@@ -15,6 +15,7 @@ void main() {
         'hy3_competition_compare': true,
         'hy3_academic_analysis': true,
         'hy3_week_plan': true,
+        'academic_analysis': true,
       },
       'quota': {
         'limit': 3,
@@ -35,6 +36,8 @@ void main() {
     expect(capabilities.maxMessageChars, 500);
     expect(capabilities.features.hy3CompetitionCompare, isTrue);
     expect(capabilities.features.hy3AcademicAnalysis, isTrue);
+    expect(capabilities.features.academicAnalysis, isTrue);
+    expect(capabilities.features.supportsAcademicAnalysis, isTrue);
     expect(capabilities.features.hy3WeekPlan, isTrue);
   });
 

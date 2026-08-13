@@ -372,7 +372,7 @@ func (r *Runtime) Execute(runID, message string) {
 	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
 	} else if hasTools {
-		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。"
+		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’。"
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},
@@ -403,6 +403,9 @@ func (r *Runtime) Execute(runID, message string) {
 	if !outcome.generated || strings.TrimSpace(outcome.answer) == "" {
 		r.failAfterProvider(runID, false, ProviderErrorInvalid, outcome.usage, time.Since(startedAt))
 		return
+	}
+	if academicAnswerNeedsGuard(outcome.answer, outcome.academicFallback, outcome.academicRiskSeen) {
+		outcome.answer = outcome.academicFallback
 	}
 	r.markQuotaConsumed(runID)
 	now := time.Now()

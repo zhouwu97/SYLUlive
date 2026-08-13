@@ -6,6 +6,7 @@ class AiFeatures {
   final bool hy3CompetitionCompare;
   final bool hy3AcademicAnalysis;
   final bool hy3WeekPlan;
+  final bool academicAnalysis;
 
   const AiFeatures({
     required this.policyRag,
@@ -13,7 +14,11 @@ class AiFeatures {
     this.hy3CompetitionCompare = false,
     this.hy3AcademicAnalysis = false,
     this.hy3WeekPlan = false,
+    this.academicAnalysis = false,
   });
+
+  /// 统一模型的学业分析能力；旧字段仅为兼容历史服务端响应保留。
+  bool get supportsAcademicAnalysis => academicAnalysis || hy3AcademicAnalysis;
 
   factory AiFeatures.fromJson(Map<String, dynamic> json) {
     return AiFeatures(
@@ -22,6 +27,7 @@ class AiFeatures {
       hy3CompetitionCompare: json['hy3_competition_compare'] == true,
       hy3AcademicAnalysis: json['hy3_academic_analysis'] == true,
       hy3WeekPlan: json['hy3_week_plan'] == true,
+      academicAnalysis: json['academic_analysis'] == true,
     );
   }
 }

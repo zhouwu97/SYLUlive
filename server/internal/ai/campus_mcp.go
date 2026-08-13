@@ -156,6 +156,7 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"academic.get_grade_summary", "汇总已授权成绩快照中的课程数、学分和绩点。", emptySchema(), mcp.getGradeSummary},
 		campusMCPTool{"academic.get_credit_summary", "返回已授权学分要求或学业情况快照中的摘要。", emptySchema(), mcp.getCreditSummary},
 		campusMCPTool{"academic.get_failure_risk", "根据已授权成绩快照计算确定性的挂科风险计数。", emptySchema(), mcp.getFailureRisk},
+		campusMCPTool{"academic.get_risk_analysis", "基于已授权成绩、学分和二课快照生成有边界的确定性风险与行动项。", emptySchema(), mcp.getRiskAnalysis},
 		campusMCPTool{"schedule.get_availability", "根据已授权课表快照计算指定教学周的空闲节次。", availabilitySchema(), mcp.getScheduleAvailability},
 		campusMCPTool{"erke.get_overview", "读取用户已授权上传的二课概览；没有上传时明确说明缺失。", emptySchema(), mcp.getErkeOverview},
 		campusMCPTool{"profile.get_academic_identity", "读取当前用户已授权的年级、学院和专业，不返回学号或账号信息。", emptySchema(), mcp.getAcademicIdentity},
@@ -870,6 +871,31 @@ func (mcp *campusMCP) getFailureRisk(ctx context.Context, userID uint, arguments
 	return personalToolResult(map[string]interface{}{"failed_course_count": summary.FailedCourseCount, "failed_credits": summary.FailedCredits, "unknown_grade_count": summary.UnknownGradeCount, "course_count": summary.CourseCount}, result), nil
 }
 
+// getRiskAnalysis 是综合学业分析的唯一入口。它把跨数据集的事实一次性读取并
+// 计算风险，避免模型只拿到一门成绩就给出“总体风险不大”之类的越界结论。
+func (mcp *campusMCP) getRiskAnalysis(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	if err := requireEmptyArguments(arguments); err != nil {
+		return nil, err
+	}
+	requested := []academic.DatasetType{
+		academic.DatasetGrades,
+		academic.DatasetCreditRequirements,
+		academic.DatasetAcademicSituation,
+		academic.DatasetErke,
+	}
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
+		Datasets: requested, Freshness: academic.FreshnessPreferRecent, Reason: "academic_risk_analysis",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	data, warnings := buildAcademicRiskAnalysis(results, requested)
+	return aggregatePersonalToolResult(data, results, warnings), nil
+}
+
 func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
 	var input struct {
 		Week           int    `json:"week"`
@@ -970,18 +996,19 @@ func personalToolResult(data interface{}, result academic.ContextResult) CampusT
 }
 
 type gradeSummary struct {
-	CourseCount       int     `json:"course_count"`
-	TotalCredits      float64 `json:"total_credits"`
-	WeightedGPA       float64 `json:"weighted_gpa"`
-	FailedCourseCount int     `json:"failed_course_count"`
-	FailedCredits     float64 `json:"failed_credits"`
-	UnknownGradeCount int     `json:"unknown_grade_count"`
+	CourseCount       int      `json:"course_count"`
+	TotalCredits      float64  `json:"total_credits"`
+	WeightedGPA       float64  `json:"weighted_gpa"`
+	FailedCourseCount int      `json:"failed_course_count"`
+	FailedCredits     float64  `json:"failed_credits"`
+	UnknownGradeCount int      `json:"unknown_grade_count"`
+	FailedCourses     []string `json:"failed_courses"`
 }
 
 func summarizeGrades(raw json.RawMessage) gradeSummary {
 	data := decodeJSONObject(raw)
 	values, _ := data["grades"].([]interface{})
-	summary := gradeSummary{CourseCount: len(values)}
+	summary := gradeSummary{CourseCount: len(values), FailedCourses: make([]string, 0)}
 	var weightedPoints float64
 	for _, value := range values {
 		item, ok := value.(map[string]interface{})
@@ -1002,6 +1029,9 @@ func summarizeGrades(raw json.RawMessage) gradeSummary {
 			if creditOK {
 				summary.FailedCredits += credits
 			}
+			if name := firstString(item, "course_name", "name", "title"); name != "" {
+				summary.FailedCourses = append(summary.FailedCourses, name)
+			}
 		}
 		if !gradeKnown(item) {
 			summary.UnknownGradeCount++
@@ -1015,7 +1045,169 @@ func summarizeGrades(raw json.RawMessage) gradeSummary {
 	return summary
 }
 
+func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.ContextResult, requested []academic.DatasetType) (map[string]interface{}, []string) {
+	data := map[string]interface{}{
+		"coverage":   make(map[string]string, len(requested)),
+		"risks":      make([]string, 0),
+		"actions":    make([]string, 0),
+		"to_confirm": make([]string, 0),
+	}
+	warnings := make([]string, 0)
+	coverage := data["coverage"].(map[string]string)
+	risks := data["risks"].([]string)
+	actions := data["actions"].([]string)
+	toConfirm := data["to_confirm"].([]string)
+	usableCount := 0
+
+	grades := results[academic.DatasetGrades]
+	coverage[string(academic.DatasetGrades)] = string(grades.Status)
+	if usablePersonalResult(grades) {
+		usableCount++
+		summary := summarizeGrades(grades.Data)
+		data["grades"] = summary
+		if summary.FailedCourseCount > 0 {
+			risk := fmt.Sprintf("发现 %d 门未通过课程", summary.FailedCourseCount)
+			if len(summary.FailedCourses) > 0 {
+				risk += "（" + strings.Join(summary.FailedCourses, "、") + "）"
+			}
+			risks = append(risks, risk)
+			actions = append(actions, "核对未通过课程的补考或重修安排，并记录当期通知的截止时间")
+		}
+		if summary.UnknownGradeCount > 0 {
+			risks = append(risks, fmt.Sprintf("有 %d 门课程缺少最终成绩或通过状态", summary.UnknownGradeCount))
+			toConfirm = append(toConfirm, "补齐未知成绩课程的最终成绩和通过状态")
+		}
+	} else {
+		warnings = append(warnings, grades.Warnings...)
+		toConfirm = append(toConfirm, "刷新或授权读取成绩快照后再判断挂科风险")
+	}
+
+	creditCandidates := []academic.DatasetType{academic.DatasetCreditRequirements, academic.DatasetAcademicSituation}
+	credit := map[string]interface{}{}
+	creditAvailable := false
+	for _, dataset := range creditCandidates {
+		result := results[dataset]
+		coverage[string(dataset)] = string(result.Status)
+		if usablePersonalResult(result) {
+			usableCount++
+			if len(credit) == 0 || (len(credit) == 1 && credit["available"] == true) {
+				credit = extractCreditFields(result.Data)
+			}
+			creditAvailable = true
+		} else {
+			warnings = append(warnings, result.Warnings...)
+		}
+	}
+	if creditAvailable {
+		data["credits"] = credit
+		if gap, ok := jsonNumber(credit["credit_gap"]); ok && gap > 0 {
+			risks = append(risks, fmt.Sprintf("按当前快照还差 %g 学分", gap))
+			actions = append(actions, "按培养方案拆分剩余学分，优先确认必修课和毕业审核要求")
+		} else if earned, earnedOK := jsonNumber(credit["earned_credits"]); earnedOK {
+			if required, requiredOK := jsonNumber(credit["required_credits"]); requiredOK && required-earned > 0 {
+				gap := roundToolNumber(required - earned)
+				credit["credit_gap"] = gap
+				risks = append(risks, fmt.Sprintf("按当前快照还差 %g 学分", gap))
+				actions = append(actions, "按培养方案拆分剩余学分，优先确认必修课和毕业审核要求")
+			}
+		}
+	} else {
+		toConfirm = append(toConfirm, "确认服务端是否有当前培养方案和学分要求快照")
+	}
+
+	erke := results[academic.DatasetErke]
+	coverage[string(academic.DatasetErke)] = string(erke.Status)
+	if usablePersonalResult(erke) {
+		usableCount++
+		overview := extractErkeOverview(erke.Data)
+		data["erke"] = overview
+		if gap, ok := jsonNumber(overview["graduation_gap"]); ok && gap > 0 {
+			risks = append(risks, fmt.Sprintf("二课学分缺口为 %g", gap))
+			actions = append(actions, "核对二课认定口径，按缺口类别制定补充计划")
+		}
+	} else {
+		warnings = append(warnings, erke.Warnings...)
+		toConfirm = append(toConfirm, "确认二课快照是否已上传及其认定口径")
+	}
+
+	data["available_dataset_count"] = usableCount
+	data["requested_dataset_count"] = len(requested)
+	if len(risks) == 0 {
+		data["risk_level"] = "no_observed_risk"
+		toConfirm = append(toConfirm, "毕业学分、必修课和二课要求以学校当期培养方案及教务审核为准")
+	} else if usableCount < len(requested) {
+		data["risk_level"] = "incomplete"
+		toConfirm = append(toConfirm, "当前数据覆盖不完整，不能据此断言整体没有风险")
+	} else {
+		data["risk_level"] = "observed_risk"
+	}
+	data["risks"] = uniqueStrings(risks)
+	data["actions"] = uniqueStrings(actions)
+	data["to_confirm"] = uniqueStrings(toConfirm)
+	return data, uniqueStrings(warnings)
+}
+
+func aggregatePersonalToolResult(data map[string]interface{}, results map[academic.DatasetType]academic.ContextResult, warnings []string) CampusToolResult {
+	combinedWarnings := append([]string{}, warnings...)
+	evidence := make([]CampusToolEvidence, 0)
+	var source academic.DataSource = academic.DataSourceNone
+	var fetchedAt *time.Time
+	status := academic.DataStatusMissing
+	stale := false
+	partial := false
+	for _, dataset := range []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke} {
+		result := results[dataset]
+		if source == academic.DataSourceNone && result.Source.Valid() {
+			source = result.Source
+		}
+		if fetchedAt == nil && result.FetchedAt != nil {
+			fetchedAt = result.FetchedAt
+		}
+		if usablePersonalResult(result) {
+			status = result.Status
+		} else if status == academic.DataStatusMissing && result.Status != academic.DataStatusMissing {
+			status = result.Status
+		}
+		stale = stale || result.IsStale
+		partial = partial || result.IsPartial || !usablePersonalResult(result)
+		combinedWarnings = append(combinedWarnings, result.Warnings...)
+		for _, item := range result.Evidence {
+			evidence = append(evidence, CampusToolEvidence{Source: item.Source, Dataset: item.Dataset, FetchedAt: item.FetchedAt, ExpiresAt: item.ExpiresAt, IsStale: item.IsStale})
+		}
+	}
+	return CampusToolResult{Data: data, Status: status, Source: source, FetchedAt: fetchedAt, IsStale: stale, IsPartial: partial, Warnings: uniqueStrings(combinedWarnings), Evidence: evidence}
+}
+
+func uniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func firstString(values map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := values[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func gradeFailed(item map[string]interface{}) bool {
+	if passed, ok := item["passed"].(bool); ok {
+		return !passed
+	}
 	if score, ok := jsonNumber(item["fraction"]); ok {
 		return score < 60
 	}

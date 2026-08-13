@@ -37,6 +37,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/ai_assistant_service.dart';
+import '../../services/ai_personal_data_permission_service.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/ai/ai_empty_state.dart';
 import '../../widgets/ai/ai_personal_empty_state.dart';
@@ -57,6 +58,8 @@ import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
+
+enum _ConsentChoice { denied, once, always }
 
 class AiAssistantScreen extends StatefulWidget {
   final AiCapabilities capabilities;
@@ -83,6 +86,7 @@ class AiAssistantScreen extends StatefulWidget {
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   late final AiAssistantProvider _provider;
+  late final AiPersonalDataPermissionService _permissionService;
   final FocusNode _inputFocusNode = FocusNode();
   final TextEditingController _inputController = TextEditingController();
 
@@ -119,6 +123,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       initialCapabilities: widget.capabilities,
       deviceToolSync: DeviceToolBridge.syncPending,
     );
+    _permissionService = AiPersonalDataPermissionService(widget.dio);
     _provider.addListener(_handleRunConsentRequired);
     final initialPrompt = widget.initialPrompt?.trim() ?? '';
     if (initialPrompt.isNotEmpty) {
@@ -178,7 +183,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         return;
       }
       final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-      final granted = await showDialog<bool>(
+      final choice = await showDialog<_ConsentChoice>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => Theme(
@@ -191,29 +196,64 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             ),
             content: Text(
               consent.consentScope == 'ai_external_model_analysis'
-                  ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给外部 Hy3 模型。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                  ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
                   : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_ConsentChoice.denied),
                 child: const Text('不允许'),
               ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_ConsentChoice.always),
+                child: const Text('以后允许'),
+              ),
               FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_ConsentChoice.once),
                 child: const Text('仅本次允许'),
               ),
             ],
           ),
         ),
       );
-      if (mounted && granted != null) {
-        final submitted = await _provider.submitConsent(granted);
-        if (!submitted && mounted) {
+      if (mounted && choice != null) {
+        final granted = choice != _ConsentChoice.denied;
+        var shouldSubmit = true;
+        if (choice == _ConsentChoice.always) {
+          final scope = AiPersonalDataPermissionScope.fromWireValue(
+            consent.consentScope,
+          );
+          if (scope == null) {
+            shouldSubmit = false;
+            AppFeedback.error('授权范围无效，请稍后重试', context: context);
+          } else {
+            try {
+              await _permissionService.update(
+                scope: scope,
+                policy: AiPersonalDataPermissionPolicy.always,
+              );
+            } on AiPersonalDataPermissionException catch (error) {
+              shouldSubmit = false;
+              if (mounted) AppFeedback.error(error.message, context: context);
+            }
+          }
+        }
+        var submitted = true;
+        if (shouldSubmit) {
+          submitted = await _provider.submitConsent(granted);
+        }
+        if (shouldSubmit && !submitted && mounted) {
+          _lastConsentDialogKey = '';
           AppFeedback.error(
             _provider.error ?? '提交本次授权失败，请稍后重试',
             context: context,
           );
+        } else if (!shouldSubmit) {
+          // 长期策略写入失败时允许用户重新打开对话框，不把一次失败锁死。
+          _lastConsentDialogKey = '';
         }
       }
       _consentDialogVisible = false;
@@ -995,7 +1035,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                     quickPrompts: provider.quickPrompts,
                                     suggestedPrompts: [
                                       if (capabilities
-                                          .features.hy3AcademicAnalysis)
+                                          .features.supportsAcademicAnalysis)
                                         const AiSuggestedPrompt(
                                           title: '学业分析',
                                           subtitle: '分析我的学业情况',

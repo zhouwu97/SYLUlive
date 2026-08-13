@@ -25,3 +25,24 @@ func TestTruncateGraphemesPreservesVisibleCharacters(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeDishName(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{" 锅包肉 ", "锅包肉"},
+		{"锅包肉", "锅包肉"},
+		{"锅 包 肉", "锅包肉"},
+		{"锅　包肉", "锅包肉"}, // 全角空格 U+3000
+		{"麻 辣 香 锅", "麻辣香锅"},
+		{"  ", ""},
+		{"", ""},
+		{"  锅 包 肉  ", "锅包肉"},
+	}
+	for _, c := range cases {
+		if got := NormalizeDishName(c.input); got != c.want {
+			t.Errorf("NormalizeDishName(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}

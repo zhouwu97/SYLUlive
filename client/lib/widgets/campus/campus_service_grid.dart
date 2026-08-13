@@ -7,6 +7,7 @@ import 'campus_service_item.dart';
 class CampusServiceGrid extends StatefulWidget {
   final bool isDark;
   final VoidCallback onEduTap;
+  final VoidCallback onCanteenTap;
   final VoidCallback onRateTap;
   final VoidCallback onTeamTap;
   final VoidCallback onMapTap;
@@ -16,6 +17,7 @@ class CampusServiceGrid extends StatefulWidget {
     super.key,
     required this.isDark,
     required this.onEduTap,
+    required this.onCanteenTap,
     required this.onRateTap,
     required this.onTeamTap,
     required this.onMapTap,
@@ -75,6 +77,12 @@ class _CampusServiceGridState extends State<CampusServiceGrid>
         icon: Icons.school_rounded,
         color: CampusTheme.blue,
         onTap: widget.onEduTap,
+      ),
+      CampusServiceItem(
+        title: '食堂',
+        icon: Icons.restaurant_rounded,
+        color: CampusTheme.dining,
+        onTap: widget.onCanteenTap,
       ),
       CampusServiceItem(
         title: '校园榜单',
@@ -154,17 +162,28 @@ class _CampusServiceGridState extends State<CampusServiceGrid>
           clipBehavior: Clip.antiAlias,
           child: Material(
             color: Colors.transparent,
-            child: Row(
-              children: [
-                for (var index = 0; index < services.length; index++)
-                  Expanded(
-                    child: _buildAnimatedService(
-                      services[index],
-                      index,
-                      isDark,
-                    ),
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final columns = width >= 1200 ? 6 : (width >= 700 ? 4 : 3);
+                const gap = 8.0;
+                final itemWidth = (width - gap * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (var index = 0; index < services.length; index++)
+                      SizedBox(
+                        width: itemWidth,
+                        child: _buildAnimatedService(
+                          services[index],
+                          index,
+                          isDark,
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),

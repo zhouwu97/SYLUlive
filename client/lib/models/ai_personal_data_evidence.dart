@@ -36,7 +36,7 @@ class AiPersonalDataEvidence {
         'device_encrypted_cache' => '手机本地加密缓存',
         'remote_edu_fetch' => '实时教务拉取',
         'user_uploaded_snapshot' => '用户上传快照',
-        'hy3_mcp' => 'Hy3 确定性分析',
+        'hy3_mcp' => '学业数据来源',
         _ => '个人数据来源',
       };
 

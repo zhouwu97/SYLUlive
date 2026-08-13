@@ -556,6 +556,38 @@ func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testi
 	require.True(t, eventTypes["tool.completed"])
 }
 
+func TestAcademicRiskFallbackRejectsFalseReassurance(t *testing.T) {
+	fallback, riskSeen := academicRiskFallback("academic_get_risk_analysis", json.RawMessage(`{
+		"status":"available",
+		"data":{
+			"risk_level":"incomplete",
+			"risks":["发现 1 门未通过课程（大学物理B2）"],
+			"actions":["核对未通过课程的补考或重修安排"],
+			"to_confirm":["确认当前快照是否覆盖全部已修学期"]
+		},
+		"warnings":[]
+	}`))
+	require.True(t, riskSeen)
+	require.Contains(t, fallback, "大学物理B2")
+	require.True(t, academicAnswerNeedsGuard("总体风险不大，建议继续保持。", fallback, riskSeen))
+	require.False(t, academicAnswerNeedsGuard("已确认大学物理B2未通过，建议核对补考安排。", fallback, riskSeen))
+}
+
+func TestAcademicRiskMissingDataCanStillProduceBoundedAnswer(t *testing.T) {
+	fallback, riskSeen := academicRiskFallback("academic_get_risk_analysis", json.RawMessage(`{
+		"status":"missing",
+		"data":{
+			"risk_level":"incomplete",
+			"risks":[],
+			"actions":[],
+			"to_confirm":["刷新或授权读取成绩快照后再判断挂科风险"]
+		},
+		"warnings":["服务端没有可用快照"]
+	}`))
+	require.True(t, riskSeen)
+	require.Contains(t, fallback, "刷新或授权读取成绩快照")
+}
+
 func TestToolRegistryMapsModelAliasesBackToCanonicalNames(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	executed := false

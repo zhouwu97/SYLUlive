@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'dart:io' show File;
 import 'admin_reports_screen.dart';
+import 'admin/canteen_dish_photo_review_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
 import 'admin_featured_applications_screen.dart';
@@ -230,6 +231,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   MaterialPageRoute(
                                       builder: (_) =>
                                           const AdminReviewTasksScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.restaurant_menu_rounded,
+                          iconColor: Colors.deepOrange,
+                          title: '菜品实拍审核',
+                          subtitle: '学生投稿实拍审核',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const CanteenDishPhotoReviewScreen()))
                               .then((_) => _loadCounts()),
                         ),
                       ],

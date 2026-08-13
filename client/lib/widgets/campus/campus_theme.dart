@@ -26,6 +26,7 @@ class CampusTheme {
   static const Color green = Color(0xFF10B981);
   static const Color cyan = Color(0xFF0EA5A4);
   static const Color red = Color(0xFFE54848);
+  static const Color dining = Color(0xFFE76F51);
 
   /// 将页面级品牌 accent 注入现有主题，保留原主题的明暗、字体和组件形状。
   ///

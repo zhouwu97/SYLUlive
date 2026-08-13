@@ -90,7 +90,7 @@ void main() {
     expect(find.text('个人数据来源'), findsOneWidget);
     await tester.tap(find.text('个人数据来源'));
     await tester.pumpAndSettle();
-    expect(find.text('学业分析：Hy3 确定性分析'), findsOneWidget);
+    expect(find.text('学业分析：学业数据来源'), findsOneWidget);
     expect(find.text('学分 25.5 / 25.5 · 二课 0 / 0'), findsOneWidget);
     expect(find.text('信号与系统'), findsOneWidget);
     expect(find.text('成绩 58 · 3 学分 · 必修 · 未通过'), findsOneWidget);

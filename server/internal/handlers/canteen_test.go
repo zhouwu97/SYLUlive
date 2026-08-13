@@ -33,6 +33,14 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
+	// 与生产 EnsureRatingInteractionSchema 对齐：建立 (canteen_id,user_id) 唯一约束，
+	// 使 Rate 的 ON CONFLICT upsert 在 SQLite 测试库中同样生效。
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_canteen_rating_user
+		ON canteen_ratings (canteen_id, user_id)
+	`).Error; err != nil {
+		t.Fatalf("create canteen rating unique index: %v", err)
+	}
 	return db
 }
 
@@ -189,15 +197,18 @@ func TestCanteenDetailSortFilterAndMyVote(t *testing.T) {
 	createCanteenTestUser(t, db, 1, "Alice")
 	createCanteenTestUser(t, db, 2, "Bob")
 	createCanteenTestUser(t, db, 3, "Cathy")
+	createCanteenTestUser(t, db, 4, "David")
+	createCanteenTestUser(t, db, 5, "Eve")
 	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
 	}
+	// (canteen_id,user_id) 唯一约束下，每个用户只能一条评价。
 	ratings := []models.CanteenRating{
 		{CanteenID: canteen.ID, UserID: 2, Star: 5, Comment: "   ", HelpfulCount: 10},
 		{CanteenID: canteen.ID, UserID: 3, Star: 4, Comment: "有参考价值", Images: `["/uploads/a.png"]`, HelpfulCount: 5},
-		{CanteenID: canteen.ID, UserID: 2, Star: 4, Comment: "   ", HelpfulCount: 5},
-		{CanteenID: canteen.ID, UserID: 2, Star: 1, Comment: "踩雷", UnhelpfulCount: 1},
+		{CanteenID: canteen.ID, UserID: 4, Star: 4, Comment: "   ", HelpfulCount: 5},
+		{CanteenID: canteen.ID, UserID: 5, Star: 1, Comment: "踩雷", UnhelpfulCount: 1},
 	}
 	if err := db.Create(&ratings).Error; err != nil {
 		t.Fatalf("create ratings: %v", err)
@@ -364,7 +375,7 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 		2,
 		`{"star":5,"comment":"很好"}`,
 	)
-	if ratingAfterApproval.Code != http.StatusCreated {
+	if ratingAfterApproval.Code != http.StatusOK {
 		t.Fatalf("verified canteen should accept ratings: %d %s", ratingAfterApproval.Code, ratingAfterApproval.Body.String())
 	}
 }

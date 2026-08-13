@@ -24,22 +24,50 @@ func NewCanteenHandler(db *gorm.DB) *CanteenHandler {
 	return &CanteenHandler{db: db}
 }
 
-// GetList 获取食堂列表（按评分降序排列）
+// canteenRankingPriorWeight Bayesian 排名的先验权重 m。
+const canteenRankingPriorWeight = 5.0
+
+// GetList 获取食堂列表（Bayesian 综合排序，无评价食堂置后）
 func (h *CanteenHandler) GetList(c *gin.Context) {
 	type CanteenWithStats struct {
 		models.Canteen
-		RatingCount int     `json:"rating_count"`
-		AverageStar float64 `json:"average_star"`
+		RatingCount    int `json:"rating_count"`
+		AverageStar    float64 `json:"average_star"`
+		DishCount      int `json:"dish_count"`
+		DishPhotoCount int `json:"dish_photo_count"`
 	}
 	var result []CanteenWithStats
 
-	// 修复 N+1 查询，使用 LEFT JOIN 与 GROUP BY 一次性查出评分统计
+	// 独立聚合子查询（rating_stats / dish_stats），避免 JOIN 膨胀污染 COUNT。
+	// dish_count 只统计至少有一张 approved 实拍的公开菜品。
 	err := h.db.Table("canteens").
-		Select("canteens.*, COUNT(canteen_ratings.id) as rating_count, COALESCE(AVG(CAST(canteen_ratings.star AS FLOAT)), 0) as average_star").
-		Joins("LEFT JOIN canteen_ratings ON canteen_ratings.canteen_id = canteens.id").
+		Select(`canteens.*,
+			COALESCE(rs.rating_count, 0) as rating_count,
+			COALESCE(rs.average_star, 0) as average_star,
+			COALESCE(ds.dish_count, 0) as dish_count,
+			COALESCE(ds.dish_photo_count, 0) as dish_photo_count`).
+		Joins(`LEFT JOIN (
+			SELECT canteen_id, COUNT(*) as rating_count, AVG(CAST(star AS FLOAT)) as average_star
+			FROM canteen_ratings GROUP BY canteen_id
+		) rs ON rs.canteen_id = canteens.id`).
+		Joins(`LEFT JOIN (
+			SELECT d.canteen_id,
+				COUNT(DISTINCT CASE WHEN p.id IS NOT NULL THEN d.id END) as dish_count,
+				COUNT(p.id) as dish_photo_count
+			FROM canteen_dishes d
+			LEFT JOIN canteen_dish_photos p ON p.dish_id = d.id AND p.status = 'approved'
+			WHERE d.status = 'active'
+			GROUP BY d.canteen_id
+		) ds ON ds.canteen_id = canteens.id`).
 		Where("canteens.verified = ?", true).
-		Group("canteens.id").
-		Order("average_star DESC, rating_count DESC, canteens.created_at DESC").
+		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_photo_count").
+		Order(`CASE WHEN rs.rating_count > 0 THEN 0 ELSE 1 END,
+			CASE WHEN rs.rating_count > 0
+				THEN (CAST(rs.rating_count AS REAL) / (rs.rating_count + ` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + `)) * rs.average_star
+					+ (` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + ` / (rs.rating_count + ` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + `)) * (SELECT AVG(avg_star) FROM (SELECT AVG(CAST(star AS FLOAT)) as avg_star FROM canteen_ratings GROUP BY canteen_id) t)
+				ELSE 0 END DESC,
+			rs.rating_count DESC,
+			canteens.created_at DESC`).
 		Find(&result).Error
 
 	if err != nil {
@@ -420,36 +448,19 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		}
 	}
 
-	var rating models.CanteenRating
-	created := false
+	rating := models.CanteenRating{
+		CanteenID: uint(cid),
+		UserID:    userID,
+		Star:      input.Star,
+		Comment:   input.Comment,
+		Images:    input.Images,
+	}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		findErr := tx.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&rating).Error
-		switch {
-		case findErr == nil:
-			rating.Star = input.Star
-			rating.Comment = input.Comment
-			rating.Images = input.Images
-			if err := tx.Model(&rating).Updates(map[string]interface{}{
-				"star":    input.Star,
-				"comment": input.Comment,
-				"images":  input.Images,
-			}).Error; err != nil {
-				return err
-			}
-		case errors.Is(findErr, gorm.ErrRecordNotFound):
-			rating = models.CanteenRating{
-				CanteenID: uint(cid),
-				UserID:    userID,
-				Star:      input.Star,
-				Comment:   input.Comment,
-				Images:    input.Images,
-			}
-			if err := tx.Create(&rating).Error; err != nil {
-				return err
-			}
-			created = true
-		default:
-			return findErr
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "canteen_id"}, {Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images"}),
+		}).Create(&rating).Error; err != nil {
+			return err
 		}
 		return services.ClaimPublicImagePathsForUser(tx, userID, imagePaths...)
 	})
@@ -457,11 +468,7 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
 		return
 	}
-	if created {
-		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
+	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": rating})
 }
 
 // DeleteCanteen 管理员删除食堂（驳回并扣除10经验）

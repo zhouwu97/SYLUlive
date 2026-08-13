@@ -115,6 +115,7 @@ func TestAICapabilitiesReportsOnlyHealthyRegisteredHy3Features(t *testing.T) {
 		capabilitiesTool{name: "hy3_decision.compare_competitions"},
 		capabilitiesTool{name: "hy3_decision.analyze_academic"},
 		capabilitiesTool{name: "hy3_decision.plan_student_week"},
+		capabilitiesTool{name: "academic.get_risk_analysis"},
 	)
 	if err != nil {
 		t.Fatalf("create tool registry: %v", err)
@@ -129,22 +130,45 @@ func TestAICapabilitiesReportsOnlyHealthyRegisteredHy3Features(t *testing.T) {
 	body := requestAICapabilities(t, handler, 99)
 	features := body["features"].(map[string]interface{})
 	for _, name := range []string{
-		"hy3_competition_explain", "hy3_competition_compare", "hy3_academic_analysis", "hy3_week_plan",
+		"hy3_competition_explain", "hy3_competition_compare", "hy3_week_plan",
 	} {
 		if features[name] != true {
 			t.Fatalf("feature %s should be available: %#v", name, features)
 		}
+	}
+	if features["hy3_academic_analysis"] != false {
+		t.Fatalf("legacy Hy3 academic feature must be disabled: %#v", features)
+	}
+	if features["academic_analysis"] != true {
+		t.Fatalf("built-in academic analysis should be available: %#v", features)
 	}
 
 	health.healthy = false
 	body = requestAICapabilities(t, handler, 99)
 	features = body["features"].(map[string]interface{})
 	for _, name := range []string{
-		"hy3_competition_explain", "hy3_competition_compare", "hy3_academic_analysis", "hy3_week_plan",
+		"hy3_competition_explain", "hy3_competition_compare", "hy3_week_plan",
 	} {
 		if features[name] != false {
 			t.Fatalf("feature %s must fail closed: %#v", name, features)
 		}
+	}
+	if features["academic_analysis"] != true {
+		t.Fatalf("built-in academic analysis must not depend on external MCP health: %#v", features)
+	}
+}
+
+func TestAICapabilitiesReportsBuiltInAcademicAnalysisWithoutExternalMCP(t *testing.T) {
+	registry, err := ai.NewToolRegistry(nil, capabilitiesTool{name: "academic.get_risk_analysis"})
+	if err != nil {
+		t.Fatalf("create tool registry: %v", err)
+	}
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, AICapabilitiesOptions{
+		ToolRegistry: registry,
+	}), 99)
+	features := body["features"].(map[string]interface{})
+	if features["academic_analysis"] != true || features["hy3_academic_analysis"] != false {
+		t.Fatalf("academic capability should be unified and external-independent: %#v", features)
 	}
 }
 

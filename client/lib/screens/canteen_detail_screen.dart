@@ -10,7 +10,9 @@ import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../config/api_constants.dart';
+import '../widgets/canteen/dish_gallery_section.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
+import 'canteen_dish_list_screen.dart';
 
 class CanteenDetailScreen extends StatefulWidget {
   final int canteenId;
@@ -89,6 +91,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     child: _buildInfoCard(isDark, accent),
+                  ),
+                  DishGallerySection(
+                    canteenId: widget.canteenId,
+                    canteenName: widget.canteenName,
+                    onUpload: () => _openDishList(isDark, accent),
                   ),
                   const SizedBox(height: 12),
                   _buildReviewHeader(reviews.length, isDark, accent),
@@ -373,6 +380,19 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
+  Future<void> _openDishList(bool isDark, Color accent) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishListScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+        ),
+      ),
+    );
+    if (mounted) await _loadData();
+  }
+
   Widget _buildReviewHeader(int count, bool isDark, Color accent) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
@@ -403,6 +423,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             child: Row(
               children: [
                 _buildFilterChip('all', '全部', isDark, accent),
+                const SizedBox(width: 8),
+                _buildFilterChip('with_image', '有图', isDark, accent),
                 const SizedBox(width: 8),
                 _buildFilterChip('high', '高分', isDark, accent),
                 const SizedBox(width: 8),

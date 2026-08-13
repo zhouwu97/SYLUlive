@@ -431,7 +431,7 @@ var expectedRemoteToolContracts = map[string]string{
 	"compare_competitions":           "183668200d82156e6385342d747d229e5ab8fe49ba4351afaf8fccc9c896905c",
 	"explain_competition_candidates": "869bed351400771f7272b5c05b97d2c20875c7ddff0db65cb9d064b5c1f84721",
 	"compare_selected_competitions":  "b8e151f2e964f96dcbc5d533632da63f5adf9b7106f681d861edb7f05cc0b463",
-	"analyze_academic_snapshot":      "fc50ff6b196c409d59df53df777f49b265fd4bfa66e34969e5787527a38fad23",
+	"analyze_academic_snapshot":      "61e7fa7dec52c493305fb585d9c44aa6c8329a716c4b29359f3a480621898269",
 	"plan_student_week":              "0cb4a9c774ea6799b8f95945d89c21195c0cb228315ab73fd849259814cc7518",
 }
 

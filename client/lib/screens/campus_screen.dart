@@ -35,7 +35,8 @@ import 'competition_center_screen.dart';
 import 'course_schedule_screen.dart';
 import 'edu_screen.dart';
 import 'exam_schedule_screen.dart';
-import 'teacher_rate_screen.dart';
+import 'canteen_screen.dart';
+import 'campus_ranking_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
 
 class CampusScreen extends StatefulWidget {
@@ -447,7 +448,8 @@ class _CampusScreenState extends State<CampusScreen>
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
-                        onRateTap: () => _openPage(const TeacherRateScreen()),
+                        onCanteenTap: () => _openPage(const CanteenScreen()),
+                        onRateTap: () => _openPage(const CampusRankingScreen()),
                         onTeamTap: () =>
                             _openPage(const TeamRecruitmentCenterScreen()),
                         onMapTap: () => _openPage(const CampusMapTabPage()),

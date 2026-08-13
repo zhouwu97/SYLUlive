@@ -17,6 +17,7 @@ const (
 	AIToolHy3CompetitionCompare = "hy3_competition_compare"
 	AIToolHy3AcademicAnalysis   = "hy3_academic_analysis"
 	AIToolHy3WeekPlan           = "hy3_week_plan"
+	AIToolAcademicAnalysis      = "academic_analysis"
 )
 
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。
@@ -102,8 +103,9 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	externalMCPAvailable := accessAllowed && h.externalMCPConfigured &&
 		h.externalMCPHealth != nil && h.externalMCPHealth.Healthy()
 	hasExternalTool := func(name string) bool {
-		return externalMCPAvailable && h.toolRegistry.HasTool(name)
+		return externalMCPAvailable && h.toolRegistry != nil && h.toolRegistry.HasTool(name)
 	}
+	academicAnalysisAvailable := accessAllowed && h.toolRegistry != nil && h.toolRegistry.HasTool("academic.get_risk_analysis")
 
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":            h.enabled,
@@ -116,8 +118,10 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 			"schedule_windows":          false,
 			AIToolHy3CompetitionExplain: hasExternalTool("hy3_decision.explain_competition_candidates"),
 			AIToolHy3CompetitionCompare: hasExternalTool("hy3_decision.compare_competitions"),
-			AIToolHy3AcademicAnalysis:   hasExternalTool("hy3_decision.analyze_academic"),
-			AIToolHy3WeekPlan:           hasExternalTool("hy3_decision.plan_student_week"),
+			// 学业分析已统一走内置 academic.get_risk_analysis，不再向客户端宣称 Hy3 能力。
+			AIToolHy3AcademicAnalysis: false,
+			AIToolHy3WeekPlan:         hasExternalTool("hy3_decision.plan_student_week"),
+			AIToolAcademicAnalysis:    academicAnalysisAvailable,
 		},
 		"quota": gin.H{
 			"limit":          h.hourlyLimit,

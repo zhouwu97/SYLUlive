@@ -21,6 +21,8 @@ const (
 type toolLoopOutcome struct {
 	answer           string
 	citationFallback string
+	academicFallback string
+	academicRiskSeen bool
 	usage            ProviderEvent
 	generated        bool
 	toolUsed         bool
@@ -187,6 +189,10 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 				requiredToolCompleted = true
 			}
 			modelResult := toolResultForModel(call.name, execution.Result)
+			if fallback, riskSeen := academicRiskFallback(call.name, execution.Result); fallback != "" {
+				outcome.academicFallback = fallback
+				outcome.academicRiskSeen = riskSeen
+			}
 			if fallback := academicCitationFallback(call.name, execution.Result); fallback != "" {
 				outcome.citationFallback = fallback
 			}
@@ -283,6 +289,92 @@ func academicCitationFallback(toolName string, result json.RawMessage) string {
 	}
 	builder.WriteString("本次校规引用未通过校验，因此不展开补考、二次考试或重修的校内流程；个人成绩结论不受影响。")
 	return builder.String()
+}
+
+// academicRiskFallback 是模型输出的最后一道事实护栏：当模型把明确的挂科或
+// 数据缺口说成“风险不大”，直接使用工具基于同一份快照生成的边界化回答。
+func academicRiskFallback(toolName string, result json.RawMessage) (string, bool) {
+	if toolName != "academic_get_risk_analysis" || !json.Valid(result) {
+		return "", false
+	}
+	var envelope struct {
+		Status   string                 `json:"status"`
+		Data     map[string]interface{} `json:"data"`
+		Warnings []string               `json:"warnings"`
+	}
+	if json.Unmarshal(result, &envelope) != nil || envelope.Status == "" || envelope.Status == "failed" {
+		return "", false
+	}
+	data := envelope.Data
+	if len(data) == 0 {
+		return "", false
+	}
+	risks := stringList(data["risks"])
+	actions := stringList(data["actions"])
+	confirmations := stringList(data["to_confirm"])
+	riskLevel, _ := data["risk_level"].(string)
+	riskSeen := riskLevel != "no_observed_risk" || len(risks) > 0
+	var builder strings.Builder
+	builder.WriteString("基于当前已授权快照，能确认的范围如下：\n")
+	if len(risks) > 0 {
+		builder.WriteString("主要风险：\n")
+		for _, risk := range risks {
+			builder.WriteString("- ")
+			builder.WriteString(risk)
+			builder.WriteByte('\n')
+		}
+	} else {
+		builder.WriteString("当前可见数据没有发现明确的未通过课程或已计算学分缺口。\n")
+	}
+	if len(actions) > 0 {
+		builder.WriteString("建议优先做：\n")
+		for _, action := range actions {
+			builder.WriteString("- ")
+			builder.WriteString(action)
+			builder.WriteByte('\n')
+		}
+	}
+	if len(confirmations) > 0 || len(envelope.Warnings) > 0 {
+		builder.WriteString("仍需确认：\n")
+		for _, item := range append(confirmations, envelope.Warnings...) {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			builder.WriteString("- ")
+			builder.WriteString(item)
+			builder.WriteByte('\n')
+		}
+	}
+	return strings.TrimSpace(builder.String()), riskSeen
+}
+
+func stringList(value interface{}) []string {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			result = append(result, strings.TrimSpace(text))
+		}
+	}
+	return result
+}
+
+func academicAnswerNeedsGuard(answer, fallback string, riskSeen bool) bool {
+	if strings.TrimSpace(fallback) == "" {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(answer))
+	if !riskSeen {
+		return false
+	}
+	if containsAny(normalized, "总体风险不大", "风险不大", "没有风险", "无明显风险", "风险很小") {
+		return true
+	}
+	return !containsAny(normalized, "未通过", "挂科", "学分缺口", "成绩缺失", "数据覆盖", "风险")
 }
 
 func formatAcademicNumber(value interface{}) string {
@@ -567,10 +659,11 @@ func toolExecutionFailure(err error) json.RawMessage {
 	return json.RawMessage(`{"status":"failed","error_code":"` + code + `"}`)
 }
 
-// fatalToolResultCode 阻止模型在个人数据工具明确不可用时继续生成无依据的分析。
-// Hy3 的成功信封状态为 ok；其余 unavailable/failed 结果都必须由 Run 层显式失败。
+// fatalToolResultCode 阻止模型在个人数据工具明确失败时继续生成无依据的分析。
+// 综合学业工具即使没有快照也会返回可解释的 missing/permission_required 结果，
+// 这些状态应交给模型如实说明，而不是统一映射成服务不可用。
 func fatalToolResultCode(toolName string, result json.RawMessage) string {
-	if !strings.HasPrefix(toolName, "hy3_decision_") || !json.Valid(result) {
+	if !json.Valid(result) {
 		return ""
 	}
 	var envelope struct {
@@ -578,6 +671,18 @@ func fatalToolResultCode(toolName string, result json.RawMessage) string {
 		ErrorCode string `json:"error_code"`
 	}
 	if err := json.Unmarshal(result, &envelope); err != nil || envelope.Status == "" || envelope.Status == "ok" {
+		return ""
+	}
+	if toolName == "academic_get_risk_analysis" {
+		switch envelope.Status {
+		case "available", "stale", "partial", "missing", "needs_refresh",
+			"permission_required", "device_offline", "fetching":
+			return ""
+		default:
+			return "personal_context_unavailable"
+		}
+	}
+	if !strings.HasPrefix(toolName, "hy3_decision_") {
 		return ""
 	}
 	if envelope.ErrorCode != "" {

@@ -112,8 +112,30 @@ void main() {
       });
       final provider = CanteenProvider(dio);
       final items = await provider.adminListPendingDishPhotos();
+      expect(items, isNotNull);
       expect(items, hasLength(1));
-      expect(items[0]['dish_name'], '锅包肉');
+      expect(items![0]['dish_name'], '锅包肉');
+    });
+
+    test('adminListPendingDishPhotos 网络失败返回 null（不伪装成空列表）', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        return _json('{"error":"internal"}', 500);
+      });
+      final provider = CanteenProvider(dio);
+      final items = await provider.adminListPendingDishPhotos();
+      expect(items, isNull);
+    });
+
+    test('adminListPendingDishPhotos 空列表成功返回空（≠失败）', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        return _json('{"items":[]}', 200);
+      });
+      final provider = CanteenProvider(dio);
+      final items = await provider.adminListPendingDishPhotos();
+      expect(items, isNotNull);
+      expect(items, isEmpty);
     });
 
     test('adminApproveDishPhoto 返回成功 + gallery_full code', () async {

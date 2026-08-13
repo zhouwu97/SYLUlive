@@ -229,7 +229,9 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
-  Future<List<Map<String, dynamic>>> adminListPendingDishPhotos() async {
+  /// 管理员待审核实拍列表。返回 null 表示请求失败；
+  /// 成功但无数据时返回空列表（区分"失败"与"暂无"，避免失败伪装成空态）。
+  Future<List<Map<String, dynamic>>?> adminListPendingDishPhotos() async {
     try {
       final response = await _dio.get('/canteens/dish-photos/pending');
       if (response.statusCode == 200) {
@@ -237,12 +239,13 @@ class CanteenProvider with ChangeNotifier {
         if (items is List) {
           return items.cast<Map<String, dynamic>>();
         }
+        return const [];
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
       debugPrint('Error listing pending dish photos: $e');
     }
-    return [];
+    return null;
   }
 
   Future<String?> adminApproveDishPhoto(int photoId) async {

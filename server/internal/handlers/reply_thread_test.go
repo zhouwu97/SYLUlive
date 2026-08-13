@@ -419,6 +419,50 @@ func TestReplyCreateRejectsReplyUnderFrozenTombstone(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "已不可回复")
 }
 
+// TestReplyCreateRejectsDirectReplyToTombstoneRoot 已删除根即便还有正常子回复，
+// 也不能作为直接回复目标（必须通过 reply_to_reply_id 指定存活子评论）。
+func TestReplyCreateRejectsDirectReplyToTombstoneRoot(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	now := time.Now()
+	post := models.Post{
+		Title: "直接回复 tombstone 测试帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+
+	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	childA := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, AuthorID: 1, Content: "A", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-30 * time.Minute)}
+	require.NoError(t, db.Create(&childA).Error)
+
+	// 删除 root → tombstone，但仍有一个正常子回复 A。
+	delRec := performDeleteReplyRequest(t, db, root.ID, 2)
+	require.Equal(t, http.StatusOK, delRec.Code)
+
+	// 不传 reply_to_reply_id，直接"回复"已删除根 → 400。
+	rec := performReplyCreateRequestAs(t, db, post.ID, 1, url.Values{
+		"content":         {"直接回复已删根"},
+		"parent_reply_id": {fmt.Sprint(root.ID)},
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "已不可回复")
+
+	// 未创建回复。
+	var createdCount int64
+	db.Model(&models.Reply{}).Where("content = ?", "直接回复已删根").Count(&createdCount)
+	require.Zero(t, createdCount, "不得创建直接回复已删根的评论")
+
+	// 根作者（用户 2）不得收到新通知。
+	var notifyCount int64
+	db.Model(&models.Notification{}).Where("user_id = ? AND type = ?", 2, "reply").Count(&notifyCount)
+	require.Zero(t, notifyCount, "已删根作者不得收到通知")
+}
+
 // TestGetChildrenRejectsCrossPostURL children 接口必须校验 URL postId 与根评论所属帖子一致。
 func TestGetChildrenRejectsCrossPostURL(t *testing.T) {
 	db := newReplyTestDB(t)

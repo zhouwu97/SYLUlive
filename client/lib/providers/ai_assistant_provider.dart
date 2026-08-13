@@ -892,7 +892,7 @@ class AiAssistantProvider extends ChangeNotifier {
       features?.policyRag == true,
       features?.scheduleWindows == true,
       features?.hy3CompetitionCompare == true,
-      features?.hy3AcademicAnalysis == true,
+      features?.supportsAcademicAnalysis == true,
       features?.hy3WeekPlan == true,
     ].join(':');
     if (_quickPromptPoolKey == poolKey && _quickPrompts.isNotEmpty) return;

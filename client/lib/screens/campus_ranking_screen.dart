@@ -3,29 +3,24 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
-import '../config/api_constants.dart';
 import '../models/teacher.dart';
-import '../providers/auth_provider.dart';
-import '../providers/canteen_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../utils/responsive_util.dart';
-import '../widgets/image_upload_widget.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
-import 'canteen_detail_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
-class TeacherRateScreen extends StatefulWidget {
-  const TeacherRateScreen({super.key});
+class CampusRankingScreen extends StatefulWidget {
+  const CampusRankingScreen({super.key});
 
   @override
-  State<TeacherRateScreen> createState() => _TeacherRateScreenState();
+  State<CampusRankingScreen> createState() => _CampusRankingScreenState();
 }
 
-class _TeacherRateScreenState extends State<TeacherRateScreen>
+class _CampusRankingScreenState extends State<CampusRankingScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   final _searchCtrl = TextEditingController();
@@ -35,7 +30,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   void initState() {
     super.initState();
     _checkDisclaimer();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 2, vsync: this);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
         setState(() {});
@@ -63,7 +58,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     await Future.wait([
       context.read<TeacherProvider>().loadTeachers(query: _currentQuery),
       context.read<MajorProvider>().loadMajors(),
-      context.read<CanteenProvider>().loadCanteens(),
     ]);
   }
 
@@ -75,14 +69,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   // ── per-tab accent helpers ─────────────────────────────────────────
 
   Color _tabAccent(bool isDark) => switch (_tabCtrl.index) {
-        0 => RankingTokens.canteenAccent(isDark),
-        1 => RankingTokens.teacherAccent(isDark),
+        0 => RankingTokens.teacherAccent(isDark),
         _ => RankingTokens.majorAccent(isDark),
       };
 
   Color _tabAccentSoft(bool isDark) => switch (_tabCtrl.index) {
-        0 => RankingTokens.canteenAccentSoft(isDark),
-        1 => RankingTokens.teacherAccentSoft(isDark),
+        0 => RankingTokens.teacherAccentSoft(isDark),
         _ => RankingTokens.majorAccentSoft(isDark),
       };
 
@@ -116,10 +108,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               _buildSegmentedControl(isDark),
               Expanded(
                 child: _tabCtrl.index == 0
-                    ? _buildCanteenList(isDark)
-                    : (_tabCtrl.index == 1
-                        ? _buildSubjectList(isDark)
-                        : _buildMajorList(isDark)),
+                    ? _buildSubjectList(isDark)
+                    : _buildMajorList(isDark),
               ),
             ],
           ),
@@ -144,9 +134,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ),
         child: Row(
           children: [
-            Expanded(child: _buildSegmentItem(0, '食堂榜', isDark)),
-            Expanded(child: _buildSegmentItem(1, '学科榜', isDark)),
-            Expanded(child: _buildSegmentItem(2, '专业榜', isDark)),
+            Expanded(child: _buildSegmentItem(0, '学科榜', isDark)),
+            Expanded(child: _buildSegmentItem(1, '专业榜', isDark)),
           ],
         ),
       ),
@@ -156,14 +145,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   Widget _buildSegmentItem(int index, String label, bool isDark) {
     final isSelected = _tabCtrl.index == index;
     final accent = switch (index) {
-      0 => RankingTokens.canteenAccent(isDark),
-      1 => RankingTokens.teacherAccent(isDark),
+      0 => RankingTokens.teacherAccent(isDark),
       _ => RankingTokens.majorAccent(isDark),
     };
     final accentSoft = switch (index) {
-      0 => RankingTokens.canteenAccentSoft(isDark),
-      1 => isDark
-          ? const Color(0xFF66BB6A).withValues(alpha: 0.16)
+      0 => isDark
+          ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
           : const Color(0xFFE8F5E9),
       _ => RankingTokens.majorAccentSoft(isDark),
     };
@@ -197,8 +184,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   // ── FAB ────────────────────────────────────────────────────────────
 
   String get _fabLabel => switch (_tabCtrl.index) {
-        0 => '添加食堂',
-        1 => '添加授课教师',
+        0 => '添加授课教师',
         _ => '添加专业',
       };
 
@@ -207,7 +193,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
       child: FloatingActionButton.extended(
-        heroTag: 'teacher_rate_fab',
+        heroTag: 'campus_ranking_fab',
         onPressed: _showAddDialog,
         backgroundColor: accent,
         foregroundColor: Colors.white,
@@ -289,8 +275,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             ),
             decoration: InputDecoration(
               hintText: _tabCtrl.index == 0
-                  ? '搜索食堂...'
-                  : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
+                  ? '搜索学科或教师...'
+                  : '搜索专业...',
               hintStyle: TextStyle(
                 fontSize: 14,
                 color: RankingTokens.mutedColor(isDark),
@@ -688,400 +674,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return groups;
   }
 
-  // ── Canteen list ───────────────────────────────────────────────────
-
-  Widget _buildCanteenList(bool isDark) {
-    final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
-
-    return Consumer<CanteenProvider>(
-      builder: (_, provider, __) {
-        final query = _currentQuery?.toLowerCase();
-        final canteens = query == null
-            ? provider.canteens
-            : provider.canteens
-                .where((m) => m.name.toLowerCase().contains(query))
-                .toList();
-
-        if (provider.isLoading && provider.canteens.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!provider.isLoading && provider.canteens.isEmpty && provider.errorMessage != null) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  provider.errorMessage!,
-                  style: TextStyle(color: RankingTokens.subColor(isDark)),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => context.read<CanteenProvider>().loadCanteens(),
-                  child: const Text('重新加载'),
-                ),
-              ],
-            ),
-          );
-        }
-
-        if (canteens.isEmpty && !provider.isLoading) {
-          return Center(
-            child: Text(
-              '暂无食堂',
-              style: TextStyle(color: RankingTokens.subColor(isDark)),
-            ),
-          );
-        }
-
-        Widget buildCard(int index) {
-          final canteen = canteens[index];
-          return _buildLeaderboardCard(
-            isDark: isDark,
-            rank: index + 1,
-            title: canteen.name,
-            subtitle: '',
-            average: canteen.averageStar,
-            count: canteen.ratingCount,
-            extraLabel: '',
-            icon: Icons.restaurant,
-            imageUrl: canteen.image.isNotEmpty
-                ? ApiConstants.fullUrl(canteen.image)
-                : null,
-            onLongPress: isAdmin
-                ? () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('删除店铺'),
-                        content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('取消'),
-                          ),
-                          TextButton(
-                            onPressed: () async {
-                              Navigator.pop(ctx);
-                              final success = await context
-                                  .read<CanteenProvider>()
-                                  .deleteCanteen(canteen.id);
-                              if (success && mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('删除成功')),
-                                );
-                                context.read<CanteenProvider>().loadCanteens();
-                              }
-                            },
-                            child: const Text(
-                              '删除',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                : null,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CanteenDetailScreen(
-                  canteenId: canteen.id,
-                  canteenName: canteen.name,
-                ),
-              ),
-            ).then((_) {
-              if (!mounted) return;
-              context.read<CanteenProvider>().loadCanteens();
-            }),
-          );
-        }
-
-        Widget listContent = RefreshIndicator(
-          onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
-          child: ResponsiveUtil.isDesktop(context)
-              ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
-                  crossAxisCount:
-                      MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: RankingTokens.cardGap,
-                  crossAxisSpacing: RankingTokens.cardGap,
-                  itemCount: canteens.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
-                  itemCount: canteens.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                ),
-        );
-
-        if (provider.isLoading && provider.canteens.isNotEmpty) {
-          return Stack(
-            children: [
-              listContent,
-              const Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: LinearProgressIndicator(),
-              ),
-            ],
-          );
-        }
-
-        return listContent;
-      },
-    );
-  }
-
-  // ── Add canteen sheet ──────────────────────────────────────────────
-
-  Future<void> _showAddCanteenSheet() async {
-    final nameCtrl = TextEditingController();
-    List<String> uploadedImageUrls = [];
-    var submitting = false;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = RankingTokens.canteenAccent(isDark);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setModalState) {
-            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-            return Padding(
-              padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: RankingTokens.cardBg(isDark),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: RankingTokens.borderColor(isDark),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: RankingTokens.canteenAccentSoft(isDark),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Icon(
-                              Icons.storefront_rounded,
-                              color: accent,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '添加食堂',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    color: RankingTokens.titleColor(isDark),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '填写名称并上传一张店铺图片',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: RankingTokens.subColor(isDark),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      TextField(
-                        controller: nameCtrl,
-                        textInputAction: TextInputAction.done,
-                        decoration: InputDecoration(
-                          hintText: '请输入食堂 / 店铺名',
-                          hintStyle: TextStyle(
-                            color: RankingTokens.subColor(isDark),
-                          ),
-                          prefixIcon: const Icon(Icons.restaurant_rounded),
-                          filled: true,
-                          fillColor: RankingTokens.pageBg(isDark),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                                color: RankingTokens.borderColor(isDark)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                                color: RankingTokens.borderColor(isDark)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: accent, width: 1.4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ImageUploadWidget(
-                        maxImages: 1,
-                        largeCard: true,
-                        emptyTitle: '添加图片',
-                        emptySubtitle: '建议上传店铺门面或招牌图',
-                        onImagesUploaded: (images) {
-                          uploadedImageUrls =
-                              images.map((e) => e.url).toList();
-                          setModalState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 22),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () => Navigator.pop(sheetContext),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                                side: BorderSide(
-                                  color: RankingTokens.borderColor(isDark),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: const Text('取消'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () async {
-                                      final name = nameCtrl.text.trim();
-                                      if (name.isEmpty) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请输入食堂 / 店铺名'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      if (uploadedImageUrls.isEmpty) {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('请上传一张食堂封面图片'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      setModalState(() => submitting = true);
-                                      final success = await context
-                                          .read<CanteenProvider>()
-                                          .addCanteen(
-                                            name,
-                                            uploadedImageUrls.first,
-                                          );
-                                      if (!mounted || !sheetContext.mounted) {
-                                        return;
-                                      }
-                                      setModalState(() => submitting = false);
-                                      if (success) {
-                                        Navigator.pop(sheetContext);
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('添加成功，经验+10'),
-                                          ),
-                                        );
-                                        await context
-                                            .read<CanteenProvider>()
-                                            .loadCanteens();
-                                      } else {
-                                        ScaffoldMessenger.of(sheetContext)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('添加失败，请稍后重试'),
-                                          ),
-                                        );
-                                      }
-                                    },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(48),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: submitting
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text('提交'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    nameCtrl.dispose();
-  }
-
   // ── Add dialog (teacher / major) ───────────────────────────────────
 
   Future<void> _showAddDialog() async {
     if (_tabCtrl.index == 0) {
-      await _showAddCanteenSheet();
-    } else if (_tabCtrl.index == 1) {
       await _showAddTeacherSheet();
     } else {
       await _showAddMajorSheet();

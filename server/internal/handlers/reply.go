@@ -239,6 +239,12 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 
 // GetChildren 懒加载某条根评论的子回复（created_at ASC 游标分页）。
 func (h *ReplyHandler) GetChildren(c *gin.Context) {
+	postIDStr := c.Param("id")
+	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
+		return
+	}
 	replyIDStr := c.Param("replyId")
 	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
 	if err != nil {
@@ -258,6 +264,11 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 
 	var root models.Reply
 	if err := h.db.Select("id", "post_id", "status").First(&root, replyID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "评论不存在"})
+		return
+	}
+	// URL 中的 postId 必须与根评论所属帖子一致，接口语义不允许跨帖取子回复。
+	if root.PostID != uint(postID) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "评论不存在"})
 		return
 	}
@@ -379,26 +390,41 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 如果有父回复，检查是否是一层嵌套
+	// 如果有父回复，检查是否是一层嵌套。
+	// tombstone 根（已删除但仍有正常子回复）允许继续讨论：
+	// 删除只隐藏根内容，不结束整个 thread。
+	var parentReply models.Reply
 	if input.ParentReplyID != nil {
-		var parentReply models.Reply
 		if err := h.db.First(&parentReply, input.ParentReplyID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不存在"})
 			return
 		} else {
-			if parentReply.PostID != uint(postID) || parentReply.Status != models.ReplyStatusNormal {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不属于当前帖子或已不可回复"})
+			if parentReply.PostID != uint(postID) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不属于当前帖子"})
 				return
 			}
 			if parentReply.ParentReplyID != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "不支持多层嵌套"})
 				return
 			}
+			if parentReply.Status != models.ReplyStatusNormal {
+				var aliveChildren int64
+				if err := h.db.Model(&models.Reply{}).
+					Where("parent_reply_id = ? AND status = ?", *input.ParentReplyID, models.ReplyStatusNormal).
+					Count(&aliveChildren).Error; err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+					return
+				}
+				if aliveChildren == 0 {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "该评论已不可回复"})
+					return
+				}
+			}
 		}
 	}
 
-	// 精确回复目标校验：reply_to_reply_id 必须属于同一 root 线程。
-	// 命中时用目标作者覆盖/补充 ReplyToUserID，通知对象以精确目标优先。
+	// 通知/回复对象由服务端强制推导，客户端传值一律忽略（防止伪造通知目标）。
+	// reply_to_reply_id 必须属于同一 root 线程，且目标本身必须为 normal。
 	if input.ReplyToReplyID != nil {
 		if input.ParentReplyID == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "精确回复目标需要父评论"})
@@ -418,10 +444,15 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "回复目标不属于该评论线程"})
 			return
 		}
-		if input.ReplyToUserID == nil {
-			uid := target.AuthorID
-			input.ReplyToUserID = &uid
-		}
+		uid := target.AuthorID
+		input.ReplyToUserID = &uid
+	} else if input.ParentReplyID != nil {
+		// 未指定精确目标时回退为根评论作者（同样由服务端推导）。
+		uid := parentReply.AuthorID
+		input.ReplyToUserID = &uid
+	} else {
+		// 顶级回复不携带精确回复对象，忽略客户端伪造值。
+		input.ReplyToUserID = nil
 	}
 
 	var stickerID *string

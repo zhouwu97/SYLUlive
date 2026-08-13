@@ -150,19 +150,21 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 	if len(ranked) > 500 {
 		ranked = ranked[:500]
 	}
-	// FEED-5/FEED-V5：任何个性化需求（shadow 或 active rollout）都必须进入计算路径。
-	// 修复 rollout 陷阱：此前 shadow=false 但 percent>0 时会在计算前直接返回 baseline，
-	// 导致"配了 10% 灰度实际 0% 生效"。
-	v4Active := s.personalizationShadow || s.rolloutPercent > 0
-	v5Active := s.v5Shadow || s.v5RolloutPercent > 0
-	if !v4Active && !v5Active {
+	// FEED-5/FEED-V5：先算 cohort，只有 shadow 或实际命中 rollout 的用户才做
+	// 特征聚合与个性化计算。否则配 10% 灰度时，100% 用户都会承担 BuildUserFeatures
+	// 的 7 组 DB 访问，数据库压力与全量上线无异（性能回归）。
+	v4InRollout := s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent)
+	v5InRollout := s.v5RolloutPercent > 0 && userInRollout(userID, s.v5RolloutPercent)
+	needV4Compute := personalizationComputeNeeded(userID, s.personalizationShadow, s.rolloutPercent)
+	needV5Compute := personalizationComputeNeeded(userID, s.v5Shadow, s.v5RolloutPercent)
+	if !needV4Compute && !needV5Compute {
 		return ranked, nil
 	}
 	baseline := ranked
 	features := s.BuildUserFeatures(ctx, userID, ids, now)
 
 	personalized := ranked
-	if v4Active {
+	if needV4Compute {
 		for i := range candidates {
 			candidates[i].PersonalDelta = ComputePersonalDelta(candidates[i], features, now)
 		}
@@ -177,7 +179,7 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 	}
 
 	// FEED-V5：独立算法版本，v5 rollout 优先于 v4 rollout。
-	if v5Active {
+	if needV5Compute {
 		v5Candidates := append([]HomeFeedCandidate(nil), candidates...)
 		for i := range v5Candidates {
 			v5Candidates[i].PersonalDelta = ComputePersonalDelta(v5Candidates[i], features, now)
@@ -194,7 +196,7 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 		if s.v5Shadow {
 			s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), v5Candidates, features, v5Ranked, now, personalizationAlgorithmVersionV5())
 		}
-		if s.v5RolloutPercent > 0 && userInRollout(userID, s.v5RolloutPercent) {
+		if v5InRollout {
 			return v5Ranked, nil
 		}
 		if s.v5Shadow {
@@ -206,10 +208,16 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 	if s.personalizationShadow {
 		s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, personalizationAlgorithmVersion())
 	}
-	if s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent) {
+	if v4InRollout {
 		return personalized, nil
 	}
 	return baseline, nil
+}
+
+// personalizationComputeNeeded 判断用户是否进入个性化计算 cohort：
+// shadow 全量计算+trace；active rollout 只对命中分桶的用户计算。
+func personalizationComputeNeeded(userID uint, shadow bool, rolloutPercent int) bool {
+	return shadow || (rolloutPercent > 0 && userInRollout(userID, rolloutPercent))
 }
 
 // personalizationAlgorithmVersion 返回个性化算法版本标识（shadow 仍可用 v4 追踪）。

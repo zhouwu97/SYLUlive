@@ -19,8 +19,10 @@ import (
 )
 
 // newDishPhotoTestDB 扩展食堂测试库：追加菜品图库模型与约束。
+// UPLOAD_DIR 指向临时目录，避免测试生成的假图片污染源码树 uploads/。
 func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("UPLOAD_DIR", t.TempDir())
 	db := newCanteenTestDB(t)
 	if err := db.AutoMigrate(&models.CanteenDish{}, &models.CanteenDishPhoto{}); err != nil {
 		t.Fatalf("migrate dish models: %v", err)

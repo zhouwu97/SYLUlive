@@ -188,15 +188,16 @@ func TestReplyListRootPagination(t *testing.T) {
 	}
 }
 
-// TestReplyListCapsChildrenPerRoot 列表里每根最多携带 maxChildrenPerRoot 条子回复，
-// 根上带真实 child_reply_count，剩余通过 children 接口懒加载。
+// TestReplyListCapsChildrenPerRoot 列表里每根只携带数据库级 child preview
+// （maxChildrenPreviewPerRoot 条），根上带真实 child_reply_count，
+// 剩余通过 children 接口懒加载。
 func TestReplyListCapsChildrenPerRoot(t *testing.T) {
 	db := newReplyTestDB(t)
 	post := createReplyTestPost(t, db)
 	now := time.Now()
 	root := models.Reply{PostID: post.ID, AuthorID: 1, Content: "big-root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
 	require.NoError(t, db.Create(&root).Error)
-	total := maxChildrenPerRoot + 10
+	total := 60
 	for i := 1; i <= total; i++ {
 		ch := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, AuthorID: 1, Content: fmt.Sprintf("ch%d", i), Status: models.ReplyStatusNormal, CreatedAt: now.Add(time.Duration(i) * time.Second)}
 		require.NoError(t, db.Create(&ch).Error)
@@ -204,8 +205,11 @@ func TestReplyListCapsChildrenPerRoot(t *testing.T) {
 
 	listRec := performReplyListRequest(t, db, post.ID, "sort=latest", 0)
 	resp := decodeReplyList(t, listRec.Body.Bytes())
-	require.Len(t, resp.Replies, 1+maxChildrenPerRoot, "根 + 最多 50 条子回复")
+	require.Len(t, resp.Replies, 1+maxChildrenPreviewPerRoot, "根 + 最多 2 条子回复预览")
 	require.Equal(t, total, resp.Replies[0].ChildReplyCount, "根应携带真实子回复总数")
+	// 预览必须是最早的两条子回复。
+	require.Equal(t, "ch1", resp.Replies[1].Content)
+	require.Equal(t, "ch2", resp.Replies[2].Content)
 
 	// children 接口第一页 50 条 + cursor 翻页取回剩余。
 	c1Rec := performGetChildrenRequest(t, db, post.ID, root.ID, "limit=50", 0)

@@ -5,7 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../providers/canteen_provider.dart';
-import '../widgets/rating_detail/ranking_tokens.dart';
+import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_dish_detail_screen.dart';
 
 /// 食堂全部菜品列表页。
@@ -49,7 +49,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: RankingTokens.pageBg(isDark),
+      backgroundColor: CanteenTheme.pageBg(isDark),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -59,9 +59,9 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: CanteenTheme.pageBg(isDark),
         surfaceTintColor: Colors.transparent,
-        foregroundColor: RankingTokens.titleColor(isDark),
+        foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -69,15 +69,16 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
               ? Center(
                   child: Text(
                     '暂无实拍菜品',
-                    style: TextStyle(color: RankingTokens.subColor(isDark)),
+                    style: TextStyle(
+                        color: CanteenTheme.textSecondaryColor(isDark)),
                   ),
                 )
               : GridView.builder(
                   padding: const EdgeInsets.all(16),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
                     childAspectRatio: 0.82,
                   ),
                   itemCount: _dishes.length,
@@ -121,13 +122,14 @@ class _GridDishCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: RankingTokens.cardDecoration(isDark),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 图片独立圆角，无白色卡片容器 / 边框 / 阴影
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
               child: SizedBox(
                 width: double.infinity,
                 child: dish.coverImage.isNotEmpty
@@ -140,46 +142,39 @@ class _GridDishCard extends StatelessWidget {
                     : _placeholder(),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    dish.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: RankingTokens.titleColor(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${dish.photoCount} 张实拍',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: RankingTokens.subColor(isDark),
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            dish.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: CanteenTheme.textPrimaryColor(isDark),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${dish.photoCount} 张实拍',
+            style: TextStyle(
+              fontSize: 12,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _placeholder() {
     return Container(
-      color: RankingTokens.canteenAccentSoft(isDark),
+      color: CanteenTheme.surfaceMutedBg(isDark),
       alignment: Alignment.center,
       child: Icon(
         Icons.restaurant_rounded,
         size: 30,
-        color: RankingTokens.canteenAccent(isDark),
+        color: CanteenTheme.textTertiaryColor(isDark),
       ),
     );
   }

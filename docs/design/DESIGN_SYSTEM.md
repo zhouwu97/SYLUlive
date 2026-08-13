@@ -168,6 +168,7 @@ Component Token（组件内部派生）
 | 6 | 动效魔法值 | chat 0/35/45/100/130/220ms 等 | AppMotion token | PR4 + PR3 顺带 |
 | 7 | 字体字重 | 仅 Regular 单字重，w600/w700 合成 | 引入字重文件或明确已知限制 | 决策在 PR5 前 |
 | 8 | FAB 圆角 | 14 | 16 | PR5 |
+| 9 | 食堂 Feature Token | `CanteenTheme` 引入 `radiusSm=10 / radiusMd=14 / radiusLg=20`（偏离 canonical 8/12/16）且 feature 层重定义 page/text/border 中性色（`#F8F7F4`/`#202124`/`#EAE8E3`），违反「Feature Token 不得重定义全局中性色」 | 食堂视觉作为独立 Feature Token 收敛；radius 偏离属 deliberate（图片 14px、chip 10px），由食堂页面统一引用 `CanteenTheme`，不扩散到其他模块 | PR6 时评估是否将 10/14 提升为全局档位 |
 
 ## 12. 路线图（冻结）
 

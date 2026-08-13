@@ -50,43 +50,42 @@ void main() {
     await tester.pumpWidget(_wrap(_card(dishCount: 12, dishPhotoCount: 26)));
     await tester.pump();
 
-    expect(find.text('12 道菜 · 26 张同学实拍'), findsOneWidget);
-    expect(find.text('86 条评价'), findsOneWidget);
+    expect(find.text('12 道菜 · 26 张实拍'), findsOneWidget);
+    expect(find.text('86 人评价'), findsOneWidget);
   });
 
-  testWidgets('无实拍时显示占位文案', (tester) async {
+  testWidgets('无实拍时显示低权重占位文案', (tester) async {
     await tester.pumpWidget(_wrap(_card(dishCount: 0, dishPhotoCount: 0)));
     await tester.pump();
 
-    expect(find.text('暂无实拍'), findsOneWidget);
+    expect(find.text('暂无同学实拍'), findsOneWidget);
   });
 
-  testWidgets('排名 badge 颜色：1金 2银 3铜 4灰', (tester) async {
+  testWidgets('排名排版数字颜色：1金 2银 3铜 4灰', (tester) async {
     const expected = {
-      1: Color(0xFFFFB800),
-      2: Color(0xFF94A3B8),
-      3: Color(0xFFCA8A4B),
-      4: Color(0xFF9CA3AF),
+      1: Color(0xFFD68A20),
+      2: Color(0xFF87909A),
+      3: Color(0xFFA66A43),
+      4: Color(0xFFB0B3B7),
     };
     for (final entry in expected.entries) {
       await tester.pumpWidget(_wrap(_card(rank: entry.key)));
       await tester.pump();
 
-      final badge = tester.widgetList<Container>(
-        find.byWidgetPredicate(
-          (w) => w is Container && (w.decoration is BoxDecoration),
-        ),
-      );
-      Container? target;
-      for (final c in badge) {
-        final deco = c.decoration as BoxDecoration?;
-        if (deco?.color == entry.value) {
-          target = c;
-          break;
-        }
-      }
-      expect(target, isNotNull, reason: 'rank ${entry.key} badge color not found');
+      final label = entry.key.toString().padLeft(2, '0');
+      final text = tester.widget<Text>(find.text(label));
+      expect(text.style?.color, entry.value,
+          reason: 'rank ${entry.key} color mismatch');
     }
+  });
+
+  testWidgets('排名无 badge 容器（纯排版数字）', (tester) async {
+    await tester.pumpWidget(_wrap(_card(rank: 1)));
+    await tester.pump();
+
+    expect(find.text('01'), findsOneWidget);
+    // 不再有覆盖在图片上的 badge 容器
+    expect(find.byType(Badge), findsNothing);
   });
 
   testWidgets('onTap 点击触发', (tester) async {

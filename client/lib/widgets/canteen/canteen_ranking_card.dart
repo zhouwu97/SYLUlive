@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
-import '../rating_detail/ranking_tokens.dart';
+import '../../theme/app_motion.dart';
+import 'canteen_theme.dart';
 
-/// 食堂排行卡：独立于学科/专业通用卡的视觉卡。
-/// 展示封面、名称、评分、评价数与菜品实拍统计。
-class CanteenRankingCard extends StatelessWidget {
+/// 食堂排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
+/// 排名使用排版数字（01/02/03），图片 104x96 圆角 14，整行底部分割线。
+class CanteenRankingCard extends StatefulWidget {
   final int rank;
   final int canteenId;
   final String name;
@@ -33,165 +34,173 @@ class CanteenRankingCard extends StatelessWidget {
   });
 
   @override
+  State<CanteenRankingCard> createState() => _CanteenRankingCardState();
+}
+
+class _CanteenRankingCardState extends State<CanteenRankingCard> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = RankingTokens.canteenAccent(isDark);
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: RankingTokens.cardGap),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(RankingTokens.cardRadius),          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: RankingTokens.cardDecoration(isDark),
-            child: Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTapDown: (_) => _setPressed(true),
+          onTapUp: (_) => _setPressed(false),
+          onTapCancel: () => _setPressed(false),
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedScale(
+            scale: _pressed ? 0.985 : 1.0,
+            duration: AppMotion.micro,
+            curve: AppMotion.standard,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 左侧封面 96x88 + 排名 badge
-                SizedBox(
-                  width: 96,
-                  height: 88,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _buildCover(isDark),
-                      Positioned(
-                        top: -6,
-                        left: -6,
-                        child: _buildRankBadge(),
-                      ),
-                    ],
+                // 排名：纯排版数字，无底色 / badge / 阴影
+                Padding(
+                  padding: const EdgeInsets.only(left: 2),
+                  child: Text(
+                    widget.rank.toString().padLeft(2, '0'),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                      height: 1.1,
+                      color: CanteenTheme.rankColor(widget.rank),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                // 右侧信息
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: RankingTokens.titleColor(isDark),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 封面 104x96，圆角 14，Hero 用于列表→详情过渡
+                    Hero(
+                      tag: 'canteen-${widget.canteenId}',
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+                        child: SizedBox(
+                          width: 104,
+                          height: 96,
+                          child: _buildCover(isDark),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Color(0xFFFFB800),
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            averageStar.toStringAsFixed(1),
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: accent,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: CanteenTheme.textPrimaryColor(isDark),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$ratingCount 条评价',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: RankingTokens.subColor(isDark),
+                            const SizedBox(height: 7),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.star_rounded,
+                                  size: 15,
+                                  color: CanteenTheme.accentColor(isDark),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  widget.averageStar.toStringAsFixed(1),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: CanteenTheme.textPrimaryColor(isDark),
+                                  ),
+                                ),
+                                const SizedBox(width: 7),
+                                Text(
+                                  '${widget.ratingCount} 人评价',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        CanteenTheme.textSecondaryColor(isDark),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        dishCount > 0
-                            ? '$dishCount 道菜 · $dishPhotoCount 张同学实拍'
-                            : '暂无实拍',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: RankingTokens.mutedColor(isDark),
+                            const SizedBox(height: 7),
+                            Text(
+                              widget.dishCount > 0
+                                  ? '${widget.dishCount} 道菜 · ${widget.dishPhotoCount} 张实拍'
+                                  : '暂无同学实拍',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: CanteenTheme.textTertiaryColor(isDark),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: RankingTokens.subColor(isDark),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+        Divider(
+          height: 1,
+          thickness: 0.5,
+          color: CanteenTheme.borderColor(isDark),
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
   Widget _buildCover(bool isDark) {
-    final hasImage = imageUrl.isNotEmpty;
-    return Container(
-      width: 96,
-      height: 88,
-      decoration: BoxDecoration(
-        color: hasImage ? null : RankingTokens.canteenAccentSoft(isDark),
-        borderRadius: BorderRadius.circular(14),
-        image: hasImage
-            ? DecorationImage(
-                image: CachedNetworkImageProvider(ApiConstants.fullUrl(imageUrl)),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      child: hasImage
-          ? null
-          : Icon(
-              Icons.restaurant_rounded,
-              size: 28,
-              color: RankingTokens.canteenAccent(isDark),
-            ),
+    if (widget.imageUrl.isEmpty) {
+      return Container(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.restaurant_rounded,
+          size: 28,
+          color: CanteenTheme.textTertiaryColor(isDark),
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: ApiConstants.fullUrl(widget.imageUrl),
+      fit: BoxFit.cover,
+      errorWidget: (_, __, ___) => _placeholder(isDark),
+      placeholder: (_, __) => _placeholder(isDark),
     );
   }
 
-  Widget _buildRankBadge() {
-    final color = switch (rank) {
-      1 => const Color(0xFFFFB800),
-      2 => const Color(0xFF94A3B8),
-      3 => const Color(0xFFCA8A4B),
-      _ => const Color(0xFF9CA3AF),
-    };
+  Widget _placeholder(bool isDark) {
     return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(7),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.4),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
+      color: CanteenTheme.surfaceMutedBg(isDark),
       alignment: Alignment.center,
-      child: Text(
-        '$rank',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          height: 1,
-        ),
+      child: Icon(
+        Icons.restaurant_rounded,
+        size: 28,
+        color: CanteenTheme.textTertiaryColor(isDark),
       ),
     );
   }

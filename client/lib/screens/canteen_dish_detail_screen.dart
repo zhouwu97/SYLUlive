@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/canteen_provider.dart';
+import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 import '../widgets/image_upload_widget.dart';
-import '../widgets/rating_detail/ranking_tokens.dart';
 
 /// 菜品详情页：实拍图库（1~3 张）+ 上传入口。无星级。
 class CanteenDishDetailScreen extends StatefulWidget {
@@ -63,10 +63,10 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = RankingTokens.canteenAccent(isDark);
+    final accent = CanteenTheme.accentColor(isDark);
 
     return Scaffold(
-      backgroundColor: RankingTokens.pageBg(isDark),
+      backgroundColor: CanteenTheme.pageBg(isDark),
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -76,9 +76,9 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: CanteenTheme.pageBg(isDark),
         surfaceTintColor: Colors.transparent,
-        foregroundColor: RankingTokens.titleColor(isDark),
+        foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -86,7 +86,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
               ? Center(
                   child: Text(
                     '加载失败',
-                    style: TextStyle(color: RankingTokens.subColor(isDark)),
+                    style: TextStyle(
+                        color: CanteenTheme.textSecondaryColor(isDark)),
                   ),
                 )
               : ListView(
@@ -96,7 +97,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       widget.canteenName,
                       style: TextStyle(
                         fontSize: 13,
-                        color: RankingTokens.subColor(isDark),
+                        color: CanteenTheme.textSecondaryColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -105,7 +106,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: RankingTokens.titleColor(isDark),
+                        color: CanteenTheme.textPrimaryColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -121,38 +122,35 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildGalleryFull(bool isDark, Color accent) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: RankingTokens.cardDecoration(isDark),
-      child: Row(
-        children: [
-          Icon(Icons.check_circle_rounded, color: accent, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '实拍图库 $_photoCount / 3',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: RankingTokens.titleColor(isDark),
-                  ),
+    // 无白色卡片：内容直接铺在页面背景上
+    return Row(
+      children: [
+        Icon(Icons.check_circle_rounded, color: accent, size: 22),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '实拍图库 $_photoCount / 3',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: CanteenTheme.textPrimaryColor(isDark),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '实拍资料已完善',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: RankingTokens.subColor(isDark),
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '实拍资料已完善',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CanteenTheme.textSecondaryColor(isDark),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -165,7 +163,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w700,
-            color: RankingTokens.titleColor(isDark),
+            color: CanteenTheme.textPrimaryColor(isDark),
           ),
         ),
         const SizedBox(height: 10),
@@ -187,7 +185,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
             foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(48),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
             ),
           ),
           icon: const Icon(Icons.add_a_photo_rounded, size: 20),
@@ -248,7 +246,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = RankingTokens.canteenAccent(isDark);
+    final accent = CanteenTheme.accentColor(isDark);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -256,7 +254,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: RankingTokens.cardBg(isDark),
+          color: CanteenTheme.surfaceBg(isDark),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -271,7 +269,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                   width: 42,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: RankingTokens.borderColor(isDark),
+                    color: CanteenTheme.borderColor(isDark),
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -282,7 +280,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
-                  color: RankingTokens.titleColor(isDark),
+                  color: CanteenTheme.textPrimaryColor(isDark),
                 ),
               ),
               const SizedBox(height: 6),
@@ -290,7 +288,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                 widget.dishName ?? '这道菜',
                 style: TextStyle(
                   fontSize: 13,
-                  color: RankingTokens.subColor(isDark),
+                  color: CanteenTheme.textSecondaryColor(isDark),
                 ),
               ),
               const SizedBox(height: 16),
@@ -298,7 +296,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                 '请上传能清楚看到菜品主体的真实照片。图片通过管理员审核后公开展示。',
                 style: TextStyle(
                   fontSize: 12,
-                  color: RankingTokens.mutedColor(isDark),
+                  color: CanteenTheme.textTertiaryColor(isDark),
                   height: 1.4,
                 ),
               ),
@@ -319,15 +317,13 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                   : _buildSelectedImage(isDark, accent),
               const SizedBox(height: 18),
               FilledButton(
-                onPressed: _submitting || !_canSubmit
-                    ? null
-                    : _submit,
+                onPressed: _submitting || !_canSubmit ? null : _submit,
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
                   ),
                 ),
                 child: _submitting
@@ -352,7 +348,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
     return Container(
       height: 140,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
         border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
       child: Stack(
@@ -373,7 +369,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                   '已选择 1 张实拍',
                   style: TextStyle(
                     fontSize: 12,
-                    color: RankingTokens.subColor(isDark),
+                    color: CanteenTheme.textSecondaryColor(isDark),
                   ),
                 ),
               ],

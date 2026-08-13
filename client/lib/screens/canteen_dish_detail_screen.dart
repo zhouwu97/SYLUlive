@@ -315,6 +315,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                 TextField(
                   controller: _dishNameCtrl,
                   textInputAction: TextInputAction.done,
+                  maxLength: 40,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: '输入菜名，例如：锅包肉',

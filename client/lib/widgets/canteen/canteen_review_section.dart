@@ -113,9 +113,9 @@ class CanteenReviewSection extends StatelessWidget {
             child: isRefreshing
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                    child: const LinearProgressIndicator(
+                    child: LinearProgressIndicator(
                       minHeight: 2,
-                      color: CanteenTheme.accent,
+                      color: CanteenTheme.accentColor(isDark),
                       backgroundColor: Colors.transparent,
                     ),
                   )

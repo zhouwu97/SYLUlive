@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -123,5 +124,120 @@ func TestDishPhotoConcurrentApproval(t *testing.T) {
 	}
 	if !has409 {
 		t.Fatalf("expected at least one 409 gallery_full among %v", results)
+	}
+}
+
+// TestDishPhotoConcurrentSameNameCreation 验证 PostgreSQL 下两个学生并发
+// 对同一食堂投稿同一个归一化菜名：
+// - 两请求都不能 500（不允许 unique error 后继续失败事务）
+// - 最终 CanteenDish 恰好 1 行（ON CONFLICT DO NOTHING 复用）
+// - 两个 pending 实拍都落库
+// 需要 TEST_DATABASE_DSN。
+func TestDishPhotoConcurrentSameNameCreation(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_DSN 未设置，跳过 PostgreSQL 并发集成测试")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(20)
+
+	cleanup := func() {
+		db.Exec("DELETE FROM canteen_dish_photos")
+		db.Exec("DELETE FROM canteen_dishes")
+		db.Exec("DELETE FROM canteen_ratings")
+		db.Exec("DELETE FROM canteens")
+		db.Exec("DELETE FROM users WHERE id > 1000")
+		db.Exec("DELETE FROM files")
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	if err := db.AutoMigrate(&models.Canteen{}, &models.CanteenRating{}, &models.CanteenRatingVote{},
+		&models.CanteenDish{}, &models.CanteenDishPhoto{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := models.EnsureCanteenDishSchema(db); err != nil {
+		t.Fatalf("ensure dish schema: %v", err)
+	}
+
+	canteen := models.Canteen{Name: "并发食堂", Image: "/uploads/canteen.png", CreatedBy: 2002, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+
+	// 两个学生 + 各自的图片文件
+	for _, uid := range []uint{2002, 2003} {
+		if err := db.Create(&models.User{ID: uid, StudentID: fmt.Sprintf("stu-%d", uid),
+			PasswordHash: "x", Nickname: fmt.Sprintf("学生%d", uid)}).Error; err != nil {
+			t.Fatalf("create user: %v", err)
+		}
+		if err := db.Model(&models.User{}).Where("id = ?", uid).Updates(map[string]interface{}{
+			"student_verified_at": time.Now(),
+			"edu_authorized":      true,
+			"edu_bound":           true,
+		}).Error; err != nil {
+			t.Fatalf("verify user: %v", err)
+		}
+	}
+	for i, uid := range []uint{2002, 2003} {
+		path := fmt.Sprintf("/uploads/pg-name-%d.jpg", uid)
+		file := models.File{ID: uint(4000 + i), Hash: fmt.Sprintf("pg-name-hash-%d", i), Path: path,
+			Size: 10, MimeType: "image/jpeg", UploaderID: uid, Status: "active", AccessScope: models.FileAccessPrivate}
+		if err := db.Create(&file).Error; err != nil {
+			t.Fatalf("create file: %v", err)
+		}
+	}
+
+	handler := NewCanteenDishPhotoHandler(db)
+	gin.SetMode(gin.TestMode)
+
+	var wg sync.WaitGroup
+	results := make([]int, 2)
+	userIDs := []uint{2002, 2003}
+	fileIDs := []uint{4000, 4001}
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"dish_name":"  锅包肉 ","file_id":%d}`, fileIDs[idx])
+			recorder := performDishPhotoRequest(t, handler.SubmitDishPhoto, http.MethodPost,
+				fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+				gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}}, userIDs[idx], body)
+			results[idx] = recorder.Code
+		}(i)
+	}
+	wg.Wait()
+
+	for i, code := range results {
+		if code == http.StatusInternalServerError {
+			t.Fatalf("request %d got 500 (PG failed-tx after unique conflict); body result=%v", i, results)
+		}
+		if code != http.StatusCreated {
+			t.Fatalf("request %d status=%d want 201; results=%v", i, code, results)
+		}
+	}
+
+	var dishCount int64
+	if err := db.Model(&models.CanteenDish{}).
+		Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "锅包肉").
+		Count(&dishCount).Error; err != nil {
+		t.Fatalf("count dish: %v", err)
+	}
+	if dishCount != 1 {
+		t.Fatalf("dish count=%d want exactly 1 (no duplicate rows)", dishCount)
+	}
+
+	var pendingCount int64
+	if err := db.Model(&models.CanteenDishPhoto{}).
+		Where("status = ?", models.DishPhotoStatusPending).
+		Count(&pendingCount).Error; err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pendingCount != 2 {
+		t.Fatalf("pending count=%d want 2 (both submissions stored)", pendingCount)
 	}
 }

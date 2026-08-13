@@ -39,6 +39,7 @@ class DishGallerySection extends StatefulWidget {
 class _DishGallerySectionState extends State<DishGallerySection> {
   List<CanteenDish> _dishes = [];
   bool _isLoading = true;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -47,13 +48,26 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     final dishes = await context
         .read<CanteenProvider>()
         .loadDishes(widget.canteenId);
     if (!mounted) return;
+    if (dishes == null) {
+      // 请求失败：不刷新父级统计（保留入口快照），显示重试而非伪装空态
+      setState(() {
+        _isLoading = false;
+        _loadFailed = true;
+      });
+      return;
+    }
     setState(() {
       _dishes = dishes;
       _isLoading = false;
+      _loadFailed = false;
     });
     // 回传真实统计：/dishes 只返回有 approved 实拍的公开菜，photoCount 即实拍数
     widget.onStatsChanged?.call(
@@ -104,6 +118,15 @@ class _DishGallerySectionState extends State<DishGallerySection> {
           const SizedBox(height: 12),
           if (_isLoading)
             _buildSkeleton(isDark)
+          else if (_loadFailed)
+            CanteenEmptyState(
+              minHeight: 96,
+              icon: Icons.wifi_off_rounded,
+              title: '菜品加载失败',
+              subtitle: '请检查网络后重试',
+              actionLabel: '点击重试',
+              onAction: _load,
+            )
           else if (_dishes.isEmpty)
             _buildEmpty(isDark)
           else

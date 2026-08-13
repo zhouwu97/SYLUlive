@@ -158,7 +158,11 @@ class CanteenProvider with ChangeNotifier {
 
   // ── 菜品图库 ──────────────────────────────────────────────────────
 
-  Future<List<CanteenDish>> loadDishes(int canteenId) async {
+  /// 加载菜品图鉴。
+  /// 返回语义：
+  /// - `[]`：请求成功，确实没有菜品
+  /// - `null`：请求失败（网络 / 5xx / 超时），调用方不应把统计刷成 0
+  Future<List<CanteenDish>?> loadDishes(int canteenId) async {
     try {
       final response = await _dio.get('/canteens/$canteenId/dishes');
       if (response.statusCode == 200 && response.data is List) {
@@ -166,11 +170,12 @@ class CanteenProvider with ChangeNotifier {
             .map((json) => CanteenDish.fromJson(json as Map<String, dynamic>))
             .toList();
       }
+      return null;
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
       debugPrint('Error loading dishes: $e');
+      return null;
     }
-    return [];
   }
 
   Future<Map<String, dynamic>?> loadDishDetail(

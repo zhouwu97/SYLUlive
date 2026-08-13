@@ -18,6 +18,9 @@ type HomeFeedService struct {
 	// FEED-5：个性化 shadow 开关与 active rollout 百分比（由 handler 注入）。
 	personalizationShadow bool
 	rolloutPercent        int
+	// FEED-V5：v5 算法（reply_like 信号 + 去 raw view + dwell 衰减）。
+	v5Shadow       bool
+	v5RolloutPercent int
 }
 
 func NewHomeFeedService(db *gorm.DB) *HomeFeedService {
@@ -33,6 +36,12 @@ func NewHomeFeedServiceWithPoll(db *gorm.DB) *HomeFeedService {
 func (s *HomeFeedService) SetPersonalization(shadow bool, percent int) {
 	s.personalizationShadow = shadow
 	s.rolloutPercent = percent
+}
+
+// SetPersonalizationV5 配置 FEED-V5 个性化：独立于 v4 的 shadow/rollout。
+func (s *HomeFeedService) SetPersonalizationV5(shadow bool, percent int) {
+	s.v5Shadow = shadow
+	s.v5RolloutPercent = percent
 }
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
@@ -142,7 +151,7 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 		ranked = ranked[:500]
 	}
 	// FEED-5：shadow 个性化（计算 + trace，默认不改用户排序）。
-	if !s.personalizationShadow {
+	if !s.personalizationShadow && !s.v5Shadow {
 		return ranked, nil
 	}
 	baseline := ranked
@@ -158,7 +167,32 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 		personalized = personalized[:500]
 	}
 	personalized = applyExploration(personalized, candidates, features, now)
-	s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, personalizationAlgorithmVersion())
+
+	// FEED-V5：独立算法版本，v5 优先于 v4 输出。
+	version := personalizationAlgorithmVersion()
+	if s.v5Shadow {
+		version = personalizationAlgorithmVersionV5()
+		// V5 使用去掉 raw view 的质量公式重新评分排序。
+		v5Candidates := append([]HomeFeedCandidate(nil), candidates...)
+		for i := range v5Candidates {
+			v5Candidates[i].PersonalDelta = ComputePersonalDelta(v5Candidates[i], features, now)
+			ScoreHomeFeedCandidateV5(&v5Candidates[i], now)
+		}
+		v5Ranked := RankHomeFeedV5(v5Candidates, now)
+		if s.includePoll {
+			v5Ranked = applyPollDensity(v5Ranked, pollByPost)
+		}
+		if len(v5Ranked) > 500 {
+			v5Ranked = v5Ranked[:500]
+		}
+		v5Ranked = applyExploration(v5Ranked, v5Candidates, features, now)
+		s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), v5Candidates, features, v5Ranked, now, version)
+		if s.v5RolloutPercent > 0 && userInRollout(userID, s.v5RolloutPercent) {
+			return v5Ranked, nil
+		}
+		return baseline, nil
+	}
+	s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, version)
 	if s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent) {
 		return personalized, nil
 	}
@@ -168,6 +202,11 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 // personalizationAlgorithmVersion 返回个性化算法版本标识（shadow 仍可用 v4 追踪）。
 func personalizationAlgorithmVersion() string {
 	return "home_all_v4_personalized"
+}
+
+// personalizationAlgorithmVersionV5 FEED-V5 算法版本标识。
+func personalizationAlgorithmVersionV5() string {
+	return "home_all_v5_personalized"
 }
 
 // applyPollDensity 保持推荐流可扫描性；内容不足时会在末尾保留一个投票入口。

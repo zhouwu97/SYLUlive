@@ -193,6 +193,23 @@ class LikeMutationResult {
   final Post? reconciledPost;
 }
 
+/// 评论点赞请求结果（低层网络封装返回值）。
+class ReplyLikeRequestResult {
+  const ReplyLikeRequestResult({
+    required this.success,
+    required this.conflict,
+    this.errorMessage,
+  });
+
+  /// 请求是否成功（2xx）。
+  final bool success;
+
+  /// 服务端是否返回明确业务冲突（4xx），如评论/帖子已删除。
+  final bool conflict;
+
+  final String? errorMessage;
+}
+
 /// 后台新鲜度探测结果：只暂存，不覆写可见列表。
 class FreshnessProbeResult {
   const FreshnessProbeResult({
@@ -1258,6 +1275,50 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('取消点赞失败: $e');
       return false;
+    }
+  }
+
+  // ---- 评论点赞网络层 ----
+  // 只做低层网络封装；乐观更新 / pending / rollback 由 PostDetailScreen 负责。
+
+  /// 点赞评论。返回 (success, conflict)。
+  /// conflict=true 表示服务端明确拒绝（4xx 业务错误，如评论已删除）。
+  Future<ReplyLikeRequestResult> likeReply(int replyId) async {
+    return _sendReplyLike('/replies/$replyId/like', like: true);
+  }
+
+  /// 取消点赞评论。返回 (success, conflict)。
+  Future<ReplyLikeRequestResult> unlikeReply(int replyId) async {
+    return _sendReplyLike('/replies/$replyId/like', like: false);
+  }
+
+  Future<ReplyLikeRequestResult> _sendReplyLike(
+    String path, {
+    required bool like,
+  }) async {
+    try {
+      final response = like ? await _dio.post(path) : await _dio.delete(path);
+      if (response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300) {
+        return const ReplyLikeRequestResult(success: true, conflict: false);
+      }
+      return const ReplyLikeRequestResult(success: false, conflict: true);
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final isConflict = statusCode != null && statusCode >= 400 && statusCode < 500;
+      return ReplyLikeRequestResult(
+        success: false,
+        conflict: isConflict,
+        errorMessage: AppFeedback.dioErrorMessage(e, fallback: '评论点赞失败'),
+      );
+    } catch (e) {
+      debugPrint('评论点赞请求异常: $e');
+      return const ReplyLikeRequestResult(
+        success: false,
+        conflict: false,
+        errorMessage: '评论点赞失败',
+      );
     }
   }
 

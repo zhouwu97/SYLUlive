@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +33,11 @@ func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyH
 	}
 }
 
-// GetList 获取回复列表
+// GetList 获取回复列表。
+//
+// 支持 ?sort=hot|latest（默认 hot）。hot 只排序一级评论线程；
+// 所有子回复始终按 created_at ASC, id ASC 组装在所属根评论之后。
+// 非法 sort 直接 400，不静默回退。
 func (h *ReplyHandler) GetList(c *gin.Context) {
 	postIDStr := c.Param("id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
@@ -41,13 +46,21 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		return
 	}
 
+	mode, ok := services.ValidCommentSort(c.Query("sort"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论排序方式"})
+		return
+	}
+
 	var replies []models.Reply
 	if err := h.db.Where("post_id = ? AND status = ?", postID, models.ReplyStatusNormal).
 		Preload("Author").Preload("Images").Preload("Images.File").
-		Order("created_at ASC").Find(&replies).Error; err != nil {
+		Find(&replies).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
 		return
 	}
+
+	replies = orderReplyThreads(replies, mode, time.Now())
 
 	if userID, exists := c.Get("user_id"); exists {
 		uid := userID.(uint)
@@ -71,6 +84,45 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, replies)
+}
+
+// orderReplyThreads 将平铺回复组装成线程顺序：
+// 一级评论按 mode 排序（hot/latest），每个根评论的子回复按 created_at ASC, id ASC。
+func orderReplyThreads(replies []models.Reply, mode services.CommentSort, now time.Time) []models.Reply {
+	// 分离 root / child。
+	roots := make([]services.CommentRankCandidate, 0, len(replies))
+	childrenByParent := make(map[uint][]models.Reply)
+	for _, r := range replies {
+		if r.ParentReplyID == nil {
+			roots = append(roots, services.CommentRankCandidate{Reply: r})
+		} else {
+			childrenByParent[*r.ParentReplyID] = append(childrenByParent[*r.ParentReplyID], r)
+		}
+	}
+	for i := range roots {
+		roots[i].ChildReplyCount = len(childrenByParent[roots[i].Reply.ID])
+	}
+
+	rootByID := make(map[uint]models.Reply, len(roots))
+	for _, c := range roots {
+		rootByID[c.Reply.ID] = c.Reply
+	}
+
+	orderedRootIDs := services.RankRootReplies(roots, mode, now)
+
+	ordered := make([]models.Reply, 0, len(replies))
+	for _, rootID := range orderedRootIDs {
+		ordered = append(ordered, rootByID[rootID])
+		children := childrenByParent[rootID]
+		sort.SliceStable(children, func(i, j int) bool {
+			if !children[i].CreatedAt.Equal(children[j].CreatedAt) {
+				return children[i].CreatedAt.Before(children[j].CreatedAt)
+			}
+			return children[i].ID < children[j].ID
+		})
+		ordered = append(ordered, children...)
+	}
+	return ordered
 }
 
 // CreateReplyInput 创建回复输入

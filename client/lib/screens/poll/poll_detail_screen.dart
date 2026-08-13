@@ -144,8 +144,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       final response =
           await context.read<AuthProvider>().dio.get('/posts/$postId/replies');
       if (!mounted) return;
-      final replies =
-          (response.data as List).map((e) => Reply.fromJson(e)).toList();
+      // 分页重构后响应为 {replies, total, next_cursor} 对象。
+      final data = response.data;
+      final raw = data is Map ? data['replies'] : data;
+      final replies = (raw is List ? raw : const [])
+          .map((e) => Reply.fromJson(e as Map<String, dynamic>))
+          .toList();
       setState(() {
         _replies = replies;
         _repliesLoading = false;

@@ -24,6 +24,8 @@ class PostReplyService {
           'parent_reply_id': draft.parentReplyId.toString(),
         if (draft.replyToUserId != null)
           'reply_to_user_id': draft.replyToUserId.toString(),
+        if (draft.replyToReplyId != null)
+          'reply_to_reply_id': draft.replyToReplyId.toString(),
       }),
     );
     return Reply.fromJson(Map<String, dynamic>.from(response.data as Map));

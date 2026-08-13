@@ -65,7 +65,14 @@ Dio _detailDio() {
         if (path == '/posts/100/replies') {
           handler.resolve(
             Response(
-                requestOptions: options, statusCode: 200, data: <dynamic>[]),
+              requestOptions: options,
+              statusCode: 200,
+              data: <String, dynamic>{
+                'replies': <dynamic>[],
+                'total': 0,
+                'next_cursor': '',
+              },
+            ),
           );
           return;
         }

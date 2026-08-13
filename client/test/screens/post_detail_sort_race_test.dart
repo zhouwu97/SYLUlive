@@ -39,9 +39,13 @@ class SortRaceDio extends Fake implements Dio {
       await Future<void>.delayed(delay);
       if (sort == 'latest') latestRequests++;
       if (sort == 'hot') hotRequests++;
-      final data = <Map<String, dynamic>>[
-        _reply(1, sort == 'latest' ? '最新第一条' : '热门第一条'),
-      ];
+      final data = <String, dynamic>{
+        'replies': <Map<String, dynamic>>[
+          _reply(1, sort == 'latest' ? '最新第一条' : '热门第一条'),
+        ],
+        'total': 1,
+        'next_cursor': '',
+      };
       return Response<T>(
         requestOptions: RequestOptions(path: path),
         data: data as dynamic,

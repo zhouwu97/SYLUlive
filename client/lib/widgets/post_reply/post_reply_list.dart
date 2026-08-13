@@ -205,8 +205,9 @@ class PostReplyItem extends StatelessWidget {
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: onMore,
+                        // 48dp 最小触控目标。
                         child: Padding(
-                          padding: const EdgeInsets.all(4),
+                          padding: const EdgeInsets.all(16),
                           child: Icon(
                             Icons.more_horiz,
                             size: 16,

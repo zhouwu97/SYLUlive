@@ -150,29 +150,34 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 	if len(ranked) > 500 {
 		ranked = ranked[:500]
 	}
-	// FEED-5：shadow 个性化（计算 + trace，默认不改用户排序）。
-	if !s.personalizationShadow && !s.v5Shadow {
+	// FEED-5/FEED-V5：任何个性化需求（shadow 或 active rollout）都必须进入计算路径。
+	// 修复 rollout 陷阱：此前 shadow=false 但 percent>0 时会在计算前直接返回 baseline，
+	// 导致"配了 10% 灰度实际 0% 生效"。
+	v4Active := s.personalizationShadow || s.rolloutPercent > 0
+	v5Active := s.v5Shadow || s.v5RolloutPercent > 0
+	if !v4Active && !v5Active {
 		return ranked, nil
 	}
 	baseline := ranked
 	features := s.BuildUserFeatures(ctx, userID, ids, now)
-	for i := range candidates {
-		candidates[i].PersonalDelta = ComputePersonalDelta(candidates[i], features, now)
-	}
-	personalized := RankHomeFeed(candidates, now)
-	if s.includePoll {
-		personalized = applyPollDensity(personalized, pollByPost)
-	}
-	if len(personalized) > 500 {
-		personalized = personalized[:500]
-	}
-	personalized = applyExploration(personalized, candidates, features, now)
 
-	// FEED-V5：独立算法版本，v5 优先于 v4 输出。
-	version := personalizationAlgorithmVersion()
-	if s.v5Shadow {
-		version = personalizationAlgorithmVersionV5()
-		// V5 使用去掉 raw view 的质量公式重新评分排序。
+	personalized := ranked
+	if v4Active {
+		for i := range candidates {
+			candidates[i].PersonalDelta = ComputePersonalDelta(candidates[i], features, now)
+		}
+		personalized = RankHomeFeed(candidates, now)
+		if s.includePoll {
+			personalized = applyPollDensity(personalized, pollByPost)
+		}
+		if len(personalized) > 500 {
+			personalized = personalized[:500]
+		}
+		personalized = applyExploration(personalized, candidates, features, now)
+	}
+
+	// FEED-V5：独立算法版本，v5 rollout 优先于 v4 rollout。
+	if v5Active {
 		v5Candidates := append([]HomeFeedCandidate(nil), candidates...)
 		for i := range v5Candidates {
 			v5Candidates[i].PersonalDelta = ComputePersonalDelta(v5Candidates[i], features, now)
@@ -186,13 +191,21 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 			v5Ranked = v5Ranked[:500]
 		}
 		v5Ranked = applyExploration(v5Ranked, v5Candidates, features, now)
-		s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), v5Candidates, features, v5Ranked, now, version)
+		if s.v5Shadow {
+			s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), v5Candidates, features, v5Ranked, now, personalizationAlgorithmVersionV5())
+		}
 		if s.v5RolloutPercent > 0 && userInRollout(userID, s.v5RolloutPercent) {
 			return v5Ranked, nil
 		}
-		return baseline, nil
+		if s.v5Shadow {
+			// 纯 shadow 的 V5 实验：保持与 baseline 对照，抑制 v4 rollout 干扰。
+			return baseline, nil
+		}
 	}
-	s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, version)
+
+	if s.personalizationShadow {
+		s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, personalizationAlgorithmVersion())
+	}
 	if s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent) {
 		return personalized, nil
 	}

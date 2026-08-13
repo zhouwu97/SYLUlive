@@ -177,6 +177,59 @@ func TestBuildSnapshotV5ShadowAndRollout(t *testing.T) {
 	}
 }
 
+// TestBuildSnapshotV5RolloutWithoutShadowActivates 回归 V5 rollout 陷阱：
+// v5 shadow=false 但 v5 percent>0 时必须进入 V5 计算路径并放量。
+func TestBuildSnapshotV5RolloutWithoutShadowActivates(t *testing.T) {
+	db := newPersonalizationTestDB(t)
+	now := time.Now()
+	for i := uint(1); i <= 6; i++ {
+		author := uint(1)
+		ptype := "course_study"
+		if i > 3 {
+			author = 2
+			ptype = "campus_life"
+		}
+		p := personalizationPost(t, db, i, author, ptype, now.Add(-time.Duration(i)*time.Minute))
+		if i == 1 {
+			// 帖子 1 有超高浏览量：V4 会因 raw view 奖励把它顶到前列，V5 去掉 view 后回落。
+			p.ViewCount = 1000
+			require.NoError(t, db.Model(&models.Post{}).Where("id = ?", p.ID).Update("view_count", 1000).Error)
+		}
+	}
+	require.NoError(t, db.Create(&models.UserFollow{FollowerID: 101, FollowingID: 1}).Error)
+	// 用户 101 对帖子 1 有 2 个 session 的曝光但从未打开 → SeenPenalty 压低帖子 1，
+	// 保证 V5 个性化排序与 V4 基线必然不同（placement policy 下不靠追热点区分）。
+	for _, session := range []string{"s1", "s2"} {
+		require.NoError(t, db.Create(&models.FeedImpression{
+			UserID:        101,
+			PostID:        1,
+			FeedSessionID: session,
+			FeedKind:      "all",
+			CreatedAt:     now.Add(-time.Hour),
+		}).Error)
+	}
+
+	svc := NewHomeFeedServiceWithPoll(db)
+	svc.SetPersonalizationV5(false, 0)
+	base, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, base)
+	require.Equal(t, uint(1), base[0], "V4 基线应把高 view 帖顶到第一")
+
+	// v5 shadow=false + v5 percent=100：修复前会直接返回 baseline（0% 生效）。
+	svc.SetPersonalizationV5(false, 100)
+	v5, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, v5)
+	require.NotEqual(t, base, v5, "v5 shadow=false 时 active v5 rollout 也应生效")
+	require.NotEqual(t, uint(1), v5[0], "V5 去掉 raw view 奖励后高 view 帖不应继续霸占第一")
+	seen := map[uint]bool{}
+	for _, id := range v5 {
+		require.False(t, seen[id], "V5 snapshot 不得出现重复帖子")
+		seen[id] = true
+	}
+}
+
 // ---- 指标：post_likes / reply_likes 分开 ----
 
 func TestMetricsSeparatesPostAndReplyLikes(t *testing.T) {

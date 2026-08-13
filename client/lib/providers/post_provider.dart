@@ -530,7 +530,10 @@ class PostProvider extends ChangeNotifier {
             type: type,
             tagId: tagId,
           );
-        } else if (sort != 'time') {
+        } else {
+          // 非 HomeV2：服务器第一页是权威快照，直接替换。
+          // 之前 sort=time 的增量 merge 会保留服务器已删除/已下沉的缓存帖子
+          // （"分类页出现服务器已没有的旧帖子"），且服务器返回空页时旧缓存永久残留。
           board.posts = newPosts;
           await _savePostsToCache(
             boardId,
@@ -539,39 +542,6 @@ class PostProvider extends ChangeNotifier {
             type: type,
             tagId: tagId,
           );
-        } else if (newPosts.isNotEmpty) {
-          // 第四步：增量合并 — 更新已有帖子，插入新帖子
-          bool changed = false;
-          final existingIndexMap = {
-            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
-          };
-          final uniqueNew = <Post>[];
-
-          for (final np in newPosts) {
-            final idx = existingIndexMap[np.id];
-            if (idx != null) {
-              board.posts[idx] = np; // 更新已有帖子
-              changed = true;
-            } else {
-              uniqueNew.add(np); // 全新帖子
-            }
-          }
-
-          if (uniqueNew.isNotEmpty) {
-            board.posts = [...uniqueNew, ...board.posts];
-            changed = true;
-          }
-
-          if (changed) {
-            // 写回缓存
-            await _savePostsToCache(
-              boardId,
-              sort,
-              board.posts,
-              type: type,
-              tagId: tagId,
-            );
-          }
         }
 
         final total = (data['total'] as num?)?.toInt();

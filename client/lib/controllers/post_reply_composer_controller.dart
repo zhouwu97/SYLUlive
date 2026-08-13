@@ -8,6 +8,7 @@ class PostReplyDraft {
     required this.text,
     this.parentReplyId,
     this.replyToUserId,
+    this.replyToReplyId,
     this.replyToName,
     this.sticker,
     this.favoriteImage,
@@ -16,6 +17,7 @@ class PostReplyDraft {
   final String text;
   final int? parentReplyId;
   final int? replyToUserId;
+  final int? replyToReplyId;
   final String? replyToName;
   final AppSticker? sticker;
   final EmojiFavoriteItem? favoriteImage;
@@ -33,6 +35,7 @@ class PostReplyComposerController extends ChangeNotifier {
   bool _showEmojiPanel = false;
   int? _parentReplyId;
   int? _replyToUserId;
+  int? _replyToReplyId;
   String? _replyToName;
   AppSticker? _sticker;
   EmojiFavoriteItem? _favoriteImage;
@@ -41,6 +44,7 @@ class PostReplyComposerController extends ChangeNotifier {
   bool get showEmojiPanel => _showEmojiPanel;
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;
+  int? get replyToReplyId => _replyToReplyId;
   String? get replyToName => _replyToName;
   AppSticker? get sticker => _sticker;
   EmojiFavoriteItem? get favoriteImage => _favoriteImage;
@@ -49,6 +53,7 @@ class PostReplyComposerController extends ChangeNotifier {
         text: textController.text.trim(),
         parentReplyId: _parentReplyId,
         replyToUserId: _replyToUserId,
+        replyToReplyId: _replyToReplyId,
         replyToName: _replyToName,
         sticker: _sticker,
         favoriteImage: _favoriteImage,
@@ -64,10 +69,12 @@ class PostReplyComposerController extends ChangeNotifier {
   void openReply({
     required int parentReplyId,
     int? replyToUserId,
+    int? replyToReplyId,
     String? replyToName,
   }) {
     _parentReplyId = parentReplyId;
     _replyToUserId = replyToUserId;
+    _replyToReplyId = replyToReplyId;
     _replyToName = replyToName?.trim();
     final name = _replyToName;
     if (name != null && name.isNotEmpty) {
@@ -91,6 +98,7 @@ class PostReplyComposerController extends ChangeNotifier {
     textController.clear();
     _parentReplyId = null;
     _replyToUserId = null;
+    _replyToReplyId = null;
     _replyToName = null;
     _sticker = null;
     _favoriteImage = null;

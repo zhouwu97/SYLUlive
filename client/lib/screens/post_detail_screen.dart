@@ -195,6 +195,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String _replySort = 'hot';
   bool _isRepliesLoading = false;
 
+  /// 评论分页状态：服务端总数、下一页游标、是否还有更多、加载更多中。
+  int _totalReplies = 0;
+  String? _repliesNextCursor;
+  bool _repliesHasMore = false;
+  bool _loadingMoreReplies = false;
+
   /// 回复请求版本号：切换排序后旧请求返回时直接丢弃。
   int _replyRequestVersion = 0;
 
@@ -240,9 +246,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _loadPost() async {
+    // 有 initialPost 时首帧已经显示完整帖子：刷新在后台进行，
+    // 不再把 _isLoading 切回 true 遮住已有内容（stale-while-refresh）。
+    final hasInitialPost = _post != null;
     if (mounted)
       setState(() {
-        _isLoading = true;
+        if (!hasInitialPost) _isLoading = true;
         _errorMessage = null;
       });
     try {
@@ -260,17 +269,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return;
       }
 
-      try {
-        final statusResponse = await _dio
-            .get('/posts/${widget.postId}/featured-application-status');
-        if (mounted) {
-          setState(() {
-            _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
-          });
-        }
-      } catch (e) {
-        // ignore status check failure
-      }
+      // 精华申请状态只影响菜单角标，不应阻塞帖子主体上屏，改为独立后台请求。
+      _loadFeaturedApplicationStatus();
 
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
@@ -291,30 +291,68 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _loadWaterSectionPermission(forceRefresh: true);
       _loadUnreadReplyNotifications();
       if (_activeTargetReplyId != null && !_hasScrolledToTarget) {
-        _prepareTargetReplyAndScroll();
+        await _prepareTargetReplyAndScroll();
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = msg;
+          if (!hasInitialPost) {
+            _errorMessage = msg;
+          }
         });
+        if (hasInitialPost) {
+          // 保留已有帖子内容 + 局部失败提示，弱网下不把整页换成错误页。
+          AppFeedback.showSnackBar(context, '内容刷新失败', isError: true);
+          _loadReplies(sort: _replySort);
+        }
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = '加载失败: $e';
+          if (!hasInitialPost) {
+            _errorMessage = '加载失败: $e';
+          }
         });
+        if (hasInitialPost) {
+          AppFeedback.showSnackBar(context, '内容刷新失败', isError: true);
+          _loadReplies(sort: _replySort);
+        }
+      }
     }
   }
 
-  void _prepareTargetReplyAndScroll() {
-    if (_activeTargetReplyId == null) return;
+  Future<void> _loadFeaturedApplicationStatus() async {
+    try {
+      final statusResponse = await _dio
+          .get('/posts/${widget.postId}/featured-application-status');
+      if (mounted) {
+        setState(() {
+          _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
+        });
+      }
+    } catch (e) {
+      // ignore status check failure
+    }
+  }
+
+  Future<void> _prepareTargetReplyAndScroll() async {
+    final targetId = _activeTargetReplyId;
+    if (targetId == null) return;
+
+    // 游标分页后目标评论可能不在第一页：最多向后翻 5 页查找。
+    for (var page = 0; page < 5; page++) {
+      if (_replies.any((r) => r.id == targetId)) break;
+      if (!_repliesHasMore || !mounted) return;
+      await _loadReplies(sort: _replySort, loadMore: true);
+    }
+    if (!mounted) return;
 
     // 寻找目标回复
     final targetReply =
-        _replies.where((r) => r.id == _activeTargetReplyId).firstOrNull;
+        _replies.where((r) => r.id == targetId).firstOrNull;
     if (targetReply == null) return;
 
     if (targetReply.parentReplyId != null) {
@@ -324,7 +362,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     setState(() {}); // 触发重新渲染，确保子组件挂载
 
-    _scheduleScrollToTarget(_activeTargetReplyId!, 3);
+    _scheduleScrollToTarget(targetId, 3);
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {
@@ -391,7 +429,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       };
       if (_post != null) {
         // 保持与当前回复列表一致，避免 count 被乐观副本覆盖。
-        _post = _post!.copyWith(replyCount: _replies.length);
+        final replyTotal = _totalReplies > 0 ? _totalReplies : _replies.length;
+        _post = _post!.copyWith(replyCount: replyTotal);
       }
     });
   }
@@ -408,13 +447,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final fileIds = draft.favoriteImage == null
           ? const <int>[]
           : <int>[await _uploadFavoriteImage(draft.favoriteImage!)];
-      return await _submitReplyContent(
+      final created = await _submitReplyContent(
         content: draft.text,
         stickerId: draft.sticker?.id,
         fileIds: fileIds,
         parentReplyId: draft.parentReplyId,
         replyToUserId: draft.replyToUserId,
+        // 底部输入区回复的是根评论本身；楼中楼 sheet 会传精确目标。
+        replyToReplyId: draft.replyToReplyId ?? draft.parentReplyId,
       );
+      return created != null;
     } on DioException catch (error) {
       if (mounted) {
         AppFeedback.showSnackBar(
@@ -467,12 +509,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return fileId;
   }
 
-  Future<bool> _submitReplyContent({
+  Future<Reply?> _submitReplyContent({
     required String content,
     String? stickerId,
     List<int> fileIds = const [],
     required int? parentReplyId,
     required int? replyToUserId,
+    int? replyToReplyId,
   }) async {
     int? tempReplyId;
 
@@ -524,6 +567,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (fileIds.isNotEmpty) 'file_ids': fileIds.join(','),
         if (parentReplyId != null) 'parent_reply_id': parentReplyId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
+        if (replyToReplyId != null)
+          'reply_to_reply_id': replyToReplyId.toString(),
       });
       final createResponse =
           await _dio.post('/posts/${widget.postId}/replies', data: formData);
@@ -535,7 +580,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
       // 静默刷新获取真实 ID（沿用当前排序，避免切回 hot 前的旧顺序残留）。
       await _loadReplies(sort: _replySort);
-      return true;
+      return createdReply;
     } on DioException catch (e) {
       if (mounted) {
         rollbackOptimisticReply();
@@ -545,13 +590,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           isError: true,
         );
       }
-      return false;
+      return null;
     } catch (_) {
       if (mounted) {
         rollbackOptimisticReply();
         AppFeedback.showSnackBar(context, '发送失败', isError: true);
       }
-      return false;
+      return null;
     }
   }
 
@@ -3224,7 +3269,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _buildActionButton(
           icon: Icons.chat_bubble_outline,
           color: isDark ? Colors.white38 : Colors.grey.shade500,
-          label: '${_replies.length}',
+          label: '${_totalReplies > 0 ? _totalReplies : _replies.length}',
           onTap: _openReplyComposer,
         ),
         IconButton(
@@ -3537,6 +3582,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildCommentsHeader(bool isDark) {
+    final total = _totalReplies > 0 ? _totalReplies : _replies.length;
     return Row(
       children: [
         Icon(
@@ -3546,7 +3592,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         const SizedBox(width: 8),
         Text(
-          '全部评论 ${_replies.length}',
+          '全部评论 $total',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -3574,9 +3620,52 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_replies.isEmpty) return _buildNoComments(isDark);
     final threads = _buildThreads();
     return Column(
-      children: threads
-          .map((t) => _buildReplyThread(t, isDark, compact: false, depth: 0))
-          .toList(),
+      children: [
+        ...threads.map(
+          (t) => _buildReplyThread(t, isDark, compact: false, depth: 0),
+        ),
+        if (_repliesHasMore) _buildLoadMoreRepliesButton(isDark),
+      ],
+    );
+  }
+
+  Widget _buildLoadMoreRepliesButton(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Center(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _loadingMoreReplies
+              ? null
+              : () => _loadReplies(sort: _replySort, loadMore: true),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: isDark ? Colors.white12 : Colors.grey.shade300,
+              ),
+            ),
+            child: _loadingMoreReplies
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
+                  )
+                : Text(
+                    '加载更多评论',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3642,6 +3731,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     int depth = 0,
   }) {
     final allChildren = _collectThreadChildren(thread.parent.id);
+    // 服务端 child_reply_count 是真实总数（列表只携带前 N 条，其余懒加载）。
+    final totalChildren = thread.parent.childReplyCount > 0
+        ? thread.parent.childReplyCount
+        : allChildren.length;
     final targetChild = _activeTargetReplyId == null
         ? null
         : allChildren
@@ -3649,7 +3742,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             .firstOrNull;
     final visibleChildren =
         targetChild != null ? [targetChild] : allChildren.take(1).toList();
-    final hasMore = allChildren.length > visibleChildren.length;
+    final hasMore = totalChildren > visibleChildren.length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -3688,7 +3781,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '共 ${allChildren.length} 条回复 ',
+                              '共 $totalChildren 条回复 ',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -3733,6 +3826,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 主评论（顶级）
   Widget _buildMainReply(Reply r, bool isDark) {
+    if (r.isDeleted) {
+      // tombstone：已删除的根评论保留其下讨论，但主体显示删除占位。
+      return _buildDeletedReplyRow(isDark);
+    }
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
     return _buildReplyAnchor(
@@ -3757,6 +3854,44 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         onImageLongPress: _showImageFavoriteAction,
         onLike: () => _toggleReplyLike(r),
         likePending: _pendingReplyLikeTargets.containsKey(r.id),
+      ),
+    );
+  }
+
+  /// 已删除根评论的占位行（保留子讨论的 tombstone 视图）。
+  Widget _buildDeletedReplyRow(bool isDark) {
+    final muted = isDark ? Colors.white38 : Colors.grey[500];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.grey[200],
+            ),
+            child: Icon(Icons.person_off_outlined, size: 18, color: muted),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '该评论已删除',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: muted,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3869,6 +4004,58 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     var replyTarget = anchorReply ?? parentReply;
     var isSending = false;
 
+    // 楼中楼 sheet 的子回复快照：初始取已在列表中的数据，剩余懒加载。
+    final sheetChildren = <Reply>[..._collectThreadChildren(parentReply.id)];
+    var childrenTotal = parentReply.childReplyCount > 0
+        ? parentReply.childReplyCount
+        : sheetChildren.length;
+    String? sheetChildrenCursor;
+    bool sheetChildrenLoading = childrenTotal > sheetChildren.length;
+    bool sheetChildrenError = false;
+    VoidCallback? sheetUpdater;
+
+    Future<void> loadMoreChildren() async {
+      if (sheetChildrenLoading) return;
+      sheetChildrenLoading = true;
+      sheetChildrenError = false;
+      sheetUpdater?.call();
+      try {
+        final resp = await _dio.get(
+          '/posts/${widget.postId}/replies/${parentReply.id}/children',
+          queryParameters: {
+            'limit': 50,
+            if (sheetChildrenCursor != null) 'cursor': sheetChildrenCursor,
+          },
+        );
+        final data = resp.data;
+        if (data is Map<String, dynamic> && data['replies'] is List) {
+          final fetched = (data['replies'] as List)
+              .map((e) => Reply.fromJson(e as Map<String, dynamic>))
+              .toList();
+          final known = sheetChildren.map((r) => r.id).toSet();
+          sheetChildren.addAll(fetched.where((r) => !known.contains(r.id)));
+          final next = data['next_cursor'] as String?;
+          sheetChildrenCursor =
+              (next != null && next.isNotEmpty) ? next : null;
+          if (sheetChildren.length >= childrenTotal) {
+            sheetChildrenCursor = null;
+          }
+        }
+      } on DioException {
+        sheetChildrenError = true;
+      } catch (_) {
+        sheetChildrenError = true;
+      } finally {
+        sheetChildrenLoading = false;
+        sheetUpdater?.call();
+      }
+    }
+
+    // 打开 sheet 前就开始补拉剩余子回复，避免打开后再闪 loading。
+    if (sheetChildrenLoading) {
+      loadMoreChildren();
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -3877,7 +4064,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContentContext, setSheetState) {
+            sheetUpdater = () {
+              if (sheetContentContext.mounted) setSheetState(() {});
+            };
+
             void selectReplyTarget(Reply target, {bool requestFocus = true}) {
+              if (target.isDeleted) return; // 已删除评论不可作为回复目标
               setSheetState(() {
                 replyTarget = target;
                 final nickname = target.author?.nickname.trim() ?? '';
@@ -3895,22 +4087,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               if (isSending) return;
               final content = replyController.text.trim();
               if (content.isEmpty) return;
+              if (replyTarget.isDeleted) {
+                AppFeedback.showSnackBar(
+                  sheetContentContext,
+                  '该评论已删除，无法回复',
+                  isError: true,
+                );
+                return;
+              }
 
               setSheetState(() => isSending = true);
-              var succeeded = false;
+              Reply? created;
               try {
-                succeeded = await _submitReplyContent(
+                created = await _submitReplyContent(
                   content: content,
                   parentReplyId: parentReply.id,
                   replyToUserId: replyTarget.authorId,
+                  replyToReplyId: replyTarget.id,
                 );
               } finally {
                 if (sheetContentContext.mounted) {
                   setSheetState(() {
                     isSending = false;
-                    if (succeeded) {
+                    if (created != null) {
                       replyController.clear();
                       replyTarget = parentReply;
+                      if (!sheetChildren.any((c) => c.id == created!.id)) {
+                        sheetChildren.add(created!);
+                        childrenTotal++;
+                      }
                     }
                   });
                 }
@@ -3958,7 +4163,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                               SliverToBoxAdapter(
                                 child: _buildRelatedRepliesHeader(
-                                  parentReply.id,
+                                  childrenTotal,
                                   isDark,
                                 ),
                               ),
@@ -3967,9 +4172,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     const EdgeInsets.symmetric(horizontal: 16),
                                 sliver: _buildSheetChildrenList(
                                   sheetContext,
-                                  parentReply,
+                                  sheetChildren,
                                   isDark,
                                   onReply: selectReplyTarget,
+                                  loading: sheetChildrenLoading,
+                                  error: sheetChildrenError,
+                                  hasMore: sheetChildrenCursor != null,
+                                  onLoadMore: loadMoreChildren,
                                 ),
                               ),
                             ],
@@ -3982,7 +4191,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           isSending: isSending,
                           isDark: isDark,
                           onTap: () {
-                            if (replyController.text.isEmpty) {
+                            if (replyController.text.isEmpty &&
+                                !replyTarget.isDeleted) {
                               selectReplyTarget(replyTarget,
                                   requestFocus: false);
                             }
@@ -4034,10 +4244,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
               GestureDetector(
                 onTap: () => Navigator.pop(sheetContext),
-                child: Icon(
-                  Icons.close,
-                  size: 24,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
+                // 48dp 最小触控目标。
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(
+                    Icons.close,
+                    size: 24,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
                 ),
               ),
             ],
@@ -4059,6 +4273,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     bool isDark, {
     required VoidCallback onReply,
   }) {
+    if (r.isDeleted) {
+      // tombstone 根：显示删除占位，不提供回复/点赞/更多入口。
+      final muted = isDark ? Colors.white38 : Colors.grey[500];
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.grey[200],
+            ),
+            child: Icon(Icons.person_off_outlined, size: 18, color: muted),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '该评论已删除',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: muted,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onReply,
@@ -4150,10 +4398,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           targetType: 'reply',
                         );
                       },
-                      child: Icon(
-                        Icons.more_horiz,
-                        size: 16,
-                        color: isDark ? Colors.white24 : Colors.grey[300],
+                      // 48dp 最小触控目标。
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Icon(
+                          Icons.more_horiz,
+                          size: 16,
+                          color: isDark ? Colors.white24 : Colors.grey[300],
+                        ),
                       ),
                     ),
                   ],
@@ -4166,8 +4418,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildRelatedRepliesHeader(int parentReplyId, bool isDark) {
-    final children = _collectThreadChildren(parentReplyId);
+  Widget _buildRelatedRepliesHeader(int total, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4181,7 +4432,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '相关回复共 ${children.length} 条',
+                '相关回复共 $total 条',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -4204,13 +4455,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildSheetChildrenList(
     BuildContext sheetContext,
-    Reply parentReply,
+    List<Reply> children,
     bool isDark, {
     required ValueChanged<Reply> onReply,
+    required bool loading,
+    required bool error,
+    required bool hasMore,
+    required VoidCallback onLoadMore,
   }) {
-    final children = _collectThreadChildren(parentReply.id);
-
-    if (children.isEmpty) {
+    final hasTrailer = loading || error || hasMore;
+    if (children.isEmpty && !loading) {
       return const SliverToBoxAdapter(
         child: SizedBox(height: 100),
       );
@@ -4219,14 +4473,61 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          return _buildSheetChildReplyItem(
-            sheetContext,
-            children[index],
-            isDark,
-            onReply: () => onReply(children[index]),
+          if (index < children.length) {
+            return _buildSheetChildReplyItem(
+              sheetContext,
+              children[index],
+              isDark,
+              onReply: () => onReply(children[index]),
+            );
+          }
+          if (loading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          if (error) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: TextButton(
+                  onPressed: onLoadMore,
+                  child: Text(
+                    '加载失败，点击重试',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: TextButton(
+                onPressed: onLoadMore,
+                child: Text(
+                  '加载更多回复',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           );
         },
-        childCount: children.length,
+        childCount: children.length + (hasTrailer ? 1 : 0),
       ),
     );
   }
@@ -4829,6 +5130,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     int? parentReplyId,
     String? replyToName,
     int? replyToUserId,
+    int? replyToReplyId,
   }) {
     if (!context.read<AuthProvider>().isLoggedIn) {
       _openReplyLogin();
@@ -4839,6 +5141,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         parentReplyId: parentReplyId,
         replyToName: replyToName,
         replyToUserId: replyToUserId,
+        replyToReplyId: replyToReplyId ?? parentReplyId,
       );
       return;
     }
@@ -4964,13 +5267,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _dio.delete('/replies/${r.id}');
       if (mounted) {
         AppFeedback.showSnackBar(context, '已删除');
-        if (_post != null && _post!.replyCount > 0) {
-          if (mounted)
-            setState(() {
-              _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
-            });
-          context.read<PostProvider>().updatePostInCache(_post!);
-        }
+        // 重新拉取：删除根评论可能变成 tombstone，计数以服务端为准。
         _loadReplies();
       }
     } on DioException catch (e) {
@@ -4983,26 +5280,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 加载回复列表。切换排序只调用此方法，不重新拉帖子详情。
   ///
+  /// 根评论游标分页：首屏/切排序 replace，[loadMore] 时按游标追加并按 id 去重。
   /// 受 [_replyRequestVersion] 保护：用户快速切换 Hot/Latest 时，
   /// 后发出的请求版本号更大，先返回的旧响应会被直接丢弃。
   /// 加载完成后，用 [_pendingReplyLikeTargets] 覆盖在途点赞的目标状态，
   /// 避免"♥13 → 切排序 → ♡12 → 请求完成 → ♥13"的闪烁。
-  Future<void> _loadReplies({String? sort}) async {
+  Future<void> _loadReplies({String? sort, bool loadMore = false}) async {
     final effectiveSort = sort ?? _replySort;
     final requestVersion = ++_replyRequestVersion;
     if (mounted) {
-      setState(() => _isRepliesLoading = true);
+      setState(() {
+        if (loadMore) {
+          _loadingMoreReplies = true;
+        } else {
+          _isRepliesLoading = true;
+        }
+      });
     }
     try {
       final repliesResponse = await _dio.get(
         '/posts/${widget.postId}/replies',
-        queryParameters: {'sort': effectiveSort},
+        queryParameters: {
+          'sort': effectiveSort,
+          if (loadMore && _repliesNextCursor != null)
+            'cursor': _repliesNextCursor,
+        },
       );
       if (!mounted || requestVersion != _replyRequestVersion) return;
-      if (repliesResponse.data is! List) return;
+      final data = repliesResponse.data;
+      if (data is! Map<String, dynamic>) return;
+      final rawReplies = data['replies'];
+      if (rawReplies is! List) return;
       setState(() {
-        var replies = (repliesResponse.data as List)
-            .map((e) => Reply.fromJson(e))
+        var replies = rawReplies
+            .map((e) => Reply.fromJson(e as Map<String, dynamic>))
             .toList();
         // 覆盖在途点赞目标，防止服务端旧状态覆盖乐观 UI。
         if (_pendingReplyLikeTargets.isNotEmpty) {
@@ -5013,21 +5324,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   : r,
           ];
         }
-        _replies = replies;
+        if (loadMore) {
+          // 追加并按 id 去重（cursor 找不到时服务端可能从第一页开始重发）。
+          final known = _replies.map((r) => r.id).toSet();
+          _replies = [
+            ..._replies,
+            ...replies.where((r) => !known.contains(r.id)),
+          ];
+        } else {
+          _replies = replies;
+        }
+        _totalReplies = (data['total'] as num?)?.toInt() ?? _replies.length;
+        final next = data['next_cursor'] as String?;
+        _repliesNextCursor = (next != null && next.isNotEmpty) ? next : null;
+        _repliesHasMore = _repliesNextCursor != null;
         _isRepliesLoading = false;
-        // 保持评论数与列表一致（乐观临时评论除外）。
+        _loadingMoreReplies = false;
+        // 保持评论数与服务端口径一致（total 含 tombstone 根）。
         if (_post != null) {
-          _post = _post!.copyWith(replyCount: _replies.length);
+          _post = _post!.copyWith(replyCount: _totalReplies);
         }
       });
     } on DioException catch (e) {
       if (!mounted || requestVersion != _replyRequestVersion) return;
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
-      setState(() => _isRepliesLoading = false);
+      setState(() {
+        _isRepliesLoading = false;
+        _loadingMoreReplies = false;
+      });
       AppFeedback.showSnackBar(context, msg, isError: true);
     } catch (e) {
       if (!mounted || requestVersion != _replyRequestVersion) return;
-      setState(() => _isRepliesLoading = false);
+      setState(() {
+        _isRepliesLoading = false;
+        _loadingMoreReplies = false;
+      });
       AppFeedback.showSnackBar(context, '加载回复失败: $e', isError: true);
     }
   }

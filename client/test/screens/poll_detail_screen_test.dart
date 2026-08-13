@@ -103,7 +103,11 @@ void main() {
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       if (options.path == '/posts/1/replies') {
         handler.resolve(
-            Response(requestOptions: options, statusCode: 200, data: const []));
+            Response(requestOptions: options, statusCode: 200, data: const {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        }));
         return;
       }
       handler.reject(DioException(
@@ -127,7 +131,11 @@ void main() {
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       if (options.path == '/posts/1/replies') {
         handler.resolve(
-            Response(requestOptions: options, statusCode: 200, data: const []));
+            Response(requestOptions: options, statusCode: 200, data: const {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        }));
         return;
       }
       handler.reject(DioException(
@@ -154,7 +162,11 @@ void main() {
       requestOrder.add(options.path);
       if (options.path == '/posts/1/replies') {
         handler.resolve(
-          Response(requestOptions: options, statusCode: 200, data: const []),
+          Response(requestOptions: options, statusCode: 200, data: const {
+            'replies': <dynamic>[],
+            'total': 0,
+            'next_cursor': '',
+          }),
         );
         return;
       }
@@ -200,7 +212,11 @@ void main() {
           Response(
             requestOptions: options,
             statusCode: 200,
-            data: [_replyJson()],
+            data: {
+              'replies': <dynamic>[_replyJson()],
+              'total': 1,
+              'next_cursor': '',
+            },
           ),
         );
         return;

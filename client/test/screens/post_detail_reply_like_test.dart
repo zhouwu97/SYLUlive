@@ -42,7 +42,11 @@ class LikeScenarioDio extends Fake implements Dio {
     if (path.startsWith('/posts/200/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: replies as dynamic,
+        data: {
+          'replies': replies,
+          'total': replies.length,
+          'next_cursor': '',
+        } as dynamic,
       );
     }
     if (path.endsWith('/featured-application-status')) {

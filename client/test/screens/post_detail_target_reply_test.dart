@@ -183,6 +183,9 @@ Post _postWithImages({
 }
 
 class FakeDio extends Fake implements Dio {
+  /// children 懒加载接口被调用的次数（51-children 死锁回归测试用）。
+  static int childrenRequestCount = 0;
+
   @override
   Future<Response<T>> get<T>(
     String path, {
@@ -408,6 +411,86 @@ class FakeDio extends Fake implements Dio {
           "content": "Content",
           "author_id": 1,
           "created_at": "2026-01-01T00:00:00.000Z"
+        } as dynamic,
+      );
+    }
+    // 帖子 106：根评论带 51 条子回复的懒加载死锁回归 fixture。
+    if (path.startsWith('/posts/106/replies/') && path.endsWith('/children')) {
+      childrenRequestCount++;
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 751,
+              "post_id": 106,
+              "parent_reply_id": 7,
+              "content": "lazy-child-51",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/106/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 7,
+              "post_id": 106,
+              "content": "big thread root",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "child_reply_count": 51,
+              "created_at": "2026-01-01T00:00:00.000Z"
+            },
+            ...List.generate(50, (i) => {
+                  "id": 701 + i,
+                  "post_id": 106,
+                  "parent_reply_id": 7,
+                  "content": "child-${i + 1}",
+                  "author_id": 2,
+                  "author": {
+                    "id": 2,
+                    "nickname": "User2",
+                    "avatar": "http://example.com/avatar.png",
+                    "student_id": "2"
+                  },
+                  "created_at": "2026-01-01T00:00:00.000Z"
+                }),
+          ],
+          'total': 52,
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/106')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          "id": 106,
+          "title": "懒加载测试帖",
+          "content": "Content",
+          "board_id": 1,
+          "author_id": 1,
+          "post_type": "",
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "images": <dynamic>[],
         } as dynamic,
       );
     }
@@ -933,6 +1016,46 @@ void main() {
       find.byKey(const ValueKey('post-reply-send-button')),
     );
     expect(sendButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('楼中楼超过50条子回复时首次懒加载不被自身loading锁挡住', (tester) async {
+    FakeDio.childrenRequestCount = 0;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = Post(
+      id: 106,
+      title: '懒加载测试帖',
+      content: 'Content',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    // 根评论只带了 50 条子回复，但真实总数 51 → 出现"共 51 条回复"入口。
+    expect(find.textContaining('共 51 条回复'), findsOneWidget);
+
+    await tester.tap(find.textContaining('共 51 条回复'));
+    await tester.pumpAndSettle();
+
+    // 死锁修复：children 请求必须真正发出。
+    // 修复前 loadMoreChildren 首句 `if (sheetChildrenLoading) return` 被初始化的
+    // loading=true 挡住，请求永远不发、spinner 永远转。
+    expect(FakeDio.childrenRequestCount, 1);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('相关回复共 51 条'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

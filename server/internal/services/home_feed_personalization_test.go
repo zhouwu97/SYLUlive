@@ -79,6 +79,21 @@ func TestUserInRollout(t *testing.T) {
 	require.Equal(t, userInRollout(42, 10), userInRollout(42, 10))
 }
 
+// TestPersonalizationComputeNeeded cohort 门控：
+// shadow 全量计算；active rollout 只对命中分桶的用户计算。
+func TestPersonalizationComputeNeeded(t *testing.T) {
+	// shadow 开 → 无论 percent 多少都计算。
+	require.True(t, personalizationComputeNeeded(1, true, 0))
+	require.True(t, personalizationComputeNeeded(1, true, 100))
+	// 全关 → 不计算。
+	require.False(t, personalizationComputeNeeded(1, false, 0))
+	// percent=100 → 所有用户命中。
+	require.True(t, personalizationComputeNeeded(1, false, 100))
+	// 部分灰度 → 与分桶结果一致。
+	require.Equal(t, userInRollout(42, 10), personalizationComputeNeeded(42, false, 10))
+	require.Equal(t, userInRollout(7, 30), personalizationComputeNeeded(7, false, 30))
+}
+
 func TestApplyExploration(t *testing.T) {
 	now := time.Now()
 	var candidates []HomeFeedCandidate

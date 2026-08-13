@@ -40,10 +40,34 @@ void main() {
       final provider = CanteenProvider(dio);
       final dishes = await provider.loadDishes(1);
 
+      expect(dishes, isNotNull);
       expect(dishes, hasLength(2));
-      expect(dishes[0].name, '锅包肉');
+      expect(dishes![0].name, '锅包肉');
       expect(dishes[0].photoCount, 3);
       expect(dishes[1].coverImage, '');
+    });
+
+    test('loadDishes 成功但为空返回 []（区别于失败）', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        return _json('[]', 200);
+      });
+      final provider = CanteenProvider(dio);
+      final dishes = await provider.loadDishes(1);
+
+      expect(dishes, isNotNull);
+      expect(dishes, isEmpty);
+    });
+
+    test('loadDishes 网络失败返回 null（不伪装成空列表）', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        return _json('{"error":"internal"}', 500);
+      });
+      final provider = CanteenProvider(dio);
+      final dishes = await provider.loadDishes(1);
+
+      expect(dishes, isNull);
     });
 
     test('submitDishPhoto 成功返回 message', () async {

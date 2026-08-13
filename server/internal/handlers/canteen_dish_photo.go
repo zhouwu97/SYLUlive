@@ -18,6 +18,9 @@ import (
 // errDishGalleryFull 该菜品已有 3 张审核实拍。
 var errDishGalleryFull = errors.New("dish_gallery_full")
 
+// MaxDishNameLength 菜名最大可见字符数（与客户端 maxLength: 40 对齐）。
+const MaxDishNameLength = 40
+
 // errDishPhotoAlreadyReviewed 该实拍已被审核处理。
 var errDishPhotoAlreadyReviewed = errors.New("dish_photo_already_reviewed")
 
@@ -59,6 +62,11 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 	}
 	if input.FileID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请上传实拍图片"})
+		return
+	}
+	// 菜名长度权威校验（1～40 个可见字符），避免极长菜名变成数据库错误。
+	if input.DishName != "" && utils.CountGraphemes(strings.TrimSpace(input.DishName)) > MaxDishNameLength {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能超过40个字"})
 		return
 	}
 
@@ -106,29 +114,31 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 			if normalized == "" {
 				return errInvalidDishName
 			}
-			if err := tx.Where("canteen_id = ? AND normalized_name = ? AND status = ?",
-				canteenID, normalized, models.DishStatusActive).First(&dish).Error; err != nil {
-				if !errors.Is(err, gorm.ErrRecordNotFound) {
+			// 同名菜并发创建：INSERT ... ON CONFLICT DO NOTHING，
+			// 命中唯一索引直接复用已有行，绝不在 PostgreSQL 事务内捕获
+			// unique error 后继续执行（事务已进入失败状态）。
+			dish = models.CanteenDish{
+				CanteenID:      uint(canteenID),
+				Name:           strings.TrimSpace(input.DishName),
+				NormalizedName: normalized,
+				Status:         models.DishStatusActive,
+				CreatedBy:      userID,
+			}
+			result := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "canteen_id"},
+					{Name: "normalized_name"},
+				},
+				DoNothing: true,
+			}).Create(&dish)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				// 并发下被其他请求先创建 → 复用已有 active 行
+				if err := tx.Where("canteen_id = ? AND normalized_name = ? AND status = ?",
+					canteenID, normalized, models.DishStatusActive).First(&dish).Error; err != nil {
 					return err
-				}
-				// 创建新菜（status=active，公开取决于后续 approved 实拍）
-				dish = models.CanteenDish{
-					CanteenID:      uint(canteenID),
-					Name:           strings.TrimSpace(input.DishName),
-					NormalizedName: normalized,
-					Status:         models.DishStatusActive,
-					CreatedBy:      userID,
-				}
-				if err := tx.Create(&dish).Error; err != nil {
-					// 并发撞唯一索引 → 重查复用
-					if isUniqueConstraintError(err) {
-						if err := tx.Where("canteen_id = ? AND normalized_name = ? AND status = ?",
-							canteenID, normalized, models.DishStatusActive).First(&dish).Error; err != nil {
-							return err
-						}
-					} else {
-						return err
-					}
 				}
 			}
 		}

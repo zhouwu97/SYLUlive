@@ -221,3 +221,44 @@ func TestBuildSnapshotShadowOffReturnsBaseline(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, ids)
 }
+
+// TestBuildSnapshotRolloutWithoutShadowActivates 回归 rollout 陷阱：
+// shadow=false 但 percent>0 时也必须进入计算路径并放量，而不是静默返回 baseline。
+func TestBuildSnapshotRolloutWithoutShadowActivates(t *testing.T) {
+	db := newPersonalizationTestDB(t)
+	now := time.Now()
+	for i := uint(1); i <= 6; i++ {
+		author := uint(1)
+		ptype := "course_study"
+		if i > 3 {
+			author = 2
+			ptype = "campus_life"
+		}
+		personalizationPost(t, db, i, author, ptype, now.Add(-time.Duration(i)*time.Minute))
+	}
+	// 用户 101 关注作者 1（course_study），且对帖子 1 有 2 个不同 session 的曝光但从未打开
+	// → SeenPenalty(-0.15) 会压低帖子 1，使个性化排序与 baseline 必然不同。
+	require.NoError(t, db.Create(&models.UserFollow{FollowerID: 101, FollowingID: 1}).Error)
+	for _, session := range []string{"s1", "s2"} {
+		require.NoError(t, db.Create(&models.FeedImpression{
+			UserID:        101,
+			PostID:        1,
+			FeedSessionID: session,
+			FeedKind:      "all",
+			CreatedAt:     now.Add(-time.Hour),
+		}).Error)
+	}
+
+	svc := NewHomeFeedServiceWithPoll(db)
+	svc.SetPersonalization(false, 0)
+	base, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, base)
+
+	// shadow=false + percent=100：修复前会直接返回 baseline（0% 生效）。
+	svc.SetPersonalization(false, 100)
+	pers, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, pers)
+	require.NotEqual(t, base, pers, "shadow=false 时 active rollout 也应生效")
+}

@@ -7,8 +7,10 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 
 class _AuthProvider extends ChangeNotifier implements AuthProvider {
   _AuthProvider({required this.client});
@@ -152,6 +154,132 @@ void main() {
     expect(input, findsOneWidget, reason: '评论输入框应始终显示');
     final field = tester.widget<TextField>(input);
     expect(field.focusNode?.hasFocus, isFalse, reason: '默认进入详情不应自动聚焦');
+  });
+
+  testWidgets('输入状态下点击正文会收起键盘并保留草稿', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: true));
+    await tester.pumpAndSettle();
+
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    await tester.enterText(input, '保留这段草稿');
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('post-detail-input-dismiss-layer')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(tester.getCenter(find.text('测试内容')));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(input);
+    expect(field.focusNode?.hasFocus, isFalse);
+    expect(field.controller?.text, '保留这段草稿');
+    expect(
+      find.byKey(const ValueKey('post-detail-input-dismiss-layer')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('表情面板打开时点击内容区会退出输入状态', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+
+    await tester.tapAt(tester.getCenter(find.text('测试内容')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppEmojiPanel), findsNothing);
+    expect(
+      find.byKey(const ValueKey('post-detail-input-dismiss-layer')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('输入时首次点击图片只收起输入，再次点击才预览', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+      images: [
+        PostImage(
+          id: 1,
+          postId: 100,
+          fileId: 1,
+          mediumUrl: 'http://example.com/post.png',
+          originUrl: 'http://example.com/post.png',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: true));
+    await tester.pumpAndSettle();
+
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    final image = find.byKey(const ValueKey('single-post-image-tap-target'));
+    expect(image, findsOneWidget);
+
+    await tester.tapAt(tester.getCenter(image));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ImageViewerScreen), findsNothing);
+    expect(tester.widget<TextField>(input).focusNode?.hasFocus, isFalse);
+
+    await tester.tapAt(tester.getCenter(image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(ImageViewerScreen), findsOneWidget);
+  });
+
+  testWidgets('输入激活时右上角更多菜单仍可直接操作', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.more_horiz_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑帖子'), findsOneWidget);
   });
 
   testWidgets('详情页点赞成功后与 Feed 信息流状态一致', (tester) async {

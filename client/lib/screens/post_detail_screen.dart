@@ -177,6 +177,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   final _replyComposerController = PostReplyComposerController();
+  late final Listenable _replyComposerActivity;
   bool _isSending = false;
   bool _hasPendingFeaturedApp = false;
 
@@ -211,6 +212,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _replyComposerActivity = Listenable.merge([
+      _replyComposerController,
+      _replyComposerController.focusNode,
+    ]);
     _dio = context.read<AuthProvider>().dio;
     if (widget.initialPost != null) {
       _post = widget.initialPost;
@@ -1545,7 +1550,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               else
                 Column(
                   children: [
-                    Expanded(child: _buildWaterDetail(isDark)),
+                    Expanded(
+                      child: _buildInputDismissRegion(
+                        child: _buildWaterDetail(isDark),
+                      ),
+                    ),
                     _buildWaterReplyBar(isDark),
                   ],
                 ),
@@ -1553,6 +1562,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInputDismissRegion({required Widget child}) {
+    return AnimatedBuilder(
+      animation: _replyComposerActivity,
+      child: child,
+      builder: (context, child) {
+        final inputActive = _replyComposerController.focusNode.hasFocus ||
+            _replyComposerController.showEmojiPanel;
+        if (!inputActive) return child!;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            child!,
+            Positioned.fill(
+              child: Semantics(
+                button: true,
+                label: '收起评论输入',
+                onTap: () => _replyComposerController.close(),
+                child: GestureDetector(
+                  key: const ValueKey('post-detail-input-dismiss-layer'),
+                  behavior: HitTestBehavior.opaque,
+                  excludeFromSemantics: true,
+                  onTap: () => _replyComposerController.close(),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2034,9 +2075,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Column(
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
-                    child: Column(
+                  child: _buildInputDismissRegion(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (p.title.isNotEmpty) ...[
@@ -2102,6 +2144,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         const SizedBox(height: 10),
                         _buildCompactReplies(isDark),
                       ],
+                      ),
                     ),
                   ),
                 ),
@@ -2117,33 +2160,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           Expanded(
             flex: 4,
-            child: p.images.isNotEmpty
-                ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
-                : Container(
-                    color: isDark
-                        ? const Color(0xFF131720)
-                        : kCleanWarmBackgroundLight,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 64,
-                            color: isDark ? Colors.white24 : Colors.grey[300],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            '没有图片展示',
-                            style: TextStyle(
-                              color: isDark ? Colors.white38 : Colors.grey[500],
-                              fontSize: 16,
+            child: _buildInputDismissRegion(
+              child: p.images.isNotEmpty
+                  ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
+                  : Container(
+                      color: isDark
+                          ? const Color(0xFF131720)
+                          : kCleanWarmBackgroundLight,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 64,
+                              color:
+                                  isDark ? Colors.white24 : Colors.grey[300],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            Text(
+                              '没有图片展示',
+                              style: TextStyle(
+                                color:
+                                    isDark ? Colors.white38 : Colors.grey[500],
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+            ),
           ),
         ],
       );
@@ -2152,9 +2199,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 80),
-            child: Column(
+          child: _buildInputDismissRegion(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (p.images.isNotEmpty)
@@ -2246,6 +2294,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),

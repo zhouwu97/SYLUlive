@@ -15,6 +15,7 @@ import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
@@ -935,9 +936,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
-
     final sendButton = find.byKey(const ValueKey('post-reply-send-button'));
     expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
 
@@ -958,7 +956,7 @@ void main() {
     expect(enabledSendButton.onPressed, isNotNull);
     expect(
       enabledSendButton.style?.backgroundColor?.resolve({}),
-      const Color(0xFF6B8EFF),
+      AppTheme.primaryColor,
     );
     expect(tester.takeException(), isNull);
   });
@@ -978,8 +976,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('post-reply-input')),
       '0000',
@@ -1030,8 +1026,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pumpAndSettle();
     await tester.tap(
@@ -1082,8 +1076,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pumpAndSettle();
     expect(find.byType(AppEmojiPanel), findsOneWidget);

@@ -19,7 +19,6 @@ import '../providers/theme_provider.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/app_feedback.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigation.dart';
@@ -28,6 +27,7 @@ import '../utils/app_time.dart';
 import '../utils/chat_scroll_intent.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/app_composer_bar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import '../widgets/emoji/sticker_composer_preview.dart';
@@ -2010,159 +2010,45 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         if (blocked) _buildPMLockedBanner(),
-        Container(
-          key: const ValueKey('chat-composer'),
-          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-          decoration: BoxDecoration(
-            color: colors.surface,
-            border: Border(
-              top: BorderSide(
-                color: colors.outlineVariant,
-              ),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                key: const ValueKey('chat-image-button'),
-                width: 44,
-                height: 44,
-                child: IconButton(
-                  tooltip: _selectedSticker != null
-                      ? '已选择表情'
-                      : _isSendingMedia
-                          ? '图片发送中'
-                          : '添加图片',
-                  onPressed: blocked ||
-                          _selectedSticker != null ||
-                          _isPickingImage ||
-                          _isSendingMedia
-                      ? null
-                      : _pickAndSendImage,
-                  padding: EdgeInsets.zero,
-                  icon: _isPickingImage || _isSendingMedia
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_rounded, size: 25),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Focus(
-                  onKeyEvent: _handleComposerKeyEvent,
-                  child: Container(
-                    key: const ValueKey('chat-input-container'),
-                    constraints: const BoxConstraints(minHeight: 46),
-                    child: TextField(
-                      key: const ValueKey('chat-input'),
-                      controller: _textController,
-                      focusNode: _inputFocusNode,
-                      onTap: _showKeyboard,
-                      enabled: !blocked,
-                      readOnly: blocked,
-                      style: TextStyle(
-                        color: blocked
-                            ? colors.onSurfaceVariant
-                            : colors.onSurface,
-                      ),
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
-                        isDense: true,
-                        filled: true,
-                        fillColor: blocked
-                            ? colors.surfaceContainerHigh
-                            : colors.surfaceContainerHighest,
-                        hintStyle: TextStyle(
-                          color: colors.onSurfaceVariant.withValues(
-                            alpha: blocked ? 0.7 : 1,
-                          ),
-                        ),
-                        suffixIconConstraints: const BoxConstraints(
-                          minWidth: 44,
-                          maxWidth: 44,
-                          minHeight: 46,
-                          maxHeight: 46,
-                        ),
-                        suffixIcon: SizedBox(
-                          key: const ValueKey('chat-emoji-button'),
-                          width: 44,
-                          height: 44,
-                          child: IconButton(
-                            tooltip: _bottomPanel == ChatBottomPanel.emoji
-                                ? '打开键盘'
-                                : '选择表情',
-                            onPressed: blocked ? null : _toggleEmojiPanel,
-                            padding: EdgeInsets.zero,
-                            icon: Icon(
-                              _bottomPanel == ChatBottomPanel.emoji
-                                  ? Icons.keyboard_alt_outlined
-                                  : Icons.sentiment_satisfied_alt_outlined,
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(23),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _textController,
-                builder: (context, value, _) {
-                  final canSend = !blocked &&
-                      (value.text.trim().isNotEmpty ||
-                          _selectedSticker != null);
-                  return SizedBox(
-                    key: const ValueKey('chat-send-button-container'),
-                    width: 44,
-                    height: 44,
-                    child: AnimatedScale(
-                      scale: canSend ? 1 : 0.985,
-                      duration: AppMotion.tab,
-                      curve: AppMotion.standard,
-                      child: AnimatedOpacity(
-                        opacity: canSend ? 1 : 0,
-                        duration: AppMotion.tab,
-                        curve: AppMotion.standard,
-                        child: IgnorePointer(
-                          ignoring: !canSend,
-                          child: IconButton.filled(
-                            key: const ValueKey('chat-send-button'),
-                            tooltip: '发送',
-                            onPressed: canSend ? _sendMessage : null,
-                            style: IconButton.styleFrom(
-                              fixedSize: const Size(44, 44),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: colors.onPrimary,
-                              disabledBackgroundColor: AppTheme.primaryColor,
-                              disabledForegroundColor: colors.onPrimary,
-                            ),
-                            icon: const Icon(Icons.send_rounded, size: 20),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
+        AppComposerBar(
+          composerKey: const ValueKey('chat-composer'),
+          leadingKey: const ValueKey('chat-image-button'),
+          inputContainerKey: const ValueKey('chat-input-container'),
+          inputKey: const ValueKey('chat-input'),
+          emojiKey: const ValueKey('chat-emoji-button'),
+          sendContainerKey: const ValueKey('chat-send-button-container'),
+          sendKey: const ValueKey('chat-send-button'),
+          textController: _textController,
+          focusNode: _inputFocusNode,
+          hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
+          leadingTooltip: _selectedSticker != null
+              ? '已选择表情'
+              : _isSendingMedia
+                  ? '图片发送中'
+                  : '添加图片',
+          onLeadingPressed: blocked ||
+                  _selectedSticker != null ||
+                  _isPickingImage ||
+                  _isSendingMedia
+              ? null
+              : _pickAndSendImage,
+          leadingLoading: _isPickingImage || _isSendingMedia,
+          emojiPanelVisible: _bottomPanel == ChatBottomPanel.emoji,
+          onEmojiPressed: blocked ? null : _toggleEmojiPanel,
+          canSend: (value) =>
+              !blocked &&
+              (value.text.trim().isNotEmpty || _selectedSticker != null),
+          onSend: _sendMessage,
+          onInputTap: _showKeyboard,
+          onKeyEvent: _handleComposerKeyEvent,
+          fieldEnabled: !blocked,
+          readOnly: blocked,
+          inputFillColor: blocked
+              ? colors.surfaceContainerHigh
+              : colors.surfaceContainerHighest,
+          inputTextColor: blocked ? colors.onSurfaceVariant : colors.onSurface,
+          hintColor: colors.onSurfaceVariant.withValues(
+            alpha: blocked ? 0.7 : 1,
           ),
         ),
       ],
@@ -2183,15 +2069,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         inputBar,
       ],
     );
-    if (_bottomPanel != ChatBottomPanel.none) return composerContent;
-
+    final panelHidden = _bottomPanel == ChatBottomPanel.none;
     final colors = Theme.of(context).colorScheme;
-    // 空闲状态由 Composer 自身消费系统手势安全区，避免透明系统栏压住输入控件。
+    // 保持 Composer 子树结构稳定，避免面板切换时重建 EditableText 并断开 IME。
     return ColoredBox(
       color: colors.surface,
       child: SafeArea(
         top: false,
-        maintainBottomViewPadding: true,
+        bottom: panelHidden,
+        maintainBottomViewPadding: panelHidden,
         child: composerContent,
       ),
     );

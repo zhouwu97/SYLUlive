@@ -18,6 +18,9 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   User get user => currentUser;
 
   @override
+  String? get token => 'test-token';
+
+  @override
   bool get isLoggedIn => true;
 
   @override
@@ -153,7 +156,8 @@ Dio chatDetailDio({
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         final path = options.path;
-        if (options.method == 'GET' && path.startsWith('/messages/conversations/')) {
+        if (options.method == 'GET' &&
+            path.startsWith('/messages/conversations/')) {
           if (gate != null) await gate.future;
           if (fail) {
             handler.reject(
@@ -167,7 +171,8 @@ Dio chatDetailDio({
           }
           if (path == '/messages/conversations/42') {
             handler.resolve(
-              Response(requestOptions: options, statusCode: 200, data: messages),
+              Response(
+                  requestOptions: options, statusCode: 200, data: messages),
             );
             return;
           }

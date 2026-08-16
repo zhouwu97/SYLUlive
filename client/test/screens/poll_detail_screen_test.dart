@@ -98,6 +98,50 @@ void main() {
     expect(find.text('投票不存在或已删除'), findsNothing);
   });
 
+  testWidgets('投票详情始终显示完整评论栏且默认不聚焦', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/polls/1') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: _pollJson(),
+          ),
+        );
+        return;
+      }
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: const {
+              'replies': <dynamic>[],
+              'total': 0,
+              'next_cursor': '',
+            },
+          ),
+        );
+        return;
+      }
+      handler.reject(DioException(requestOptions: options));
+    }));
+
+    await tester.pumpWidget(_buildScreen(dio));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const ValueKey('post-reply-image-button')), findsOneWidget);
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    expect(input, findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('post-reply-emoji-button')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('post-reply-send-button')), findsOneWidget);
+    expect(tester.widget<TextField>(input).focusNode?.hasFocus, isFalse);
+  });
+
   testWidgets('主体加载失败时展示错误和重试，而不是误报不存在', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {

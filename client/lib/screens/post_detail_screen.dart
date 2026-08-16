@@ -462,9 +462,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     setState(() => _isSending = true);
     try {
-      final fileIds = draft.favoriteImage == null
-          ? const <int>[]
-          : <int>[await _uploadFavoriteImage(draft.favoriteImage!)];
+      final fileIds = <int>[];
+      if (draft.localImage != null) {
+        fileIds.add(
+          await _uploadLocalImage(
+            draft.localImage!.path,
+            draft.localImage!.name,
+          ),
+        );
+      } else if (draft.favoriteImage != null) {
+        fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!));
+      }
       final created = await _submitReplyContent(
         content: draft.text,
         stickerId: draft.sticker?.id,
@@ -479,16 +487,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         AppFeedback.showSnackBar(
           context,
-          AppFeedback.dioErrorMessage(error, fallback: '收藏图片上传失败'),
+          AppFeedback.dioErrorMessage(error, fallback: '评论发送失败'),
           isError: true,
         );
       }
       return false;
     } catch (error) {
       if (mounted) {
-        AppFeedback.showSnackBar(context, '收藏图片上传失败', isError: true);
+        AppFeedback.showSnackBar(context, '评论发送失败', isError: true);
       }
-      debugPrint('上传收藏图片失败: $error');
+      debugPrint('发送评论失败: $error');
       return false;
     } finally {
       if (mounted) setState(() => _isSending = false);
@@ -514,6 +522,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       '/upload',
       data: FormData.fromMap({
         'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      }),
+    );
+    final rawFileId =
+        response.data is Map ? (response.data as Map)['file_id'] : null;
+    final fileId = rawFileId is num
+        ? rawFileId.toInt()
+        : int.tryParse(rawFileId?.toString() ?? '');
+    if (fileId == null || fileId <= 0) {
+      throw StateError('服务器未返回有效图片 ID');
+    }
+    return fileId;
+  }
+
+  Future<int> _uploadLocalImage(String path, String fileName) async {
+    final response = await _dio.post(
+      '/upload',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(path, filename: fileName),
       }),
     );
     final rawFileId =
@@ -2862,12 +2888,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildComposerBody(bool isDark) {
     return PostReplyComposer(
       controller: _replyComposerController,
-      replyCount: _post?.replyCount ?? _replies.length,
-      likeCount: _post?.likeCount ?? 0,
-      liked: _post?.isLiked ?? false,
       sending: _isSending,
       enabled: context.watch<AuthProvider>().isLoggedIn,
-      onToggleLike: _toggleLike,
       onSubmit: _sendReplyDraft,
       onNeedLogin: _openReplyLogin,
     );

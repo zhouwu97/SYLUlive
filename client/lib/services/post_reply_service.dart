@@ -11,9 +11,17 @@ class PostReplyService {
   final Dio _dio;
 
   Future<Reply> submit(int postId, PostReplyDraft draft) async {
-    final fileIds = draft.favoriteImage == null
-        ? const <int>[]
-        : <int>[await _uploadFavoriteImage(draft.favoriteImage!.imageUrl)];
+    final fileIds = <int>[];
+    if (draft.localImage != null) {
+      fileIds.add(
+        await _uploadLocalImage(
+          draft.localImage!.path,
+          draft.localImage!.name,
+        ),
+      );
+    } else if (draft.favoriteImage != null) {
+      fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!.imageUrl));
+    }
     final response = await _dio.post(
       '/posts/$postId/replies',
       data: FormData.fromMap({
@@ -47,6 +55,24 @@ class PostReplyService {
       '/upload',
       data: FormData.fromMap({
         'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      }),
+    );
+    final rawFileId =
+        response.data is Map ? (response.data as Map)['file_id'] : null;
+    final fileId = rawFileId is num
+        ? rawFileId.toInt()
+        : int.tryParse(rawFileId?.toString() ?? '');
+    if (fileId == null || fileId <= 0) {
+      throw StateError('服务器未返回有效图片 ID');
+    }
+    return fileId;
+  }
+
+  Future<int> _uploadLocalImage(String path, String fileName) async {
+    final response = await _dio.post(
+      '/upload',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(path, filename: fileName),
       }),
     );
     final rawFileId =

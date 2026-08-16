@@ -36,13 +36,42 @@ class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
-  testWidgets('empty composer disables send and text enables it',
+  testWidgets('empty composer keeps send visible and text enables it',
       (tester) async {
     final provider = MessageProvider(_chatDio());
     await _pumpChat(tester, provider);
 
-    expect(_sendButton(tester).onPressed, isNull);
-    expect(_sendButtonOpacity(tester).opacity, 0);
+    final disabledSendButton = _sendButton(tester);
+    final colors = Theme.of(
+      tester.element(find.byKey(const ValueKey('chat-send-button'))),
+    ).colorScheme;
+    expect(disabledSendButton.onPressed, isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('chat-send-button')),
+        matching: find.byIcon(Icons.send_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      disabledSendButton.style?.backgroundColor?.resolve(
+        {WidgetState.disabled},
+      ),
+      colors.onSurface.withValues(alpha: 0.12),
+    );
+    expect(
+      disabledSendButton.style?.foregroundColor?.resolve(
+        {WidgetState.disabled},
+      ),
+      colors.onSurface.withValues(alpha: 0.38),
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('chat-send-button')),
+        matching: find.byType(AnimatedOpacity),
+      ),
+      findsNothing,
+    );
 
     await tester.enterText(find.byType(TextField), 'hello');
     await tester.pump();
@@ -53,7 +82,42 @@ void main() {
       enabledSendButton.style?.backgroundColor?.resolve({}),
       const Color(0xFF6366F1),
     );
-    expect(_sendButtonOpacity(tester).opacity, 1);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('dark composer keeps the disabled send affordance visible',
+      (tester) async {
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(
+      tester,
+      provider,
+      theme: ThemeData(brightness: Brightness.dark, useMaterial3: true),
+    );
+
+    final disabledSendButton = _sendButton(tester);
+    final colors = Theme.of(
+      tester.element(find.byKey(const ValueKey('chat-send-button'))),
+    ).colorScheme;
+    expect(disabledSendButton.onPressed, isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('chat-send-button')),
+        matching: find.byIcon(Icons.send_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      disabledSendButton.style?.backgroundColor?.resolve(
+        {WidgetState.disabled},
+      ),
+      colors.onSurface.withValues(alpha: 0.12),
+    );
+    expect(
+      disabledSendButton.style?.foregroundColor?.resolve(
+        {WidgetState.disabled},
+      ),
+      colors.onSurface.withValues(alpha: 0.38),
+    );
     await _disposeChat(tester, provider);
   });
 
@@ -116,6 +180,53 @@ void main() {
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       0,
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('single input tap restores the keyboard after composer relayout',
+      (tester) async {
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(
+      tester,
+      provider,
+      theme: ThemeData(
+        platform: TargetPlatform.android,
+        useMaterial3: true,
+      ),
+    );
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    final editableState = tester.state<EditableTextState>(
+      find.descendant(of: input, matching: find.byType(EditableText)),
+    );
+    final clearedClientsBeforeTap = tester.testTextInput.log
+        .where((call) => call.method == 'TextInput.clearClient')
+        .length;
+    expect(focusNode.hasFocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+
+    await tester.tap(input);
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+    expect(
+      tester.state<EditableTextState>(
+        find.descendant(of: input, matching: find.byType(EditableText)),
+      ),
+      same(editableState),
+    );
+    expect(
+      tester.testTextInput.log
+          .where((call) => call.method == 'TextInput.clearClient')
+          .length,
+      clearedClientsBeforeTap,
+    );
+    expect(tester.testTextInput.isVisible, isTrue);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      300,
     );
     await _disposeChat(tester, provider);
   });
@@ -261,6 +372,13 @@ void main() {
     expect(provider.messages, hasLength(1));
     expect(find.text('首条私信已提交。等待对方回复后可继续发送。'), findsOneWidget);
     expect(_sendButton(tester).onPressed, isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('chat-send-button')),
+        matching: find.byIcon(Icons.send_rounded),
+      ),
+      findsOneWidget,
+    );
 
     failureGate.complete();
     await _pumpFrames(tester);
@@ -794,8 +912,9 @@ Dio _chatDio({
 
 Future<void> _pumpChat(
   WidgetTester tester,
-  MessageProvider provider,
-) async {
+  MessageProvider provider, {
+  ThemeData? theme,
+}) async {
   final currentUser = _user(8, '我');
   await tester.pumpWidget(
     MultiProvider(
@@ -807,6 +926,7 @@ Future<void> _pumpChat(
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: MaterialApp(
+        theme: theme,
         navigatorObservers: [appRouteObserver],
         home: ChatDetailScreen(
           conversationId: 42,
@@ -821,15 +941,6 @@ Future<void> _pumpChat(
 IconButton _sendButton(WidgetTester tester) {
   return tester.widget<IconButton>(
     find.byKey(const ValueKey('chat-send-button')),
-  );
-}
-
-AnimatedOpacity _sendButtonOpacity(WidgetTester tester) {
-  return tester.widget<AnimatedOpacity>(
-    find.ancestor(
-      of: find.byKey(const ValueKey('chat-send-button')),
-      matching: find.byType(AnimatedOpacity),
-    ),
   );
 }
 

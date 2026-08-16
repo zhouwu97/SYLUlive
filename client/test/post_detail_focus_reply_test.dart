@@ -9,7 +9,6 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-import 'package:shenliyuan/widgets/post_reply_composer.dart';
 
 class _AuthProvider extends ChangeNotifier implements AuthProvider {
   _AuthProvider({required this.client});
@@ -134,7 +133,7 @@ void main() {
     expect(field.focusNode?.hasFocus, isTrue, reason: '评论输入框应获得焦点');
   });
 
-  testWidgets('focusReplyComposer=false 时评论输入框不自动展开', (tester) async {
+  testWidgets('focusReplyComposer=false 时评论输入框显示但不自动聚焦', (tester) async {
     final initial = Post(
       id: 100,
       title: '测试帖子',
@@ -149,11 +148,10 @@ void main() {
     await tester.pumpWidget(_app(initial, focusReplyComposer: false));
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('post-reply-input')),
-      findsNothing,
-      reason: '默认进入详情不应自动展开输入框',
-    );
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    expect(input, findsOneWidget, reason: '评论输入框应始终显示');
+    final field = tester.widget<TextField>(input);
+    expect(field.focusNode?.hasFocus, isFalse, reason: '默认进入详情不应自动聚焦');
   });
 
   testWidgets('详情页点赞成功后与 Feed 信息流状态一致', (tester) async {
@@ -172,13 +170,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('12'), findsWidgets);
-    // 点击详情页点赞按钮（composer 收起态下方的点赞统计）。
-    await tester.tap(
-      find.descendant(
-        of: find.byType(PostReplyComposer),
-        matching: find.byIcon(Icons.thumb_up_outlined),
-      ),
-    );
+    // 底部评论栏不再重复展示统计，使用帖子内容区的点赞入口。
+    await tester.tap(find.byIcon(Icons.thumb_up_outlined).first);
     await tester.pumpAndSettle();
 
     expect(find.text('13'), findsWidgets);

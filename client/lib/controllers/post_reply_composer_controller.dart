@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/emoji_favorite_service.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -12,6 +13,7 @@ class PostReplyDraft {
     this.replyToName,
     this.sticker,
     this.favoriteImage,
+    this.localImage,
   });
 
   final String text;
@@ -21,9 +23,13 @@ class PostReplyDraft {
   final String? replyToName;
   final AppSticker? sticker;
   final EmojiFavoriteItem? favoriteImage;
+  final XFile? localImage;
 
   bool get isEmpty =>
-      text.trim().isEmpty && sticker == null && favoriteImage == null;
+      text.trim().isEmpty &&
+      sticker == null &&
+      favoriteImage == null &&
+      localImage == null;
 }
 
 /// 统一维护帖子评论输入区的编辑状态。
@@ -39,6 +45,7 @@ class PostReplyComposerController extends ChangeNotifier {
   String? _replyToName;
   AppSticker? _sticker;
   EmojiFavoriteItem? _favoriteImage;
+  XFile? _localImage;
 
   bool get isOpen => _isOpen;
   bool get showEmojiPanel => _showEmojiPanel;
@@ -48,6 +55,7 @@ class PostReplyComposerController extends ChangeNotifier {
   String? get replyToName => _replyToName;
   AppSticker? get sticker => _sticker;
   EmojiFavoriteItem? get favoriteImage => _favoriteImage;
+  XFile? get localImage => _localImage;
 
   PostReplyDraft get draft => PostReplyDraft(
         text: textController.text.trim(),
@@ -57,6 +65,7 @@ class PostReplyComposerController extends ChangeNotifier {
         replyToName: _replyToName,
         sticker: _sticker,
         favoriteImage: _favoriteImage,
+        localImage: _localImage,
       );
 
   void open() {
@@ -102,6 +111,7 @@ class PostReplyComposerController extends ChangeNotifier {
     _replyToName = null;
     _sticker = null;
     _favoriteImage = null;
+    _localImage = null;
     notifyListeners();
   }
 
@@ -113,6 +123,7 @@ class PostReplyComposerController extends ChangeNotifier {
       return;
     }
     focusNode.unfocus();
+    _isOpen = true;
     _showEmojiPanel = true;
     notifyListeners();
   }
@@ -126,6 +137,7 @@ class PostReplyComposerController extends ChangeNotifier {
   void selectSticker(AppSticker value) {
     _sticker = value;
     _favoriteImage = null;
+    _localImage = null;
     notifyListeners();
   }
 
@@ -139,12 +151,26 @@ class PostReplyComposerController extends ChangeNotifier {
     if (value.type != EmojiFavoriteType.image) return;
     _favoriteImage = value;
     _sticker = null;
+    _localImage = null;
     notifyListeners();
   }
 
   void removeFavoriteImage() {
     if (_favoriteImage == null) return;
     _favoriteImage = null;
+    notifyListeners();
+  }
+
+  void selectLocalImage(XFile value) {
+    _localImage = value;
+    _sticker = null;
+    _favoriteImage = null;
+    notifyListeners();
+  }
+
+  void removeLocalImage() {
+    if (_localImage == null) return;
+    _localImage = null;
     notifyListeners();
   }
 

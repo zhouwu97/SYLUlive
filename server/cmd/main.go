@@ -249,6 +249,8 @@ func main() {
 
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.UserEmojiAsset{},
+		&models.UserEmojiFavorite{},
 
 		&models.ExamPaper{},
 

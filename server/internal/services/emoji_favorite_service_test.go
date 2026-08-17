@@ -209,3 +209,21 @@ func TestEmojiFavoriteServiceDeleteKeepsSharedFile(t *testing.T) {
 		t.Fatalf("消息仍引用文件时不应清理文件: %v", err)
 	}
 }
+
+func TestEmojiFavoriteServicePutsNewestFavoriteFirst(t *testing.T) {
+	db := newEmojiFavoriteServiceTestDB(t)
+	service := NewEmojiFavoriteService(db)
+	if _, err := service.CreateBuiltin(context.Background(), 7, "sticker-old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateBuiltin(context.Background(), 7, "sticker-new"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := service.List(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].StickerID == nil || *items[0].StickerID != "sticker-new" {
+		t.Fatalf("最新收藏未排在首位: %+v", items)
+	}
+}

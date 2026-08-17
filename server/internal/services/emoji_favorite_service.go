@@ -103,7 +103,11 @@ func (s *EmojiFavoriteService) CreateBuiltin(ctx context.Context, userID uint, s
 		if count >= MaxEmojiFavoriteCount {
 			return ErrEmojiFavoriteLimit
 		}
-		favorite := models.UserEmojiFavorite{UserID: userID, Kind: models.EmojiFavoriteKindBuiltin, StickerID: &stickerID, SortOrder: count}
+		sortOrder, err := emojiNextSortOrder(tx, userID)
+		if err != nil {
+			return err
+		}
+		favorite := models.UserEmojiFavorite{UserID: userID, Kind: models.EmojiFavoriteKindBuiltin, StickerID: &stickerID, SortOrder: sortOrder}
 		if err := tx.Create(&favorite).Error; err != nil {
 			return err
 		}
@@ -173,6 +177,10 @@ func (s *EmojiFavoriteService) createCustom(ctx context.Context, userID, fileID 
 		if count >= MaxEmojiFavoriteCount {
 			return ErrEmojiFavoriteLimit
 		}
+		sortOrder, err := emojiNextSortOrder(tx, userID)
+		if err != nil {
+			return err
+		}
 		used, err := emojiQuotaUsed(tx, userID)
 		if err != nil {
 			return err
@@ -204,7 +212,7 @@ func (s *EmojiFavoriteService) createCustom(ctx context.Context, userID, fileID 
 			return err
 		}
 		assetID := asset.ID
-		favorite := models.UserEmojiFavorite{UserID: userID, Kind: models.EmojiFavoriteKindCustom, AssetID: &assetID, SortOrder: count}
+		favorite := models.UserEmojiFavorite{UserID: userID, Kind: models.EmojiFavoriteKindCustom, AssetID: &assetID, SortOrder: sortOrder}
 		if err := tx.Create(&favorite).Error; err != nil {
 			return err
 		}
@@ -391,6 +399,23 @@ func emojiFavoriteCount(tx *gorm.DB, userID uint) (int64, error) {
 	var count int64
 	err := tx.Model(&models.UserEmojiFavorite{}).Where("user_id = ?", userID).Count(&count).Error
 	return count, err
+}
+
+// emojiNextSortOrder 使用递减排序值，让最新收藏稳定出现在列表第一位。
+func emojiNextSortOrder(tx *gorm.DB, userID uint) (int64, error) {
+	var row struct {
+		Minimum *int64 `gorm:"column:minimum"`
+	}
+	if err := tx.Model(&models.UserEmojiFavorite{}).
+		Select("MIN(sort_order) AS minimum").
+		Where("user_id = ?", userID).
+		Scan(&row).Error; err != nil {
+		return 0, err
+	}
+	if row.Minimum == nil {
+		return 0, nil
+	}
+	return *row.Minimum - 1, nil
 }
 
 func emojiQuotaUsed(tx *gorm.DB, userID uint) (int64, error) {

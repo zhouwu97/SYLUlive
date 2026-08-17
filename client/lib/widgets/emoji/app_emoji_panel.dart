@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
+import '../../services/emoji_favorite_repository.dart';
 import '../../services/emoji_favorite_service.dart';
 import '../../theme/app_motion.dart';
 import 'emoji_catalog.dart';
@@ -18,6 +19,10 @@ class AppEmojiPanel extends StatefulWidget {
   final VoidCallback onBackspace;
   final ValueChanged<AppSticker>? onStickerSelected;
   final ValueChanged<EmojiFavoriteItem>? onFavoriteImageSelected;
+  final VoidCallback? onAddImage;
+  final ValueChanged<EmojiFavoriteItem>? onFavoriteRemoved;
+  final ValueChanged<EmojiFavoriteItem>? onFavoriteUndo;
+  final Map<String, String> favoriteImageHeaders;
   final bool enabled;
   final EmojiFavoriteService? favoriteService;
 
@@ -27,6 +32,10 @@ class AppEmojiPanel extends StatefulWidget {
     required this.onBackspace,
     this.onStickerSelected,
     this.onFavoriteImageSelected,
+    this.onAddImage,
+    this.onFavoriteRemoved,
+    this.onFavoriteUndo,
+    this.favoriteImageHeaders = const <String, String>{},
     this.enabled = true,
     this.favoriteService,
   });
@@ -53,7 +62,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   List<EmojiFavoriteItem> get _visibleFavorites => _favorites.where((item) {
         if (item.type == EmojiFavoriteType.image) {
-          return item.imageUrl?.isNotEmpty == true;
+          return item.imageUrl?.isNotEmpty == true || item.fileId != null;
         }
         return appStickerById(item.stickerId) != null;
       }).toList(growable: false);
@@ -126,8 +135,60 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   Future<void> _removeFavorite(EmojiFavoriteItem item) async {
     if (!widget.enabled) return;
-    await _favoriteService.remove(item);
-    if (mounted) _showFavoriteFeedback(false);
+    final index = _favorites.indexWhere((entry) => entry.key == item.key);
+    try {
+      await _favoriteService.remove(item);
+    } on EmojiFavoriteException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    }
+    widget.onFavoriteRemoved?.call(item);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('已从收藏移除'),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () {
+              unawaited(_undoFavorite(item, index));
+            },
+          ),
+        ),
+      );
+  }
+
+  Future<void> _undoFavorite(EmojiFavoriteItem item, int index) async {
+    try {
+      await _favoriteService.undo(item, index: index);
+    } on EmojiFavoriteException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('撤销收藏失败')),
+        );
+      }
+      debugPrint('撤销表情收藏失败: $error');
+      return;
+    }
+    widget.onFavoriteUndo?.call(item);
+    if (mounted) _showFavoriteFeedback(true);
   }
 
   void _showFavoriteFeedback(bool added) {
@@ -182,88 +243,170 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   Widget _buildFavoriteGrid(Color muted) {
     final favorites = _visibleFavorites;
-    if (favorites.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.favorite_border_rounded, size: 32, color: muted),
-            const SizedBox(height: 8),
-            Text(
-              '暂无收藏的表情',
-              style: TextStyle(color: muted, fontSize: 13),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '长按图片或表情即可添加',
-              style: TextStyle(
-                color: muted.withValues(alpha: 0.72),
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
-    return GridView.builder(
-      key: const ValueKey('emoji-favorite-grid'),
-      padding: const EdgeInsets.all(10),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-      ),
-      itemCount: favorites.length,
-      itemBuilder: (context, index) {
-        final item = favorites[index];
-        final sticker = item.type == EmojiFavoriteType.sticker
-            ? appStickerById(item.stickerId)
-            : null;
-        final label = sticker?.label ?? '收藏图片';
-        return Semantics(
-          button: true,
-          label: '发送$label',
-          child: InkWell(
-            key: ValueKey('favorite-${item.key}'),
-            onTap: widget.enabled
-                ? () {
-                    if (sticker != null) {
-                      widget.onStickerSelected?.call(sticker);
-                    } else {
-                      widget.onFavoriteImageSelected?.call(item);
-                    }
-                  }
-                : null,
-            onLongPress: widget.enabled ? () => _removeFavorite(item) : null,
-            borderRadius: BorderRadius.circular(12),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: ColoredBox(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.35),
-                child: sticker != null
-                    ? Padding(
-                        padding: const EdgeInsets.all(5),
-                        child: Image.asset(
-                          sticker.thumbnailAsset,
-                          fit: BoxFit.contain,
-                        ),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: ApiConstants.fullUrl(item.imageUrl!),
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            Icon(Icons.broken_image_outlined, color: muted),
-                      ),
+    if (favorites.isEmpty) {
+      return Stack(
+        children: [
+          GridView.builder(
+            key: const ValueKey('emoji-favorite-grid'),
+            padding: const EdgeInsets.all(10),
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisExtent: 72,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: 1,
+            itemBuilder: (context, index) => _buildAddImageCell(muted),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Padding(
+                // 上下对称留白，让空态以整个内容区为基准居中。
+                padding: const EdgeInsets.all(10),
+                child: Center(
+                  child: _buildFavoriteEmptyState(muted),
+                ),
               ),
             ),
           ),
-        );
-      },
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            key: const ValueKey('emoji-favorite-grid'),
+            padding: const EdgeInsets.all(10),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisExtent: 72,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: favorites.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) return _buildAddImageCell(muted);
+              final item = favorites[index - 1];
+              return _buildFavoriteCell(item, muted);
+            },
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildFavoriteEmptyState(Color muted) {
+    return Semantics(
+      liveRegion: true,
+      label: '暂无收藏的表情，长按图片或表情即可添加',
+      child: Column(
+        key: const ValueKey('emoji-favorite-empty-state'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.favorite_border_rounded, size: 28, color: muted),
+          const SizedBox(height: 4),
+          Text('暂无收藏的表情', style: TextStyle(color: muted, fontSize: 13)),
+          const SizedBox(height: 2),
+          Text(
+            '长按图片或表情即可添加',
+            style: TextStyle(
+              color: muted.withValues(alpha: 0.72),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddImageCell(Color muted) {
+    return Semantics(
+      button: true,
+      label: '添加图片到表情包',
+      child: Tooltip(
+        message: '添加图片',
+        child: InkWell(
+          key: const ValueKey('emoji-add-image'),
+          onTap: widget.enabled ? widget.onAddImage : null,
+          borderRadius: BorderRadius.circular(12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                Icons.add_rounded,
+                size: 36,
+                color: muted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFavoriteCell(EmojiFavoriteItem item, Color muted) {
+    final sticker = item.type == EmojiFavoriteType.sticker
+        ? appStickerById(item.stickerId)
+        : null;
+    final label = sticker?.label ?? (item.isAnimated ? '收藏图片（GIF 动图）' : '收藏图片');
+    return Semantics(
+      button: true,
+      label: '发送$label',
+      child: InkWell(
+        key: ValueKey('favorite-${item.key}'),
+        onTap: widget.enabled
+            ? () {
+                if (sticker != null) {
+                  widget.onStickerSelected?.call(sticker);
+                } else {
+                  widget.onFavoriteImageSelected?.call(item);
+                }
+              }
+            : null,
+        onLongPress: widget.enabled ? () => _removeFavorite(item) : null,
+        borderRadius: BorderRadius.circular(12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: ColoredBox(
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.35),
+            child: sticker != null
+                ? Padding(
+                    padding: const EdgeInsets.all(5),
+                    child: Image.asset(
+                      sticker.thumbnailAsset,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                : CachedNetworkImage(
+                    imageUrl: ApiConstants.fullUrl(_favoriteImagePath(item)),
+                    httpHeaders: widget.favoriteImageHeaders,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) =>
+                        Icon(Icons.broken_image_outlined, color: muted),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _favoriteImagePath(EmojiFavoriteItem item) {
+    final path = item.thumbnailUrl ?? item.imageUrl;
+    if (path?.isNotEmpty == true) return path!;
+    final id = item.serverId;
+    return id == null ? '' : '/emoji/favorites/$id/thumbnail';
   }
 
   Widget _buildEmojiGrid() {

@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
+import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
 
 /// 私信实时传输层状态。
@@ -565,6 +566,30 @@ class MessageProvider extends ChangeNotifier {
     }
     return null;
   }
+
+  /// 发送已上传并归属当前账号的收藏图片，不重新下载或上传资源。
+  Future<Message?> sendFavoriteImageMessage(
+    int targetUserId,
+    EmojiFavoriteItem favorite, {
+    String content = '',
+    int? senderId,
+  }) {
+    final fileId = favorite.fileId;
+    if (favorite.type != EmojiFavoriteType.image ||
+        fileId == null ||
+        fileId <= 0) {
+      return Future.value(null);
+    }
+    return sendMessage(
+      targetUserId,
+      content,
+      fileId: fileId,
+      senderId: senderId,
+    );
+  }
+
+  /// 上传图片并返回文件 ID，供收藏流程复用现有上传接口。
+  Future<int> uploadImage(XFile image) => _uploadImage(image);
 
   Future<Message?> sendStickerMessage(
     int targetUserId,

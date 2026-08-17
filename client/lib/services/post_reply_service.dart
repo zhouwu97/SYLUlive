@@ -46,6 +46,7 @@ class PostReplyService {
     }
     final file = await DefaultCacheManager().getSingleFile(
       ApiConstants.fullUrl(imageUrl),
+      headers: _authHeaders(),
     );
     final segments = Uri.tryParse(imageUrl)?.pathSegments ?? const [];
     final fileName = segments.isEmpty || segments.last.trim().isEmpty
@@ -84,5 +85,13 @@ class PostReplyService {
       throw StateError('服务器未返回有效图片 ID');
     }
     return fileId;
+  }
+
+  Map<String, String> _authHeaders() {
+    final authorization = _dio.options.headers['Authorization']?.toString();
+    if (authorization == null || authorization.trim().isEmpty) {
+      return const <String, String>{};
+    }
+    return <String, String>{'Authorization': authorization};
   }
 }

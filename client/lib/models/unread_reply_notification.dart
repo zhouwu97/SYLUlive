@@ -5,6 +5,7 @@ class UnreadReplyNotification {
   final int postId;
   final int relatedId;
   final String content;
+  final String postTitle;
   final DateTime createdAt;
   final User? fromUser;
 
@@ -13,19 +14,23 @@ class UnreadReplyNotification {
     required this.postId,
     required this.relatedId,
     required this.content,
+    this.postTitle = '',
     required this.createdAt,
     this.fromUser,
   });
 
   factory UnreadReplyNotification.fromJson(Map<String, dynamic> json) {
+    final rawFromUser = json['from_user'];
     return UnreadReplyNotification(
-      id: json['id'] as int,
-      postId: json['post_id'] as int,
-      relatedId: json['related_id'] as int,
-      content: json['content'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      fromUser: json['from_user'] != null
-          ? User.fromJson(json['from_user'] as Map<String, dynamic>)
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      postId: (json['post_id'] as num?)?.toInt() ?? 0,
+      relatedId: (json['related_id'] as num?)?.toInt() ?? 0,
+      content: json['content']?.toString() ?? '',
+      postTitle: json['post_title']?.toString() ?? '',
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      fromUser: rawFromUser is Map<String, dynamic>
+          ? User.fromJson(rawFromUser)
           : null,
     );
   }

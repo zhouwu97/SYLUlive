@@ -612,6 +612,9 @@ func main() {
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 
+	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
+	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
+
 	examPaperFiles, examPaperFileErr := services.NewExamPaperFileService(cfg.ExamPaperDir)
 	if examPaperFileErr != nil {
 		log.Fatal("初始化试卷私有文件目录失败:", examPaperFileErr)
@@ -1484,8 +1487,18 @@ func main() {
 
 		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
 
-		messages.GET("/unread_count", messageHandler.GetUnreadCount)
+	messages.GET("/unread_count", messageHandler.GetUnreadCount)
 
+	}
+
+	// 账号级自定义表情收藏路由。
+	emojiFavorites := r.Group("/api/emoji/favorites")
+	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		emojiFavorites.GET("", emojiFavoriteHandler.List)
+		emojiFavorites.POST("", emojiFavoriteHandler.Create)
+		emojiFavorites.POST("/from-message", emojiFavoriteHandler.CreateFromMessage)
+		emojiFavorites.DELETE("/:id", emojiFavoriteHandler.Delete)
 	}
 
 	// 公告路由：/api/announcements 与 /api/notices 为同一资源别名，

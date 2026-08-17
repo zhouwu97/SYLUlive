@@ -57,6 +57,8 @@ import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
+import 'services/emoji_favorite_repository.dart';
+import 'services/emoji_favorite_service.dart';
 import 'features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'features/ai_device_bridge/device_tool_worker.dart';
 import 'platform/platform_bootstrap.dart';
@@ -1246,6 +1248,24 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
+          create: (_) {
+            final service = EmojiFavoriteService(
+              repository: EmojiFavoriteRepository(dio),
+            );
+            EmojiFavoriteService.configureSharedInstance(service);
+            return service;
+          },
+          update: (_, auth, service) {
+            final nextUserId = auth.user?.id.toString();
+            if (service!.userId != nextUserId) {
+              service.switchUser(nextUserId);
+              unawaited(service.syncFromServer());
+            }
+            EmojiFavoriteService.configureSharedInstance(service);
+            return service;
+          },
+        ),
         ChangeNotifierProvider(create: (_) {
           final postProvider = PostProvider(dio);
           // H1.5：登录/退出/切换账号时清除首页 Feed 缓存与状态，

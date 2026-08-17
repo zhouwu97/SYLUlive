@@ -325,7 +325,7 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('chat-input')), '第一条');
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('chat-send-button')));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(
       tester
           .widget<TextField>(find.byKey(const ValueKey('chat-input')))
@@ -671,6 +671,62 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
+  testWidgets(
+      'selecting a GIF favorite previews it and sends its existing file id',
+      (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    EmojiFavoriteService.resetSharedInstanceForTesting();
+    addTearDown(EmojiFavoriteService.resetSharedInstanceForTesting);
+    final favoriteService = EmojiFavoriteService(
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+    await favoriteService.add(
+      const EmojiFavoriteItem.custom(
+        serverId: 11,
+        fileId: 77,
+        imageUrl: '/api/emoji/favorites/11/file',
+        thumbnailUrl: '/api/emoji/favorites/11/thumbnail',
+        mimeType: 'image/gif',
+        isAnimated: true,
+      ),
+    );
+    EmojiFavoriteService.configureSharedInstance(favoriteService);
+
+    var uploadRequests = 0;
+    Map<String, dynamic>? sentData;
+    final provider = MessageProvider(
+      _chatDio(
+        onUpload: () => uploadRequests++,
+        onSend: (data) => sentData = data,
+      ),
+    );
+    await _pumpChat(tester, provider);
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey(
+          'favorite-image:/api/emoji/favorites/11/file',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('favorite-image-composer-preview')),
+        findsOneWidget);
+    expect(provider.messages, isEmpty);
+
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sentData?['file_id'], 77);
+    expect(uploadRequests, 0);
+    expect(find.byKey(const ValueKey('favorite-image-composer-preview')),
+        findsNothing);
+
+    await _disposeChat(tester, provider);
+  });
+
   testWidgets('private message image sends the bearer token', (tester) async {
     final provider = MessageProvider(
       _chatDio(messages: [
@@ -839,6 +895,8 @@ Dio _chatDio({
   List<Map<String, dynamic>> otherMessages = const [],
   Completer<void>? failureGate,
   VoidCallback? onRead,
+  VoidCallback? onUpload,
+  ValueChanged<Map<String, dynamic>>? onSend,
   Map<String, dynamic> sendState = const {'can_send': true},
 }) {
   final dio = Dio();
@@ -885,6 +943,8 @@ Dio _chatDio({
           return;
         }
         if (options.method == 'POST' && options.path == '/messages/3') {
+          final data = Map<String, dynamic>.from(options.data as Map);
+          onSend?.call(data);
           if (failureGate != null) {
             failureGate.future.then((_) {
               handler.reject(
@@ -897,6 +957,23 @@ Dio _chatDio({
             });
             return;
           }
+          if (onSend != null) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: _messageJson(
+                  id: 900,
+                  clientMessageId: data['client_message_id'] as String,
+                  content: data['content'] as String? ?? '',
+                ),
+              ),
+            );
+            return;
+          }
+        }
+        if (options.method == 'POST' && options.path == '/upload') {
+          onUpload?.call();
         }
         handler.reject(
           DioException(
@@ -966,4 +1043,19 @@ User _user(int id, String nickname) {
     nickname: nickname,
     createdAt: DateTime.utc(2026, 1, 1),
   );
+}
+
+Map<String, dynamic> _messageJson({
+  required int id,
+  required String clientMessageId,
+  String content = '',
+}) {
+  return {
+    'id': id,
+    'conversation_id': 42,
+    'sender_id': 8,
+    'client_message_id': clientMessageId,
+    'content': content,
+    'created_at': '2026-08-17T08:14:00Z',
+  };
 }

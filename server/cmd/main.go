@@ -1498,6 +1498,8 @@ func main() {
 		emojiFavorites.GET("", emojiFavoriteHandler.List)
 		emojiFavorites.POST("", emojiFavoriteHandler.Create)
 		emojiFavorites.POST("/from-message", emojiFavoriteHandler.CreateFromMessage)
+		emojiFavorites.GET("/:id/file", emojiFavoriteHandler.ServeFile)
+		emojiFavorites.GET("/:id/thumbnail", emojiFavoriteHandler.ServeThumbnail)
 		emojiFavorites.DELETE("/:id", emojiFavoriteHandler.Delete)
 	}
 

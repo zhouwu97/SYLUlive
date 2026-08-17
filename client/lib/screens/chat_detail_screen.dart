@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +16,7 @@ import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/diagnostic_log_service.dart';
+import '../services/emoji_favorite_repository.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
@@ -70,7 +70,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int _positionRequestVersion = 0;
   int? _syncedPlatformConversationId;
   double _lastKeyboardInset = 0;
-  double _lastKeyboardHeight = _fallbackKeyboardHeight;
   double _stableKeyboardHeight = _fallbackKeyboardHeight;
   Timer? _keyboardMetricsTimer;
   Timer? _messageFocusHighlightTimer;
@@ -78,6 +77,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   bool _keyboardRequestPending = false;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
   AppSticker? _selectedSticker;
+  EmojiFavoriteItem? _selectedFavoriteImage;
   bool _isPickingImage = false;
   bool _isSendingMedia = false;
   bool _firstContactSendPending = false;
@@ -313,7 +313,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _keyboardMetricsTimer?.cancel();
       setState(() {
         _stableKeyboardHeight = keyboardInset;
-        _lastKeyboardHeight = keyboardInset;
         _hasObservedKeyboardHeight = true;
         if (_bottomPanel != ChatBottomPanel.emoji) {
           _bottomPanel = ChatBottomPanel.keyboard;
@@ -329,7 +328,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       if (settledInset > 0) {
         setState(() {
           _stableKeyboardHeight = settledInset;
-          _lastKeyboardHeight = settledInset;
           _hasObservedKeyboardHeight = true;
           _keyboardRequestPending = false;
           if (_bottomPanel != ChatBottomPanel.emoji) {
@@ -470,7 +468,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _sendMessage() {
     final content = _textController.text.trim();
     if (!_canStartOutgoingMessage) return;
-    if (content.isEmpty && _selectedSticker == null) return;
+    if (content.isEmpty &&
+        _selectedSticker == null &&
+        _selectedFavoriteImage == null) {
+      return;
+    }
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
@@ -482,17 +484,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
     final provider = context.read<MessageProvider>();
     final stickerIdToSend = _selectedSticker?.id;
+    final favoriteToSend = _selectedFavoriteImage;
     _reserveFirstContactAllowanceIfNeeded();
 
     _textController.clear();
     _removeSelectedSticker();
+    setState(() => _selectedFavoriteImage = null);
     provider.clearDraft(widget.targetUser.id);
-    final sendFuture = provider.sendMessage(
-      widget.targetUser.id,
-      content,
-      stickerId: stickerIdToSend,
-      senderId: context.read<AuthProvider>().user?.id,
-    );
+    final sendFuture = favoriteToSend != null
+        ? provider.sendFavoriteImageMessage(
+            widget.targetUser.id,
+            favoriteToSend,
+            content: content,
+            senderId: context.read<AuthProvider>().user?.id,
+          )
+        : provider.sendMessage(
+            widget.targetUser.id,
+            content,
+            stickerId: stickerIdToSend,
+            senderId: context.read<AuthProvider>().user?.id,
+          );
     _lastMessageActivity = DateTime.now();
     unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
     unawaited(_completeOutgoingSend(sendFuture));
@@ -532,6 +543,42 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     } finally {
       if (mounted && _isPickingImage) {
         setState(() => _isPickingImage = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndAddFavoriteImage() async {
+    if (!_canStartOutgoingMessage || _isPickingImage || _isSendingMedia) {
+      return;
+    }
+    setState(() => _isPickingImage = true);
+    try {
+      // 不在客户端指定 imageQuality，避免 ImagePicker 将 GIF 转成静态图；
+      // 服务端负责统一压缩尺寸、逐帧处理和配额校验。
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (image == null || !mounted) return;
+      final provider = context.read<MessageProvider>();
+      setState(() => _isSendingMedia = true);
+      final fileId = await provider.uploadImage(image);
+      await EmojiFavoriteService.instance.addCustomFromUpload(fileId);
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '已添加到表情包');
+      }
+    } on EmojiFavoriteException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, error.message, isError: true);
+      }
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '添加表情包失败', isError: true);
+      }
+      debugPrint('添加自定义表情失败: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+          _isSendingMedia = false;
+        });
       }
     }
   }
@@ -613,7 +660,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     setState(() {
       if (keyboardInset > 0) {
         _stableKeyboardHeight = keyboardInset;
-        _lastKeyboardHeight = keyboardInset;
         _hasObservedKeyboardHeight = true;
       }
       _bottomPanel = ChatBottomPanel.emoji;
@@ -654,6 +700,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (_isComposerBlocked) return;
     setState(() {
       _selectedSticker = sticker;
+      _selectedFavoriteImage = null;
     });
     context.read<MessageProvider>().updateDraftSticker(
           widget.targetUser.id,
@@ -671,42 +718,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         );
   }
 
-  Future<void> _sendFavoriteImage(EmojiFavoriteItem favorite) async {
-    final imageUrl = favorite.imageUrl?.trim();
-    if (imageUrl == null ||
-        imageUrl.isEmpty ||
-        !_canStartOutgoingMessage ||
-        _isSendingMedia) {
-      return;
-    }
+  void _selectFavoriteImage(EmojiFavoriteItem favorite) {
+    if (!_canStartOutgoingMessage || _isSendingMedia) return;
+    setState(() {
+      _selectedFavoriteImage = favorite;
+      _selectedSticker = null;
+    });
+  }
 
-    setState(() => _isSendingMedia = true);
-    try {
-      final file = await DefaultCacheManager().getSingleFile(
-        ApiConstants.fullUrl(imageUrl),
-      );
-      if (!mounted) return;
-      if (!_canStartOutgoingMessage) return;
-      final provider = context.read<MessageProvider>();
-      _reserveFirstContactAllowanceIfNeeded();
-      final sendFuture = provider.sendImageMessage(
-        widget.targetUser.id,
-        XFile(file.path),
-        senderId: context.read<AuthProvider>().user?.id,
-      );
-      _lastMessageActivity = DateTime.now();
-      unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
-      await _completeOutgoingSend(sendFuture, isMedia: true);
-    } catch (error) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '收藏图片发送失败', isError: true);
-      }
-      debugPrint('发送收藏图片失败: $error');
-    } finally {
-      if (mounted && _isSendingMedia) {
-        setState(() => _isSendingMedia = false);
-      }
-    }
+  void _removeSelectedFavoriteImage() {
+    if (!mounted) return;
+    setState(() => _selectedFavoriteImage = null);
   }
 
   double get _emojiPanelHeight {
@@ -749,10 +771,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       key: const ValueKey('chat-emoji-panel'),
       onEmojiSelected: _insertEmoji,
       onStickerSelected: _selectSticker,
-      onFavoriteImageSelected: _sendFavoriteImage,
+      onFavoriteImageSelected: _selectFavoriteImage,
+      onAddImage: _pickAndAddFavoriteImage,
+      favoriteImageHeaders: _privateMediaHeaders(),
       onBackspace: () => deletePreviousCharacter(_textController),
       // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
-      enabled: !_isComposerBlocked,
+      enabled: !_isComposerBlocked && !_isPickingImage && !_isSendingMedia,
     );
     return SizedBox(
       key: const ValueKey('chat-bottom-viewport'),
@@ -1919,14 +1943,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final sticker = appStickerById(message.stickerId);
     final favoriteImageUrl =
         message.imageUrl.isEmpty ? null : message.imageUrl.trim();
-    final canFavorite = sticker != null || favoriteImageUrl != null;
+    final canFavorite =
+        sticker != null || (favoriteImageUrl != null && message.fileId != null);
     if (!canCopy && !canDelete && !canFavorite) return;
 
     final favoriteService = EmojiFavoriteService.instance;
     final isFavorite = sticker != null
         ? await favoriteService.containsSticker(sticker.id)
-        : favoriteImageUrl != null
-            ? await favoriteService.containsImage(favoriteImageUrl)
+        : message.fileId != null
+            ? await favoriteService.containsFile(message.fileId!)
             : false;
     if (!mounted) return;
 
@@ -1976,7 +2001,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     } else if (action == 'favorite') {
       final added = sticker != null
           ? await favoriteService.toggleSticker(sticker.id)
-          : await favoriteService.toggleImage(favoriteImageUrl!);
+          : await _toggleMessageFavorite(
+              favoriteService,
+              message,
+              favoriteImageUrl,
+              isFavorite,
+            );
       if (mounted) {
         AppFeedback.showSnackBar(
           context,
@@ -1997,7 +2027,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (composing.isValid && !composing.isCollapsed) {
       return KeyEventResult.ignored;
     }
-    if (_canStartOutgoingMessage && _textController.text.trim().isNotEmpty) {
+    if (_canStartOutgoingMessage &&
+        (_textController.text.trim().isNotEmpty ||
+            _selectedSticker != null ||
+            _selectedFavoriteImage != null)) {
       _sendMessage();
     }
     return KeyEventResult.handled;
@@ -2023,9 +2056,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
           leadingTooltip: _selectedSticker != null
               ? '已选择表情'
-              : _isSendingMedia
-                  ? '图片发送中'
-                  : '添加图片',
+              : _selectedFavoriteImage != null
+                  ? '已选择收藏图片'
+                  : _isSendingMedia
+                      ? '图片发送中'
+                      : '添加图片',
           onLeadingPressed: blocked ||
                   _selectedSticker != null ||
                   _isPickingImage ||
@@ -2037,7 +2072,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           onEmojiPressed: blocked ? null : _toggleEmojiPanel,
           canSend: (value) =>
               !blocked &&
-              (value.text.trim().isNotEmpty || _selectedSticker != null),
+              (value.text.trim().isNotEmpty ||
+                  _selectedSticker != null ||
+                  _selectedFavoriteImage != null),
           onSend: _sendMessage,
           onInputTap: _showKeyboard,
           onKeyEvent: _handleComposerKeyEvent,
@@ -2055,6 +2092,80 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
   }
 
+  Future<bool> _toggleMessageFavorite(
+    EmojiFavoriteService service,
+    Message message,
+    String? imageUrl,
+    bool isFavorite,
+  ) async {
+    if (isFavorite) {
+      final items = await service.load();
+      final existing = items.where((item) {
+        if (item.type != EmojiFavoriteType.image) return false;
+        return message.fileId != null
+            ? item.fileId == message.fileId
+            : item.imageUrl == imageUrl;
+      });
+      if (existing.isNotEmpty) await service.remove(existing.first);
+      return false;
+    }
+    if (message.id > 0 && service.repository != null) {
+      await service.addFromMessage(message.id);
+      return true;
+    }
+    if (imageUrl == null || imageUrl.isEmpty) return false;
+    return service.toggleImage(imageUrl);
+  }
+
+  Widget _buildFavoriteImagePreview(EmojiFavoriteItem favorite) {
+    final colors = Theme.of(context).colorScheme;
+    final path = favorite.thumbnailUrl?.trim().isNotEmpty == true
+        ? favorite.thumbnailUrl!
+        : favorite.imageUrl?.trim().isNotEmpty == true
+            ? favorite.imageUrl!
+            : '/emoji/favorites/${favorite.serverId ?? 0}/thumbnail';
+    return Container(
+      key: const ValueKey('favorite-image-composer-preview'),
+      height: 58,
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: ApiConstants.fullUrl(path),
+              httpHeaders: _privateMediaHeaders(),
+              width: 46,
+              height: 46,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => const SizedBox(
+                width: 46,
+                height: 46,
+                child: Icon(Icons.broken_image_outlined, size: 20),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              favorite.isAnimated ? 'GIF 收藏图片' : '收藏图片',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('remove-selected-favorite-image'),
+            tooltip: '移除收藏图片',
+            onPressed: _isComposerBlocked ? null : _removeSelectedFavoriteImage,
+            icon: const Icon(Icons.close_rounded, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildComposerArea() {
     final inputBar = _buildInputBar();
     final composerContent = Column(
@@ -2066,6 +2177,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             onRemove: _removeSelectedSticker,
             enabled: !_isComposerBlocked,
           ),
+        if (_selectedFavoriteImage != null)
+          _buildFavoriteImagePreview(_selectedFavoriteImage!),
         inputBar,
       ],
     );

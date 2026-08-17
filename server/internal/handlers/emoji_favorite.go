@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -118,6 +120,40 @@ func (h *EmojiFavoriteHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *EmojiFavoriteHandler) ServeFile(c *gin.Context) {
+	h.serveAsset(c, false)
+}
+
+func (h *EmojiFavoriteHandler) ServeThumbnail(c *gin.Context) {
+	h.serveAsset(c, true)
+}
+
+func (h *EmojiFavoriteHandler) serveAsset(c *gin.Context, thumbnail bool) {
+	favoriteID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || favoriteID == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	path, mimeType, err := h.service.ResolveFavoriteAsset(
+		c.Request.Context(),
+		c.GetUint("user_id"),
+		uint(favoriteID),
+		thumbnail,
+	)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Content-Type", mimeType)
+	c.Header("Cache-Control", "private, max-age=31536000")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.File(path)
+}
+
 func emojiFavoriteJSON(item services.EmojiFavoriteView) gin.H {
 	result := gin.H{
 		"id":              item.ID,
@@ -138,11 +174,11 @@ func emojiFavoriteJSON(item services.EmojiFavoriteView) gin.H {
 	if item.Asset != nil {
 		result["mime_type"] = item.Asset.MimeType
 		result["is_animated"] = item.Asset.IsAnimated
-		result["thumbnail_url"] = item.Asset.ThumbnailPath
+		result["thumbnail_url"] = fmt.Sprintf("/api/emoji/favorites/%d/thumbnail", item.ID)
 	}
 	if item.File != nil {
 		result["file_id"] = item.File.ID
-		result["url"] = item.File.Path
+		result["url"] = fmt.Sprintf("/api/emoji/favorites/%d/file", item.ID)
 		result["compressed_size"] = item.File.Size
 		if _, ok := result["mime_type"]; !ok {
 			result["mime_type"] = item.File.MimeType
@@ -169,5 +205,13 @@ func (h *EmojiFavoriteHandler) writeError(c *gin.Context, err error) {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		status, code, message = http.StatusNotFound, "emoji_favorite_not_found", "收藏不存在"
 	}
-	c.JSON(status, gin.H{"code": code, "error": message, "message": message})
+	payload := gin.H{"code": code, "error": message, "message": message}
+	if errors.Is(err, services.ErrEmojiQuotaExceeded) {
+		used, limit, quotaErr := h.service.Quota(c.Request.Context(), c.GetUint("user_id"))
+		if quotaErr == nil {
+			payload["quota_used"] = used
+			payload["quota_limit"] = limit
+		}
+	}
+	c.JSON(status, payload)
 }

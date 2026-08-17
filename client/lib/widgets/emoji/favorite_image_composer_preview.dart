@@ -9,11 +9,13 @@ class FavoriteImageComposerPreview extends StatelessWidget {
     super.key,
     required this.favorite,
     required this.onRemove,
+    this.httpHeaders = const <String, String>{},
     this.enabled = true,
   });
 
   final EmojiFavoriteItem favorite;
   final VoidCallback onRemove;
+  final Map<String, String> httpHeaders;
   final bool enabled;
 
   @override
@@ -33,6 +35,7 @@ class FavoriteImageComposerPreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             child: CachedNetworkImage(
               imageUrl: ApiConstants.fullUrl(favorite.imageUrl ?? ''),
+              httpHeaders: httpHeaders,
               width: 60,
               height: 60,
               fit: BoxFit.cover,

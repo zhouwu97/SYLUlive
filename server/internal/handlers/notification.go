@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"shenliyuan/internal/models"
 	textutils "shenliyuan/internal/utils"
@@ -199,6 +200,109 @@ func (h *NotificationHandler) GetPostUnreadReplyNotifications(c *gin.Context) {
 		"count": len(items),
 		"items": items,
 	})
+}
+
+// GetUnreadReplyNotifications 获取当前用户首页展示的未读回复通知。
+// 帖子标题和回复者信息分别批量查询，避免按通知逐条查询产生 N+1。
+func (h *NotificationHandler) GetUnreadReplyNotifications(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+
+	limit := 20
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil && parsed > 0 {
+			if parsed < limit {
+				limit = parsed
+			}
+		}
+	}
+
+	query := h.db.Model(&models.Notification{}).
+		Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false)
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读回复失败"})
+		return
+	}
+
+	var notifications []models.Notification
+	if err := query.Order("created_at desc").Limit(limit).Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读回复失败"})
+		return
+	}
+
+	type userInfo struct {
+		ID       uint   `json:"id"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	}
+	type unreadReplyItem struct {
+		ID        uint      `json:"id"`
+		PostID    uint      `json:"post_id"`
+		RelatedID uint      `json:"related_id"`
+		Content   string    `json:"content"`
+		PostTitle string    `json:"post_title"`
+		CreatedAt string    `json:"created_at"`
+		FromUser  *userInfo `json:"from_user"`
+	}
+
+	postIDs := make([]uint, 0, len(notifications))
+	fromUserIDs := make([]uint, 0, len(notifications))
+	for _, notification := range notifications {
+		if notification.PostID > 0 {
+			postIDs = append(postIDs, notification.PostID)
+		}
+		if notification.FromUID > 0 {
+			fromUserIDs = append(fromUserIDs, notification.FromUID)
+		}
+	}
+
+	type postTitle struct {
+		ID    uint
+		Title string
+	}
+	posts := make(map[uint]string, len(postIDs))
+	if len(postIDs) > 0 {
+		var records []postTitle
+		if err := h.db.Model(&models.Post{}).Select("id, title").Where("id IN ?", postIDs).Find(&records).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子信息失败"})
+			return
+		}
+		for _, post := range records {
+			posts[post.ID] = post.Title
+		}
+	}
+
+	users := make(map[uint]userInfo, len(fromUserIDs))
+	if len(fromUserIDs) > 0 {
+		var records []models.User
+		if err := h.db.Select("id, nickname, avatar").Where("id IN ?", fromUserIDs).Find(&records).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复者信息失败"})
+			return
+		}
+		for _, user := range records {
+			users[user.ID] = userInfo{ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar}
+		}
+	}
+
+	items := make([]unreadReplyItem, 0, len(notifications))
+	for _, notification := range notifications {
+		item := unreadReplyItem{
+			ID:        notification.ID,
+			PostID:    notification.PostID,
+			RelatedID: notification.RelatedID,
+			Content:   notification.Content,
+			PostTitle: posts[notification.PostID],
+			CreatedAt: notification.CreatedAt.Format(time.RFC3339),
+		}
+		if user, ok := users[notification.FromUID]; ok {
+			item.FromUser = &user
+		}
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"count": count, "items": items})
 }
 
 // CreateReplyNotification 创建回复通知（被 reply handler 调用）

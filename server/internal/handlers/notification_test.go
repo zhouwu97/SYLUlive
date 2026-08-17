@@ -147,3 +147,64 @@ func TestGetUnreadReplyNotifications(t *testing.T) {
 		t.Fatalf("返回条目不符合预期: %+v", item)
 	}
 }
+
+func TestGetUnreadReplyNotificationsLimitBounds(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Notification{}); err != nil {
+		t.Fatalf("迁移测试表失败: %v", err)
+	}
+	if err := db.Create(&models.User{ID: 1, Nickname: "当前用户"}).Error; err != nil {
+		t.Fatalf("写入用户失败: %v", err)
+	}
+	createdAt := time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC)
+	items := make([]models.Notification, 0, 25)
+	for index := 0; index < 25; index++ {
+		items = append(items, models.Notification{
+			ID: uint(index + 1), UserID: 1, Type: "reply", PostID: 0,
+			RelatedID: uint(index + 500), Content: "回复", CreatedAt: createdAt.Add(time.Duration(index) * time.Minute),
+		})
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("写入通知失败: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name  string
+		limit string
+		want  int
+	}{
+		{name: "缺省", want: 20},
+		{name: "非法", limit: "abc", want: 20},
+		{name: "负数", limit: "-1", want: 20},
+		{name: "零", limit: "0", want: 20},
+		{name: "超过上限", limit: "21", want: 20},
+		{name: "有效小值", limit: "3", want: 3},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			path := "/notifications/replies/unread"
+			if testCase.limit != "" {
+				path += "?limit=" + testCase.limit
+			}
+			ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+			ctx.Set("user_id", uint(1))
+			NewNotificationHandler(db).GetUnreadReplyNotifications(ctx)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("状态码=%d，响应=%s", recorder.Code, recorder.Body.String())
+			}
+			var response struct {
+				Items []json.RawMessage `json:"items"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatalf("解析响应失败: %v", err)
+			}
+			if len(response.Items) != testCase.want {
+				t.Fatalf("items=%d，期望=%d", len(response.Items), testCase.want)
+			}
+		})
+	}
+}

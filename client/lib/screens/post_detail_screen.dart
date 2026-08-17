@@ -331,8 +331,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _loadFeaturedApplicationStatus() async {
     try {
-      final statusResponse = await _dio
-          .get('/posts/${widget.postId}/featured-application-status');
+      final statusResponse =
+          await _dio.get('/posts/${widget.postId}/featured-application-status');
       if (mounted) {
         setState(() {
           _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
@@ -348,8 +348,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (targetId == null) return;
 
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
-    final loadedTarget =
-        _replies.where((r) => r.id == targetId).firstOrNull;
+    final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
     if (loadedTarget != null) {
       setState(() {}); // 触发重新渲染，确保子组件挂载
       _scheduleScrollToTarget(targetId, 3);
@@ -519,6 +518,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final file = await DefaultCacheManager().getSingleFile(
       ApiConstants.fullUrl(imageUrl),
+      headers: _favoriteImageHeaders(),
     );
     final pathSegments = Uri.tryParse(imageUrl)?.pathSegments ?? const [];
     final originalName = pathSegments.isEmpty ? '' : pathSegments.last.trim();
@@ -538,6 +538,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       throw StateError('服务器未返回有效图片 ID');
     }
     return fileId;
+  }
+
+  Map<String, String> _favoriteImageHeaders() {
+    final token = context.read<AuthProvider>().token?.trim();
+    if (token == null || token.isEmpty) return const <String, String>{};
+    return <String, String>{'Authorization': 'Bearer $token'};
   }
 
   Future<int> _uploadLocalImage(String path, String fileName) async {
@@ -2079,71 +2085,73 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
                       child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (p.title.isNotEmpty) ...[
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (p.title.isNotEmpty) ...[
+                            Text(
+                              p.title,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (p.price > 0) ...[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  '¥ ',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFFF6B6B),
+                                  ),
+                                ),
+                                Text(
+                                  p.price.toStringAsFixed(
+                                    p.price.truncateToDouble() == p.price
+                                        ? 0
+                                        : 2,
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFFF6B6B),
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (p.marketTags.isNotEmpty) ...[
+                            _buildMarketTagWrap(p.marketTags, isDark),
+                            const SizedBox(height: 16),
+                          ],
                           Text(
-                            p.title,
+                            p.content,
                             style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                              height: 1.6,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                        ],
-                        if (p.price > 0) ...[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text(
-                                '¥ ',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFFF6B6B),
-                                ),
-                              ),
-                              Text(
-                                p.price.toStringAsFixed(
-                                  p.price.truncateToDouble() == p.price ? 0 : 2,
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFFFF6B6B),
-                                  height: 1.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        if (p.marketTags.isNotEmpty) ...[
-                          _buildMarketTagWrap(p.marketTags, isDark),
-                          const SizedBox(height: 16),
-                        ],
-                        Text(
-                          p.content,
-                          style: TextStyle(
-                            fontSize: 16,
-                            height: 1.6,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildMarketSellerRow(p, isDark),
-                        if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
-                          _buildOwnerMarketActions(isDark),
+                          _buildMarketSellerRow(p, isDark),
+                          if (_canUseOwnerMarketActions()) ...[
+                            const SizedBox(height: 24),
+                            _buildOwnerMarketActions(isDark),
+                          ],
+                          const SizedBox(height: 32),
+                          _buildActionBar(isDark),
+                          const SizedBox(height: 24),
+                          _buildCommentsHeader(isDark),
+                          const SizedBox(height: 10),
+                          _buildCompactReplies(isDark),
                         ],
-                        const SizedBox(height: 32),
-                        _buildActionBar(isDark),
-                        const SizedBox(height: 24),
-                        _buildCommentsHeader(isDark),
-                        const SizedBox(height: 10),
-                        _buildCompactReplies(isDark),
-                      ],
                       ),
                     ),
                   ),
@@ -2174,8 +2182,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Icon(
                               Icons.image_not_supported_outlined,
                               size: 64,
-                              color:
-                                  isDark ? Colors.white24 : Colors.grey[300],
+                              color: isDark ? Colors.white24 : Colors.grey[300],
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -2203,97 +2210,100 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(bottom: 80),
               child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (p.images.isNotEmpty)
-                  _buildMarketHeroImage(p, isDark)
-                else
-                  SizedBox(
-                    height: MediaQuery.of(context).padding.top + kToolbarHeight,
-                  ),
-                Transform.translate(
-                  offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF131720) : Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(p.images.isNotEmpty ? 24 : 0),
-                      ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (p.images.isNotEmpty)
+                    _buildMarketHeroImage(p, isDark)
+                  else
+                    SizedBox(
+                      height:
+                          MediaQuery.of(context).padding.top + kToolbarHeight,
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (p.title.isNotEmpty) ...[
+                  Transform.translate(
+                    offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF131720) : Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(p.images.isNotEmpty ? 24 : 0),
+                        ),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (p.title.isNotEmpty) ...[
+                            Text(
+                              p.title,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (p.price > 0) ...[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  '¥ ',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFFF6B6B),
+                                  ),
+                                ),
+                                Text(
+                                  p.price.toStringAsFixed(
+                                    p.price.truncateToDouble() == p.price
+                                        ? 0
+                                        : 2,
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFFF6B6B),
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (p.marketTags.isNotEmpty) ...[
+                            _buildMarketTagWrap(p.marketTags, isDark),
+                            const SizedBox(height: 16),
+                          ],
                           Text(
-                            p.title,
+                            p.content,
                             style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                              height: 1.6,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                        ],
-                        if (p.price > 0) ...[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text(
-                                '¥ ',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFFF6B6B),
-                                ),
-                              ),
-                              Text(
-                                p.price.toStringAsFixed(
-                                  p.price.truncateToDouble() == p.price ? 0 : 2,
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFFFF6B6B),
-                                  height: 1.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        if (p.marketTags.isNotEmpty) ...[
-                          _buildMarketTagWrap(p.marketTags, isDark),
-                          const SizedBox(height: 16),
-                        ],
-                        Text(
-                          p.content,
-                          style: TextStyle(
-                            fontSize: 16,
-                            height: 1.6,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildMarketSellerRow(p, isDark),
-                        if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
-                          _buildOwnerMarketActions(isDark),
+                          _buildMarketSellerRow(p, isDark),
+                          if (_canUseOwnerMarketActions()) ...[
+                            const SizedBox(height: 24),
+                            _buildOwnerMarketActions(isDark),
+                          ],
+                          const SizedBox(height: 32),
+                          _buildActionBar(isDark),
+                          const SizedBox(height: 24),
+                          if (_unreadReplyNotifications.isNotEmpty)
+                            _buildUnreadReplyBanner(isDark),
+                          _buildCommentsHeader(isDark),
+                          const SizedBox(height: 10),
+                          _buildCompactReplies(isDark),
                         ],
-                        const SizedBox(height: 32),
-                        _buildActionBar(isDark),
-                        const SizedBox(height: 24),
-                        if (_unreadReplyNotifications.isNotEmpty)
-                          _buildUnreadReplyBanner(isDark),
-                        _buildCommentsHeader(isDark),
-                        const SizedBox(height: 10),
-                        _buildCompactReplies(isDark),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
               ),
             ),
           ),
@@ -3622,9 +3632,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   color: _replySort == 'hot'
                       ? Theme.of(ctx).primaryColor
                       : (isDark ? Colors.white70 : Colors.black87),
-                  fontWeight: _replySort == 'hot'
-                      ? FontWeight.w600
-                      : FontWeight.w400,
+                  fontWeight:
+                      _replySort == 'hot' ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
               trailing: _replySort == 'hot'
@@ -4137,8 +4146,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           final known = sheetChildren.map((r) => r.id).toSet();
           sheetChildren.addAll(fetched.where((r) => !known.contains(r.id)));
           final next = data['next_cursor'] as String?;
-          sheetChildrenCursor =
-              (next != null && next.isNotEmpty) ? next : null;
+          sheetChildrenCursor = (next != null && next.isNotEmpty) ? next : null;
           if (sheetChildren.length >= childrenTotal) {
             sheetChildrenCursor = null;
           }
@@ -4671,103 +4679,104 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(sheetContext);
-                if (child.author != null) {
-                  _openAuthorHome(child.author!.id);
-                }
-              },
-              child: CachedAvatar(
-                radius: 14,
-                imageUrl: child.author?.avatar.isNotEmpty == true
-                    ? ApiConstants.fullUrl(child.author!.avatar)
-                    : null,
-                fallbackText: child.author?.nickname,
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (child.author != null) {
+                    _openAuthorHome(child.author!.id);
+                  }
+                },
+                child: CachedAvatar(
+                  radius: 14,
+                  imageUrl: child.author?.avatar.isNotEmpty == true
+                      ? ApiConstants.fullUrl(child.author!.avatar)
+                      : null,
+                  fallbackText: child.author?.nickname,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        child.author?.nickname ?? '匿名',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white70 : Colors.black87,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          child.author?.nickname ?? '匿名',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
                         ),
-                      ),
-                      if (child.author != null) ...[
-                        const SizedBox(width: 4),
-                        _buildLevelBadgeSmall(child.author!, isDark),
-                      ],
-                      const SizedBox(width: 8),
-                      Text(
-                        _formatTime(child.createdAt),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white24 : Colors.grey[400],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  _buildChildContent(child, isDark),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: onReply,
-                        child: Text(
-                          '回复',
+                        if (child.author != null) ...[
+                          const SizedBox(width: 4),
+                          _buildLevelBadgeSmall(child.author!, isDark),
+                        ],
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatTime(child.createdAt),
                           style: TextStyle(
                             fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: isDark ? Colors.white38 : Colors.grey[500],
+                            color: isDark ? Colors.white24 : Colors.grey[400],
                           ),
                         ),
-                      ),
-                      const Spacer(),
-                      _buildSheetReplyLikeButton(child, isDark),
-                      if (isOwn || isAdmin)
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _buildChildContent(child, isDark),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
                         GestureDetector(
-                          onTap: () async {
-                            Navigator.pop(sheetContext);
-                            await _deleteReply(child);
-                          },
+                          onTap: onReply,
                           child: Text(
-                            '删除',
+                            '回复',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.red[400],
-                            ),
-                          ),
-                        )
-                      else
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            showReportSheet(context,
-                                targetId: child.id, targetType: 'reply');
-                          },
-                          child: Text(
-                            '举报',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.white24 : Colors.grey[400],
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white38 : Colors.grey[500],
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                ],
+                        const Spacer(),
+                        _buildSheetReplyLikeButton(child, isDark),
+                        if (isOwn || isAdmin)
+                          GestureDetector(
+                            onTap: () async {
+                              Navigator.pop(sheetContext);
+                              await _deleteReply(child);
+                            },
+                            child: Text(
+                              '删除',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red[400],
+                              ),
+                            ),
+                          )
+                        else
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              showReportSheet(context,
+                                  targetId: child.id, targetType: 'reply');
+                            },
+                            child: Text(
+                              '举报',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white24 : Colors.grey[400],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
       ),
@@ -4877,7 +4886,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-    /// BottomSheet 内的回复点赞按钮：完整线程视图中展示点赞操作。
+  /// BottomSheet 内的回复点赞按钮：完整线程视图中展示点赞操作。
   Widget _buildSheetReplyLikeButton(Reply r, bool isDark) {
     final pending = _pendingReplyLikeTargets.containsKey(r.id);
     final activeColor = Theme.of(context).primaryColor;

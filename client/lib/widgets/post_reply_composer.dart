@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../controllers/post_reply_composer_controller.dart';
+import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
@@ -81,6 +83,7 @@ class _PostReplyComposerState extends State<PostReplyComposer> {
               FavoriteImageComposerPreview(
                 favorite: controller.favoriteImage!,
                 onRemove: controller.removeFavoriteImage,
+                httpHeaders: _favoriteImageHeaders(context),
                 enabled: !widget.sending,
               ),
             if (controller.localImage != null)
@@ -144,6 +147,7 @@ class _PostReplyComposerState extends State<PostReplyComposer> {
                             insertAtSelection(controller.textController, emoji),
                         onStickerSelected: controller.selectSticker,
                         onFavoriteImageSelected: controller.selectFavoriteImage,
+                        favoriteImageHeaders: _favoriteImageHeaders(context),
                         onBackspace: () => deletePreviousCharacter(
                           controller.textController,
                         ),
@@ -221,5 +225,11 @@ class _PostReplyComposerState extends State<PostReplyComposer> {
     }
     final sent = await widget.onSubmit(controller.draft);
     if (sent) controller.close(clearDraft: true);
+  }
+
+  Map<String, String> _favoriteImageHeaders(BuildContext context) {
+    final token = context.read<AuthProvider?>()?.token?.trim();
+    if (token == null || token.isEmpty) return const <String, String>{};
+    return <String, String>{'Authorization': 'Bearer $token'};
   }
 }

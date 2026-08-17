@@ -83,6 +83,15 @@ func (s *EmojiFavoriteService) List(ctx context.Context, userID uint) ([]EmojiFa
 	return views, nil
 }
 
+// Quota 返回账号级表情包空间快照，供接口错误响应和管理端展示使用。
+func (s *EmojiFavoriteService) Quota(ctx context.Context, userID uint) (int64, int64, error) {
+	if userID == 0 {
+		return 0, MaxEmojiQuotaBytes, errors.New("user id is required")
+	}
+	used, err := emojiQuotaUsed(s.db.WithContext(ctx), userID)
+	return used, MaxEmojiQuotaBytes, err
+}
+
 func (s *EmojiFavoriteService) CreateBuiltin(ctx context.Context, userID uint, stickerID string) (*EmojiFavoriteView, error) {
 	stickerID = strings.TrimSpace(stickerID)
 	if userID == 0 || stickerID == "" {
@@ -314,6 +323,40 @@ func (s *EmojiFavoriteService) Delete(ctx context.Context, userID, favoriteID ui
 		}
 		return nil
 	})
+}
+
+// ResolveFavoriteAsset 校验收藏归属后返回受保护资源的磁盘路径和 MIME 类型。
+func (s *EmojiFavoriteService) ResolveFavoriteAsset(ctx context.Context, userID, favoriteID uint, thumbnail bool) (string, string, error) {
+	if userID == 0 || favoriteID == 0 {
+		return "", "", gorm.ErrRecordNotFound
+	}
+	tx := s.db.WithContext(ctx)
+	var favorite models.UserEmojiFavorite
+	if err := tx.Where("id = ? AND user_id = ?", favoriteID, userID).First(&favorite).Error; err != nil {
+		return "", "", err
+	}
+	if favorite.AssetID == nil {
+		return "", "", gorm.ErrRecordNotFound
+	}
+	var asset models.UserEmojiAsset
+	if err := tx.First(&asset, *favorite.AssetID).Error; err != nil {
+		return "", "", err
+	}
+	path := asset.ThumbnailPath
+	mimeType := asset.MimeType
+	if !thumbnail {
+		var file models.File
+		if err := tx.First(&file, asset.FileID).Error; err != nil {
+			return "", "", err
+		}
+		path = file.Path
+		mimeType = file.MimeType
+	}
+	fullPath, err := s.resolveUploadPath(path)
+	if err != nil {
+		return "", "", gorm.ErrRecordNotFound
+	}
+	return fullPath, mimeType, nil
 }
 
 func (s *EmojiFavoriteService) canReferenceFile(ctx context.Context, userID uint, file models.File) bool {

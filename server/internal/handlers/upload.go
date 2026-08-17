@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -154,10 +154,6 @@ func ensureImageVariant(
 	if _, err := os.Stat(variantPath); err == nil {
 		return nil
 	}
-	if mimeType == "image/gif" {
-		return os.ErrNotExist
-	}
-
 	source, err := os.Open(originalPath)
 	if err != nil {
 		return err
@@ -203,6 +199,8 @@ func ensureImageVariant(
 		err = jpeg.Encode(temp, resized, &jpeg.Options{Quality: 82})
 	case "image/png":
 		err = png.Encode(temp, resized)
+	case "image/gif":
+		err = gif.Encode(temp, resized, &gif.Options{NumColors: 256})
 	default:
 		err = fmt.Errorf("不支持生成缩略图的格式: %s", mimeType)
 	}

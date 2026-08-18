@@ -20,12 +20,17 @@ class ImageViewerScreen extends StatefulWidget {
   /// 对应下标为 null 时回退到网络/CachedNetworkImage。
   final List<Uint8List?>? imageBytes;
 
+  /// 与 imageUrls 一一对应的本地文件路径；对应下标非 null 时优先读取本地
+  /// 文件，让发送方与全屏查看共享同一 fallback 策略（本地 → 鉴权网络）。
+  final List<String?>? localPaths;
+
   const ImageViewerScreen({
     super.key,
     required this.imageUrls,
     this.initialIndex = 0,
     this.httpHeaders = const {},
     this.imageBytes,
+    this.localPaths,
   });
 
   @override
@@ -368,34 +373,62 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
             },
             child: InteractiveViewer(
               child: Center(
-                child: (widget.imageBytes != null &&
-                        index < widget.imageBytes!.length &&
-                        widget.imageBytes![index] != null)
-                    ? Image.memory(
-                        widget.imageBytes![index]!,
-                        fit: BoxFit.contain,
-                      )
-                    : _downloadedImages.containsKey(index)
-                        ? Image.memory(_downloadedImages[index]!.bytes,
-                            fit: BoxFit.contain)
-                        : CachedNetworkImage(
-                        cacheManager: PostImageCache.manager,
-                        imageUrl: widget.imageUrls[index],
-                        httpHeaders: widget.httpHeaders,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) => const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
-                        errorWidget: (context, url, error) => const Icon(
-                          Icons.error,
-                          color: Colors.white,
-                          size: 48,
-                        ),
-                      ),
+                child: _buildPageImage(index),
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// 单页图片来源优先级：内存字节 → 本地文件 → 已下载内存 → 鉴权网络。
+  Widget _buildPageImage(int index) {
+    if (widget.imageBytes != null &&
+        index < widget.imageBytes!.length &&
+        widget.imageBytes![index] != null) {
+      return Image.memory(widget.imageBytes![index]!, fit: BoxFit.contain);
+    }
+    final localPath = _localPathFor(index);
+    if (localPath != null) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _networkImageView(index),
+      );
+    }
+    if (_downloadedImages.containsKey(index)) {
+      return Image.memory(
+        _downloadedImages[index]!.bytes,
+        fit: BoxFit.contain,
+      );
+    }
+    return _networkImageView(index);
+  }
+
+  String? _localPathFor(int index) {
+    final paths = widget.localPaths;
+    if (paths == null || index >= paths.length) return null;
+    final path = paths[index]?.trim();
+    return (path == null || path.isEmpty) ? null : path;
+  }
+
+  Widget _networkImageView(int index) {
+    if (widget.imageUrls.isEmpty || index >= widget.imageUrls.length) {
+      return const Icon(Icons.error, color: Colors.white, size: 48);
+    }
+    return CachedNetworkImage(
+      cacheManager: PostImageCache.manager,
+      imageUrl: widget.imageUrls[index],
+      httpHeaders: widget.httpHeaders,
+      fit: BoxFit.contain,
+      placeholder: (context, url) => const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      ),
+      errorWidget: (context, url, error) => const Icon(
+        Icons.error,
+        color: Colors.white,
+        size: 48,
       ),
     );
   }

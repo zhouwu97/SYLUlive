@@ -1258,8 +1258,8 @@ class MyApp extends StatelessWidget {
           },
           update: (_, auth, service) {
             final nextUserId = auth.user?.id.toString();
-            if (service!.userId != nextUserId) {
-              service.switchUser(nextUserId);
+            service!.syncSessionUser(nextUserId);
+            if (nextUserId != null) {
               unawaited(service.syncFromServer());
             }
             EmojiFavoriteService.configureSharedInstance(service);

@@ -33,7 +33,6 @@ class WaterModeratorProvider extends ChangeNotifier {
     _permissionLoadedAt.clear();
     _moderatorsBySlug.clear();
     _error = null;
-    notifyListeners();
   }
 
   // ── 权限 ──

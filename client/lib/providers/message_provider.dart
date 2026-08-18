@@ -6,8 +6,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../config/api_constants.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
+import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
 
@@ -739,6 +741,11 @@ class MessageProvider extends ChangeNotifier {
           Map<String, dynamic>.from(response.data as Map),
         );
         _replacePendingWithServer(clientMessageId, serverMessage);
+        // 发送成功后后台校验服务器图片资源可用性，避免发送方本地预览
+        // 掩盖服务器坏图；仅记录诊断，不改动消息发送状态。
+        if (serverMessage.fileId != null) {
+          unawaited(_verifyRemoteMedia(serverMessage));
+        }
         unawaited(loadConversations(silent: true));
         return serverMessage;
       }
@@ -755,6 +762,63 @@ class MessageProvider extends ChangeNotifier {
       timeoutTimer.cancel();
     }
     return null;
+  }
+
+  /// 后台校验服务器图片资源是否真实可读（Authenticated GET）。
+  ///
+  /// 发送成功只是消息已确认；图片是否能在对方/重启后显示取决于服务器资源。
+  /// 这里收到首个字节即视为可用并取消下载，既不整张下载也避免本地文件
+  /// 长期掩盖服务器坏图；失败仅写入诊断日志 `pm_media_remote_verify_failed`。
+  Future<void> _verifyRemoteMedia(Message message) async {
+    final url = message.imageUrl;
+    if (url.isEmpty) return;
+    final cancelToken = CancelToken();
+    try {
+      await _dio.get<List<int>>(
+        ApiConstants.fullUrl(url),
+        options: Options(responseType: ResponseType.bytes),
+        cancelToken: cancelToken,
+        onReceiveProgress: (received, total) {
+          if (received > 0) cancelToken.cancel();
+        },
+      );
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) return; // 已收到首字节，视为可用
+      DiagnosticLogService.instance.record(
+        level: 'error',
+        source: 'pm',
+        type: 'pm_media_remote_verify_failed',
+        eventCode: 'pm_media_remote_verify_failed',
+        category: 'pm',
+        summary: '私信图片服务器资源校验失败',
+        detail: 'fileId=${message.fileId} url=$url',
+        httpStatus: error.response?.statusCode,
+        operation: 'verify_remote_media',
+        result: 'failure',
+        metadata: {
+          'fileId': message.fileId ?? -1,
+          'messageId': message.stableKey,
+          'senderId': message.senderId,
+        },
+      );
+    } catch (_) {
+      DiagnosticLogService.instance.record(
+        level: 'error',
+        source: 'pm',
+        type: 'pm_media_remote_verify_failed',
+        eventCode: 'pm_media_remote_verify_failed',
+        category: 'pm',
+        summary: '私信图片服务器资源校验失败',
+        detail: 'fileId=${message.fileId} url=$url',
+        operation: 'verify_remote_media',
+        result: 'failure',
+        metadata: {
+          'fileId': message.fileId ?? -1,
+          'messageId': message.stableKey,
+          'senderId': message.senderId,
+        },
+      );
+    }
   }
 
   void _replacePendingWithServer(

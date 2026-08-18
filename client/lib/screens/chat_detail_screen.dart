@@ -30,6 +30,7 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/app_composer_bar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
+import '../widgets/private_message_image.dart';
 import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'image_viewer_screen.dart';
@@ -1729,6 +1730,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final highlightColor = isMine
         ? colors.onPrimary.withValues(alpha: 0.72)
         : colors.primary.withValues(alpha: 0.72);
+    // 仅图片消息（无文字、无表情）不套普通气泡，图片自带圆角。
+    final imageOnly = hasImage &&
+        stickerUrl == null &&
+        !message.hasTextContent;
+    final chromeFree = message.isStickerOnly || imageOnly;
 
     return Padding(
       padding: EdgeInsets.only(top: groupGap, bottom: isGroupEnd ? 3 : 0),
@@ -1758,19 +1764,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           .clamp(180.0, 420.0)
                           .toDouble(),
                     ),
-                    padding: message.isStickerOnly || hasImage
-                        ? const EdgeInsets.all(4)
+                    padding: chromeFree
+                        ? EdgeInsets.zero
                         : const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 10,
                           ),
                     decoration: BoxDecoration(
-                      color: message.isStickerOnly
-                          ? Colors.transparent
-                          : bubbleColor,
-                      borderRadius: bubbleRadius,
+                      color: chromeFree ? Colors.transparent : bubbleColor,
+                      borderRadius:
+                          chromeFree ? BorderRadius.zero : bubbleRadius,
                       border: Border.all(
-                        color: message.isStickerOnly
+                        color: chromeFree
                             ? Colors.transparent
                             : isHighlighted
                                 ? highlightColor
@@ -1798,7 +1803,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             key: ValueKey(
                               'message-image-${message.stableKey}',
                             ),
-                            onTap: imageUrl == null
+                            onTap: (imageUrl == null &&
+                                    (localImagePath?.isNotEmpty ?? false) ==
+                                        false)
                                 ? null
                                 : () {
                                     _collapseBottomPanelOnly();
@@ -1806,19 +1813,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => ImageViewerScreen(
-                                          imageUrls: [imageUrl],
+                                          imageUrls:
+                                              imageUrl == null ? [] : [imageUrl],
+                                          localPaths: localImagePath
+                                                      ?.isNotEmpty ==
+                                                  true
+                                              ? [localImagePath]
+                                              : null,
                                           httpHeaders: privateMediaHeaders,
                                         ),
                                       ),
                                     );
                                   },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: _buildMessageImage(
-                                localImagePath: localImagePath,
-                                imageUrl: imageUrl,
-                                httpHeaders: privateMediaHeaders,
-                              ),
+                            child: PrivateMessageImage(
+                              networkUrl: message.imageUrl.isEmpty
+                                  ? null
+                                  : message.imageUrl,
+                              localPath:
+                                  localImagePath?.isNotEmpty == true
+                                      ? localImagePath
+                                      : null,
+                              fileId: message.fileId,
+                              serverWidth: message.file?.width ?? 0,
+                              serverHeight: message.file?.height ?? 0,
+                              httpHeaders: privateMediaHeaders,
+                              maxWidth: (MediaQuery.sizeOf(context).width *
+                                      0.64)
+                                  .clamp(120.0, 260.0),
                             ),
                           ),
                         if (message.hasTextContent)
@@ -1894,47 +1915,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
   }
 
-  Widget _buildMessageImage({
-    required String? localImagePath,
-    required String? imageUrl,
-    required Map<String, String> httpHeaders,
-  }) {
-    Widget networkImage() {
-      if (imageUrl == null) return _buildBrokenMessageImage();
-      return CachedNetworkImage(
-        imageUrl: imageUrl,
-        httpHeaders: httpHeaders,
-        width: 210,
-        height: 156,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => const SizedBox(
-          width: 210,
-          height: 156,
-          child: Center(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        ),
-        errorWidget: (_, __, ___) => _buildBrokenMessageImage(),
-      );
-    }
-
-    if (localImagePath?.isNotEmpty == true) {
-      return Image.file(
-        File(localImagePath!),
-        key: ValueKey('local-message-image-$localImagePath'),
-        width: 210,
-        height: 156,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => networkImage(),
-      );
-    }
-    return networkImage();
-  }
-
   Map<String, String> _privateMediaHeaders() {
     final token = context.read<AuthProvider>().token;
     if (token == null || token.isEmpty) {
@@ -1978,14 +1958,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildBrokenStickerImage() {
     return const SizedBox(
       width: 156,
-      height: 156,
-      child: Center(child: Icon(Icons.broken_image_outlined)),
-    );
-  }
-
-  Widget _buildBrokenMessageImage() {
-    return const SizedBox(
-      width: 210,
       height: 156,
       child: Center(child: Icon(Icons.broken_image_outlined)),
     );

@@ -1004,22 +1004,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (!mounted) return;
     final provider = context.read<WaterModerationProvider>();
-    final ok = await provider.featurePost(
+    final outcome = await provider.featurePost(
       sectionSlug: sectionSlug,
       postId: post.id,
       reason: reason,
     );
     if (!mounted) return;
-    if (ok) {
-      AppFeedback.showSnackBar(context, '已入版块精华 · 首页推荐待审核');
+    if (outcome.ok) {
+      AppFeedback.showSnackBar(
+        context,
+        outcome.homePending
+            ? '已入版块精华 · 首页推荐待审核'
+            : '已设为版块精华',
+      );
       setState(() => _post = _post?.copyWith(
             waterSectionFeatured: true,
-            homeFeaturedPending: true,
+            homeFeaturedPending: outcome.homePending,
           ));
       await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
       if (mounted) await _loadPost();
     } else {
-      AppFeedback.showSnackBar(context, provider.error ?? '设为精华失败',
+      AppFeedback.showSnackBar(context, outcome.error ?? '设为精华失败',
           isError: true);
     }
   }

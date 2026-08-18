@@ -729,34 +729,51 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFreshnessBanner() {
     final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.surfaceContainerHighest,
-      elevation: 3,
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        key: const ValueKey('feed-freshness-banner'),
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => unawaited(_applyFreshnessBanner()),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.arrow_upward_rounded,
-                size: 16,
-                color: colors.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _freshnessBannerLabel,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: colors.onSurface,
+    return Container(
+      key: const ValueKey('feed-freshness-banner-container'),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.45),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(19),
+        child: InkWell(
+          key: const ValueKey('feed-freshness-banner'),
+          borderRadius: BorderRadius.circular(19),
+          onTap: () => unawaited(_applyFreshnessBanner()),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.arrow_upward_rounded,
+                  size: 16,
+                  color: colors.primary,
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Text(
+                  _freshnessBannerLabel,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2066,70 +2083,63 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             .where((post) => !post.isActivePinned)
             .toList();
 
-        return NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            final canLoadMore =
-                mode != 'following' || context.read<AuthProvider>().isLoggedIn;
-            if (config.supportsRemoteLoading &&
-                notification.metrics.pixels >=
-                    notification.metrics.maxScrollExtent - 500 &&
-                feedHasMore &&
-                !isFeedLoading &&
-                canLoadMore) {
-              context.read<PostProvider>().loadPosts(
-                    boardId: 1,
-                    sort: sort,
-                  );
-            }
-            return false;
-          },
-          child: CustomScrollView(
-            key: PageStorageKey<String>('home-feed-scroll-$mode'),
-            controller: _feedScrollControllers[mode],
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              SliverPersistentHeader(
-                pinned: true,
-                floating: true,
-                delegate: _SliverSearchBarDelegate(
-                  vsync: this,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
-                    child: _buildSearchBar(isDark),
-                  ),
+        return Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                final canLoadMore =
+                    mode != 'following' || context.read<AuthProvider>().isLoggedIn;
+                if (config.supportsRemoteLoading &&
+                    notification.metrics.pixels >=
+                        notification.metrics.maxScrollExtent - 500 &&
+                    feedHasMore &&
+                    !isFeedLoading &&
+                    canLoadMore) {
+                  context.read<PostProvider>().loadPosts(
+                        boardId: 1,
+                        sort: sort,
+                      );
+                }
+                return false;
+              },
+              child: CustomScrollView(
+                key: PageStorageKey<String>('home-feed-scroll-$mode'),
+                controller: _feedScrollControllers[mode],
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-              ),
-              // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
-              if (_unreadReplyNotifications.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                      AppSpacing.xs,
-                    ),
-                    child: ReplyNotificationReminder(
-                      items: _unreadReplyNotifications,
-                      totalCount: _unreadReplyCount,
-                      onPressed: _handleUnreadReplyReminderPressed,
+                slivers: [
+                  SliverPersistentHeader(
+                    pinned: true,
+                    floating: true,
+                    delegate: _SliverSearchBarDelegate(
+                      vsync: this,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                        child: _buildSearchBar(isDark),
+                      ),
                     ),
                   ),
-                ),
-              if (_freshnessBannerVisible)
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _SliverFreshnessBannerDelegate(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-                      child: Center(child: _buildFreshnessBanner()),
+                  // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
+                  if (_unreadReplyNotifications.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppSpacing.sm,
+                          AppSpacing.md,
+                          AppSpacing.xs,
+                        ),
+                        child: ReplyNotificationReminder(
+                          items: _unreadReplyNotifications,
+                          totalCount: _unreadReplyCount,
+                          onPressed: _handleUnreadReplyReminderPressed,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              if (mode == 'following' && !_followingExpanded) ...[
+                  if (mode == 'following' && !_followingExpanded) ...[
                 if (!context.read<AuthProvider>().isLoggedIn)
                   SliverToBoxAdapter(
                     child: _buildFollowingPlaceholder(isDark),
@@ -2299,9 +2309,35 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ],
           ),
-        );
-      },
+        ),
+        Positioned(
+          top: 52,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            reverseDuration: const Duration(milliseconds: 160),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.15),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: _freshnessBannerVisible
+                ? _buildFreshnessBanner()
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
+  },
+);
 
     // Feed 是高频筛选路径：内容立即替换，不对帖子逐条重播 reveal。
     return feedList;
@@ -2452,33 +2488,6 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _SliverFreshnessBannerDelegate extends SliverPersistentHeaderDelegate {
-  const _SliverFreshnessBannerDelegate({required this.child});
-
-  final Widget child;
-
-  @override
-  double get minExtent => 54;
-
-  @override
-  double get maxExtent => 54;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return ColoredBox(
-      color: Theme.of(context).colorScheme.surface,
-      child: child,
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _SliverFreshnessBannerDelegate oldDelegate) =>
-      oldDelegate.child != child;
-}
 
 class CheckInSuccessDialog extends StatelessWidget {
   final int streakDays;

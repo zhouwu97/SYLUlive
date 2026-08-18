@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -385,7 +387,14 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 	var existing models.WaterSectionFeaturedPost
 	dupErr := h.db.Where("section_id = ? AND post_id = ?", section.ID, postID).First(&existing).Error
 	if dupErr == nil && existing.Status == models.SectionFeaturedStatusActive {
-		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing})
+		// 已是版块精华：补偿检查首页推荐申请是否仍然存在（自动修复历史脏状态）
+		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
+		if ensureErr != nil {
+			log.Printf("[water_moderation] 帖子已是版块精华，但首页推荐补偿失败 post_id=%d: %v", postID, ensureErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "帖子已是版块精华，但首页推荐提交失败，请重试"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing, "home_application": homeApp})
 		return
 	}
 
@@ -398,8 +407,13 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 		_ = h.db.First(&existing, existing.ID)
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
-		h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
-		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing})
+		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
+		if ensureErr != nil {
+			log.Printf("[water_moderation] 恢复版块精华后首页推荐失败 post_id=%d: %v", postID, ensureErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "已恢复版块精华，但首页推荐提交失败，请重试"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing, "home_application": homeApp})
 		return
 	}
 
@@ -418,17 +432,27 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 	snapshot, _ := json.Marshal(featured)
 	h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
 
-	// 自动生成首页精华审核记录
-	h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
+	// 自动生成首页精华审核记录；失败必须如实上报，不能假报成功
+	homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
+	if ensureErr != nil {
+		log.Printf("[water_moderation] 版块加精成功但首页推荐提交失败 post_id=%d: %v", postID, ensureErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "已设为版块精华，首页推荐提交失败，请重试"})
+		return
+	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured})
+	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured, "home_application": homeApp})
 }
 
-func (h *WaterModerationHandler) createHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) {
+// ensureHomeFeaturedApplication 确保首页精华审核记录存在，任何数据库错误都向上返回：
+// 已有 pending → 返回 existing,nil；没有 → 创建并返回；查询/创建失败 → 返回 error。
+func (h *WaterModerationHandler) ensureHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) (*models.FeaturedApplication, error) {
 	var existing models.FeaturedApplication
 	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
-	if err == nil {
-		return // 已有待审核记录
+	switch {
+	case err == nil:
+		return &existing, nil
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, fmt.Errorf("查询首页精华申请失败: %w", err)
 	}
 	app := models.FeaturedApplication{
 		PostID:            postID,
@@ -439,7 +463,10 @@ func (h *WaterModerationHandler) createHomeFeaturedApplication(postID uint, mode
 		Reason:            "版主推荐: " + reason,
 		Status:            "pending",
 	}
-	h.db.Create(&app)
+	if err := h.db.Create(&app).Error; err != nil {
+		return nil, fmt.Errorf("创建首页精华申请失败: %w", err)
+	}
+	return &app, nil
 }
 
 // UnfeaturePost DELETE /api/water/sections/:slug/posts/:post_id/feature

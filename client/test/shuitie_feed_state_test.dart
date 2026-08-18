@@ -84,12 +84,180 @@ void main() {
     expect(find.text('去登录'), findsOneWidget);
     await _disposeFeed(tester, page);
   });
+
+  testWidgets('登录用户的最新信息流显示首页互动回复模块', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [
+        {
+          'id': 11,
+          'post_id': 100,
+          'related_id': 511,
+          'content': '首页测试回复',
+          'post_title': '首页测试帖子',
+          'created_at': '2026-08-18T10:00:00Z',
+          'from_user': {'id': 2, 'nickname': '回复者', 'avatar': ''},
+        },
+      ],
+    );
+    await _pumpFrames(tester);
+
+    await tester.tap(find.text('最新'));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    expect(find.text('互动回复'), findsOneWidget);
+    expect(find.text('1 条新回复'), findsOneWidget);
+    expect(find.text('回复者'), findsNothing);
+    expect(find.text('首页测试回复'), findsNothing);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('综合信息流也显示首页互动回复模块', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [
+        {
+          'id': 12,
+          'post_id': 101,
+          'related_id': 512,
+          'content': '综合页测试回复',
+          'post_title': '综合页测试帖子',
+          'created_at': '2026-08-18T10:00:00Z',
+          'from_user': {'id': 3, 'nickname': '综合回复者', 'avatar': ''},
+        },
+      ],
+    );
+    await _pumpFrames(tester);
+
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    expect(find.text('互动回复'), findsOneWidget);
+    expect(find.text('1 条新回复'), findsOneWidget);
+    expect(find.text('综合回复者'), findsNothing);
+    expect(find.text('综合页测试回复'), findsNothing);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('首次加载未读回复失败时不展示提醒但保留信息流错误态', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadRequestFail: true,
+      fail: true,
+    );
+    await _pumpFrames(tester);
+
+    await tester.tap(find.text('最新'));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsNothing,
+    );
+    expect(find.text('帖子加载失败'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('已有未读提醒后刷新失败仍保留旧提醒', (tester) async {
+    var failUnread = false;
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [
+        {
+          'id': 11,
+          'post_id': 100,
+          'related_id': 511,
+          'content': '首页测试回复',
+          'post_title': '首页测试帖子',
+          'created_at': '2026-08-18T10:00:00Z',
+          'from_user': {'id': 2, 'nickname': '回复者', 'avatar': ''},
+        },
+      ],
+      unreadFailCondition: () => failUnread,
+    );
+    await _pumpFrames(tester);
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    expect(find.text('1 条新回复'), findsOneWidget);
+
+    // 模拟网络抖动刷新失败
+    failUnread = true;
+    await tester.fling(
+      find.byType(CustomScrollView).first,
+      const Offset(0, 300),
+      1000,
+    );
+    await _pumpFrames(tester);
+
+    // 提醒仍保留在界面上
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    expect(find.text('1 条新回复'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('点击回复所属原帖404时自动调用markRead并清除死提醒', (tester) async {
+    final markedReadIds = <int>[];
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [
+        {
+          'id': 11,
+          'post_id': 999,
+          'related_id': 511,
+          'content': '死提醒测试回复',
+          'post_title': '已被删除的帖子',
+          'created_at': '2026-08-18T10:00:00Z',
+          'from_user': {'id': 2, 'nickname': '回复者', 'avatar': ''},
+        },
+      ],
+      post404Id: 999,
+      onMarkRead: (ids) => markedReadIds.addAll(ids),
+    );
+    await _pumpFrames(tester);
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+
+    // 点击单条提醒打开
+    await tester.tap(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+    );
+    await _pumpFrames(tester);
+
+    expect(markedReadIds, contains(11));
+    expect(find.text('原帖已删除，已移除提醒'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsNothing,
+    );
+    await _disposeFeed(tester, page);
+  });
 }
 
 Future<_FeedTestPage> _pumpFeed(
   WidgetTester tester, {
   Completer<void>? gate,
   bool fail = false,
+  bool loggedIn = false,
+  bool unreadRequestFail = false,
+  bool Function()? unreadFailCondition,
+  int? post404Id,
+  void Function(List<int> ids)? onMarkRead,
+  List<Map<String, dynamic>> unreadItems = const [],
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -125,6 +293,58 @@ Future<_FeedTestPage> _pumpFeed(
           );
           return;
         }
+        if (options.path == '/notifications/replies/unread') {
+          final shouldFail =
+              unreadRequestFail || (unreadFailCondition?.call() ?? false);
+          if (shouldFail) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: 'offline',
+              ),
+            );
+            return;
+          }
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'count': unreadItems.length,
+                'items': unreadItems,
+              },
+            ),
+          );
+          return;
+        }
+        if (post404Id != null && options.path == '/posts/$post404Id') {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 404,
+                data: {'error': 'not found'},
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          );
+          return;
+        }
+        if (options.path == '/notifications/read-selected') {
+          final body = options.data as Map<String, dynamic>?;
+          final ids = (body?['ids'] as List<dynamic>?)?.cast<int>() ?? [];
+          onMarkRead?.call(ids);
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {'success': true},
+            ),
+          );
+          return;
+        }
         handler.resolve(
           Response(
             requestOptions: options,
@@ -136,7 +356,7 @@ Future<_FeedTestPage> _pumpFeed(
     ),
   );
 
-  final auth = _FeedAuthProvider(client: dio, loggedIn: false);
+  final auth = _FeedAuthProvider(client: dio, loggedIn: loggedIn);
   final postProvider = PostProvider(dio, enableCache: false);
   final messageProvider = MessageProvider(Dio());
   final themeProvider = ThemeProvider(loadOnStart: false);

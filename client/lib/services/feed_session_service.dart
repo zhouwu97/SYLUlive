@@ -43,7 +43,7 @@ class FeedSessionService {
     _generation++;
     final random = Random.secure();
     _current =
-        '${DateTime.now().millisecondsSinceEpoch}_${_generation}_${random.nextInt(1 << 32)}';
+        '${DateTime.now().millisecondsSinceEpoch}_${_generation}_${random.nextInt(0xFFFFFFFF)}';
     _createdAt = DateTime.now();
     return _current!;
   }

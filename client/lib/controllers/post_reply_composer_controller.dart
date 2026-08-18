@@ -4,6 +4,12 @@ import 'package:image_picker/image_picker.dart';
 import '../services/emoji_favorite_service.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 
+enum PostReplyBottomPanel {
+  none,
+  keyboard,
+  emoji,
+}
+
 class PostReplyDraft {
   const PostReplyDraft({
     required this.text,
@@ -38,7 +44,9 @@ class PostReplyComposerController extends ChangeNotifier {
   final FocusNode focusNode = FocusNode();
 
   bool _isOpen = false;
-  bool _showEmojiPanel = false;
+  PostReplyBottomPanel _bottomPanel = PostReplyBottomPanel.none;
+  double _stableKeyboardHeight = 300;
+  bool _keyboardRequestPending = false;
   int? _parentReplyId;
   int? _replyToUserId;
   int? _replyToReplyId;
@@ -48,7 +56,10 @@ class PostReplyComposerController extends ChangeNotifier {
   XFile? _localImage;
 
   bool get isOpen => _isOpen;
-  bool get showEmojiPanel => _showEmojiPanel;
+  PostReplyBottomPanel get bottomPanel => _bottomPanel;
+  bool get showEmojiPanel => _bottomPanel == PostReplyBottomPanel.emoji;
+  double get stableKeyboardHeight => _stableKeyboardHeight;
+  bool get keyboardRequestPending => _keyboardRequestPending;
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;
   int? get replyToReplyId => _replyToReplyId;
@@ -68,9 +79,27 @@ class PostReplyComposerController extends ChangeNotifier {
         localImage: _localImage,
       );
 
+  void updateKeyboardMetrics(double inset) {
+    if (inset > 0) {
+      _stableKeyboardHeight = inset;
+      _keyboardRequestPending = false;
+      if (_bottomPanel != PostReplyBottomPanel.emoji) {
+        _bottomPanel = PostReplyBottomPanel.keyboard;
+        notifyListeners();
+      }
+    } else {
+      if (_bottomPanel == PostReplyBottomPanel.keyboard &&
+          !_keyboardRequestPending) {
+        _bottomPanel = PostReplyBottomPanel.none;
+        notifyListeners();
+      }
+    }
+  }
+
   void open() {
     _isOpen = true;
-    _showEmojiPanel = false;
+    _keyboardRequestPending = true;
+    _bottomPanel = PostReplyBottomPanel.keyboard;
     notifyListeners();
     _focusAfterLayout();
   }
@@ -85,20 +114,23 @@ class PostReplyComposerController extends ChangeNotifier {
     _replyToUserId = replyToUserId;
     _replyToReplyId = replyToReplyId;
     _replyToName = replyToName?.trim();
-    final name = _replyToName;
-    if (name != null && name.isNotEmpty) {
-      textController.value = TextEditingValue(
-        text: '@$name ',
-        selection: TextSelection.collapsed(offset: name.length + 2),
-      );
-    }
     open();
+  }
+
+  void clearReplyTarget() {
+    if (_parentReplyId == null && _replyToName == null) return;
+    _parentReplyId = null;
+    _replyToUserId = null;
+    _replyToReplyId = null;
+    _replyToName = null;
+    notifyListeners();
   }
 
   void close({bool clearDraft = false}) {
     focusNode.unfocus();
     _isOpen = false;
-    _showEmojiPanel = false;
+    _keyboardRequestPending = false;
+    _bottomPanel = PostReplyBottomPanel.none;
     if (clearDraft) clear();
     notifyListeners();
   }
@@ -116,21 +148,23 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void toggleEmojiPanel() {
-    if (_showEmojiPanel) {
-      _showEmojiPanel = false;
+    if (_bottomPanel == PostReplyBottomPanel.emoji) {
+      _keyboardRequestPending = true;
+      _bottomPanel = PostReplyBottomPanel.keyboard;
       notifyListeners();
       _focusAfterLayout();
       return;
     }
     focusNode.unfocus();
     _isOpen = true;
-    _showEmojiPanel = true;
+    _keyboardRequestPending = false;
+    _bottomPanel = PostReplyBottomPanel.emoji;
     notifyListeners();
   }
 
   void closeEmojiPanel() {
-    if (!_showEmojiPanel) return;
-    _showEmojiPanel = false;
+    if (_bottomPanel != PostReplyBottomPanel.emoji) return;
+    _bottomPanel = PostReplyBottomPanel.none;
     notifyListeners();
   }
 

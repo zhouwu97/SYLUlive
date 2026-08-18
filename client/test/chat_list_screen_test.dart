@@ -128,7 +128,7 @@ void main() {
       find.byKey(const ValueKey('chat-conversation-42')),
     );
     final unreadDecoration = unreadTile.decoration as BoxDecoration;
-    expect(unreadDecoration.color, isNot(Colors.transparent));
+    expect(unreadDecoration.color, Colors.transparent);
     expect(unreadDecoration.border, isNull);
     expect(unreadDecoration.boxShadow, isNull);
     expect(unreadDecoration.borderRadius, BorderRadius.zero);

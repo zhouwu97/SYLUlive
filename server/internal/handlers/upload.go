@@ -24,34 +24,57 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func validateImageFile(src io.ReadSeeker) (string, error) {
+// ValidatedImageMetadata 一次校验得到的完整图片元数据，避免对同一文件重复解码。
+type ValidatedImageMetadata struct {
+	MimeType string
+	Width    int
+	Height   int
+}
+
+// canonicalImageExt 根据检测出的真实 MIME 返回规范化扩展名，纠正
+// “PNG 内容 + .jpg 文件名”这类 MIME/磁盘扩展名不一致的问题。
+func canonicalImageExt(mimeType string) string {
+	switch mimeType {
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	default: // image/jpeg 及未知的图片类型统一落到 .jpg
+		return ".jpg"
+	}
+}
+
+func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
+	var meta ValidatedImageMetadata
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+		return meta, err
 	}
 
 	header := make([]byte, 512)
 	n, _ := src.Read(header)
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+		return meta, err
 	}
 
 	mimeType := http.DetectContentType(header[:n])
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif":
 	default:
-		return "", fmt.Errorf("只支持 jpg/png/gif 图片")
+		return meta, fmt.Errorf("只支持 jpg/png/gif 图片")
 	}
 
-	if _, _, err := image.DecodeConfig(src); err != nil {
-		_, _ = src.Seek(0, io.SeekStart)
-		return "", fmt.Errorf("图片文件损坏或格式不支持")
+	config, _, err := image.DecodeConfig(src)
+	_, _ = src.Seek(0, io.SeekStart)
+	if err != nil {
+		return meta, fmt.Errorf("图片文件损坏或格式不支持")
 	}
 
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+	meta = ValidatedImageMetadata{
+		MimeType: mimeType,
+		Width:    config.Width,
+		Height:   config.Height,
 	}
-
-	return mimeType, nil
+	return meta, nil
 }
 
 // UploadHandler 上传处理器
@@ -245,10 +268,12 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	defer src.Close()
 
-	if _, err := validateImageFile(src); err != nil {
+	meta, err := validateImageFile(src)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	canonicalExt := canonicalImageExt(meta.MimeType)
 
 	// 计算SHA256哈希
 	hash := sha256.New()
@@ -297,8 +322,8 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 保存文件
-	dstPath := filepath.Join(dir1, hashStr+ext)
+	// 保存文件（使用规范化扩展名，与真实内容一致）
+	dstPath := filepath.Join(dir1, hashStr+canonicalExt)
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件失败"})
@@ -315,9 +340,11 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	// 创建文件记录
 	fileRecord := models.File{
 		Hash:        hashStr,
-		Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+		Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
 		Size:        file.Size,
-		MimeType:    getMimeType(ext),
+		MimeType:    meta.MimeType,
+		Width:       meta.Width,
+		Height:      meta.Height,
 		RefCount:    1,
 		UploaderID:  c.GetUint("user_id"),
 		Status:      "temporary",
@@ -382,11 +409,13 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			continue
 		}
 
-		if _, err := validateImageFile(src); err != nil {
+		meta, err := validateImageFile(src)
+		if err != nil {
 			src.Close()
 			results = append(results, gin.H{"error": err.Error() + ": " + file.Filename})
 			continue
 		}
+		canonicalExt := canonicalImageExt(meta.MimeType)
 
 		hash := sha256.New()
 		io.Copy(hash, src)
@@ -424,8 +453,8 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			continue
 		}
 
-		// 保存文件
-		dstPath := filepath.Join(dir1, hashStr+ext)
+		// 保存文件（使用规范化扩展名，与真实内容一致）
+		dstPath := filepath.Join(dir1, hashStr+canonicalExt)
 		err = func() error {
 			src2, err := file.Open()
 			if err != nil {
@@ -451,9 +480,11 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		// 创建文件记录
 		fileRecord := models.File{
 			Hash:        hashStr,
-			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
 			Size:        file.Size,
-			MimeType:    getMimeType(ext),
+			MimeType:    meta.MimeType,
+			Width:       meta.Width,
+			Height:      meta.Height,
 			RefCount:    1,
 			UploaderID:  c.GetUint("user_id"),
 			Status:      "temporary",
@@ -505,16 +536,3 @@ func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
 	}).Error
 }
 
-// getMimeType 根据扩展名获取MIME类型
-func getMimeType(ext string) string {
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	default:
-		return "application/octet-stream"
-	}
-}

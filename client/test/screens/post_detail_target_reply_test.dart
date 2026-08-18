@@ -603,6 +603,9 @@ class FakeAuthProvider extends Fake
       );
 
   @override
+  String? get token => 'test-token';
+
+  @override
   Dio get dio => _dio;
 }
 

@@ -28,7 +28,13 @@ func TestPrivateMessagePreviewUsesTextForMixedStickerMessage(t *testing.T) {
 	}
 
 	pure := models.Message{Content: stickerFallbackText, StickerID: &stickerID}
-	if got, want := privateMessagePreview(pure), stickerFallbackText; got != want {
+	if got, want := privateMessagePreview(pure), "发来一个表情"; got != want {
 		t.Fatalf("pure sticker preview = %q, want %q", got, want)
+	}
+
+	fileID := uint(123)
+	img := models.Message{FileID: &fileID}
+	if got, want := privateMessagePreview(img), "发来一张图片"; got != want {
+		t.Fatalf("image preview = %q, want %q", got, want)
 	}
 }

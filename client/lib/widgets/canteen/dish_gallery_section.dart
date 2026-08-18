@@ -40,6 +40,8 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   List<CanteenDish> _dishes = [];
   bool _isLoading = true;
   bool _loadFailed = false;
+  String? _errorSubtitle;
+  IconData _errorIcon = Icons.cloud_off_rounded;
 
   @override
   void initState() {
@@ -58,9 +60,15 @@ class _DishGallerySectionState extends State<DishGallerySection> {
     if (!mounted) return;
     if (dishes == null) {
       // 请求失败：不刷新父级统计（保留入口快照），显示重试而非伪装空态
+      final errorMsg =
+          context.read<CanteenProvider>().dishesErrorMessage ?? '请稍后重试';
       setState(() {
         _isLoading = false;
         _loadFailed = true;
+        _errorSubtitle = errorMsg;
+        _errorIcon = errorMsg.contains('网络')
+            ? Icons.wifi_off_rounded
+            : Icons.cloud_off_rounded;
       });
       return;
     }
@@ -121,9 +129,9 @@ class _DishGallerySectionState extends State<DishGallerySection> {
           else if (_loadFailed)
             CanteenEmptyState(
               minHeight: 96,
-              icon: Icons.wifi_off_rounded,
+              icon: _errorIcon,
               title: '菜品加载失败',
-              subtitle: '请检查网络后重试',
+              subtitle: _errorSubtitle ?? '请稍后重试',
               actionLabel: '点击重试',
               onAction: _load,
             )

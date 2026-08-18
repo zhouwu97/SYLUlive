@@ -64,7 +64,7 @@ class CanteenReviewDraftImage {
 
 /// 食堂评价草稿
 class CanteenReviewDraft {
-  static const int currentSchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
 
   final int schemaVersion;
   final int userId;
@@ -72,7 +72,7 @@ class CanteenReviewDraft {
   final int star;
   final String comment;
   final List<String> tags;
-  final List<int> recommendedDishIds;
+  final List<String> recommendedDishes;
   final List<CanteenReviewDraftImage> images;
   final DateTime updatedAt;
 
@@ -86,7 +86,7 @@ class CanteenReviewDraft {
     this.star = 0,
     this.comment = '',
     this.tags = const [],
-    this.recommendedDishIds = const [],
+    this.recommendedDishes = const [],
     this.images = const [],
     required this.updatedAt,
     this.baseRatingUpdatedAt,
@@ -97,7 +97,7 @@ class CanteenReviewDraft {
       star == 0 &&
       comment.trim().isEmpty &&
       tags.isEmpty &&
-      recommendedDishIds.isEmpty &&
+      recommendedDishes.isEmpty &&
       images.isEmpty;
 
   CanteenReviewDraft copyWith({
@@ -107,7 +107,7 @@ class CanteenReviewDraft {
     int? star,
     String? comment,
     List<String>? tags,
-    List<int>? recommendedDishIds,
+    List<String>? recommendedDishes,
     List<CanteenReviewDraftImage>? images,
     DateTime? updatedAt,
     DateTime? baseRatingUpdatedAt,
@@ -119,7 +119,7 @@ class CanteenReviewDraft {
       star: star ?? this.star,
       comment: comment ?? this.comment,
       tags: tags ?? this.tags,
-      recommendedDishIds: recommendedDishIds ?? this.recommendedDishIds,
+      recommendedDishes: recommendedDishes ?? this.recommendedDishes,
       images: images ?? this.images,
       updatedAt: updatedAt ?? this.updatedAt,
       baseRatingUpdatedAt: baseRatingUpdatedAt ?? this.baseRatingUpdatedAt,
@@ -133,7 +133,7 @@ class CanteenReviewDraft {
         'star': star,
         'comment': comment,
         'tags': tags,
-        'recommended_dish_ids': recommendedDishIds,
+        'recommended_dishes': recommendedDishes,
         'images': images.map((e) => e.toJson()).toList(),
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'base_rating_updated_at':
@@ -150,8 +150,9 @@ class CanteenReviewDraft {
       comment: json['comment']?.toString() ?? '',
       tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
-      recommendedDishIds: (json['recommended_dish_ids'] as List?)
-              ?.map((e) => (e as num).toInt())
+      recommendedDishes: (json['recommended_dishes'] as List?)
+              ?.map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
               .toList() ??
           const [],
       images: (json['images'] as List?)

@@ -37,7 +37,11 @@ func NewCanteenDishPhotoHandler(db *gorm.DB) *CanteenDishPhotoHandler {
 // POST /api/canteens/:canteenId/dish-photos
 // Body 二选一：{"dish_id": 12, "file_id": 9527} 或 {"dish_name": "锅包肉", "file_id": 9527}
 func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
-	canteenID, err := strconv.ParseUint(c.Param("canteenId"), 10, 64)
+	canteenIDStr := c.Param("id")
+	if canteenIDStr == "" {
+		canteenIDStr = c.Param("canteenId")
+	}
+	canteenID, err := strconv.ParseUint(canteenIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return

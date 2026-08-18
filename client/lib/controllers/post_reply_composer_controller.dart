@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -9,6 +11,9 @@ enum PostReplyBottomPanel {
   keyboard,
   emoji,
 }
+
+/// Emoji → Keyboard 切换时的内容连续性交接状态。
+enum PostReplyInputHandoff { none, emojiToKeyboard }
 
 class PostReplyDraft {
   const PostReplyDraft({
@@ -46,7 +51,10 @@ class PostReplyComposerController extends ChangeNotifier {
   bool _isOpen = false;
   PostReplyBottomPanel _bottomPanel = PostReplyBottomPanel.none;
   double _stableKeyboardHeight = 300;
-  bool _keyboardRequestPending = false;
+  PostReplyInputHandoff _handoff = PostReplyInputHandoff.none;
+  int _handoffGeneration = 0;
+  Timer? _handoffTimer;
+  bool _disposing = false;
   int? _parentReplyId;
   int? _replyToUserId;
   int? _replyToReplyId;
@@ -59,7 +67,7 @@ class PostReplyComposerController extends ChangeNotifier {
   PostReplyBottomPanel get bottomPanel => _bottomPanel;
   bool get showEmojiPanel => _bottomPanel == PostReplyBottomPanel.emoji;
   double get stableKeyboardHeight => _stableKeyboardHeight;
-  bool get keyboardRequestPending => _keyboardRequestPending;
+  bool get inputHandoffActive => _handoff != PostReplyInputHandoff.none;
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;
   int? get replyToReplyId => _replyToReplyId;
@@ -80,16 +88,33 @@ class PostReplyComposerController extends ChangeNotifier {
       );
 
   void updateKeyboardMetrics(double inset) {
+    // Emoji → Keyboard 交接期间保持 Emoji 可见，直到 IME 覆盖到稳定高度
+    // 再完成交接；不让 Emoji 面板在 IME 升起途中让位造成空白板。
+    if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {
+      if (inset > 0) {
+        // 交接期间不改写 target：以记录的稳定高度（或 fallback）为基准，
+        // 避免首帧小 inset 把目标重设导致 Emoji 提前让位。
+        final target = _stableKeyboardHeight;
+        if (inset >= target * 0.90 || (target - inset).abs() <= 12) {
+          _completeEmojiToKeyboardHandoff();
+        }
+      } else {
+        // 键盘没有起来/异常：取消 handoff，保持 Emoji
+        _cancelHandoff();
+      }
+      return;
+    }
+
     if (inset > 0) {
-      _stableKeyboardHeight = inset;
-      _keyboardRequestPending = false;
+      if (inset > _stableKeyboardHeight) {
+        _stableKeyboardHeight = inset;
+      }
       if (_bottomPanel != PostReplyBottomPanel.emoji) {
         _bottomPanel = PostReplyBottomPanel.keyboard;
         notifyListeners();
       }
     } else {
-      if (_bottomPanel == PostReplyBottomPanel.keyboard &&
-          !_keyboardRequestPending) {
+      if (_bottomPanel == PostReplyBottomPanel.keyboard) {
         _bottomPanel = PostReplyBottomPanel.none;
         notifyListeners();
       }
@@ -97,8 +122,8 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void open() {
+    _cancelHandoff();
     _isOpen = true;
-    _keyboardRequestPending = true;
     _bottomPanel = PostReplyBottomPanel.keyboard;
     notifyListeners();
     _focusAfterLayout();
@@ -127,15 +152,16 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void close({bool clearDraft = false}) {
+    _cancelHandoff();
     focusNode.unfocus();
     _isOpen = false;
-    _keyboardRequestPending = false;
     _bottomPanel = PostReplyBottomPanel.none;
     if (clearDraft) clear();
     notifyListeners();
   }
 
   void clear() {
+    _cancelHandoff();
     textController.clear();
     _parentReplyId = null;
     _replyToUserId = null;
@@ -147,22 +173,68 @@ class PostReplyComposerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleEmojiPanel() {
+  void toggleEmojiPanel({double keyboardInset = 0}) {
     if (_bottomPanel == PostReplyBottomPanel.emoji) {
-      _keyboardRequestPending = true;
-      _bottomPanel = PostReplyBottomPanel.keyboard;
-      notifyListeners();
-      _focusAfterLayout();
+      // Emoji → Keyboard：保持 Emoji 原位直到 IME 覆盖，避免空白板。
+      _beginEmojiToKeyboardHandoff();
       return;
+    }
+    _cancelHandoff();
+    if (keyboardInset > 0) {
+      _stableKeyboardHeight = keyboardInset;
     }
     focusNode.unfocus();
     _isOpen = true;
-    _keyboardRequestPending = false;
     _bottomPanel = PostReplyBottomPanel.emoji;
     notifyListeners();
   }
 
+  /// 发起 Emoji → Keyboard 交接：Emoji 保持显示直到 IME 稳定高度出现。
+  void _beginEmojiToKeyboardHandoff() {
+    _cancelHandoff();
+    final generation = ++_handoffGeneration;
+    _handoff = PostReplyInputHandoff.emojiToKeyboard;
+    notifyListeners();
+    _focusAfterLayout();
+    // 保险超时：仅防状态永远卡住，不作为动画时长。
+    _handoffTimer = Timer(
+      const Duration(milliseconds: 400),
+      () {
+        if (_disposing || generation != _handoffGeneration) return;
+        if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {
+          _handoff = PostReplyInputHandoff.none;
+          _bottomPanel = PostReplyBottomPanel.keyboard;
+          notifyListeners();
+        }
+      },
+    );
+  }
+
+  /// handoff 完成后调用：Emoji 让位给已稳定的 IME。
+  void _completeEmojiToKeyboardHandoff() {
+    _handoffTimer?.cancel();
+    if (_handoff != PostReplyInputHandoff.emojiToKeyboard) return;
+    _handoffGeneration++;
+    _handoff = PostReplyInputHandoff.none;
+    _bottomPanel = PostReplyBottomPanel.keyboard;
+    notifyListeners();
+  }
+
+  void _cancelHandoff() {
+    _handoffTimer?.cancel();
+    if (_handoff != PostReplyInputHandoff.none) {
+      _handoffGeneration++;
+      if (_disposing) {
+        _handoff = PostReplyInputHandoff.none;
+        return;
+      }
+      _handoff = PostReplyInputHandoff.none;
+      notifyListeners();
+    }
+  }
+
   void closeEmojiPanel() {
+    _cancelHandoff();
     if (_bottomPanel != PostReplyBottomPanel.emoji) return;
     _bottomPanel = PostReplyBottomPanel.none;
     notifyListeners();
@@ -217,6 +289,9 @@ class PostReplyComposerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposing = true;
+    _handoffTimer?.cancel();
+    _handoffTimer = null;
     textController.dispose();
     focusNode.dispose();
     super.dispose();

@@ -150,6 +150,9 @@ class LikeTestAuthProvider extends Fake
   bool get isLoggedIn => true;
 
   @override
+  String? get token => 'test-token';
+
+  @override
   User? get user => User(
         id: 1,
         studentId: '123',

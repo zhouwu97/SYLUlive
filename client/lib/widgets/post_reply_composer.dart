@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../controllers/post_reply_composer_controller.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
@@ -60,9 +61,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
   void didChangeMetrics() {
     super.didChangeMetrics();
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    if (keyboardInset > 0) {
-      controller.updateKeyboardMetrics(keyboardInset);
-    }
+    controller.updateKeyboardMetrics(keyboardInset);
   }
 
   @override
@@ -157,7 +156,6 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     double keyboardInset,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final panelHeight = controller.stableKeyboardHeight;
 
     return _shell(
       context,
@@ -237,10 +235,20 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                 : AppColors.iconMutedLight,
             decorate: false,
           ),
-          SizedBox(
-            height: isEmoji ? panelHeight : 0,
-            child: isEmoji
-                ? AppEmojiPanel(
+          Builder(builder: (context) {
+            final reduceMotion = MediaQuery.disableAnimationsOf(context);
+            return AnimatedContainer(
+              key: const ValueKey('post-reply-emoji-panel-container'),
+              duration: (reduceMotion) ? Duration.zero : AppMotion.fast,
+              curve: Curves.easeOutCubic,
+              height: isEmoji ? controller.stableKeyboardHeight : 0,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: Offstage(
+                offstage: !isEmoji,
+                child: IgnorePointer(
+                  ignoring: !isEmoji,
+                  child: AppEmojiPanel(
                     key: const ValueKey('post-reply-emoji-panel'),
                     onEmojiSelected: (emoji) =>
                         insertAtSelection(controller.textController, emoji),
@@ -251,9 +259,11 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                       controller.textController,
                     ),
                     enabled: widget.enabled && !widget.sending,
-                  )
-                : const SizedBox.shrink(),
-          ),
+                  ),
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );

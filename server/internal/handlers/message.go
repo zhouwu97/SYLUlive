@@ -916,11 +916,11 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 
 func privateMessagePreview(message models.Message) string {
 	content := strings.TrimSpace(message.Content)
-	if message.StickerID != nil && (content == "" || content == stickerFallbackText) {
-		return stickerFallbackText
+	if message.StickerID != nil && (content == "" || content == stickerFallbackText || content == "发来一个表情") {
+		return "发来一个表情"
 	}
 	if content == "" && message.FileID != nil {
-		return "[图片]"
+		return "发来一张图片"
 	}
 	return utils.TruncateGraphemes(content, 50)
 }

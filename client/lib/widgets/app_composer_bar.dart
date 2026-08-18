@@ -97,7 +97,7 @@ class AppComposerBar extends StatelessWidget {
     final effectiveIconColor = iconColor ??
         (isDark ? AppColors.iconNeutralDark : AppColors.iconNeutralLight);
     final effectiveEnabledSendColor = enabledSendColor ??
-        (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary);
+        (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight);
     final effectiveEnabledSendIconColor =
         enabledSendIconColor ?? Colors.white;
     final effectiveDisabledSendColor = disabledSendColor ??

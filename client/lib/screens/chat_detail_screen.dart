@@ -1651,7 +1651,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             size: 16,
                             color: isDark
                                 ? AppColors.messageOutgoingDark
-                                : AppColors.brandPrimary,
+                                : AppColors.messageOutgoingLight,
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -1793,7 +1793,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         : (isMine ? '我' : widget.targetUser.nickname);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bubbleColor = isMine
-        ? (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary)
+        ? (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight)
         : (isDark ? AppColors.messageIncomingDark : AppColors.messageIncomingLight);
     final textColor = isMine
         ? Colors.white
@@ -1807,7 +1807,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final isHighlighted = _messageFocusHighlightId == message.id;
     final highlightColor = isMine
         ? Colors.white.withValues(alpha: 0.72)
-        : (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary).withValues(alpha: 0.72);
+        : (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight).withValues(alpha: 0.72);
     // 仅图片消息（无文字、无表情）不套普通气泡，图片自带圆角。
     final imageOnly = hasImage &&
         stickerUrl == null &&

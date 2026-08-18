@@ -705,7 +705,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     final tileColor = selected
         ? (isDark
             ? AppColors.messageOutgoingDark.withValues(alpha: 0.22)
-            : AppColors.brandPrimary.withValues(alpha: 0.10))
+            : AppColors.messageOutgoingLight.withValues(alpha: 0.10))
         : Colors.transparent;
     final tileRadius = selected ? AppTheme.borderRadius : 0.0;
     final nickname = targetUser.nickname.isEmpty
@@ -826,7 +826,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               color: emphasized
                                   ? (isDark
                                       ? AppColors.messageOutgoingDark
-                                      : AppColors.brandPrimary)
+                                      : AppColors.messageOutgoingLight)
                                   : textMuted,
                               fontWeight: emphasized
                                   ? FontWeight.w600
@@ -846,7 +846,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               decoration: BoxDecoration(
                                 color: isDark
                                     ? AppColors.messageOutgoingDark
-                                    : AppColors.brandPrimary,
+                                    : AppColors.messageOutgoingLight,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(

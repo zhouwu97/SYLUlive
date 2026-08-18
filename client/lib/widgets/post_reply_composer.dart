@@ -112,7 +112,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             size: 16,
             color: isDark
                 ? AppColors.messageOutgoingDark
-                : AppColors.brandPrimary,
+                : AppColors.messageOutgoingLight,
           ),
           const SizedBox(width: 6),
           Expanded(

@@ -19,6 +19,9 @@ type File struct {
 	Path        string          `gorm:"size:500;not null" json:"path"`
 	Size        int64           `gorm:"not null" json:"size"`
 	MimeType    string          `gorm:"size:100;not null" json:"mime_type"`
+	// 图片元数据；旧数据为 0，客户端回退到 intrinsic 布局。
+	Width       int             `gorm:"not null;default:0" json:"width"`
+	Height      int             `gorm:"not null;default:0" json:"height"`
 	UploaderID  uint            `gorm:"index;not null;default:0" json:"-"`
 	Status      string          `gorm:"size:20;not null;default:'temporary';index" json:"status"`
 	AccessScope FileAccessScope `gorm:"size:16;not null;default:'private';index" json:"-"`

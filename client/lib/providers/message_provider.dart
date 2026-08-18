@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/api_constants.dart';
@@ -918,11 +918,16 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<int> _uploadImage(XFile image) async {
-    final bytes = await image.readAsBytes();
     final filename = _safeUploadFilename(image.name);
-    final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: filename),
-    });
+    // 移动/桌面端从文件流式上传，避免整张图片读入内存；Web 走 fromBytes。
+    final MultipartFile part;
+    if (!kIsWeb && image.path.isNotEmpty) {
+      part = await MultipartFile.fromFile(image.path, filename: filename);
+    } else {
+      final bytes = await image.readAsBytes();
+      part = MultipartFile.fromBytes(bytes, filename: filename);
+    }
+    final formData = FormData.fromMap({'file': part});
     final response = await _dio.post(
       '/upload',
       data: formData,

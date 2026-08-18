@@ -47,8 +47,9 @@ abstract final class AppColors {
   static const messageIncomingBorderLight = Color(0xFFE2E5E1);
   static const messageIncomingDark = Color(0xFF262A2C);
   static const messageIncomingBorderDark = Color(0xFF323739);
-  static const messageOutgoingLight = Color(0xFF147C72);
-  static const messageOutgoingDark = Color(0xFF287F75);
+  // Chat Message Bubbles & Send Button (Classic Indigo Blue)
+  static const messageOutgoingLight = accentIndigo;
+  static const messageOutgoingDark = Color(0xFF818CF8);
   static const messageOutgoingTextLight = Color(0xFFFFFFFF);
   static const messageOutgoingTextDark = Color(0xFFFFFFFF);
 

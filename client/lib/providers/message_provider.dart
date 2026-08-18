@@ -12,6 +12,7 @@ import '../models/message_send_state.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/private_message_media_cache.dart';
 
 /// 私信实时传输层状态。
 ///
@@ -175,6 +176,8 @@ class MessageProvider extends ChangeNotifier {
   void syncSessionUser(int? userId) {
     if (_sessionUserId == userId) return;
     _stopRealtime();
+    // 账号切换后清空私信媒体缓存，避免跨账号复用上一账号的私信图片。
+    PrivateMessageMediaCache.instance.scopeByAccount(userId);
     _sessionUserId = userId;
     resetSession();
     if (userId != null) {

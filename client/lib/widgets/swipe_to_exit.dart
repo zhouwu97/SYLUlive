@@ -7,9 +7,14 @@ import '../utils/screen_swipe.dart';
 class SwipeToExit extends StatefulWidget {
   final Widget child;
 
+  /// 为 false 时完全禁用退出滑动（例如输入面板打开时），避免侵入性手势
+  /// 与 Emoji PageView / 输入框等子组件的手势冲突。
+  final bool enabled;
+
   const SwipeToExit({
     super.key,
     required this.child,
+    this.enabled = true,
   });
 
   @override
@@ -28,6 +33,10 @@ class _SwipeToExitState extends State<SwipeToExit> {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
+    if (!widget.enabled) {
+      _resetPointer();
+      return;
+    }
     if (_trackedPointer != null || !_supportsSwipe(event.kind)) return;
     _trackedPointer = event.pointer;
     _startPosition = event.position;
@@ -37,7 +46,7 @@ class _SwipeToExitState extends State<SwipeToExit> {
     if (event.pointer != _trackedPointer) return;
     final startPosition = _startPosition;
     _resetPointer();
-    if (startPosition == null) return;
+    if (!widget.enabled || startPosition == null) return;
 
     final shouldExit = isLeftPageExitSwipe(
       start: startPosition,
@@ -58,6 +67,14 @@ class _SwipeToExitState extends State<SwipeToExit> {
   void _resetPointer() {
     _trackedPointer = null;
     _startPosition = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant SwipeToExit oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled && !widget.enabled) {
+      _resetPointer();
+    }
   }
 
   @override

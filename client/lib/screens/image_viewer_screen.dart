@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -7,9 +8,28 @@ import 'package:dio/dio.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 
 import '../utils/post_image_cache.dart';
+
+/// 全屏图片查看单项数据模型。
+class ImageViewerItem {
+  final String? url;
+  final String? localPath;
+  final Uint8List? bytes;
+
+  const ImageViewerItem({
+    this.url,
+    this.localPath,
+    this.bytes,
+  });
+
+  bool get isEmpty =>
+      (url == null || url!.trim().isEmpty) &&
+      (localPath == null || localPath!.trim().isEmpty) &&
+      (bytes == null || bytes!.isEmpty);
+
+  bool get isNotEmpty => !isEmpty;
+}
 
 class ImageViewerScreen extends StatefulWidget {
   final List<String> imageUrls;
@@ -24,6 +44,9 @@ class ImageViewerScreen extends StatefulWidget {
   /// 文件，让发送方与全屏查看共享同一 fallback 策略（本地 → 鉴权网络）。
   final List<String?>? localPaths;
 
+  /// 统一结构化列表（优先于 imageUrls/localPaths/imageBytes 解析）。
+  final List<ImageViewerItem>? items;
+
   /// 自定义缓存管理器（如私信图片使用 [PrivateMessageMediaCache.instance.manager]）；
   /// 为空时回退到公开图片缓存 [PostImageCache.manager]。
   final BaseCacheManager? cacheManager;
@@ -33,11 +56,12 @@ class ImageViewerScreen extends StatefulWidget {
 
   const ImageViewerScreen({
     super.key,
-    required this.imageUrls,
+    this.imageUrls = const <String>[],
     this.initialIndex = 0,
     this.httpHeaders = const {},
     this.imageBytes,
     this.localPaths,
+    this.items,
     this.cacheManager,
     this.cacheKeyBuilder,
   });
@@ -92,14 +116,46 @@ String _guessMimeType(String ext) {
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late PageController _pageController;
   late int _currentIndex;
+  late final List<ImageViewerItem> _resolvedItems;
   bool _isSaving = false;
   final Map<int, _ImageBytesResult> _downloadedImages = {};
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
+    _resolvedItems = _computeResolvedItems();
+    final total = _resolvedItems.length;
+    _currentIndex = total == 0 ? 0 : widget.initialIndex.clamp(0, total - 1);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  List<ImageViewerItem> _computeResolvedItems() {
+    if (widget.items != null && widget.items!.isNotEmpty) {
+      return widget.items!;
+    }
+    final int urlsLen = widget.imageUrls.length;
+    final int bytesLen = widget.imageBytes?.length ?? 0;
+    final int pathsLen = widget.localPaths?.length ?? 0;
+    int maxLen = urlsLen;
+    if (bytesLen > maxLen) maxLen = bytesLen;
+    if (pathsLen > maxLen) maxLen = pathsLen;
+    if (maxLen == 0) return const [];
+
+    return List<ImageViewerItem>.generate(maxLen, (i) {
+      final String? url = i < urlsLen ? widget.imageUrls[i] : null;
+      final Uint8List? bytes = (widget.imageBytes != null && i < bytesLen)
+          ? widget.imageBytes![i]
+          : null;
+      final String? localPath = (widget.localPaths != null && i < pathsLen)
+          ? widget.localPaths![i]
+          : null;
+      return ImageViewerItem(
+        url: (url != null && url.isNotEmpty) ? url : null,
+        localPath:
+            (localPath != null && localPath.isNotEmpty) ? localPath : null,
+        bytes: (bytes != null && bytes.isNotEmpty) ? bytes : null,
+      );
+    });
   }
 
   @override
@@ -108,19 +164,38 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     super.dispose();
   }
 
-  Future<_ImageBytesResult> _loadImageBytesForSaving(String url) async {
-    final alreadyDownloaded = _downloadedImages[_currentIndex];
+  Future<_ImageBytesResult> _loadImageBytesForSaving(int index) async {
+    final alreadyDownloaded = _downloadedImages[index];
     if (alreadyDownloaded != null) {
       return alreadyDownloaded;
     }
+    if (index < 0 || index >= _resolvedItems.length) {
+      throw Exception('图片不存在');
+    }
+    final item = _resolvedItems[index];
 
-    final memoryBytes = widget.imageBytes != null &&
-            _currentIndex < widget.imageBytes!.length
-        ? widget.imageBytes![_currentIndex]
-        : null;
-    if (memoryBytes != null) {
-      final ext = _guessExtensionFromBytes(memoryBytes, 'png');
-      return _ImageBytesResult(memoryBytes, '原图', ext, _guessMimeType(ext));
+    // 1. 优先从内存字节读取
+    if (item.bytes != null && item.bytes!.isNotEmpty) {
+      final ext = _guessExtensionFromBytes(item.bytes!, 'png');
+      return _ImageBytesResult(item.bytes!, '原图', ext, _guessMimeType(ext));
+    }
+
+    // 2. 优先从本地文件读取
+    if (item.localPath != null && item.localPath!.isNotEmpty) {
+      final file = File(item.localPath!);
+      if (await file.exists()) {
+        final fileBytes = await file.readAsBytes();
+        if (fileBytes.isNotEmpty) {
+          final ext = _guessExtensionFromBytes(fileBytes, 'png');
+          return _ImageBytesResult(fileBytes, '原图', ext, _guessMimeType(ext));
+        }
+      }
+    }
+
+    // 3. 网络图或缓存读取
+    final url = item.url;
+    if (url == null || url.isEmpty) {
+      throw Exception('原图不可用，且本地文件不存在');
     }
 
     // 尝试直接下载原始字节
@@ -138,13 +213,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         String ext = 'png'; // 默认
         final contentType = response.headers.value('content-type');
         if (contentType != null) {
-          if (contentType.contains('jpeg') || contentType.contains('jpg'))
+          if (contentType.contains('jpeg') || contentType.contains('jpg')) {
             ext = 'jpg';
-          else if (contentType.contains('png'))
+          } else if (contentType.contains('png')) {
             ext = 'png';
-          else if (contentType.contains('webp'))
+          } else if (contentType.contains('webp')) {
             ext = 'webp';
-          else if (contentType.contains('gif')) ext = 'gif';
+          } else if (contentType.contains('gif')) {
+            ext = 'gif';
+          }
         }
         ext = _guessExtensionFromBytes(data, ext);
 
@@ -169,12 +246,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
 
     throw Exception('原图不可用，且本机没有找到缓存');
-  }
-
-  Future<Uint8List> _normalizeImageBytes(List<int> bytes) async {
-    final codec = await ui.instantiateImageCodec(Uint8List.fromList(bytes));
-    final frame = await codec.getNextFrame();
-    return _encodeImageForGallery(frame.image);
   }
 
   Future<Uint8List?> _readVisibleImage(String url) async {
@@ -264,12 +335,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   }
 
   Future<void> _saveImage() async {
-    if (_isSaving) return;
+    if (_isSaving || _resolvedItems.isEmpty) return;
     if (mounted) setState(() => _isSaving = true);
 
     try {
-      final String url = widget.imageUrls[_currentIndex];
-
       final hasAccess = await Gal.hasAccess();
       if (!hasAccess) {
         final request = await Gal.requestAccess();
@@ -288,7 +357,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')));
 
-      final image = await _loadImageBytesForSaving(url);
+      final image = await _loadImageBytesForSaving(_currentIndex);
       final extension = switch (image.extension.toLowerCase()) {
         'jpg' || 'jpeg' => 'jpg',
         'png' => 'png',
@@ -328,6 +397,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final total = _resolvedItems.length;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -335,7 +405,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
-          '${_currentIndex + 1} / ${widget.imageUrls.length}',
+          total == 0 ? '0 / 0' : '${_currentIndex + 1} / $total',
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
@@ -350,102 +420,111 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     ),
                   )
                 : const Icon(Icons.download),
-            onPressed: _saveImage,
+            onPressed: total == 0 ? null : _saveImage,
           ),
         ],
       ),
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: widget.imageUrls.length,
-        onPageChanged: (index) {
-          if (mounted) {
-            setState(() {
-              _currentIndex = index;
-            });
-          }
-        },
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onLongPress: () {
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: Colors.transparent,
-                builder: (context) => Container(
-                  margin: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF1E1E1E)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.download),
-                        title: const Text('保存原图'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _saveImage();
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.close),
-                        title: const Text('取消'),
-                        onTap: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-            child: InteractiveViewer(
-              child: Center(
-                child: _buildPageImage(index),
+      body: total == 0
+          ? const Center(
+              child: Text(
+                '暂无图片',
+                style: TextStyle(color: Colors.white70),
               ),
+            )
+          : PageView.builder(
+              controller: _pageController,
+              itemCount: total,
+              onPageChanged: (index) {
+                if (mounted) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                }
+              },
+              itemBuilder: (context, index) {
+                return GestureDetector(
+                  onLongPress: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => Container(
+                        margin: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF1E1E1E)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.download),
+                              title: const Text('保存原图'),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _saveImage();
+                              },
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.close),
+                              title: const Text('取消'),
+                              onTap: () => Navigator.pop(context),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: InteractiveViewer(
+                    child: Center(
+                      child: _buildPageImage(index),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
   /// 单页图片来源优先级：内存字节 → 本地文件 → 已下载内存 → 鉴权网络。
   Widget _buildPageImage(int index) {
-    if (widget.imageBytes != null &&
-        index < widget.imageBytes!.length &&
-        widget.imageBytes![index] != null) {
-      return Image.memory(widget.imageBytes![index]!, fit: BoxFit.contain);
+    if (index < 0 || index >= _resolvedItems.length) {
+      return const Icon(Icons.error, color: Colors.white, size: 48);
     }
-    final localPath = _localPathFor(index);
-    if (localPath != null) {
+    final item = _resolvedItems[index];
+
+    // 优先级 1：内存字节
+    if (item.bytes != null && item.bytes!.isNotEmpty) {
+      return Image.memory(item.bytes!, fit: BoxFit.contain);
+    }
+
+    // 优先级 2：本地文件
+    final localPath = item.localPath;
+    if (localPath != null && localPath.isNotEmpty) {
       return Image.file(
         File(localPath),
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _networkImageView(index),
+        errorBuilder: (_, __, ___) => _networkImageView(item.url),
       );
     }
+
+    // 优先级 3：已下载内存
     if (_downloadedImages.containsKey(index)) {
       return Image.memory(
         _downloadedImages[index]!.bytes,
         fit: BoxFit.contain,
       );
     }
-    return _networkImageView(index);
+
+    // 优先级 4：网络
+    return _networkImageView(item.url);
   }
 
-  String? _localPathFor(int index) {
-    final paths = widget.localPaths;
-    if (paths == null || index >= paths.length) return null;
-    final path = paths[index]?.trim();
-    return (path == null || path.isEmpty) ? null : path;
-  }
-
-  Widget _networkImageView(int index) {
-    if (widget.imageUrls.isEmpty || index >= widget.imageUrls.length) {
+  Widget _networkImageView(String? url) {
+    if (url == null || url.isEmpty) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
-    final url = widget.imageUrls[index];
     final cacheKey =
         widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
     return CachedNetworkImage(

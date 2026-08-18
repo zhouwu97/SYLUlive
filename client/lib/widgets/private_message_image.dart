@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../config/api_constants.dart';
 import '../services/diagnostic_log_service.dart';
+import '../utils/image_header_size_parser.dart';
 import '../utils/message_image_sizing.dart';
 import '../utils/private_message_media_cache.dart';
 
@@ -92,24 +92,16 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     }
   }
 
-  /// 服务端没给宽高时，尝试从本地文件解码 intrinsic 尺寸。
+  /// 服务端没给宽高时，使用轻量级文件头解析器提取尺寸，不将整图读入内存。
   Future<void> _resolveIntrinsic() async {
     if (widget.serverWidth > 0 && widget.serverHeight > 0) return;
     final localPath = widget.localPath;
     if (localPath == null || localPath.isEmpty) return;
     try {
-      final file = File(localPath);
-      if (!await file.exists()) return;
-      final bytes = await file.readAsBytes();
-      ui.Image image;
-      try {
-        image = await decodeImageFromList(bytes);
-      } catch (_) {
+      final size = await ImageHeaderSizeParser.parseFileSize(localPath);
+      if (!mounted || size == null || size.width <= 0 || size.height <= 0) {
         return;
       }
-      final size = Size(image.width.toDouble(), image.height.toDouble());
-      image.dispose();
-      if (!mounted || size.width <= 0 || size.height <= 0) return;
       setState(() => _intrinsic = size);
     } catch (_) {
       // 本地文件解码失败，交由渲染层回退到网络来源。
@@ -158,7 +150,23 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     );
   }
 
-  void _retry() {
+  Future<void> _retry() async {
+    final url = widget.networkUrl;
+    if (url != null && url.isNotEmpty) {
+      final fullUrl = ApiConstants.fullUrl(url);
+      final key = widget.cacheKey ??
+          PrivateMessageMediaCache.cacheKeyFor(
+            fullUrl,
+            accountId: widget.accountId,
+          );
+      try {
+        await (widget.cacheManager ?? PrivateMessageMediaCache.instance.manager)
+            .removeFile(key);
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _loadAttempt++;
       _localFailed = false;

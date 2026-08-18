@@ -74,12 +74,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   bool _initialLoadFinished = false;
   int _positionRequestVersion = 0;
   int? _syncedPlatformConversationId;
-  double _lastKeyboardInset = 0;
   double _stableKeyboardHeight = _fallbackKeyboardHeight;
-  Timer? _keyboardMetricsTimer;
   Timer? _messageFocusHighlightTimer;
   bool _hasObservedKeyboardHeight = false;
-  bool _keyboardRequestPending = false;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
   ChatInputHandoff _handoff = ChatInputHandoff.none;
   int _handoffGeneration = 0;
@@ -212,7 +209,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _initialLoadFinished = false;
       _bottomPanel = ChatBottomPanel.none;
       _cancelHandoff();
-      _keyboardRequestPending = false;
       _firstContactSendPending = false;
       _positionRequestVersion++;
       WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
@@ -231,7 +227,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _deactivateConversation();
     _refreshTimer?.cancel();
     _messageProvider?.setFallbackPollingActive(false);
-    _keyboardMetricsTimer?.cancel();
     _keyboardHandoffTimer?.cancel();
     _messageFocusHighlightTimer?.cancel();
     _scrollController
@@ -297,7 +292,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       // 再完成交接；不让 Emoji 面板在 IME 升起途中让位造成空白板。
       if (_handoff == ChatInputHandoff.emojiToKeyboard) {
         if (keyboardInset > 0) {
-          _scheduleStableKeyboardHeight(keyboardInset);
+          // 交接期间不改写 target：以记录过的稳定高度（或 fallback）为基准，
+          // 避免首帧小 inset 把目标重设为几十像素导致 Emoji 提前让位。
+          final target = _stableKeyboardHeight;
+          if (keyboardInset >= target * 0.90 ||
+              (target - keyboardInset).abs() <= 12) {
+            _completeEmojiToKeyboardHandoff();
+          }
         }
         return;
       }
@@ -307,55 +308,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       }
 
       if (keyboardInset <= 0) {
-        _keyboardMetricsTimer?.cancel();
         _cancelHandoff();
-        if (_bottomPanel == ChatBottomPanel.keyboard &&
-            !_keyboardRequestPending) {
+        if (_bottomPanel == ChatBottomPanel.keyboard) {
           setState(() => _bottomPanel = ChatBottomPanel.none);
         }
         return;
       }
 
-      if ((keyboardInset - _lastKeyboardInset).abs() >= 0.5) {
-        _lastKeyboardInset = keyboardInset;
-        _scheduleStableKeyboardHeight(keyboardInset);
-      }
-    });
-  }
-
-  void _scheduleStableKeyboardHeight(double keyboardInset) {
-    if (keyboardInset <= 0) return;
-    if (!_keyboardRequestPending &&
-        (keyboardInset >= _stableKeyboardHeight ||
-            !_hasObservedKeyboardHeight)) {
-      _keyboardMetricsTimer?.cancel();
-      setState(() {
+      // 记录稳定键盘高度（异步，不阻塞 UI）
+      if (keyboardInset > _stableKeyboardHeight ||
+          !_hasObservedKeyboardHeight) {
         _stableKeyboardHeight = keyboardInset;
         _hasObservedKeyboardHeight = true;
-        if (_bottomPanel != ChatBottomPanel.emoji) {
-          _bottomPanel = ChatBottomPanel.keyboard;
-        }
-      });
-      return;
-    }
-
-    _keyboardMetricsTimer?.cancel();
-    _keyboardMetricsTimer = Timer(const Duration(milliseconds: 100), () {
-      if (!mounted) return;
-      final settledInset = MediaQuery.viewInsetsOf(context).bottom;
-      if (settledInset > 0) {
+      }
+      if (_bottomPanel != ChatBottomPanel.emoji) {
         setState(() {
-          _stableKeyboardHeight = settledInset;
-          _hasObservedKeyboardHeight = true;
-          _keyboardRequestPending = false;
-          if (_handoff == ChatInputHandoff.emojiToKeyboard) {
-            // IME 稳定后完成 Emoji → Keyboard 交接，Emoji 让位给键盘。
-            _completeEmojiToKeyboardHandoff();
-            return;
-          }
-          if (_bottomPanel != ChatBottomPanel.emoji) {
-            _bottomPanel = ChatBottomPanel.keyboard;
-          }
+          _bottomPanel = ChatBottomPanel.keyboard;
         });
       }
     });
@@ -487,10 +455,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!(_sendState?.canUseFirstContactAllowance ?? false)) return;
     _cancelHandoff();
     setState(() {
-      // 本地先占用额度，避免首条还在 pending 时被连续发送绕过。
       _firstContactSendPending = true;
       _bottomPanel = ChatBottomPanel.none;
-      _keyboardRequestPending = false;
     });
     _inputFocusNode.unfocus();
   }
@@ -679,7 +645,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _sendState = next;
       if (next?.isBlocked ?? false) {
         _bottomPanel = ChatBottomPanel.none;
-        _keyboardRequestPending = false;
         _inputFocusNode.unfocus();
       }
       if (next?.targetFollowsMe == true || next?.targetReplied == true) {
@@ -710,7 +675,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         _hasObservedKeyboardHeight = true;
       }
       _bottomPanel = ChatBottomPanel.emoji;
-      _keyboardRequestPending = false;
     });
     _inputFocusNode.unfocus();
   }
@@ -728,7 +692,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
     setState(() {
       _bottomPanel = ChatBottomPanel.keyboard;
-      _keyboardRequestPending = true;
     });
     _inputFocusNode.requestFocus();
   }
@@ -739,12 +702,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final generation = ++_handoffGeneration;
     setState(() {
       _handoff = ChatInputHandoff.emojiToKeyboard;
-      _keyboardRequestPending = true;
     });
     _inputFocusNode.requestFocus();
     // 保险超时：仅防状态永远卡住，不作为动画时长。
     _keyboardHandoffTimer = Timer(
-      const Duration(milliseconds: 700),
+      const Duration(milliseconds: 400),
       () {
         if (!mounted || generation != _handoffGeneration) return;
         if (_handoff == ChatInputHandoff.emojiToKeyboard) {
@@ -765,7 +727,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     setState(() {
       _handoff = ChatInputHandoff.none;
       _bottomPanel = ChatBottomPanel.keyboard;
-      _keyboardRequestPending = false;
     });
   }
 
@@ -782,26 +743,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   void _dismissBottomPanel() {
-    _inputFocusNode.unfocus();
     _cancelHandoff();
-    if (_bottomPanel == ChatBottomPanel.none &&
-        _keyboardRequestPending == false) {
+    if (_bottomPanel == ChatBottomPanel.keyboard) {
+      // 键盘模式：先 unfocus，等 didChangeMetrics 中 inset 归零后自动切 none
+      _inputFocusNode.unfocus();
       return;
     }
+    _inputFocusNode.unfocus();
+    if (_bottomPanel == ChatBottomPanel.none) return;
     setState(() {
       _bottomPanel = ChatBottomPanel.none;
-      _keyboardRequestPending = false;
     });
   }
 
   /// 仅关闭当前底部面板（消息区点击、返回等），不退出页面。
   void _collapseBottomPanelOnly() {
-    _inputFocusNode.unfocus();
     _cancelHandoff();
+    if (_bottomPanel == ChatBottomPanel.keyboard) {
+      // 键盘模式：unfocus 后让 viewport 跟随 viewInsets 逐帧降到 0，
+      // 不立即设 none，避免页面瞬间下落。
+      _inputFocusNode.unfocus();
+      return;
+    }
+    _inputFocusNode.unfocus();
     if (_bottomPanel == ChatBottomPanel.none) return;
     setState(() {
       _bottomPanel = ChatBottomPanel.none;
-      _keyboardRequestPending = false;
     });
   }
 
@@ -811,7 +778,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _inputFocusNode.unfocus();
     setState(() {
       _bottomPanel = ChatBottomPanel.none;
-      _keyboardRequestPending = false;
     });
     // 下一帧再 pop，避免 PopScope 仍看到旧的底部面板状态。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -838,17 +804,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   double get _keyboardViewportHeight {
-    if (_keyboardRequestPending) {
-      return _stableKeyboardHeight;
-    }
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    return keyboardInset > 0 ? keyboardInset : _stableKeyboardHeight;
+    return MediaQuery.viewInsetsOf(context).bottom;
   }
 
   double get _bottomViewportHeight {
     switch (_bottomPanel) {
       case ChatBottomPanel.none:
-        return 0;
+        // 键盘收起过程中 inset 尚未归零，跟随系统 IME 动画自然下落
+        return _keyboardViewportHeight;
       case ChatBottomPanel.keyboard:
         return _keyboardViewportHeight;
       case ChatBottomPanel.emoji:
@@ -874,22 +837,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
       enabled: !_isComposerBlocked && !_isPickingImage && !_isSendingMedia,
     );
+    // 只有自定义 Emoji 面板的高度变化走 Flutter 动画（160ms easeOutCubic），
+    // 系统 IME 动画由 viewInsets 驱动，不二次套动画。
+    final animateCustomPanel = _bottomPanel == ChatBottomPanel.emoji ||
+        (_bottomPanel == ChatBottomPanel.none && _keyboardViewportHeight <= 0);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     // 表情面板常驻同一棵子树，用 Offstage 控制可见性而非销毁重建，
     // 确保收藏页 / tab / PageView / scroll offset 在键盘切换间不丢状态。
-    // Keyboard ↔ Emoji 本身不做额外过渡动画。
-    return SizedBox(
+    return AnimatedContainer(
       key: const ValueKey('chat-bottom-viewport'),
+      duration: (animateCustomPanel && !reduceMotion)
+          ? AppMotion.fast
+          : Duration.zero,
+      curve: Curves.easeOutCubic,
       width: double.infinity,
       height: height,
       child: ColoredBox(
         color: colors.surface,
-        child: Offstage(
-          offstage: !showEmojiPanel,
-          child: IgnorePointer(
-            ignoring: !showEmojiPanel,
-            child: SafeArea(
-              top: false,
-              child: emojiPanel,
+        child: AnimatedOpacity(
+          opacity: showEmojiPanel ? 1.0 : 0.0,
+          duration: (showEmojiPanel && !reduceMotion)
+              ? AppMotion.micro
+              : Duration.zero,
+          child: Offstage(
+            offstage: !showEmojiPanel,
+            child: IgnorePointer(
+              ignoring: !showEmojiPanel,
+              child: SafeArea(
+                top: false,
+                child: emojiPanel,
+              ),
             ),
           ),
         ),

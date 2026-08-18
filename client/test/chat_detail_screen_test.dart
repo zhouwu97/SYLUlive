@@ -222,9 +222,11 @@ void main() {
       clearedClientsBeforeTap,
     );
     expect(tester.testTextInput.isVisible, isTrue);
+    // 键盘未真正弹起前不得预留 stableKeyboardHeight：viewport 跟随真实
+    // viewInsets（测试环境无 IME，因此是 0），不能提前撑起 300。
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
-      300,
+      0,
     );
     await _disposeChat(tester, provider);
   });
@@ -236,6 +238,8 @@ void main() {
     addTearDown(tester.view.reset);
     final provider = MessageProvider(_chatDio());
     await _pumpChat(tester, provider);
+    final composerSize =
+        tester.getSize(find.byKey(const ValueKey('chat-composer')));
 
     tester.view.viewInsets = const FakeViewPadding(bottom: 356);
     await _pumpFrames(tester, count: 2);
@@ -285,12 +289,18 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
     // Emoji → Keyboard 交接期间面板保持原位直到 IME 覆盖；测试环境无 IME，
-    // 依赖 700ms 保险超时切回键盘，因此这里推过超时再断言面板关闭。
-    await tester.pump(const Duration(milliseconds: 800));
+    // 依赖 400ms 保险超时切回键盘，因此这里推过超时再断言面板关闭。
+    await tester.pump(const Duration(milliseconds: 450));
     expect(find.byType(AppEmojiPanel), findsNothing);
+    // 交接完成后 viewport 跟随真实 inset（无 IME 时为 0），
+    // 内容回到屏幕底部，而不是残留 stableKeyboardHeight 悬空。
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
-      closeTo(composerTopWithKeyboard, 1),
+      closeTo(900 - composerSize.height, 1),
     );
     await _disposeChat(tester, provider);
   });
@@ -579,16 +589,18 @@ void main() {
     final provider = MessageProvider(_chatDio());
     await _pumpChat(tester, provider);
 
-    // 从未弹起过键盘，直接点击 Emoji 按钮
+    // 从未弹起过键盘，直接点击 Emoji 按钮（fallback 300）
     await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
     await _pumpFrames(tester, count: 2);
+    // 自定义 Emoji 面板高度走 160ms Flutter 动画，推完动画再断言
+    await tester.pump(const Duration(milliseconds: 200));
     expect(find.byType(AppEmojiPanel), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       300,
     );
 
-    // 点击输入框切回键盘 (keyboardRequestPending = true)
+    // 点击输入框切回键盘（进入 Emoji → Keyboard 交接）
     await tester.tap(find.byKey(const ValueKey('chat-input')));
     await tester.pump();
 
@@ -597,6 +609,7 @@ void main() {
     for (final inset in transitionFrames) {
       tester.view.viewInsets = FakeViewPadding(bottom: inset);
       await tester.pump(const Duration(milliseconds: 16));
+      // 交接基准是 fallback 300，首帧小 inset 不能改写目标；
       // 高度不能从 300 坍塌到第一帧的 40 或 100
       expect(
         tester
@@ -611,6 +624,143 @@ void main() {
       356,
     );
     await _disposeChat(tester, provider);
+  });
+
+  testWidgets('系统返回键先关闭输入面板再退出', (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+
+    // 键盘态：返回 → unfocus，panel 不瞬切 none，viewport 跟随 inset 逐帧下落
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+    // 收起过程 inset 尚未归零：viewport 跟随真实 inset（260），不瞬跳 0
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      260,
+    );
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+
+    // Emoji 态：返回 → 面板直接关闭并回到底部
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await _pumpFrames(tester, count: 5); // 等 160ms 高度动画完成
+    expect(find.byType(AppEmojiPanel), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('连续快速 Emoji/Keyboard/Emoji 切换不残留交接状态',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+
+    // Emoji → 快速重按两次（handoff 反复重发，generation 递增）
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pump();
+
+    // 键盘升起，覆盖 90% 后完成交接
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+
+    // 立即再切回 Emoji：面板保持同高
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+
+    // 键盘落下后 Emoji 仍保持稳定高度
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await _pumpFrames(tester, count: 2);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+
+    // 再点回键盘：交接再次完成，无残留 handoff
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 16));
+    await _pumpFrames(tester, count: 2);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('disableAnimations 时 Emoji 面板高度动画立即完成',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider, disableAnimations: true);
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pump(); // 单帧即到位，不做 160ms 高度动画
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      300,
+    );
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('dispose 时 handoff timer 不 setState', (tester) async {
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pump();
+
+    await _disposeChat(tester, provider);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('long pressing a message image can add it to favorites',
@@ -970,6 +1120,7 @@ Future<void> _pumpChat(
   WidgetTester tester,
   MessageProvider provider, {
   ThemeData? theme,
+  bool disableAnimations = false,
 }) async {
   final currentUser = _user(8, '我');
   await tester.pumpWidget(
@@ -983,6 +1134,14 @@ Future<void> _pumpChat(
       ],
       child: MaterialApp(
         theme: theme,
+        builder: disableAnimations
+            ? (context, child) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    disableAnimations: true,
+                  ),
+                  child: child!,
+                )
+            : null,
         navigatorObservers: [appRouteObserver],
         home: ChatDetailScreen(
           conversationId: 42,

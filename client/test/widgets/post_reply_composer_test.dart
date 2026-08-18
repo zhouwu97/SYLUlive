@@ -10,6 +10,7 @@ Widget _buildComposer({
   bool sending = false,
   ThemeData? theme,
   double textScaleFactor = 1,
+  bool disableAnimations = false,
   VoidCallback? onNeedLogin,
   PostReplySubmitCallback? onSubmit,
   PostReplyImagePicker? pickImage,
@@ -20,6 +21,7 @@ Widget _buildComposer({
       return MediaQuery(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScaleFactor),
+          disableAnimations: disableAnimations,
         ),
         child: child!,
       );
@@ -221,10 +223,17 @@ void main() {
     expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
     expect(find.byKey(const ValueKey('post-reply-emoji-panel')), findsOneWidget);
 
-    // 再次点击表情按钮切换回键盘模式
+    // 再次点击表情按钮：进入 Emoji → Keyboard 交接，Emoji 保持原位，
+    // 直到 IME 覆盖 90%（测试环境无 IME，依赖 400ms 保险超时完成交接）
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pump();
 
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.showEmojiPanel, isTrue);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(controller.inputHandoffActive, isFalse);
     expect(controller.showEmojiPanel, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
   });
@@ -297,5 +306,130 @@ void main() {
       find.byKey(const ValueKey('local-image-composer-preview')),
       findsOneWidget,
     );
+  });
+
+  test('键盘 inset 逐帧驱动面板：>0 进入 keyboard，归零后才切 none', () {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    expect(controller.bottomPanel, PostReplyBottomPanel.none);
+    controller.updateKeyboardMetrics(120);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+    controller.updateKeyboardMetrics(240);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+    controller.updateKeyboardMetrics(356);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+    // 键盘收起过程中（inset 尚未归零）panel 保持 keyboard，
+    // 不允许瞬间切 none 造成页面下落
+    controller.updateKeyboardMetrics(180);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+    controller.updateKeyboardMetrics(0);
+    expect(controller.bottomPanel, PostReplyBottomPanel.none);
+  });
+
+  test('Emoji → Keyboard：覆盖 90% 即完成交接，无 100ms settle 等待', () {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    controller.toggleEmojiPanel(keyboardInset: 356);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+    expect(controller.stableKeyboardHeight, 356);
+
+    controller.toggleEmojiPanel(); // 发起交接
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+
+    // 首帧小 inset 不能改写交接基准（fresh page 防坍塌）
+    controller.updateKeyboardMetrics(40);
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+    // 未到 90%（356 * 0.9 = 320.4）：继续等待，不依赖定时器
+    controller.updateKeyboardMetrics(300);
+    expect(controller.inputHandoffActive, isTrue);
+    // 覆盖 90% 后立即完成，无 100ms settle
+    controller.updateKeyboardMetrics(321);
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+
+    // 键盘未起来的异常场景：取消交接并保持 Emoji
+    controller.toggleEmojiPanel(keyboardInset: 356);
+    controller.toggleEmojiPanel();
+    controller.updateKeyboardMetrics(0);
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+  });
+
+  test('连续快速 Emoji/Keyboard 切换不残留 handoff', () {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    controller.toggleEmojiPanel(keyboardInset: 356); // Emoji
+    controller.toggleEmojiPanel(); // handoff #1
+    controller.toggleEmojiPanel(); // 快速重按：handoff #2（generation 递增）
+    expect(controller.inputHandoffActive, isTrue);
+    controller.updateKeyboardMetrics(321); // 覆盖 90% 完成
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+
+    controller.toggleEmojiPanel(keyboardInset: 356); // 再回 Emoji
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+    controller.toggleEmojiPanel(); // 再发起交接
+    controller.updateKeyboardMetrics(0); // 键盘没起来 → 取消
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+  });
+
+  testWidgets('系统返回键关闭表情面板', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+    expect(controller.showEmojiPanel, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(controller.showEmojiPanel, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.none);
+  });
+
+  testWidgets('disableAnimations 时表情面板高度动画立即完成', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _buildComposer(controller: controller, disableAnimations: true),
+    );
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump(); // 单帧即到位，不做 160ms 高度动画
+
+    expect(controller.showEmojiPanel, isTrue);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('post-reply-emoji-panel-container')),
+          )
+          .height,
+      300,
+    );
+  });
+
+  testWidgets('dispose 时 handoff timer 被取消，不触发已释放通知', (tester) async {
+    final controller = PostReplyComposerController();
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+    expect(controller.inputHandoffActive, isTrue);
+
+    // 先卸载组件再释放 controller；400ms timer 必须被取消
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.takeException(), isNull);
   });
 }

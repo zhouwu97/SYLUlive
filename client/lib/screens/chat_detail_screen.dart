@@ -1324,7 +1324,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
       statusBarColor: colors.surface,
-      systemNavigationBarColor: colors.surfaceContainerHighest,
+      systemNavigationBarColor: colors.surface,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -1464,6 +1464,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     User? currentUser, {
     required bool includeBackdrop,
   }) {
+    final colors = Theme.of(context).colorScheme;
     if (provider.messageLoading &&
         !_initialLoadFinished &&
         provider.messages.isEmpty) {
@@ -1586,16 +1587,62 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             Positioned(
               right: 16,
               bottom: 12,
-              child: FilledButton.icon(
-                onPressed: () {
-                  setState(() => _newMessageCount = 0);
-                  unawaited(_scrollToLatestMessage(
-                    intent: ChatScrollIntent.incomingNearBottom,
-                  ));
-                  unawaited(_markVisibleMessagesRead());
-                },
-                icon: const Icon(Icons.arrow_downward_rounded, size: 18),
-                label: Text('$_newMessageCount 条新消息'),
+              child: Container(
+                key: const ValueKey('chat-new-message-button'),
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: colors.outlineVariant.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () {
+                      setState(() => _newMessageCount = 0);
+                      unawaited(_scrollToLatestMessage(
+                        intent: ChatScrollIntent.incomingNearBottom,
+                      ));
+                      unawaited(_markVisibleMessagesRead());
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_downward_rounded,
+                            size: 16,
+                            color: colors.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$_newMessageCount 条新消息',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
         ],

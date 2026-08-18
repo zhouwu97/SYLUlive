@@ -676,9 +676,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     final emphasized = conversation.unreadCount > 0;
     final tileColor = selected
         ? colors.primary.withValues(alpha: isDark ? 0.22 : 0.10)
-        : emphasized
-            ? colors.primary.withValues(alpha: isDark ? 0.10 : 0.035)
-            : Colors.transparent;
+        : Colors.transparent;
     final tileRadius = selected ? AppTheme.borderRadius : 0.0;
     final nickname = targetUser.nickname.isEmpty
         ? '用户${targetUser.id}'

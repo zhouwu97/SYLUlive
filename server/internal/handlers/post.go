@@ -552,6 +552,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if !exists || !ok || userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "请先登录查看关注动态",
+				"code":  "authentication_required",
 			})
 			return
 		}
@@ -1114,7 +1115,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	if supportsPoll {
 		feed = services.NewHomeFeedServiceWithPoll(h.db)
 		feed.SetPersonalization(h.feedShadow, h.feedRollout)
-	feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
+		feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
 		feedKind = "home_v3_poll"
 	}
 	userID := optionalFeedUserID(c)
@@ -1440,7 +1441,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return
 	}
 	if models.BoardID(input.BoardID) == models.BoardMarket && !user.IsStudentVerified() {
@@ -1901,7 +1902,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 		case "unauthorized":
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 		case "user_not_found":
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		case "market_graduated":
 			c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户不能编辑集市帖子"})
 		case "invalid_post_type":

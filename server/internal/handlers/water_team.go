@@ -67,12 +67,12 @@ func (h *WaterTeamHandler) NotifyDeadlineSoon() {
 func (h *WaterTeamHandler) currentUserOr401(c *gin.Context) (uint, bool) {
 	val, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return 0, false
 	}
 	userID, ok := val.(uint)
 	if !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return 0, false
 	}
 	return userID, true

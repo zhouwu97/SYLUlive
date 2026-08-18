@@ -75,7 +75,7 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	if len(input.ImageIDs) > 0 {
 		uid, ok := userID.(uint)
 		if !ok || uid == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后再上传截图"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后再上传截图", "code": "authentication_required"})
 			return
 		}
 		files, err := services.ValidateImageFileIDs(h.db, input.ImageIDs, maxFeedbackImages, uid)

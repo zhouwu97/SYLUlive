@@ -59,6 +59,11 @@ func TestEduBindingRecoveryCompletesEmailAccountAfterRemoteCommit(t *testing.T) 
 	if stored.StudentID != pendingStudentID || stored.AccountStatus != "active" || stored.EduBindingState != "active" || !stored.EduAuthorized || stored.EduAuthorizationGeneration != 1 || stored.StudentVerifiedAt == nil || stored.EduBindingPendingStudentID != "" {
 		t.Fatalf("恢复后的账号状态错误: %#v", stored)
 	}
+	// 后台恢复没有客户端响应可以下发新 JWT，绝不能悄悄推进 token_version，
+	// 否则客户端仍持有的旧 JWT 会在下一次请求被 token_version_expired 拒绝。
+	if stored.TokenVersion != user.TokenVersion {
+		t.Fatalf("恢复不得修改令牌版本: got=%d want=%d", stored.TokenVersion, user.TokenVersion)
+	}
 	var consent models.UserLegalConsent
 	if err := db.Where("user_id = ? AND document = ?", user.ID, models.LegalDocumentEduDataConsent).First(&consent).Error; err != nil {
 		t.Fatalf("读取恢复的专项同意失败: %v", err)

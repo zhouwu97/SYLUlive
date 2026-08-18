@@ -34,7 +34,7 @@ func requireFeedUser(c *gin.Context) (uint, bool) {
 	rawUserID, exists := c.Get("user_id")
 	userID, ok := rawUserID.(uint)
 	if !exists || !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return 0, false
 	}
 	return userID, true

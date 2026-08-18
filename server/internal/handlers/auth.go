@@ -1017,7 +1017,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 	if verifyResult.StudentID != "" && verifyResult.StudentID != input.StudentID {
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致", "code": "EDU_STUDENT_MISMATCH"})
 
 		return
 
@@ -1248,7 +1248,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	if result.StudentID != "" && result.StudentID != input.StudentID {
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致", "code": "EDU_STUDENT_MISMATCH"})
 
 		return
 
@@ -1427,7 +1427,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 		}
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入", "code": "INVALID_PASSWORD"})
 
 		return
 

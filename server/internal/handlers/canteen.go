@@ -167,24 +167,18 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 
 	type ratingDishRecRow struct {
 		RatingID uint   `gorm:"column:rating_id"`
-		DishID   uint   `gorm:"column:dish_id"`
 		DishName string `gorm:"column:dish_name"`
 	}
-	recsByRatingID := map[uint][]models.CanteenDish{}
-	recIDsByRatingID := map[uint][]uint{}
+	recsByRatingID := map[uint][]string{}
 	if len(ratingIDs) > 0 {
 		var recRows []ratingDishRecRow
 		if err := h.db.Table("canteen_rating_dish_recommendations").
-			Select("canteen_rating_dish_recommendations.rating_id, canteen_rating_dish_recommendations.dish_id, canteen_dishes.name as dish_name").
-			Joins("JOIN canteen_dishes ON canteen_dishes.id = canteen_rating_dish_recommendations.dish_id").
-			Where("canteen_rating_dish_recommendations.rating_id IN ?", ratingIDs).
+			Select("rating_id, dish_name").
+			Where("rating_id IN ?", ratingIDs).
+			Order("id ASC").
 			Find(&recRows).Error; err == nil {
 			for _, row := range recRows {
-				recsByRatingID[row.RatingID] = append(recsByRatingID[row.RatingID], models.CanteenDish{
-					ID:   row.DishID,
-					Name: row.DishName,
-				})
-				recIDsByRatingID[row.RatingID] = append(recIDsByRatingID[row.RatingID], row.DishID)
+				recsByRatingID[row.RatingID] = append(recsByRatingID[row.RatingID], row.DishName)
 			}
 		}
 	}
@@ -198,10 +192,7 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			ratings[i].MyVote = &vote
 		}
 		if recs, ok := recsByRatingID[ratings[i].ID]; ok {
-			ratings[i].RecommendedDishes = recs
-		}
-		if recIDs, ok := recIDsByRatingID[ratings[i].ID]; ok {
-			ratings[i].RecommendedDishIDs = recIDs
+			ratings[i].RecommendedDishNames = recs
 		}
 	}
 
@@ -223,16 +214,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			}
 			var myRecRows []ratingDishRecRow
 			if err := h.db.Table("canteen_rating_dish_recommendations").
-				Select("canteen_rating_dish_recommendations.rating_id, canteen_rating_dish_recommendations.dish_id, canteen_dishes.name as dish_name").
-				Joins("JOIN canteen_dishes ON canteen_dishes.id = canteen_rating_dish_recommendations.dish_id").
-				Where("canteen_rating_dish_recommendations.rating_id = ?", rating.ID).
+				Select("rating_id, dish_name").
+				Where("rating_id = ?", rating.ID).
+				Order("id ASC").
 				Find(&myRecRows).Error; err == nil {
 				for _, row := range myRecRows {
-					rating.RecommendedDishes = append(rating.RecommendedDishes, models.CanteenDish{
-						ID:   row.DishID,
-						Name: row.DishName,
-					})
-					rating.RecommendedDishIDs = append(rating.RecommendedDishIDs, row.DishID)
+					rating.RecommendedDishNames = append(rating.RecommendedDishNames, row.DishName)
 				}
 			}
 			myRating = &rating
@@ -454,11 +441,11 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 
 	var input struct {
-		Star               int      `json:"star" binding:"required,min=1,max=5"`
-		Comment            string   `json:"comment" binding:"max=500"`
-		Images             string   `json:"images"`
-		Tags               []string `json:"tags"`
-		RecommendedDishIDs []uint   `json:"recommended_dish_ids"`
+		Star              int      `json:"star" binding:"required,min=1,max=5"`
+		Comment           string   `json:"comment" binding:"max=500"`
+		Images            string   `json:"images"`
+		Tags              []string `json:"tags"`
+		RecommendedDishes []string `json:"recommended_dishes"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -551,27 +538,51 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		normalizedImagesJSON = "[]"
 	}
 
-	// 3. 推荐菜品校验 (最多 3 个，必须属于当前食堂且 status == active)
-	var cleanedDishIDs []uint
-	seenDishIDs := make(map[uint]bool)
-	for _, dishID := range input.RecommendedDishIDs {
-		if dishID > 0 && !seenDishIDs[dishID] {
-			seenDishIDs[dishID] = true
-			cleanedDishIDs = append(cleanedDishIDs, dishID)
+	// 3. 推荐菜品校验与标准化 (最多 3 道，允许学生自由输入，单菜名最大 30 字，同一评价内去重)
+	type cleanedRec struct {
+		DishName       string
+		NormalizedName string
+		DishID         *uint
+	}
+	var cleanedRecs []cleanedRec
+	var cleanedDishNames []string
+	seenDishNormalized := make(map[string]bool)
+
+	for _, rawName := range input.RecommendedDishes {
+		trimmed := strings.TrimSpace(rawName)
+		if trimmed == "" {
+			continue
 		}
-	}
-	if len(cleanedDishIDs) > 3 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "最多只能推荐3道菜品"})
-		return
-	}
-	if len(cleanedDishIDs) > 0 {
-		var validCount int64
-		if err := h.db.Model(&models.CanteenDish{}).
-			Where("id IN ? AND canteen_id = ? AND status = ?", cleanedDishIDs, cid, models.DishStatusActive).
-			Count(&validCount).Error; err != nil || int(validCount) != len(cleanedDishIDs) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "推荐菜品不存在或不属于该食堂"})
+		if len([]rune(trimmed)) > 30 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "推荐菜名不能超过30个字符"})
 			return
 		}
+		normalized := normalizeCanteenName(trimmed)
+		if seenDishNormalized[normalized] {
+			continue
+		}
+		seenDishNormalized[normalized] = true
+
+		// 可选匹配已有活跃菜品实体以填充弱引用 DishID（绝不在此自动创建 CanteenDish）
+		var matchedDish models.CanteenDish
+		var dishIDPtr *uint
+		if err := h.db.Select("id").
+			Where("canteen_id = ? AND normalized_name = ? AND status = ?", cid, normalized, models.DishStatusActive).
+			First(&matchedDish).Error; err == nil && matchedDish.ID > 0 {
+			dishIDPtr = &matchedDish.ID
+		}
+
+		cleanedRecs = append(cleanedRecs, cleanedRec{
+			DishName:       trimmed,
+			NormalizedName: normalized,
+			DishID:         dishIDPtr,
+		})
+		cleanedDishNames = append(cleanedDishNames, trimmed)
+	}
+
+	if len(cleanedRecs) > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "最多只能推荐3道菜品"})
+		return
 	}
 
 	rating := models.CanteenRating{
@@ -601,10 +612,12 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 			return err
 		}
 
-		for _, dishID := range cleanedDishIDs {
+		for _, recItem := range cleanedRecs {
 			rec := models.CanteenRatingDishRecommendation{
-				RatingID: rating.ID,
-				DishID:   dishID,
+				RatingID:       rating.ID,
+				DishName:       recItem.DishName,
+				NormalizedName: recItem.NormalizedName,
+				DishID:         recItem.DishID,
 			}
 			if err := tx.Create(&rec).Error; err != nil {
 				return err
@@ -618,7 +631,7 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	rating.RecommendedDishIDs = cleanedDishIDs
+	rating.RecommendedDishNames = cleanedDishNames
 	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": rating})
 }
 

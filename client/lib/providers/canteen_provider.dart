@@ -137,7 +137,7 @@ class CanteenProvider with ChangeNotifier {
     required String comment,
     List<String> images = const [],
     List<String> tags = const [],
-    List<int> recommendedDishIds = const [],
+    List<String> recommendedDishes = const [],
   }) async {
     try {
       final response = await _dio.post(
@@ -147,7 +147,7 @@ class CanteenProvider with ChangeNotifier {
           'comment': comment,
           'images': json.encode(images),
           'tags': tags,
-          'recommended_dish_ids': recommendedDishIds,
+          'recommended_dishes': recommendedDishes,
         },
       );
       return response.statusCode == 200 || response.statusCode == 201;
@@ -158,11 +158,27 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  String? _dishesErrorMessage;
+  String? get dishesErrorMessage => _dishesErrorMessage;
+
   String _parseError(DioException e) {
     if (e.response?.data is Map && e.response?.data['error'] != null) {
-      return e.response!.data['error'];
+      return e.response!.data['error'].toString();
     }
-    return '网络异常';
+    final status = e.response?.statusCode;
+    if (status == 404) {
+      return '菜品服务暂不可用';
+    }
+    if (status != null && status >= 500) {
+      return '菜品加载失败，请稍后重试';
+    }
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.connectionError) {
+      return '网络连接失败，请检查网络后重试';
+    }
+    return '加载异常，请重试';
   }
 
   // ── 菜品图库 ──────────────────────────────────────────────────────
@@ -172,6 +188,7 @@ class CanteenProvider with ChangeNotifier {
   /// - `[]`：请求成功，确实没有菜品
   /// - `null`：请求失败（网络 / 5xx / 超时），调用方不应把统计刷成 0
   Future<List<CanteenDish>?> loadDishes(int canteenId) async {
+    _dishesErrorMessage = null;
     try {
       final response = await _dio.get('/canteens/$canteenId/dishes');
       if (response.statusCode == 200 && response.data is List) {
@@ -179,10 +196,15 @@ class CanteenProvider with ChangeNotifier {
             .map((json) => CanteenDish.fromJson(json as Map<String, dynamic>))
             .toList();
       }
+      _dishesErrorMessage = '数据格式异常';
       return null;
     } on DioException catch (e) {
-      _errorMessage = _parseError(e);
+      _dishesErrorMessage = _parseError(e);
+      _errorMessage = _dishesErrorMessage;
       debugPrint('Error loading dishes: $e');
+      return null;
+    } catch (e) {
+      _dishesErrorMessage = '数据解析异常';
       return null;
     }
   }

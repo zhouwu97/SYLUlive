@@ -28,6 +28,8 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
   List<CanteenDish> _dishes = [];
   bool _isLoading = true;
   bool _loadFailed = false;
+  String? _errorSubtitle;
+  IconData _errorIcon = Icons.cloud_off_rounded;
 
   @override
   void initState() {
@@ -43,10 +45,16 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     final dishes =
         await context.read<CanteenProvider>().loadDishes(widget.canteenId);
     if (mounted) {
+      final errorMsg =
+          context.read<CanteenProvider>().dishesErrorMessage ?? '请稍后重试';
       setState(() {
         _dishes = dishes ?? _dishes;
         _isLoading = false;
         _loadFailed = dishes == null;
+        _errorSubtitle = errorMsg;
+        _errorIcon = errorMsg.contains('网络')
+            ? Icons.wifi_off_rounded
+            : Icons.cloud_off_rounded;
       });
     }
   }
@@ -86,9 +94,9 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _loadFailed
               ? CanteenEmptyState(
-                  icon: Icons.wifi_off_rounded,
+                  icon: _errorIcon,
                   title: '菜品加载失败',
-                  subtitle: '请检查网络后重试',
+                  subtitle: _errorSubtitle ?? '请稍后重试',
                   actionLabel: '点击重试',
                   onAction: _load,
                 )

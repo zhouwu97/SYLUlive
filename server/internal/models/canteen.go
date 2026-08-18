@@ -37,8 +37,7 @@ type CanteenRating struct {
 	UserStudentID      string        `gorm:"-" json:"user_student_id"`
 	UserAvatar         string        `gorm:"-" json:"user_avatar"`
 	MyVote             *string       `gorm:"-" json:"my_vote"`
-	RecommendedDishes  []CanteenDish `gorm:"-" json:"recommended_dishes,omitempty"`
-	RecommendedDishIDs []uint        `gorm:"-" json:"recommended_dish_ids,omitempty"`
+	RecommendedDishNames []string       `gorm:"-" json:"recommended_dishes,omitempty"`
 }
 
 // CanteenRatingVote 食堂评价有用/无用投票

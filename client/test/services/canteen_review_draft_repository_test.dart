@@ -35,7 +35,7 @@ void main() {
       star: 5,
       comment: '非常好吃，下次还来',
       tags: ['taste_good', 'portion_enough'],
-      recommendedDishIds: [10, 12],
+      recommendedDishes: ['红烧牛肉面', '油泼面'],
       images: [
         const CanteenReviewDraftImage(
           type: ReviewDraftImageType.localPending,
@@ -59,7 +59,7 @@ void main() {
     expect(loaded.star, 5);
     expect(loaded.comment, '非常好吃，下次还来');
     expect(loaded.tags, ['taste_good', 'portion_enough']);
-    expect(loaded.recommendedDishIds, [10, 12]);
+    expect(loaded.recommendedDishes, ['红烧牛肉面', '油泼面']);
     expect(loaded.images.length, 2);
     expect(loaded.images[0].type, ReviewDraftImageType.localPending);
     expect(loaded.images[0].localPath, '/path/to/local.jpg');
@@ -132,7 +132,7 @@ void main() {
       star: 0,
       comment: '',
       tags: const [],
-      recommendedDishIds: const [],
+      recommendedDishes: const [],
       images: const [],
       updatedAt: DateTime.now(),
     );

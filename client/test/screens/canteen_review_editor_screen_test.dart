@@ -210,6 +210,67 @@ void main() {
     expect(find.text('13 / 200'), findsOneWidget);
   });
 
+  testWidgets('自由输入推荐菜品、快捷填入已有菜品与删除标签交互', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/dishes') {
+        return _json(
+          '[{"id":1,"canteen_id":1,"name":"牛肉面","status":"active"},{"id":2,"canteen_id":1,"name":"炸酱面","status":"active"}]',
+          200,
+        );
+      }
+      return _json('{}', 200);
+    });
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. 验证初始状态：0 / 3，展示快捷推荐
+    expect(find.text('0 / 3'), findsOneWidget);
+    expect(find.text('大家常推荐（点击快速填入）：'), findsOneWidget);
+    expect(find.text('牛肉面'), findsWidgets);
+
+    // 2. 自由文本输入“自创麻辣烫”并点击添加
+    final dishInput = find.byKey(const Key('canteen_dish_input'));
+    expect(dishInput, findsOneWidget);
+    await tester.enterText(dishInput, '自创麻辣烫');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
+    await tester.pumpAndSettle();
+
+    // 验证添加成功：1 / 3，标签显示“自创麻辣烫”
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.text('自创麻辣烫'), findsOneWidget);
+
+    // 3. 点击快捷推荐中的“牛肉面”
+    final beefNoodleFinder = find.text('牛肉面').first;
+    await tester.ensureVisible(beefNoodleFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(beefNoodleFinder);
+    await tester.pumpAndSettle();
+
+    // 验证添加成功：2 / 3
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    // 4. 点击“自创麻辣烫”标签的 ❌ 按钮删除
+    final closeIcons = find.byIcon(Icons.close_rounded);
+    expect(closeIcons, findsNWidgets(2));
+    await tester.ensureVisible(closeIcons.first);
+    await tester.pumpAndSettle();
+    await tester.tap(closeIcons.first);
+    await tester.pumpAndSettle();
+
+    // 验证删除后变为 1 / 3
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.text('自创麻辣烫'), findsNothing);
+    expect(find.text('牛肉面'), findsWidgets);
+  });
+
   testWidgets('修改已有评价预填数据，按钮文案为“保存修改”', (tester) async {
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async => _json('[]', 200));
@@ -220,7 +281,7 @@ void main() {
       'comment': '老评价内容',
       'images': '["/uploads/old_photo.jpg"]',
       'tags': '["taste_good","price_fair"]',
-      'recommended_dish_ids': [1],
+      'recommended_dishes': ['老字号牛肉面'],
       'updated_at': '2026-08-01T12:00:00Z',
     };
 
@@ -237,6 +298,8 @@ void main() {
     expect(find.text('老评价内容'), findsOneWidget);
     expect(find.text('很满意'), findsWidgets);
     expect(find.text('2/6'), findsOneWidget);
+    expect(find.text('老字号牛肉面'), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '保存修改'), findsOneWidget);
   });
 

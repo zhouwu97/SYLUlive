@@ -685,6 +685,9 @@ func main() {
 	majorHandler := handlers.NewMajorHandler(db)
 
 	canteenHandler := handlers.NewCanteenHandler(db)
+	canteenDishHandler := handlers.NewCanteenDishHandler(db)
+	canteenDishPhotoHandler := handlers.NewCanteenDishPhotoHandler(db)
+	canteenDishPhotoAdminHandler := handlers.NewCanteenDishPhotoAdminHandler(db)
 
 	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir)
 
@@ -1883,6 +1886,10 @@ func main() {
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
 
+		// 菜品图库公开接口
+		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
+		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
+
 	}
 
 	canteenAdmin := canteen.Group("")
@@ -1901,6 +1908,13 @@ func main() {
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
+		// 菜品实拍审核与菜品管理
+		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
+
 	}
 
 	canteenAuth := canteen.Group("")
@@ -1914,6 +1928,9 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 
 		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
+
+		// 学生上传菜品实拍
+		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
 
 	}
 

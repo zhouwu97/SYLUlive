@@ -77,7 +77,11 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 // GetDish 公开菜品详情：dish + approved 实拍列表。
 // GET /api/canteens/:canteenId/dishes/:dishId
 func (h *CanteenDishHandler) GetDish(c *gin.Context) {
-	canteenID, err := strconv.ParseUint(c.Param("canteenId"), 10, 64)
+	canteenIDStr := c.Param("id")
+	if canteenIDStr == "" {
+		canteenIDStr = c.Param("canteenId")
+	}
+	canteenID, err := strconv.ParseUint(canteenIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return

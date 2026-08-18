@@ -32,11 +32,11 @@ class ReplyNotificationReminder extends StatelessWidget {
       excludeSemantics: true,
       label: '互动回复，$count 条未读，查看',
       child: Material(
-        color: colors.surfaceContainerLow,
+        color: colors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
           side: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.6),
+            color: colors.outlineVariant.withValues(alpha: 0.35),
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -44,10 +44,7 @@ class ReplyNotificationReminder extends StatelessWidget {
           key: const ValueKey('home-reply-notification-reminder'),
           onTap: onPressed,
           child: Padding(
-            padding: const EdgeInsets.only(
-              left: AppSpacing.md,
-              right: AppSpacing.sm,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 44),
               child: Row(
@@ -158,7 +155,10 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
       shrinkWrap: items.length <= 6,
       physics: items.length <= 6 ? const NeverScrollableScrollPhysics() : null,
       itemCount: items.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => Divider(
+        height: 1,
+        color: colors.outlineVariant.withValues(alpha: 0.25),
+      ),
       itemBuilder: (_, index) {
         final item = items[index];
         final title = item.postTitle.trim().isEmpty ? '帖子' : item.postTitle.trim();
@@ -184,7 +184,7 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.lg,
-                vertical: AppSpacing.sm,
+                vertical: 12,
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,7 +290,9 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
                       ? '未读回复 $totalCount'
                       : '未读回复 (${items.length})',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
                       ),
                 ),
                 if (showRecentTag) ...[

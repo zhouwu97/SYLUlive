@@ -12,12 +12,15 @@ import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_feedback.dart';
+import '../utils/post_route.dart';
 import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
+import '../models/unread_reply_notification.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
@@ -27,6 +30,7 @@ import '../services/feed_event_service.dart';
 import '../services/feed_session_service.dart';
 import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
+import '../services/reply_notification_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
@@ -34,6 +38,7 @@ import '../widgets/community_post_card.dart';
 import '../widgets/feed/feed_exposure_tracker.dart';
 import '../widgets/feed/feed_post_action_menu.dart';
 import '../widgets/report_sheet.dart';
+import '../widgets/reply_notification_reminder.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
 import 'create_post_screen.dart';
@@ -144,6 +149,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Timer? _announcementDelayTimer;
   List<model.Announcement> _announcements = [];
   List<model.Announcement> _unreadAnnouncements = [];
+  List<UnreadReplyNotification> _unreadReplyNotifications = [];
+  int _unreadReplyCount = 0;
+  final Set<int> _openingUnreadReplyIds = <int>{};
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
   bool _checkinStatusLoading = false;
@@ -218,6 +226,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       _startAutoRefresh();
       _ensureCheckinStatusLoaded();
+      unawaited(_loadUnreadReplyNotifications());
 
       // 预热水帖版块缓存，供服务抽屉使用
       context.read<WaterSectionProvider>().loadSections();
@@ -238,6 +247,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         unawaited(_probeFeedFreshness());
       }
       _loadAnnouncements();
+      unawaited(_loadUnreadReplyNotifications());
       unawaited(_ensureCheckinStatusLoaded(force: true));
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
@@ -293,6 +303,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         unawaited(_probeFeedFreshness());
       }
       _loadAnnouncements();
+      unawaited(_loadUnreadReplyNotifications());
     });
   }
 
@@ -533,12 +544,127 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final postProvider = context.read<PostProvider>();
     await Future.wait([
       postProvider.refresh(boardId: 1, sort: sortAtStart),
+      _loadUnreadReplyNotifications(),
     ]);
     if (!mounted) return;
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
     if (_feedMode != modeAtStart) return;
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
+    }
+  }
+
+  Future<void> _loadUnreadReplyNotifications() async {
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isLoggedIn) {
+      if (mounted &&
+          (_unreadReplyNotifications.isNotEmpty || _unreadReplyCount != 0)) {
+        setState(() {
+          _unreadReplyNotifications = [];
+          _unreadReplyCount = 0;
+        });
+      }
+      return;
+    }
+
+    final generation = authProvider.sessionGeneration;
+    try {
+      final page =
+          await ReplyNotificationService(authProvider.dio).fetchUnread();
+      if (!mounted ||
+          !authProvider.isLoggedIn ||
+          authProvider.sessionGeneration != generation) {
+        return;
+      }
+      setState(() {
+        _unreadReplyNotifications = page.items;
+        _unreadReplyCount = page.count;
+      });
+    } catch (error) {
+      debugPrint('加载未读回复失败: $error');
+      // 保留上一次成功状态。首次加载若失败则保持空状态，无需额外清空。
+    }
+  }
+
+  void _removeUnreadReply(int notificationId) {
+    if (!mounted) return;
+    setState(() {
+      _unreadReplyNotifications = _unreadReplyNotifications
+          .where((item) => item.id != notificationId)
+          .toList(growable: false);
+      _unreadReplyCount = _unreadReplyCount > 0
+          ? _unreadReplyCount - 1
+          : _unreadReplyNotifications.length;
+    });
+  }
+
+  Future<void> _handleUnreadReplyReminderPressed() async {
+    final items = List<UnreadReplyNotification>.of(_unreadReplyNotifications);
+    if (items.isEmpty) return;
+    if (items.length == 1) {
+      await _openUnreadReply(items.single);
+      return;
+    }
+    if (!mounted) return;
+    await showReplyNotificationList(
+      context,
+      items: items,
+      totalCount: _unreadReplyCount,
+      onSelected: (item) {
+        unawaited(_openUnreadReply(item));
+      },
+    );
+  }
+
+  Future<void> _openUnreadReply(UnreadReplyNotification item) async {
+    if (_openingUnreadReplyIds.contains(item.id)) return;
+    _openingUnreadReplyIds.add(item.id);
+    try {
+      final authProvider = context.read<AuthProvider>();
+      if (!authProvider.isLoggedIn) return;
+      final response = await authProvider.dio.get('/posts/${item.postId}');
+      if (response.statusCode != 200 ||
+          response.data is! Map<String, dynamic>) {
+        throw StateError('帖子响应格式错误');
+      }
+      final post = Post.fromJson(response.data as Map<String, dynamic>);
+      try {
+        await ReplyNotificationService(authProvider.dio).markRead(item.id);
+        _removeUnreadReply(item.id);
+      } catch (error) {
+        debugPrint('消费回复通知失败: $error');
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        buildPostDetailRoute(post, targetReplyId: item.relatedId),
+      );
+      if (mounted) unawaited(_loadUnreadReplyNotifications());
+    } on DioException catch (error) {
+      if (!mounted) return;
+      if (error.response?.statusCode == 404) {
+        try {
+          final authProvider = context.read<AuthProvider>();
+          await ReplyNotificationService(authProvider.dio).markRead(item.id);
+          _removeUnreadReply(item.id);
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '原帖已删除，已移除提醒');
+          }
+        } catch (markError) {
+          debugPrint('消费失效回复通知失败: $markError');
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '原帖已删除，但提醒清理失败', isError: true);
+          }
+        }
+      } else {
+        AppFeedback.showSnackBar(context, '打开帖子失败，请稍后重试', isError: true);
+      }
+    } catch (error) {
+      debugPrint('打开回复所属帖子失败: $error');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '打开帖子失败，请稍后重试', isError: true);
+      }
+    } finally {
+      _openingUnreadReplyIds.remove(item.id);
     }
   }
 
@@ -969,6 +1095,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         }
         _ensureCheckinStatusLoaded();
         _loadAnnouncements();
+        unawaited(_loadUnreadReplyNotifications());
       });
     }
 
@@ -1975,6 +2102,23 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ),
                 ),
               ),
+              // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
+              if (_unreadReplyNotifications.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                      AppSpacing.xs,
+                    ),
+                    child: ReplyNotificationReminder(
+                      items: _unreadReplyNotifications,
+                      totalCount: _unreadReplyCount,
+                      onPressed: _handleUnreadReplyReminderPressed,
+                    ),
+                  ),
+                ),
               if (_freshnessBannerVisible)
                 SliverPersistentHeader(
                   pinned: true,

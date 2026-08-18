@@ -186,6 +186,7 @@ Post _postWithImages({
 class FakeDio extends Fake implements Dio {
   /// children 懒加载接口被调用的次数（51-children 死锁回归测试用）。
   static int childrenRequestCount = 0;
+  static final requestedPaths = <String>[];
 
   @override
   Future<Response<T>> get<T>(
@@ -196,6 +197,7 @@ class FakeDio extends Fake implements Dio {
     CancelToken? cancelToken,
     void Function(int, int)? onReceiveProgress,
   }) async {
+    requestedPaths.add(path);
     if (path.startsWith('/posts/104/replies') ||
         path.startsWith('/posts/105/replies')) {
       return Response<T>(
@@ -343,20 +345,20 @@ class FakeDio extends Fake implements Dio {
         data: {
           'replies': <dynamic>[
             ...List.generate(
-              30,
-              (index) => {
-                    "id": 10 + index,
-                    "post_id": 100,
-                    "content": "Padding top level reply $index",
-                    "author_id": 2,
-                    "author": {
-                      "id": 2,
-                      "nickname": "User2",
-                      "avatar": "http://example.com/avatar.png",
-                      "student_id": "2"
-                    },
-                    "created_at": "2026-01-01T00:00:00.000Z"
-                  }),
+                30,
+                (index) => {
+                      "id": 10 + index,
+                      "post_id": 100,
+                      "content": "Padding top level reply $index",
+                      "author_id": 2,
+                      "author": {
+                        "id": 2,
+                        "nickname": "User2",
+                        "avatar": "http://example.com/avatar.png",
+                        "student_id": "2"
+                      },
+                      "created_at": "2026-01-01T00:00:00.000Z"
+                    }),
             {
               "id": 1,
               "post_id": 100,
@@ -460,20 +462,22 @@ class FakeDio extends Fake implements Dio {
               "child_reply_count": 51,
               "created_at": "2026-01-01T00:00:00.000Z"
             },
-            ...List.generate(50, (i) => {
-                  "id": 701 + i,
-                  "post_id": 106,
-                  "parent_reply_id": 7,
-                  "content": "child-${i + 1}",
-                  "author_id": 2,
-                  "author": {
-                    "id": 2,
-                    "nickname": "User2",
-                    "avatar": "http://example.com/avatar.png",
-                    "student_id": "2"
-                  },
-                  "created_at": "2026-01-01T00:00:00.000Z"
-                }),
+            ...List.generate(
+                50,
+                (i) => {
+                      "id": 701 + i,
+                      "post_id": 106,
+                      "parent_reply_id": 7,
+                      "content": "child-${i + 1}",
+                      "author_id": 2,
+                      "author": {
+                        "id": 2,
+                        "nickname": "User2",
+                        "avatar": "http://example.com/avatar.png",
+                        "student_id": "2"
+                      },
+                      "created_at": "2026-01-01T00:00:00.000Z"
+                    }),
           ],
           'total': 52,
           'next_cursor': '',
@@ -750,6 +754,36 @@ void main() {
 
     // 断言高亮状态已消失
     expect(clearedDecoration.color, Colors.transparent);
+  });
+
+  testWidgets('详情页不再请求或显示未读回复提醒', (WidgetTester tester) async {
+    FakeDio.requestedPaths.clear();
+    final post = Post(
+      id: 102,
+      title: '普通帖子',
+      content: '帖子内容',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    expect(
+      FakeDio.requestedPaths,
+      isNot(contains('/posts/102/notifications/unread')),
+    );
+    expect(find.textContaining('未读回复'), findsNothing);
+    expect(find.text('全部标记已读'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('PostDetailScreen renders three images with shared media view',

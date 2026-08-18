@@ -24,6 +24,13 @@ class ImageViewerScreen extends StatefulWidget {
   /// 文件，让发送方与全屏查看共享同一 fallback 策略（本地 → 鉴权网络）。
   final List<String?>? localPaths;
 
+  /// 自定义缓存管理器（如私信图片使用 [PrivateMessageMediaCache.instance.manager]）；
+  /// 为空时回退到公开图片缓存 [PostImageCache.manager]。
+  final BaseCacheManager? cacheManager;
+
+  /// 针对私有图片等需要自定义账号隔离 cacheKey 的构建器；为空时使用 url 作为 cacheKey。
+  final String Function(String url)? cacheKeyBuilder;
+
   const ImageViewerScreen({
     super.key,
     required this.imageUrls,
@@ -31,6 +38,8 @@ class ImageViewerScreen extends StatefulWidget {
     this.httpHeaders = const {},
     this.imageBytes,
     this.localPaths,
+    this.cacheManager,
+    this.cacheKeyBuilder,
   });
 
   @override
@@ -169,10 +178,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   }
 
   Future<Uint8List?> _readVisibleImage(String url) async {
+    final cacheKey =
+        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
     final provider = CachedNetworkImageProvider(
       url,
       headers: widget.httpHeaders,
-      cacheManager: PostImageCache.manager,
+      cacheManager: widget.cacheManager ?? PostImageCache.manager,
+      cacheKey: cacheKey,
     );
     final stream = provider.resolve(const ImageConfiguration());
     final completer = Completer<ui.Image?>();
@@ -219,13 +231,29 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   }
 
   Future<Uint8List?> _readCachedImage(String url) async {
+    final cacheKey =
+        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : url;
+
+    // 如果指定了私有/自定义 cacheManager，则严格只从该管理器按 cacheKey 读取，
+    // 绝不回退到 PostImageCache 或 DefaultCacheManager，防止私信账号隔离被旁路。
+    if (widget.cacheManager != null) {
+      final fileInfo = await widget.cacheManager!.getFileFromCache(cacheKey);
+      final file = fileInfo?.file;
+      if (file != null && await file.exists()) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isNotEmpty) return bytes;
+      }
+      return null;
+    }
+
+    // 未指定 cacheManager（公开帖子/公开图片），使用公开缓存与默认缓存回退
     final cacheManagers = <BaseCacheManager>[
       PostImageCache.manager,
       DefaultCacheManager(),
     ];
 
     for (final cacheManager in cacheManagers) {
-      final fileInfo = await cacheManager.getFileFromCache(url);
+      final fileInfo = await cacheManager.getFileFromCache(cacheKey);
       final file = fileInfo?.file;
       if (file != null && await file.exists()) {
         final bytes = await file.readAsBytes();
@@ -417,9 +445,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (widget.imageUrls.isEmpty || index >= widget.imageUrls.length) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
+    final url = widget.imageUrls[index];
+    final cacheKey =
+        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
     return CachedNetworkImage(
-      cacheManager: PostImageCache.manager,
-      imageUrl: widget.imageUrls[index],
+      cacheManager: widget.cacheManager ?? PostImageCache.manager,
+      imageUrl: url,
+      cacheKey: cacheKey,
       httpHeaders: widget.httpHeaders,
       fit: BoxFit.contain,
       placeholder: (context, url) => const Center(

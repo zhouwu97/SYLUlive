@@ -3,10 +3,12 @@ import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../config/api_constants.dart';
 import '../services/diagnostic_log_service.dart';
 import '../utils/message_image_sizing.dart';
+import '../utils/private_message_media_cache.dart';
 
 /// 私信图片独立渲染组件。
 ///
@@ -29,6 +31,15 @@ class PrivateMessageImage extends StatefulWidget {
   final int? fileId;
 
   final Map<String, String> httpHeaders;
+
+  /// 账号作用域 ID；为空时默认使用 [PrivateMessageMediaCache.instance.accountId]。
+  final int? accountId;
+
+  /// 自定义缓存 key；为空时由 [PrivateMessageMediaCache.cacheKeyFor] 自动生成账号作用域 key。
+  final String? cacheKey;
+
+  /// 私信媒体缓存；为空时使用账号作用域的 [PrivateMessageMediaCache]。
+  final CacheManager? cacheManager;
   final double maxWidth;
   final double maxHeight;
   final double minWidth;
@@ -44,9 +55,12 @@ class PrivateMessageImage extends StatefulWidget {
     this.serverHeight = 0,
     this.httpHeaders = const <String, String>{},
     this.fileId,
+    this.accountId,
+    this.cacheKey,
     this.maxWidth = 260,
     this.maxHeight = 320,
     this.minWidth = 96,
+    this.cacheManager,
     this.onRetry,
   });
 
@@ -220,9 +234,18 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     if (url == null || url.isEmpty) {
       return _buildFailureCard(colors, compact: display == null);
     }
+    final fullUrl = ApiConstants.fullUrl(url);
+    final resolvedCacheKey = widget.cacheKey ??
+        PrivateMessageMediaCache.cacheKeyFor(
+          fullUrl,
+          accountId: widget.accountId,
+        );
     return CachedNetworkImage(
-      imageUrl: ApiConstants.fullUrl(url),
+      imageUrl: fullUrl,
+      cacheKey: resolvedCacheKey,
       httpHeaders: widget.httpHeaders,
+      cacheManager:
+          widget.cacheManager ?? PrivateMessageMediaCache.instance.manager,
       fit: display == null ? BoxFit.contain : BoxFit.cover,
       width: display?.width,
       height: display?.height,

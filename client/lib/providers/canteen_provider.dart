@@ -132,14 +132,23 @@ class CanteenProvider with ChangeNotifier {
   }
 
   Future<bool> rateCanteen(
-    int id,
-    int star,
-    String comment,
-  ) async {
+    int id, {
+    required int star,
+    required String comment,
+    List<String> images = const [],
+    List<String> tags = const [],
+    List<int> recommendedDishIds = const [],
+  }) async {
     try {
       final response = await _dio.post(
         '/canteens/$id/rate',
-        data: {'star': star, 'comment': comment, 'images': json.encode([])},
+        data: {
+          'star': star,
+          'comment': comment,
+          'images': json.encode(images),
+          'tags': tags,
+          'recommended_dish_ids': recommendedDishIds,
+        },
       );
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {

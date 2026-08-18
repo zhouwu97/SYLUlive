@@ -25,17 +25,20 @@ type CanteenRating struct {
 	Star           int       `gorm:"not null" json:"star"`                      // 1-5星
 	Comment        string    `gorm:"size:500" json:"comment"`                   // 评价文字
 	Images         string    `gorm:"type:text" json:"images"`                   // 图片JSON数组
+	Tags           string    `gorm:"type:text" json:"tags"`                     // 体验标签JSON数组
 	HelpfulCount   int       `gorm:"not null;default:0" json:"helpful_count"`   // 有用票数
 	UnhelpfulCount int       `gorm:"not null;default:0" json:"unhelpful_count"` // 无用票数
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 
 	// 关联数据（非数据库字段）
-	User          *User   `gorm:"foreignKey:UserID" json:"-"`
-	UserName      string  `gorm:"-" json:"user_name"`
-	UserStudentID string  `gorm:"-" json:"user_student_id"`
-	UserAvatar    string  `gorm:"-" json:"user_avatar"`
-	MyVote        *string `gorm:"-" json:"my_vote"`
+	User               *User         `gorm:"foreignKey:UserID" json:"-"`
+	UserName           string        `gorm:"-" json:"user_name"`
+	UserStudentID      string        `gorm:"-" json:"user_student_id"`
+	UserAvatar         string        `gorm:"-" json:"user_avatar"`
+	MyVote             *string       `gorm:"-" json:"my_vote"`
+	RecommendedDishes  []CanteenDish `gorm:"-" json:"recommended_dishes,omitempty"`
+	RecommendedDishIDs []uint        `gorm:"-" json:"recommended_dish_ids,omitempty"`
 }
 
 // CanteenRatingVote 食堂评价有用/无用投票

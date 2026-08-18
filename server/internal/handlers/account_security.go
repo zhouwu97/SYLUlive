@@ -200,7 +200,7 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)) != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
 	email, err := services.NormalizeEmail(input.Email)
@@ -282,7 +282,7 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)) != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
 	previousEmail := user.Email
@@ -302,7 +302,7 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 			return
 		}
 		if err.Error() == "APP 密码错误" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除邮箱失败"})

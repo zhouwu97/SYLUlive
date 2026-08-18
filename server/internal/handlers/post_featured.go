@@ -35,12 +35,12 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 func currentUserID(c *gin.Context) (uint, bool) {
 	raw, ok := c.Get("user_id")
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return 0, false
 	}
 	id, ok := raw.(uint)
 	if !ok || id == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效", "code": "authentication_required"})
 		return 0, false
 	}
 	return id, true

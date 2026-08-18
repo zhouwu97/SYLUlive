@@ -54,7 +54,7 @@ class ReplyNotificationReminder extends StatelessWidget {
                     width: 6,
                     height: 6,
                     decoration: const BoxDecoration(
-                      color: AppColors.accentIndigo,
+                      color: AppColors.brandPrimary,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -62,7 +62,7 @@ class ReplyNotificationReminder extends StatelessWidget {
                   const Icon(
                     Icons.forum_outlined,
                     size: 18,
-                    color: AppColors.accentIndigo,
+                    color: AppColors.brandPrimary,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(

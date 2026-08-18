@@ -30,7 +30,6 @@ class WaterModerationProvider extends ChangeNotifier {
     _mutesBySlug.clear();
     _logsBySlug.clear();
     _error = null;
-    notifyListeners();
   }
 
   List<WaterSectionMute> mutesOf(String slug) => _mutesBySlug[slug] ?? [];

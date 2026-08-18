@@ -180,13 +180,11 @@ class EmojiFavoriteService extends ChangeNotifier {
   /// 绑定应用级共享服务，使各页面复用同一个账号云端收藏状态。
   static void configureSharedInstance(EmojiFavoriteService service) {
     if (identical(_sharedInstance, service)) return;
-    _sharedInstance?.dispose();
     _sharedInstance = service;
   }
 
   @visibleForTesting
   static void resetSharedInstanceForTesting() {
-    _sharedInstance?.dispose();
     _sharedInstance = null;
   }
 
@@ -221,6 +219,18 @@ class EmojiFavoriteService extends ChangeNotifier {
     _syncing = null;
     _remoteSynced = false;
     notifyListeners();
+  }
+
+  /// 在 ProxyProvider.update 构建期同步账号，避免在构建阶段调用 notifyListeners 导致断言错误。
+  void syncSessionUser(String? userId) {
+    final normalized = userId?.trim();
+    final next = normalized == null || normalized.isEmpty ? null : normalized;
+    if (next == _userId) return;
+    _userId = next;
+    _sessionEpoch++;
+    _cache = null;
+    _syncing = null;
+    _remoteSynced = false;
   }
 
   Future<AppPreferencesStore> get _preferences =>

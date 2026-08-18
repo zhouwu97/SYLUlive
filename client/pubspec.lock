@@ -897,10 +897,10 @@ packages:
     dependency: "direct main"
     description:
       name: photo_manager
-      sha256: "2d00a785b501bf1e5f6180bbef772846e767be11d45d11112b63092ef54a419e"
+      sha256: fb3bc8ea653370f88742b3baa304700107c83d12748aa58b2b9f2ed3ef15e6c2
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "3.12.0"
+    version: "3.9.0"
   platform:
     dependency: transitive
     description:

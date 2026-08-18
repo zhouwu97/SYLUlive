@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 
 typedef AppComposerCanSend = bool Function(TextEditingValue value);
 
@@ -31,10 +31,18 @@ class AppComposerBar extends StatelessWidget {
     this.readOnly = false,
     this.leadingLoading = false,
     this.sending = false,
+    this.shellColor,
     this.inputFillColor,
     this.inputTextColor,
     this.hintColor,
+    this.iconColor,
+    this.enabledSendColor,
+    this.enabledSendIconColor,
+    this.disabledSendColor,
+    this.disabledSendIconColor,
+    this.dividerColor,
     this.decorate = true,
+    this.leadingIcon = Icons.add_rounded,
   });
 
   final TextEditingController textController;
@@ -53,10 +61,18 @@ class AppComposerBar extends StatelessWidget {
   final bool readOnly;
   final bool leadingLoading;
   final bool sending;
+  final Color? shellColor;
   final Color? inputFillColor;
   final Color? inputTextColor;
   final Color? hintColor;
+  final Color? iconColor;
+  final Color? enabledSendColor;
+  final Color? enabledSendIconColor;
+  final Color? disabledSendColor;
+  final Color? disabledSendIconColor;
+  final Color? dividerColor;
   final bool decorate;
+  final IconData leadingIcon;
   final Key? composerKey;
   final Key? leadingKey;
   final Key? inputContainerKey;
@@ -67,16 +83,37 @@ class AppComposerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveShellColor = shellColor ??
+        (isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight);
+    final effectiveDividerColor = dividerColor ??
+        (isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight);
+    final effectiveInputFillColor = inputFillColor ??
+        (isDark ? AppColors.composerInputDark : AppColors.composerInputLight);
+    final effectiveInputTextColor = inputTextColor ??
+        (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight);
+    final effectiveHintColor = hintColor ??
+        (isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight);
+    final effectiveIconColor = iconColor ??
+        (isDark ? AppColors.iconNeutralDark : AppColors.iconNeutralLight);
+    final effectiveEnabledSendColor = enabledSendColor ??
+        (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary);
+    final effectiveEnabledSendIconColor =
+        enabledSendIconColor ?? Colors.white;
+    final effectiveDisabledSendColor = disabledSendColor ??
+        (isDark ? AppColors.disabledControlDark : AppColors.disabledControlLight);
+    final effectiveDisabledSendIconColor = disabledSendIconColor ??
+        (isDark ? AppColors.disabledControlTextDark : AppColors.disabledControlTextLight);
+
     return Container(
       key: composerKey,
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: decorate
           ? BoxDecoration(
-              color: colors.surface,
+              color: effectiveShellColor,
               border: Border(
                 top: BorderSide(
-                  color: colors.outlineVariant.withValues(alpha: 0.4),
+                  color: effectiveDividerColor,
                   width: 1.0,
                 ),
               ),
@@ -104,13 +141,13 @@ class AppComposerBar extends StatelessWidget {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: colors.primary,
+                          color: effectiveEnabledSendColor,
                         ),
                       )
                     : Icon(
-                        Icons.add_rounded,
+                        leadingIcon,
                         size: 24,
-                        color: colors.onSurfaceVariant,
+                        color: effectiveIconColor,
                       ),
               ),
             ),
@@ -129,7 +166,7 @@ class AppComposerBar extends StatelessWidget {
                   onTap: onInputTap,
                   enabled: fieldEnabled,
                   readOnly: readOnly,
-                  style: TextStyle(color: inputTextColor ?? colors.onSurface),
+                  style: TextStyle(color: effectiveInputTextColor),
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.newline,
@@ -137,9 +174,9 @@ class AppComposerBar extends StatelessWidget {
                     hintText: hintText,
                     isDense: true,
                     filled: true,
-                    fillColor: inputFillColor ?? colors.surfaceContainerHighest,
+                    fillColor: effectiveInputFillColor,
                     hintStyle: TextStyle(
-                      color: hintColor ?? colors.onSurfaceVariant,
+                      color: effectiveHintColor,
                     ),
                     suffixIconConstraints: const BoxConstraints(
                       minWidth: 40,
@@ -160,7 +197,7 @@ class AppComposerBar extends StatelessWidget {
                               ? Icons.keyboard_alt_outlined
                               : Icons.sentiment_satisfied_alt_outlined,
                           size: 21,
-                          color: colors.onSurfaceVariant,
+                          color: effectiveIconColor,
                         ),
                       ),
                     ),
@@ -198,12 +235,14 @@ class AppComposerBar extends StatelessWidget {
                           sendEnabled ? 40 : 38,
                         ),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        backgroundColor: AppTheme.primaryColor,
-                        foregroundColor: colors.onPrimary,
-                        disabledBackgroundColor:
-                            colors.onSurface.withValues(alpha: 0.05),
-                        disabledForegroundColor:
-                            colors.onSurface.withValues(alpha: 0.28),
+                        backgroundColor: sendEnabled
+                            ? effectiveEnabledSendColor
+                            : effectiveDisabledSendColor,
+                        foregroundColor: sendEnabled
+                            ? effectiveEnabledSendIconColor
+                            : effectiveDisabledSendIconColor,
+                        disabledBackgroundColor: effectiveDisabledSendColor,
+                        disabledForegroundColor: effectiveDisabledSendIconColor,
                       ),
                       icon: sending
                           ? SizedBox(
@@ -211,7 +250,7 @@ class AppComposerBar extends StatelessWidget {
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                color: colors.onPrimary,
+                                color: effectiveEnabledSendIconColor,
                               ),
                             )
                           : Icon(

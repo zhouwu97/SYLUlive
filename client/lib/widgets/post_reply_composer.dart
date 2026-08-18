@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/post_reply_composer_controller.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
@@ -84,7 +85,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     );
   }
 
-  Widget _buildReplyTargetBanner(BuildContext context, ColorScheme colors) {
+  Widget _buildReplyTargetBanner(BuildContext context, bool isDark) {
     final name = controller.replyToName;
     if (name == null || name.isEmpty) return const SizedBox.shrink();
 
@@ -92,10 +93,14 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       key: const ValueKey('post-reply-target-banner'),
       padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
       decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
+        color: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
         border: Border(
           bottom: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.35),
+            color: isDark
+                ? AppColors.composerDividerDark
+                : AppColors.composerDividerLight,
             width: 1,
           ),
         ),
@@ -105,7 +110,9 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           Icon(
             Icons.reply_rounded,
             size: 16,
-            color: colors.primary,
+            color: isDark
+                ? AppColors.messageOutgoingDark
+                : AppColors.brandPrimary,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -116,7 +123,9 @@ class _PostReplyComposerState extends State<PostReplyComposer>
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: colors.onSurface,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ),
@@ -131,7 +140,9 @@ class _PostReplyComposerState extends State<PostReplyComposer>
               icon: Icon(
                 Icons.close_rounded,
                 size: 18,
-                color: colors.onSurfaceVariant,
+                color: isDark
+                    ? AppColors.iconNeutralDark
+                    : AppColors.iconNeutralLight,
               ),
             ),
           ),
@@ -145,16 +156,17 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     bool isEmoji,
     double keyboardInset,
   ) {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final panelHeight = controller.stableKeyboardHeight;
 
     return _shell(
       context,
+      isDark: isDark,
       bottomSafeArea: !isEmoji && keyboardInset == 0,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildReplyTargetBanner(context, colors),
+          _buildReplyTargetBanner(context, isDark),
           if (controller.sticker != null)
             StickerComposerPreview(
               sticker: controller.sticker!,
@@ -206,14 +218,23 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             fieldEnabled: !widget.sending,
             readOnly: widget.sending || !widget.enabled,
             sending: widget.sending,
-            inputFillColor: widget.enabled
-                ? colors.surfaceContainerHighest
-                : colors.surfaceContainerHigh,
-            inputTextColor:
-                widget.enabled ? colors.onSurface : colors.onSurfaceVariant,
-            hintColor: colors.onSurfaceVariant.withValues(
-              alpha: widget.enabled ? 1 : 0.7,
-            ),
+            inputFillColor: !widget.enabled
+                ? (isDark
+                    ? AppColors.disabledControlDark
+                    : AppColors.disabledControlLight)
+                : (isDark
+                    ? AppColors.composerInputDark
+                    : AppColors.composerInputLight),
+            inputTextColor: widget.enabled
+                ? (isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight)
+                : (isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight),
+            hintColor: isDark
+                ? AppColors.iconMutedDark
+                : AppColors.iconMutedLight,
             decorate: false,
           ),
           SizedBox(
@@ -240,16 +261,20 @@ class _PostReplyComposerState extends State<PostReplyComposer>
 
   Widget _shell(
     BuildContext context, {
+    required bool isDark,
     required bool bottomSafeArea,
     required Widget child,
   }) {
-    final colors = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: isDark
+            ? AppColors.composerSurfaceDark
+            : AppColors.composerSurfaceLight,
         border: Border(
           top: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.4),
+            color: isDark
+                ? AppColors.composerDividerDark
+                : AppColors.composerDividerLight,
             width: 1.0,
           ),
         ),

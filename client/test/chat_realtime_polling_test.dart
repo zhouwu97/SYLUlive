@@ -22,6 +22,9 @@ class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   User get user => currentUser;
 
   @override
+  String? get token => 'test-token';
+
+  @override
   bool get isLoggedIn => true;
 
   @override

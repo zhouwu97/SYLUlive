@@ -34,4 +34,16 @@ class UnreadReplyNotification {
           : null,
     );
   }
+
+  UnreadReplyNotification copyWith({String? postTitle}) {
+    return UnreadReplyNotification(
+      id: id,
+      postId: postId,
+      relatedId: relatedId,
+      content: content,
+      postTitle: postTitle ?? this.postTitle,
+      createdAt: createdAt,
+      fromUser: fromUser,
+    );
+  }
 }

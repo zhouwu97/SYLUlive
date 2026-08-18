@@ -28,7 +28,6 @@ import '../widgets/post_media/post_media_view.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
-import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
@@ -181,8 +180,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSending = false;
   bool _hasPendingFeaturedApp = false;
 
-  List<UnreadReplyNotification> _unreadReplyNotifications = [];
-  bool _loadingUnreadReplies = false;
   int? _activeTargetReplyId;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -294,7 +291,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // 评论区独立加载：切换 Hot/Latest 只刷新回复，不重复拉帖子详情。
       await _loadReplies(sort: _replySort);
       await _loadWaterSectionPermission(forceRefresh: true);
-      _loadUnreadReplyNotifications();
       if (_activeTargetReplyId != null && !_hasScrolledToTarget) {
         await _prepareTargetReplyAndScroll();
       }
@@ -373,8 +369,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
       target = Reply.fromJson(rawTarget);
       root = Reply.fromJson(rawRoot);
-    } on DioException {
-      return; // 目标已被删除或网络失败：保持默认页面。
+    } on DioException catch (e) {
+      // 深链目标失效时仍可正常浏览帖子；仅对明确的删除/不存在做轻提示。
+      if (mounted && e.response?.statusCode == 404) {
+        AppFeedback.showSnackBar(context, '该回复可能已删除');
+      }
+      return;
     } catch (_) {
       return;
     }
@@ -2294,8 +2294,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           const SizedBox(height: 32),
                           _buildActionBar(isDark),
                           const SizedBox(height: 24),
-                          if (_unreadReplyNotifications.isNotEmpty)
-                            _buildUnreadReplyBanner(isDark),
                           _buildCommentsHeader(isDark),
                           const SizedBox(height: 10),
                           _buildCompactReplies(isDark),
@@ -2912,8 +2910,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_unreadReplyNotifications.isNotEmpty)
-          _buildUnreadReplyBanner(isDark),
         // 评论标题
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -5572,217 +5568,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (index >= 0) {
       _replies[index] = replacement;
     }
-  }
-
-  // ---- 未读回复流程 ----
-
-  Future<void> _loadUnreadReplyNotifications() async {
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) return;
-    if (mounted) {
-      setState(() {
-        _loadingUnreadReplies = true;
-      });
-    }
-    try {
-      final response =
-          await _dio.get('/posts/${widget.postId}/notifications/unread');
-      final items = (response.data['items'] as List)
-          .map((e) => UnreadReplyNotification.fromJson(e))
-          .toList();
-      if (mounted) {
-        setState(() {
-          _unreadReplyNotifications = items;
-          _loadingUnreadReplies = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingUnreadReplies = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _markNotificationsRead(List<int> ids) async {
-    if (ids.isEmpty) return;
-    try {
-      await _dio.post('/notifications/read-selected', data: {'ids': ids});
-    } catch (_) {
-      // 忽略失败
-    }
-  }
-
-  void _jumpToUnreadReply(UnreadReplyNotification item) async {
-    final targetReply =
-        _replies.where((r) => r.id == item.relatedId).firstOrNull;
-    if (targetReply == null) {
-      AppFeedback.showSnackBar(context, '该回复可能已删除');
-      _markNotificationsRead([item.id]);
-      if (mounted) {
-        setState(() {
-          _unreadReplyNotifications.removeWhere((n) => n.id == item.id);
-        });
-      }
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _activeTargetReplyId = item.relatedId;
-        _unreadReplyNotifications.removeWhere((n) => n.id == item.id);
-      });
-      _scheduleScrollToTarget(item.relatedId, 3);
-      _markNotificationsRead([item.id]);
-    }
-  }
-
-  Widget _buildUnreadReplyBanner(bool isDark) {
-    if (_unreadReplyNotifications.isEmpty) return const SizedBox.shrink();
-    final count = _unreadReplyNotifications.length;
-    final text = count <= 3 ? '$count 条未读回复 · 查看' : '$count 条未读回复 · 查看列表';
-
-    return GestureDetector(
-      onTap: () {
-        if (count <= 3) {
-          _jumpToUnreadReply(_unreadReplyNotifications.first);
-        } else {
-          _showUnreadReplySheet(isDark);
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color:
-              isDark ? Colors.blue.withValues(alpha: 0.2) : Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isDark
-                ? Colors.blue.withValues(alpha: 0.3)
-                : Colors.blue.shade100,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.mark_chat_unread,
-                size: 16,
-                color: isDark ? Colors.blue.shade300 : Colors.blue.shade600),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.blue.shade300 : Colors.blue.shade700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showUnreadReplySheet(bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E222D) : Colors.white,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '未读回复 (${_unreadReplyNotifications.length})',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            final ids = _unreadReplyNotifications
-                                .map((e) => e.id)
-                                .toList();
-                            _markNotificationsRead(ids);
-                            setState(() {
-                              _unreadReplyNotifications.clear();
-                            });
-                            Navigator.pop(context);
-                          },
-                          child: const Text('全部标记已读'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _unreadReplyNotifications.length,
-                      itemBuilder: (context, index) {
-                        final item = _unreadReplyNotifications[index];
-                        return ListTile(
-                          leading: CachedAvatar(
-                            radius: 18,
-                            imageUrl: item.fromUser?.avatar.isNotEmpty == true
-                                ? ApiConstants.fullUrl(item.fromUser!.avatar)
-                                : null,
-                            fallbackText: item.fromUser?.nickname,
-                          ),
-                          title: Text(
-                            item.fromUser?.nickname ?? '匿名',
-                            style: TextStyle(
-                                color: isDark ? Colors.white : Colors.black87),
-                          ),
-                          subtitle: Text(
-                            item.content,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color:
-                                    isDark ? Colors.white70 : Colors.black54),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _jumpToUnreadReply(item);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 }
 

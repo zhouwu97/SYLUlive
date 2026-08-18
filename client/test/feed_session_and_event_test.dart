@@ -39,8 +39,16 @@ void main() {
       final a = session.newSession();
       final b = session.newSession();
       expect(a, isNot(b));
-      expect(a.startsWith('${DateTime.now().millisecondsSinceEpoch}'.substring(0, 4)),
+      expect(
+          a.startsWith(
+              '${DateTime.now().millisecondsSinceEpoch}'.substring(0, 4)),
           isTrue); // 时间戳前缀
+    });
+
+    test('session id 的随机段保持在无符号 32 位范围内', () {
+      final session = FeedSessionService();
+      final randomPart = int.parse(session.newSession().split('_').last);
+      expect(randomPart, inInclusiveRange(0, 0xFFFFFFFF));
     });
   });
 
@@ -63,25 +71,36 @@ void main() {
       final svc = FeedEventService(dio, maxBatch: 40);
 
       svc.enqueue(FeedEvent(
-          feedSessionId: 's1', feedKind: 'all', algorithmVersion: 'v3',
-          type: 'impression', postId: 1, position: 0, visibleMs: 800));
+          feedSessionId: 's1',
+          feedKind: 'all',
+          algorithmVersion: 'v3',
+          type: 'impression',
+          postId: 1,
+          position: 0,
+          visibleMs: 800));
       svc.enqueue(FeedEvent(
-          feedSessionId: 's1', feedKind: 'all', algorithmVersion: 'v3',
-          type: 'impression', postId: 2, position: 1, visibleMs: 900));
+          feedSessionId: 's1',
+          feedKind: 'all',
+          algorithmVersion: 'v3',
+          type: 'impression',
+          postId: 2,
+          position: 1,
+          visibleMs: 900));
       svc.enqueue(FeedEvent(
-          feedSessionId: 's2', feedKind: 'time', algorithmVersion: 'v3',
-          type: 'open', postId: 3));
+          feedSessionId: 's2',
+          feedKind: 'time',
+          algorithmVersion: 'v3',
+          type: 'open',
+          postId: 3));
 
       await svc.flush();
 
       expect(requests, hasLength(2));
       // 分组：s1/all/v3 一组含两个 impression；s2/time/v3 一组含一个 open。
-      final group1 =
-          requests.firstWhere((r) => r['feed_session_id'] == 's1');
+      final group1 = requests.firstWhere((r) => r['feed_session_id'] == 's1');
       expect(group1['feed_kind'], 'all');
       expect((group1['events'] as List), hasLength(2));
-      final group2 =
-          requests.firstWhere((r) => r['feed_session_id'] == 's2');
+      final group2 = requests.firstWhere((r) => r['feed_session_id'] == 's2');
       expect(group2['feed_kind'], 'time');
       expect((group2['events'] as List), hasLength(1));
       expect((group2['events'] as List).single['type'], 'open');
@@ -98,15 +117,21 @@ void main() {
           onRequest: (options, handler) {
             calls++;
             handler.reject(
-              DioException(requestOptions: options, type: DioExceptionType.connectionError),
+              DioException(
+                  requestOptions: options,
+                  type: DioExceptionType.connectionError),
             );
           },
         ),
       );
       final svc = FeedEventService(dio, maxBatch: 40);
       svc.enqueue(FeedEvent(
-          feedSessionId: 's1', feedKind: 'all', algorithmVersion: 'v3',
-          type: 'impression', postId: 1, visibleMs: 800));
+          feedSessionId: 's1',
+          feedKind: 'all',
+          algorithmVersion: 'v3',
+          type: 'impression',
+          postId: 1,
+          visibleMs: 800));
 
       await svc.flush();
       expect(svc.pendingEvents, isNotEmpty, reason: '失败后事件回队列重试');

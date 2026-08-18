@@ -12,6 +12,7 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_navigator.dart' show appRouteObserver;
 import '../utils/app_time.dart';
@@ -183,13 +184,15 @@ class _ChatListScreenState extends State<ChatListScreen>
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = Theme.of(context).colorScheme;
+    final surfaceColor = isDark
+        ? AppColors.surfacePrimaryDark
+        : AppColors.surfacePrimaryLight;
 
     return SwipeToExit(
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: _privateMessageSystemUiStyle(isDark),
         child: Scaffold(
-          backgroundColor: colors.surface,
+          backgroundColor: surfaceColor,
           appBar: AppBar(
             toolbarHeight: 64,
             title: const Text(
@@ -210,11 +213,13 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   SystemUiOverlayStyle _privateMessageSystemUiStyle(bool isDark) {
-    final colors = Theme.of(context).colorScheme;
+    final surfaceColor = isDark
+        ? AppColors.surfacePrimaryDark
+        : AppColors.surfacePrimaryLight;
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
-      statusBarColor: colors.surface,
-      systemNavigationBarColor: colors.surface,
+      statusBarColor: surfaceColor,
+      systemNavigationBarColor: surfaceColor,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -223,9 +228,12 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildLoginRequiredScaffold() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark
+        ? AppColors.surfacePrimaryDark
+        : AppColors.surfacePrimaryLight;
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: colors.surface,
+      backgroundColor: surfaceColor,
       appBar: AppBar(
         title: const Text('私信'),
         backgroundColor: Colors.transparent,
@@ -328,13 +336,14 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildPrivateMessageBackground() {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = Theme.of(context).colorScheme;
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
     if (!themeProvider.shouldShowCustomBackground ||
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: colors.surface,
+        color: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
       );
     }
 
@@ -345,8 +354,8 @@ class _ChatListScreenState extends State<ChatListScreen>
       children: [
         _buildPrivateMessageBackgroundImage(imageProvider: imageProvider),
         ColoredBox(
-          color: (isDark ? colors.scrim : colors.surface)
-              .withValues(alpha: isDark ? 0.30 : 0.24),
+          color: (isDark ? Colors.black : Colors.white)
+              .withValues(alpha: isDark ? 0.25 : 0.12),
         ),
       ],
     );
@@ -459,7 +468,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildConversationSearchField() {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: SizedBox(
@@ -473,8 +482,21 @@ class _ChatListScreenState extends State<ChatListScreen>
             hintText: '搜索联系人或消息',
             isDense: true,
             filled: true,
-            fillColor: colors.surfaceContainerHighest,
-            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+            fillColor: isDark
+                ? AppColors.searchBarFillDark
+                : AppColors.searchBarFillLight,
+            hintStyle: TextStyle(
+              color: isDark
+                  ? AppColors.iconMutedDark
+                  : AppColors.iconMutedLight,
+            ),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: isDark
+                  ? AppColors.iconNeutralDark
+                  : AppColors.iconNeutralLight,
+            ),
             suffixIcon: _searchQuery.isEmpty
                 ? null
                 : IconButton(
@@ -483,7 +505,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                       _searchController.clear();
                       setState(() => _searchQuery = '');
                     },
-                    icon: const Icon(Icons.close_rounded, size: 18),
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: isDark
+                          ? AppColors.iconNeutralDark
+                          : AppColors.iconNeutralLight,
+                    ),
                   ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -497,7 +525,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildRecentMessagesLabel() {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Align(
@@ -505,7 +533,9 @@ class _ChatListScreenState extends State<ChatListScreen>
         child: Text(
           '最近消息',
           style: TextStyle(
-            color: colors.onSurfaceVariant,
+            color: isDark
+                ? AppColors.iconNeutralDark
+                : AppColors.iconNeutralLight,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -669,13 +699,13 @@ class _ChatListScreenState extends State<ChatListScreen>
           );
     final previewIsAlert = !hasDraft && lastMessage?.isFailed == true;
     final selected = splitMode && _selectedConversationId == conversation.id;
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final muted = colors.onSurfaceVariant;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textMuted = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final emphasized = conversation.unreadCount > 0;
     final tileColor = selected
-        ? colors.primary.withValues(alpha: isDark ? 0.22 : 0.10)
+        ? (isDark
+            ? AppColors.messageOutgoingDark.withValues(alpha: 0.22)
+            : AppColors.brandPrimary.withValues(alpha: 0.10))
         : Colors.transparent;
     final tileRadius = selected ? AppTheme.borderRadius : 0.0;
     final nickname = targetUser.nickname.isEmpty
@@ -708,6 +738,12 @@ class _ChatListScreenState extends State<ChatListScreen>
                           : ApiConstants.fullUrl(targetUser.avatar),
                       radius: 28,
                       fallbackText: nickname,
+                      fallbackBackgroundColor: isDark
+                          ? const Color(0xFF262A2C)
+                          : const Color(0xFFF0F2EF),
+                      fallbackIconColor: isDark
+                          ? const Color(0xFFA7AFAB)
+                          : const Color(0xFF69716D),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -721,6 +757,9 @@ class _ChatListScreenState extends State<ChatListScreen>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight,
                               fontWeight: emphasized
                                   ? FontWeight.w700
                                   : FontWeight.w600,
@@ -731,7 +770,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                             Text.rich(
                               TextSpan(
                                 style: TextStyle(
-                                  color: muted,
+                                  color: textMuted,
                                   fontSize: 14,
                                   height: 1.25,
                                 ),
@@ -758,7 +797,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               style: TextStyle(
                                 color: previewIsAlert
                                     ? Colors.red.shade600
-                                    : muted,
+                                    : textMuted,
                                 fontSize: 14,
                                 height: 1.25,
                               ),
@@ -784,7 +823,11 @@ class _ChatListScreenState extends State<ChatListScreen>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              color: emphasized ? colors.primary : muted,
+                              color: emphasized
+                                  ? (isDark
+                                      ? AppColors.messageOutgoingDark
+                                      : AppColors.brandPrimary)
+                                  : textMuted,
                               fontWeight: emphasized
                                   ? FontWeight.w600
                                   : FontWeight.w400,
@@ -801,7 +844,9 @@ class _ChatListScreenState extends State<ChatListScreen>
                                 horizontal: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: colors.primary,
+                                color: isDark
+                                    ? AppColors.messageOutgoingDark
+                                    : AppColors.brandPrimary,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
@@ -809,8 +854,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                                     ? '99+'
                                     : '${conversation.unreadCount}',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: colors.onPrimary,
+                                style: const TextStyle(
+                                  color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   height: 1.15,

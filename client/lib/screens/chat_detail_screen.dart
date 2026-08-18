@@ -20,6 +20,7 @@ import '../services/emoji_favorite_repository.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
@@ -1272,7 +1273,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             appBar: AppBar(
               automaticallyImplyLeading: false,
               toolbarHeight: _chatHeaderHeight,
-              backgroundColor: _chatSurfaceColor(),
+              backgroundColor: _chatSurfaceColor(isDark),
               surfaceTintColor: Colors.transparent,
               elevation: 0,
               systemOverlayStyle: _chatSystemOverlayStyle(isDark),
@@ -1315,16 +1316,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
   }
 
-  Color _chatSurfaceColor() {
-    return Theme.of(context).colorScheme.surface;
+  Color _chatSurfaceColor(bool isDark) {
+    return isDark
+        ? AppColors.surfacePrimaryDark
+        : AppColors.surfacePrimaryLight;
   }
 
   SystemUiOverlayStyle _chatSystemOverlayStyle(bool isDark) {
-    final colors = Theme.of(context).colorScheme;
+    final surfaceColor = _chatSurfaceColor(isDark);
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
-      statusBarColor: colors.surface,
-      systemNavigationBarColor: colors.surface,
+      statusBarColor: surfaceColor,
+      systemNavigationBarColor: surfaceColor,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -1332,19 +1335,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildChatHeader({required bool showBackButton}) {
-    final colors = Theme.of(context).colorScheme;
-    final foreground = colors.onSurface;
-    final muted = colors.onSurfaceVariant;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final muted = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final nickname = widget.targetUser.nickname.isEmpty
         ? '用户${widget.targetUser.id}'
         : widget.targetUser.nickname;
     return Container(
       key: const ValueKey('chat-header'),
       decoration: BoxDecoration(
-        color: _chatSurfaceColor(),
+        color: _chatSurfaceColor(isDark),
         border: Border(
           bottom: BorderSide(
-            color: colors.outlineVariant,
+            color: isDark
+                ? AppColors.composerDividerDark
+                : AppColors.composerDividerLight,
           ),
         ),
       ),
@@ -1363,8 +1368,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                         tooltip: '返回',
                         onPressed: _exitChat,
                         padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                            size: 20),
+                        icon: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: isDark
+                              ? AppColors.iconNeutralDark
+                              : AppColors.iconNeutralLight,
+                        ),
                       )
                     : null,
               ),
@@ -1388,6 +1398,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                   ),
                             radius: 20,
                             fallbackText: nickname,
+                            fallbackBackgroundColor: isDark
+                                ? const Color(0xFF262A2C)
+                                : const Color(0xFFF0F2EF),
+                            fallbackIconColor: isDark
+                                ? const Color(0xFFA7AFAB)
+                                : const Color(0xFF69716D),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1434,7 +1450,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   padding: EdgeInsets.zero,
                   icon: Icon(
                     Icons.more_horiz_rounded,
-                    color: foreground,
+                    color: isDark
+                        ? AppColors.iconNeutralDark
+                        : AppColors.iconNeutralLight,
                     size: 24,
                   ),
                   onSelected: (_) => _openTargetProfile(),
@@ -1464,7 +1482,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     User? currentUser, {
     required bool includeBackdrop,
   }) {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (provider.messageLoading &&
         !_initialLoadFinished &&
         provider.messages.isEmpty) {
@@ -1590,10 +1608,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               child: Container(
                 key: const ValueKey('chat-new-message-button'),
                 decoration: BoxDecoration(
-                  color: colors.surface,
+                  color: isDark
+                      ? AppColors.composerSurfaceDark
+                      : AppColors.composerSurfaceLight,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: colors.outlineVariant.withValues(alpha: 0.45),
+                    color: isDark
+                        ? AppColors.composerDividerDark
+                        : AppColors.composerDividerLight,
                     width: 1,
                   ),
                   boxShadow: [
@@ -1627,7 +1649,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           Icon(
                             Icons.arrow_downward_rounded,
                             size: 16,
-                            color: colors.primary,
+                            color: isDark
+                                ? AppColors.messageOutgoingDark
+                                : AppColors.brandPrimary,
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -1635,7 +1659,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: colors.onSurface,
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight,
                             ),
                           ),
                         ],
@@ -1671,13 +1697,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildChatBackground() {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = Theme.of(context).colorScheme;
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
     if (!themeProvider.shouldShowCustomBackground ||
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: colors.surface,
+        color: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
       );
     }
 
@@ -1690,8 +1717,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           imageProvider: imageProvider,
         ),
         ColoredBox(
-          color: (isDark ? colors.scrim : colors.surface)
-              .withValues(alpha: isDark ? 0.28 : 0.15),
+          color: (isDark ? Colors.black : Colors.white)
+              .withValues(alpha: isDark ? 0.20 : 0.10),
         ),
       ],
     );
@@ -1764,10 +1791,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final senderName = sender?.nickname.isNotEmpty == true
         ? sender!.nickname
         : (isMine ? '我' : widget.targetUser.nickname);
-    final colors = Theme.of(context).colorScheme;
-    final bubbleColor =
-        isMine ? colors.primary : colors.surfaceContainerHighest;
-    final textColor = isMine ? colors.onPrimary : colors.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bubbleColor = isMine
+        ? (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary)
+        : (isDark ? AppColors.messageIncomingDark : AppColors.messageIncomingLight);
+    final textColor = isMine
+        ? Colors.white
+        : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight);
     final groupGap = isGroupStart ? 10.0 : 4.0;
     final bubbleRadius = _messageBubbleRadius(
       isMine: isMine,
@@ -1776,8 +1806,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
     final isHighlighted = _messageFocusHighlightId == message.id;
     final highlightColor = isMine
-        ? colors.onPrimary.withValues(alpha: 0.72)
-        : colors.primary.withValues(alpha: 0.72);
+        ? Colors.white.withValues(alpha: 0.72)
+        : (isDark ? AppColors.messageOutgoingDark : AppColors.brandPrimary).withValues(alpha: 0.72);
     // 仅图片消息（无文字、无表情）不套普通气泡，图片自带圆角。
     final imageOnly = hasImage &&
         stickerUrl == null &&
@@ -1829,7 +1859,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                 ? highlightColor
                                 : isMine
                                     ? Colors.transparent
-                                    : colors.outlineVariant,
+                                    : (isDark
+                                        ? AppColors.messageIncomingBorderDark
+                                        : AppColors.messageIncomingBorderLight),
                       ),
                       boxShadow: isHighlighted
                           ? [
@@ -2150,7 +2182,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildInputBar() {
     final blocked = _isComposerBlocked;
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2181,12 +2213,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           fieldEnabled: !blocked,
           readOnly: blocked,
           inputFillColor: blocked
-              ? colors.surfaceContainerHigh
-              : colors.surfaceContainerHighest,
-          inputTextColor: blocked ? colors.onSurfaceVariant : colors.onSurface,
-          hintColor: colors.onSurfaceVariant.withValues(
-            alpha: blocked ? 0.7 : 1,
-          ),
+              ? (isDark
+                  ? AppColors.disabledControlDark
+                  : AppColors.disabledControlLight)
+              : (isDark
+                  ? AppColors.composerInputDark
+                  : AppColors.composerInputLight),
+          inputTextColor: blocked
+              ? (isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight)
+              : (isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight),
+          hintColor: isDark
+              ? AppColors.iconMutedDark
+              : AppColors.iconMutedLight,
         ),
       ],
     );

@@ -57,13 +57,13 @@ void main() {
       disabledSendButton.style?.backgroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.12),
+      colors.onSurface.withValues(alpha: 0.05),
     );
     expect(
       disabledSendButton.style?.foregroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.38),
+      colors.onSurface.withValues(alpha: 0.28),
     );
     expect(
       find.ancestor(
@@ -110,13 +110,13 @@ void main() {
       disabledSendButton.style?.backgroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.12),
+      colors.onSurface.withValues(alpha: 0.05),
     );
     expect(
       disabledSendButton.style?.foregroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.38),
+      colors.onSurface.withValues(alpha: 0.28),
     );
     await _disposeChat(tester, provider);
   });

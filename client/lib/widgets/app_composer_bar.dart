@@ -70,31 +70,49 @@ class AppComposerBar extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Container(
       key: composerKey,
-      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: decorate
           ? BoxDecoration(
               color: colors.surface,
-              border: Border(top: BorderSide(color: colors.outlineVariant)),
+              border: Border(
+                top: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: 0.4),
+                  width: 1.0,
+                ),
+              ),
             )
           : null,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           SizedBox(
             key: leadingKey,
             width: 44,
             height: 44,
-            child: IconButton(
-              tooltip: leadingTooltip,
-              onPressed: onLeadingPressed,
-              padding: EdgeInsets.zero,
-              icon: leadingLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_rounded, size: 25),
+            child: Center(
+              child: IconButton(
+                tooltip: leadingTooltip,
+                onPressed: onLeadingPressed,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 44,
+                ),
+                icon: leadingLoading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.primary,
+                        ),
+                      )
+                    : Icon(
+                        Icons.add_rounded,
+                        size: 24,
+                        color: colors.onSurfaceVariant,
+                      ),
+              ),
             ),
           ),
           const SizedBox(width: 4),
@@ -103,7 +121,7 @@ class AppComposerBar extends StatelessWidget {
               onKeyEvent: onKeyEvent,
               child: Container(
                 key: inputContainerKey,
-                constraints: const BoxConstraints(minHeight: 46),
+                constraints: const BoxConstraints(minHeight: 44),
                 child: TextField(
                   key: inputKey,
                   controller: textController,
@@ -124,14 +142,14 @@ class AppComposerBar extends StatelessWidget {
                       color: hintColor ?? colors.onSurfaceVariant,
                     ),
                     suffixIconConstraints: const BoxConstraints(
-                      minWidth: 44,
+                      minWidth: 40,
                       maxWidth: 44,
-                      minHeight: 46,
-                      maxHeight: 46,
+                      minHeight: 44,
+                      maxHeight: 44,
                     ),
                     suffixIcon: SizedBox(
                       key: emojiKey,
-                      width: 44,
+                      width: 40,
                       height: 44,
                       child: IconButton(
                         tooltip: emojiPanelVisible ? '打开键盘' : '选择表情',
@@ -141,24 +159,22 @@ class AppComposerBar extends StatelessWidget {
                           emojiPanelVisible
                               ? Icons.keyboard_alt_outlined
                               : Icons.sentiment_satisfied_alt_outlined,
-                          size: 22,
+                          size: 21,
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(23),
+                      borderRadius: BorderRadius.circular(22),
                       borderSide: BorderSide.none,
                     ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
+                    contentPadding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: textController,
             builder: (context, value, _) {
@@ -167,30 +183,43 @@ class AppComposerBar extends StatelessWidget {
                 key: sendContainerKey,
                 width: 44,
                 height: 44,
-                child: IconButton.filled(
-                  key: sendKey,
-                  tooltip: sendTooltip,
-                  onPressed: sendEnabled ? onSend : null,
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size(44, 44),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: colors.onPrimary,
-                    disabledBackgroundColor:
-                        colors.onSurface.withValues(alpha: 0.12),
-                    disabledForegroundColor:
-                        colors.onSurface.withValues(alpha: 0.38),
+                child: Center(
+                  child: SizedBox(
+                    width: sendEnabled ? 40 : 38,
+                    height: sendEnabled ? 40 : 38,
+                    child: IconButton.filled(
+                      key: sendKey,
+                      tooltip: sendTooltip,
+                      onPressed: sendEnabled ? onSend : null,
+                      padding: EdgeInsets.zero,
+                      style: IconButton.styleFrom(
+                        fixedSize: Size(
+                          sendEnabled ? 40 : 38,
+                          sendEnabled ? 40 : 38,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: colors.onPrimary,
+                        disabledBackgroundColor:
+                            colors.onSurface.withValues(alpha: 0.05),
+                        disabledForegroundColor:
+                            colors.onSurface.withValues(alpha: 0.28),
+                      ),
+                      icon: sending
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: colors.onPrimary,
+                              ),
+                            )
+                          : Icon(
+                              Icons.send_rounded,
+                              size: sendEnabled ? 20 : 19,
+                            ),
+                    ),
                   ),
-                  icon: sending
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: colors.onPrimary,
-                          ),
-                        )
-                      : const Icon(Icons.send_rounded, size: 20),
                 ),
               );
             },

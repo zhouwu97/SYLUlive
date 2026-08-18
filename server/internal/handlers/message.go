@@ -485,11 +485,14 @@ func (h *MessageHandler) ServePrivateFile(c *gin.Context) {
 	// 单独校验当前用户是否属于引用该附件的任一会话，与“记录不存在”区分开，
 	// 但客户端同样只会看到 404。
 	var accessCount int64
-	h.db.Model(&models.Message{}).
+	if err := h.db.Model(&models.Message{}).
 		Joins("JOIN conversations AS conv ON conv.id = messages.conversation_id").
 		Where("messages.file_id = ? AND (conv.user1_id = ? OR conv.user2_id = ?)",
 			fileID, userID, userID).
-		Count(&accessCount)
+		Count(&accessCount).Error; err != nil {
+		notFound("access_check_db_failed")
+		return
+	}
 	if accessCount == 0 {
 		notFound("no_message_access")
 		return

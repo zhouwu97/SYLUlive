@@ -44,6 +44,11 @@ func canonicalImageExt(mimeType string) string {
 	}
 }
 
+const (
+	maxImageDimension = 12000
+	maxImagePixels    = 50_000_000
+)
+
 func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
 	var meta ValidatedImageMetadata
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
@@ -69,12 +74,51 @@ func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
 		return meta, fmt.Errorf("图片文件损坏或格式不支持")
 	}
 
+	if config.Width <= 0 || config.Height <= 0 {
+		return meta, fmt.Errorf("图片尺寸无效")
+	}
+	if config.Width > maxImageDimension || config.Height > maxImageDimension ||
+		int64(config.Width)*int64(config.Height) > maxImagePixels {
+		return meta, fmt.Errorf("图片分辨率过高")
+	}
+
 	meta = ValidatedImageMetadata{
 		MimeType: mimeType,
 		Width:    config.Width,
 		Height:   config.Height,
 	}
 	return meta, nil
+}
+
+func atomicWriteFile(dstPath string, src io.Reader) error {
+	dir := filepath.Dir(dstPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	tmpPath := fmt.Sprintf("%s.tmp.%d", dstPath, os.Getpid())
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("写入文件失败: %w", err)
+	}
+	if err := dst.Sync(); err != nil {
+		dst.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("同步文件失败: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("关闭临时文件失败: %w", err)
+	}
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("原子重命名失败: %w", err)
+	}
+	return nil
 }
 
 // UploadHandler 上传处理器
@@ -306,7 +350,36 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 			})
 			return
 		}
-		// 磁盘文件丢失 → 不返回旧记录，继续执行下面的保存逻辑用本次上传内容写回。
+		// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置，保证所有历史引用与返回 URL 仍然有效。
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
+			return
+		}
+		if err := atomicWriteFile(diskPath, src); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复文件失败"})
+			return
+		}
+		updates := map[string]interface{}{
+			"size":      file.Size,
+			"mime_type": meta.MimeType,
+			"width":     meta.Width,
+			"height":    meta.Height,
+		}
+		if err := h.db.Model(&existing).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新文件记录失败"})
+			return
+		}
+		if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"file_id": existing.ID,
+			"url":     existing.Path,
+			"hash":    existing.Hash,
+			"reused":  false,
+		})
+		return
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -315,24 +388,14 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 创建上传目录
+	// 保存新文件（使用规范化扩展名，与真实内容一致）
 	dir1 := filepath.Join(h.uploadDir, hashStr[:2])
-	if err := os.MkdirAll(dir1, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建上传目录失败"})
-		return
-	}
-
-	// 保存文件（使用规范化扩展名，与真实内容一致）
 	dstPath := filepath.Join(dir1, hashStr+canonicalExt)
-	dst, err := os.Create(dstPath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件失败"})
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
 		return
 	}
-	defer dst.Close()
-
-	src.Seek(0, 0)
-	if _, err := io.Copy(dst, src); err != nil {
+	if err := atomicWriteFile(dstPath, src); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
 	}
@@ -443,17 +506,45 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 				createdFiles = append(createdFiles, existing)
 				continue
 			}
-			// 磁盘文件丢失，继续执行后面的保存逻辑用本次上传内容写回。
-		}
-
-		// 创建上传目录
-		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
-		if err := os.MkdirAll(dir1, 0755); err != nil {
-			results = append(results, gin.H{"error": "创建目录失败"})
+			// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置
+			err = func() error {
+				src2, err := file.Open()
+				if err != nil {
+					return fmt.Errorf("恢复文件时读取失败")
+				}
+				defer src2.Close()
+				return atomicWriteFile(diskPath, src2)
+			}()
+			if err != nil {
+				results = append(results, gin.H{"error": err.Error()})
+				continue
+			}
+			updates := map[string]interface{}{
+				"size":      file.Size,
+				"mime_type": meta.MimeType,
+				"width":     meta.Width,
+				"height":    meta.Height,
+			}
+			if err := h.db.Model(&existing).Updates(updates).Error; err != nil {
+				results = append(results, gin.H{"error": "更新文件记录失败"})
+				continue
+			}
+			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+				return
+			}
+			results = append(results, gin.H{
+				"file_id": existing.ID,
+				"url":     existing.Path,
+				"hash":    existing.Hash,
+				"reused":  false,
+			})
+			createdFiles = append(createdFiles, existing)
 			continue
 		}
 
-		// 保存文件（使用规范化扩展名，与真实内容一致）
+		// 保存新文件（使用规范化扩展名，与真实内容一致）
+		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 		dstPath := filepath.Join(dir1, hashStr+canonicalExt)
 		err = func() error {
 			src2, err := file.Open()
@@ -461,15 +552,7 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 				return fmt.Errorf("保存文件时读取失败")
 			}
 			defer src2.Close()
-
-			dst, err := os.Create(dstPath)
-			if err != nil {
-				return fmt.Errorf("保存文件失败")
-			}
-			defer dst.Close()
-
-			_, err = io.Copy(dst, src2)
-			return err
+			return atomicWriteFile(dstPath, src2)
 		}()
 
 		if err != nil {

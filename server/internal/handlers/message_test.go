@@ -531,7 +531,7 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 
 	select {
 	case call := <-notifier.calls:
-		if call.UserID != 2 || call.Title != "Alice" || call.Content != "[图片]" {
+		if call.UserID != 2 || call.Title != "Alice" || call.Content != "发来一张图片" {
 			t.Fatalf("unexpected push call: %#v", call)
 		}
 		conversationID := call.Extras["conversation_id"]

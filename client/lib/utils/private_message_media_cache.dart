@@ -59,15 +59,39 @@ class PrivateMessageMediaCache {
   void scopeByAccount(int? accountId) {
     if (_accountId == accountId) return;
     _accountId = accountId;
-    unawaited(clearAll());
+    final oldManager = _defaultManager;
+    final custom = _customManager;
+    _defaultManager = null;
+    if (oldManager != null || custom != null) {
+      unawaited(() async {
+        try {
+          if (oldManager != null) {
+            await oldManager.emptyCache();
+          }
+          if (custom != null) {
+            await custom.emptyCache();
+          }
+        } catch (_) {
+          // 清空缓存失败不影响业务
+        }
+      }());
+    }
   }
 
   Future<void> clearAll() async {
-    if (_customManager == null && _defaultManager == null) {
+    final oldDefault = _defaultManager;
+    final custom = _customManager;
+    _defaultManager = null;
+    if (custom == null && oldDefault == null) {
       return;
     }
     try {
-      await manager.emptyCache();
+      if (custom != null) {
+        await custom.emptyCache();
+      }
+      if (oldDefault != null) {
+        await oldDefault.emptyCache();
+      }
     } catch (_) {
       // 清空缓存失败不影响业务，下次请求会重新拉取。
     }

@@ -1,5 +1,5 @@
 // 回填历史图片元数据：为 width/height 为 0 的 image/* 文件补齐规范宽高，
-// 并按真实内容纠正 MIME（PNG 内容 + .jpg 名 → image/png + hash.png）。
+// 并按真实内容纠正 MIME（仅更新数据库 width/height/mime_type 字段，不重命名物理文件与不变更原有 Path/URL，保持历史引用有效）。
 //
 // 用法：
 //

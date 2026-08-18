@@ -234,7 +234,7 @@ func TestBuildSnapshotV5RolloutWithoutShadowActivates(t *testing.T) {
 
 func TestMetricsSeparatesPostAndReplyLikes(t *testing.T) {
 	db := newMetricsTestDB(t)
-	now := time.Now()
+	now := time.Now().UTC()
 
 	// post like + reply like 各 1 条。
 	require.NoError(t, db.Create(&models.Like{UserID: 1, TargetType: "post", TargetID: 1, CreatedAt: now}).Error)

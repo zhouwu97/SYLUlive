@@ -310,6 +310,9 @@ func main() {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.CanteenDish{},
+		&models.CanteenDishPhoto{},
+		&models.CanteenRatingDishRecommendation{},
 		&models.UserFollow{},
 
 		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
@@ -410,6 +413,12 @@ func main() {
 	}
 	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
 		log.Fatal("食堂名称唯一索引迁移失败:", err)
+	}
+	if err := models.EnsureCanteenDishSchema(db); err != nil {
+		log.Fatal("食堂菜品图库约束迁移失败:", err)
+	}
+	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
+		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
 	}
 	if err := ensureAppReleaseIndexes(db); err != nil {
 		log.Fatal("应用发布索引迁移失败:", err)

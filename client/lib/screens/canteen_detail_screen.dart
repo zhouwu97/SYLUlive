@@ -17,6 +17,7 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_gallery_section.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import 'canteen_dish_list_screen.dart';
+import 'canteen_review_editor_screen.dart';
 
 /// 食堂详情页：Hero + 信息区 + 大家都在吃 + 评价区 + 底部写评价。
 ///
@@ -259,7 +260,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       }
                     },
                     onVote: _voteRating,
-                    onWriteReview: _showRatingSheet,
+                    onWriteReview: _openReviewEditor,
                   ),
                 ],
               ),
@@ -412,7 +413,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                onTap: _showRatingSheet,
+                onTap: _openReviewEditor,
                 child: Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -434,7 +435,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ),
           const SizedBox(width: 10),
           FilledButton(
-            onPressed: _showRatingSheet,
+            onPressed: _openReviewEditor,
             style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
@@ -572,11 +573,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
-  // ── 写评价 Sheet（完整五颗交互星只在评分 Sheet 出现）──────────────
+  // ── 打开评价编辑器全屏页 ────────────────────────────────────────
 
-  Future<void> _showRatingSheet() async {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = CanteenTheme.accentColor(isDark);
+  Future<void> _openReviewEditor() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -590,177 +589,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       return;
     }
 
-    final myRating = _canteenData?['my_rating'];
-    var selectedStar = (myRating?['star'] as num?)?.toInt() ?? 0;
-    var isSubmitting = false;
-    final controller = TextEditingController(
-      text: myRating?['comment']?.toString() ?? '',
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewEditorScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+          canteenImage: _canteenData?['canteen']?['image']?.toString(),
+          averageStar:
+              (_canteenData?['average_star'] as num?)?.toDouble() ?? 0.0,
+          ratingCount:
+              (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
+          dishCount: _dishCount,
+          dishPhotoCount: _dishPhotoCount,
+          existingRating: _canteenData?['my_rating'],
+        ),
+      ),
     );
 
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (sheetContext) {
-          return StatefulBuilder(
-            builder: (context, setSheetState) {
-              Future<void> submitRating() async {
-                if (selectedStar == 0 || isSubmitting) return;
-                setSheetState(() => isSubmitting = true);
-                final result =
-                    await context.read<CanteenProvider>().rateCanteen(
-                          widget.canteenId,
-                          selectedStar,
-                          controller.text.trim(),
-                        );
-                if (!context.mounted) return;
-                setSheetState(() => isSubmitting = false);
-                if (result) {
-                  Navigator.pop(sheetContext);
-                  await _reloadSilently();
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('提交失败，请稍后再试')),
-                  );
-                }
-              }
-
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                  decoration: BoxDecoration(
-                    color: CanteenTheme.surfaceBg(isDark),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 36,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: CanteenTheme.borderColor(isDark),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          myRating == null ? '写评价' : '修改评价',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: CanteenTheme.textPrimaryColor(isDark),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '给这个食堂打个分，顺便说说真实体验',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: CanteenTheme.textSecondaryColor(isDark),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: List.generate(5, (index) {
-                            final value = index + 1;
-                            final selected = value <= selectedStar;
-                            return IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              onPressed: isSubmitting
-                                  ? null
-                                  : () {
-                                      setSheetState(() {
-                                        selectedStar = value;
-                                      });
-                                    },
-                              icon: Icon(
-                                selected
-                                    ? Icons.star_rounded
-                                    : Icons.star_border_rounded,
-                                color: accent,
-                                size: 34,
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: controller,
-                          maxLines: 5,
-                          minLines: 4,
-                          maxLength: 200,
-                          enabled: !isSubmitting,
-                          decoration: InputDecoration(
-                            hintText: '比如味道、价格、排队情况、推荐窗口...',
-                            hintStyle: TextStyle(
-                                color: CanteenTheme.textSecondaryColor(isDark)),
-                            filled: true,
-                            fillColor: CanteenTheme.surfaceMutedBg(isDark),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.all(16),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: FilledButton(
-                            onPressed: selectedStar == 0 || isSubmitting
-                                ? null
-                                : submitRating,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: accent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: isSubmitting
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Text(
-                                    myRating == null ? '发布评价' : '保存修改',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
+    if (result == true && mounted) {
+      await _reloadSilently();
     }
   }
 

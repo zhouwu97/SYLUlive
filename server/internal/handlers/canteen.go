@@ -24,6 +24,20 @@ func NewCanteenHandler(db *gorm.DB) *CanteenHandler {
 	return &CanteenHandler{db: db}
 }
 
+// validCanteenTags 食堂评价体验标签白名单
+var validCanteenTags = map[string]string{
+	"taste_good":         "味道不错",
+	"portion_enough":     "分量足",
+	"price_fair":         "价格合适",
+	"serving_fast":       "出餐快",
+	"queue_long":         "排队久",
+	"recommended_window": "推荐窗口",
+	"clean":              "卫生干净",
+	"service_warm":       "服务热情",
+	"environment_clean":  "环境整洁",
+	"good_value":         "性价比高",
+}
+
 // canteenRankingPriorWeight Bayesian 排名的先验权重 m。
 const canteenRankingPriorWeight = 5.0
 
@@ -151,6 +165,30 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		}
 	}
 
+	type ratingDishRecRow struct {
+		RatingID uint   `gorm:"column:rating_id"`
+		DishID   uint   `gorm:"column:dish_id"`
+		DishName string `gorm:"column:dish_name"`
+	}
+	recsByRatingID := map[uint][]models.CanteenDish{}
+	recIDsByRatingID := map[uint][]uint{}
+	if len(ratingIDs) > 0 {
+		var recRows []ratingDishRecRow
+		if err := h.db.Table("canteen_rating_dish_recommendations").
+			Select("canteen_rating_dish_recommendations.rating_id, canteen_rating_dish_recommendations.dish_id, canteen_dishes.name as dish_name").
+			Joins("JOIN canteen_dishes ON canteen_dishes.id = canteen_rating_dish_recommendations.dish_id").
+			Where("canteen_rating_dish_recommendations.rating_id IN ?", ratingIDs).
+			Find(&recRows).Error; err == nil {
+			for _, row := range recRows {
+				recsByRatingID[row.RatingID] = append(recsByRatingID[row.RatingID], models.CanteenDish{
+					ID:   row.DishID,
+					Name: row.DishName,
+				})
+				recIDsByRatingID[row.RatingID] = append(recIDsByRatingID[row.RatingID], row.DishID)
+			}
+		}
+	}
+
 	for i := range ratings {
 		if ratings[i].User != nil {
 			ratings[i].UserName = ratings[i].User.Nickname
@@ -158,6 +196,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		}
 		if vote, ok := voteByRatingID[ratings[i].ID]; ok {
 			ratings[i].MyVote = &vote
+		}
+		if recs, ok := recsByRatingID[ratings[i].ID]; ok {
+			ratings[i].RecommendedDishes = recs
+		}
+		if recIDs, ok := recIDsByRatingID[ratings[i].ID]; ok {
+			ratings[i].RecommendedDishIDs = recIDs
 		}
 	}
 
@@ -176,6 +220,20 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			if err := h.db.Select("nickname, student_id, avatar").First(&user, rating.UserID).Error; err == nil {
 				rating.UserName = user.Nickname
 				rating.UserAvatar = user.Avatar
+			}
+			var myRecRows []ratingDishRecRow
+			if err := h.db.Table("canteen_rating_dish_recommendations").
+				Select("canteen_rating_dish_recommendations.rating_id, canteen_rating_dish_recommendations.dish_id, canteen_dishes.name as dish_name").
+				Joins("JOIN canteen_dishes ON canteen_dishes.id = canteen_rating_dish_recommendations.dish_id").
+				Where("canteen_rating_dish_recommendations.rating_id = ?", rating.ID).
+				Find(&myRecRows).Error; err == nil {
+				for _, row := range myRecRows {
+					rating.RecommendedDishes = append(rating.RecommendedDishes, models.CanteenDish{
+						ID:   row.DishID,
+						Name: row.DishName,
+					})
+					rating.RecommendedDishIDs = append(rating.RecommendedDishIDs, row.DishID)
+				}
 			}
 			myRating = &rating
 		}
@@ -396,9 +454,11 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 
 	var input struct {
-		Star    int    `json:"star" binding:"required,min=1,max=5"`
-		Comment string `json:"comment" binding:"max=500"`
-		Images  string `json:"images"`
+		Star               int      `json:"star" binding:"required,min=1,max=5"`
+		Comment            string   `json:"comment" binding:"max=500"`
+		Images             string   `json:"images"`
+		Tags               []string `json:"tags"`
+		RecommendedDishIDs []uint   `json:"recommended_dish_ids"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -440,10 +500,76 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
+	// 1. 体验标签白名单校验 & 去重 (最多 6 个)
+	var cleanedTags []string
+	seenTags := make(map[string]bool)
+	for _, tag := range input.Tags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := validCanteenTags[trimmed]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "评价标签不合法"})
+			return
+		}
+		if !seenTags[trimmed] {
+			seenTags[trimmed] = true
+			cleanedTags = append(cleanedTags, trimmed)
+		}
+	}
+	if len(cleanedTags) > 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "最多选择6个体验标签"})
+		return
+	}
+	tagsBytes, _ := json.Marshal(cleanedTags)
+	tagsJSON := string(tagsBytes)
+	if len(cleanedTags) == 0 {
+		tagsJSON = "[]"
+	}
+
+	// 2. 图片列表解析与数量校验 (最多 3 张)
 	var imagePaths []string
 	if strings.TrimSpace(input.Images) != "" {
 		if err := json.Unmarshal([]byte(input.Images), &imagePaths); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "图片列表格式错误"})
+			return
+		}
+	}
+	if len(imagePaths) > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "最多只能上传3张评价图片"})
+		return
+	}
+	for _, p := range imagePaths {
+		if len([]rune(p)) > 500 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "图片路径长度过长"})
+			return
+		}
+	}
+	imagesBytes, _ := json.Marshal(imagePaths)
+	normalizedImagesJSON := string(imagesBytes)
+	if len(imagePaths) == 0 {
+		normalizedImagesJSON = "[]"
+	}
+
+	// 3. 推荐菜品校验 (最多 3 个，必须属于当前食堂且 status == active)
+	var cleanedDishIDs []uint
+	seenDishIDs := make(map[uint]bool)
+	for _, dishID := range input.RecommendedDishIDs {
+		if dishID > 0 && !seenDishIDs[dishID] {
+			seenDishIDs[dishID] = true
+			cleanedDishIDs = append(cleanedDishIDs, dishID)
+		}
+	}
+	if len(cleanedDishIDs) > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "最多只能推荐3道菜品"})
+		return
+	}
+	if len(cleanedDishIDs) > 0 {
+		var validCount int64
+		if err := h.db.Model(&models.CanteenDish{}).
+			Where("id IN ? AND canteen_id = ? AND status = ?", cleanedDishIDs, cid, models.DishStatusActive).
+			Count(&validCount).Error; err != nil || int(validCount) != len(cleanedDishIDs) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "推荐菜品不存在或不属于该食堂"})
 			return
 		}
 	}
@@ -453,21 +579,46 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		UserID:    userID,
 		Star:      input.Star,
 		Comment:   input.Comment,
-		Images:    input.Images,
+		Images:    normalizedImagesJSON,
+		Tags:      tagsJSON,
 	}
+
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "canteen_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images"}),
+			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images", "tags"}),
 		}).Create(&rating).Error; err != nil {
 			return err
 		}
+
+		var savedRating models.CanteenRating
+		if err := tx.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&savedRating).Error; err != nil {
+			return err
+		}
+		rating.ID = savedRating.ID
+
+		if err := tx.Where("rating_id = ?", rating.ID).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
+			return err
+		}
+
+		for _, dishID := range cleanedDishIDs {
+			rec := models.CanteenRatingDishRecommendation{
+				RatingID: rating.ID,
+				DishID:   dishID,
+			}
+			if err := tx.Create(&rec).Error; err != nil {
+				return err
+			}
+		}
+
 		return services.ClaimPublicImagePathsForUser(tx, userID, imagePaths...)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
 		return
 	}
+
+	rating.RecommendedDishIDs = cleanedDishIDs
 	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": rating})
 }
 
@@ -490,6 +641,15 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
+		}
+		var ratingIDs []uint
+		if err := tx.Model(&models.CanteenRating{}).Where("canteen_id = ?", id).Pluck("id", &ratingIDs).Error; err != nil {
+			return err
+		}
+		if len(ratingIDs) > 0 {
+			if err := tx.Where("rating_id IN ?", ratingIDs).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("canteen_id = ?", id).Delete(&models.CanteenRating{}).Error; err != nil {
 			return err

@@ -294,6 +294,8 @@ class _ReviewItem extends StatelessWidget {
     final unhelpfulCount = (review['unhelpful_count'] as num?)?.toInt() ?? 0;
     final myVote = review['my_vote']?.toString();
     final imgList = _parseImageList(review['images']);
+    final tagLabels = _parseTagLabels(review['tags']);
+    final dishNames = _parseRecommendedDishNames(review);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -340,6 +342,78 @@ class _ReviewItem extends StatelessWidget {
                   : CanteenTheme.textSecondaryColor(isDark),
             ),
           ),
+          if (tagLabels.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var i = 0; i < tagLabels.take(3).length; i++)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      tagLabels[i],
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (tagLabels.length > 3)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '+${tagLabels.length - 3}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CanteenTheme.textTertiaryColor(isDark),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (dishNames.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.thumb_up_alt_rounded,
+                  size: 13,
+                  color: CanteenTheme.accentStrongColor(isDark),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '推荐：${dishNames.join(' · ')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: CanteenTheme.accentStrongColor(isDark),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (imgList.isNotEmpty) ...[
             const SizedBox(height: 10),
             Wrap(
@@ -485,6 +559,53 @@ class _ReviewItem extends StatelessWidget {
       }
     } catch (e) {
       // ignore parsing error
+    }
+    return [];
+  }
+
+  static const Map<String, String> _canteenTagMap = {
+    'taste_good': '味道不错',
+    'portion_enough': '分量足',
+    'price_fair': '价格合适',
+    'serving_fast': '出餐快',
+    'queue_long': '排队久',
+    'recommended_window': '推荐窗口',
+    'clean': '卫生干净',
+    'service_warm': '服务热情',
+    'environment_clean': '环境整洁',
+    'good_value': '性价比高',
+  };
+
+  List<String> _parseTagLabels(dynamic rawTags) {
+    if (rawTags == null) return [];
+    List<dynamic>? list;
+    if (rawTags is List) {
+      list = rawTags;
+    } else if (rawTags.toString().trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawTags.toString());
+        if (decoded is List) list = decoded;
+      } catch (_) {}
+    }
+    if (list == null) return [];
+    return list
+        .map((tag) => _canteenTagMap[tag.toString()] ?? tag.toString())
+        .where((label) => label.trim().isNotEmpty)
+        .toList();
+  }
+
+  List<String> _parseRecommendedDishNames(Map<String, dynamic> review) {
+    final recs = review['recommended_dishes'];
+    if (recs is List) {
+      return recs
+          .map((item) {
+            if (item is Map) {
+              return item['name']?.toString() ?? '';
+            }
+            return item.toString();
+          })
+          .where((name) => name.trim().isNotEmpty)
+          .toList();
     }
     return [];
   }

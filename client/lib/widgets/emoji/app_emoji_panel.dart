@@ -251,8 +251,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             key: const ValueKey('emoji-favorite-grid'),
             padding: const EdgeInsets.all(10),
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 66,
               mainAxisExtent: 72,
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
@@ -280,9 +280,9 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         Expanded(
           child: GridView.builder(
             key: const ValueKey('emoji-favorite-grid'),
-            padding: const EdgeInsets.all(10),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 66,
               mainAxisExtent: 72,
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
@@ -295,6 +295,21 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             },
           ),
         ),
+        // 收藏稀疏时在剩余空间给出低干扰提示，不参与网格滚动。
+        if (favorites.length < 2)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '收藏常用图片和表情 · 长按聊天中的图片或表情即可收藏',
+                style: TextStyle(
+                  color: muted.withValues(alpha: 0.72),
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

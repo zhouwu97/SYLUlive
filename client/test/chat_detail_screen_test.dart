@@ -286,7 +286,9 @@ void main() {
     );
 
     await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
-    await _pumpFrames(tester, count: 2);
+    // Emoji → Keyboard 交接期间面板保持原位直到 IME 覆盖；测试环境无 IME，
+    // 依赖 700ms 保险超时切回键盘，因此这里推过超时再断言面板关闭。
+    await tester.pump(const Duration(milliseconds: 800));
     expect(find.byType(AppEmojiPanel), findsNothing);
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
@@ -412,7 +414,7 @@ void main() {
   });
 
   testWidgets(
-      'tapping a sticker shows preview and sends with text when send button is tapped',
+      'tapping a sticker sends it immediately without disturbing the draft text',
       (tester) async {
     final failureGate = Completer<void>();
     final provider = MessageProvider(_chatDio(failureGate: failureGate));
@@ -434,10 +436,12 @@ void main() {
     await tester.tap(find.byKey(ValueKey('sticker-${sticker.id}')));
     await tester.pump();
 
-    // 点击 sticker 后显示 StickerComposerPreview 预览，尚不直接发送
-    expect(find.byType(StickerComposerPreview), findsOneWidget);
-    expect(provider.messages, isEmpty);
-    expect(provider.draftStickerFor(3), sticker.id);
+    // 点击 sticker 即独立发送，不出现 composer preview，也不清空已输入文字
+    expect(find.byType(StickerComposerPreview), findsNothing);
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.stickerId, sticker.id);
+    expect(provider.messages.single.content, isEmpty);
+    expect(provider.messages.single.isPending, isTrue);
     expect(
       tester
           .widget<TextField>(find.byKey(const ValueKey('chat-input')))
@@ -446,29 +450,11 @@ void main() {
       '晚安',
     );
 
-    // 点击发送按钮后提交文字 + sticker
-    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
-    await tester.pump();
-
-    expect(provider.messages, hasLength(1));
-    expect(provider.messages.single.stickerId, sticker.id);
-    expect(provider.messages.single.content, '晚安');
-    expect(provider.messages.single.isPending, isTrue);
-    expect(find.byType(StickerComposerPreview), findsNothing);
-    expect(
-      tester
-          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
-          .controller
-          ?.text,
-      isEmpty,
-    );
-
     failureGate.complete();
     await _pumpFrames(tester);
 
     expect(provider.messages.single.isFailed, isTrue);
-    expect(provider.draftFor(3), isEmpty);
-    expect(provider.draftStickerFor(3), isNull);
+    expect(provider.draftFor(3), '晚安');
     await _disposeChat(tester, provider);
   });
 
@@ -672,7 +658,7 @@ void main() {
   });
 
   testWidgets(
-      'selecting a GIF favorite previews it and sends its existing file id',
+      'tapping a GIF favorite sends it immediately with its existing file id',
       (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     EmojiFavoriteService.resetSharedInstanceForTesting();
@@ -711,18 +697,13 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('favorite-image-composer-preview')),
-        findsOneWidget);
-    expect(provider.messages, isEmpty);
-
-    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
     await tester.pump(const Duration(milliseconds: 100));
+
+    // 点击即发送，不出现 composer preview，也不重新上传。
+    expect(find.byType(StickerComposerPreview), findsNothing);
+    expect(provider.messages, hasLength(1));
     expect(sentData?['file_id'], 77);
     expect(uploadRequests, 0);
-    expect(find.byKey(const ValueKey('favorite-image-composer-preview')),
-        findsNothing);
 
     await _disposeChat(tester, provider);
   });

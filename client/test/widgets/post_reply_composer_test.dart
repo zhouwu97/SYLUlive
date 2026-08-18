@@ -139,7 +139,7 @@ void main() {
     expect(find.byKey(const ValueKey('post-reply-input')), findsOneWidget);
   });
 
-  testWidgets('发送成功后清空回复对象并保持完整评论栏', (tester) async {
+  testWidgets('回复某人时显示回复上下文条且不污染输入框文本，可取消或发送', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
     PostReplyDraft? submitted;
@@ -157,29 +157,76 @@ void main() {
     controller.openReply(
       parentReplyId: 9,
       replyToUserId: 12,
-      replyToName: '同学',
+      replyToName: '纯合子',
     );
     await tester.pump();
+
+    // 输入框不应被塞入 @纯合子
+    expect(controller.textController.text, isEmpty);
+    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsOneWidget);
+    expect(find.text('回复 纯合子'), findsOneWidget);
+
+    // 输入回复内容并发送
     await tester.enterText(
       find.byKey(const ValueKey('post-reply-input')),
-      '@同学 收到',
+      '收到攻略',
     );
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
     await tester.pumpAndSettle();
 
     expect(submitted?.parentReplyId, 9);
     expect(submitted?.replyToUserId, 12);
+    expect(submitted?.replyToName, '纯合子');
+    expect(submitted?.text, '收到攻略');
     expect(controller.isOpen, isFalse);
     expect(controller.textController.text, isEmpty);
     expect(controller.parentReplyId, isNull);
-    expect(controller.focusNode.hasFocus, isFalse);
-    expect(find.byKey(const ValueKey('post-reply-input')), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('post-reply-image-button')), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('post-reply-emoji-button')), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('post-reply-send-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+  });
+
+  testWidgets('点击取消回复按钮退出回复上下文', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    controller.openReply(
+      parentReplyId: 9,
+      replyToUserId: 12,
+      replyToName: '纯合子',
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-cancel-target-button')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+    expect(controller.parentReplyId, isNull);
+    expect(controller.replyToName, isNull);
+  });
+
+  testWidgets('表情面板切换与返回键拦截', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 打开表情面板
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+
+    expect(controller.showEmojiPanel, isTrue);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+    expect(find.byKey(const ValueKey('post-reply-emoji-panel')), findsOneWidget);
+
+    // 再次点击表情按钮切换回键盘模式
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+
+    expect(controller.showEmojiPanel, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
   });
 
   testWidgets('本地图片可选择、预览并作为草稿发送', (tester) async {

@@ -30,13 +30,15 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/app_composer_bar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
-import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'image_viewer_screen.dart';
 
 /// 聊天底部只有一个可见区域，避免键盘和表情面板分别驱动布局。
 enum ChatBottomPanel { none, keyboard, emoji }
+
+/// Emoji → Keyboard 切换时的内容连续性交接状态。
+enum ChatInputHandoff { none, emojiToKeyboard }
 
 class ChatDetailScreen extends StatefulWidget {
   final int? conversationId;
@@ -76,8 +78,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   bool _hasObservedKeyboardHeight = false;
   bool _keyboardRequestPending = false;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
-  AppSticker? _selectedSticker;
-  EmojiFavoriteItem? _selectedFavoriteImage;
+  ChatInputHandoff _handoff = ChatInputHandoff.none;
+  int _handoffGeneration = 0;
+  Timer? _keyboardHandoffTimer;
+  bool _disposing = false;
+
   bool _isPickingImage = false;
   bool _isSendingMedia = false;
   bool _firstContactSendPending = false;
@@ -136,9 +141,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _initialPositionSettled = false;
     _initialLoadFinished = false;
     final draft = provider.draftFor(widget.targetUser.id);
-    _selectedSticker = appStickerById(
-      provider.draftStickerFor(widget.targetUser.id),
-    );
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
       _textController.selection = TextSelection.collapsed(offset: draft.length);
@@ -205,10 +207,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _initialMessageId = widget.initialMessageId;
       _initialPositionSettled = false;
       _initialLoadFinished = false;
-      _selectedSticker = appStickerById(
-        context.read<MessageProvider>().draftStickerFor(widget.targetUser.id),
-      );
       _bottomPanel = ChatBottomPanel.none;
+      _cancelHandoff();
       _keyboardRequestPending = false;
       _firstContactSendPending = false;
       _positionRequestVersion++;
@@ -218,6 +218,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   @override
   void dispose() {
+    _disposing = true;
     WidgetsBinding.instance.removeObserver(this);
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
@@ -228,6 +229,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _refreshTimer?.cancel();
     _messageProvider?.setFallbackPollingActive(false);
     _keyboardMetricsTimer?.cancel();
+    _keyboardHandoffTimer?.cancel();
     _messageFocusHighlightTimer?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
@@ -245,6 +247,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _activateConversationIfVisible();
       unawaited(_refreshMessages());
     } else {
+      _cancelHandoff();
       _deactivateConversation();
     }
   }
@@ -268,12 +271,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   @override
   void didPushNext() {
     _isRouteVisible = false;
+    _cancelHandoff();
     _deactivateConversation();
   }
 
   @override
   void didPop() {
     _isRouteVisible = false;
+    _cancelHandoff();
     _deactivateConversation();
     unawaited(_clearRestorableConversation());
   }
@@ -285,12 +290,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       if (!mounted) return;
       final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
+      // Emoji → Keyboard 交接期间保持 Emoji 可见，直到 IME 覆盖到稳定高度
+      // 再完成交接；不让 Emoji 面板在 IME 升起途中让位造成空白板。
+      if (_handoff == ChatInputHandoff.emojiToKeyboard) {
+        if (keyboardInset > 0) {
+          _scheduleStableKeyboardHeight(keyboardInset);
+        }
+        return;
+      }
+
       if (_bottomPanel == ChatBottomPanel.emoji) {
         return;
       }
 
       if (keyboardInset <= 0) {
         _keyboardMetricsTimer?.cancel();
+        _cancelHandoff();
         if (_bottomPanel == ChatBottomPanel.keyboard &&
             !_keyboardRequestPending) {
           setState(() => _bottomPanel = ChatBottomPanel.none);
@@ -330,6 +345,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           _stableKeyboardHeight = settledInset;
           _hasObservedKeyboardHeight = true;
           _keyboardRequestPending = false;
+          if (_handoff == ChatInputHandoff.emojiToKeyboard) {
+            // IME 稳定后完成 Emoji → Keyboard 交接，Emoji 让位给键盘。
+            _completeEmojiToKeyboardHandoff();
+            return;
+          }
           if (_bottomPanel != ChatBottomPanel.emoji) {
             _bottomPanel = ChatBottomPanel.keyboard;
           }
@@ -452,10 +472,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   bool get _isComposerBlocked =>
       _isServerSendBlocked || _firstContactSendPending;
 
+  /// 键盘、Emoji 或 handoff 未结束期间视为输入面板活跃，
+  /// 用于系统返回拦截与禁用退出滑动。
+  bool get _inputPanelActive =>
+      _bottomPanel != ChatBottomPanel.none ||
+      _handoff != ChatInputHandoff.none;
+
   bool get _canStartOutgoingMessage => !_isComposerBlocked;
 
   void _reserveFirstContactAllowanceIfNeeded() {
     if (!(_sendState?.canUseFirstContactAllowance ?? false)) return;
+    _cancelHandoff();
     setState(() {
       // 本地先占用额度，避免首条还在 pending 时被连续发送绕过。
       _firstContactSendPending = true;
@@ -467,12 +494,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _sendMessage() {
     final content = _textController.text.trim();
-    if (!_canStartOutgoingMessage) return;
-    if (content.isEmpty &&
-        _selectedSticker == null &&
-        _selectedFavoriteImage == null) {
-      return;
-    }
+    if (!_canStartOutgoingMessage || content.isEmpty) return;
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
@@ -483,27 +505,43 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     final provider = context.read<MessageProvider>();
-    final stickerIdToSend = _selectedSticker?.id;
-    final favoriteToSend = _selectedFavoriteImage;
     _reserveFirstContactAllowanceIfNeeded();
 
     _textController.clear();
-    _removeSelectedSticker();
-    setState(() => _selectedFavoriteImage = null);
     provider.clearDraft(widget.targetUser.id);
-    final sendFuture = favoriteToSend != null
-        ? provider.sendFavoriteImageMessage(
-            widget.targetUser.id,
-            favoriteToSend,
-            content: content,
-            senderId: context.read<AuthProvider>().user?.id,
-          )
-        : provider.sendMessage(
-            widget.targetUser.id,
-            content,
-            stickerId: stickerIdToSend,
-            senderId: context.read<AuthProvider>().user?.id,
-          );
+    final sendFuture = provider.sendMessage(
+      widget.targetUser.id,
+      content,
+      senderId: context.read<AuthProvider>().user?.id,
+    );
+    _lastMessageActivity = DateTime.now();
+    unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
+    unawaited(_completeOutgoingSend(sendFuture));
+  }
+
+  /// Sticker 点击即独立发送，不清空输入框里已输入的文字。
+  void _sendSticker(AppSticker sticker) {
+    if (!_canStartOutgoingMessage) return;
+    _reserveFirstContactAllowanceIfNeeded();
+    final sendFuture = context.read<MessageProvider>().sendStickerMessage(
+          widget.targetUser.id,
+          sticker.id,
+          senderId: context.read<AuthProvider>().user?.id,
+        );
+    _lastMessageActivity = DateTime.now();
+    unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
+    unawaited(_completeOutgoingSend(sendFuture));
+  }
+
+  /// 收藏图片/GIF 点击即独立发送，不清空输入框里已输入的文字。
+  void _sendFavorite(EmojiFavoriteItem favorite) {
+    if (!_canStartOutgoingMessage) return;
+    _reserveFirstContactAllowanceIfNeeded();
+    final sendFuture = context.read<MessageProvider>().sendFavoriteImageMessage(
+          widget.targetUser.id,
+          favorite,
+          senderId: context.read<AuthProvider>().user?.id,
+        );
     _lastMessageActivity = DateTime.now();
     unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
     unawaited(_completeOutgoingSend(sendFuture));
@@ -513,6 +551,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!_canStartOutgoingMessage || _isPickingImage || _isSendingMedia) {
       return;
     }
+    // 打开系统相册前先收输入态；取消回来保持 panel none、不自动抢焦点。
+    _collapseBottomPanelOnly();
     setState(() => _isPickingImage = true);
     try {
       final image = await ImagePicker().pickImage(
@@ -629,6 +669,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       debugPrint('拉取 send-state 失败: $e');
     }
     if (!mounted) return;
+    if (next?.isBlocked ?? false) {
+      _cancelHandoff();
+    }
     setState(() {
       _sendState = next;
       if (next?.isBlocked ?? false) {
@@ -656,6 +699,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _showKeyboard();
       return;
     }
+    _cancelHandoff();
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     setState(() {
       if (keyboardInset > 0) {
@@ -674,6 +718,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _inputFocusNode.requestFocus();
       return;
     }
+    if (_bottomPanel == ChatBottomPanel.emoji) {
+      // Emoji → Keyboard：保持 Emoji 原位直到 IME 覆盖，避免空白板。
+      _beginEmojiToKeyboardHandoff();
+      return;
+    }
     setState(() {
       _bottomPanel = ChatBottomPanel.keyboard;
       _keyboardRequestPending = true;
@@ -681,8 +730,71 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _inputFocusNode.requestFocus();
   }
 
+  /// 发起 Emoji → Keyboard 交接：Emoji 保持显示直到 IME 稳定高度出现。
+  void _beginEmojiToKeyboardHandoff() {
+    _cancelHandoff();
+    final generation = ++_handoffGeneration;
+    setState(() {
+      _handoff = ChatInputHandoff.emojiToKeyboard;
+      _keyboardRequestPending = true;
+    });
+    _inputFocusNode.requestFocus();
+    // 保险超时：仅防状态永远卡住，不作为动画时长。
+    _keyboardHandoffTimer = Timer(
+      const Duration(milliseconds: 700),
+      () {
+        if (!mounted || generation != _handoffGeneration) return;
+        if (_handoff == ChatInputHandoff.emojiToKeyboard) {
+          setState(() {
+            _handoff = ChatInputHandoff.none;
+            _bottomPanel = ChatBottomPanel.keyboard;
+          });
+        }
+      },
+    );
+  }
+
+  /// handoff 完成后调用：Emoji 让位给已稳定的 IME。
+  void _completeEmojiToKeyboardHandoff() {
+    _keyboardHandoffTimer?.cancel();
+    if (_handoff != ChatInputHandoff.emojiToKeyboard) return;
+    _handoffGeneration++;
+    setState(() {
+      _handoff = ChatInputHandoff.none;
+      _bottomPanel = ChatBottomPanel.keyboard;
+      _keyboardRequestPending = false;
+    });
+  }
+
+  void _cancelHandoff() {
+    _keyboardHandoffTimer?.cancel();
+    if (_handoff != ChatInputHandoff.none) {
+      _handoffGeneration++;
+      if (_disposing) {
+        _handoff = ChatInputHandoff.none;
+        return;
+      }
+      setState(() => _handoff = ChatInputHandoff.none);
+    }
+  }
+
   void _dismissBottomPanel() {
     _inputFocusNode.unfocus();
+    _cancelHandoff();
+    if (_bottomPanel == ChatBottomPanel.none &&
+        _keyboardRequestPending == false) {
+      return;
+    }
+    setState(() {
+      _bottomPanel = ChatBottomPanel.none;
+      _keyboardRequestPending = false;
+    });
+  }
+
+  /// 仅关闭当前底部面板（消息区点击、返回等），不退出页面。
+  void _collapseBottomPanelOnly() {
+    _inputFocusNode.unfocus();
+    _cancelHandoff();
     if (_bottomPanel == ChatBottomPanel.none) return;
     setState(() {
       _bottomPanel = ChatBottomPanel.none;
@@ -690,45 +802,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     });
   }
 
+  /// 顶部 ←：与系统返回不同，一次直接退出聊天。
+  void _exitChat() {
+    _cancelHandoff();
+    _inputFocusNode.unfocus();
+    setState(() {
+      _bottomPanel = ChatBottomPanel.none;
+      _keyboardRequestPending = false;
+    });
+    // 下一帧再 pop，避免 PopScope 仍看到旧的底部面板状态。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    });
+  }
+
   void _insertEmoji(String emoji) {
     if (_isComposerBlocked) return;
     insertAtSelection(_textController, emoji);
     _saveDraft();
-  }
-
-  void _selectSticker(AppSticker sticker) {
-    if (_isComposerBlocked) return;
-    setState(() {
-      _selectedSticker = sticker;
-      _selectedFavoriteImage = null;
-    });
-    context.read<MessageProvider>().updateDraftSticker(
-          widget.targetUser.id,
-          sticker.id,
-        );
-  }
-
-  void _removeSelectedSticker() {
-    setState(() {
-      _selectedSticker = null;
-    });
-    context.read<MessageProvider>().updateDraftSticker(
-          widget.targetUser.id,
-          null,
-        );
-  }
-
-  void _selectFavoriteImage(EmojiFavoriteItem favorite) {
-    if (!_canStartOutgoingMessage || _isSendingMedia) return;
-    setState(() {
-      _selectedFavoriteImage = favorite;
-      _selectedSticker = null;
-    });
-  }
-
-  void _removeSelectedFavoriteImage() {
-    if (!mounted) return;
-    setState(() => _selectedFavoriteImage = null);
   }
 
   double get _emojiPanelHeight {
@@ -763,47 +855,41 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildBottomViewport() {
     final height = _bottomViewportHeight;
+    // Emoji → Keyboard handoff 期间 _bottomPanel 仍是 emoji，面板保持显示
+    // 直到 IME 覆盖；__showEmojiPanel__ 不随键盘面板切换而翻转。
     final showEmojiPanel =
         _bottomPanel == ChatBottomPanel.emoji && !_isComposerBlocked;
     final colors = Theme.of(context).colorScheme;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final emojiPanel = AppEmojiPanel(
       key: const ValueKey('chat-emoji-panel'),
       onEmojiSelected: _insertEmoji,
-      onStickerSelected: _selectSticker,
-      onFavoriteImageSelected: _selectFavoriteImage,
+      onStickerSelected: _sendSticker,
+      onFavoriteImageSelected: _sendFavorite,
       onAddImage: _pickAndAddFavoriteImage,
       favoriteImageHeaders: _privateMediaHeaders(),
       onBackspace: () => deletePreviousCharacter(_textController),
       // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
       enabled: !_isComposerBlocked && !_isPickingImage && !_isSendingMedia,
     );
+    // 表情面板常驻同一棵子树，用 Offstage 控制可见性而非销毁重建，
+    // 确保收藏页 / tab / PageView / scroll offset 在键盘切换间不丢状态。
+    // Keyboard ↔ Emoji 本身不做额外过渡动画。
     return SizedBox(
       key: const ValueKey('chat-bottom-viewport'),
       width: double.infinity,
       height: height,
       child: ColoredBox(
         color: colors.surface,
-        child: showEmojiPanel
-            ? SafeArea(
-                top: false,
-                child: TweenAnimationBuilder<double>(
-                  key: const ValueKey('chat-emoji-content-transition'),
-                  tween: Tween(begin: 0.94, end: 1),
-                  duration: reduceMotion ? AppMotion.micro : AppMotion.tab,
-                  curve: AppMotion.incoming,
-                  child: emojiPanel,
-                  builder: (context, value, child) {
-                    final faded = Opacity(opacity: value, child: child);
-                    if (reduceMotion) return faded;
-                    return Transform.translate(
-                      offset: Offset(0, 6 * (1 - value)),
-                      child: faded,
-                    );
-                  },
-                ),
-              )
-            : const SizedBox.expand(),
+        child: Offstage(
+          offstage: !showEmojiPanel,
+          child: IgnorePointer(
+            ignoring: !showEmojiPanel,
+            child: SafeArea(
+              top: false,
+              child: emojiPanel,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -872,6 +958,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _deactivateConversation() {
     _refreshTimer?.cancel();
+    _cancelHandoff();
     _messageProvider?.setFallbackPollingActive(false);
     final provider = _messageProvider;
     if (provider?.activeConversationId == _conversationId) {
@@ -1148,10 +1235,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final body = _buildConversationBody(provider, currentUserId, currentUser);
     if (widget.embedded) {
       return PopScope(
-        canPop: _bottomPanel == ChatBottomPanel.none,
+        canPop: !_inputPanelActive,
         onPopInvokedWithResult: (didPop, result) {
-          if (!didPop && _bottomPanel != ChatBottomPanel.none) {
-            _dismissBottomPanel();
+          if (!didPop && _inputPanelActive) {
+            _collapseBottomPanelOnly();
           }
         },
         child: Material(
@@ -1167,13 +1254,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     return SwipeToExit(
+      enabled: !_inputPanelActive,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: _chatSystemOverlayStyle(isDark),
         child: PopScope(
-          canPop: _bottomPanel == ChatBottomPanel.none,
+          canPop: !_inputPanelActive,
           onPopInvokedWithResult: (didPop, result) {
-            if (!didPop && _bottomPanel != ChatBottomPanel.none) {
-              _dismissBottomPanel();
+            if (!didPop && _inputPanelActive) {
+              _collapseBottomPanelOnly();
             }
           },
           child: Scaffold(
@@ -1271,9 +1359,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     ? IconButton(
                         key: const ValueKey('chat-header-back'),
                         tooltip: '返回',
-                        onPressed: () {
-                          Navigator.maybePop(context);
-                        },
+                        onPressed: _exitChat,
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.arrow_back_ios_new_rounded,
                             size: 20),
@@ -1423,7 +1509,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final messageList = GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
-        _dismissBottomPanel();
+        _collapseBottomPanelOnly();
       },
       child: ListView.builder(
           controller: _scrollController,
@@ -1714,7 +1800,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             ),
                             onTap: imageUrl == null
                                 ? null
-                                : () => Navigator.push(
+                                : () {
+                                    _collapseBottomPanelOnly();
+                                    Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => ImageViewerScreen(
@@ -1722,7 +1810,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                           httpHeaders: privateMediaHeaders,
                                         ),
                                       ),
-                                    ),
+                                    );
+                                  },
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: _buildMessageImage(
@@ -2028,9 +2117,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       return KeyEventResult.ignored;
     }
     if (_canStartOutgoingMessage &&
-        (_textController.text.trim().isNotEmpty ||
-            _selectedSticker != null ||
-            _selectedFavoriteImage != null)) {
+        _textController.text.trim().isNotEmpty) {
       _sendMessage();
     }
     return KeyEventResult.handled;
@@ -2054,27 +2141,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           textController: _textController,
           focusNode: _inputFocusNode,
           hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
-          leadingTooltip: _selectedSticker != null
-              ? '已选择表情'
-              : _selectedFavoriteImage != null
-                  ? '已选择收藏图片'
-                  : _isSendingMedia
-                      ? '图片发送中'
-                      : '添加图片',
-          onLeadingPressed: blocked ||
-                  _selectedSticker != null ||
-                  _isPickingImage ||
-                  _isSendingMedia
-              ? null
-              : _pickAndSendImage,
+          leadingTooltip: _isSendingMedia ? '图片发送中' : '添加图片',
+          onLeadingPressed:
+              blocked || _isPickingImage || _isSendingMedia
+                  ? null
+                  : _pickAndSendImage,
           leadingLoading: _isPickingImage || _isSendingMedia,
           emojiPanelVisible: _bottomPanel == ChatBottomPanel.emoji,
           onEmojiPressed: blocked ? null : _toggleEmojiPanel,
-          canSend: (value) =>
-              !blocked &&
-              (value.text.trim().isNotEmpty ||
-                  _selectedSticker != null ||
-                  _selectedFavoriteImage != null),
+          canSend: (value) => !blocked && value.text.trim().isNotEmpty,
           onSend: _sendMessage,
           onInputTap: _showKeyboard,
           onKeyEvent: _handleComposerKeyEvent,
@@ -2117,68 +2192,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return service.toggleImage(imageUrl);
   }
 
-  Widget _buildFavoriteImagePreview(EmojiFavoriteItem favorite) {
-    final colors = Theme.of(context).colorScheme;
-    final path = favorite.thumbnailUrl?.trim().isNotEmpty == true
-        ? favorite.thumbnailUrl!
-        : favorite.imageUrl?.trim().isNotEmpty == true
-            ? favorite.imageUrl!
-            : '/emoji/favorites/${favorite.serverId ?? 0}/thumbnail';
-    return Container(
-      key: const ValueKey('favorite-image-composer-preview'),
-      height: 58,
-      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-      color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
-              imageUrl: ApiConstants.fullUrl(path),
-              httpHeaders: _privateMediaHeaders(),
-              width: 46,
-              height: 46,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => const SizedBox(
-                width: 46,
-                height: 46,
-                child: Icon(Icons.broken_image_outlined, size: 20),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              favorite.isAnimated ? 'GIF 收藏图片' : '收藏图片',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
-            ),
-          ),
-          IconButton(
-            key: const ValueKey('remove-selected-favorite-image'),
-            tooltip: '移除收藏图片',
-            onPressed: _isComposerBlocked ? null : _removeSelectedFavoriteImage,
-            icon: const Icon(Icons.close_rounded, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildComposerArea() {
     final inputBar = _buildInputBar();
     final composerContent = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_selectedSticker != null)
-          StickerComposerPreview(
-            sticker: _selectedSticker!,
-            onRemove: _removeSelectedSticker,
-            enabled: !_isComposerBlocked,
-          ),
-        if (_selectedFavoriteImage != null)
-          _buildFavoriteImagePreview(_selectedFavoriteImage!),
         inputBar,
       ],
     );

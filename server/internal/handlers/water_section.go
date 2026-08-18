@@ -304,12 +304,12 @@ func validateTagDescription(value string) string {
 func (h *WaterSectionHandler) currentUserOr401(c *gin.Context) (*models.User, bool) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return nil, false
 	}
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return nil, false
 	}
 	return &user, true
@@ -1610,7 +1610,7 @@ func (h *WaterSectionHandler) SubmitSectionIconReview(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return
 	}
 
@@ -1721,7 +1721,7 @@ func (h *WaterSectionHandler) CancelSectionIconReview(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return
 	}
 

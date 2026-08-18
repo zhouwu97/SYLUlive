@@ -76,7 +76,7 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 	// 获取用户当前的经验值以计算权重
 	var user models.User
 	if err := h.db.Select("id", "exp").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return
 	}
 

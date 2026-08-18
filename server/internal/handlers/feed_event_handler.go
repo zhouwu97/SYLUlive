@@ -46,7 +46,7 @@ func (h *FeedEventHandler) RecordEventsBatch(c *gin.Context) {
 	rawUserID, exists := c.Get("user_id")
 	userID, ok := rawUserID.(uint)
 	if !exists || !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return
 	}
 	var req feedEventBatchRequest

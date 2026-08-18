@@ -182,6 +182,8 @@ class FileItem {
   final String path;
   final int size;
   final String mimeType;
+  final int width;
+  final int height;
 
   FileItem({
     required this.id,
@@ -189,6 +191,8 @@ class FileItem {
     required this.path,
     required this.size,
     required this.mimeType,
+    this.width = 0,
+    this.height = 0,
   });
 
   factory FileItem.fromJson(Map<String, dynamic> json) {
@@ -198,6 +202,8 @@ class FileItem {
       path: (json['download_url'] ?? json['path'] ?? '').toString(),
       size: json['size'] ?? 0,
       mimeType: json['mime_type'] ?? '',
+      width: (json['width'] as num?)?.toInt() ?? 0,
+      height: (json['height'] as num?)?.toInt() ?? 0,
     );
   }
 

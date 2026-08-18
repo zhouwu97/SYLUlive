@@ -64,6 +64,8 @@ type MessageFileDTO struct {
 	MimeType    string `json:"mime_type"`
 	Size        int64  `json:"size"`
 	DownloadURL string `json:"download_url"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
 }
 
 // PrivateMessageDTO 统一 REST、SSE 和发送响应的私信结构。
@@ -90,6 +92,8 @@ func privateMessageFileResponse(file *models.File) *MessageFileDTO {
 		MimeType:    file.MimeType,
 		Size:        file.Size,
 		DownloadURL: fmt.Sprintf("/api/messages/files/%d", file.ID),
+		Width:       file.Width,
+		Height:      file.Height,
 	}
 }
 
@@ -448,42 +452,56 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 }
 
 // ServePrivateFile 只允许当前用户所属会话中的消息附件被读取。
-// 无权限和不存在统一返回 404，避免确认私信附件是否存在。
+// 无权限和不存在统一返回 404，避免确认私信附件是否存在；
+// 内部记录细分失败原因，便于定位坏图属于权限/数据库/路径/磁盘哪一类。
 func (h *MessageHandler) ServePrivateFile(c *gin.Context) {
-	notFound := func() {
+	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+	userID := c.GetUint("user_id")
+	fileIDRaw := c.Param("file_id")
+	notFound := func(reason string) {
+		log.Printf("[PM_MEDIA] serve_private_file reason=%s user_id=%d file_id=%s request_id=%s",
+			reason, userID, fileIDRaw, requestID)
 		c.Status(http.StatusNotFound)
 		c.Writer.WriteHeaderNow()
 	}
-	fileID, err := strconv.ParseUint(c.Param("file_id"), 10, 64)
+
+	fileID, err := strconv.ParseUint(fileIDRaw, 10, 64)
 	if err != nil || fileID == 0 {
-		notFound()
+		notFound("parse_failed")
 		return
 	}
-	userID := c.GetUint("user_id")
 
 	var file models.File
-	err = h.db.Model(&models.File{}).
-		Where("files.id = ?", fileID).
-		Where(`EXISTS (
-			SELECT 1
-			FROM messages AS m
-			JOIN conversations AS conv ON conv.id = m.conversation_id
-			WHERE m.file_id = files.id
-			  AND (conv.user1_id = ? OR conv.user2_id = ?)
-		)`, userID, userID).
-		First(&file).Error
+	err = h.db.Model(&models.File{}).Where("files.id = ?", fileID).First(&file).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		notFound("record_missing")
+		return
+	}
 	if err != nil {
-		notFound()
+		notFound("db_failed")
+		return
+	}
+
+	// 单独校验当前用户是否属于引用该附件的任一会话，与“记录不存在”区分开，
+	// 但客户端同样只会看到 404。
+	var accessCount int64
+	h.db.Model(&models.Message{}).
+		Joins("JOIN conversations AS conv ON conv.id = messages.conversation_id").
+		Where("messages.file_id = ? AND (conv.user1_id = ? OR conv.user2_id = ?)",
+			fileID, userID, userID).
+		Count(&accessCount)
+	if accessCount == 0 {
+		notFound("no_message_access")
 		return
 	}
 
 	fullPath, err := services.ResolveUploadPath(h.uploadDir, file.Path)
 	if err != nil {
-		notFound()
+		notFound("invalid_stored_path")
 		return
 	}
 	if _, err := os.Stat(fullPath); err != nil {
-		notFound()
+		notFound("disk_missing")
 		return
 	}
 	c.Header("Content-Type", file.MimeType)

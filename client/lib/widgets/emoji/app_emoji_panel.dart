@@ -7,6 +7,7 @@ import '../../config/api_constants.dart';
 import '../../services/emoji_favorite_repository.dart';
 import '../../services/emoji_favorite_service.dart';
 import '../../theme/app_motion.dart';
+import '../../utils/private_message_media_cache.dart';
 import 'emoji_catalog.dart';
 import 'sticker_catalog.dart';
 
@@ -404,13 +405,20 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                       fit: BoxFit.contain,
                     ),
                   )
-                : CachedNetworkImage(
-                    imageUrl: ApiConstants.fullUrl(_favoriteImagePath(item)),
-                    httpHeaders: widget.favoriteImageHeaders,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
-                        Icon(Icons.broken_image_outlined, color: muted),
-                  ),
+                : () {
+                    final imageUrl =
+                        ApiConstants.fullUrl(_favoriteImagePath(item));
+                    return CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      cacheKey:
+                          PrivateMessageMediaCache.cacheKeyFor(imageUrl),
+                      cacheManager: PrivateMessageMediaCache.instance.manager,
+                      httpHeaders: widget.favoriteImageHeaders,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) =>
+                          Icon(Icons.broken_image_outlined, color: muted),
+                    );
+                  }(),
           ),
         ),
       ),

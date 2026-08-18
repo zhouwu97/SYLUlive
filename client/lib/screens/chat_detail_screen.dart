@@ -33,6 +33,7 @@ import '../widgets/emoji/sticker_catalog.dart';
 import '../widgets/private_message_image.dart';
 import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
+import '../utils/private_message_media_cache.dart';
 import 'image_viewer_screen.dart';
 
 /// 聊天底部只有一个可见区域，避免键盘和表情面板分别驱动布局。
@@ -1821,6 +1822,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                               ? [localImagePath]
                                               : null,
                                           httpHeaders: privateMediaHeaders,
+                                          cacheManager: PrivateMessageMediaCache
+                                              .instance.manager,
+                                          cacheKeyBuilder: (url) =>
+                                              PrivateMessageMediaCache
+                                                  .cacheKeyFor(url),
                                         ),
                                       ),
                                     );

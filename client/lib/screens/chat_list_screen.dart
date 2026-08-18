@@ -283,7 +283,14 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
     final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = Theme.of(context).colorScheme;
+    final surfaceColor = isDark
+        ? AppColors.surfacePrimaryDark.withValues(alpha: 0.92)
+        : AppColors.surfacePrimaryLight.withValues(alpha: 0.92);
+    final titleColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final borderColor =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: _privateMessageSystemUiStyle(isDark),
       child: Stack(
@@ -295,8 +302,8 @@ class _ChatListScreenState extends State<ChatListScreen>
             backgroundColor: Colors.transparent,
             appBar: AppBar(
               title: const Text('私信'),
-              backgroundColor: colors.surface.withValues(alpha: 0.92),
-              foregroundColor: colors.onSurface,
+              backgroundColor: surfaceColor,
+              foregroundColor: titleColor,
               surfaceTintColor: Colors.transparent,
               elevation: 0,
               systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
@@ -307,10 +314,10 @@ class _ChatListScreenState extends State<ChatListScreen>
                   width: width,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: colors.surface.withValues(alpha: 0.92),
+                      color: surfaceColor,
                       border: Border(
                         right: BorderSide(
-                          color: colors.outlineVariant.withValues(alpha: 0.8),
+                          color: borderColor,
                         ),
                       ),
                     ),
@@ -374,7 +381,9 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildPrivateMessageBackgroundImage({
     required ImageProvider imageProvider,
   }) {
-    final fallbackColor = Theme.of(context).colorScheme.surface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fallbackColor =
+        isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight;
     // 私信双栏背景同样固定铺满，避免竖图在宽屏时留下整块空白。
     return Image(
       image: imageProvider,
@@ -386,18 +395,19 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildWideDetailPane(MessageProvider provider) {
-    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mutedTextColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final selectedTarget = _selectedTargetUser;
     if (selectedTarget == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.forum_outlined,
-                size: 72, color: colors.onSurfaceVariant),
+            Icon(Icons.forum_outlined, size: 72, color: mutedTextColor),
             const SizedBox(height: 16),
             Text('选择左侧会话开始聊天',
-                style: TextStyle(color: colors.onSurfaceVariant)),
+                style: TextStyle(color: mutedTextColor)),
           ],
         ),
       );

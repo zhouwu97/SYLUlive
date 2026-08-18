@@ -1773,7 +1773,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         ? (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight)
         : (isDark ? AppColors.messageIncomingDark : AppColors.messageIncomingLight);
     final textColor = isMine
-        ? Colors.white
+        ? (isDark ? AppColors.messageOutgoingTextDark : AppColors.messageOutgoingTextLight)
         : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight);
     final groupGap = isGroupStart ? 10.0 : 4.0;
     final bubbleRadius = _messageBubbleRadius(

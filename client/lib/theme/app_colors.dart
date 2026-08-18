@@ -47,11 +47,11 @@ abstract final class AppColors {
   static const messageIncomingBorderLight = Color(0xFFE2E5E1);
   static const messageIncomingDark = Color(0xFF262A2C);
   static const messageIncomingBorderDark = Color(0xFF323739);
-  // Chat Message Bubbles & Send Button (Classic Sky Blue from commit 86ff9f0e)
+  // Chat Message Bubbles & Send Button (Classic Sky Blue with high-contrast text)
   static const messageOutgoingLight = Color(0xFF76C4FF);
   static const messageOutgoingDark = Color(0xFF80C4FC);
-  static const messageOutgoingTextLight = Color(0xFFFFFFFF);
-  static const messageOutgoingTextDark = Color(0xFFFFFFFF);
+  static const messageOutgoingTextLight = Color(0xFF1F2328);
+  static const messageOutgoingTextDark = Color(0xFF111315);
 
   // Icons & Disabled States
   static const iconNeutralLight = Color(0xFF626966);

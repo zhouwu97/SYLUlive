@@ -68,10 +68,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     with WidgetsBindingObserver {
   late final CanteenReviewDraftRepository _draftRepo;
   late final TextEditingController _commentController;
+  late final TextEditingController _dishInputController;
 
   int _star = 0;
   List<String> _selectedTags = [];
-  List<int> _selectedDishIds = [];
+  List<String> _recommendedDishes = [];
   List<CanteenReviewDraftImage> _draftImages = [];
   List<CanteenDish> _allDishes = [];
   bool _isLoadingDishes = false;
@@ -99,6 +100,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         const CanteenReviewDraftRepository();
     _commentController = TextEditingController();
     _commentController.addListener(_onFormChanged);
+    _dishInputController = TextEditingController();
 
     _initFormAndDraft();
     _loadDishesQuietly();
@@ -110,6 +112,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     _debounceTimer?.cancel();
     _statusTimer?.cancel();
     _commentController.dispose();
+    _dishInputController.dispose();
     super.dispose();
   }
 
@@ -175,7 +178,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _star = draft.star;
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
-      _selectedDishIds = List.from(draft.recommendedDishIds);
+      _recommendedDishes = List.from(draft.recommendedDishes);
       _draftImages = List.from(draft.images);
       _baseRatingUpdatedAt = draft.baseRatingUpdatedAt;
       _isDirty = false;
@@ -187,13 +190,13 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final comment = existing['comment']?.toString() ?? '';
     final imagesList = _parseImagesList(existing['images']);
     final tagsList = _parseTagsList(existing['tags']);
-    final dishIds = _parseDishIds(existing);
+    final dishNames = _parseDishNames(existing);
 
     setState(() {
       _star = star;
       _commentController.text = comment;
       _selectedTags = tagsList;
-      _selectedDishIds = dishIds;
+      _recommendedDishes = dishNames;
       _draftImages = imagesList
           .map((url) => CanteenReviewDraftImage(
                 type: ReviewDraftImageType.publishedRemote,
@@ -229,16 +232,15 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     return [];
   }
 
-  List<int> _parseDishIds(Map<String, dynamic> existing) {
-    final rawIds = existing['recommended_dish_ids'];
-    if (rawIds is List) {
-      return rawIds.map((e) => (e as num).toInt()).toList();
-    }
+  List<String> _parseDishNames(Map<String, dynamic> existing) {
     final recs = existing['recommended_dishes'];
     if (recs is List) {
       return recs
-          .map((m) => m is Map ? (m['id'] as num?)?.toInt() : null)
-          .whereType<int>()
+          .map((e) {
+            if (e is Map) return e['name']?.toString().trim() ?? '';
+            return e.toString().trim();
+          })
+          .where((e) => e.isNotEmpty)
           .toList();
     }
     return [];
@@ -326,7 +328,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       star: _star,
       comment: _commentController.text,
       tags: _selectedTags,
-      recommendedDishIds: _selectedDishIds,
+      recommendedDishes: _recommendedDishes,
       images: _draftImages,
       updatedAt: DateTime.now(),
       baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -351,7 +353,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final isFormClean = _star == 0 &&
         _commentController.text.trim().isEmpty &&
         _selectedTags.isEmpty &&
-        _selectedDishIds.isEmpty &&
+        _recommendedDishes.isEmpty &&
         _draftImages.isEmpty;
 
     if (isFormClean || !_isDirty) {
@@ -542,7 +544,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 star: _star,
                 comment: _commentController.text,
                 tags: _selectedTags,
-                recommendedDishIds: _selectedDishIds,
+                recommendedDishes: _recommendedDishes,
                 images: updatedDraftImages,
                 updatedAt: DateTime.now(),
                 baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -577,7 +579,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       comment: _commentController.text.trim(),
       images: finalImages,
       tags: _selectedTags,
-      recommendedDishIds: _selectedDishIds,
+      recommendedDishes: _recommendedDishes,
     );
 
     if (!mounted) return;
@@ -1142,7 +1144,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 ),
               ),
               Text(
-                '已选 ${_selectedDishIds.length} / 3',
+                '${_recommendedDishes.length} / 3',
                 style: TextStyle(
                   fontSize: 12,
                   color: CanteenTheme.textSecondaryColor(isDark),
@@ -1151,49 +1153,69 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             ],
           ),
           const SizedBox(height: 12),
-          _buildDishSelectorSection(isDark, accent),
+          _buildDishRecommendationSection(isDark, accent),
         ],
       ),
     );
   }
 
-  Widget _buildDishSelectorSection(bool isDark, Color accent) {
-    if (_isLoadingDishes && _allDishes.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          '正在加载菜品列表…',
-          style: TextStyle(
-            fontSize: 12,
-            color: CanteenTheme.textSecondaryColor(isDark),
-          ),
-        ),
+  void _addRecommendedDish(String rawName) {
+    final trimmed = rawName.trim();
+    if (trimmed.isEmpty) return;
+
+    if (_recommendedDishes.length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('最多只能推荐 3 道菜品')),
       );
+      return;
     }
 
-    if (_allDishes.isEmpty) {
-      return Text(
-        '该食堂暂未录入菜品',
-        style: TextStyle(
-          fontSize: 12,
-          color: CanteenTheme.textTertiaryColor(isDark),
-        ),
+    if (trimmed.length > 30) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('菜名长度不能超过 30 个字')),
       );
+      return;
     }
 
-    // 默认展示前 4 个菜品 + '+ 添加更多'
-    final initialDishes = _allDishes.take(4).toList();
+    final isDuplicate = _recommendedDishes.any(
+      (d) => d.toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (isDuplicate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已添加该推荐菜品')),
+      );
+      return;
+    }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    setState(() {
+      _recommendedDishes.add(trimmed);
+      _dishInputController.clear();
+    });
+    _onFormChanged();
+  }
+
+  void _removeRecommendedDish(int index) {
+    if (index < 0 || index >= _recommendedDishes.length) return;
+    setState(() {
+      _recommendedDishes.removeAt(index);
+    });
+    _onFormChanged();
+  }
+
+  Widget _buildDishRecommendationSection(bool isDark, Color accent) {
+    final unselectedDishes = _allDishes
+        .where((d) => !_recommendedDishes.any(
+            (r) => r.toLowerCase() == d.name.toLowerCase()))
+        .take(6)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final dish in initialDishes) _buildDishChip(dish, isDark, accent),
-        // 添加更多按钮
-        GestureDetector(
-          onTap: _openDishSelectionSheet,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        // 1. 输入框（未达到3个时展示）
+        if (_recommendedDishes.length < 3) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceMutedBg(isDark),
               borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
@@ -1203,244 +1225,147 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               ),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.add_rounded,
-                  size: 14,
-                  color: CanteenTheme.textSecondaryColor(isDark),
+                Expanded(
+                  child: TextField(
+                    key: const Key('canteen_dish_input'),
+                    controller: _dishInputController,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: _addRecommendedDish,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: CanteenTheme.textPrimaryColor(isDark),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '输入你觉得值得推荐的菜名',
+                      hintStyle: TextStyle(
+                        fontSize: 13,
+                        color: CanteenTheme.textTertiaryColor(isDark),
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 2),
-                Text(
-                  '更多菜品',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                    fontWeight: FontWeight.w600,
+                GestureDetector(
+                  key: const Key('canteen_dish_add_btn'),
+                  onTap: () => _addRecommendedDish(_dishInputController.text),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                    ),
+                    child: Icon(
+                      Icons.add_rounded,
+                      size: 18,
+                      color: accent,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
 
-  Widget _buildDishChip(CanteenDish dish, bool isDark, Color accent) {
-    final isSelected = _selectedDishIds.contains(dish.id);
-
-    return GestureDetector(
-      onTap: _isSubmitting
-          ? null
-          : () {
-              if (isSelected) {
-                setState(() => _selectedDishIds.remove(dish.id));
-                _onFormChanged();
-              } else {
-                if (_selectedDishIds.length >= 3) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('最多只能推荐 3 道菜品')),
-                  );
-                  return;
-                }
-                setState(() => _selectedDishIds.add(dish.id));
-                _onFormChanged();
-              }
-            },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? CanteenTheme.accentSoftColor(isDark)
-              : CanteenTheme.surfaceMutedBg(isDark),
-          borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-          border: Border.all(
-            color: isSelected ? accent.withValues(alpha: 0.5) : Colors.transparent,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              dish.name,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected
-                    ? CanteenTheme.accentStrongColor(isDark)
-                    : CanteenTheme.textPrimaryColor(isDark),
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.check_rounded,
-                size: 13,
-                color: CanteenTheme.accentStrongColor(isDark),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openDishSelectionSheet() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = CanteenTheme.accentColor(isDark);
-    var searchKeyword = '';
-    final tempSelectedIds = List<int>.from(_selectedDishIds);
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final filtered = _allDishes
-                .where((d) => d.name.toLowerCase().contains(searchKeyword.toLowerCase().trim()))
-                .toList();
-
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              decoration: BoxDecoration(
-                color: CanteenTheme.surfaceBg(isDark),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: CanteenTheme.borderColor(isDark),
-                          borderRadius: BorderRadius.circular(999),
+        // 2. 已添加的推荐菜标签（支持点 ❌ 删除）
+        if (_recommendedDishes.isNotEmpty) ...[
+          if (_recommendedDishes.length < 3) const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var i = 0; i < _recommendedDishes.length; i++)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: CanteenTheme.accentSoftColor(isDark),
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                    border: Border.all(
+                      color: accent.withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _recommendedDishes[i],
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: CanteenTheme.accentStrongColor(isDark),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '推荐菜品',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: CanteenTheme.textPrimaryColor(isDark),
-                            ),
-                          ),
-                          Text(
-                            '已选择 ${tempSelectedIds.length} / 3',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: CanteenTheme.textSecondaryColor(isDark),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                      child: TextField(
-                        onChanged: (val) {
-                          setSheetState(() => searchKeyword = val);
-                        },
-                        decoration: InputDecoration(
-                          hintText: '搜索菜品…',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                          filled: true,
-                          fillColor: CanteenTheme.surfaceMutedBg(isDark),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => _removeRecommendedDish(i),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: CanteenTheme.accentStrongColor(isDark),
                         ),
                       ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Text(
-                                '未找到匹配菜品',
-                                style: TextStyle(
-                                  color: CanteenTheme.textTertiaryColor(isDark),
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (ctx, idx) {
-                                final dish = filtered[idx];
-                                final isSelected = tempSelectedIds.contains(dish.id);
-                                return ListTile(
-                                  title: Text(
-                                    dish.name,
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                      color: CanteenTheme.textPrimaryColor(isDark),
-                                    ),
-                                  ),
-                                  trailing: isSelected
-                                      ? Icon(Icons.check_circle_rounded, color: accent)
-                                      : Icon(Icons.radio_button_unchecked,
-                                          color: CanteenTheme.textTertiaryColor(isDark)),
-                                  onTap: () {
-                                    setSheetState(() {
-                                      if (isSelected) {
-                                        tempSelectedIds.remove(dish.id);
-                                      } else {
-                                        if (tempSelectedIds.length >= 3) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('最多只能推荐 3 道菜品')),
-                                          );
-                                          return;
-                                        }
-                                        tempSelectedIds.add(dish.id);
-                                      }
-                                    });
-                                  },
-                                );
-                              },
-                            ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                      child: FilledButton(
-                        onPressed: () {
-                          setState(() => _selectedDishIds = tempSelectedIds);
-                          _onFormChanged();
-                          Navigator.pop(sheetCtx);
-                        },
-                        style: FilledButton.styleFrom(
-                          backgroundColor: accent,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size.fromHeight(46),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                          ),
-                        ),
-                        child: const Text('完成', style: TextStyle(fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
+            ],
+          ),
+        ],
+
+        // 3. 快捷推荐：本食堂已有菜品（点击快速填入）
+        if (_recommendedDishes.length < 3 && unselectedDishes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            '大家常推荐（点击快速填入）：',
+            style: TextStyle(
+              fontSize: 12,
+              color: CanteenTheme.textTertiaryColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final dish in unselectedDishes)
+                GestureDetector(
+                  onTap: () => _addRecommendedDish(dish.name),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      border: Border.all(
+                        color: CanteenTheme.borderColor(isDark),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          dish.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: CanteenTheme.textSecondaryColor(isDark),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.add_rounded,
+                          size: 13,
+                          color: CanteenTheme.textSecondaryColor(isDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 

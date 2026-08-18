@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
+import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
@@ -57,13 +58,13 @@ void main() {
       disabledSendButton.style?.backgroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.05),
+      AppColors.disabledControlLight,
     );
     expect(
       disabledSendButton.style?.foregroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.28),
+      AppColors.disabledControlTextLight,
     );
     expect(
       find.ancestor(
@@ -80,7 +81,7 @@ void main() {
     expect(enabledSendButton.onPressed, isNotNull);
     expect(
       enabledSendButton.style?.backgroundColor?.resolve({}),
-      const Color(0xFF6366F1),
+      AppColors.brandPrimary,
     );
     await _disposeChat(tester, provider);
   });
@@ -95,9 +96,6 @@ void main() {
     );
 
     final disabledSendButton = _sendButton(tester);
-    final colors = Theme.of(
-      tester.element(find.byKey(const ValueKey('chat-send-button'))),
-    ).colorScheme;
     expect(disabledSendButton.onPressed, isNull);
     expect(
       find.descendant(
@@ -110,13 +108,13 @@ void main() {
       disabledSendButton.style?.backgroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.05),
+      AppColors.disabledControlDark,
     );
     expect(
       disabledSendButton.style?.foregroundColor?.resolve(
         {WidgetState.disabled},
       ),
-      colors.onSurface.withValues(alpha: 0.28),
+      AppColors.disabledControlTextDark,
     );
     await _disposeChat(tester, provider);
   });

@@ -108,7 +108,7 @@ func TestGetHomeFeedUsesVerifiedAndApprovedOnly(t *testing.T) {
 	}
 	mean := globalMeanStars(rows)
 
-	feed := h.BuildHomeFeed(toEntries(rows, mean), mean, 8)
+	feed := h.BuildHomeFeed(toEntries(rows, mean), mean, 8, nil, nil)
 	if len(feed) == 0 {
 		t.Fatalf("expected non-empty feed")
 	}
@@ -144,7 +144,7 @@ func TestBuildHomeFeedEmpty(t *testing.T) {
 		t.Fatalf("query stats: %v", err)
 	}
 	mean := globalMeanStars(rows)
-	feed := h.BuildHomeFeed(toEntries(rows, mean), mean, 8)
+	feed := h.BuildHomeFeed(toEntries(rows, mean), mean, 8, nil, nil)
 	if feed == nil || len(feed) != 0 {
 		t.Fatalf("expected empty feed on no data, got %v", feed)
 	}

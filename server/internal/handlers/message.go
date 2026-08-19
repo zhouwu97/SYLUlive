@@ -666,7 +666,16 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "校验图片所有权失败"})
 			return
 		}
+		var emojiAssetCount int64
 		if file.UploaderID != currentUserID && grantCount == 0 {
+			if err := h.db.Model(&models.UserEmojiAsset{}).
+				Where("file_id = ? AND user_id = ?", file.ID, currentUserID).
+				Count(&emojiAssetCount).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "校验图片所有权失败"})
+				return
+			}
+		}
+		if file.UploaderID != currentUserID && grantCount == 0 && emojiAssetCount == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权发送该图片"})
 			return
 		}

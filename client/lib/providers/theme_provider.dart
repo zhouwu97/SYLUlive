@@ -11,11 +11,11 @@ enum AppBackgroundMode {
 
 /// 简洁模式（clean mode）下的暖色底色规范。
 ///
-/// 亮色：页面底用暖白，卡片保持纯白，卡片边框用浅米灰。
-/// 暗色保持原有深色逻辑，不强制改动。
+/// 亮色：页面底用暖白，卡片保持纯白，卡片边框用青灰。
+/// 暗色：深色表面遵循全局 Token。
 const Color kCleanWarmBackgroundLight = Color(0xFFFFFAF4);
-const Color kCleanWarmCardBorderLight = Color(0xFFECE4DA);
-const Color kCleanWarmBackgroundDark = Color(0xFF101219);
+const Color kCleanWarmCardBorderLight = Color(0xFFE2EFEA);
+const Color kCleanWarmBackgroundDark = Color(0xFF111315);
 
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';

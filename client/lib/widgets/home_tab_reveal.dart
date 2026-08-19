@@ -33,9 +33,9 @@ class HomeTabRevealItem extends StatelessWidget {
     this.enabled = true,
     this.revealOrder,
     this.delayStep = 0.025,
-    this.initialOffset = 12,
+    this.initialOffset = 8,
     this.initialOpacity = 0.96,
-    this.initialScale = 0.995,
+    this.initialScale = 1.0,
     this.curve = Curves.easeOutCubic,
     this.maxDelayItems = 3,
   });

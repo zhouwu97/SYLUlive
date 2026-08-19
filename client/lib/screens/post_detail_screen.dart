@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_motion.dart';
 import '../config/api_constants.dart';
 import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
@@ -395,10 +396,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final context = key?.currentContext;
 
       if (context != null) {
+        final reduceMotion =
+            MediaQuery.maybeOf(context)?.disableAnimations ?? false;
         Scrollable.ensureVisible(
           context,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
+          duration: reduceMotion ? Duration.zero : AppMotion.page,
+          curve: AppMotion.incoming,
           alignment: 0.5,
         );
         setState(() {

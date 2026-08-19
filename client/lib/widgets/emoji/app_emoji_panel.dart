@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../services/emoji_favorite_repository.dart';
 import '../../services/emoji_favorite_service.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../utils/private_message_media_cache.dart';
 import 'emoji_catalog.dart';
@@ -209,8 +210,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final surface = isDark ? const Color(0xFF1C202A) : const Color(0xFFF8F9FC);
-    final muted = isDark ? Colors.white60 : Colors.black54;
+    final surface = isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
+    final muted = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Material(
       color: surface,
@@ -578,11 +579,11 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     Color muted,
   ) {
     final divider =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE8EAF0);
+        isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight;
     return Container(
       height: 56,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
         border: Border(top: BorderSide(color: divider)),
       ),
       child: Row(

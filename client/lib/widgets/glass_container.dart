@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 
 class GlassContainer extends StatelessWidget {
   final Widget child;
@@ -50,14 +51,14 @@ class GlassContainer extends StatelessWidget {
         gradientColors == null;
 
     final defaultBorderColor = isDark
-        ? Colors.white.withValues(alpha: 0.15)
+        ? AppColors.borderNormalDark
         : (useCleanDefaultSurface
-            ? kCleanWarmCardBorderLight
+            ? AppColors.borderNormalLight
             : Colors.white.withValues(alpha: 0.6));
     final defaultBgColor = useCleanDefaultSurface
         ? (isDark
-            ? const Color(0xFF1B1E28).withValues(alpha: 0.96)
-            : Colors.white.withValues(alpha: 0.98))
+            ? AppColors.surfaceSecondaryDark.withValues(alpha: 0.96)
+            : AppColors.surfaceSecondaryLight.withValues(alpha: 0.98))
         : (isDark
             ? Colors.white.withValues(alpha: compOpacity * 0.12)
             : Colors.white.withValues(alpha: compOpacity * 0.55));

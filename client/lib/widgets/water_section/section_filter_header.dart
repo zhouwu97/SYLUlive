@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
+import '../../theme/app_colors.dart';
 
 /// 分类页顶部单行标签栏（推荐/最新/精华 + 细分标签）
 class SectionFilterHeader extends StatelessWidget {
@@ -69,14 +70,14 @@ class SectionFilterHeader extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Center(
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: selected
                 ? accentColor.withValues(alpha: 0.1)
                 : (isDark
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : const Color(0xFFF3F4F6)),
+                    ? AppColors.surfaceMutedDark
+                    : AppColors.surfaceMutedLight),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected
@@ -89,10 +90,10 @@ class SectionFilterHeader extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 13.5,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              fontWeight: FontWeight.w600,
               color: selected
                   ? accentColor
-                  : (isDark ? Colors.white70 : const Color(0xFF4B5563)),
+                  : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
             ),
           ),
         ),

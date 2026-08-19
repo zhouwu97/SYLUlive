@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,9 +6,8 @@ import '../../models/post.dart';
 import '../../models/user.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
-import '../../screens/image_viewer_screen.dart';
 import '../../screens/user_home_screen.dart';
-import '../../utils/post_image_cache.dart';
+import '../../theme/app_colors.dart';
 import '../cached_avatar.dart';
 import '../post_media/post_media_view.dart';
 
@@ -24,6 +22,7 @@ class SectionPostCard extends StatelessWidget {
   final Post post;
   final WaterSection section;
   final Color accentColor;
+  final bool? isDark;
   final VoidCallback? onTap;
   final ValueChanged<int>? onAuthorTap;
 
@@ -32,14 +31,14 @@ class SectionPostCard extends StatelessWidget {
     required this.post,
     required this.section,
     required this.accentColor,
+    this.isDark,
     this.onTap,
     this.onAuthorTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    final isDark = this.isDark ?? (Theme.of(context).brightness == Brightness.dark);
     // 若是当前登录用户，使用最新资料
     final authUser = context.watch<AuthProvider>().user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
@@ -66,12 +65,12 @@ class SectionPostCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xE8171B24) : Colors.white,
+          color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEEF0F5),
+                ? AppColors.borderNormalDark
+                : AppColors.borderNormalLight,
           ),
         ),
         child: Padding(
@@ -102,7 +101,7 @@ class SectionPostCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13.5,
                     height: 1.45,
-                    color: isDark ? Colors.white70 : const Color(0xFF3B4050),
+                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                   ),
                 ),
               if (post.teamRecruitment != null) ...[
@@ -359,7 +358,7 @@ class SectionPostCard extends StatelessWidget {
   }
 
   Widget _buildBottomActions(BuildContext context, bool isDark) {
-    final mutedColor = isDark ? Colors.white30 : const Color(0xFFA8B0BF);
+    final mutedColor = isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
     return Row(
       children: [
         // 分享
@@ -431,20 +430,6 @@ class SectionPostCard extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => UserHomeScreen(userId: author.id)),
-    );
-  }
-
-  void _openImageViewer(
-    BuildContext context,
-    List<String> urls,
-    int initialIndex,
-  ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            ImageViewerScreen(imageUrls: urls, initialIndex: initialIndex),
-      ),
     );
   }
 

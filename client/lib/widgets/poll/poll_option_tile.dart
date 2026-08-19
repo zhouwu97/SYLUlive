@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/poll.dart';
+import '../../theme/app_colors.dart';
 import 'poll_result_bar.dart';
 
 class PollOptionTile extends StatelessWidget {
@@ -23,7 +24,7 @@ class PollOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFF7C3AED);
+    final accent = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ratio = option.ratio ?? 0;
     return Semantics(
@@ -39,12 +40,12 @@ class PollOptionTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected
                 ? accent.withValues(alpha: isDark ? 0.18 : 0.07)
-                : (isDark ? const Color(0xFF20232C) : const Color(0xFFF8F8FA)),
+                : (isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: selected
                   ? accent.withValues(alpha: 0.55)
-                  : (isDark ? Colors.white12 : const Color(0xFFE8E8EE)),
+                  : (isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight),
             ),
           ),
           child: Column(
@@ -75,7 +76,7 @@ class PollOptionTile extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       '${(ratio * 100).round()}%',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: accent,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -86,7 +87,7 @@ class PollOptionTile extends StatelessWidget {
               ),
               if (showResult) ...[
                 const SizedBox(height: 6),
-                PollResultBar(ratio: ratio),
+                PollResultBar(ratio: ratio, color: accent),
               ],
             ],
           ),

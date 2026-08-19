@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+
 class PollResultBar extends StatelessWidget {
   final double ratio;
   final Color color;
@@ -7,7 +9,7 @@ class PollResultBar extends StatelessWidget {
   const PollResultBar({
     super.key,
     required this.ratio,
-    this.color = const Color(0xFF7C3AED),
+    this.color = AppColors.brandPrimary,
   });
 
   @override

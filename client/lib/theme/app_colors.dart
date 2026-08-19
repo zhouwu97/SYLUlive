@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
 /// 全局颜色 token。
-///
-/// `accentIndigo` 暂时保留为 Material 的 legacy seed；切换到
-/// `brandPrimary` 属于 PR5A-1，必须在 Golden/视觉 QA 就绪后单独验收。
 abstract final class AppColors {
   static const brandPrimary = Color(0xFF147C72);
   static const accentIndigo = Color(0xFF6366F1);
@@ -13,12 +10,17 @@ abstract final class AppColors {
   // Surface Tokens
   static const surfacePrimaryLight = Color(0xFFFFFAF4);
   static const surfaceSecondaryLight = Colors.white;
+  static const surfaceMutedLight = Color(0xFFF2F3F1);
+  static const surfaceFocusedLight = Color(0xFFEFF4F1);
   static const surfacePrimaryDark = Color(0xFF111315);
   static const surfaceSecondaryDark = Color(0xFF1A1D1F);
+  static const surfaceMutedDark = Color(0xFF24282A);
+  static const surfaceFocusedDark = Color(0xFF2B3033);
 
   // Text Tokens
   static const textPrimaryLight = Color(0xFF1F2328);
   static const textSecondaryLight = Color(0xFF747B82);
+  static const textMutedLight = Color(0xFF858C89);
   static const textPrimaryDark = Color(0xFFF2F4F3);
   static const textSecondaryDark = Color(0xFFA7AFAB);
 

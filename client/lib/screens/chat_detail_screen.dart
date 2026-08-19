@@ -103,8 +103,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int _newMessageCount = 0;
   int? _messageFocusHighlightId;
   bool _allowLatestEdgeKeyboardGesture = false;
-  double _latestEdgeOverscroll = 0;
+  bool _dragStartedWithInputPanel = false;
+  bool _dragStartedWithKeyboard = false;
+  double _latestEdgeUpDrag = 0;
+  double _keyboardDownDrag = 0;
   static const double _latestEdgeKeyboardTrigger = 28;
+  static const double _keyboardDismissDragTrigger = 10;
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
   static const double _fallbackKeyboardHeight = 300;
@@ -442,32 +446,69 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
   }
 
-  /// 已处最新消息边缘继续向最新方向 overscroll（reverse 列表即 minScrollExtent≈0）
-  /// 时弹起键盘。是否允许在 ScrollStart 时决定：键盘打开期间拖列表收键盘，
-  /// IME 刚降到 0 的同一次拖动不得重新弹起。
+  /// 消息列表滑动通知处理：
+  /// 1. 键盘/输入面板展开时：消息区向下划（dy > 0 累计 >= 18dp）收起键盘与面板；向上划保持展开与正常滚动。
+  /// 2. 键盘关闭且已处最新消息边缘：继续向上划（dy < 0 且 overscroll < 0 累计 >= 28dp）展开键盘。
+  /// 3. ScrollStart 时冻结手势意图，防止同一手势展开键盘后又误收起。
   bool _handleMessageScrollNotification(ScrollNotification notification) {
     if (notification is ScrollStartNotification) {
-      _latestEdgeOverscroll = 0;
+      _latestEdgeUpDrag = 0;
+      _keyboardDownDrag = 0;
+
+      _dragStartedWithKeyboard =
+          _keyboardViewportHeight > 0 ||
+          _bottomPanel == ChatBottomPanel.keyboard ||
+          _inputFocusNode.hasFocus;
+
+      _dragStartedWithInputPanel =
+          _inputPanelActive || _dragStartedWithKeyboard;
+
       _allowLatestEdgeKeyboardGesture =
-          !_inputPanelActive &&
+          !_dragStartedWithInputPanel &&
           !_inputFocusNode.hasFocus &&
           _keyboardViewportHeight <= 0 &&
           !_isComposerBlocked;
-    } else if (notification is OverscrollNotification &&
-        _allowLatestEdgeKeyboardGesture &&
-        notification.metrics.pixels <=
-            notification.metrics.minScrollExtent + 0.5 &&
-        notification.overscroll < 0) {
-      _latestEdgeOverscroll += -notification.overscroll;
-      if (_latestEdgeOverscroll >= _latestEdgeKeyboardTrigger) {
-        _allowLatestEdgeKeyboardGesture = false;
-        _latestEdgeOverscroll = 0;
-        _showKeyboard();
-        _jumpToLatestMessage();
+    } else if (notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification) {
+      final dy = (notification is ScrollUpdateNotification
+              ? notification.dragDetails?.primaryDelta
+              : (notification as OverscrollNotification)
+                  .dragDetails
+                  ?.primaryDelta) ??
+          0;
+      if (_dragStartedWithKeyboard || _dragStartedWithInputPanel) {
+        if (dy > 0) {
+          _keyboardDownDrag += dy;
+          if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
+            _dragStartedWithKeyboard = false;
+            _dragStartedWithInputPanel = false;
+            _keyboardDownDrag = 0;
+            _collapseBottomPanelOnly();
+          }
+        } else if (dy < 0) {
+          _keyboardDownDrag = 0;
+        }
+      } else if (notification is OverscrollNotification &&
+          _allowLatestEdgeKeyboardGesture) {
+        if (dy < 0 &&
+            notification.metrics.pixels <=
+                notification.metrics.minScrollExtent + 0.5 &&
+            notification.overscroll < 0) {
+          _latestEdgeUpDrag += -dy;
+          if (_latestEdgeUpDrag >= _latestEdgeKeyboardTrigger) {
+            _allowLatestEdgeKeyboardGesture = false;
+            _latestEdgeUpDrag = 0;
+            _showKeyboard();
+            _jumpToLatestMessage();
+          }
+        }
       }
     } else if (notification is ScrollEndNotification) {
-      _latestEdgeOverscroll = 0;
+      _latestEdgeUpDrag = 0;
+      _keyboardDownDrag = 0;
       _allowLatestEdgeKeyboardGesture = false;
+      _dragStartedWithKeyboard = false;
+      _dragStartedWithInputPanel = false;
     }
     return false;
   }
@@ -820,17 +861,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   /// 仅关闭当前底部面板（消息区点击、返回等），不退出页面。
   void _collapseBottomPanelOnly() {
     _cancelHandoff();
-    if (_bottomPanel == ChatBottomPanel.keyboard) {
-      // 键盘模式：unfocus 后让 viewport 跟随 viewInsets 逐帧降到 0，
-      // 不立即设 none，避免页面瞬间下落。
-      _inputFocusNode.unfocus();
-      return;
-    }
     _inputFocusNode.unfocus();
-    if (_bottomPanel == ChatBottomPanel.none) return;
-    setState(() {
-      _bottomPanel = ChatBottomPanel.none;
-    });
+    if (_keyboardViewportHeight <= 0 ||
+        _bottomPanel != ChatBottomPanel.keyboard) {
+      if (_bottomPanel != ChatBottomPanel.none) {
+        setState(() {
+          _bottomPanel = ChatBottomPanel.none;
+        });
+      }
+    }
   }
 
   /// 顶部 ←：与系统返回不同，一次直接退出聊天。
@@ -1597,7 +1636,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             12,
             18,
           ),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
           itemCount: provider.messages.length + (provider.loadingMore ? 1 : 0),
           itemBuilder: (context, index) {
             final messageCount = provider.messages.length;

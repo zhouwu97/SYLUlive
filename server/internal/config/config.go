@@ -89,6 +89,12 @@ type Config struct {
 	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
 	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
 	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
+	ReviewEnabled                       bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
+}
+
+// IsReviewEnabled 返回当前是否启用了前置审核链路。
+func IsReviewEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("REVIEW_ENABLED")), "true")
 }
 
 const (
@@ -436,6 +442,7 @@ func Load() *Config {
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
+		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
 	}
 }
 

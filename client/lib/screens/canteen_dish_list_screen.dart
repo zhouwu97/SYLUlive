@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/admin_feature_flags.dart';
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../providers/canteen_provider.dart';
@@ -104,9 +105,15 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                   ? CanteenEmptyState(
                       icon: Icons.photo_camera_outlined,
                       title: '还没有实拍菜品',
-                      subtitle: '上传第一道菜的第一张实拍吧',
-                      actionLabel: '上传第一道菜实拍',
-                      onAction: _openUploadSheet,
+                      subtitle: AdminFeatureFlags.reviewEnabled
+                          ? '上传第一道菜的第一张实拍吧'
+                          : '实拍投稿暂未开放',
+                      actionLabel: AdminFeatureFlags.reviewEnabled
+                          ? '上传第一道菜实拍'
+                          : null,
+                      onAction: AdminFeatureFlags.reviewEnabled
+                          ? _openUploadSheet
+                          : null,
                     )
                   : GridView.builder(
                   padding: const EdgeInsets.all(16),

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
@@ -150,6 +151,13 @@ func (h *MajorHandler) Create(c *gin.Context) {
 	}
 
 	verified := role == "admin" || role == "super_admin"
+	if !verified && !config.IsReviewEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":  "review_temporarily_disabled",
+			"error": "专业添加暂未开放",
+		})
+		return
+	}
 	major := models.Major{Name: input.Name, Level: input.Level, Verified: verified, CreatedBy: userID.(uint)}
 	if err := h.db.Create(&major).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})

@@ -245,7 +245,7 @@ class EmojiFavoriteService extends ChangeNotifier {
 
     final preferences = await _preferences;
     final raw = preferences.getString(accountStorageKey);
-    final items = <EmojiFavoriteItem>[];
+    var items = <EmojiFavoriteItem>[];
     if (raw?.isNotEmpty == true) {
       try {
         final decoded = jsonDecode(raw!);
@@ -261,11 +261,52 @@ class EmojiFavoriteService extends ChangeNotifier {
         // 损坏的本地收藏不应阻断表情面板，后续写入时会自动修复。
       }
     }
+
+    if (_userId != null) {
+      items = await _migrateV1IfNeeded(preferences, items);
+    }
+
     _cache = items.take(maxFavoriteCount).toList(growable: true);
     if (repository != null && _userId != null && !_remoteSynced) {
       await syncFromServer();
     }
     return List.unmodifiable(_cache!);
+  }
+
+  Future<List<EmojiFavoriteItem>> _migrateV1IfNeeded(
+    AppPreferencesStore preferences,
+    List<EmojiFavoriteItem> currentItems,
+  ) async {
+    if (_userId == null) return currentItems;
+    final flagKey = 'emoji_favorites_v1_migrated_${_userId!}';
+    if (preferences.getBool(flagKey) == true) {
+      return currentItems;
+    }
+
+    final rawV1 = preferences.getString(storageKey);
+    final merged = <EmojiFavoriteItem>[...currentItems];
+    if (rawV1?.isNotEmpty == true) {
+      try {
+        final decoded = jsonDecode(rawV1!);
+        if (decoded is List) {
+          for (final value in decoded) {
+            final item = EmojiFavoriteItem.fromJson(value);
+            if (item != null && !merged.any((entry) => entry.key == item.key)) {
+              merged.add(item);
+            }
+          }
+        }
+      } catch (_) {
+        // 忽略损坏的旧数据
+      }
+    }
+
+    await preferences.setString(
+      accountStorageKey,
+      jsonEncode(merged.map((item) => item.toJson()).toList()),
+    );
+    await preferences.setBool(flagKey, true);
+    return merged;
   }
 
   /// 拉取当前账号收藏。失败时保留本地缓存，下一次加载继续尝试。
@@ -289,8 +330,17 @@ class EmojiFavoriteService extends ChangeNotifier {
     try {
       final page = await repository!.fetchFavorites();
       if (sessionEpoch != _sessionEpoch) return;
+      final serverItems = page.items;
+      final merged = <EmojiFavoriteItem>[...serverItems];
+      if (_cache != null) {
+        for (final local in _cache!) {
+          if (local.serverId == null && !merged.any((m) => m.key == local.key)) {
+            merged.add(local);
+          }
+        }
+      }
       _cache =
-          _dedupe(page.items).take(maxFavoriteCount).toList(growable: true);
+          _dedupe(merged).take(maxFavoriteCount).toList(growable: true);
       _remoteSynced = true;
       await _persist();
       notifyListeners();
@@ -316,7 +366,8 @@ class EmojiFavoriteService extends ChangeNotifier {
     if (normalized.isEmpty) return false;
     return (await load()).any(
       (item) =>
-          item.type == EmojiFavoriteType.image && item.imageUrl == normalized,
+          item.type == EmojiFavoriteType.image &&
+          (item.imageUrl == normalized || item.thumbnailUrl == normalized),
     );
   }
 
@@ -324,25 +375,7 @@ class EmojiFavoriteService extends ChangeNotifier {
       _toggleStickerRemoteAware(stickerId.trim());
 
   Future<bool> toggleImage(String imageUrl) =>
-      _toggle(EmojiFavoriteItem.image(imageUrl.trim()));
-
-  Future<bool> _toggle(EmojiFavoriteItem item) async {
-    if (item.key.endsWith(':')) return false;
-    await load();
-    final index = _cache!.indexWhere((entry) => entry.key == item.key);
-    final added = index < 0;
-    if (added) {
-      _cache!.insert(0, item);
-      if (_cache!.length > maxFavoriteCount) {
-        _cache!.removeRange(maxFavoriteCount, _cache!.length);
-      }
-    } else {
-      _cache!.removeAt(index);
-    }
-    await _persist();
-    notifyListeners();
-    return added;
-  }
+      _toggleImageRemoteAware(imageUrl.trim());
 
   Future<bool> _toggleStickerRemoteAware(String stickerId) async {
     if (stickerId.isEmpty) return false;
@@ -365,6 +398,41 @@ class EmojiFavoriteService extends ChangeNotifier {
     var item = EmojiFavoriteItem.sticker(stickerId);
     if (repository != null && _userId != null) {
       item = await repository!.createBuiltin(stickerId);
+    }
+    _cache!.insert(0, item);
+    _trimCache();
+    await _persist();
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> _toggleImageRemoteAware(String imageUrl) async {
+    if (imageUrl.isEmpty) return false;
+    await load();
+    final index = _cache!.indexWhere(
+      (entry) =>
+          entry.type == EmojiFavoriteType.image &&
+          (entry.imageUrl == imageUrl || entry.thumbnailUrl == imageUrl),
+    );
+    if (index >= 0) {
+      final existing = _cache![index];
+      if (repository != null && existing.serverId != null) {
+        try {
+          await repository!.delete(existing.serverId!);
+        } catch (_) {}
+      }
+      _cache!.removeAt(index);
+      await _persist();
+      notifyListeners();
+      return false;
+    }
+    var item = EmojiFavoriteItem.image(imageUrl);
+    if (repository != null && _userId != null) {
+      try {
+        item = await repository!.createFromPublicImage(imageUrl);
+      } catch (_) {
+        // 服务端异常或网络不通时保留本地临时项
+      }
     }
     _cache!.insert(0, item);
     _trimCache();

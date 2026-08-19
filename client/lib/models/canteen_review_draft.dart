@@ -157,7 +157,7 @@ class CanteenReviewDraft {
           const [],
       images: (json['images'] as List?)
               ?.filterMapJson(
-                  (m) => CanteenReviewDraftImage.fromJson(m as Map<String, dynamic>))
+                  (m) => CanteenReviewDraftImage.fromJson(Map<String, dynamic>.from(m as Map)))
               .toList() ??
           const [],
       updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??

@@ -28,10 +28,17 @@ type emojiFavoriteRequest struct {
 	Kind      string `json:"kind"`
 	StickerID string `json:"sticker_id"`
 	FileID    uint   `json:"file_id"`
+	ImageURL  string `json:"image_url"`
+	ImagePath string `json:"image_path"`
 }
 
 type emojiFavoriteMessageRequest struct {
 	MessageID uint `json:"message_id"`
+}
+
+type emojiFavoritePublicImageRequest struct {
+	ImageURL  string `json:"image_url"`
+	ImagePath string `json:"image_path"`
 }
 
 func (h *EmojiFavoriteHandler) List(c *gin.Context) {
@@ -76,16 +83,43 @@ func (h *EmojiFavoriteHandler) Create(c *gin.Context) {
 			return
 		}
 		item, err = h.service.CreateBuiltin(c.Request.Context(), userID, input.StickerID)
-	case models.EmojiFavoriteKindCustom:
-		if input.FileID == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_file_id", "error": "缺少 file_id"})
+	case models.EmojiFavoriteKindCustom, "image":
+		if input.FileID > 0 {
+			item, err = h.service.CreateCustom(c.Request.Context(), userID, input.FileID)
+		} else if strings.TrimSpace(input.ImagePath) != "" {
+			item, err = h.service.CreateFromPublicImage(c.Request.Context(), userID, input.ImagePath)
+		} else if strings.TrimSpace(input.ImageURL) != "" {
+			item, err = h.service.CreateFromPublicImage(c.Request.Context(), userID, input.ImageURL)
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_file_id", "error": "缺少 file_id 或 image_url"})
 			return
 		}
-		item, err = h.service.CreateCustom(c.Request.Context(), userID, input.FileID)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_kind", "error": "kind 必须是 builtin 或 custom"})
 		return
 	}
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, emojiFavoriteJSON(*item))
+}
+
+func (h *EmojiFavoriteHandler) CreateFromPublicImage(c *gin.Context) {
+	var input emojiFavoritePublicImageRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "error": "请求格式无效"})
+		return
+	}
+	path := input.ImagePath
+	if path == "" {
+		path = input.ImageURL
+	}
+	if strings.TrimSpace(path) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_image_path", "error": "缺少 image_path 或 image_url"})
+		return
+	}
+	item, err := h.service.CreateFromPublicImage(c.Request.Context(), c.GetUint("user_id"), path)
 	if err != nil {
 		h.writeError(c, err)
 		return

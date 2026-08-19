@@ -4,6 +4,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/models/startup_destination.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/services/root_page_state_service.dart';
 
 enum AppBackgroundMode {
   clean,
@@ -377,6 +378,8 @@ class ThemeProvider extends ChangeNotifier {
     // 同步旧 key（过渡期兼容）。
     _startOnTimetable = mode == StartupDestinationMode.timetable;
     await prefs.setBool(_startOnTimetableKey, _startOnTimetable);
+    // 切换模式时丢弃上次保存的页面，避免历史垃圾状态在日后切回 lastPage 时复活。
+    await RootPageStateStore.instance.clearLastPage();
     notifyListeners();
   }
 

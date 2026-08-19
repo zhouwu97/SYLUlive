@@ -9,11 +9,14 @@ import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
 import '../app_bootstrap.dart';
 import '../models/post.dart';
+import '../models/startup_destination.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
+import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
@@ -28,6 +31,9 @@ import 'market_screen.dart';
 import 'course_schedule_screen.dart';
 import 'campus_screen.dart';
 import 'profile_screen.dart';
+import 'chat_detail_screen.dart';
+import 'post_detail_screen.dart';
+import 'notifications_screen.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
 import 'publish/publish_type_sheet.dart';
@@ -62,7 +68,13 @@ bool isModalAnnouncementCandidate(Map<String, dynamic> item) {
 
 class HomeScreen extends StatefulWidget {
   final int initialTab;
-  const HomeScreen({super.key, this.initialTab = 0});
+
+  /// `lastPage` 模式下首屏要直接进入的深层页面（私信/帖子/通知）。
+  ///
+  /// 非空时 HomeScreen 以正确 [initialTab] 打底，在首帧后推入该页面，
+  /// 返回后落在对应的 root tab。
+  final RestorablePageState? initialDeepPage;
+  const HomeScreen({super.key, this.initialTab = 0, this.initialDeepPage});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -90,8 +102,9 @@ class HomeTabKeepAliveStage extends StatelessWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   late final TabTransitionLedger _mainTabLedger;
+  PageRoute<dynamic>? _subscribedRoute;
   bool _publishOpening = false;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
   final Map<int, Widget> _tabPages = {};
@@ -175,6 +188,19 @@ class _HomeScreenState extends State<HomeScreen>
   static const _announcementRetryDelay = Duration(seconds: 15);
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _hasWidgetTabOverride = consumeWidgetTabSwitch();
@@ -184,6 +210,7 @@ class _HomeScreenState extends State<HomeScreen>
           (_hasWidgetTabOverride ? 2 : widget.initialTab).clamp(0, 4).toInt(),
     );
     _mainVisualIndex = _currentIndex.toDouble();
+    currentHomeTabIndex.value = _currentIndex;
     _mainVisualIndexListenable = ValueNotifier(_mainVisualIndex);
     _mainTabController = AnimationController(
       vsync: this,
@@ -196,12 +223,68 @@ class _HomeScreenState extends State<HomeScreen>
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
-    // 冷启动以用户启动页偏好（startOnTimetable）为唯一根 Tab 依据；
-    // 不再用"上次停留的一级页面"覆盖它。明确导航意图（桌面小组件/通知/深链）
-    // 由 widgetTabSwitch 与后续深链回调处理，优先级始终更高。
+    // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
+    // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
+    final deepPage = widget.initialDeepPage;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _bootstrapHome();
+      if (!mounted) return;
+      _bootstrapHome();
+      if (deepPage != null) {
+        _pushRestoredDeepPage(deepPage);
+      }
     });
+  }
+
+  /// 首屏直接进入上次退出时的深层页面（私信/帖子/通知）。
+  void _pushRestoredDeepPage(RestorablePageState state) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) return;
+    switch (state.type) {
+      case RestorablePageType.rootTab:
+        break;
+      case RestorablePageType.chat:
+        final conversationId = state.arguments['conversationId'] as int?;
+        final targetUserId = state.arguments['targetUserId'] as int?;
+        if (conversationId == null ||
+            conversationId <= 0 ||
+            targetUserId == null ||
+            targetUserId <= 0) {
+          break;
+        }
+        navigator.push(
+          MaterialPageRoute<void>(
+            settings: RouteSettings(
+              name: '/messages/conversations/$conversationId',
+            ),
+            builder: (_) => ChatDetailScreen(
+              conversationId: conversationId,
+              targetUser: User(
+                id: targetUserId,
+                studentId: '',
+                nickname: (state.arguments['targetNickname'] ?? '').toString(),
+                avatar: (state.arguments['targetAvatar'] ?? '').toString(),
+                createdAt: DateTime.now(),
+              ),
+            ),
+          ),
+        );
+      case RestorablePageType.post:
+        final postId = state.arguments['postId'] as int?;
+        if (postId == null || postId <= 0) break;
+        navigator.push(
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: '/post/detail'),
+            builder: (_) => PostDetailScreen(postId: postId),
+          ),
+        );
+      case RestorablePageType.notification:
+        navigator.push(
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: '/notifications'),
+            builder: (_) => const NotificationsScreen(),
+          ),
+        );
+    }
   }
 
   void _bootstrapHome() {
@@ -253,6 +336,10 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     widgetTabSwitch.removeListener(_onWidgetTabSwitch);
+    final subscribedRoute = _subscribedRoute;
+    if (subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+    }
     _mainTabController
       ..removeListener(_handleMainTabAnimationTick)
       ..dispose();
@@ -281,7 +368,32 @@ class _HomeScreenState extends State<HomeScreen>
       _visitedTabs.add(_currentIndex);
       _revealedTabs.add(_currentIndex);
       _getOrCreateTabPage(_currentIndex);
+      currentHomeTabIndex.value = _currentIndex;
     }
+  }
+
+  @override
+  void didPopNext() {
+    // 从深层页面（私信/帖子/通知）返回：底层 root tab 重新可见，
+    // 由它自己保存「上次退出页面」，替代私信里硬编码的课表 index。
+    _saveCurrentTabAsLastPage();
+  }
+
+  /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。
+  Future<void> _saveCurrentTabAsLastPage() async {
+    if (context.read<ThemeProvider>().startupDestination !=
+        StartupDestinationMode.lastPage) {
+      return;
+    }
+    final accountId = context.read<AuthProvider>().user?.id;
+    if (accountId == null || accountId <= 0) return;
+    await RootPageStateStore.instance.saveLastPage(
+      RestorablePageState(
+        type: RestorablePageType.rootTab,
+        arguments: <String, dynamic>{'index': _currentIndex},
+        accountId: accountId,
+      ),
+    );
   }
 
   @override
@@ -1559,6 +1671,10 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     if (!mounted || !_mainTabLedger.complete(plan)) return;
+
+    // 真正的 Tab 切换已提交：发布当前 index，并（lastPage 模式下）保存。
+    currentHomeTabIndex.value = _currentIndex;
+    unawaited(_saveCurrentTabAsLastPage());
 
     setState(() {
       _mainTargetIndex = null;

@@ -1011,11 +1011,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (outcome.ok) {
+      final msg = outcome.warning ??
+          (outcome.homePending
+              ? '已入版块精华 · 首页推荐待审核'
+              : '已设为版块精华');
       AppFeedback.showSnackBar(
         context,
-        outcome.homePending
-            ? '已入版块精华 · 首页推荐待审核'
-            : '已设为版块精华',
+        msg,
+        isError: outcome.warning != null,
       );
       setState(() => _post = _post?.copyWith(
             waterSectionFeatured: true,

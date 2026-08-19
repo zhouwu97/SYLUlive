@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -391,7 +392,12 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
 		if ensureErr != nil {
 			log.Printf("[water_moderation] 帖子已是版块精华，但首页推荐补偿失败 post_id=%d: %v", postID, ensureErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "帖子已是版块精华，但首页推荐提交失败，请重试"})
+			c.JSON(http.StatusOK, gin.H{
+				"message":          "帖子已是版块精华，但首页推荐提交失败",
+				"warning":          "版块精华已生效，但首页推荐提交失败，请稍后重试",
+				"featured":         existing,
+				"home_application": nil,
+			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing, "home_application": homeApp})
@@ -410,7 +416,12 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
 		if ensureErr != nil {
 			log.Printf("[water_moderation] 恢复版块精华后首页推荐失败 post_id=%d: %v", postID, ensureErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "已恢复版块精华，但首页推荐提交失败，请重试"})
+			c.JSON(http.StatusOK, gin.H{
+				"message":          "已恢复版块精华，但首页推荐提交失败",
+				"warning":          "版块精华已生效，但首页推荐提交失败，请稍后重试",
+				"featured":         existing,
+				"home_application": nil,
+			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing, "home_application": homeApp})
@@ -432,19 +443,25 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 	snapshot, _ := json.Marshal(featured)
 	h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
 
-	// 自动生成首页精华审核记录；失败必须如实上报，不能假报成功
+	// 自动生成首页精华审核记录；失败返回 200 partial success 告知客户端版块精华已生效
 	homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
 	if ensureErr != nil {
 		log.Printf("[water_moderation] 版块加精成功但首页推荐提交失败 post_id=%d: %v", postID, ensureErr)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "已设为版块精华，首页推荐提交失败，请重试"})
+		c.JSON(http.StatusOK, gin.H{
+			"message":          "已设为版块精华，首页推荐提交失败",
+			"warning":          "已设为版块精华，首页推荐提交失败，请稍后重试",
+			"featured":         featured,
+			"home_application": nil,
+		})
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured, "home_application": homeApp})
 }
 
-// ensureHomeFeaturedApplication 确保首页精华审核记录存在，任何数据库错误都向上返回：
-// 已有 pending → 返回 existing,nil；没有 → 创建并返回；查询/创建失败 → 返回 error。
+// ensureHomeFeaturedApplication 确保首页精华审核记录存在：
+// 已有 pending → 返回 existing,nil；没有 → 创建并返回；
+// 若并发 Create 遇到 23505 unique constraint 冲突 → 重新 SELECT pending 记录并返回。
 func (h *WaterModerationHandler) ensureHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) (*models.FeaturedApplication, error) {
 	var existing models.FeaturedApplication
 	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
@@ -464,6 +481,13 @@ func (h *WaterModerationHandler) ensureHomeFeaturedApplication(postID uint, mode
 		Status:            "pending",
 	}
 	if err := h.db.Create(&app).Error; err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			var recheck models.FeaturedApplication
+			if recheckErr := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&recheck).Error; recheckErr == nil {
+				return &recheck, nil
+			}
+		}
 		return nil, fmt.Errorf("创建首页精华申请失败: %w", err)
 	}
 	return &app, nil
@@ -513,6 +537,9 @@ func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
 	}
 
 	h.db.Model(&featured).Update("status", models.SectionFeaturedStatusInactive)
+	h.db.Model(&models.FeaturedApplication{}).
+		Where("source = ? AND section_featured_id = ? AND status = ?", "moderator", featured.ID, "pending").
+		Update("status", "withdrawn")
 	h.writeLog(section.ID, operator.ID, models.ModActionUnfeaturePost, "post", uint(postID), nil, reason, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
 }

@@ -141,7 +141,7 @@ void main() {
     expect(find.byKey(const ValueKey('post-reply-input')), findsOneWidget);
   });
 
-  testWidgets('回复某人时显示回复上下文条且不污染输入框文本，可取消或发送', (tester) async {
+  testWidgets('回复某人时在输入框插入 @昵称，不渲染顶部 Banner 且保持 Composer 尺寸稳定', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
     PostReplyDraft? submitted;
@@ -156,6 +156,9 @@ void main() {
       ),
     );
 
+    final initialHeight =
+        tester.getSize(find.byKey(const ValueKey('post-reply-composer'))).height;
+
     controller.openReply(
       parentReplyId: 9,
       replyToUserId: 12,
@@ -163,15 +166,20 @@ void main() {
     );
     await tester.pump();
 
-    // 输入框不应被塞入 @纯合子
-    expect(controller.textController.text, isEmpty);
-    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsOneWidget);
-    expect(find.text('回复 纯合子'), findsOneWidget);
+    // 输入框应被插入 @纯合子 ，且不应存在独立的 target banner
+    expect(controller.textController.text, '@纯合子 ');
+    expect(controller.textController.selection.baseOffset, '@纯合子 '.length);
+    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+
+    // Composer 自身高度保持稳定，不发生跳跃
+    final openedHeight =
+        tester.getSize(find.byKey(const ValueKey('post-reply-composer'))).height;
+    expect(openedHeight, initialHeight);
 
     // 输入回复内容并发送
     await tester.enterText(
       find.byKey(const ValueKey('post-reply-input')),
-      '收到攻略',
+      '@纯合子 收到攻略',
     );
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
@@ -180,33 +188,86 @@ void main() {
     expect(submitted?.parentReplyId, 9);
     expect(submitted?.replyToUserId, 12);
     expect(submitted?.replyToName, '纯合子');
-    expect(submitted?.text, '收到攻略');
+    expect(submitted?.text, '@纯合子 收到攻略');
     expect(controller.isOpen, isFalse);
     expect(controller.textController.text, isEmpty);
     expect(controller.parentReplyId, isNull);
     expect(find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
   });
 
-  testWidgets('点击取消回复按钮退出回复上下文', (tester) async {
+  testWidgets('连续回复多人时追加 @ 并保留已有文本与草稿', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 先输入一段文本
+    controller.textController.text = '这个我觉得不对';
+    controller.textController.selection = const TextSelection.collapsed(offset: 7);
+
+    // 点张三回复
+    controller.openReply(
+      parentReplyId: 1,
+      replyToUserId: 10,
+      replyToName: '张三',
+    );
+    await tester.pump();
+
+    expect(controller.textController.text, '这个我觉得不对 @张三 ');
+    expect(controller.replyToUserId, 10);
+
+    // 再点李四回复
+    controller.openReply(
+      parentReplyId: 1,
+      replyToUserId: 20,
+      replyToName: '李四',
+    );
+    await tester.pump();
+
+    expect(controller.textController.text, '这个我觉得不对 @张三 @李四 ');
+    expect(controller.replyToUserId, 20);
+  });
+
+  testWidgets('在文本中间光标处插入 @', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    controller.textController.text = '你好世界';
+    controller.textController.selection = const TextSelection.collapsed(offset: 2);
+
+    controller.openReply(
+      parentReplyId: 1,
+      replyToUserId: 10,
+      replyToName: '张三',
+    );
+    await tester.pump();
+
+    expect(controller.textController.text, '你好 @张三 世界');
+    expect(controller.textController.selection.baseOffset, '你好 @张三 '.length);
+  });
+
+  testWidgets('openRoot 清空回复 target 但保留文本草稿', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(_buildComposer(controller: controller));
 
     controller.openReply(
-      parentReplyId: 9,
-      replyToUserId: 12,
-      replyToName: '纯合子',
+      parentReplyId: 1,
+      replyToUserId: 10,
+      replyToName: '张三',
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsOneWidget);
+    expect(controller.parentReplyId, 1);
 
-    await tester.tap(find.byKey(const ValueKey('post-reply-cancel-target-button')));
+    controller.openRoot();
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
     expect(controller.parentReplyId, isNull);
-    expect(controller.replyToName, isNull);
+    expect(controller.replyToUserId, isNull);
+    expect(controller.textController.text, '@张三 ');
   });
 
   testWidgets('表情面板切换与返回键拦截', (tester) async {
@@ -224,7 +285,7 @@ void main() {
     expect(find.byKey(const ValueKey('post-reply-emoji-panel')), findsOneWidget);
 
     // 再次点击表情按钮：进入 Emoji → Keyboard 交接，Emoji 保持原位，
-    // 直到 IME 覆盖 90%（测试环境无 IME，依赖 400ms 保险超时完成交接）
+    // 直到 IME 覆盖 90%（测试环境无 IME，依赖保险超时完成交接）
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pump();
 
@@ -232,7 +293,7 @@ void main() {
     expect(controller.showEmojiPanel, isTrue);
     expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
 
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 800));
     expect(controller.inputHandoffActive, isFalse);
     expect(controller.showEmojiPanel, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);

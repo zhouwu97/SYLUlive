@@ -1,11 +1,11 @@
+import 'package:flutter/material.dart';
+import '../../models/edu_credit_requirement.dart';
+import '../../theme/app_colors.dart';
+import 'academic_requirement_state.dart';
+
 /// 可折叠的学分要求模块。
 ///
 /// 标题行展示最低要求和已获学分，点击后在当前页面展开课程明细。
-
-import 'package:flutter/material.dart';
-import '../../models/edu_credit_requirement.dart';
-import 'academic_requirement_state.dart';
-
 class AcademicRequirementCard extends StatefulWidget {
   final EduCreditRequirementModule module;
 
@@ -27,11 +27,12 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBackground = isDark ? const Color(0xFF1A1D21) : Colors.white;
+    final cardBackground =
+        isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight;
     final headerBackground =
-        isDark ? const Color(0xFF17312E) : const Color(0xFFE6F3F1);
+        isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight;
     final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFBCDCD7);
+        isDark ? AppColors.borderSubtleDark : AppColors.borderNormalLight;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -63,9 +64,10 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
   }
 
   Widget _buildHeader(bool isDark, Color background) {
-    final titleColor = isDark ? Colors.white : const Color(0xFF1F3030);
+    final titleColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
     final summaryColor =
-        isDark ? const Color(0xFFB7C9C6) : const Color(0xFF42635F);
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Semantics(
       button: true,
@@ -117,12 +119,10 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
                           ),
                         Text(
                           '已获 ${_formatCredits(module.earnedCredits)} 学分',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: isDark
-                                ? const Color(0xFF7ED6C5)
-                                : const Color(0xFF147C72),
+                            color: AppColors.brandPrimary,
                           ),
                         ),
                       ],
@@ -149,7 +149,8 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
 
   Widget _buildCourseList(bool isDark) {
     final courses = module.courses;
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF667078);
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     if (courses.isEmpty) {
       return Padding(
@@ -173,8 +174,8 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
               indent: 14,
               endIndent: 14,
               color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFE7EAED),
+                  ? AppColors.borderSubtleDark
+                  : AppColors.borderSubtleLight,
             ),
           _RequirementCourseRow(course: courses[index]),
         ],
@@ -197,13 +198,15 @@ class _RequirementCourseRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF252A2F);
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF687078);
+    final titleColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final statusColor = course.completed == true
-        ? const Color(0xFF159D8C)
+        ? AppColors.success
         : course.completed == false
-            ? const Color(0xFF8A929A)
-            : const Color(0xFFC47C14);
+            ? (isDark ? AppColors.textMutedLight : AppColors.textSecondaryLight)
+            : AppColors.brandPrimary;
 
     final metadata = <String>[
       if (course.courseCode.isNotEmpty) course.courseCode,

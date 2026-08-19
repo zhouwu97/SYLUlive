@@ -1,11 +1,29 @@
 import 'package:flutter/material.dart';
 
-/// 全局颜色 token。
+/// 全局颜色 token 与语义系统。
 abstract final class AppColors {
+  // Brand Tokens
   static const brandPrimary = Color(0xFF147C72);
-  static const accentIndigo = Color(0xFF6366F1);
-  static const accentPurple = Color(0xFF8B5CF6);
-  static const accentPink = Color(0xFFEC4899);
+  static const brandPrimaryStrong = Color(0xFF0F635B);
+  static const brandSurfaceLight = Color(0xFFEAF6F3);
+  static const brandSurfaceDark = Color(0xFF162B28);
+
+  // Status Tokens
+  static const success = Color(0xFF169B5B);
+  static const successSurfaceLight = Color(0xFFE8F7EE);
+  static const successSurfaceDark = Color(0xFF142B1F);
+
+  static const warning = Color(0xFFF59E0B);
+  static const warningSurfaceLight = Color(0xFFFFF3DD);
+  static const warningSurfaceDark = Color(0xFF2E2413);
+
+  static const danger = Color(0xFFE54848);
+  static const dangerSurfaceLight = Color(0xFFFFEAEA);
+  static const dangerSurfaceDark = Color(0xFF2D1818);
+
+  static const info = Color(0xFF426C85);
+  static const infoSurfaceLight = Color(0xFFEAF2F6);
+  static const infoSurfaceDark = Color(0xFF18242C);
 
   // Surface Tokens
   static const surfacePrimaryLight = Color(0xFFFFFAF4);
@@ -64,4 +82,61 @@ abstract final class AppColors {
   static const disabledControlDark = Color(0xFF24282A);
   static const disabledControlTextLight = Color(0xFFB8BDBA);
   static const disabledControlTextDark = Color(0xFF5A615D);
+
+  // ==================================================================
+  //  分数与成绩语义 Helper 函数
+  // ==================================================================
+
+  /// 分数前景色语义：
+  /// - 90 ~ 100: 优秀/高分 -> 绿色 (success)
+  /// - 60 ~ 89: 达标/普通 -> 品牌青绿 (brandPrimary)
+  /// - < 60: 不及格/低分 -> 红色 (danger)
+  static Color scoreColor(num score) {
+    if (score >= 90) return success;
+    if (score >= 60) return brandPrimary;
+    return danger;
+  }
+
+  /// 分数背景色语义
+  static Color scoreSurface(num score, {required bool isDark}) {
+    if (score >= 90) {
+      return isDark ? successSurfaceDark : successSurfaceLight;
+    }
+    if (score >= 60) {
+      return isDark ? brandSurfaceDark : brandSurfaceLight;
+    }
+    return isDark ? dangerSurfaceDark : dangerSurfaceLight;
+  }
+
+  /// 评级文字前景色语义 (优秀/良好/及格/不及格)
+  static Color gradeStatusColor(String grade) {
+    final trimmed = grade.trim();
+    if (trimmed == '优秀') return success;
+    if (trimmed == '良好' || trimmed == '及格' || trimmed == '正常') {
+      return brandPrimary;
+    }
+    if (trimmed == '不及格' ||
+        trimmed.contains('未通过') ||
+        trimmed.contains('不合格')) {
+      return danger;
+    }
+    return textSecondaryLight;
+  }
+
+  /// 评级背景色语义
+  static Color gradeStatusSurface(String grade, {required bool isDark}) {
+    final trimmed = grade.trim();
+    if (trimmed == '优秀') {
+      return isDark ? successSurfaceDark : successSurfaceLight;
+    }
+    if (trimmed == '良好' || trimmed == '及格' || trimmed == '正常') {
+      return isDark ? brandSurfaceDark : brandSurfaceLight;
+    }
+    if (trimmed == '不及格' ||
+        trimmed.contains('未通过') ||
+        trimmed.contains('不合格')) {
+      return isDark ? dangerSurfaceDark : dangerSurfaceLight;
+    }
+    return isDark ? surfaceMutedDark : surfaceMutedLight;
+  }
 }

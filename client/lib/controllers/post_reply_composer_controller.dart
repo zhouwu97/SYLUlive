@@ -129,7 +129,12 @@ class PostReplyComposerController extends ChangeNotifier {
     _focusAfterLayout();
   }
 
-  void openReply({
+  void openRoot() {
+    clearReplyTarget();
+    open();
+  }
+
+  void setReplyTarget({
     required int parentReplyId,
     int? replyToUserId,
     int? replyToReplyId,
@@ -139,7 +144,59 @@ class PostReplyComposerController extends ChangeNotifier {
     _replyToUserId = replyToUserId;
     _replyToReplyId = replyToReplyId;
     _replyToName = replyToName?.trim();
+    notifyListeners();
+  }
+
+  void openReply({
+    required int parentReplyId,
+    int? replyToUserId,
+    int? replyToReplyId,
+    String? replyToName,
+  }) {
+    _parentReplyId = parentReplyId;
+    _replyToUserId = replyToUserId;
+    _replyToReplyId = replyToReplyId;
+    final trimmedName = replyToName?.trim();
+    _replyToName = trimmedName;
+
+    if (trimmedName != null && trimmedName.isNotEmpty) {
+      _insertMention('@$trimmedName ');
+    }
+
     open();
+  }
+
+  void _insertMention(String mention) {
+    final text = textController.text;
+    final selection = textController.selection;
+
+    int start = selection.start;
+    int end = selection.end;
+
+    if (start < 0 || end < 0) {
+      start = text.length;
+      end = text.length;
+    }
+
+    if (start > end) {
+      final temp = start;
+      start = end;
+      end = temp;
+    }
+
+    String prefix = '';
+    if (start > 0 && !text[start - 1].contains(RegExp(r'\s'))) {
+      prefix = ' ';
+    }
+
+    final insertText = '$prefix$mention';
+    final newText = text.replaceRange(start, end, insertText);
+    final newCursorPos = start + insertText.length;
+
+    textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
   }
 
   void clearReplyTarget() {

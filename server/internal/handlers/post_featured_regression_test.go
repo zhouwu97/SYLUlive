@@ -365,4 +365,40 @@ func TestWaterModeration_UnfeaturePost_TransactionError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500 on transaction failure, got %d", w.Code)
 	}
+
+	// 确认事务回滚：featured.Status 依然保持 active
+	var after models.WaterSectionFeaturedPost
+	if err := db.First(&after, featured.ID).Error; err != nil {
+		t.Fatalf("failed to find featured after error: %v", err)
+	}
+	if after.Status != models.SectionFeaturedStatusActive {
+		t.Fatalf("expected transaction to rollback status to active, got %s", after.Status)
+	}
+}
+
+// 8. 测试帖子已是首页精华时，ensureHomeFeaturedApplication 直接返回 nil,nil 不重复创建
+func TestEnsureHomeFeaturedApplication_PostAlreadyIsFeatured(t *testing.T) {
+	db := newFeaturedTestDB(t)
+	modHandler := NewWaterModerationHandler(db)
+
+	post := models.Post{
+		Title:      "Already Featured Post",
+		IsFeatured: true,
+		Status:     models.PostStatusNormal,
+	}
+	db.Create(&post)
+
+	app, err := modHandler.ensureHomeFeaturedApplication(post.ID, 1, 1, 1, "推荐")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if app != nil {
+		t.Fatalf("expected nil app for already featured post, got %+v", app)
+	}
+
+	var count int64
+	db.Model(&models.FeaturedApplication{}).Where("post_id = ?", post.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("expected 0 applications created, got %d", count)
+	}
 }

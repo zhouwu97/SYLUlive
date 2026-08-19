@@ -471,9 +471,15 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 }
 
 // ensureHomeFeaturedApplication 确保首页精华审核记录存在：
+// 若帖子本身已是首页精华 (is_featured=true) → 直接返回 nil,nil，不重复排队；
 // 已有 pending → 返回 existing,nil；没有 → 创建并返回；
 // 若并发 Create 遇到 23505 unique constraint 冲突 → 重新 SELECT pending 记录并返回。
 func (h *WaterModerationHandler) ensureHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) (*models.FeaturedApplication, error) {
+	var post models.Post
+	if err := h.db.Select("id", "is_featured").First(&post, postID).Error; err == nil && post.IsFeatured {
+		return nil, nil
+	}
+
 	var existing models.FeaturedApplication
 	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
 	switch {

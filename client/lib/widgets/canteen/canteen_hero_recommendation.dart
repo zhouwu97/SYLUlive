@@ -203,7 +203,6 @@ class _CanteenHeroRecommendationCardState
     return CachedNetworkImage(
       imageUrl: ApiConstants.fullUrl(h.image),
       fit: BoxFit.cover,
-      cacheWidth: 200,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),
     );

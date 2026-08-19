@@ -283,7 +283,6 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
-      cacheWidth: 300,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),
     );
@@ -295,7 +294,6 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     return CachedNetworkImage(
       imageUrl: ApiConstants.fullUrl(item.image),
       fit: BoxFit.cover,
-      cacheWidth: 200,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),
     );

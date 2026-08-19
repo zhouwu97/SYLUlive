@@ -74,3 +74,25 @@ func TestRatingConfidence(t *testing.T) {
 		}
 	}
 }
+
+// TestBayesianScoreTo100 验证 1~5 尺度转 0~100 综合分。
+func TestBayesianScoreTo100(t *testing.T) {
+	cases := []struct {
+		raw  float64
+		want float64
+	}{
+		{0.0, 0.0},
+		{-1.0, 0.0},
+		{4.30, 86.0},
+		{4.80, 96.0},
+		{5.0, 100.0},
+		{5.5, 100.0},
+	}
+	for _, tc := range cases {
+		got := BayesianScoreTo100(tc.raw)
+		if math.Abs(got-tc.want) > 1e-6 {
+			t.Fatalf("BayesianScoreTo100(%v)=%v want %v", tc.raw, got, tc.want)
+		}
+	}
+}
+

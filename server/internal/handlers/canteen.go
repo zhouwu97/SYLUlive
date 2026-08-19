@@ -173,7 +173,7 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 	out := make([]canteenStatsRow, 0, len(entries))
 	for _, e := range entries {
 		row := e.canteenStatsRow
-		row.RankingScore = e.RankingScore
+		row.RankingScore = services.BayesianScoreTo100(e.RankingScore)
 		out = append(out, row)
 	}
 	c.JSON(http.StatusOK, out)

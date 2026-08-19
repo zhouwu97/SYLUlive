@@ -10,6 +10,7 @@ class Canteen {
   final double averageStar;
   final int dishCount;
   final int dishPhotoCount;
+  final double rankingScore;
 
   Canteen({
     required this.id,
@@ -21,6 +22,7 @@ class Canteen {
     required this.averageStar,
     this.dishCount = 0,
     this.dishPhotoCount = 0,
+    this.rankingScore = 0,
   });
 
   factory Canteen.fromJson(Map<String, dynamic> json) {
@@ -34,6 +36,7 @@ class Canteen {
       averageStar: (json['average_star'] ?? 0).toDouble(),
       dishCount: json['dish_count'] ?? 0,
       dishPhotoCount: json['dish_photo_count'] ?? 0,
+      rankingScore: (json['ranking_score'] ?? 0).toDouble(),
     );
   }
 }

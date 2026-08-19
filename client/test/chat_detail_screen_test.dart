@@ -81,7 +81,7 @@ void main() {
     expect(enabledSendButton.onPressed, isNotNull);
     expect(
       enabledSendButton.style?.backgroundColor?.resolve({}),
-      AppColors.messageOutgoingLight,
+      AppColors.brandPrimary,
     );
     await _disposeChat(tester, provider);
   });

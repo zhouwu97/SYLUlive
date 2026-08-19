@@ -103,7 +103,7 @@ void main() {
         .firstWhere((widget) => widget.transform.getTranslation().y > 0);
     final fade = tester.widget<Opacity>(find.byType(Opacity));
 
-    expect(startTransform.transform.getTranslation().y, 12);
+    expect(startTransform.transform.getTranslation().y, 8);
     expect(fade.opacity, lessThan(1));
 
     controller.value = 1;

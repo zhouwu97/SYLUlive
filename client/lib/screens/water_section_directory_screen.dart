@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../theme/app_colors.dart';
 import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
@@ -98,18 +99,18 @@ class _WaterSectionDirectoryScreenState
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF251D3A) : const Color(0xFFF5EEFF),
+              color: isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.18)),
+              border: Border.all(color: AppColors.brandPrimary.withValues(alpha: 0.18)),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('特殊版块', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)),
               const SizedBox(height: 8),
               Row(children: [
-                const CircleAvatar(backgroundColor: Color(0xFFE9D5FF), child: Icon(Icons.poll_outlined, color: Color(0xFF7C3AED))),
+                CircleAvatar(backgroundColor: isDark ? AppColors.surfaceMutedDark : AppColors.brandSurfaceLight, child: const Icon(Icons.poll_outlined, color: AppColors.brandPrimary)),
                 const SizedBox(width: 12),
                 const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('校园投票', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('参与校园话题、选择与意见征集', style: TextStyle(fontSize: 12))])),
-                const Icon(Icons.chevron_right, color: Color(0xFF7C3AED)),
+                const Icon(Icons.chevron_right, color: AppColors.brandPrimary),
               ]),
               const SizedBox(height: 8),
               Wrap(spacing: 4, children: [

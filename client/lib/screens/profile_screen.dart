@@ -13,6 +13,7 @@ import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/message_provider.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
@@ -935,13 +936,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
-          iconColor: const Color(0xFF667EEA),
+          iconColor: AppColors.brandPrimary,
           title: '下次直接进入课表',
           subtitle: _startOnTimetable ? '已开启' : '已关闭',
           isDark: isDark,
           trailing: Switch(
             value: _startOnTimetable,
-            activeColor: const Color(0xFF6366F1),
+            activeColor: AppColors.brandPrimary,
             onChanged: (v) {
               context.read<ThemeProvider>().setStartOnTimetable(v);
               if (mounted) setState(() => _startOnTimetable = v);

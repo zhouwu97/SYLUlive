@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import 'app_navigator.dart';
 
 class AppFeedback {
@@ -7,6 +8,7 @@ class AppFeedback {
 
   static const Duration _infoDuration = Duration(seconds: 3);
   static const Duration _successDuration = Duration(seconds: 2);
+  static const Duration _warningDuration = Duration(seconds: 3);
   static const Duration _errorDuration = Duration(seconds: 4);
   static const Duration _actionDuration = Duration(seconds: 6);
 
@@ -97,6 +99,15 @@ class AppFeedback {
     );
   }
 
+  static void warning(String message, {BuildContext? context}) {
+    _show(
+      message,
+      context: context,
+      kind: _FeedbackKind.warning,
+      duration: _warningDuration,
+    );
+  }
+
   static void error(String message, {BuildContext? context}) {
     _show(
       message,
@@ -122,7 +133,7 @@ class AppFeedback {
     );
   }
 
-  /// 兼容旧调用点；业务代码应迁移到 info/success/error/action。
+  /// 兼容旧调用点；业务代码应迁移到 info/success/warning/error/action。
   static void showSnackBar(
     BuildContext context,
     String message, {
@@ -156,9 +167,11 @@ class AppFeedback {
     if (messenger == null || message.trim().isEmpty) return;
 
     final layoutContext = context ?? scaffoldMessengerKey.currentContext;
-    final theme = context == null ? null : Theme.of(context);
-    final colors = theme?.colorScheme;
-    final palette = _FeedbackPalette.from(kind, colors);
+    final theme = context == null
+        ? (layoutContext == null ? null : Theme.of(layoutContext))
+        : Theme.of(context);
+    final isDark = theme?.brightness == Brightness.dark;
+    final palette = _FeedbackPalette.from(kind, isDark);
     final mediaQuery =
         layoutContext == null ? null : MediaQuery.maybeOf(layoutContext);
     final viewPaddingBottom = mediaQuery?.viewPadding.bottom ?? 0.0;
@@ -178,7 +191,10 @@ class AppFeedback {
               message,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: palette.foreground),
+              style: TextStyle(
+                color: palette.foreground,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -249,7 +265,7 @@ class AppFeedback {
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(confirmText),
           ),
@@ -260,7 +276,7 @@ class AppFeedback {
   }
 }
 
-enum _FeedbackKind { info, success, error, action }
+enum _FeedbackKind { info, success, warning, error, action }
 
 class _FeedbackPalette {
   const _FeedbackPalette({
@@ -275,32 +291,49 @@ class _FeedbackPalette {
 
   factory _FeedbackPalette.from(
     _FeedbackKind kind,
-    ColorScheme? colors,
+    bool isDark,
   ) {
-    final scheme = colors ?? ColorScheme.fromSeed(seedColor: Colors.teal);
     switch (kind) {
       case _FeedbackKind.info:
         return _FeedbackPalette(
-          background: scheme.secondaryContainer,
-          foreground: scheme.onSecondaryContainer,
+          background:
+              isDark ? AppColors.infoSurfaceDark : AppColors.infoSurfaceLight,
+          foreground:
+              isDark ? AppColors.textPrimaryDark : AppColors.info,
           icon: Icons.info_outline_rounded,
         );
       case _FeedbackKind.success:
         return _FeedbackPalette(
-          background: scheme.tertiaryContainer,
-          foreground: scheme.onTertiaryContainer,
+          background: isDark
+              ? AppColors.successSurfaceDark
+              : AppColors.successSurfaceLight,
+          foreground:
+              isDark ? AppColors.textPrimaryDark : AppColors.success,
           icon: Icons.check_circle_outline_rounded,
+        );
+      case _FeedbackKind.warning:
+        return _FeedbackPalette(
+          background: isDark
+              ? AppColors.warningSurfaceDark
+              : AppColors.warningSurfaceLight,
+          foreground:
+              isDark ? AppColors.textPrimaryDark : AppColors.warning,
+          icon: Icons.warning_amber_rounded,
         );
       case _FeedbackKind.error:
         return _FeedbackPalette(
-          background: scheme.errorContainer,
-          foreground: scheme.onErrorContainer,
+          background: isDark
+              ? AppColors.dangerSurfaceDark
+              : AppColors.dangerSurfaceLight,
+          foreground:
+              isDark ? AppColors.textPrimaryDark : AppColors.danger,
           icon: Icons.error_outline_rounded,
         );
       case _FeedbackKind.action:
         return _FeedbackPalette(
-          background: scheme.inverseSurface,
-          foreground: scheme.onInverseSurface,
+          background:
+              isDark ? AppColors.brandSurfaceDark : AppColors.brandPrimary,
+          foreground: Colors.white,
           icon: Icons.touch_app_outlined,
         );
     }

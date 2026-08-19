@@ -42,13 +42,13 @@ class GymScoreItem {
   int get statusColorValue {
     switch (scoreStatus) {
       case '1':
-        return 0xFF16A34A; // 绿
+        return 0xFF169B5B; // 优秀 - 成功绿
       case '2':
-        return 0xFF6366F1; // 蓝紫
+        return 0xFF147C72; // 及格 - 品牌青绿
       case '3':
-        return 0xFFEF4444; // 红
+        return 0xFFE54848; // 不及格 - 危险红
       default:
-        return 0xFF9CA3AF; // 灰
+        return 0xFF858C89; // 未知 - 弱文字灰
     }
   }
 }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../providers/theme_provider.dart';
 
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
+import '../theme/app_colors.dart';
 
 class PhysicalPercentileReportScreen extends StatefulWidget {
   final List<PhysicalRawScore> scores;
@@ -38,19 +38,23 @@ class _PhysicalPercentileReportScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      backgroundColor: isDark
+          ? AppColors.surfacePrimaryDark
+          : AppColors.surfacePrimaryLight,
       appBar: AppBar(
         title: const Text('超越了多少大学生'),
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        backgroundColor: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
         elevation: 0,
       ),
       body: FutureBuilder<PhysicalPercentileService>(
         future: _serviceFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.brandPrimary),
+            );
           }
           if (snapshot.hasError || !snapshot.hasData) {
             return _buildErrorState(isDark);
@@ -112,12 +116,14 @@ class _PhysicalPercentileReportScreenState
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                  color: isDark
+                      ? AppColors.brandSurfaceDark
+                      : AppColors.brandSurfaceLight,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.insights_rounded,
-                  color: Color(0xFF6366F1),
+                  color: AppColors.brandPrimary,
                   size: 23,
                 ),
               ),
@@ -129,7 +135,9 @@ class _PhysicalPercentileReportScreenState
                     fontSize: 18,
                     height: 1.35,
                     fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : const Color(0xFF1F2430),
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                   ),
                 ),
               ),
@@ -142,8 +150,8 @@ class _PhysicalPercentileReportScreenState
               value: report.sportAveragePercentile / 100,
               minHeight: 8,
               backgroundColor:
-                  isDark ? Colors.white12 : const Color(0xFFE9ECF3),
-              color: const Color(0xFF6366F1),
+                  isDark ? Colors.white12 : AppColors.brandSurfaceLight,
+              color: AppColors.brandPrimary,
             ),
           ),
           const SizedBox(height: 10),
@@ -151,7 +159,9 @@ class _PhysicalPercentileReportScreenState
             '娱乐参考结果，按匿名样本分布计算，不代表官方排名。',
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? Colors.white54 : const Color(0xFF737B8C),
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
             ),
           ),
         ],
@@ -168,7 +178,9 @@ class _PhysicalPercentileReportScreenState
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : const Color(0xFFE8EBF2),
+        color: isDark
+            ? AppColors.surfaceMutedDark
+            : AppColors.surfaceMutedLight,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -184,7 +196,9 @@ class _PhysicalPercentileReportScreenState
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected
-                      ? (isDark ? const Color(0xFF2B3140) : Colors.white)
+                      ? (isDark
+                          ? AppColors.surfaceSecondaryDark
+                          : Colors.white)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(9),
                   boxShadow: selected && !isDark
@@ -203,8 +217,10 @@ class _PhysicalPercentileReportScreenState
                     fontSize: 13,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color: selected
-                        ? const Color(0xFF6366F1)
-                        : (isDark ? Colors.white70 : const Color(0xFF596170)),
+                        ? AppColors.brandPrimary
+                        : (isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight),
                   ),
                 ),
               ),
@@ -222,7 +238,10 @@ class _PhysicalPercentileReportScreenState
         child: Text(
           '暂无可展示亮点',
           style: TextStyle(
-              color: isDark ? Colors.white60 : const Color(0xFF737B8C)),
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
         ),
       );
     }
@@ -251,7 +270,9 @@ class _PhysicalPercentileReportScreenState
       style: TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w800,
-        color: isDark ? Colors.white : const Color(0xFF20232A),
+        color: isDark
+            ? AppColors.textPrimaryDark
+            : AppColors.textPrimaryLight,
       ),
     );
   }
@@ -263,7 +284,10 @@ class _PhysicalPercentileReportScreenState
         child: Text(
           '暂无可比项目',
           style: TextStyle(
-              color: isDark ? Colors.white60 : const Color(0xFF737B8C)),
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
         ),
       );
     }
@@ -280,7 +304,9 @@ class _PhysicalPercentileReportScreenState
                 Divider(
                   height: 1,
                   thickness: 1,
-                  color: isDark ? Colors.white10 : const Color(0xFFEEF0F4),
+                  color: isDark
+                      ? AppColors.borderSubtleDark
+                      : AppColors.borderSubtleLight,
                   indent: 16,
                   endIndent: 16,
                 ),
@@ -301,7 +327,9 @@ class _PhysicalPercentileReportScreenState
             Icon(
               Icons.cloud_off_outlined,
               size: 46,
-              color: isDark ? Colors.white38 : const Color(0xFF9AA1AF),
+              color: isDark
+                  ? AppColors.iconMutedDark
+                  : AppColors.textMutedLight,
             ),
             const SizedBox(height: 14),
             Text(
@@ -309,7 +337,9 @@ class _PhysicalPercentileReportScreenState
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : const Color(0xFF333A46),
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
             const SizedBox(height: 6),
@@ -318,7 +348,9 @@ class _PhysicalPercentileReportScreenState
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white54 : const Color(0xFF737B8C),
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             ),
           ],
@@ -336,7 +368,9 @@ class _PhysicalPercentileReportScreenState
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
-            color: isDark ? Colors.white60 : const Color(0xFF737B8C),
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
           ),
         ),
       ),
@@ -363,13 +397,13 @@ class _HighlightRow extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFFFB020).withValues(alpha: 0.15),
+              color: AppColors.warning.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
               Icons.star_rounded,
               size: 20,
-              color: Color(0xFFFFA000),
+              color: AppColors.warning,
             ),
           ),
           const SizedBox(width: 10),
@@ -379,7 +413,9 @@ class _HighlightRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : const Color(0xFF20232A),
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ),
@@ -388,7 +424,7 @@ class _HighlightRow extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF6366F1),
+              color: AppColors.brandPrimary,
             ),
           ),
         ],
@@ -427,7 +463,9 @@ class _MetricRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF20232A),
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -435,8 +473,9 @@ class _MetricRow extends StatelessWidget {
                       '成绩：${metric.studentResult.rawResult}',
                       style: TextStyle(
                         fontSize: 12,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF7D8492),
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
                       ),
                     ),
                   ],
@@ -452,10 +491,10 @@ class _MetricRow extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                       color: comparable
-                          ? const Color(0xFF6366F1)
+                          ? AppColors.brandPrimary
                           : (isDark
-                              ? Colors.white.withValues(alpha: 0.45)
-                              : const Color(0xFF9AA1AF)),
+                              ? AppColors.iconMutedDark
+                              : AppColors.textMutedLight),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -463,7 +502,9 @@ class _MetricRow extends StatelessWidget {
                     comparable ? '样本 ${comparison.sampleSize}' : '样本 0',
                     style: TextStyle(
                       fontSize: 11,
-                      color: isDark ? Colors.white38 : const Color(0xFF9AA1AF),
+                      color: isDark
+                          ? AppColors.iconMutedDark
+                          : AppColors.textMutedLight,
                     ),
                   ),
                 ],
@@ -477,10 +518,10 @@ class _MetricRow extends StatelessWidget {
               value: comparable ? comparison.percentile / 100 : 0,
               minHeight: 6,
               backgroundColor:
-                  isDark ? Colors.white10 : const Color(0xFFE9ECF3),
+                  isDark ? Colors.white10 : AppColors.brandSurfaceLight,
               color: comparable
-                  ? const Color(0xFF6366F1)
-                  : (isDark ? Colors.white24 : const Color(0xFFC8CDD8)),
+                  ? AppColors.brandPrimary
+                  : (isDark ? Colors.white24 : AppColors.borderSubtleLight),
             ),
           ),
         ],
@@ -506,8 +547,15 @@ class _SurfaceCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: isDark ? Colors.grey[850] : Colors.white,
+        color: isDark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? AppColors.borderSubtleDark
+              : AppColors.borderSubtleLight,
+        ),
         boxShadow: [
           if (!isDark)
             BoxShadow(

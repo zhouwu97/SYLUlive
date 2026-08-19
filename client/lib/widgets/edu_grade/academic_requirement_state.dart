@@ -1,3 +1,6 @@
+import 'package:flutter/material.dart';
+import '../../theme/app_colors.dart';
+
 /// 学分要求模块的状态标签 chip。
 ///
 /// 四个固定状态：
@@ -5,9 +8,6 @@
 /// - in_progress → 进行中
 /// - shortfall   → 待补足
 /// - unknown     → 状态未知
-
-import 'package:flutter/material.dart';
-
 class AcademicRequirementState extends StatefulWidget {
   final String status;
 
@@ -32,27 +32,27 @@ class _AcademicRequirementStateState extends State<AcademicRequirementState> {
     switch (widget.status) {
       case 'completed':
         bg = isDark
-            ? const Color(0xFF7ED6C5).withValues(alpha: 0.14)
-            : const Color(0xFF147C72).withValues(alpha: 0.1);
-        fg = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+            ? AppColors.successSurfaceDark
+            : AppColors.successSurfaceLight;
+        fg = AppColors.success;
         break;
       case 'in_progress':
         bg = isDark
-            ? const Color(0xFFF4B860).withValues(alpha: 0.14)
-            : const Color(0xFFC47C14).withValues(alpha: 0.1);
-        fg = isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
+            ? AppColors.brandSurfaceDark
+            : AppColors.brandSurfaceLight;
+        fg = AppColors.brandPrimary;
         break;
       case 'shortfall':
         bg = isDark
-            ? const Color(0xFFE36B5E).withValues(alpha: 0.12)
-            : const Color(0xFFC62828).withValues(alpha: 0.08);
-        fg = isDark ? const Color(0xFFE36B5E) : const Color(0xFFC62828);
+            ? AppColors.warningSurfaceDark
+            : AppColors.warningSurfaceLight;
+        fg = AppColors.warning;
         break;
       default:
         bg = isDark
-            ? Colors.grey.shade700.withValues(alpha: 0.3)
-            : Colors.grey.shade200;
-        fg = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+            ? AppColors.surfaceMutedDark
+            : AppColors.surfaceMutedLight;
+        fg = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     }
 
     return Container(

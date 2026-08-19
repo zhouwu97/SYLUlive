@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_colors.dart';
 import 'rating_star_row.dart';
 
 class RatingSummaryCard extends StatelessWidget {
@@ -39,7 +40,7 @@ class RatingSummaryCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 28,
-              backgroundColor: const Color(0xFF6366F1),
+              backgroundColor: AppColors.brandPrimary,
               child: Text(
                 _initial(title),
                 style: const TextStyle(

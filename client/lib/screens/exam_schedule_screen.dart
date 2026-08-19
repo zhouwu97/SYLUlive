@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 import '../models/exam_schedule.dart';
 import '../services/exam_schedule_repository.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -965,16 +966,14 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF6366F1,
-                                  ).withOpacity(0.12),
+                                  color: AppColors.brandPrimary.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Column(
                                   children: [
                                     const Icon(
                                       Icons.location_on,
-                                      color: Color(0xFF6366F1),
+                                      color: AppColors.brandPrimary,
                                       size: 16,
                                     ),
                                     const SizedBox(height: 4),
@@ -983,7 +982,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                           ? exam.location
                                           : '未指定',
                                       style: const TextStyle(
-                                        color: Color(0xFF6366F1),
+                                        color: AppColors.brandPrimary,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12,
                                       ),

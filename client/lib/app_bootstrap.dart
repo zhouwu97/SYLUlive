@@ -24,12 +24,14 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
+import 'providers/canteen_discovery_provider.dart';
 import 'providers/social_provider.dart';
 import 'providers/water_section_provider.dart';
 import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
 import 'models/user.dart';
+import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
@@ -1311,6 +1313,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+        ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
         ChangeNotifierProvider(
@@ -1752,7 +1755,12 @@ class HomeInitialTabResolver {
   int? _initialTab;
 
   int resolve(ThemeProvider themeProvider) {
-    return _initialTab ??= themeProvider.startOnTimetable ? 2 : 0;
+    return _initialTab ??= switch (themeProvider.startupDestination) {
+      StartupDestinationMode.timetable => 2,
+      // home 和 lastPage 的基础 tab 都是 0。
+      // lastPage 的 rootTab index 和深层路由由 _scheduleLastPageRestore 处理。
+      _ => 0,
+    };
   }
 }
 
@@ -1760,7 +1768,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
   bool _legalConsentDialogVisible = false;
-  int? _conversationRestoreScheduledForUserId;
+  bool _lastPageRestoreScheduled = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1810,83 +1818,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  void _scheduleConversationRestore(AuthProvider authProvider) {
-    final userId = authProvider.user?.id;
-    if (userId == null ||
-        userId <= 0 ||
-        _conversationRestoreScheduledForUserId == userId) {
-      return;
-    }
-    _conversationRestoreScheduledForUserId = userId;
-    unawaited(_restoreLastConversation(userId));
-  }
-
-  Future<void> _restoreLastConversation(int userId) async {
-    // 给原生通知、JPush 回调和小组件深链留出优先处理窗口。
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted || context.read<AuthProvider>().user?.id != userId) return;
-
-    try {
-      final state = await RootPageStateStore.instance.readConversation(
-        accountId: userId,
-      );
-      if (!mounted || state == null) return;
-
-      final navigator = appNavigatorKey.currentState;
-      final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
-          _pendingNotificationOpen.target != null ||
-          widgetTabSwitch.value > 0;
-      if (navigator == null || navigator.canPop() || externalTargetPending) {
-        await RootPageStateStore.instance.clearConversation();
-        return;
-      }
-
-      navigator.push(
-        MaterialPageRoute<void>(
-          settings: RouteSettings(
-            name: '/messages/conversations/${state.conversationId}',
-          ),
-          builder: (_) => ChatDetailScreen(
-            conversationId: state.conversationId,
-            targetUser: User(
-              id: state.targetUserId,
-              studentId: '',
-              nickname: state.targetNickname,
-              avatar: state.targetAvatar,
-              createdAt: DateTime.now(),
-            ),
-          ),
-        ),
-      );
-      DiagnosticLogService.instance.record(
-        level: 'info',
-        source: '导航',
-        type: '私信会话已恢复',
-        summary: '已恢复上次打开的私信会话并重新拉取消息',
-        detail: '',
-        eventCode: 'navigation_conversation_restored',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'success',
-        route: '/messages/conversations/:id',
-        metadata: <String, Object?>{
-          'conversationId': state.conversationId,
-        },
-      );
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '私信页面状态恢复失败',
-        summary: '无法恢复上次打开的私信会话',
-        detail: error.toString(),
-        eventCode: 'navigation_conversation_state_restore_failed',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'failure',
-      );
-    }
-  }
 
   void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
     if (_legalConsentDialogVisible) return;
@@ -1950,7 +1881,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             if (PlatformCapabilities.current.supportsJPush) {
               _checkNativeNotificationOpen();
             }
-            _scheduleConversationRestore(authProvider);
+            _scheduleLastPageRestore(authProvider);
           });
         } else if (!authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1974,9 +1905,103 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const PrivacyCenterScreen(restricted: true);
         }
 
-        return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));
+        return HomeScreen(
+          initialTab: _homeInitialTabResolver.resolve(tp),
+        );
       },
     );
+  }
+
+  /// 仅在 [StartupDestinationMode.lastPage] 且无外部导航目标时执行。
+  void _scheduleLastPageRestore(AuthProvider authProvider) {
+    if (_lastPageRestoreScheduled) return;
+    final userId = authProvider.user?.id;
+    if (userId == null || userId <= 0) return;
+    final tp = context.read<ThemeProvider>();
+    if (tp.startupDestination != StartupDestinationMode.lastPage) return;
+    _lastPageRestoreScheduled = true;
+    unawaited(_restoreLastPage(userId));
+  }
+
+  Future<void> _restoreLastPage(int userId) async {
+    if (!mounted || context.read<AuthProvider>().user?.id != userId) return;
+
+    // 外部导航目标优先于 lastPage 恢复。
+    final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
+        _pendingNotificationOpen.target != null ||
+        widgetTabSwitch.value > 0;
+    if (externalTargetPending) return;
+
+    try {
+      final state = await RootPageStateStore.instance.readLastPage(
+        accountId: userId,
+      );
+      if (!mounted || state == null) return;
+
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null || navigator.canPop()) return;
+
+      switch (state.type) {
+        case RestorablePageType.rootTab:
+          // rootTab 已由 HomeInitialTabResolver 处理，无需额外 push。
+          break;
+        case RestorablePageType.chat:
+          final conversationId = state.arguments['conversationId'] as int?;
+          final targetUserId = state.arguments['targetUserId'] as int?;
+          if (conversationId == null ||
+              conversationId <= 0 ||
+              targetUserId == null ||
+              targetUserId <= 0) {
+            break;
+          }
+          navigator.push(
+            MaterialPageRoute<void>(
+              settings: RouteSettings(
+                name: '/messages/conversations/$conversationId',
+              ),
+              builder: (_) => ChatDetailScreen(
+                conversationId: conversationId,
+                targetUser: User(
+                  id: targetUserId,
+                  studentId: '',
+                  nickname:
+                      (state.arguments['targetNickname'] ?? '').toString(),
+                  avatar: (state.arguments['targetAvatar'] ?? '').toString(),
+                  createdAt: DateTime.now(),
+                ),
+              ),
+            ),
+          );
+        case RestorablePageType.post:
+          final postId = state.arguments['postId'] as int?;
+          if (postId == null || postId <= 0) break;
+          navigator.push(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: '/post/detail'),
+              builder: (_) => PostDetailScreen(postId: postId),
+            ),
+          );
+        case RestorablePageType.notification:
+          navigator.push(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: '/notifications'),
+              builder: (_) => const NotificationsScreen(),
+            ),
+          );
+      }
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '上次页面恢复失败',
+        summary: '无法恢复上次退出时的页面',
+        detail: error.toString(),
+        eventCode: 'navigation_last_page_restore_failed',
+        category: 'navigation',
+        operation: 'restore',
+        result: 'failure',
+      );
+    }
   }
 }
 

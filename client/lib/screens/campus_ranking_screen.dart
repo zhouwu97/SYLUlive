@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
-import '../config/admin_feature_flags.dart';
 import '../models/teacher.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
@@ -190,9 +189,6 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
       };
 
   Widget _buildFAB(bool isDark, Color accent) {
-    if (!AdminFeatureFlags.reviewEnabled) {
-      return const SizedBox.shrink();
-    }
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),

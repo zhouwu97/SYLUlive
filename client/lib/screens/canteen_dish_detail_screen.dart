@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import '../config/admin_feature_flags.dart';
 import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_theme.dart';
@@ -158,7 +157,6 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildUploadEntry(bool isDark, Color accent) {
-    final enabled = AdminFeatureFlags.reviewEnabled;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -172,20 +170,18 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         ),
         const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: enabled
-              ? () async {
-                  final success = await showDishPhotoUploadSheet(
-                    context,
-                    canteenId: widget.canteenId,
-                    dishId: widget.dishId,
-                    dishName: widget.dishName,
-                    provider: context.read<CanteenProvider>(),
-                  );
-                  if (success == true && mounted) {
-                    await _load();
-                  }
-                }
-              : null,
+          onPressed: () async {
+            final success = await showDishPhotoUploadSheet(
+              context,
+              canteenId: widget.canteenId,
+              dishId: widget.dishId,
+              dishName: widget.dishName,
+              provider: context.read<CanteenProvider>(),
+            );
+            if (success == true && mounted) {
+              await _load();
+            }
+          },
           style: FilledButton.styleFrom(
             backgroundColor: accent,
             foregroundColor: Colors.white,
@@ -194,11 +190,11 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
               borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
             ),
           ),
-          icon: Icon(
-            enabled ? Icons.add_a_photo_rounded : Icons.info_outline,
+          icon: const Icon(
+            Icons.add_a_photo_rounded,
             size: 20,
           ),
-          label: Text(enabled ? '上传菜品实拍' : '实拍投稿暂未开放'),
+          label: const Text('上传菜品实拍'),
         ),
       ],
     );
@@ -369,7 +365,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
               ],
               const SizedBox(height: 16),
               Text(
-                '请上传能清楚看到菜品主体的真实照片。图片通过管理员审核后公开展示。',
+                '请上传能清楚看到菜品主体的真实照片，上传后将直接展示。',
                 style: TextStyle(
                   fontSize: 12,
                   color: CanteenTheme.textTertiaryColor(isDark),
@@ -414,7 +410,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('提交审核'),
+                    : const Text('确认上传'),
               ),
             ],
             ),

@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/admin_announcements_screen.dart';
 import 'package:shenliyuan/screens/admin_candidates_screen.dart';
 import 'package:shenliyuan/screens/admin_members_screen.dart';
+import 'package:shenliyuan/screens/admin_panel_screen.dart';
 import 'package:shenliyuan/screens/admin_review_tasks_screen.dart';
 
 class _RouteJsonAdapter implements HttpClientAdapter {
@@ -356,6 +357,63 @@ void main() {
 
     expect(find.text('审核队列已清空'), findsOneWidget);
     expect(find.text('刷新任务'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('管理员面板显示全部待办指标与审核入口，且无菜品实拍审核', (tester) async {
+    String? requestedReportStatus;
+    await tester.pumpWidget(
+      _buildApp(
+        const AdminPanelScreen(),
+        {
+          '/reports': (RequestOptions opt) {
+            requestedReportStatus = opt.uri.queryParameters['status'];
+            return [
+              {'id': 1, 'status': 'pending'},
+              {'id': 2, 'status': 'pending'},
+            ];
+          },
+          '/admin/featured-applications': [
+            {'id': 1},
+          ],
+          '/teachers/pending': [
+            {'id': 1},
+          ],
+          '/majors/pending': [
+            {'id': 1},
+            {'id': 2},
+          ],
+          '/admin/invitations/pending': [
+            {'id': 1},
+          ],
+          '/admin/removals/pending': <Object>[],
+          '/admin/exam-papers/pending-count': {'count': 5},
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 验证举报接口携带 status=pending 过滤
+    expect(requestedReportStatus, equals('pending'));
+
+    // 顶部待办指标栏
+    expect(find.text('待处理'), findsOneWidget);
+    expect(find.text('举报'), findsOneWidget);
+    expect(find.text('精华'), findsOneWidget);
+    expect(find.text('审核'), findsOneWidget);
+    expect(find.text('试卷'), findsOneWidget);
+    expect(find.text('管理员代办'), findsOneWidget);
+
+    // 社区治理区块
+    expect(find.text('精华申请'), findsOneWidget);
+    expect(find.text('版块图标审核'), findsOneWidget);
+
+    // 审核代办区块：包含教师、试卷、专业审核，绝无菜品实拍审核
+    expect(find.text('教师审核'), findsOneWidget);
+    expect(find.text('试卷审核'), findsOneWidget);
+    expect(find.text('专业审核'), findsOneWidget);
+    expect(find.text('菜品实拍审核'), findsNothing);
+
     expect(tester.takeException(), isNull);
   });
 }

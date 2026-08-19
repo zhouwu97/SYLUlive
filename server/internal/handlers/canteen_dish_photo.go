@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -16,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// errDishGalleryFull 该菜品已有 3 张审核实拍。
+// errDishGalleryFull 该菜品已有 3 张实拍。
 var errDishGalleryFull = errors.New("dish_gallery_full")
 
 // MaxDishNameLength 菜名最大可见字符数（与客户端 maxLength: 40 对齐）。
@@ -34,17 +33,10 @@ func NewCanteenDishPhotoHandler(db *gorm.DB) *CanteenDishPhotoHandler {
 	return &CanteenDishPhotoHandler{db: db}
 }
 
-// SubmitDishPhoto 学生投稿菜品实拍。
+// SubmitDishPhoto 学生上传菜品实拍（无需前置审核，直接发布入库）。
 // POST /api/canteens/:canteenId/dish-photos
 // Body 二选一：{"dish_id": 12, "file_id": 9527} 或 {"dish_name": "锅包肉", "file_id": 9527}
 func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
-	if !config.IsReviewEnabled() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"code":  "review_temporarily_disabled",
-			"error": "菜品实拍投稿暂未开放",
-		})
-		return
-	}
 	canteenIDStr := c.Param("id")
 	if canteenIDStr == "" {
 		canteenIDStr = c.Param("canteenId")
@@ -171,24 +163,13 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 			return errDishGalleryFull
 		}
 
-		// 同一用户同一菜最多一个 pending
-		var pendingCount int64
-		if err := tx.Model(&models.CanteenDishPhoto{}).
-			Where("dish_id = ? AND user_id = ? AND status = ?", dish.ID, userID, models.DishPhotoStatusPending).
-			Count(&pendingCount).Error; err != nil {
-			return err
-		}
-		if pendingCount > 0 {
-			return errPendingPhotoExists
-		}
-
 		// 校验文件（存在/图片/磁盘/所有权）
 		if _, err := services.ValidateImageFileIDs(tx, []uint{input.FileID}, 1, userID); err != nil {
 			return err
 		}
 
-		// 文件认领为 active/private（审核通过前绝不公开）
-		if err := services.ClaimPrivateFiles(tx, []uint{input.FileID}); err != nil {
+		// 文件认领为 active/public（直接公开入库展示）
+		if err := services.ClaimPublicImageFiles(tx, []uint{input.FileID}); err != nil {
 			return err
 		}
 
@@ -196,7 +177,7 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 			DishID: dish.ID,
 			FileID: input.FileID,
 			UserID: userID,
-			Status: models.DishPhotoStatusPending,
+			Status: models.DishPhotoStatusApproved,
 		}
 		return tx.Create(&photo).Error
 	})
@@ -210,9 +191,7 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 		case errors.Is(err, errInvalidDishName):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能为空"})
 		case errors.Is(err, errDishGalleryFull):
-			c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张审核实拍"})
-		case errors.Is(err, errPendingPhotoExists):
-			c.JSON(http.StatusConflict, gin.H{"code": "pending_photo_exists", "error": "该菜品已有待审核实拍"})
+			c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张实拍"})
 		case errors.Is(err, services.ErrInvalidImageFileReference):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case isUniqueConstraintError(err):
@@ -223,14 +202,16 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
 		return
 	}
 
+	canteenDiscoveryCache.Invalidate()
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "已提交审核",
+		"message": "实拍已上传",
 		"photo": gin.H{
-			"id":       photo.ID,
-			"dish_id":  photo.DishID,
-			"status":   photo.Status,
-			"sort":     photo.SortOrder,
-			"file_id":  photo.FileID,
+			"id":         photo.ID,
+			"dish_id":    photo.DishID,
+			"status":     photo.Status,
+			"sort":       photo.SortOrder,
+			"file_id":    photo.FileID,
 			"created_at": photo.CreatedAt,
 		},
 	})
@@ -241,6 +222,3 @@ var errDishNotFound = errors.New("dish not found")
 
 // errInvalidDishName 菜名为空。
 var errInvalidDishName = errors.New("invalid dish name")
-
-// errPendingPhotoExists 同一用户同一菜已有 pending 实拍。
-var errPendingPhotoExists = errors.New("pending photo exists")

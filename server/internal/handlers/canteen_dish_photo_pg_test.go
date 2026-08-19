@@ -231,13 +231,13 @@ func TestDishPhotoConcurrentSameNameCreation(t *testing.T) {
 		t.Fatalf("dish count=%d want exactly 1 (no duplicate rows)", dishCount)
 	}
 
-	var pendingCount int64
+	var approvedCount int64
 	if err := db.Model(&models.CanteenDishPhoto{}).
-		Where("status = ?", models.DishPhotoStatusPending).
-		Count(&pendingCount).Error; err != nil {
-		t.Fatalf("count pending: %v", err)
+		Where("status = ?", models.DishPhotoStatusApproved).
+		Count(&approvedCount).Error; err != nil {
+		t.Fatalf("count approved: %v", err)
 	}
-	if pendingCount != 2 {
-		t.Fatalf("pending count=%d want 2 (both submissions stored)", pendingCount)
+	if approvedCount != 2 {
+		t.Fatalf("approved count=%d want 2 (both submissions approved)", approvedCount)
 	}
 }

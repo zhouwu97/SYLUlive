@@ -991,22 +991,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: selected
                     ? Icon(Icons.check_rounded, color: AppColors.brandPrimary, size: 20)
                     : null,
-                onTap: () {
-                  context.read<ThemeProvider>().setStartupDestination(mode);
+                onTap: () async {
+                  final provider = context.read<ThemeProvider>();
+                  await provider.setStartupDestination(mode);
                   if (mode == StartupDestinationMode.lastPage) {
                     final userId = context.read<AuthProvider>().user?.id;
                     if (userId != null && userId > 0) {
-                      unawaited(RootPageStateStore.instance.saveLastPage(
+                      await RootPageStateStore.instance.saveLastPage(
                         RestorablePageState(
                           type: RestorablePageType.rootTab,
                           arguments: <String, dynamic>{'index': currentHomeTabIndex.value},
                           accountId: userId,
                         ),
-                      ));
+                      );
                     }
                   }
+                  if (!mounted) return;
                   setSheetState(() {});
-                  if (mounted) setState(() => _startupDestination = mode);
+                  setState(() => _startupDestination = mode);
                   Navigator.pop(sheetContext);
                 },
               );

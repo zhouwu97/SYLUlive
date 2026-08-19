@@ -108,7 +108,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _latestEdgeUpDrag = 0;
   double _keyboardDownDrag = 0;
   static const double _latestEdgeKeyboardTrigger = 28;
-  static const double _keyboardDismissDragTrigger = 10;
+  static const double _keyboardDismissDragTrigger = 18;
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
   static const double _fallbackKeyboardHeight = 300;
@@ -447,7 +447,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   /// 消息列表滑动通知处理：
-  /// 1. 键盘/输入面板展开时：Scroll 手势成立后继续向下累计 10dp；考虑约 18dp touch slop，用户实际拖动约 28dp 触发收起键盘与面板；向上划保持展开与正常滚动。
+  /// 1. 键盘/输入面板展开时：Scroll 手势成立后继续向下累计 18dp；考虑约 18dp touch slop，用户实际拖动约 36dp 触发收起键盘与面板；向上划保持展开与正常滚动。
   /// 2. 键盘关闭且已处最新消息边缘：继续向上划（dy < 0 且 overscroll < 0 累计 >= 28dp）展开键盘。
   /// 3. ScrollStart 时冻结手势意图，防止同一手势展开键盘后又误收起。
   bool _handleMessageScrollNotification(ScrollNotification notification) {

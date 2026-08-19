@@ -386,11 +386,32 @@ void main() {
     await tester.pump();
     expect(focusNode.hasFocus, isTrue);
 
-    // 向下拖动 60dp (超过 touch slop 后累计达标)
+    // 向下拖动 60dp (超过 18dp touch slop 且累计 primaryDelta >= 18dp 达标)
     await tester.drag(find.byType(ListView).first, const Offset(0, 60));
     await tester.pump();
 
     expect(focusNode.hasFocus, isFalse);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'keyboard open: subtle downward drag (<18dp cumulative) does not collapse keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    // 向下轻微拖动 25dp：扣除 ~18dp touch slop 后，交付 ScrollView 的 primaryDelta 仅约 7dp (< 18dp 阈值)
+    await tester.drag(find.byType(ListView).first, const Offset(0, 25));
+    await tester.pump();
+
+    // 键盘依然保持打开聚焦
+    expect(focusNode.hasFocus, isTrue);
     await _disposeChat(tester, provider);
   });
 

@@ -8,6 +8,7 @@ Widget _buildComposer({
   required PostReplyComposerController controller,
   bool enabled = true,
   bool sending = false,
+  bool preserveReplyTargetOnSuccess = false,
   ThemeData? theme,
   double textScaleFactor = 1,
   bool disableAnimations = false,
@@ -34,6 +35,7 @@ Widget _buildComposer({
             controller: controller,
             sending: sending,
             enabled: enabled,
+            preserveReplyTargetOnSuccess: preserveReplyTargetOnSuccess,
             onSubmit: onSubmit ?? (_) async => true,
             onNeedLogin: onNeedLogin ?? () {},
             pickImage: pickImage,
@@ -487,10 +489,119 @@ void main() {
     await tester.pump();
     expect(controller.inputHandoffActive, isTrue);
 
-    // 先卸载组件再释放 controller；400ms timer 必须被取消
+    // 先卸载组件再释放 controller；timer 必须被取消
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 800));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('preserveReplyTargetOnSuccess 为 true 时发送成功保留 parentReplyId，后续输入仍为子回复', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+    PostReplyDraft? lastSubmitted;
+
+    await tester.pumpWidget(
+      _buildComposer(
+        controller: controller,
+        preserveReplyTargetOnSuccess: true,
+        onSubmit: (draft) async {
+          lastSubmitted = draft;
+          return true;
+        },
+      ),
+    );
+
+    // 初始设定回复上下文（如进入楼中楼 Sheet）
+    controller.setReplyTarget(
+      parentReplyId: 100,
+      replyToUserId: 5,
+      replyToReplyId: 100,
+      replyToName: '楼楼主',
+    );
+    await tester.pump();
+
+    // 输入第一条回复并发送
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '第一条楼中楼回复',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(lastSubmitted?.parentReplyId, 100);
+    expect(lastSubmitted?.text, '第一条楼中楼回复');
+    // 发送成功后：草稿内容被清空，但 parentReplyId 仍然被保留为 100
+    expect(controller.textController.text, isEmpty);
+    expect(controller.parentReplyId, 100);
+
+    // 用户直接输入第二条回复（不重新点击任何回复按钮）
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '第二条楼中楼回复',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
+    await tester.pumpAndSettle();
+
+    // 第二条回复依然属于根评论 100，未退化为一级评论
+    expect(lastSubmitted?.parentReplyId, 100);
+    expect(lastSubmitted?.text, '第二条楼中楼回复');
+  });
+
+  testWidgets('未处于打开或聚焦状态的 Composer 忽略系统 IME 变更，避免多 Composer 串扰', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    expect(controller.isOpen, isFalse);
+    expect(controller.focusNode.hasFocus, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.none);
+
+    // 模拟外层弹窗输入导致的系统 viewInsets 变化 (如另一个浮层获取焦点)
+    tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+    await tester.pump();
+
+    // closed + unfocused 的主 Composer 不响应键盘事件，状态保持 none
+    expect(controller.bottomPanel, PostReplyBottomPanel.none);
+
+    // 聚焦自身后，应当正常响应 viewInsets
+    controller.open();
+    await tester.pump();
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+
+    // 清理 viewInsets
+    tester.view.resetViewInsets();
+    await tester.pump();
+  });
+
+  testWidgets('Emoji → Keyboard 750ms 保险超时在 500ms 仍保持交接并在 750ms 顺利完成', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 打开表情面板
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+    expect(controller.showEmojiPanel, isTrue);
+
+    // 切换到键盘模式：开始 handoff
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+    expect(controller.inputHandoffActive, isTrue);
+
+    // 500ms 时仍处于交接保护中（避免慢键盘在 400ms 时发生面板塌陷）
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.showEmojiPanel, isTrue);
+
+    // 800ms (已超 750ms 保险上限) 时交接自动完成
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.showEmojiPanel, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
   });
 }

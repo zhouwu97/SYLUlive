@@ -215,16 +215,29 @@ func buildFeedReason(tags []services.SummaryTag, averageStar float64, ratingCoun
 	return "暂无足够评分，先看看同学实拍"
 }
 
+// takeSummaryTags 安全截取前 k 个标签。
+func takeSummaryTags(tags []services.SummaryTag, k int) []services.SummaryTag {
+	if len(tags) <= k {
+		return tags
+	}
+	return tags[:k]
+}
+
 // BuildHomeFeed 规则型首页信息流：多类型混合 + 多样性控制（同店不连续、不刷屏）。
-// 支持外部传入已批量统计的 recentCounts，避免 sort 比较器内查询 DB。
-func (h *CanteenHandler) BuildHomeFeed(entries []canteenRankingEntry, mean float64, limit int, optionalRecentCounts ...map[uint]int64) []canteenFeedItem {
-	var recentCounts map[uint]int64
-	if len(optionalRecentCounts) > 0 && optionalRecentCounts[0] != nil {
-		recentCounts = optionalRecentCounts[0]
-	} else {
+// 支持外部传入已批量统计的 recentCounts 和 summaryTags，避免多次查询 DB 与在 sort 比较器内查询 DB。
+func (h *CanteenHandler) BuildHomeFeed(
+	entries []canteenRankingEntry,
+	mean float64,
+	limit int,
+	recentCounts map[uint]int64,
+	summaryTags map[uint][]services.SummaryTag,
+) []canteenFeedItem {
+	if recentCounts == nil {
 		recentCounts = h.batchRecentReviewCounts(7)
 	}
-	summaryTags := h.batchAggregateSummaryTags(summaryTagDays, 2)
+	if summaryTags == nil {
+		summaryTags = h.batchAggregateSummaryTags(summaryTagDays, 3)
+	}
 
 	// 1. 候选池按类型组织，各自按质量/新鲜度排序。
 	recommendations := make([]canteenRankingEntry, 0) // 有评价，按推荐分
@@ -328,7 +341,7 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 		if lastType == "recommended_store" {
 			continue
 		}
-		tags := summaryTags[e.ID]
+		tags := takeSummaryTags(summaryTags[e.ID], 2)
 		names := make([]string, len(tags))
 		for j, t := range tags {
 			names[j] = t.Name
@@ -339,7 +352,7 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 			CanteenID:    e.ID,
 			CanteenName:  e.Name,
 			Image:        e.Image,
-			Title:        "今天想吃得下饭一点？",
+			Title:        "今天可以优先看看",
 			Reason:       buildFeedReason(tags, e.AverageStar, e.RatingCount),
 			RankingScore: services.BayesianScoreTo100(e.RankingScore),
 			AverageStar:  e.AverageStar,
@@ -357,7 +370,7 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 		if seen[e.ID] >= 1 || lastCanteen == e.ID || lastType == "stable_choice" {
 			continue
 		}
-		tags := summaryTags[e.ID]
+		tags := takeSummaryTags(summaryTags[e.ID], 2)
 		names := make([]string, len(tags))
 		for j, t := range tags {
 			names[j] = t.Name
@@ -387,7 +400,7 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 			continue
 		}
 		recent := recentCounts[e.ID]
-		tags := summaryTags[e.ID]
+		tags := takeSummaryTags(summaryTags[e.ID], 2)
 		names := make([]string, len(tags))
 		for j, t := range tags {
 			names[j] = t.Name
@@ -528,8 +541,9 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	}
 	sortRanking(entries, "composite")
 
-	// 批量拉取近 30 天评价标签，避免 N+1
+	// 批量拉取近 30 天评价标签和近 7 天评价数，一次性查询避免 N+1 与重复查询
 	tagMap := h.batchAggregateSummaryTags(summaryTagDays, 3)
+	recentCounts := h.batchRecentReviewCounts(7)
 
 	// Hero：综合分最高的「有评价」食堂。
 	var hero *canteenFeedItem
@@ -537,7 +551,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		if e.RatingCount == 0 {
 			continue
 		}
-		tags := tagMap[e.ID]
+		tags := takeSummaryTags(tagMap[e.ID], 3)
 		tagNames := make([]string, 0, len(tags))
 		for _, t := range tags {
 			tagNames = append(tagNames, t.Name)
@@ -580,7 +594,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	if hero != nil {
 		feedEntries = removeCanteen(entries, hero.CanteenID)
 	}
-	feed := h.BuildHomeFeed(feedEntries, mean, 8)
+	feed := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
 
 	resp := gin.H{
 		"generated_at":  time.Now(),

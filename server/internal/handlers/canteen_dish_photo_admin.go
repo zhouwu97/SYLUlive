@@ -134,6 +134,7 @@ func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
 		respondDishPhotoAdminError(c, err)
 		return
 	}
+	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已通过", "photo_id": photo.ID})
 }
 
@@ -234,6 +235,7 @@ func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
 		respondDishPhotoAdminError(c, err)
 		return
 	}
+	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已下架", "photo_id": photo.ID})
 }
 
@@ -321,6 +323,7 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 		}
 		return
 	}
+	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已更新", "dish": dish})
 }
 

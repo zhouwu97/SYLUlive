@@ -45,5 +45,26 @@ void main() {
       await theme.setStartupDestination(StartupDestinationMode.lastPage);
       expect(await store.readLastPage(accountId: 1), isNull);
     });
+
+    test('顺序执行：切换 lastPage 并写入当前停留 tab，最终正确保留最新停留页面', () async {
+      final store = RootPageStateStore();
+      // 预置旧的 chat 页面状态
+      const oldChatState = RestorablePageState(
+        type: RestorablePageType.chat,
+        arguments: <String, dynamic>{'conversationId': 99},
+        accountId: 1,
+      );
+      await store.saveLastPage(oldChatState);
+
+      final theme = ThemeProvider(loadOnStart: false);
+      // 模拟设置页顺序操作：先 setStartupDestination，再保存当前所在 rootTab
+      await theme.setStartupDestination(StartupDestinationMode.lastPage);
+      await store.saveLastPage(rootTabState);
+
+      final saved = await store.readLastPage(accountId: 1);
+      expect(saved, isNotNull);
+      expect(saved!.type, RestorablePageType.rootTab);
+      expect(saved.arguments['index'], 3);
+    });
   });
 }

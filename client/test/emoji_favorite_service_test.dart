@@ -459,5 +459,84 @@ void main() {
     final preferences = await AppPreferencesStore.getInstance();
     expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
   });
+
+  test('操作在初始 load 阶段被切号阻断：A 的 toggle 不继续以 B 身份执行', () async {
+    // 预置 A 本地收藏 + 已迁移，让 load 快速进入 sync（fetchFavorites 处阻塞）
+    AppPreferencesStore.setMockInitialValues({
+      'emoji_favorites_v1_migrated_A': true,
+      'emoji_favorites_cache_v2_A': jsonEncode([
+        {'type': 'sticker', 'sticker_id': 'legacy-A'},
+      ]),
+    });
+
+    final blockedFetch = Completer<ResponseBody>();
+    var fetchStarted = false;
+    var createPublicImage = false;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.path == '/emoji/favorites' && options.method == 'GET') {
+          fetchStarted = true;
+          // 阻塞 load 内的 fetchFavorites，制造“初始 load 进行中”切号窗口
+          return blockedFetch.future;
+        }
+        if (options.path == '/emoji/favorites/from-public-image') {
+          createPublicImage = true;
+          return ResponseBody.fromString(
+            jsonEncode({
+              'id': 33,
+              'kind': 'custom',
+              'file_id': 200,
+              'url': '/api/emoji/favorites/33/file',
+            }),
+            201,
+            headers: {
+              Headers.contentTypeHeader: ['application/json']
+            },
+          );
+        }
+        return ResponseBody.fromString(
+          jsonEncode({'items': []}),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+
+    final service = EmojiFavoriteService(
+      userId: 'A',
+      repository: EmojiFavoriteRepository(dio),
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    final toggle = service.toggleImage('/uploads/op.png');
+    var ticks = 0;
+    while (!fetchStarted && ticks < 100) {
+      await Future<void>.delayed(Duration.zero);
+      ticks++;
+    }
+    expect(fetchStarted, isTrue, reason: 'A 的 load 必须进入 fetchFetch 阻塞窗口');
+
+    // 在 A 的 load 尚未完成时切到 B
+    service.switchUser('B');
+
+    // 放行 A 的 load
+    blockedFetch.complete(
+      ResponseBody.fromString(
+        jsonEncode({'items': []}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/json']
+        },
+      ),
+    );
+
+    // 操作必须因会话失效而被放弃，绝不能以 B 身份继续
+    expect(await toggle, isFalse);
+    expect(createPublicImage, isFalse, reason: 'A 的 toggle 不应触发任何远端写入');
+
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
+  });
 }
 

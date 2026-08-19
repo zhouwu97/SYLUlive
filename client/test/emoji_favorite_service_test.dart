@@ -343,5 +343,121 @@ void main() {
     final preferences = await AppPreferencesStore.getInstance();
     expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
   });
+
+  test('A addCustomFromUpload 阻塞期间切到 B：A 的 item 不写入 B 缓存', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'emoji_favorites_v1_migrated_A': true,
+    });
+
+    final blockedCustom = Completer<ResponseBody>();
+    var createCalls = 0;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.path == '/emoji/favorites' && options.method == 'POST') {
+          createCalls++;
+          return blockedCustom.future;
+        }
+        return ResponseBody.fromString(
+          jsonEncode({'items': []}),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+
+    final service = EmojiFavoriteService(
+      userId: 'A',
+      repository: EmojiFavoriteRepository(dio),
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    final upload = service.addCustomFromUpload(500);
+    var ticks = 0;
+    while (createCalls == 0 && ticks < 100) {
+      await Future<void>.delayed(Duration.zero);
+      ticks++;
+    }
+    expect(createCalls, 1, reason: 'A 的 createCustom 必须进入阻塞窗口');
+
+    service.switchUser('B');
+
+    blockedCustom.complete(
+      ResponseBody.fromString(
+        jsonEncode({
+          'id': 77,
+          'kind': 'custom',
+          'file_id': 500,
+          'url': '/api/emoji/favorites/77/file',
+        }),
+        201,
+        headers: {
+          Headers.contentTypeHeader: ['application/json']
+        },
+      ),
+    );
+    await expectLater(upload, throwsA(isA<EmojiFavoriteException>()));
+
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
+  });
+
+  test('A addFromMessage 阻塞期间切到 B：A 的 item 不写入 B 缓存', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'emoji_favorites_v1_migrated_A': true,
+    });
+
+    final blockedMsg = Completer<ResponseBody>();
+    var messageCalls = 0;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.path == '/emoji/favorites/from-message') {
+          messageCalls++;
+          return blockedMsg.future;
+        }
+        return ResponseBody.fromString(
+          jsonEncode({'items': []}),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+
+    final service = EmojiFavoriteService(
+      userId: 'A',
+      repository: EmojiFavoriteRepository(dio),
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    final addMsg = service.addFromMessage(3001);
+    var ticks = 0;
+    while (messageCalls == 0 && ticks < 100) {
+      await Future<void>.delayed(Duration.zero);
+      ticks++;
+    }
+    expect(messageCalls, 1, reason: 'A 的 createFromMessage 必须进入阻塞窗口');
+
+    service.switchUser('B');
+
+    blockedMsg.complete(
+      ResponseBody.fromString(
+        jsonEncode({
+          'id': 88,
+          'kind': 'custom',
+          'file_id': 501,
+          'url': '/api/emoji/favorites/88/file',
+        }),
+        201,
+        headers: {
+          Headers.contentTypeHeader: ['application/json']
+        },
+      ),
+    );
+    await expectLater(addMsg, throwsA(isA<EmojiFavoriteException>()));
+
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
+  });
 }
 

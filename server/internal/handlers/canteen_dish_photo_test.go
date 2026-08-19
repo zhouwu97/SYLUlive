@@ -23,6 +23,7 @@ import (
 func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	t.Setenv("UPLOAD_DIR", t.TempDir())
+	t.Setenv("REVIEW_ENABLED", "true")
 	db := newCanteenTestDB(t)
 	if err := db.AutoMigrate(&models.CanteenDish{}, &models.CanteenDishPhoto{}); err != nil {
 		t.Fatalf("migrate dish models: %v", err)
@@ -506,4 +507,30 @@ func decodeJSONBody(t *testing.T, body string) map[string]interface{} {
 		t.Fatalf("decode: %v", err)
 	}
 	return m
+}
+
+func TestDishPhotoDisabledWhenReviewDisabled(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	t.Setenv("REVIEW_ENABLED", "false")
+
+	canteen := models.Canteen{Name: "第二食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "宫保鸡丁", NormalizedName: "宫保鸡丁", Status: models.DishStatusActive, CreatedBy: 1}
+	db.Create(&dish)
+	createVerifiedUser(t, db, 1, "student1")
+	file := createTestFile(t, db, 100, 1, models.FileAccessPrivate)
+
+	submit := NewCanteenDishPhotoHandler(db)
+	resp := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 1,
+		fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, file.ID))
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := decodeJSONBody(t, resp.Body.String())
+	if body["code"] != "review_temporarily_disabled" {
+		t.Fatalf("expected code review_temporarily_disabled, got %v", body["code"])
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 )
 
@@ -88,6 +89,13 @@ func (h *PostHandler) GetFeaturedList(c *gin.Context) {
 }
 
 func (h *PostHandler) CreateFeaturedApplication(c *gin.Context) {
+	if !config.IsReviewEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":  "review_temporarily_disabled",
+			"error": "精华申请暂未开放",
+		})
+		return
+	}
 	userID, ok := currentUserID(c)
 	if !ok {
 		return

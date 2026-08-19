@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
@@ -147,6 +148,13 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 	}
 	// 管理员添加自动通过
 	verified := role == "admin" || role == "super_admin"
+	if !verified && !config.IsReviewEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":  "review_temporarily_disabled",
+			"error": "教师添加暂未开放",
+		})
+		return
+	}
 	teacher := models.Teacher{
 		Name: input.Name, Course: input.Course,
 		Verified: verified, CreatedBy: userID.(uint),

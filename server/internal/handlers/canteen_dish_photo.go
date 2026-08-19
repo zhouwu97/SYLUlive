@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -37,6 +38,13 @@ func NewCanteenDishPhotoHandler(db *gorm.DB) *CanteenDishPhotoHandler {
 // POST /api/canteens/:canteenId/dish-photos
 // Body 二选一：{"dish_id": 12, "file_id": 9527} 或 {"dish_name": "锅包肉", "file_id": 9527}
 func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
+	if !config.IsReviewEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":  "review_temporarily_disabled",
+			"error": "菜品实拍投稿暂未开放",
+		})
+		return
+	}
 	canteenIDStr := c.Param("id")
 	if canteenIDStr == "" {
 		canteenIDStr = c.Param("canteenId")

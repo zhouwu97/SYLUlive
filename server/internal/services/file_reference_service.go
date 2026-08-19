@@ -291,16 +291,35 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 		}
 	}
 
-	// 2. 帖子图片 (post_images join posts active)
+	// 2. 帖子图片 (post_images join posts 有效状态)
 	if tx.Migrator().HasTable("post_images") && tx.Migrator().HasTable("posts") {
 		var postImageCount int64
 		if err := tx.Table("post_images AS pi").
 			Joins("JOIN posts p ON p.id = pi.post_id").
-			Where("pi.file_id = ? AND p.status = ?", fileID, "active").
+			Where("pi.file_id = ? AND p.status IN ?", fileID,
+				[]models.PostStatus{
+					models.PostStatusNormal,
+					models.PostStatusSold,
+					models.PostStatusClosed,
+				}).
 			Count(&postImageCount).Error; err != nil {
 			return false, err
 		}
 		if postImageCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 2b. 回复图片 (reply_images join replies 有效状态)
+	if tx.Migrator().HasTable("reply_images") && tx.Migrator().HasTable("replies") {
+		var replyImageCount int64
+		if err := tx.Table("reply_images AS ri").
+			Joins("JOIN replies r ON r.id = ri.reply_id").
+			Where("ri.file_id = ? AND r.status = ?", fileID, models.ReplyStatusNormal).
+			Count(&replyImageCount).Error; err != nil {
+			return false, err
+		}
+		if replyImageCount > 0 {
 			return true, nil
 		}
 	}

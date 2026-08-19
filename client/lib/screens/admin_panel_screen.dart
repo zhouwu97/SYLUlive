@@ -47,8 +47,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     try {
       final dio = context.read<AuthProvider>().dio;
       if (!AdminFeatureFlags.reviewEnabled) {
-        final reportsRes = await dio.get('/reports').catchError((_) =>
-            Response(requestOptions: RequestOptions(path: ''), data: []));
+        final reportsRes = await dio
+            .get('/reports', queryParameters: {'status': 'pending'}).catchError(
+                (_) => Response(
+                    requestOptions: RequestOptions(path: ''), data: []));
         if (!mounted) return;
         int getCount(Response res) {
           if (res.data is List) return (res.data as List).length;
@@ -66,7 +68,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       }
 
       final futures = await Future.wait([
-        dio.get('/reports'),
+        dio.get('/reports', queryParameters: {'status': 'pending'}),
         dio.get('/admin/featured-applications'),
         dio.get('/teachers/pending'),
         dio.get('/majors/pending'),

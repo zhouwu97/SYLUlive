@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/config"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -1599,6 +1600,13 @@ func formatIconReviewResponse(r models.WaterSectionIconReview) waterSectionIconR
 
 // SubmitSectionIconReview 提交图标审核申请
 func (h *WaterSectionHandler) SubmitSectionIconReview(c *gin.Context) {
+	if !config.IsReviewEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":  "review_temporarily_disabled",
+			"error": "版块图标申请暂未开放",
+		})
+		return
+	}
 	slug := c.Param("slug")
 	userID := c.GetUint("userID")
 

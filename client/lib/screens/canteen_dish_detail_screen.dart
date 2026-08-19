@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/admin_feature_flags.dart';
 import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_theme.dart';
@@ -157,6 +158,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildUploadEntry(bool isDark, Color accent) {
+    final enabled = AdminFeatureFlags.reviewEnabled;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -170,18 +172,20 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         ),
         const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: () async {
-            final success = await showDishPhotoUploadSheet(
-              context,
-              canteenId: widget.canteenId,
-              dishId: widget.dishId,
-              dishName: widget.dishName,
-              provider: context.read<CanteenProvider>(),
-            );
-            if (success == true && mounted) {
-              await _load();
-            }
-          },
+          onPressed: enabled
+              ? () async {
+                  final success = await showDishPhotoUploadSheet(
+                    context,
+                    canteenId: widget.canteenId,
+                    dishId: widget.dishId,
+                    dishName: widget.dishName,
+                    provider: context.read<CanteenProvider>(),
+                  );
+                  if (success == true && mounted) {
+                    await _load();
+                  }
+                }
+              : null,
           style: FilledButton.styleFrom(
             backgroundColor: accent,
             foregroundColor: Colors.white,
@@ -190,8 +194,11 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
               borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
             ),
           ),
-          icon: const Icon(Icons.add_a_photo_rounded, size: 20),
-          label: const Text('上传菜品实拍'),
+          icon: Icon(
+            enabled ? Icons.add_a_photo_rounded : Icons.info_outline,
+            size: 20,
+          ),
+          label: Text(enabled ? '上传菜品实拍' : '实拍投稿暂未开放'),
         ),
       ],
     );

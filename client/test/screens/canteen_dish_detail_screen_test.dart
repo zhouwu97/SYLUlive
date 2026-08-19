@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/config/admin_feature_flags.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_dish_detail_screen.dart';
 
@@ -75,7 +76,7 @@ void main() {
     expect(find.text('上传菜品实拍'), findsNothing);
   });
 
-  testWidgets('1/3 显示上传按钮', (tester) async {
+  testWidgets('1/3 显示上传入口状态', (tester) async {
     await tester.pumpWidget(_buildApp(detailJson: '''
       {
         "dish": {"id":12,"name":"锅包肉","canteen_id":1},
@@ -86,7 +87,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('实拍图库 1 / 3'), findsOneWidget);
-    expect(find.text('上传菜品实拍'), findsOneWidget);
+    expect(
+      find.text(AdminFeatureFlags.reviewEnabled ? '上传菜品实拍' : '实拍投稿暂未开放'),
+      findsOneWidget,
+    );
     expect(find.text('实拍资料已完善'), findsNothing);
   });
 

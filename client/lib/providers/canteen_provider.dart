@@ -4,6 +4,20 @@ import 'package:dio/dio.dart';
 import '../models/canteen.dart';
 import '../models/canteen_dish.dart';
 
+class CanteenRatingSubmitResult {
+  final bool success;
+  final String? errorCode;
+  final String? errorMessage;
+  final DateTime? remoteUpdatedAt;
+
+  const CanteenRatingSubmitResult({
+    required this.success,
+    this.errorCode,
+    this.errorMessage,
+    this.remoteUpdatedAt,
+  });
+}
+
 class CanteenProvider with ChangeNotifier {
   final Dio _dio;
 
@@ -131,7 +145,7 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> rateCanteen(
+  Future<CanteenRatingSubmitResult> rateCanteen(
     int id, {
     required int star,
     required String comment,
@@ -156,15 +170,40 @@ class CanteenProvider with ChangeNotifier {
         '/canteens/$id/rate',
         data: payload,
       );
-      return response.statusCode == 200 || response.statusCode == 201;
+      final ok = response.statusCode == 200 || response.statusCode == 201;
+      return CanteenRatingSubmitResult(success: ok);
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
+      String? code;
+      DateTime? remoteTime;
       if (e.response?.data is Map) {
-        errorCode = e.response!.data['code']?.toString();
+        code = e.response!.data['code']?.toString();
+        errorCode = code;
+        final rawRemote = e.response!.data['remote_updated_at']?.toString();
+        if (rawRemote != null) {
+          remoteTime = DateTime.tryParse(rawRemote);
+        }
       }
       debugPrint('Error rating canteen: $e');
-      return false;
+      return CanteenRatingSubmitResult(
+        success: false,
+        errorCode: code,
+        errorMessage: _errorMessage,
+        remoteUpdatedAt: remoteTime,
+      );
     }
+  }
+
+  Future<Map<String, dynamic>?> adminGetDishPhotoDetail(int photoId) async {
+    try {
+      final response = await _dio.get('/canteens/dish-photos/$photoId');
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error getting dish photo detail: $e');
+    }
+    return null;
   }
 
   String? _dishesErrorMessage;

@@ -35,6 +35,12 @@ Widget _buildApp({required String detailJson, bool isAdmin = false}) {
     if (options.path == '/canteens/1/dishes/12') {
       return _json(detailJson, 200);
     }
+    if (options.path == '/canteens/dish-photos/1') {
+      return _json('{"id":1,"dish_id":12,"dish_name":"锅包肉","file_id":100,"image":"/uploads/a.jpg","uploader_id":2,"uploader_name":"真实的李同学","status":"approved","created_at":"2026-08-13"}', 200);
+    }
+    if (options.path == '/canteens/dish-photos/1/archive' && options.method == 'POST') {
+      return _json('{"message":"已下架","photo_id":1}', 200);
+    }
     return _json('{"error":"not found"}', 404);
   });
   final user = isAdmin
@@ -131,7 +137,7 @@ void main() {
     expect(find.byIcon(Icons.star_rounded), findsNothing);
   });
 
-  testWidgets('管理员身份展示下架治理提示', (tester) async {
+  testWidgets('管理员身份展示下架治理提示并长按唤起管理弹窗展示真实上传者', (tester) async {
     await tester.pumpWidget(_buildApp(
       isAdmin: true,
       detailJson: '''
@@ -139,7 +145,7 @@ void main() {
         "dish": {"id":12,"name":"锅包肉","canteen_id":1},
         "photo_count": 1,
         "photos": [
-          {"id":1,"image":"/uploads/a.jpg","created_at":"2026-08-13","nickname":"测试同学"}
+          {"id":1,"image":"/uploads/a.jpg","created_at":"2026-08-13"}
         ]
       }
     ''',
@@ -147,5 +153,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('管理员提示：长按实拍图片可进行下架治理'), findsOneWidget);
+
+    // 长按实拍图片唤起管理 Sheet
+    await tester.longPress(find.byType(Image));
+    await tester.pumpAndSettle();
+
+    expect(find.text('管理已发布实拍'), findsOneWidget);
+    expect(find.textContaining('上传者：真实的李同学'), findsOneWidget);
+    expect(find.text('下架此实拍（释放名额）'), findsOneWidget);
+
+    // 点击下架
+    await tester.tap(find.text('下架此实拍（释放名额）'));
+    await tester.pumpAndSettle();
   });
 }

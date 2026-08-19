@@ -1919,6 +1919,7 @@ func main() {
 
 		// 菜品实拍审核与菜品管理
 		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
 		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)

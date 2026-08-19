@@ -272,3 +272,114 @@ func normalizeUploadReference(raw string) (string, bool) {
 func imageDiskPath(publicPath string) (string, error) {
 	return ResolveUploadPath("", publicPath)
 }
+
+// HasActivePublicReferences 检查指定 fileID 是否仍存在有效公开业务引用。
+func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool, error) {
+	if fileID == 0 {
+		return false, nil
+	}
+	// 1. 菜品实拍 (approved)
+	if tx.Migrator().HasTable("canteen_dish_photos") {
+		var dishPhotoCount int64
+		if err := tx.Table("canteen_dish_photos").
+			Where("file_id = ? AND status = ?", fileID, models.DishPhotoStatusApproved).
+			Count(&dishPhotoCount).Error; err != nil {
+			return false, err
+		}
+		if dishPhotoCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 2. 帖子图片 (post_images join posts active)
+	if tx.Migrator().HasTable("post_images") && tx.Migrator().HasTable("posts") {
+		var postImageCount int64
+		if err := tx.Table("post_images AS pi").
+			Joins("JOIN posts p ON p.id = pi.post_id").
+			Where("pi.file_id = ? AND p.status = ?", fileID, "active").
+			Count(&postImageCount).Error; err != nil {
+			return false, err
+		}
+		if postImageCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 3. 自定义表情资产
+	if tx.Migrator().HasTable("user_emoji_assets") {
+		var emojiCount int64
+		if err := tx.Table("user_emoji_assets").Where("file_id = ?", fileID).Count(&emojiCount).Error; err != nil {
+			return false, err
+		}
+		if emojiCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 4. 路径引用（食堂封面、评价、头像等）
+	if filePath != "" {
+		cleanPath := strings.TrimPrefix(filePath, "/")
+		if tx.Migrator().HasTable("canteens") {
+			var canteenCount int64
+			if err := tx.Table("canteens").Where("image = ? OR image = ?", filePath, "/"+cleanPath).Count(&canteenCount).Error; err != nil {
+				return false, err
+			}
+			if canteenCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("canteen_ratings") {
+			var ratingCount int64
+			if err := tx.Table("canteen_ratings").Where("images LIKE ? OR images LIKE ?", "%"+filePath+"%", "%"+cleanPath+"%").Count(&ratingCount).Error; err != nil {
+				return false, err
+			}
+			if ratingCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("users") {
+			var userCount int64
+			if err := tx.Table("users").Where("avatar = ? OR avatar = ?", filePath, "/"+cleanPath).Count(&userCount).Error; err != nil {
+				return false, err
+			}
+			if userCount > 0 {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// ReconcileFilePublicAccess 在公开业务引用移除后（如实拍下架、帖子删除等），
+// 检查并回收不再被任何公开业务引用的文件权限，降级为 private。
+func ReconcileFilePublicAccess(tx *gorm.DB, fileIDs ...uint) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	for _, id := range fileIDs {
+		if id == 0 {
+			continue
+		}
+		var file models.File
+		if err := tx.Select("id", "path", "access_scope").First(&file, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		if file.AccessScope != models.FileAccessPublic {
+			continue
+		}
+		hasPublic, err := HasActivePublicReferences(tx, file.ID, file.Path)
+		if err != nil {
+			return err
+		}
+		if !hasPublic {
+			if err := tx.Model(&models.File{}).Where("id = ?", file.ID).Update("access_scope", models.FileAccessPrivate).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

@@ -1883,6 +1883,11 @@ func main() {
 
 		canteen.GET("", canteenHandler.GetList)
 
+		// 食堂发现/排行聚合接口（公开）：
+		// /home 与 /rankings 是静态段，优先于 /:id 注册避免歧义。
+		canteen.GET("/home", canteenHandler.GetHome)
+		canteen.GET("/rankings", canteenHandler.GetRankings)
+
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
 

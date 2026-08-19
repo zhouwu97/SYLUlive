@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -38,22 +39,35 @@ var validCanteenTags = map[string]string{
 	"good_value":         "性价比高",
 }
 
-// canteenRankingPriorWeight Bayesian 排名的先验权重 m。
-const canteenRankingPriorWeight = 5.0
+// canteenStatsRow 食堂聚合统计行（GetList / GetRankings / GetHome 共用）。
+// RankingScore 与 Rank 由调用方基于全局均值（globalMean）在 Go 内计算。
+//
+// 注意：排序与评分计算全部放在 Go 层，而不是 SQL。
+// 历史教训：把「全校平均分 globalMean」写成 SQL 嵌套子查询，在外层 GROUP BY 下作为
+// 算术操作数求值时，SQLite 会返回 NULL/0 导致公式退化为 (n/(n+m))*R，顺序失真。
+// Go 层计算对 SQLite/PostgreSQL 行为一致、可单元测试、可解释。
+type canteenStatsRow struct {
+	models.Canteen
+	RatingCount    int     `json:"rating_count"`
+	AverageStar    float64 `json:"average_star"`
+	DishCount      int     `json:"dish_count"`
+	DishPhotoCount int     `json:"dish_photo_count"`
+	RankingScore   float64 `json:"ranking_score"`
+}
 
-// GetList 获取食堂列表（Bayesian 综合排序，无评价食堂置后）
-func (h *CanteenHandler) GetList(c *gin.Context) {
-	type CanteenWithStats struct {
-		models.Canteen
-		RatingCount    int `json:"rating_count"`
-		AverageStar    float64 `json:"average_star"`
-		DishCount      int `json:"dish_count"`
-		DishPhotoCount int `json:"dish_photo_count"`
-	}
-	var result []CanteenWithStats
+// canteenRankingEntry 一条可排名的食堂项（含计算出的 Bayesian score 与 rank）。
+type canteenRankingEntry struct {
+	canteenStatsRow
+	RankingScore float64
+	Rank         int
+}
 
+// queryCanteenStats 拉取全部 verified 食堂的聚合统计。
+// 终端尾部保留一个稳定次序（created_at DESC, id DESC），供排序同分时作最后 tie-break。
+func (h *CanteenHandler) queryCanteenStats() ([]canteenStatsRow, error) {
+	var rows []canteenStatsRow
 	// 独立聚合子查询（rating_stats / dish_stats），避免 JOIN 膨胀污染 COUNT。
-	// dish_count 只统计至少有一张 approved 实拍的公开菜品。
+	// 不再内嵌 globalMean 子查询（SQLite 算术语境陷阱，见 canteenStatsRow 注释）。
 	err := h.db.Table("canteens").
 		Select(`canteens.*,
 			COALESCE(rs.rating_count, 0) as rating_count,
@@ -75,21 +89,94 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 		) ds ON ds.canteen_id = canteens.id`).
 		Where("canteens.verified = ?", true).
 		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_photo_count").
-		Order(`CASE WHEN rs.rating_count > 0 THEN 0 ELSE 1 END,
-			CASE WHEN rs.rating_count > 0
-				THEN (CAST(rs.rating_count AS REAL) / (rs.rating_count + ` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + `)) * rs.average_star
-					+ (` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + ` / (rs.rating_count + ` + strconv.FormatFloat(canteenRankingPriorWeight, 'f', -1, 64) + `)) * (SELECT AVG(avg_star) FROM (SELECT AVG(CAST(star AS FLOAT)) as avg_star FROM canteen_ratings GROUP BY canteen_id) t)
-				ELSE 0 END DESC,
-			rs.rating_count DESC,
-			canteens.created_at DESC`).
-		Find(&result).Error
+		Order("canteens.created_at DESC, canteens.id DESC").
+		Scan(&rows).Error
+	return rows, err
+}
 
+// globalMeanStars 计算全体「有评价」食堂的平均星级（Bayesian 公式里的 C）。
+// 与原始 SQL 语义一致：从按食堂分组的平均分再取一次均值；无评价食堂不参与。
+func globalMeanStars(rows []canteenStatsRow) float64 {
+	var sum float64
+	var n int
+	for _, r := range rows {
+		if r.RatingCount > 0 {
+			sum += r.AverageStar
+			n++
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
+}
+
+// sortRanking 按 mode 策略排序并赋 rank，tie-break 稳定（都退到 rating_count → average → created_at → id）。
+func sortRanking(entries []canteenRankingEntry, mode string) {
+	less := func(a, b canteenRankingEntry) bool {
+		var ka, kb float64
+		var na, nb int
+		switch mode {
+		case "rating":
+			ka, kb = a.AverageStar, b.AverageStar
+			na, nb = a.RatingCount, b.RatingCount
+		case "review_count":
+			na, nb = a.RatingCount, b.RatingCount
+			ka, kb = a.AverageStar, b.AverageStar
+		default: // composite（Bayesian）
+			ka, kb = a.RankingScore, b.RankingScore
+			na, nb = a.RatingCount, b.RatingCount
+		}
+		// 无评价食堂按主键 0 的分值恒低，天然置后；但评分/评价数排序时避免 0 分店误排，
+		// 统一再以「有无评价」为第一优先。
+		aRated, bRated := a.RatingCount > 0, b.RatingCount > 0
+		if aRated != bRated {
+			return aRated
+		}
+		if ka != kb {
+			return ka > kb
+		}
+		if na != nb {
+			return na > nb
+		}
+		if a.AverageStar != b.AverageStar {
+			return a.AverageStar > b.AverageStar
+		}
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.After(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	}
+	// stable sort：为同分保持 created_at 稳定次序。
+	sort.SliceStable(entries, func(i, j int) bool { return less(entries[i], entries[j]) })
+	for i := range entries {
+		entries[i].Rank = i + 1
+	}
+}
+
+// GetList 获取食堂列表（Bayesian 综合排序，无评价食堂置后）。兼容旧客户端字段。
+func (h *CanteenHandler) GetList(c *gin.Context) {
+	rows, err := h.queryCanteenStats()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂列表失败"})
 		return
 	}
+	mean := globalMeanStars(rows)
+	entries := make([]canteenRankingEntry, 0, len(rows))
+	for _, r := range rows {
+		score := services.BayesianRatingScore(r.AverageStar, float64(r.RatingCount), mean, services.BayesianPriorWeight)
+		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
+	}
+	sortRanking(entries, "composite")
 
-	c.JSON(http.StatusOK, result)
+	// 返回结构保持旧客户端兼容（顶层数组，新增 ranking_score 字段旧端忽略）。
+	out := make([]canteenStatsRow, 0, len(entries))
+	for _, e := range entries {
+		row := e.canteenStatsRow
+		row.RankingScore = e.RankingScore
+		out = append(out, row)
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 // GetDetail 食堂详情（含评价列表）
@@ -632,6 +719,7 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 
 	rating.RecommendedDishNames = cleanedDishNames
+	canteenDiscoveryCache.Invalidate() // 评价变更影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": rating})
 }
 
@@ -679,6 +767,7 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 		return
 	}
 
+	canteenDiscoveryCache.Invalidate() // 食堂删除影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
@@ -737,6 +826,7 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		return
 	}
 	canteen.Verified = true
+	canteenDiscoveryCache.Invalidate() // 新食堂公开影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "审核已通过", "canteen": canteen})
 }
 
@@ -781,6 +871,7 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 		}
 		return
 	}
+	canteenDiscoveryCache.Invalidate() // 驳回食堂影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回"})
 }
 
@@ -866,6 +957,7 @@ func (h *CanteenHandler) UpdateImage(c *gin.Context) {
 	}
 
 	updatedCanteen, _ := c.Get("updated_canteen")
+	canteenDiscoveryCache.Invalidate() // 封面变更影响排行/首页缩略图
 	c.JSON(http.StatusOK, gin.H{
 		"message": "食堂图片已更新",
 		"canteen": updatedCanteen,

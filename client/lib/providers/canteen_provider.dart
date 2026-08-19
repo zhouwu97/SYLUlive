@@ -253,7 +253,7 @@ class CanteenProvider with ChangeNotifier {
       );
       if (response.statusCode == 201) {
         return (response.data as Map<String, dynamic>)['message']?.toString() ??
-            '已提交审核';
+            '实拍已上传';
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);

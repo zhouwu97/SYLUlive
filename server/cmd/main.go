@@ -417,6 +417,9 @@ func main() {
 	if err := models.EnsureCanteenDishSchema(db); err != nil {
 		log.Fatal("食堂菜品图库约束迁移失败:", err)
 	}
+	if err := models.MigratePendingCanteenDishPhotos(db); err != nil {
+		log.Fatal("待审核实拍数据迁移失败:", err)
+	}
 	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
 		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
 	}

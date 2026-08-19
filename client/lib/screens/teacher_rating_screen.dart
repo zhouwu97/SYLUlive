@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
-import '../config/admin_feature_flags.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
@@ -185,12 +184,11 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         elevation: 0,
         title: const Text('避雷'),
         actions: [
-          if (AdminFeatureFlags.reviewEnabled)
-            IconButton(
-              icon: const Icon(Icons.person_add),
-              tooltip: '添加教师',
-              onPressed: _addTeacher,
-            ),
+          IconButton(
+            icon: const Icon(Icons.person_add),
+            tooltip: '添加教师',
+            onPressed: _addTeacher,
+          ),
         ],
       ),
       body: Stack(

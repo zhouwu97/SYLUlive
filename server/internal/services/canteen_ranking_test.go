@@ -3,6 +3,7 @@ package services
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 // TestBayesianRatingScore 验证 Bayesian 公式在截图场景（个位评价数）下单调且可解释。
@@ -95,4 +96,40 @@ func TestBayesianScoreTo100(t *testing.T) {
 		}
 	}
 }
+
+func TestCanteenDiscoveryCacheRejectsStaleGeneration(t *testing.T) {
+	cache := NewCanteenDiscoveryCache(time.Minute)
+
+	generation := cache.Generation()
+
+	cache.Invalidate()
+
+	if cache.SetIfGeneration(
+		"home",
+		"stale",
+		generation,
+	) {
+		t.Fatal("stale generation should not be cached")
+	}
+
+	if _, ok := cache.Get("home"); ok {
+		t.Fatal("stale value must not exist")
+	}
+}
+
+func TestCanteenDiscoveryCacheAcceptsMatchingGeneration(t *testing.T) {
+	cache := NewCanteenDiscoveryCache(time.Minute)
+
+	generation := cache.Generation()
+
+	if !cache.SetIfGeneration("home", "fresh", generation) {
+		t.Fatal("matching generation should be accepted")
+	}
+
+	val, ok := cache.Get("home")
+	if !ok || val != "fresh" {
+		t.Fatalf("expected 'fresh', got %v", val)
+	}
+}
+
 

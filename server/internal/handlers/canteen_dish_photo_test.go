@@ -32,6 +32,8 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		&models.File{},
 		&models.FileUploadGrant{},
 		&models.Canteen{},
+		&models.CanteenRating{},
+		&models.CanteenRatingVote{},
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.AdminLog{},

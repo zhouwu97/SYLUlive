@@ -3,21 +3,25 @@ import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
 import '../../services/emoji_favorite_service.dart';
+import '../../utils/private_message_media_cache.dart';
 
 class FavoriteImageComposerPreview extends StatelessWidget {
   const FavoriteImageComposerPreview({
     super.key,
     required this.favorite,
     required this.onRemove,
+    this.httpHeaders = const <String, String>{},
     this.enabled = true,
   });
 
   final EmojiFavoriteItem favorite;
   final VoidCallback onRemove;
+  final Map<String, String> httpHeaders;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final imageUrl = ApiConstants.fullUrl(favorite.imageUrl ?? '');
     return Container(
       key: const ValueKey('favorite-image-composer-preview'),
       height: 76,
@@ -32,7 +36,10 @@ class FavoriteImageComposerPreview extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: CachedNetworkImage(
-              imageUrl: ApiConstants.fullUrl(favorite.imageUrl ?? ''),
+              imageUrl: imageUrl,
+              cacheKey: PrivateMessageMediaCache.cacheKeyFor(imageUrl),
+              cacheManager: PrivateMessageMediaCache.instance.manager,
+              httpHeaders: httpHeaders,
               width: 60,
               height: 60,
               fit: BoxFit.cover,

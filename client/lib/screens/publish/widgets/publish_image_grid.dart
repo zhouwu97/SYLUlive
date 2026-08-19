@@ -2,24 +2,25 @@ import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../config/api_constants.dart';
-import '../../../models/post.dart';
+import '../../../models/publish_image_item.dart';
+import '../../../theme/app_motion.dart';
 import 'dashed_outline.dart';
 
-/// 发布表单图片网格。
+/// 发布表单图片网格（C-2 统一模型）。
 ///
-/// 以三列方形网格展示已上传图片和本地新选图片。第一张图片会标记为「封面」。
-/// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片。
+/// 以三列方形网格展示统一 [PublishImageItem] 列表（服务器已有图 + 本地新选图可混合）。
+/// 第一张标记「封面」。支持长按拖拽排序（Add 按钮不参与）。
+/// 空状态展示添加入口，水帖页渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
   static const Color _marketAccent = Color(0xFFFF7A45);
 
-  final List<PostImage> existingImages;
-  final List<XFile> selectedImages;
+  final List<PublishImageItem> images;
   final bool canAddMore;
-  final VoidCallback onAddImage;
-  final void Function(int index) onRemoveNewImage;
-  final void Function(int index) onRemoveExistingImage;
+  final VoidCallback onAdd;
+  final ValueChanged<String> onRemove;
+  final void Function(String draggedId, String targetId) onReorder;
+  final ValueChanged<String>? onRetry;
   final void Function(int index)? onPreviewImage;
   final bool compact;
   final bool singleSlot;
@@ -28,12 +29,12 @@ class PublishImageGrid extends StatelessWidget {
 
   const PublishImageGrid({
     super.key,
-    required this.existingImages,
-    required this.selectedImages,
+    required this.images,
     required this.canAddMore,
-    required this.onAddImage,
-    required this.onRemoveNewImage,
-    required this.onRemoveExistingImage,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onReorder,
+    this.onRetry,
     this.onPreviewImage,
     this.compact = false,
     this.singleSlot = false,
@@ -41,7 +42,7 @@ class PublishImageGrid extends StatelessWidget {
     this.accent,
   });
 
-  int get totalImages => existingImages.length + selectedImages.length;
+  int get totalImages => images.length;
 
   double get _spacing => compact ? 8.0 : 10.0;
   double get _radius => compact ? 10.0 : 12.0;
@@ -80,101 +81,189 @@ class PublishImageGrid extends StatelessWidget {
       ),
       itemCount: cellCount,
       itemBuilder: (context, index) {
-        // ---- 添加入口：空状态在首位，有图片时在末尾 ----
+        // ---- 添加入口：空状态在首位，有图片时在末尾；不参与排序 ----
         final isAddSlot = (totalImages == 0) || (index == totalImages);
         if (isAddSlot) {
           return _buildAddCell(isDark);
         }
 
-        // ---- 图片缩略图 ----
-        final isExisting = index < existingImages.length;
-        final isFirst = index == 0;
-
-        return GestureDetector(
-          onTap: onPreviewImage == null ? null : () => onPreviewImage!(index),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(_radius),
-                child: isExisting
-                    ? CachedNetworkImage(
-                        imageUrl:
-                            ApiConstants.fullUrl(existingImages[index].url),
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.broken_image),
-                        ),
-                      )
-                    : Image.file(
-                        File(
-                            selectedImages[index - existingImages.length].path),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.broken_image),
-                        ),
-                      ),
-              ),
-
-              // 封面角标
-              if (isFirst)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      '封面',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
-                    ),
-                  ),
-                ),
-
-              // 删除按钮
-              Positioned(
-                top: 4,
-                right: 4,
-                child: GestureDetector(
-                  onTap: () => isExisting
-                      ? onRemoveExistingImage(index)
-                      : onRemoveNewImage(index - existingImages.length),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                      size: 14,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
+        final item = images[index];
+        return _buildDraggableItem(context, item, index, isDark);
       },
     );
   }
 
+  // ---- 可拖拽图片项（长按拖动，drop 到目标位交换） ----
+
+  Widget _buildDraggableItem(
+    BuildContext context,
+    PublishImageItem item,
+    int index,
+    bool isDark,
+  ) {
+    final thumbnail = _buildThumbnail(context, item, index, isDark);
+    return LongPressDraggable<String>(
+      data: item.id,
+      hapticFeedbackOnStart: false,
+      delay: const Duration(milliseconds: 500), // 长按启动拖动，避免普通点击即拖
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.85,
+          child: SizedBox(width: 100, height: 100, child: thumbnail),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.4, child: thumbnail),
+      child: DragTarget<String>(
+        onWillAcceptWithDetails: (_) => true,
+        onAcceptWithDetails: (details) {
+          if (details.data == item.id) return;
+          onReorder(details.data, item.id);
+        },
+        builder: (context, candidates, rejected) {
+          if (MediaQuery.disableAnimationsOf(context)) {
+            return thumbnail;
+          }
+          final isOver = candidates.isNotEmpty;
+          return AnimatedContainer(
+            duration: AppMotion.fast,
+            decoration: BoxDecoration(
+              border: isOver
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(_radius),
+            ),
+            child: thumbnail,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(
+    BuildContext context,
+    PublishImageItem item,
+    int index,
+    bool isDark,
+  ) {
+    final isFirst = index == 0;
+    return GestureDetector(
+      onTap: onPreviewImage == null ? null : () => onPreviewImage!(index),
+      child: Stack(
+        key: ValueKey(item.id),
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(_radius),
+            child: switch (item.source) {
+              PublishImageSource.existing => CachedNetworkImage(
+                  imageUrl: ApiConstants.fullUrl(item.existingImage!.url),
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.broken_image),
+                  ),
+                ),
+              PublishImageSource.local => Image.file(
+                  File(item.localFile!.path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.broken_image),
+                  ),
+                ),
+            },
+          ),
+
+          // 上传状态覆盖层（仅本地新图；C-3）
+          if (item.source == PublishImageSource.local &&
+              item.uploadState == PublishImageUploadState.uploading)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      value: item.progress > 0 ? item.progress : null,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (item.source == PublishImageSource.local &&
+              item.uploadState == PublishImageUploadState.failed)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: onRetry == null ? null : () => onRetry!(item.id),
+                child: const ColoredBox(
+                  color: Colors.black45,
+                  child: Center(
+                    child: Icon(Icons.refresh_rounded,
+                        color: Colors.white, size: 26),
+                  ),
+                ),
+              ),
+            ),
+
+          // 封面角标
+          if (isFirst)
+            Positioned(
+              top: 6,
+              left: 6,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  '封面',
+                  style: TextStyle(color: Colors.white, fontSize: 11),
+                ),
+              ),
+            ),
+
+          // 删除按钮
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: () => onRemove(item.id),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 单槽模式（市场） ----
+
   Widget _buildSingleSlot(BuildContext context, bool isDark) {
-    final existing = existingImages.isNotEmpty ? existingImages.first : null;
-    final selected = existing == null && selectedImages.isNotEmpty
-        ? selectedImages.first
-        : null;
-    final hasImage = existing != null || selected != null;
+    final item = images.isNotEmpty ? images.first : null;
+    final hasImage = item != null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -193,7 +282,7 @@ class PublishImageGrid extends StatelessWidget {
             child: GestureDetector(
               onTap: hasImage
                   ? (onPreviewImage == null ? null : () => onPreviewImage!(0))
-                  : onAddImage,
+                  : onAdd,
               child: DashedOutline(
                 color: hasImage
                     ? Colors.transparent
@@ -230,11 +319,7 @@ class PublishImageGrid extends StatelessWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: hasImage
-                      ? _buildSinglePreview(
-                          context: context,
-                          existing: existing,
-                          selected: selected,
-                        )
+                      ? _buildSinglePreview(context, item, isDark)
                       : _buildSingleAddContent(isDark),
                 ),
               ),
@@ -245,26 +330,27 @@ class PublishImageGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildSinglePreview({
-    required BuildContext context,
-    required PostImage? existing,
-    required XFile? selected,
-  }) {
+  Widget _buildSinglePreview(
+    BuildContext context,
+    PublishImageItem item,
+    bool isDark,
+  ) {
     return Stack(
+      key: ValueKey(item.id),
       fit: StackFit.expand,
       children: [
-        if (existing != null)
-          CachedNetworkImage(
-            imageUrl: ApiConstants.fullUrl(existing.url),
-            fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => _buildBrokenImage(),
-          )
-        else
-          Image.file(
-            File(selected!.path),
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildBrokenImage(),
-          ),
+        switch (item.source) {
+          PublishImageSource.existing => CachedNetworkImage(
+              imageUrl: ApiConstants.fullUrl(item.existingImage!.url),
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _buildBrokenImage(),
+            ),
+          PublishImageSource.local => Image.file(
+              File(item.localFile!.path),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildBrokenImage(),
+            ),
+        },
         Positioned(
           top: 10,
           left: 10,
@@ -289,9 +375,7 @@ class PublishImageGrid extends StatelessWidget {
           top: 8,
           right: 8,
           child: GestureDetector(
-            onTap: () => existing != null
-                ? onRemoveExistingImage(0)
-                : onRemoveNewImage(0),
+            onTap: () => onRemove(item.id),
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
@@ -372,7 +456,7 @@ class PublishImageGrid extends StatelessWidget {
 
   Widget _buildAddCell(bool isDark) {
     return GestureDetector(
-      onTap: onAddImage,
+      onTap: onAdd,
       child: DashedOutline(
         color: isDark
             ? _marketAccent.withValues(alpha: 0.55)

@@ -42,6 +42,7 @@ type AndroidNotification struct {
 	Title     string                 `json:"title"`
 	Extras    map[string]interface{} `json:"extras,omitempty"`
 	ChannelID string                 `json:"channel_id,omitempty"`
+	LargeIcon string                 `json:"large_icon,omitempty"`
 }
 
 // NewJPushClient 初始化极光客户端
@@ -54,6 +55,10 @@ func NewJPushClient(appKey, masterSecret string) *JPushClient {
 
 // SendNotification 推送通知给指定设备
 func (c *JPushClient) SendNotification(rid, title, alert string, extras map[string]interface{}) error {
+	var largeIcon string
+	if avatar, ok := extras["sender_avatar"].(string); ok && avatar != "" {
+		largeIcon = avatar
+	}
 	return c.send(PushPayload{
 		Platform: "android",
 		Audience: Audience{
@@ -62,9 +67,10 @@ func (c *JPushClient) SendNotification(rid, title, alert string, extras map[stri
 		Notification: Notification{
 			Alert: alert,
 			Android: AndroidNotification{
-				Alert:  alert,
-				Title:  title,
-				Extras: extras,
+				Alert:     alert,
+				Title:     title,
+				Extras:    extras,
+				LargeIcon: largeIcon,
 			},
 		},
 	})
@@ -72,6 +78,10 @@ func (c *JPushClient) SendNotification(rid, title, alert string, extras map[stri
 
 // SendAliasNotification pushes a notification to the given JPush alias.
 func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras map[string]interface{}) error {
+	var largeIcon string
+	if avatar, ok := extras["sender_avatar"].(string); ok && avatar != "" {
+		largeIcon = avatar
+	}
 	return c.send(PushPayload{
 		Platform: "android",
 		Audience: Audience{
@@ -84,6 +94,7 @@ func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras m
 				Title:     title,
 				Extras:    extras,
 				ChannelID: "private_messages",
+				LargeIcon: largeIcon,
 			},
 		},
 	})

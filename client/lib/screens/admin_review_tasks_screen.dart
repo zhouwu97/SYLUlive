@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/app_page_app_bar.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -288,7 +293,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.amber.withOpacity(0.2),
+              color: Colors.amber.withValues(alpha: 0.2),
               child: Text(
                 _warningMessage!,
                 style: TextStyle(
@@ -304,8 +309,79 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('审核代办')),
-      body: body,
+      appBar: const AppPageAppBar(title: Text('审核代办')),
+      body: SafeArea(
+        top: false,
+        child: body,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.xxl),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF173B36), AppColors.surfaceSecondaryDark]
+              : const [Color(0xFFEAF6F3), Colors.white],
+        ),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : AppColors.borderNormalLight,
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: AppColors.brandPrimary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.task_alt_rounded,
+              color: AppColors.brandPrimary,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            '审核队列已清空',
+            style: AppTextStyles.titleMedium.copyWith(
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '当前没有需要你处理的教师、专业或管理员协作事项。',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.62)
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          FilledButton.tonalIcon(
+            onPressed: _loadData,
+            style: FilledButton.styleFrom(
+              backgroundColor: isDark
+                  ? AppColors.brandPrimary.withValues(alpha: 0.24)
+                  : const Color(0xFFE5F4F1),
+              foregroundColor:
+                  isDark ? const Color(0xFF8DE0D3) : AppColors.brandPrimary,
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('刷新任务'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -430,7 +506,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: const Color(0xFF6366F1),
+              backgroundColor: AppColors.brandPrimary,
               child: Text((t['name'] as String? ?? '?').substring(0, 1)),
             ),
             title: Text(t['name'] ?? ''),
@@ -486,13 +562,39 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       );
     }
     if (items.isEmpty) {
-      return Center(
-        child: Text(
-          '暂无管理员代办',
-          style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
+      return RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.section,
+            AppSpacing.lg,
+            MediaQuery.viewPaddingOf(context).bottom + AppSpacing.xxl,
+          ),
+          children: [_buildEmptyState(isDark)],
         ),
       );
     }
-    return ListView(padding: const EdgeInsets.all(12), children: items);
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            MediaQuery.viewPaddingOf(context).bottom + AppSpacing.xxl,
+          ),
+          children: items,
+        ),
+      ),
+    );
   }
 }

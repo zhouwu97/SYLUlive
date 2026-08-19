@@ -248,7 +248,7 @@ func (h *AnnouncementHandler) GetUnread(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	uid, ok := userID.(uint)
 	if !exists || !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return
 	}
 
@@ -276,7 +276,7 @@ func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	uid, ok := userID.(uint)
 	if !exists || !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return
 	}
 
@@ -300,7 +300,7 @@ func (h *AnnouncementHandler) GetUnreadCount(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	uid, ok := userID.(uint)
 	if !exists || !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return
 	}
 
@@ -347,7 +347,7 @@ func (h *AnnouncementHandler) MarkAllRead(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	uid, ok := userID.(uint)
 	if !exists || !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return
 	}
 

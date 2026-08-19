@@ -308,9 +308,6 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 			"edu_college":                    result.College,
 			"edu_major":                      result.Major,
 		}
-		if user.StudentID != studentID || user.StudentVerifiedAt == nil {
-			updates["token_version"] = gorm.Expr("token_version + 1")
-		}
 		if user.AccountStatus == "registration_pending" {
 			updates["account_status"] = "active"
 		}
@@ -474,6 +471,7 @@ func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":         msg,
+			"code":          "EDU_BINDING_REJECTED",
 			"upstream_code": svcErr.Code,
 		})
 	case http.StatusServiceUnavailable, http.StatusBadGateway:

@@ -21,6 +21,96 @@ class CompetitionCategory {
   }
 }
 
+class CompetitionCatalogPackage {
+  final int id;
+  final String datasetVersion;
+  final int revision;
+  final String packageHash;
+  final String lifecycleStatus;
+  final String publishStatus;
+  final bool productionLoadAllowed;
+  final int itemCount;
+  final String validationStatus;
+  final String sourceFilename;
+  final bool isActive;
+  final int? previousPackageId;
+
+  const CompetitionCatalogPackage({
+    required this.id,
+    required this.datasetVersion,
+    required this.revision,
+    required this.packageHash,
+    required this.lifecycleStatus,
+    required this.publishStatus,
+    required this.productionLoadAllowed,
+    required this.itemCount,
+    required this.validationStatus,
+    required this.sourceFilename,
+    required this.isActive,
+    this.previousPackageId,
+  });
+
+  factory CompetitionCatalogPackage.fromJson(Map<String, dynamic> json) {
+    return CompetitionCatalogPackage(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      datasetVersion: '${json['dataset_version'] ?? ''}',
+      revision: (json['revision'] as num?)?.toInt() ?? 0,
+      packageHash: '${json['package_hash'] ?? ''}',
+      lifecycleStatus: '${json['lifecycle_status'] ?? ''}',
+      publishStatus: '${json['publish_status'] ?? ''}',
+      productionLoadAllowed: json['production_load_allowed'] == true,
+      itemCount: (json['item_count'] as num?)?.toInt() ?? 0,
+      validationStatus: '${json['validation_status'] ?? ''}',
+      sourceFilename: '${json['source_filename'] ?? ''}',
+      isActive: json['is_active'] == true,
+      previousPackageId: (json['previous_package_id'] as num?)?.toInt(),
+    );
+  }
+}
+
+class CompetitionAdminCatalogSummary {
+  final int activeCatalog;
+  final int activePublished;
+  final int displayEnabled;
+  final int candidateEnabled;
+  final int parentRelationships;
+  final int manual;
+  final int canonical;
+  final int superseded;
+  final int resolvedDuplicates;
+  final int allDatabaseRows;
+
+  const CompetitionAdminCatalogSummary({
+    this.activeCatalog = 0,
+    this.activePublished = 0,
+    this.displayEnabled = 0,
+    this.candidateEnabled = 0,
+    this.parentRelationships = 0,
+    this.manual = 0,
+    this.canonical = 0,
+    this.superseded = 0,
+    this.resolvedDuplicates = 0,
+    this.allDatabaseRows = 0,
+  });
+
+  factory CompetitionAdminCatalogSummary.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    int count(String key) => (value[key] as num?)?.toInt() ?? 0;
+    return CompetitionAdminCatalogSummary(
+      activeCatalog: count('active_catalog'),
+      activePublished: count('active_published'),
+      displayEnabled: count('display_enabled'),
+      candidateEnabled: count('candidate_enabled'),
+      parentRelationships: count('parent_relationships'),
+      manual: count('manual'),
+      canonical: count('canonical'),
+      superseded: count('superseded'),
+      resolvedDuplicates: count('resolved_duplicates'),
+      allDatabaseRows: count('all_database_rows'),
+    );
+  }
+}
+
 class CompetitionMatchDimensions {
   final String eligibility;
   final String major;
@@ -94,6 +184,9 @@ class CompetitionRecommendationGates {
 class CompetitionEvent {
   final int id;
   final String competitionId;
+  final int? catalogPackageId;
+  final String parentCompetitionId;
+  final int? parentEventId;
   final String title;
   final String summary;
   final CompetitionCategory? primaryCategory;
@@ -152,12 +245,23 @@ class CompetitionEvent {
   final String evidenceSubgrade;
   final String datasetVersion;
   final String recordHash;
+  final String managementSource;
+  final bool mutable;
+  final bool searchDisplayAllowed;
+  final bool candidatePoolAllowed;
+  final bool personalizedRankingAllowed;
+  final bool strongRecommendationEligible;
+  final String recommendationPermissionLevel;
+  final String aiMode;
   final CompetitionRecommendationGates gates;
 
   CompetitionEvent({
     required this.id,
     required this.title,
     this.competitionId = '',
+    this.catalogPackageId,
+    this.parentCompetitionId = '',
+    this.parentEventId,
     this.summary = '',
     this.primaryCategory,
     this.tags = const [],
@@ -215,6 +319,14 @@ class CompetitionEvent {
     this.evidenceSubgrade = '',
     this.datasetVersion = '',
     this.recordHash = '',
+    this.managementSource = '',
+    this.mutable = true,
+    this.searchDisplayAllowed = false,
+    this.candidatePoolAllowed = false,
+    this.personalizedRankingAllowed = false,
+    this.strongRecommendationEligible = false,
+    this.recommendationPermissionLevel = 'low',
+    this.aiMode = 'disabled',
     this.gates = const CompetitionRecommendationGates(),
   });
 
@@ -232,6 +344,9 @@ class CompetitionEvent {
     return CompetitionEvent(
       id: json['id'] ?? 0,
       competitionId: json['competition_id'] ?? '',
+      catalogPackageId: (json['catalog_package_id'] as num?)?.toInt(),
+      parentCompetitionId: json['parent_competition_id'] ?? '',
+      parentEventId: (json['parent_event_id'] as num?)?.toInt(),
       title: json['title'] ?? '',
       summary: json['summary'] ?? '',
       primaryCategory: json['primary_category'] != null
@@ -297,6 +412,16 @@ class CompetitionEvent {
       evidenceSubgrade: json['evidence_subgrade'] ?? '',
       datasetVersion: json['dataset_version'] ?? '',
       recordHash: json['record_hash'] ?? '',
+      managementSource: json['management_source'] ?? '',
+      mutable: json.containsKey('mutable') ? json['mutable'] == true : true,
+      searchDisplayAllowed: json['search_display_allowed'] == true,
+      candidatePoolAllowed: json['candidate_pool_allowed'] == true,
+      personalizedRankingAllowed: json['personalized_ranking_allowed'] == true,
+      strongRecommendationEligible:
+          json['strong_recommendation_eligible'] == true,
+      recommendationPermissionLevel:
+          json['recommendation_permission_level'] ?? 'low',
+      aiMode: json['ai_mode'] ?? 'disabled',
       gates: CompetitionRecommendationGates.fromJson(
         json['gates'] is Map
             ? Map<String, dynamic>.from(json['gates'] as Map)
@@ -362,6 +487,10 @@ class CompetitionEvent {
     return {
       'id': id,
       if (competitionId.isNotEmpty) 'competition_id': competitionId,
+      if (catalogPackageId != null) 'catalog_package_id': catalogPackageId,
+      if (parentCompetitionId.isNotEmpty)
+        'parent_competition_id': parentCompetitionId,
+      if (parentEventId != null) 'parent_event_id': parentEventId,
       'title': title,
       'summary': summary,
       if (primaryCategory != null)
@@ -439,6 +568,16 @@ class CompetitionEvent {
       if (questionsToConfirm.isNotEmpty)
         'questions_to_confirm': questionsToConfirm,
       if (evidenceSubgrade.isNotEmpty) 'evidence_subgrade': evidenceSubgrade,
+      if (datasetVersion.isNotEmpty) 'dataset_version': datasetVersion,
+      if (recordHash.isNotEmpty) 'record_hash': recordHash,
+      if (managementSource.isNotEmpty) 'management_source': managementSource,
+      'mutable': mutable,
+      'search_display_allowed': searchDisplayAllowed,
+      'candidate_pool_allowed': candidatePoolAllowed,
+      'personalized_ranking_allowed': personalizedRankingAllowed,
+      'strong_recommendation_eligible': strongRecommendationEligible,
+      'recommendation_permission_level': recommendationPermissionLevel,
+      'ai_mode': aiMode,
       if (datasetVersion.isNotEmpty) 'dataset_version': datasetVersion,
       if (recordHash.isNotEmpty) 'record_hash': recordHash,
       'gates': {

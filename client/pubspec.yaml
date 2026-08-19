@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.6.9+1609
+version: 1.6.10+1610
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -14,6 +14,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   provider: ^6.1.1
   dio: ^5.10.0
+  visibility_detector: ^0.4.0
   cached_network_image: ^3.3.1
   flutter_cache_manager: ^3.4.1
   hive: ^2.2.3
@@ -21,7 +22,7 @@ dependencies:
   sqflite: ^2.3.2
   flutter_secure_storage: ^9.0.0
   image_picker: ^1.0.7
-  photo_manager: ^3.0.0
+  photo_manager: 3.9.0
   image_cropper: ^8.0.2
   shared_preferences: ^2.2.2
   intl: ^0.20.2
@@ -57,6 +58,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  file: ^7.0.0
+  image_picker_platform_interface: ^2.11.1
 
 flutter:
   uses-material-design: true

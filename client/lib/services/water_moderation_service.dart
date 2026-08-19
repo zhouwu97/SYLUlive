@@ -43,15 +43,18 @@ class WaterModerationService {
 
   // ── 加精 ──
 
-  Future<void> featurePost({
+  /// 返回响应体（含服务端回传的 home_application 审核状态），失败时抛出 DioException。
+  Future<Map<String, dynamic>?> featurePost({
     required String sectionSlug,
     required int postId,
     required String reason,
   }) async {
-    await _dio.post(
+    final response = await _dio.post(
       '${_base(sectionSlug)}/posts/$postId/feature',
       data: {'reason': reason},
     );
+    final data = response.data;
+    return data is Map<String, dynamic> ? data : null;
   }
 
   Future<void> unfeaturePost({

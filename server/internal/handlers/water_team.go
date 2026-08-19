@@ -67,12 +67,12 @@ func (h *WaterTeamHandler) NotifyDeadlineSoon() {
 func (h *WaterTeamHandler) currentUserOr401(c *gin.Context) (uint, bool) {
 	val, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return 0, false
 	}
 	userID, ok := val.(uint)
 	if !ok || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份", "code": "authentication_required"})
 		return 0, false
 	}
 	return userID, true
@@ -410,7 +410,7 @@ func validateTeamRoles(roles []string) ([]string, error) {
 }
 
 // validateTeamImageFiles 校验组队图片引用，避免关联不存在或非图片文件。
-func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint) error {
+func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint, ownerID uint) error {
 	if len(fileIDs) > 9 {
 		return &teamInputError{message: "最多上传9张图片"}
 	}
@@ -437,6 +437,18 @@ func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint) error {
 	for _, file := range files {
 		if !strings.HasPrefix(strings.ToLower(file.MimeType), "image/") {
 			return &teamInputError{message: "仅支持图片文件"}
+		}
+		if file.AccessScope == models.FileAccessPublic || file.UploaderID == ownerID {
+			continue
+		}
+		var grants int64
+		if err := tx.Model(&models.FileUploadGrant{}).
+			Where("file_id = ? AND user_id = ?", file.ID, ownerID).
+			Count(&grants).Error; err != nil {
+			return err
+		}
+		if grants == 0 {
+			return &teamInputError{message: "无权引用该图片文件"}
 		}
 	}
 	return nil
@@ -858,7 +870,7 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateTeamImageFiles(h.db, req.ImageFileIDs); err != nil {
+	if err := validateTeamImageFiles(h.db, req.ImageFileIDs, userID); err != nil {
 		var inputErr *teamInputError
 		if errors.As(err, &inputErr) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": inputErr.Error()})
@@ -873,6 +885,9 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 
 	var detail TeamRecruitmentDetail
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := services.ClaimPublicImageFiles(tx, req.ImageFileIDs); err != nil {
+			return err
+		}
 		// 找到系统内部 team_recruitment 标签
 		sectionID, tagID, tagErr := h.ensureTeamTag(tx, sectionSlug)
 		if tagErr != nil {
@@ -1040,8 +1055,13 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 			Count(&acceptedCount).Error; err != nil {
 			return err
 		}
-		if err := validateTeamImageFiles(tx, req.ImageFileIDs); req.ImageFileIDs != nil && err != nil {
+		if err := validateTeamImageFiles(tx, req.ImageFileIDs, userID); req.ImageFileIDs != nil && err != nil {
 			return err
+		}
+		if req.ImageFileIDs != nil {
+			if err := services.ClaimPublicImageFiles(tx, req.ImageFileIDs); err != nil {
+				return err
+			}
 		}
 
 		updates := map[string]interface{}{}

@@ -1,0 +1,115 @@
+{
+  "schema_version": "sylu-ai-kb-release/v1",
+  "knowledge_base": "sylu-academic-policy",
+  "version": "v0.8",
+  "generated_at": "2026-07-29T06:17:51Z",
+  "bundle_file": "SYLUlive_AI学生资助政策完整导入包_v0.8.jsonl",
+  "bundle_sha256": "4bf51c7cde37e3e0d36a4e8de66a11d4bb7f91548fe384af323d6a1beddea3ab",
+  "document_count": 9,
+  "chunking_version": "langchain-chinese-policy-v1",
+  "embedding_model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "embedding_model_version": "paraphrase-multilingual-minilm-l12-v2-384-v1",
+  "embedding_dimensions": 384,
+  "supersedes_versions": [
+    "v0.7"
+  ],
+  "documents": [
+    {
+      "document_key": "bundle-001",
+      "title": "沈阳理工大学本科生奖学金评审办法（试行）",
+      "content_hash": "c3e274e363fa8c2c8d493f9964231978102dbea486df05f0ae1f6c0194d77ae2",
+      "expected_document_type": "school_undergraduate_scholarship_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "关于印发《沈阳理工大学本科生奖学金评审办法（试行）》的通知",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2022-05-23",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-002",
+      "title": "沈阳理工大学家庭经济困难学生认定政策（2023）",
+      "content_hash": "c34f08a83325fefe4dadd4ec4a076dac7a26aa68e708007b9f1fb57b105c3f3c",
+      "expected_document_type": "school_financial_hardship_recognition_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2023 年家庭经济困难学生认定办法",
+      "department": "沈阳理工大学学生处",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-003",
+      "title": "沈阳理工大学校助学金与临时困难补助政策（2023）",
+      "content_hash": "3b56200ba9a87819fe62b3ba8be6ea9c10ec5d8138fcb4bfe62c2406e17a73bc",
+      "expected_document_type": "school_grant_and_temporary_aid_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2023 年校助学金与临时困难补助办法",
+      "department": "沈阳理工大学学生处",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-004",
+      "title": "沈阳理工大学国家助学金评审政策（2022）",
+      "content_hash": "36d3fd799d19fac5b0ff0983767c80222ca39986bd65cf63a3cd718608bb47fc",
+      "expected_document_type": "school_national_grant_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2022 年国家助学金评审办法",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2022-03-01",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-005",
+      "title": "沈阳理工大学国家励志奖学金评审政策（2022）",
+      "content_hash": "12132b8c03b7fad28afcd4f57d0d444f34ceaaf37e9d36cadfe907882a3e99a2",
+      "expected_document_type": "school_national_inspirational_scholarship_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2022 年国家励志奖学金评审办法",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2022-03-01",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-006",
+      "title": "沈阳理工大学国家（省政府）奖学金评审政策（2022）",
+      "content_hash": "5645492dd8a11cfe27dafe0f3f819f24b1dfdeb79e0d98720685c7b432eaf49f",
+      "expected_document_type": "school_national_scholarship_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2022 年国家（省政府）奖学金评审办法",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2022-03-01",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-007",
+      "title": "沈阳理工大学孤儿学生资助政策",
+      "content_hash": "aff48a73bd4a8ae4670c9d7ed8090ef0bd51e564511837ab7162ee6ec18d66a4",
+      "expected_document_type": "school_orphan_aid_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "孤儿学生学费住宿费减免细则",
+      "department": "沈阳理工大学学生处",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-008",
+      "title": "国家助学贷款政策调整（2024）",
+      "content_hash": "2a615354cd731447b3cc37361de42fa2477f5cb3d59139832b452c1c8d59b837",
+      "expected_document_type": "school_student_loan_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2024 年国家助学贷款政策调整通知",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2024-09-01",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-009",
+      "title": "沈阳理工大学勤工助学管理政策（2021）",
+      "content_hash": "1ae3605dc6fe1cd0ab0d49c0758aa057d8a3d9260635331252d79010c5a95b31",
+      "expected_document_type": "school_work_study_policy",
+      "source_type": "official_transcript",
+      "source_file_name": "2021 年勤工助学办法",
+      "department": "沈阳理工大学学生处",
+      "effective_from": "2021-05-25",
+      "currentness": "current"
+    }
+  ],
+  "unresolved_items": []
+}

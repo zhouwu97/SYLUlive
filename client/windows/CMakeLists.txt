@@ -10,6 +10,11 @@ set(BINARY_NAME "shenliyuan")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# flutter_inappwebview_windows 0.6.0 仍使用 CMP0175 收紧前允许的
+# add_custom_command(TARGET ... DEPENDS ...) 形式。仅为未设置该策略的
+# 第三方子项目保留旧行为，避免在新版 CMake 中产生开发者警告。
+set(CMAKE_POLICY_DEFAULT_CMP0175 OLD)
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)
@@ -56,6 +61,17 @@ add_subdirectory("runner")
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+# 第三方 WebView 插件不应继承本项目的编译诊断噪声：源码以 UTF-8 编码，
+# 并且其 Windows SDK 版本会产生已知的窄化与成员遮蔽警告。选项只作用于
+# 该插件目标，不降低应用自身或其他插件的警告级别。
+if(MSVC AND TARGET flutter_inappwebview_windows_plugin)
+  target_compile_options(flutter_inappwebview_windows_plugin PRIVATE
+    /utf-8
+    /wd4244
+    /wd4458
+  )
+endif()
 
 
 # === Installation ===

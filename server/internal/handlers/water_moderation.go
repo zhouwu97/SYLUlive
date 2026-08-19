@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -50,12 +53,12 @@ func (h *WaterModerationHandler) getSectionOr404(c *gin.Context) (*models.WaterS
 func (h *WaterModerationHandler) getOperatorOr401(c *gin.Context) (*models.User, bool) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return nil, false
 	}
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return nil, false
 	}
 	return &user, true
@@ -384,22 +387,55 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 
 	var existing models.WaterSectionFeaturedPost
 	dupErr := h.db.Where("section_id = ? AND post_id = ?", section.ID, postID).First(&existing).Error
-	if dupErr == nil && existing.Status == models.SectionFeaturedStatusActive {
-		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing})
+	switch {
+	case dupErr == nil && existing.Status == models.SectionFeaturedStatusActive:
+		// 已是版块精华：补偿检查首页推荐申请是否仍然存在（自动修复历史脏状态）
+		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
+		if ensureErr != nil {
+			log.Printf("[water_moderation] 帖子已是版块精华，但首页推荐补偿失败 post_id=%d: %v", postID, ensureErr)
+			c.JSON(http.StatusOK, gin.H{
+				"message":          "帖子已是版块精华，但首页推荐提交失败",
+				"warning":          "版块精华已生效，但首页推荐提交失败，请稍后重试",
+				"featured":         existing,
+				"home_application": nil,
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing, "home_application": homeApp})
 		return
-	}
 
-	if dupErr == nil {
-		h.db.Model(&existing).Updates(map[string]interface{}{
+	case dupErr == nil:
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"featured_by": operator.ID,
 			"reason":      reason,
 			"status":      models.SectionFeaturedStatusActive,
-		})
+		}).Error; err != nil {
+			log.Printf("[water_moderation] 恢复版块精华失败 post_id=%d: %v", postID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复版块精华失败"})
+			return
+		}
 		_ = h.db.First(&existing, existing.ID)
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
-		h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
-		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing})
+		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
+		if ensureErr != nil {
+			log.Printf("[water_moderation] 恢复版块精华后首页推荐失败 post_id=%d: %v", postID, ensureErr)
+			c.JSON(http.StatusOK, gin.H{
+				"message":          "已恢复版块精华，但首页推荐提交失败",
+				"warning":          "版块精华已生效，但首页推荐提交失败，请稍后重试",
+				"featured":         existing,
+				"home_application": nil,
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing, "home_application": homeApp})
+		return
+
+	case errors.Is(dupErr, gorm.ErrRecordNotFound):
+		// 正常记录不存在，继续下方新建流程
+	default:
+		log.Printf("[water_moderation] 查询版块精华记录失败 post_id=%d: %v", postID, dupErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询加精记录失败"})
 		return
 	}
 
@@ -418,17 +454,39 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 	snapshot, _ := json.Marshal(featured)
 	h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
 
-	// 自动生成首页精华审核记录
-	h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
+	// 自动生成首页精华审核记录；失败返回 200 partial success 告知客户端版块精华已生效
+	homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
+	if ensureErr != nil {
+		log.Printf("[water_moderation] 版块加精成功但首页推荐提交失败 post_id=%d: %v", postID, ensureErr)
+		c.JSON(http.StatusOK, gin.H{
+			"message":          "已设为版块精华，首页推荐提交失败",
+			"warning":          "已设为版块精华，首页推荐提交失败，请稍后重试",
+			"featured":         featured,
+			"home_application": nil,
+		})
+		return
+	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured})
+	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured, "home_application": homeApp})
 }
 
-func (h *WaterModerationHandler) createHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) {
+// ensureHomeFeaturedApplication 确保首页精华审核记录存在：
+// 若帖子本身已是首页精华 (is_featured=true) → 直接返回 nil,nil，不重复排队；
+// 已有 pending → 返回 existing,nil；没有 → 创建并返回；
+// 若并发 Create 遇到 23505 unique constraint 冲突 → 重新 SELECT pending 记录并返回。
+func (h *WaterModerationHandler) ensureHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) (*models.FeaturedApplication, error) {
+	var post models.Post
+	if err := h.db.Select("id", "is_featured").First(&post, postID).Error; err == nil && post.IsFeatured {
+		return nil, nil
+	}
+
 	var existing models.FeaturedApplication
 	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
-	if err == nil {
-		return // 已有待审核记录
+	switch {
+	case err == nil:
+		return &existing, nil
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, fmt.Errorf("查询首页精华申请失败: %w", err)
 	}
 	app := models.FeaturedApplication{
 		PostID:            postID,
@@ -439,7 +497,17 @@ func (h *WaterModerationHandler) createHomeFeaturedApplication(postID uint, mode
 		Reason:            "版主推荐: " + reason,
 		Status:            "pending",
 	}
-	h.db.Create(&app)
+	if err := h.db.Create(&app).Error; err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			var recheck models.FeaturedApplication
+			if recheckErr := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&recheck).Error; recheckErr == nil {
+				return &recheck, nil
+			}
+		}
+		return nil, fmt.Errorf("创建首页精华申请失败: %w", err)
+	}
+	return &app, nil
 }
 
 // UnfeaturePost DELETE /api/water/sections/:slug/posts/:post_id/feature
@@ -485,7 +553,22 @@ func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
 		reason = body.Reason
 	}
 
-	h.db.Model(&featured).Update("status", models.SectionFeaturedStatusInactive)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&featured).Update("status", models.SectionFeaturedStatusInactive).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.FeaturedApplication{}).
+			Where("source = ? AND section_featured_id = ? AND status = ?", "moderator", featured.ID, "pending").
+			Update("status", "withdrawn").Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Printf("[water_moderation] 取消加精事务失败 post_id=%d: %v", postID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消加精失败"})
+		return
+	}
+
 	h.writeLog(section.ID, operator.ID, models.ModActionUnfeaturePost, "post", uint(postID), nil, reason, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
 }

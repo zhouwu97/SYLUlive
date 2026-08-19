@@ -175,10 +175,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         },
       );
       if (mounted) {
+        final deleted = action == 'handled' &&
+            deleteReasonController.text.trim().isNotEmpty;
+        final message = deleted
+            ? '已处理并删除相关内容'
+            : (action == 'handled' ? '举报已处理' : '已忽略');
         setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(action == 'handled' ? '已处理并删除' : '已忽略'),
+            content: Text(message),
             backgroundColor: action == 'handled' ? Colors.green : Colors.grey,
           ),
         );

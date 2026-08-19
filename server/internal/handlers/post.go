@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,25 @@ type PostHandler struct {
 	db                *gorm.DB
 	jpushAppKey       string
 	jpushMasterSecret string
+
+	// FEED-5：个性化 shadow 开关与 active rollout 百分比。
+	feedShadow  bool
+	feedRollout int
+	// FEED-V5：独立 shadow/rollout。
+	feedV5Shadow  bool
+	feedV5Rollout int
+}
+
+// SetFeedPersonalization 注入 FEED-5 个性化配置（shadow 计算 + rollout 百分比）。
+func (h *PostHandler) SetFeedPersonalization(shadow bool, percent int) {
+	h.feedShadow = shadow
+	h.feedRollout = percent
+}
+
+// SetFeedPersonalizationV5 注入 FEED-V5 个性化配置（shadow 计算 + rollout 百分比）。
+func (h *PostHandler) SetFeedPersonalizationV5(shadow bool, percent int) {
+	h.feedV5Shadow = shadow
+	h.feedV5Rollout = percent
 }
 
 // NewPostHandler 创建帖子处理器
@@ -35,6 +55,9 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHan
 
 // Snapshot 帖子快照
 type Snapshot struct {
+	// UserID 快照归属用户。userID > 0 时快照已应用该用户的负反馈过滤，
+	// loadmore 必须校验归属；匿名 / 用户无关的 generic 快照为 0。
+	UserID           uint
 	PostIDs          []uint
 	ExpiredAt        time.Time
 	AlgorithmVersion string
@@ -42,7 +65,102 @@ type Snapshot struct {
 	FeedKind         string
 }
 
-var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
+// latestFeedCursor 是最新 Feed 的稳定游标。created_at 相同时使用 ID
+// 作为第二排序键，避免同一时间写入的帖子在翻页时重复或丢失。
+type latestFeedCursor struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        uint      `json:"id"`
+}
+
+func parseLatestFeedCursor(c *gin.Context) (*latestFeedCursor, error) {
+	raw := strings.TrimSpace(c.Query("cursor"))
+	createdAtRaw := firstNonEmpty(c.Query("cursor_created_at"), c.Query("cursor_time"))
+	idRaw := strings.TrimSpace(c.Query("cursor_id"))
+	if raw != "" {
+		payload := []byte(raw)
+		if !strings.HasPrefix(raw, "{") {
+			decoded, err := base64.RawURLEncoding.DecodeString(raw)
+			if err != nil {
+				return nil, fmt.Errorf("游标编码无效")
+			}
+			payload = decoded
+		}
+		var cursor latestFeedCursor
+		if err := json.Unmarshal(payload, &cursor); err != nil {
+			return nil, fmt.Errorf("游标格式无效")
+		}
+		if cursor.ID == 0 || cursor.CreatedAt.IsZero() {
+			return nil, fmt.Errorf("游标字段不完整")
+		}
+		return &cursor, nil
+	}
+	if createdAtRaw == "" && idRaw == "" {
+		return nil, nil
+	}
+	if createdAtRaw == "" || idRaw == "" {
+		return nil, fmt.Errorf("游标字段不完整")
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, createdAtRaw)
+	if err != nil {
+		return nil, fmt.Errorf("游标时间无效")
+	}
+	id, err := strconv.ParseUint(idRaw, 10, 64)
+	if err != nil || id == 0 {
+		return nil, fmt.Errorf("游标 ID 无效")
+	}
+	return &latestFeedCursor{CreatedAt: createdAt, ID: uint(id)}, nil
+}
+
+func encodeLatestFeedCursor(cursor latestFeedCursor) string {
+	payload, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// ActiveSnapshots 帖子快照缓存。key: session_id (string)，value: Snapshot。
+var ActiveSnapshots sync.Map
+
+// ActiveUserSnapshots 用户 → 该用户综合推荐快照 session 集合的索引，
+// 用于用户反馈变化后快速失效其全部旧快照，避免遍历整个 ActiveSnapshots。
+var ActiveUserSnapshots sync.Map // key: userID (uint)，value: *sync.Map[sessionID -> struct{}]
+
+// storeSnapshot 存储快照；用户相关快照（UserID>0）同时登记到用户索引。
+func storeSnapshot(sessionID string, snap Snapshot) {
+	ActiveSnapshots.Store(sessionID, snap)
+	if snap.UserID == 0 {
+		return
+	}
+	idx, _ := ActiveUserSnapshots.LoadOrStore(snap.UserID, &sync.Map{})
+	idx.(*sync.Map).Store(sessionID, struct{}{})
+}
+
+// deleteSnapshot 删除快照；用户相关快照同时从用户索引移除。
+func deleteSnapshot(sessionID string) {
+	value, ok := ActiveSnapshots.Load(sessionID)
+	ActiveSnapshots.Delete(sessionID)
+	if !ok {
+		return
+	}
+	snap := value.(Snapshot)
+	if snap.UserID == 0 {
+		return
+	}
+	if idx, ok := ActiveUserSnapshots.Load(snap.UserID); ok {
+		idx.(*sync.Map).Delete(sessionID)
+	}
+}
+
+// invalidateUserFeedSnapshots 使该用户所有用户相关快照失效（如负反馈变化后）。
+func invalidateUserFeedSnapshots(userID uint) {
+	if userID == 0 {
+		return
+	}
+	if value, ok := ActiveUserSnapshots.LoadAndDelete(userID); ok {
+		value.(*sync.Map).Range(func(sessionID, _ interface{}) bool {
+			ActiveSnapshots.Delete(sessionID.(string))
+			return true
+		})
+	}
+}
 
 var allowedWaterPostTypes = map[string]struct{}{
 	"freshman_help": {},
@@ -325,7 +443,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 					return
 				}
 			} else {
-				ActiveSnapshots.Delete(sessionID)
+				deleteSnapshot(sessionID)
 			}
 		}
 	}
@@ -399,6 +517,16 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("water_tag_id = ?", tagID)
 	}
 
+	// 版块“推荐”使用独立快照算法；带标签、搜索或增量条件的请求继续走通用查询。
+	isSectionRecommend := requestedBoardID != nil &&
+		*requestedBoardID == models.BoardShuitie &&
+		postType != "" &&
+		waterSectionFeedID > 0 &&
+		!tagIDProvided &&
+		sort == "all" &&
+		searchQuery == "" &&
+		sinceStr == ""
+
 	if sinceStr != "" {
 		sinceTime, err := time.Parse(time.RFC3339, sinceStr)
 		if err == nil {
@@ -406,22 +534,41 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
-	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
+	// Feed 负反馈过滤（FEED-1）：仅水帖首页 Tab（综合/最新/精华/关注）生效。
+	// 搜索、集市、版块内页、带标签页、增量请求不受影响。
+	if requestedBoardID != nil &&
+		*requestedBoardID == models.BoardShuitie &&
+		postType == "" &&
+		!tagIDProvided &&
+		searchQuery == "" &&
+		sinceStr == "" {
+		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort, now)
+	}
+
+	// 关注信息：关注的作者 + 关注的版块（FEED-6）
 	if sort == "following" {
 		rawUserID, exists := c.Get("user_id")
 		userID, ok := rawUserID.(uint)
 		if !exists || !ok || userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "请先登录查看关注动态",
+				"code":  "authentication_required",
 			})
 			return
 		}
-		followingSubQuery := h.db.
+		followedAuthorsSub := h.db.
+			Model(&models.UserFollow{}).
+			Select("following_id").
+			Where("follower_id = ?", userID)
+		followedSectionsSub := h.db.
 			Model(&models.WaterSectionFollow{}).
 			Joins("JOIN water_sections ON water_sections.id = water_section_follows.section_id").
 			Select("water_sections.slug").
 			Where("water_section_follows.user_id = ?", userID)
-		query = query.Where("posts.board_id = ? AND posts.post_type IN (?)", models.BoardShuitie, followingSubQuery)
+		query = query.Where(
+			"posts.board_id = ? AND (posts.author_id IN (?) OR posts.post_type IN (?))",
+			models.BoardShuitie, followedAuthorsSub, followedSectionsSub,
+		)
 	}
 
 	if searchQuery != "" {
@@ -531,55 +678,65 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	if isSnapshotting {
 		var allIDs []uint
-		// 这里必须清除Preload等，单纯Pluck
-		snapshotQuery := h.db.Model(&models.Post{}).
-			Where("posts.status != ?", models.PostStatusDeleted).
-			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
-		if !supportsPoll {
-			snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
-		}
-		if boardIDStr != "" {
-			boardID, err := strconv.Atoi(boardIDStr)
-			if err == nil {
-				snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
+		if isSectionRecommend {
+			sectionIDs, sectionErr := services.NewSectionFeedService(h.db, supportsPoll).BuildSnapshot(waterSectionFeedID, postType, now)
+			if sectionErr != nil {
+				log.Printf("[DB_ERROR] GetList section feed snapshot failed: %v", sectionErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "构建版块推荐失败"})
+				return
 			}
-		}
-		snapshotQuery = applyPostTypeFilter(snapshotQuery, requestedBoardID, postType)
-		if tagIDProvided {
-			snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
-		}
-		if sort == "all" {
-			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
-			snapshotQuery = applyPinnedOrder(snapshotQuery, now)
-
-			var isTeamTag bool
-			if tagIDProvided {
-				var tag models.WaterSectionTag
-				if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
-					isTeamTag = true
+			allIDs = sectionIDs
+		} else {
+			// 这里必须清除Preload等，单纯Pluck
+			snapshotQuery := h.db.Model(&models.Post{}).
+				Where("posts.status != ?", models.PostStatusDeleted).
+				Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
+			if !supportsPoll {
+				snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
+			}
+			if boardIDStr != "" {
+				boardID, err := strconv.Atoi(boardIDStr)
+				if err == nil {
+					snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
 				}
 			}
-			if isTeamTag {
-				snapshotQuery = snapshotQuery.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
-				snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
+			snapshotQuery = applyPostTypeFilter(snapshotQuery, requestedBoardID, postType)
+			if tagIDProvided {
+				snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
 			}
+			if sort == "all" {
+				snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
+				snapshotQuery = applyPinnedOrder(snapshotQuery, now)
 
-			snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
-		} else if sort == "hot" {
-			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
-			snapshotQuery = snapshotQuery.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
-		}
-		if sort == "hot" {
-			snapshotQuery = snapshotQuery.Limit(500)
-		}
-		if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
-			log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
-			return
+				var isTeamTag bool
+				if tagIDProvided {
+					var tag models.WaterSectionTag
+					if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
+						isTeamTag = true
+					}
+				}
+				if isTeamTag {
+					snapshotQuery = snapshotQuery.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
+					snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
+				}
+
+				snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
+			} else if sort == "hot" {
+				snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
+				snapshotQuery = snapshotQuery.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
+			}
+			if sort == "hot" {
+				snapshotQuery = snapshotQuery.Limit(500)
+			}
+			if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
+				log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+				return
+			}
 		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{
+		storeSnapshot(sessionID, Snapshot{
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 			Sort:      sort,
@@ -588,7 +745,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 		// 自动销毁
 		time.AfterFunc(10*time.Minute, func() {
-			ActiveSnapshots.Delete(sessionID)
+			deleteSnapshot(sessionID)
 		})
 
 		// 取出第一页
@@ -952,11 +1109,16 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 // getHomeFeedV2 返回独立置顶和普通首页帖子；普通快照不会包含有效置顶。
 func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID string, page, limit, offset int, now time.Time, supportsPoll bool) {
 	feed := services.NewHomeFeedService(h.db)
+	feed.SetPersonalization(h.feedShadow, h.feedRollout)
+	feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
 	feedKind := "home_v2"
 	if supportsPoll {
 		feed = services.NewHomeFeedServiceWithPoll(h.db)
+		feed.SetPersonalization(h.feedShadow, h.feedRollout)
+		feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
 		feedKind = "home_v3_poll"
 	}
+	userID := optionalFeedUserID(c)
 	pinned, err := feed.PinnedPosts(now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
@@ -973,6 +1135,10 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			algorithm = "home_time_v3_poll"
 		}
 	}
+	if sortName == "time" {
+		h.getHomeLatestFeedV2(c, pinned, page, limit, offset, now, supportsPoll, algorithm)
+		return
+	}
 	if sortName == "all" && scene == "loadmore" {
 		value, ok := ActiveSnapshots.Load(sessionID)
 		if !ok {
@@ -980,32 +1146,32 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind {
-			ActiveSnapshots.Delete(sessionID)
+		// H1.1：综合快照按用户过滤，loadmore 必须归属校验，避免复用他人个性化快照。
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind || snapshot.UserID != optionalFeedUserID(c) {
+			deleteSnapshot(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
 		}
 		ids = snapshot.PostIDs
 	} else if sortName == "all" {
-		ids, err = feed.BuildSnapshot(now)
+		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
 		}
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
-		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
+		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	} else {
 		var normal []models.Post
-		err = h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+		timeQuery := h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
-			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now).
-			Scopes(func(db *gorm.DB) *gorm.DB {
-				if supportsPoll {
-					return db
-				}
-				return db.Where("content_kind <> ?", models.PostContentKindPoll)
-			}).Order("created_at DESC").Limit(500).Find(&normal).Error
+			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
+		if !supportsPoll {
+			timeQuery = timeQuery.Where("content_kind <> ?", models.PostContentKindPoll)
+		}
+		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time", now)
+		err = timeQuery.Order("created_at DESC, id DESC").Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 			return
@@ -1038,6 +1204,90 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	c.JSON(http.StatusOK, gin.H{"pinned_posts": pinned, "posts": posts, "total": len(ids), "page": page, "limit": limit, "session_id": sessionID, "algorithm_version": algorithm})
 }
 
+// getHomeLatestFeedV2 使用数据库 keyset 游标读取“最新”Feed，不再先把结果
+// 截断到 500 条再在内存中分页。旧客户端仍可使用 page/offset；支持游标的
+// 客户端应优先传 cursor_created_at + cursor_id，或传 next_cursor_token。
+func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, page, limit, offset int, now time.Time, supportsPoll bool, algorithm string) {
+	userID := optionalFeedUserID(c)
+	query := h.db.Model(&models.Post{}).
+		Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
+		Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
+	if !supportsPoll {
+		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
+	}
+	query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, userID, "time", now)
+
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计最新帖子失败"})
+		return
+	}
+
+	cursor, err := parseLatestFeedCursor(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_feed_cursor", "error": err.Error()})
+		return
+	}
+	pageQuery := query
+	if cursor != nil {
+		pageQuery = pageQuery.Where("created_at < ? OR (created_at = ? AND id < ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+	} else if offset > 0 {
+		// 兼容旧客户端的 page/offset 请求，但不再把可见结果截断到 500。
+		pageQuery = pageQuery.Offset(offset)
+	}
+
+	var rows []models.Post
+	if err := pageQuery.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
+		return
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	ids := make([]uint, 0, len(rows))
+	for _, post := range rows {
+		ids = append(ids, post.ID)
+	}
+	posts, err := h.loadPostsInOrder(ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
+		return
+	}
+	h.hydratePosts(c, posts, now)
+	h.hydratePosts(c, pinned, now)
+	if posts == nil {
+		posts = []models.Post{}
+	}
+	if pinned == nil {
+		pinned = []models.Post{}
+	}
+
+	var nextCursor *latestFeedCursor
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = &latestFeedCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"pinned_posts":      pinned,
+		"posts":             posts,
+		"total":             total,
+		"page":              page,
+		"limit":             limit,
+		"session_id":        "",
+		"algorithm_version": algorithm,
+		"has_more":          hasMore,
+		"next_cursor":       nextCursor,
+		"next_cursor_token": func() string {
+			if nextCursor == nil {
+				return ""
+			}
+			return encodeLatestFeedCursor(*nextCursor)
+		}(),
+	})
+}
+
 func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
 	if len(ids) == 0 {
 		return []models.Post{}, nil
@@ -1062,6 +1312,8 @@ func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
 // getLegacyHomeFeedCompat 兼容旧版本首页请求
 func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID string, page, limit, offset int, now time.Time) {
 	feed := services.NewHomeFeedService(h.db)
+	feed.SetPersonalization(h.feedShadow, h.feedRollout)
+	feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
 	pinned, err := feed.PinnedPosts(now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
@@ -1076,14 +1328,15 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" {
-			ActiveSnapshots.Delete(sessionID)
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" || snapshot.UserID != optionalFeedUserID(c) {
+			deleteSnapshot(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
 		}
 		ids = snapshot.PostIDs
 	} else {
-		ids, err = feed.BuildSnapshot(now)
+		userID := optionalFeedUserID(c)
+		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
@@ -1105,8 +1358,8 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		ids = finalIDs
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
-		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
+		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	}
 
 	end := offset + limit
@@ -1188,7 +1441,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return
 	}
 	if models.BoardID(input.BoardID) == models.BoardMarket && !user.IsStudentVerified() {
@@ -1284,6 +1537,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
+			return err
+		}
+		if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
 			return err
 		}
 		if err := tx.Create(&post).Error; err != nil {
@@ -1461,6 +1717,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 		if replaceImages {
 			if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
+				return err
+			}
+			if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
 				return err
 			}
 		}
@@ -1643,7 +1902,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 		case "unauthorized":
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 		case "user_not_found":
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		case "market_graduated":
 			c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户不能编辑集市帖子"})
 		case "invalid_post_type":

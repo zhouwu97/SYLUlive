@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
@@ -7,9 +9,22 @@ import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import '../screens/image_viewer_screen.dart';
 
+/// 一次成功上传的图片：以服务端 file_id 为可信标识，url 供回显，previewBytes 供本地预览。
+class UploadedImage {
+  const UploadedImage({
+    required this.fileId,
+    required this.url,
+    this.previewBytes,
+  });
+
+  final int fileId;
+  final String url;
+  final Uint8List? previewBytes;
+}
+
 class ImageUploadWidget extends StatefulWidget {
   final int maxImages;
-  final ValueChanged<List<String>> onImagesUploaded;
+  final ValueChanged<List<UploadedImage>> onImagesUploaded;
   final bool largeCard;
   final String emptyTitle;
   final String emptySubtitle;
@@ -29,7 +44,7 @@ class ImageUploadWidget extends StatefulWidget {
 
 class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   final ImagePicker _imagePicker = ImagePicker();
-  final List<String> _uploadedUrls = [];
+  final List<UploadedImage> _uploadedImages = [];
   bool _isUploading = false;
 
   bool get _canUploadUnlimitedImages {
@@ -38,11 +53,11 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   }
 
   bool get _canAddMoreImages =>
-      _canUploadUnlimitedImages || _uploadedUrls.length < widget.maxImages;
+      _canUploadUnlimitedImages || _uploadedImages.length < widget.maxImages;
 
   bool get _canPickImage =>
       _canAddMoreImages ||
-      (widget.largeCard && widget.maxImages == 1 && _uploadedUrls.isNotEmpty);
+      (widget.largeCard && widget.maxImages == 1 && _uploadedImages.isNotEmpty);
 
   Future<void> _pickAndUploadImage(ImageSource source) async {
     if (!_canPickImage) {
@@ -103,15 +118,36 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         if (response.statusCode == 200 &&
             response.data != null &&
             response.data['url'] != null) {
+          final rawFileId = response.data['file_id'];
+          final fileId = rawFileId is num ? rawFileId.toInt() : 0;
+          if (fileId <= 0) {
+            // 服务端已私有化并按归属校验，file_id 缺失/0 一律视为上传失败。
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('图片上传失败'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+          final url = response.data['url'] as String;
           if (mounted) {
             setState(() {
               if (widget.largeCard && widget.maxImages == 1) {
-                _uploadedUrls.clear();
+                _uploadedImages.clear();
               }
-              _uploadedUrls.add(response.data['url']);
+              _uploadedImages.add(
+                UploadedImage(
+                  fileId: fileId,
+                  url: url,
+                  previewBytes: bytes,
+                ),
+              );
             });
           }
-          widget.onImagesUploaded(_uploadedUrls);
+          widget.onImagesUploaded(_uploadedImages);
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -182,6 +218,36 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     );
   }
 
+  void _openViewer(int initialIndex) {
+    final imageUrls = _uploadedImages
+        .map((e) => ApiConstants.fullUrl(e.url))
+        .toList();
+    final imageBytes =
+        _uploadedImages.map((e) => e.previewBytes).toList(growable: false);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: imageUrls,
+          imageBytes: imageBytes,
+          initialIndex: initialIndex,
+        ),
+      ),
+    );
+  }
+
+  Widget _imageOrPlaceholder(UploadedImage image) {
+    final bytes = image.previewBytes;
+    if (bytes != null) {
+      return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+    }
+    return Container(
+      color: Colors.grey[300],
+      alignment: Alignment.center,
+      child: const Icon(Icons.broken_image_outlined, color: Colors.white54),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.largeCard) {
@@ -191,16 +257,16 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_uploadedUrls.isNotEmpty) ...[
+        if (_uploadedImages.isNotEmpty) ...[
           SizedBox(
             height: 80,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Wrap(
                 spacing: 8,
-                children: _uploadedUrls.asMap().entries.map((entry) {
+                children: _uploadedImages.asMap().entries.map((entry) {
                   final index = entry.key;
-                  final url = entry.value;
+                  final image = entry.value;
                   return Stack(
                     children: [
                       Container(
@@ -211,26 +277,10 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                           border: Border.all(color: Colors.grey[300]!),
                         ),
                         child: GestureDetector(
-                          onTap: () {
-                            final fullUrls = _uploadedUrls
-                                .map((u) => ApiConstants.fullUrl(u))
-                                .toList();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ImageViewerScreen(
-                                  imageUrls: fullUrls,
-                                  initialIndex: index,
-                                ),
-                              ),
-                            );
-                          },
+                          onTap: () => _openViewer(index),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              ApiConstants.fullUrl(url),
-                              fit: BoxFit.cover,
-                            ),
+                            child: _imageOrPlaceholder(image),
                           ),
                         ),
                       ),
@@ -241,10 +291,10 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                           onTap: () {
                             if (mounted) {
                               setState(() {
-                                _uploadedUrls.removeAt(index);
+                                _uploadedImages.removeAt(index);
                               });
                             }
-                            widget.onImagesUploaded(_uploadedUrls);
+                            widget.onImagesUploaded(_uploadedImages);
                           },
                           child: Container(
                             padding: const EdgeInsets.all(2),
@@ -278,7 +328,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.add_photo_alternate),
-            label: Text(_uploadedUrls.isEmpty ? '添加图片' : '继续添加'),
+            label: Text(_uploadedImages.isEmpty ? '添加图片' : '继续添加'),
           ),
       ],
     );
@@ -288,29 +338,18 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     const borderColor = Color(0xFFE8E4F0);
     const primary = Color(0xFF7367C6);
 
-    if (_uploadedUrls.isNotEmpty) {
-      final url = _uploadedUrls.first;
+    if (_uploadedImages.isNotEmpty) {
+      final image = _uploadedImages.first;
       return Stack(
         children: [
           GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: [ApiConstants.fullUrl(url)],
-                    initialIndex: 0,
-                  ),
-                ),
-              );
-            },
+            onTap: () => _openViewer(0),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
-              child: Image.network(
-                ApiConstants.fullUrl(url),
+              child: SizedBox(
                 height: 132,
                 width: double.infinity,
-                fit: BoxFit.cover,
+                child: _imageOrPlaceholder(image),
               ),
             ),
           ),
@@ -335,8 +374,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             top: 10,
             child: GestureDetector(
               onTap: () {
-                setState(_uploadedUrls.clear);
-                widget.onImagesUploaded(_uploadedUrls);
+                setState(_uploadedImages.clear);
+                widget.onImagesUploaded(_uploadedImages);
               },
               child: Container(
                 width: 28,

@@ -797,14 +797,15 @@ void main() {
         ),
       );
 
-      expect(json, contains('"personalized_score":82'));
-      expect(json, contains('"fit_reasons":["技能匹配"]'));
+      expect(json, contains('"competition_rating":"A"'));
+      expect(json, contains('"school_recognition_status":"recognized"'));
       for (final forbidden in <String>[
         'evidence_file_id',
         'verification_note',
         'verified_by',
         'file_path',
         'access_log',
+        'personalized_score',
       ]) {
         expect(json, isNot(contains(forbidden)));
       }

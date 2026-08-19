@@ -2,6 +2,21 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../models/canteen.dart';
+import '../models/canteen_dish.dart';
+
+class CanteenRatingSubmitResult {
+  final bool success;
+  final String? errorCode;
+  final String? errorMessage;
+  final DateTime? remoteUpdatedAt;
+
+  const CanteenRatingSubmitResult({
+    required this.success,
+    this.errorCode,
+    this.errorMessage,
+    this.remoteUpdatedAt,
+  });
+}
 
 class CanteenProvider with ChangeNotifier {
   final Dio _dio;
@@ -130,28 +145,249 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> rateCanteen(
-    int id,
-    int star,
-    String comment,
-  ) async {
+  Future<CanteenRatingSubmitResult> rateCanteen(
+    int id, {
+    required int star,
+    required String comment,
+    List<String> images = const [],
+    List<String> tags = const [],
+    List<String> recommendedDishes = const [],
+    DateTime? baseUpdatedAt,
+  }) async {
+    errorCode = null;
     try {
+      final payload = <String, dynamic>{
+        'star': star,
+        'comment': comment,
+        'images': json.encode(images),
+        'tags': tags,
+        'recommended_dishes': recommendedDishes,
+      };
+      if (baseUpdatedAt != null) {
+        payload['base_updated_at'] = baseUpdatedAt.toUtc().toIso8601String();
+      }
       final response = await _dio.post(
         '/canteens/$id/rate',
-        data: {'star': star, 'comment': comment, 'images': json.encode([])},
+        data: payload,
       );
-      return response.statusCode == 200 || response.statusCode == 201;
+      final ok = response.statusCode == 200 || response.statusCode == 201;
+      return CanteenRatingSubmitResult(success: ok);
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
+      String? code;
+      DateTime? remoteTime;
+      if (e.response?.data is Map) {
+        code = e.response!.data['code']?.toString();
+        errorCode = code;
+        final rawRemote = e.response!.data['remote_updated_at']?.toString();
+        if (rawRemote != null) {
+          remoteTime = DateTime.tryParse(rawRemote);
+        }
+      }
       debugPrint('Error rating canteen: $e');
+      return CanteenRatingSubmitResult(
+        success: false,
+        errorCode: code,
+        errorMessage: _errorMessage,
+        remoteUpdatedAt: remoteTime,
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>?> adminGetDishPhotoDetail(int photoId) async {
+    try {
+      final response = await _dio.get('/canteens/dish-photos/$photoId');
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error getting dish photo detail: $e');
+    }
+    return null;
+  }
+
+  String? _dishesErrorMessage;
+  String? get dishesErrorMessage => _dishesErrorMessage;
+
+  String _parseError(DioException e) {
+    if (e.response?.data is Map && e.response?.data['error'] != null) {
+      return e.response!.data['error'].toString();
+    }
+    final status = e.response?.statusCode;
+    if (status == 404) {
+      return '菜品服务暂不可用';
+    }
+    if (status != null && status >= 500) {
+      return '菜品加载失败，请稍后重试';
+    }
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.connectionError) {
+      return '网络连接失败，请检查网络后重试';
+    }
+    return '加载异常，请重试';
+  }
+
+  // ── 菜品图库 ──────────────────────────────────────────────────────
+
+  /// 加载菜品图鉴。
+  /// 返回语义：
+  /// - `[]`：请求成功，确实没有菜品
+  /// - `null`：请求失败（网络 / 5xx / 超时），调用方不应把统计刷成 0
+  Future<List<CanteenDish>?> loadDishes(int canteenId) async {
+    _dishesErrorMessage = null;
+    try {
+      final response = await _dio.get('/canteens/$canteenId/dishes');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List)
+            .map((json) => CanteenDish.fromJson(json as Map<String, dynamic>))
+            .toList();
+      }
+      _dishesErrorMessage = '数据格式异常';
+      return null;
+    } on DioException catch (e) {
+      _dishesErrorMessage = _parseError(e);
+      _errorMessage = _dishesErrorMessage;
+      debugPrint('Error loading dishes: $e');
+      return null;
+    } catch (e) {
+      _dishesErrorMessage = '数据解析异常';
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> loadDishDetail(
+    int canteenId,
+    int dishId,
+  ) async {
+    try {
+      final response = await _dio.get('/canteens/$canteenId/dishes/$dishId');
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error loading dish detail: $e');
+    }
+    return null;
+  }
+
+  /// 投稿菜品实拍。返回 null 表示网络错误；成功返回 message。
+  /// 通过 [errorCode] 暴露服务端 code（如 dish_gallery_full）。
+  String? errorCode;
+
+  Future<String?> submitDishPhoto(
+    int canteenId, {
+    int? dishId,
+    String? dishName,
+    required int fileId,
+  }) async {
+    errorCode = null;
+    try {
+      final response = await _dio.post(
+        '/canteens/$canteenId/dish-photos',
+        data: {
+          if (dishId != null) 'dish_id': dishId,
+          if (dishName != null && dishName.trim().isNotEmpty)
+            'dish_name': dishName.trim(),
+          'file_id': fileId,
+        },
+      );
+      if (response.statusCode == 201) {
+        return (response.data as Map<String, dynamic>)['message']?.toString() ??
+            '实拍已上传';
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      debugPrint('Error submitting dish photo: $e');
+    }
+    return null;
+  }
+
+  /// 管理员待审核实拍列表。返回 null 表示请求失败；
+  /// 成功但无数据时返回空列表（区分"失败"与"暂无"，避免失败伪装成空态）。
+  Future<List<Map<String, dynamic>>?> adminListPendingDishPhotos() async {
+    try {
+      final response = await _dio.get('/canteens/dish-photos/pending');
+      if (response.statusCode == 200) {
+        final items = (response.data as Map<String, dynamic>)['items'];
+        if (items is List) {
+          return items.cast<Map<String, dynamic>>();
+        }
+        return const [];
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error listing pending dish photos: $e');
+    }
+    return null;
+  }
+
+  Future<String?> adminApproveDishPhoto(int photoId) async {
+    errorCode = null;
+    try {
+      final response = await _dio.post('/canteens/dish-photos/$photoId/approve');
+      if (response.statusCode == 200) {
+        return '已通过';
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      debugPrint('Error approving dish photo: $e');
+    }
+    return null;
+  }
+
+  Future<bool> adminRejectDishPhoto(int photoId, String reason) async {
+    try {
+      final response = await _dio.post(
+        '/canteens/dish-photos/$photoId/reject',
+        data: {'reason': reason},
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error rejecting dish photo: $e');
       return false;
     }
   }
 
-  String _parseError(DioException e) {
-    if (e.response?.data is Map && e.response?.data['error'] != null) {
-      return e.response!.data['error'];
+  Future<bool> adminArchiveDishPhoto(int photoId) async {
+    try {
+      final response =
+          await _dio.post('/canteens/dish-photos/$photoId/archive');
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error archiving dish photo: $e');
+      return false;
     }
-    return '网络异常';
+  }
+
+  Future<bool> adminUpdateDish(
+    int dishId, {
+    String? name,
+    String? status,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/canteens/dishes/$dishId',
+        data: {
+          if (name != null) 'name': name,
+          if (status != null) 'status': status,
+        },
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error updating dish: $e');
+      return false;
+    }
   }
 }

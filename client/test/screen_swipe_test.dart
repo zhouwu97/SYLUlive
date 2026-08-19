@@ -1,14 +1,57 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/screen_swipe.dart';
 import 'package:shenliyuan/widgets/swipe_to_exit.dart';
 
+class _NavigatorObserver extends NavigatorObserver {
+  final List<Route<dynamic>> poppedRoutes = [];
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    poppedRoutes.add(route);
+    super.didPop(route, previousRoute);
+  }
+}
+
 void main() {
-  test('bottom third is reserved for main navigation swipes', () {
-    expect(isBottomNavigationSwipeStart(650, 900), isTrue);
-    expect(isBottomNavigationSwipeStart(599, 900), isFalse);
-    expect(isUpperContentSwipeStart(599, 900), isTrue);
-    expect(isUpperContentSwipeStart(650, 900), isFalse);
+  group('resolveSwipeAxisIntent', () {
+    test('slop threshold returns pending for small movements', () {
+      expect(
+        resolveSwipeAxisIntent(dx: 5, dy: 4),
+        SwipeAxisIntent.pending,
+      );
+    });
+
+    test('horizontal movement triggers horizontal intent', () {
+      expect(
+        resolveSwipeAxisIntent(dx: 30, dy: 5),
+        SwipeAxisIntent.horizontal,
+      );
+      expect(
+        resolveSwipeAxisIntent(dx: 100, dy: 20),
+        SwipeAxisIntent.horizontal,
+      );
+    });
+
+    test('vertical movement triggers vertical intent', () {
+      expect(
+        resolveSwipeAxisIntent(dx: 10, dy: 40),
+        SwipeAxisIntent.vertical,
+      );
+      expect(
+        resolveSwipeAxisIntent(dx: 25, dy: 100),
+        SwipeAxisIntent.vertical,
+      );
+    });
+
+    test('ambiguous diagonal movement remains pending', () {
+      expect(
+        resolveSwipeAxisIntent(dx: 20, dy: 18),
+        SwipeAxisIntent.pending,
+      );
+    });
   });
 
   test('detects a fast horizontal swipe direction', () {
@@ -168,69 +211,49 @@ void main() {
     expect(find.text('私信'), findsNothing);
   });
 
-  testWidgets('upper and lower swipe zones do not trigger each other',
+  testWidgets('mouse drag can exit a page in the Android emulator',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    var navigationSwitches = 0;
-    var contentSwitches = 0;
-    Offset? navigationStart;
-    DateTime? navigationStartTime;
-    double? contentStartY;
+    final navigatorObserver = _NavigatorObserver();
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Listener(
-          onPointerDown: (event) {
-            if (isBottomNavigationSwipeStart(event.position.dy, 900)) {
-              navigationStart = event.position;
-              navigationStartTime = DateTime.now();
-            }
-          },
-          onPointerUp: (event) {
-            if (navigationStart == null || navigationStartTime == null) return;
-            final direction = horizontalSwipeDirection(
-              start: navigationStart!,
-              end: event.position,
-              elapsed: DateTime.now().difference(navigationStartTime!),
-            );
-            navigationStart = null;
-            navigationStartTime = null;
-            if (direction != 0) navigationSwitches++;
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (details) {
-              contentStartY = details.globalPosition.dy;
-            },
-            onHorizontalDragEnd: (_) {
-              if (contentStartY != null &&
-                  !isBottomNavigationSwipeStart(contentStartY!, 900)) {
-                contentSwitches++;
-              }
-              contentStartY = null;
-            },
-            child: const SizedBox.expand(),
+        navigatorObservers: [navigatorObserver],
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SwipeToExit(
+                      child: Scaffold(body: Text('私信')),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('进入私信'),
+            ),
           ),
         ),
       ),
     );
+    await tester.tap(find.text('进入私信'));
+    await tester.pumpAndSettle();
 
-    await tester.dragFrom(
-      const Offset(320, 750),
-      const Offset(-100, 0),
+    final swipeWidget = find.byType(SwipeToExit);
+    final pageWidth = tester.getSize(swipeWidget).width;
+    final mediaWidth = MediaQuery.sizeOf(tester.element(swipeWidget)).width;
+    final gesture = await tester.startGesture(
+      Offset(pageWidth - 40, 400),
+      kind: PointerDeviceKind.mouse,
     );
-    await tester.pump();
-    expect(navigationSwitches, 1);
-    expect(contentSwitches, 0);
+    await gesture.moveBy(Offset(-mediaWidth * 0.35, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
 
-    await tester.dragFrom(
-      const Offset(320, 300),
-      const Offset(-100, 0),
-    );
-    await tester.pump();
-    expect(navigationSwitches, 1);
-    expect(contentSwitches, 1);
+    expect(navigatorObserver.poppedRoutes, hasLength(1));
+    expect(find.text('私信'), findsNothing);
   });
 }

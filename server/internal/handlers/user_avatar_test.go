@@ -23,7 +23,7 @@ func TestUpdateAvatarVersionsSameUploadURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, &models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, &models.User{}, &models.File{}, &models.FileUploadGrant{}); err != nil {
 		t.Fatalf("migrate users: %v", err)
 	}
 

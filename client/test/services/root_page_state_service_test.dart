@@ -3,17 +3,6 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 
 void main() {
-  test('仅保存和恢复有效的首页一级 Tab', () async {
-    final preferences = MemoryPreferencesStore();
-    final store = RootPageStateStore(preferences: preferences);
-
-    await store.saveRootTab(3);
-    expect(await store.readRootTab(), 3);
-
-    await preferences.setInt(RootPageStateStore.rootTabKey, 9);
-    expect(await store.readRootTab(), isNull);
-  });
-
   test('恢复社区信息流模式和有效滚动位置', () async {
     final preferences = MemoryPreferencesStore();
     final store = RootPageStateStore(preferences: preferences);

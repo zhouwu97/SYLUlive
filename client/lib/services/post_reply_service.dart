@@ -11,9 +11,17 @@ class PostReplyService {
   final Dio _dio;
 
   Future<Reply> submit(int postId, PostReplyDraft draft) async {
-    final fileIds = draft.favoriteImage == null
-        ? const <int>[]
-        : <int>[await _uploadFavoriteImage(draft.favoriteImage!.imageUrl)];
+    final fileIds = <int>[];
+    if (draft.localImage != null) {
+      fileIds.add(
+        await _uploadLocalImage(
+          draft.localImage!.path,
+          draft.localImage!.name,
+        ),
+      );
+    } else if (draft.favoriteImage != null) {
+      fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!.imageUrl));
+    }
     final response = await _dio.post(
       '/posts/$postId/replies',
       data: FormData.fromMap({
@@ -24,6 +32,8 @@ class PostReplyService {
           'parent_reply_id': draft.parentReplyId.toString(),
         if (draft.replyToUserId != null)
           'reply_to_user_id': draft.replyToUserId.toString(),
+        if (draft.replyToReplyId != null)
+          'reply_to_reply_id': draft.replyToReplyId.toString(),
       }),
     );
     return Reply.fromJson(Map<String, dynamic>.from(response.data as Map));
@@ -36,6 +46,7 @@ class PostReplyService {
     }
     final file = await DefaultCacheManager().getSingleFile(
       ApiConstants.fullUrl(imageUrl),
+      headers: _authHeaders(),
     );
     final segments = Uri.tryParse(imageUrl)?.pathSegments ?? const [];
     final fileName = segments.isEmpty || segments.last.trim().isEmpty
@@ -56,5 +67,31 @@ class PostReplyService {
       throw StateError('服务器未返回有效图片 ID');
     }
     return fileId;
+  }
+
+  Future<int> _uploadLocalImage(String path, String fileName) async {
+    final response = await _dio.post(
+      '/upload',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(path, filename: fileName),
+      }),
+    );
+    final rawFileId =
+        response.data is Map ? (response.data as Map)['file_id'] : null;
+    final fileId = rawFileId is num
+        ? rawFileId.toInt()
+        : int.tryParse(rawFileId?.toString() ?? '');
+    if (fileId == null || fileId <= 0) {
+      throw StateError('服务器未返回有效图片 ID');
+    }
+    return fileId;
+  }
+
+  Map<String, String> _authHeaders() {
+    final authorization = _dio.options.headers['Authorization']?.toString();
+    if (authorization == null || authorization.trim().isEmpty) {
+      return const <String, String>{};
+    }
+    return <String, String>{'Authorization': authorization};
   }
 }

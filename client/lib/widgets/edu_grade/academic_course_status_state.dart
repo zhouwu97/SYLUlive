@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_colors.dart';
 
 class AcademicCourseStatusState extends StatelessWidget {
   final String status;
@@ -13,8 +14,8 @@ class AcademicCourseStatusState extends StatelessWidget {
     final presentation = _presentationFor(status);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final foreground = presentation.isWarning
-        ? (isDark ? const Color(0xFFFFC46B) : const Color(0xFF9A5A00))
-        : (isDark ? Colors.grey.shade400 : const Color(0xFF687078));
+        ? AppColors.warning
+        : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight);
 
     return Padding(
       key: ValueKey('academic_course_status_$status'),

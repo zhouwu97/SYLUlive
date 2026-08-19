@@ -68,7 +68,7 @@ func (h *TutorialHandler) Update(c *gin.Context) {
 
 	if !exists {
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 
 		return
 

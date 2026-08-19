@@ -9,6 +9,7 @@ import '../../models/poll_visibility.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../services/poll_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/campus/campus_theme.dart';
 import 'widgets/poll_option_editor.dart';
 import 'widgets/poll_setting_row.dart';
@@ -117,8 +118,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
     final value =
         DateTime(date.year, date.month, date.day, time.hour, time.minute);
     if (value.isBefore(now.add(const Duration(minutes: 30)))) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('截止时间至少晚于当前时间 30 分钟')));
+      AppFeedback.info('截止时间至少晚于当前时间 30 分钟', context: context);
       return;
     }
     setState(() {
@@ -151,8 +151,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   Future<void> _submit() async {
     final error = _validate();
     if (error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      AppFeedback.error(error, context: context);
       return;
     }
     setState(() => _submitting = true);
@@ -184,16 +183,16 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         final message = pollId == null
             ? provider.lastActionError
             : provider.mutationError(pollId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message ?? (_isEditing ? '更新失败' : '发布失败'))),
+        AppFeedback.error(
+          message ?? (_isEditing ? '更新失败' : '发布失败'),
+          context: context,
         );
         return;
       }
       Navigator.pop(context, result);
     } on PollApiException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        AppFeedback.error(error.message, context: context);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

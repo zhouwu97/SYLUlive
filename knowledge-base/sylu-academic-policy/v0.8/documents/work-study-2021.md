@@ -1,7 +1,7 @@
 ---
 title: "沈阳理工大学勤工助学管理政策（2021）"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "2021 年勤工助学办法"
 document_type: "school_work_study_policy"
 department: "沈阳理工大学学生处"

@@ -3,6 +3,10 @@ enum AiSourceType { policy, schedule, competitionCatalog, competitionEvidence }
 class AiSource {
   final AiSourceType type;
   final int chunkId;
+
+  /// 一张来源卡可能由多个检索 chunk 组成；旧接口只有 primary_chunk_id，
+  /// 因此始终把 [chunkId] 作为兼容主键保留。
+  final List<int> chunkIds;
   final int documentId;
   final String title;
   final String publisher;
@@ -25,6 +29,7 @@ class AiSource {
   const AiSource({
     required this.type,
     this.chunkId = 0,
+    this.chunkIds = const [],
     this.documentId = 0,
     required this.title,
     this.publisher = '',
@@ -46,13 +51,18 @@ class AiSource {
   });
 
   factory AiSource.fromJson(Map<String, dynamic> json) {
+    final primaryChunkId =
+        int.tryParse('${json['primary_chunk_id'] ?? json['chunk_id'] ?? ''}') ??
+            0;
+    final chunkIds = _intList(json['chunk_ids']);
+    final normalizedChunkIds = <int>{
+      if (primaryChunkId > 0) primaryChunkId,
+      ...chunkIds,
+    }.toList(growable: false);
     return AiSource(
       type: _sourceType(json['type']),
-      chunkId:
-          int.tryParse(
-            '${json['primary_chunk_id'] ?? json['chunk_id'] ?? ''}',
-          ) ??
-          0,
+      chunkId: primaryChunkId,
+      chunkIds: normalizedChunkIds,
       documentId: int.tryParse('${json['document_id'] ?? ''}') ?? 0,
       title: json['title']?.toString() ?? '',
       publisher:
@@ -67,8 +77,7 @@ class AiSource {
       publishedAt: _dateTime(json['published_at']),
       competitionId: json['competition_id']?.toString() ?? '',
       datasetVersion: json['dataset_version']?.toString() ?? '',
-      schoolRecognition:
-          json['school_recognition']?.toString() ??
+      schoolRecognition: json['school_recognition']?.toString() ??
           json['school_recognition_grade']?.toString() ??
           '',
       competitionRating: json['competition_rating']?.toString() ?? '',
@@ -134,6 +143,38 @@ class AiSource {
   }
 
   String get locatorLabel => locators.isEmpty ? '未标注' : locators.join(' · ');
+
+  String get stableKey =>
+      '${type.name}:$documentId:${chunkIds.isEmpty ? chunkId : chunkIds.join(',')}:$title';
+
+  AiSource copyWith({
+    List<int>? citationNumbers,
+    List<int>? chunkIds,
+  }) {
+    return AiSource(
+      type: type,
+      chunkId: chunkId,
+      chunkIds: chunkIds ?? this.chunkIds,
+      documentId: documentId,
+      title: title,
+      publisher: publisher,
+      status: status,
+      confidence: confidence,
+      url: url,
+      citationNumbers: citationNumbers ?? this.citationNumbers,
+      locators: locators,
+      effectiveFrom: effectiveFrom,
+      effectiveTo: effectiveTo,
+      publishedAt: publishedAt,
+      competitionId: competitionId,
+      datasetVersion: datasetVersion,
+      schoolRecognition: schoolRecognition,
+      competitionRating: competitionRating,
+      evidenceSubgrade: evidenceSubgrade,
+      aiMode: aiMode,
+      lastUpdated: lastUpdated,
+    );
+  }
 }
 
 AiSourceType _sourceType(dynamic value) {

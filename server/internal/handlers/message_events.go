@@ -6,20 +6,18 @@ import (
 	"sync"
 	"time"
 
-	"shenliyuan/internal/models"
-
 	"github.com/gin-gonic/gin"
 )
 
 const messageEventBufferSize = 32
 
 type privateMessageEvent struct {
-	Type           string          `json:"type"`
-	ConversationID uint            `json:"conversation_id"`
-	Message        *models.Message `json:"message,omitempty"`
-	ReadByUserID   uint            `json:"read_by_user_id,omitempty"`
-	ReadThroughID  uint            `json:"read_through_message_id,omitempty"`
-	ReadAt         *time.Time      `json:"read_at,omitempty"`
+	Type           string             `json:"type"`
+	ConversationID uint               `json:"conversation_id"`
+	Message        *PrivateMessageDTO `json:"message,omitempty"`
+	ReadByUserID   uint               `json:"read_by_user_id,omitempty"`
+	ReadThroughID  uint               `json:"read_through_message_id,omitempty"`
+	ReadAt         *time.Time         `json:"read_at,omitempty"`
 }
 
 // messageEventBroker 负责单进程内的前台实时事件分发。

@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -35,12 +38,12 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 func currentUserID(c *gin.Context) (uint, bool) {
 	raw, ok := c.Get("user_id")
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录", "code": "authentication_required"})
 		return 0, false
 	}
 	id, ok := raw.(uint)
 	if !ok || id == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效", "code": "authentication_required"})
 		return 0, false
 	}
 	return id, true
@@ -115,11 +118,31 @@ func (h *PostHandler) CreateFeaturedApplication(c *gin.Context) {
 		return
 	}
 
+	// 先明确查询是否已有待审核申请，再插入；不能把所有 INSERT 错误都当成“重复申请”。
+	var existing models.FeaturedApplication
+	existingErr := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
+	switch {
+	case existingErr == nil:
+		c.JSON(http.StatusConflict, gin.H{"error": "该帖子已有待审核精华申请"})
+		return
+	case !errors.Is(existingErr, gorm.ErrRecordNotFound):
+		log.Printf("[featured_application] 查询待审核申请失败 post_id=%d: %v", postID, existingErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询申请状态失败"})
+		return
+	}
+
 	app := models.FeaturedApplication{
 		PostID: post.ID, ApplicantID: userID, Reason: input.Reason, Status: "pending",
 	}
 	if err := h.db.Create(&app).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "该帖子已有待审核精华申请"})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// 并发申请被 partial unique index（一帖一条 pending）拦截，等价于已有待审核申请
+			c.JSON(http.StatusConflict, gin.H{"error": "该帖子已有待审核精华申请"})
+			return
+		}
+		log.Printf("[featured_application] 创建申请失败 post_id=%d user_id=%d: %v", postID, userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交精华申请失败，请稍后重试"})
 		return
 	}
 	c.JSON(http.StatusCreated, app)
@@ -135,11 +158,21 @@ func (h *PostHandler) GetFeaturedApplicationStatus(c *gin.Context) {
 		return
 	}
 	var app models.FeaturedApplication
-	err := h.db.Where("post_id = ? AND applicant_id = ? AND status = ?", postID, userID, "pending").First(&app).Error
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{"has_pending": true, "status": "pending"})
-	} else {
+	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&app).Error
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, gin.H{
+			"has_pending":    true,
+			"is_mine":        app.ApplicantID == userID,
+			"source":         app.Source,
+			"application_id": app.ID,
+			"status":         "pending",
+		})
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusOK, gin.H{"has_pending": false})
+	default:
+		log.Printf("[featured_application] 查询状态失败 post_id=%d: %v", postID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询申请状态失败"})
 	}
 }
 
@@ -161,7 +194,7 @@ func (h *PostHandler) GetMyFeaturedApplications(c *gin.Context) {
 func (h *PostHandler) AdminGetFeaturedApplications(c *gin.Context) {
 	status := strings.TrimSpace(c.DefaultQuery("status", "pending"))
 	query := h.db.Model(&models.FeaturedApplication{}).
-		Preload("Post").Preload("Applicant").Preload("Reviewer")
+		Preload("Post").Preload("Post.Author").Preload("Applicant").Preload("Reviewer")
 	if status != "" && status != "all" {
 		query = query.Where("status = ?", status)
 	}

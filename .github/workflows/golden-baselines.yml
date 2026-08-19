@@ -1,0 +1,33 @@
+name: Golden Baselines
+
+# 手动生成 Linux canonical Golden 基线。
+# 仅用于 baseline 生成/更新，不是 CI gate：
+# 主 CI（ci.yml）里的 `flutter test` 本身会验证已有 Golden。
+# Windows 禁止更新 canonical baseline，见 docs/design/DESIGN_QA.md §4。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.8'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Generate Linux canonical goldens
+        run: flutter test test/goldens --update-goldens
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golden-baselines
+          path: client/test/goldens/baselines/**
+          if-no-files-found: warn

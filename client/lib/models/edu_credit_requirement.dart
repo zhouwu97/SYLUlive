@@ -1,6 +1,6 @@
 /// 官方学分要求模块的数据模型。
 ///
-/// 对应 Python 教务服务返回的 credit-requirement-v1 结构。
+/// 对应 Python 教务服务返回的 credit-requirement-v2 结构。
 
 class EduCreditRequirementOverview {
   final bool success;

@@ -4,8 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/app_page_app_bar.dart';
 import '../config/api_constants.dart';
 
 class AdminCandidatesScreen extends StatefulWidget {
@@ -16,19 +20,29 @@ class AdminCandidatesScreen extends StatefulWidget {
 }
 
 class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
+  static const int _pageSize = 20;
+
   List<AdminUserSummary> _candidates = [];
-  bool _isLoading = false;
+  bool _initialLoading = false;
+  bool _loadingMore = false;
+  bool _refreshing = false;
+  bool _hasMore = true;
+  int _page = 1;
+  String _currentQuery = '';
   bool _hasSearched = false;
   String? _errorMessage;
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
 
   int? _totalUsers;
   int? _eduUsers;
   int? _otherUsers;
+  int? _eligibleUsers;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchStats();
       _loadCandidates();
@@ -44,6 +58,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           _totalUsers = res.data['total'];
           _eduUsers = res.data['edu'];
           _otherUsers = res.data['other'];
+          _eligibleUsers = res.data['eligible'];
         });
       }
     } catch (e) {
@@ -54,50 +69,112 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadCandidates({String? keyword}) async {
-    final q = keyword ?? _searchController.text.trim();
+  List<AdminUserSummary> _decodeCandidates(List<dynamic> items) {
+    return items
+        .whereType<Map>()
+        .map(
+          (value) => AdminUserSummary.fromJson(
+            Map<String, dynamic>.from(value),
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> _loadCandidates({String? keyword, bool append = false}) async {
+    final q = keyword ?? _currentQuery;
+    _currentQuery = q;
 
     setState(() {
-      _isLoading = true;
-      _hasSearched = q.isNotEmpty;
-      _errorMessage = null;
+      if (append) {
+        _loadingMore = true;
+      } else {
+        _initialLoading = _candidates.isEmpty && !_refreshing;
+        _hasSearched = q.isNotEmpty;
+        _errorMessage = null;
+        _page = 1;
+        _hasMore = true;
+      }
     });
 
     try {
       final dio = context.read<AuthProvider>().dio;
       final res = await dio.get(
         '/admin/candidates',
-        queryParameters: q.isEmpty ? null : {'q': q},
+        queryParameters: {
+          'page': append ? _page + 1 : 1,
+          'page_size': _pageSize,
+          if (q.isNotEmpty) 'q': q,
+        },
       );
 
-      if (mounted) {
-        setState(() {
-          _candidates = ((res.data as List?) ?? const [])
-              .whereType<Map>()
-              .map(
-                (value) => AdminUserSummary.fromJson(
-                  Map<String, dynamic>.from(value),
-                ),
-              )
-              .toList();
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+
+      final data = res.data;
+      final items =
+          (data is Map ? data['items'] as List? : null) ?? const [];
+      final hasMore =
+          (data is Map ? data['has_more'] as bool? : null) ?? false;
+
+      setState(() {
+        if (append) {
+          _candidates = [..._candidates, ..._decodeCandidates(items)];
+          _page += 1;
+        } else {
+          _candidates = _decodeCandidates(items);
+        }
+        _hasMore = hasMore;
+        _initialLoading = false;
+        _refreshing = false;
+        _loadingMore = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
+      if (!mounted) return;
+      setState(() {
+        _initialLoading = false;
+        _refreshing = false;
+        _loadingMore = false;
+        if (!append && _candidates.isEmpty) {
           _errorMessage = e.toString();
-        });
+        }
+      });
+      if (append || _candidates.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(append ? '加载更多失败' : '刷新失败'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _refreshing || _initialLoading || !_hasMore) return;
+    await _loadCandidates(append: true);
+  }
+
   Future<void> _searchCandidates() async {
     await _loadCandidates(keyword: _searchController.text.trim());
+  }
+
+  Future<void> _refreshCandidates() async {
+    setState(() {
+      _refreshing = true;
+      _errorMessage = null;
+    });
+    await Future.wait([_fetchStats(), _loadCandidates()]);
   }
 
   Future<void> _inviteAdmin(AdminUserSummary candidate) async {
@@ -124,8 +201,12 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      setState(
-          () => _candidates.removeWhere((item) => item.id == candidate.id));
+      setState(() {
+        _candidates.removeWhere((item) => item.id == candidate.id);
+        if (_eligibleUsers != null && _eligibleUsers! > 0) {
+          _eligibleUsers = _eligibleUsers! - 1;
+        }
+      });
     } on DioException catch (e) {
       if (!mounted) return;
       String msg = '邀请失败';
@@ -181,22 +262,487 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   }
 
   Widget _buildStatItem(String label, int value, bool isDark) {
-    return Column(
-      children: [
-        Text(
-          value.toString(),
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : Colors.black87,
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value.toString(),
+            style: AppTextStyles.titleMedium.copyWith(
+              fontSize: 20,
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            label,
+            style: AppTextStyles.labelMedium.copyWith(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.62)
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsCard(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? const [Color(0xFF173B36), AppColors.surfaceSecondaryDark]
+                : const [Color(0xFFEAF6F3), Colors.white],
+          ),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : AppColors.borderNormalLight,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+          child: Row(
+            children: [
+              _buildStatItem('总用户', _totalUsers ?? 0, isDark),
+              _buildStatDivider(isDark),
+              _buildStatItem('教务账号', _eduUsers ?? 0, isDark),
+              _buildStatDivider(isDark),
+              _buildStatItem('其他', _otherUsers ?? 0, isDark),
+            ],
+          ),
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildStatDivider(bool isDark) {
+    return Container(
+      width: 1,
+      height: 34,
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.1)
+          : AppColors.borderSubtleLight,
+    );
+  }
+
+  Widget _buildSearchField(bool isDark) {
+    final hasKeyword = _searchController.text.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.surfaceSecondaryDark
+              : AppColors.surfaceSecondaryLight,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : AppColors.borderSubtleLight,
+          ),
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _searchCandidates(),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.55)
+                  : AppColors.textSecondaryLight,
+            ),
+            hintText: '搜索用户 ID、学号/账号或昵称',
+            hintStyle: TextStyle(
+              fontSize: 13,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.45)
+                  : AppColors.textSecondaryLight,
+            ),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.md,
+            ),
+            suffixIcon: IconButton(
+              tooltip: hasKeyword ? '清除搜索' : '搜索候选人',
+              icon: Icon(
+                hasKeyword ? Icons.close_rounded : Icons.arrow_forward_rounded,
+                color: hasKeyword
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.58)
+                        : AppColors.textSecondaryLight)
+                    : AppColors.brandPrimary,
+              ),
+              onPressed: hasKeyword
+                  ? () {
+                      _searchController.clear();
+                      _loadCandidates(keyword: '');
+                    }
+                  : _searchCandidates,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStateCard({
+    required bool isDark,
+    required IconData icon,
+    required String title,
+    required String message,
+    VoidCallback? onPressed,
+  }) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 300),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppColors.brandPrimary.withValues(alpha: 0.16)
+                    : AppColors.brandPrimary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: AppColors.brandPrimary, size: 30),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.titleMedium.copyWith(
+                color: isDark ? Colors.white : AppColors.textPrimaryLight,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.58)
+                    : AppColors.textSecondaryLight,
+              ),
+            ),
+            if (onPressed != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton.tonalIcon(
+                onPressed: onPressed,
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark
+                      ? AppColors.brandPrimary.withValues(alpha: 0.24)
+                      : const Color(0xFFE5F4F1),
+                  foregroundColor:
+                      isDark ? const Color(0xFF8DE0D3) : AppColors.brandPrimary,
+                ),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('重新加载'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCandidateCard(AdminUserSummary candidate, bool isDark) {
+    final name = candidate.nickname.isEmpty ? '未知用户' : candidate.nickname;
+    final surface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      elevation: 0,
+      color: surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : AppColors.borderSubtleLight,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CachedAvatar(
+              imageUrl: candidate.avatar.isEmpty
+                  ? null
+                  : ApiConstants.fullUrl(candidate.avatar),
+              fallbackText: name,
+              radius: 22,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.titleMedium.copyWith(
+                            fontSize: 16,
+                            color: isDark
+                                ? Colors.white
+                                : AppColors.textPrimaryLight,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      _buildCandidateChip(isDark),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    candidate.publicIdLabel,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.62)
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    candidate.accountLabel,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.62)
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: FilledButton(
+                onPressed: () => _inviteAdmin(candidate),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(64, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  backgroundColor: isDark
+                      ? AppColors.brandPrimary.withValues(alpha: 0.24)
+                      : const Color(0xFFE5F4F1),
+                  foregroundColor:
+                      isDark ? const Color(0xFF8DE0D3) : AppColors.brandPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+                child: const Text('邀请'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCandidateChip(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.brandPrimary.withValues(alpha: 0.16)
+            : AppColors.brandPrimary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(
+        '候选人',
+        style: AppTextStyles.labelMedium.copyWith(
+          color: isDark ? const Color(0xFF8DE0D3) : AppColors.brandPrimary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCandidatesBody(bool isDark) {
+    final bottomPadding =
+        MediaQuery.viewPaddingOf(context).bottom + AppSpacing.xxl;
+
+    if (_initialLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return _buildStateScroll(
+        isDark: isDark,
+        bottomPadding: bottomPadding,
+        child: _buildStateCard(
+          isDark: isDark,
+          icon: Icons.cloud_off_rounded,
+          title: '候选人加载失败',
+          message: '网络或服务暂时不可用，可以下拉刷新重试。',
+          onPressed: _refreshCandidates,
+        ),
+      );
+    }
+
+    if (_candidates.isEmpty && !_loadingMore) {
+      return _buildStateScroll(
+        isDark: isDark,
+        bottomPadding: bottomPadding,
+        child: _buildStateCard(
+          isDark: isDark,
+          icon:
+              _hasSearched ? Icons.person_search_rounded : Icons.group_outlined,
+          title: _hasSearched ? '没有找到候选人' : '暂无候选人',
+          message: _hasSearched ? '换一个用户 ID、学号或昵称试试。' : '符合条件的普通用户会显示在这里。',
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshCandidates,
+      child: Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        child: ListView.builder(
+          controller: _scrollController,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.xs,
+            AppSpacing.lg,
+            bottomPadding,
+          ),
+          itemCount: _candidates.length + 1,
+          itemBuilder: (context, index) {
+            if (index == _candidates.length) {
+              return _buildListFooter(isDark);
+            }
+            return _buildCandidateCard(_candidates[index], isDark);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListFooter(bool isDark) {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+    if (!_hasMore && _candidates.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Center(
+          child: Text(
+            '已显示全部符合条件候选人',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : AppColors.textSecondaryLight.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      );
+    }
+    return const SizedBox(height: 12);
+  }
+
+  Widget _buildEligibleHeader(bool isDark) {
+    if (_eligibleUsers == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xs,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          Text(
+            '符合邀请条件',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.62)
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '$_eligibleUsers 人',
+            style: AppTextStyles.titleMedium.copyWith(
+              fontSize: 15,
+              color: AppColors.brandPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStateScroll({
+    required bool isDark,
+    required double bottomPadding,
+    required Widget child,
+  }) {
+    return RefreshIndicator(
+      onRefresh: _refreshCandidates,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.xxl,
+          AppSpacing.section,
+          AppSpacing.xxl,
+          bottomPadding,
+        ),
+        children: [child],
+      ),
     );
   }
 
@@ -205,116 +751,17 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('管理员候选人')),
-      body: Column(
-        children: [
-          if (_totalUsers != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: GlassContainer(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                borderRadius: 16,
-                blur: 8,
-                opacity: isDark ? 0.05 : 0.8,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildStatItem('总用户', _totalUsers!, isDark),
-                    _buildStatItem('教务账号', _eduUsers!, isDark),
-                    _buildStatItem('其他', _otherUsers!, isDark),
-                  ],
-                ),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: GlassContainer(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              borderRadius: 12,
-              blur: 8,
-              opacity: isDark ? 0.1 : 0.4,
-              child: TextField(
-                controller: _searchController,
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _searchCandidates(),
-                decoration: InputDecoration(
-                  icon: const Icon(Icons.search, color: Colors.grey),
-                  hintText: '输入用户 ID、学号/账号或昵称搜索候选人',
-                  hintStyle: const TextStyle(fontSize: 13),
-                  border: InputBorder.none,
-                  suffixIcon: _searchController.text.trim().isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.close_rounded,
-                              color: Colors.grey),
-                          onPressed: () {
-                            _searchController.clear();
-                            _loadCandidates();
-                          },
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.arrow_forward,
-                              color: Colors.blue),
-                          onPressed: _searchCandidates,
-                        ),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? Center(child: Text(_errorMessage!))
-                    : _candidates.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Text(
-                                _hasSearched ? '未找到候选人' : '暂无符合条件的候选人',
-                                style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white54
-                                        : Colors.black54),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            itemCount: _candidates.length,
-                            itemBuilder: (context, index) {
-                              final candidate = _candidates[index];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                color: isDark ? Colors.grey[850] : Colors.white,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                child: ListTile(
-                                  leading: CachedAvatar(
-                                    imageUrl: candidate.avatar.isEmpty
-                                        ? null
-                                        : ApiConstants.fullUrl(candidate.avatar),
-                                    fallbackText: candidate.nickname,
-                                    radius: 20,
-                                  ),
-                                  title: Text(
-                                    candidate.nickname.isEmpty
-                                        ? '未知用户'
-                                        : candidate.nickname,
-                                  ),
-                                  subtitle: Text(
-                                    '${candidate.publicIdLabel}\n${candidate.accountLabel}',
-                                  ),
-                                  isThreeLine: true,
-                                  trailing: FilledButton.tonal(
-                                    onPressed: () => _inviteAdmin(candidate),
-                                    child: const Text('邀请'),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-          ),
-        ],
+      appBar: const AppPageAppBar(title: Text('管理员候选人')),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            if (_totalUsers != null) _buildStatsCard(isDark),
+            _buildSearchField(isDark),
+            _buildEligibleHeader(isDark),
+            Expanded(child: _buildCandidatesBody(isDark)),
+          ],
+        ),
       ),
     );
   }

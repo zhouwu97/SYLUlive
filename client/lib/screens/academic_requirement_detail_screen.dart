@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../models/edu_credit_requirement.dart';
+import '../theme/app_colors.dart';
 import '../widgets/edu_grade/academic_requirement_state.dart';
 
 class AcademicRequirementDetailScreen extends StatelessWidget {
@@ -17,13 +18,15 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    const accent = AppColors.brandPrimary;
+    final titleColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -43,7 +46,9 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1A1D21) : Colors.white,
+              color: isDark
+                  ? AppColors.surfaceSecondaryDark
+                  : AppColors.surfaceSecondaryLight,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
@@ -103,8 +108,8 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
                         minHeight: 6,
                         backgroundColor: isDark
                             ? Colors.white.withValues(alpha: 0.08)
-                            : const Color(0xFFE8ECEF),
-                        color: const Color(0xFF147C72),
+                            : AppColors.brandSurfaceLight,
+                        color: AppColors.success,
                       ),
                     )
                   else
@@ -115,7 +120,7 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
                         minHeight: 6,
                         backgroundColor: isDark
                             ? Colors.white.withValues(alpha: 0.08)
-                            : const Color(0xFFE8ECEF),
+                            : AppColors.brandSurfaceLight,
                         color: _progressColor(module.status),
                       ),
                     ),
@@ -168,13 +173,13 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
   Color _progressColor(String status) {
     switch (status) {
       case 'completed':
-        return const Color(0xFF147C72);
+        return AppColors.success;
       case 'in_progress':
-        return const Color(0xFFC47C14);
+        return AppColors.brandPrimary;
       case 'shortfall':
-        return const Color(0xFFC62828);
+        return AppColors.warning;
       default:
-        return const Color(0xFF9EA7B0);
+        return AppColors.textMutedLight;
     }
   }
 }
@@ -194,7 +199,8 @@ class _StatColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -231,16 +237,18 @@ class _RequirementCourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardBg =
-        isDark ? const Color(0xFF1A1D21) : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : const Color(0xFFE2E6EB);
+    final cardBg = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final borderColor =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderNormalLight;
 
     final isFinished = course.completed == true;
     final statusColor = isFinished
-        ? (isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72))
-        : Colors.grey;
+        ? AppColors.success
+        : course.completed == false
+            ? (isDark ? AppColors.textMutedLight : AppColors.textSecondaryLight)
+            : AppColors.brandPrimary;
 
     return Container(
       width: double.infinity,

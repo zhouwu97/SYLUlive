@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
+import '../../theme/app_colors.dart';
 
 /// 版块频道入口卡片。
 /// 展示版块的公告/规则，敏感版块额外显示安全提醒条。
@@ -16,26 +17,30 @@ class SectionChannelCard extends StatelessWidget {
     required this.isDark,
   });
 
-  @override
-  Widget build(BuildContext context) {
+  String _effectiveNoticeText() {
     final cfg = _channelConfig(section.slug);
     final sensitiveSlug = section.sensitiveLevel == 'caution' ||
         section.sensitiveLevel == 'strict';
-    final noticeText = section.noticeText.isNotEmpty
+    return section.noticeText.isNotEmpty
         ? section.noticeText
-        : (sensitiveSlug ? cfg.defaultNotice : null);
+        : (sensitiveSlug ? cfg.defaultNotice : '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final noticeText = _effectiveNoticeText();
+    final cfg = _channelConfig(section.slug);
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 主频道入口卡片
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
           child: _buildChannelCard(cfg),
         ),
-        // 敏感版块规则提示条
-        if (noticeText != null && noticeText.isNotEmpty) ...[
-          const SizedBox(height: 8),
+        if (noticeText.isNotEmpty) ...[
+          const SizedBox(height: 6),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: _buildNoticeBar(noticeText),
@@ -50,12 +55,12 @@ class SectionChannelCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFEDEFF3),
+              ? AppColors.borderNormalDark
+              : AppColors.borderNormalLight,
         ),
       ),
       child: Row(
@@ -79,7 +84,7 @@ class SectionChannelCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : const Color(0xFF151922),
+                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -87,7 +92,7 @@ class SectionChannelCard extends StatelessWidget {
                   cfg.channelDesc,
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : const Color(0xFF8A93A3),
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -98,7 +103,7 @@ class SectionChannelCard extends StatelessWidget {
           Icon(
             Icons.chevron_right_rounded,
             size: 18,
-            color: isDark ? Colors.white30 : const Color(0xFFBCC3CC),
+            color: isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight,
           ),
         ],
       ),

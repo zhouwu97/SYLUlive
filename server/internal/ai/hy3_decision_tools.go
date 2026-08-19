@@ -727,6 +727,12 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 		"analysis":               envelope.Result,
 		"deterministic_findings": findings,
 		"warnings":               append(warnings, envelope.Warnings...),
+		"source":                 "hy3_mcp",
+		"fetched_at":             grades.FetchedAt,
+		"expires_at":             grades.ExpiresAt,
+		"is_stale":               grades.IsStale,
+		"evidence":               contextResultsEvidence(grades, credits, erke),
+		"analysis_input":         snapshot,
 	}, nil
 }
 

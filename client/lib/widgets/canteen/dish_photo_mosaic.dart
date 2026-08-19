@@ -10,8 +10,13 @@ import '../../screens/image_viewer_screen.dart';
 /// - 3 张：1 大 + 2 小
 class DishPhotoMosaic extends StatelessWidget {
   final List<String> imageUrls;
+  final void Function(int index)? onLongPress;
 
-  const DishPhotoMosaic({super.key, required this.imageUrls});
+  const DishPhotoMosaic({
+    super.key,
+    required this.imageUrls,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -22,23 +27,23 @@ class DishPhotoMosaic extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: switch (urls.length) {
-        1 => _buildLarge(urls[0], context),
+        1 => _buildLarge(urls[0], context, 0),
         2 => Row(
             children: [
-              Expanded(child: _buildTile(urls[0], context, 220)),
+              Expanded(child: _buildTile(urls[0], context, 220, 0)),
               const SizedBox(width: 4),
-              Expanded(child: _buildTile(urls[1], context, 220)),
+              Expanded(child: _buildTile(urls[1], context, 220, 1)),
             ],
           ),
         _ => Column(
             children: [
-              _buildLarge(urls[0], context),
+              _buildLarge(urls[0], context, 0),
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Expanded(child: _buildTile(urls[1], context, 160)),
+                  Expanded(child: _buildTile(urls[1], context, 160, 1)),
                   const SizedBox(width: 4),
-                  Expanded(child: _buildTile(urls[2], context, 160)),
+                  Expanded(child: _buildTile(urls[2], context, 160, 2)),
                 ],
               ),
             ],
@@ -47,11 +52,11 @@ class DishPhotoMosaic extends StatelessWidget {
     );
   }
 
-  Widget _buildLarge(String url, BuildContext context) {
-    return _buildTile(url, context, 240);
+  Widget _buildLarge(String url, BuildContext context, int index) {
+    return _buildTile(url, context, 240, index);
   }
 
-  Widget _buildTile(String url, BuildContext context, double height) {
+  Widget _buildTile(String url, BuildContext context, double height, int index) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -64,6 +69,7 @@ class DishPhotoMosaic extends StatelessWidget {
           ),
         );
       },
+      onLongPress: onLongPress != null ? () => onLongPress!(index) : null,
       child: SizedBox(
         height: height,
         width: double.infinity,

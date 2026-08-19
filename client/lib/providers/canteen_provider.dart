@@ -140,6 +140,7 @@ class CanteenProvider with ChangeNotifier {
     List<String> recommendedDishes = const [],
     DateTime? baseUpdatedAt,
   }) async {
+    errorCode = null;
     try {
       final payload = <String, dynamic>{
         'star': star,
@@ -158,6 +159,9 @@ class CanteenProvider with ChangeNotifier {
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
       debugPrint('Error rating canteen: $e');
       return false;
     }

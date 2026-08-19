@@ -2,6 +2,9 @@ package models
 
 import (
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -39,7 +42,7 @@ type CanteenDishPhoto struct {
 	DishID       uint       `gorm:"not null;index" json:"dish_id"`
 	FileID       uint       `gorm:"not null;index" json:"file_id"`
 	UserID       uint       `gorm:"not null;index" json:"user_id"`
-	Status       string     `gorm:"size:20;not null;default:'pending';index" json:"status"`
+	Status       string     `gorm:"size:20;not null;default:'approved';index" json:"status"`
 	SortOrder    int        `gorm:"not null;default:0" json:"sort_order"`
 	ReviewedBy   *uint      `json:"reviewed_by"`
 	ReviewedAt   *time.Time `json:"reviewed_at"`
@@ -49,7 +52,6 @@ type CanteenDishPhoto struct {
 }
 
 // EnsureCanteenDishSchema 建立菜品图库的数据库级唯一约束（幂等）。
-// SQLite (modernc.org/sqlite) 与 PostgreSQL 均支持 partial unique index。
 func EnsureCanteenDishSchema(db *gorm.DB) error {
 	statements := []string{
 		// 同食堂归一化菜名唯一
@@ -58,10 +60,8 @@ func EnsureCanteenDishSchema(db *gorm.DB) error {
 		// 同一文件不能重复进入菜品图库（配合 File.SHA-256 去重 = 免费完全重复检测）
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_canteen_dish_photo_file
 		 ON canteen_dish_photos (file_id)`,
-		// 同一用户同一道菜最多一个 pending
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_dish_photo_user
-		 ON canteen_dish_photos (dish_id, user_id)
-		 WHERE status = 'pending'`,
+		// 历史 pending 索引安全移除
+		`DROP INDEX IF EXISTS uq_pending_dish_photo_user`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -72,12 +72,27 @@ func EnsureCanteenDishSchema(db *gorm.DB) error {
 	return nil
 }
 
+func validatePhotoFileOnDisk(f File) bool {
+	if !strings.HasPrefix(strings.ToLower(f.MimeType), "image/") {
+		return false
+	}
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+	rel := strings.TrimPrefix(f.Path, "/uploads/")
+	rel = strings.TrimPrefix(rel, "uploads/")
+	fullPath := filepath.Join(uploadDir, filepath.FromSlash(rel))
+	info, err := os.Stat(fullPath)
+	return err == nil && !info.IsDir()
+}
+
 // MigratePendingCanteenDishPhotos 迁移现存 pending 实拍图片：
 // 对于每道菜：
 //   已有 approved 数 = N
 //   剩余容量 = 3 - N (若 N >= 3 则容量为 0)
-//   按 created_at ASC 取最多剩余容量个 pending -> approved，并将其对应 File 设为 public
-//   超出 3 张的其余 pending -> archived
+//   按 created_at ASC 取最多剩余容量个合法且文件存在 pending -> approved，并将其对应 File 设为 public
+//   超出容量或文件非法/缺失的 pending -> archived
 func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		var dishIDs []uint
@@ -114,13 +129,16 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 			var toApproveFileIDs []uint
 			var toArchiveIDs []uint
 
-			for i, p := range pendingPhotos {
-				if i < capacity {
-					toApproveIDs = append(toApproveIDs, p.ID)
-					toApproveFileIDs = append(toApproveFileIDs, p.FileID)
-				} else {
-					toArchiveIDs = append(toArchiveIDs, p.ID)
+			for _, p := range pendingPhotos {
+				if len(toApproveIDs) < capacity {
+					var file File
+					if err := tx.First(&file, p.FileID).Error; err == nil && validatePhotoFileOnDisk(file) {
+						toApproveIDs = append(toApproveIDs, p.ID)
+						toApproveFileIDs = append(toApproveFileIDs, p.FileID)
+						continue
+					}
 				}
+				toArchiveIDs = append(toArchiveIDs, p.ID)
 			}
 
 			if len(toApproveIDs) > 0 {

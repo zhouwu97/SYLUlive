@@ -255,21 +255,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   /// 仅在 `lastPage` 模式下，把当前帖子详情保存为 lastPage。
+  /// 最佳努力：读取失败（如测试用 Fake Provider）时静默跳过，不打断页面。
   void _saveCurrentPageAsLastPage() {
-    final theme = context.read<ThemeProvider>();
-    if (theme.startupDestination != StartupDestinationMode.lastPage) return;
-    final accountId = context.read<AuthProvider>().user?.id;
-    if (accountId == null || accountId <= 0 || widget.postId <= 0) return;
-    unawaited(RootPageStateStore.instance.saveLastPage(
-      RestorablePageState(
-        type: RestorablePageType.post,
-        arguments: <String, dynamic>{
-          'postId': widget.postId,
-          'underlyingRootTab': currentHomeTabIndex.value,
-        },
-        accountId: accountId,
-      ),
-    ));
+    try {
+      final theme = context.read<ThemeProvider>();
+      if (theme.startupDestination != StartupDestinationMode.lastPage) return;
+      final accountId = context.read<AuthProvider>().user?.id;
+      if (accountId == null || accountId <= 0 || widget.postId <= 0) return;
+      unawaited(RootPageStateStore.instance.saveLastPage(
+        RestorablePageState(
+          type: RestorablePageType.post,
+          arguments: <String, dynamic>{
+            'postId': widget.postId,
+            'underlyingRootTab': currentHomeTabIndex.value,
+          },
+          accountId: accountId,
+        ),
+      ));
+    } catch (_) {
+      // 忽略：不影响正常浏览。
+    }
   }
 
   Future<void> _loadWaterSectionPermission({bool forceRefresh = false}) async {

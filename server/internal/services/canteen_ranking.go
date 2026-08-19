@@ -31,3 +31,16 @@ func RatingConfidence(count int) string {
 		return "high"
 	}
 }
+
+// BayesianScoreTo100 将 1~5 分尺度的加权得分转为 0~100 综合分。
+func BayesianScoreTo100(rawScore float64) float64 {
+	if rawScore <= 0 {
+		return 0
+	}
+	score100 := rawScore * 20.0
+	if score100 > 100.0 {
+		score100 = 100.0
+	}
+	return score100
+}
+

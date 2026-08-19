@@ -11,11 +11,11 @@ import 'package:shenliyuan/screens/canteen_ranking_screen.dart';
 
 const _rankingsBody =
     '{"items":['
-    '{"rank":1,"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","average_star":4.8,'
-    '"rating_count":86,"ranking_score":92.0,"confidence":"low","dish_count":12,"dish_photo_count":26,'
+    '{"rank":1,"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","average_star":4.6,'
+    '"rating_count":5,"ranking_score":86.0,"confidence":"low","dish_count":12,"dish_photo_count":26,'
     '"summary_tags":[{"key":"taste_good","name":"味道不错","count":8}]},'
     '{"rank":2,"id":2,"name":"二食堂","image":"","average_star":5.0,"rating_count":1,'
-    '"ranking_score":85.0,"confidence":"low","dish_count":0,"dish_photo_count":0,"summary_tags":[]}'
+    '"ranking_score":83.0,"confidence":"low","dish_count":0,"dish_photo_count":0,"summary_tags":[]}'
     '],"meta":{"sort":"composite","algorithm":"bayesian","prior_weight":5,"total":2}}';
 
 class _FakeAdapter implements HttpClientAdapter {
@@ -68,7 +68,7 @@ void main() {
     expect(find.text('02'), findsOneWidget);
     expect(find.text('一食堂二楼'), findsOneWidget);
     // 综合分展示
-    expect(find.text('综合分 92'), findsOneWidget);
+    expect(find.text('综合分 86'), findsOneWidget);
     // 样本很少提示（rating_count=1）
     expect(find.text('样本很少'), findsOneWidget);
   });

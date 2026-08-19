@@ -387,7 +387,8 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 
 	var existing models.WaterSectionFeaturedPost
 	dupErr := h.db.Where("section_id = ? AND post_id = ?", section.ID, postID).First(&existing).Error
-	if dupErr == nil && existing.Status == models.SectionFeaturedStatusActive {
+	switch {
+	case dupErr == nil && existing.Status == models.SectionFeaturedStatusActive:
 		// 已是版块精华：补偿检查首页推荐申请是否仍然存在（自动修复历史脏状态）
 		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
 		if ensureErr != nil {
@@ -402,14 +403,17 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing, "home_application": homeApp})
 		return
-	}
 
-	if dupErr == nil {
-		h.db.Model(&existing).Updates(map[string]interface{}{
+	case dupErr == nil:
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"featured_by": operator.ID,
 			"reason":      reason,
 			"status":      models.SectionFeaturedStatusActive,
-		})
+		}).Error; err != nil {
+			log.Printf("[water_moderation] 恢复版块精华失败 post_id=%d: %v", postID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复版块精华失败"})
+			return
+		}
 		_ = h.db.First(&existing, existing.ID)
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
@@ -425,6 +429,13 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing, "home_application": homeApp})
+		return
+
+	case errors.Is(dupErr, gorm.ErrRecordNotFound):
+		// 正常记录不存在，继续下方新建流程
+	default:
+		log.Printf("[water_moderation] 查询版块精华记录失败 post_id=%d: %v", postID, dupErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询加精记录失败"})
 		return
 	}
 
@@ -536,10 +547,22 @@ func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
 		reason = body.Reason
 	}
 
-	h.db.Model(&featured).Update("status", models.SectionFeaturedStatusInactive)
-	h.db.Model(&models.FeaturedApplication{}).
-		Where("source = ? AND section_featured_id = ? AND status = ?", "moderator", featured.ID, "pending").
-		Update("status", "withdrawn")
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&featured).Update("status", models.SectionFeaturedStatusInactive).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.FeaturedApplication{}).
+			Where("source = ? AND section_featured_id = ? AND status = ?", "moderator", featured.ID, "pending").
+			Update("status", "withdrawn").Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Printf("[water_moderation] 取消加精事务失败 post_id=%d: %v", postID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消加精失败"})
+		return
+	}
+
 	h.writeLog(section.ID, operator.ID, models.ModActionUnfeaturePost, "post", uint(postID), nil, reason, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
 }

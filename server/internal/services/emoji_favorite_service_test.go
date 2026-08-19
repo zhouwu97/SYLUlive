@@ -232,12 +232,32 @@ func TestEmojiFavoriteServiceCreatesFromPublicImage(t *testing.T) {
 	db := newEmojiFavoriteServiceTestDB(t)
 	dir := t.TempDir()
 	t.Setenv("UPLOAD_DIR", dir)
-	source := createEmojiSourceFile(t, db, dir, 7)
+
+	// 1. 公开图片（FileAccessPublic），其他用户（8）可以成功收藏
+	publicPath := writeEmojiPNG(t, dir, "public_post.png")
+	publicInfo, err := os.Stat(publicPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicFile := models.File{
+		Hash:        "public-" + t.Name(),
+		Path:        "/uploads/public_post.png",
+		Size:        publicInfo.Size(),
+		MimeType:    "image/png",
+		UploaderID:  7,
+		Status:      "active",
+		AccessScope: models.FileAccessPublic,
+		RefCount:    1,
+	}
+	if err := db.Create(&publicFile).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	service := NewEmojiFavoriteService(db)
 
-	created, err := service.CreateFromPublicImage(context.Background(), 8, source.Path)
+	created, err := service.CreateFromPublicImage(context.Background(), 8, publicFile.Path)
 	if err != nil {
-		t.Fatalf("从公共图片创建自定义收藏失败: %v", err)
+		t.Fatalf("从公开图片创建自定义收藏失败: %v", err)
 	}
 	if created.Kind != models.EmojiFavoriteKindCustom || created.AssetID == nil {
 		t.Fatalf("创建的公共图片表情视图错误: %+v", created)
@@ -245,6 +265,13 @@ func TestEmojiFavoriteServiceCreatesFromPublicImage(t *testing.T) {
 	items, err := service.List(context.Background(), 8)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("列出公共图片收藏错误: len=%d err=%v", len(items), err)
+	}
+
+	// 2. 私有图片（FileAccessPrivate 且属于用户 7），其他用户（8）调用 CreateFromPublicImage 必须被拒绝（防权限越权绕过）
+	privateFile := createEmojiSourceFile(t, db, dir, 7)
+	_, err = service.CreateFromPublicImage(context.Background(), 8, privateFile.Path)
+	if err == nil {
+		t.Fatal("从其他用户的私有图片创建公共表情收藏未被拒绝，存在权限越权绕过")
 	}
 }
 

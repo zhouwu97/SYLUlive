@@ -5380,12 +5380,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       ),
     );
     if (shouldToggle != true) return;
-    final added = await service.toggleImage(normalizedUrl);
-    if (mounted) {
-      AppFeedback.showSnackBar(
-        context,
-        added ? '已添加到收藏' : '已取消收藏',
-      );
+    try {
+      final added = await service.toggleImage(normalizedUrl);
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          added ? '已添加到收藏' : '已取消收藏',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '收藏操作失败，请检查网络后重试', isError: true);
+      }
     }
   }
 

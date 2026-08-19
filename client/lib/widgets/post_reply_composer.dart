@@ -26,6 +26,7 @@ class PostReplyComposer extends StatefulWidget {
     required this.onSubmit,
     required this.onNeedLogin,
     this.pickImage,
+    this.preserveReplyTargetOnSuccess = false,
   });
 
   final PostReplyComposerController controller;
@@ -34,6 +35,7 @@ class PostReplyComposer extends StatefulWidget {
   final PostReplySubmitCallback onSubmit;
   final VoidCallback onNeedLogin;
   final PostReplyImagePicker? pickImage;
+  final bool preserveReplyTargetOnSuccess;
 
   @override
   State<PostReplyComposer> createState() => _PostReplyComposerState();
@@ -60,6 +62,12 @@ class _PostReplyComposerState extends State<PostReplyComposer>
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
+    final ownsInput = controller.focusNode.hasFocus ||
+        controller.showEmojiPanel ||
+        controller.inputHandoffActive ||
+        controller.isOpen;
+    if (!ownsInput) return;
+
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     controller.updateKeyboardMetrics(keyboardInset);
   }
@@ -274,7 +282,12 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     }
     final draft = controller.draft;
     final sent = await widget.onSubmit(draft);
-    if (sent) controller.close(clearDraft: true);
+    if (sent) {
+      controller.close(
+        clearDraft: true,
+        preserveReplyTarget: widget.preserveReplyTargetOnSuccess,
+      );
+    }
   }
 
   Map<String, String> _favoriteImageHeaders(BuildContext context) {

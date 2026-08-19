@@ -4313,6 +4313,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               controller: threadComposerController,
                               sending: isSending,
                               enabled: context.watch<AuthProvider>().isLoggedIn,
+                              preserveReplyTargetOnSuccess: true,
                               onSubmit: (draft) async {
                                 if (isSending) return false;
                                 setSheetState(() => isSending = true);

@@ -80,9 +80,9 @@ func TestDishPhotoConcurrentApproval(t *testing.T) {
 		}
 		return photo
 	}
-	for i := 0; i < 3; i++ {
-		newPhoto(uint(3000+i), models.DishPhotoStatusApproved)
-	}
+	// 初始恰好 2 张 approved（容量上限 3），另 2 张 pending 供并发审批
+	newPhoto(uint(3000), models.DishPhotoStatusApproved)
+	newPhoto(uint(3001), models.DishPhotoStatusApproved)
 	pending1 := newPhoto(3010, models.DishPhotoStatusPending)
 	pending2 := newPhoto(3011, models.DishPhotoStatusPending)
 
@@ -91,10 +91,6 @@ func TestDishPhotoConcurrentApproval(t *testing.T) {
 
 	adminHandler := NewCanteenDishPhotoAdminHandler(db)
 	gin.SetMode(gin.TestMode)
-
-	// 两个管理员并发 approve 两个 pending（从 approved=2 出发实际上限场景：
-	// 为验证并发边界，先把 3 个 approved 中的 1 个删掉 → approved=2，再并发 approve 2 个 pending）。
-	db.Exec("DELETE FROM canteen_dish_photos WHERE status = ? AND id = ?", models.DishPhotoStatusApproved, 3000)
 
 	var wg sync.WaitGroup
 	results := make([]int, 2)
@@ -119,15 +115,17 @@ func TestDishPhotoConcurrentApproval(t *testing.T) {
 		t.Fatalf("approved count=%d want exactly 3 (never 4); results=%v", approvedCount, results)
 	}
 
-	// 其中至少一个 409 gallery_full（因为上限 3）
-	has409 := false
+	// PG 行锁保证两个并发 approve 严格序列化：恰好 1 个成功、1 个 409 gallery_full
+	okCount, conflictCount := 0, 0
 	for _, code := range results {
-		if code == http.StatusConflict {
-			has409 = true
+		if code == http.StatusOK {
+			okCount++
+		} else if code == http.StatusConflict {
+			conflictCount++
 		}
 	}
-	if !has409 {
-		t.Fatalf("expected at least one 409 gallery_full among %v", results)
+	if okCount != 1 || conflictCount != 1 {
+		t.Fatalf("并发审批必须恰好 1 成功 + 1 409，got results=%v", results)
 	}
 }
 
@@ -343,14 +341,22 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 
 // requireIntegrationTestDatabase 是破坏性集成测试的硬保护：这些测试会清空
 // canteen_* / files / 部分 users 表，绝不能指向开发库或生产库。
-// 数据库名必须能看出是测试库（含 "test"），否则直接失败，绝不执行任何清表。
+// requireIntegrationTestDatabase 是破坏性集成测试的硬保护：这些测试会清空
+// canteen_* / files / 部分 users 表，绝不能指向开发库或生产库。
+// 双重校验：1) 必须显式设置 ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1（防止误跑）；
+// 2) 当前数据库名必须以 _test 结尾（防止 test/prod 名称混淆）。
+// 任一不满足即放弃本次测试，绝不执行任何清表。
 func requireIntegrationTestDatabase(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	if os.Getenv("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS") != "1" {
+		t.Skip("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS 未显式开启，跳过破坏性集成测试")
+	}
 	var dbName string
 	if err := db.Raw("SELECT current_database()").Scan(&dbName).Error; err != nil {
 		t.Fatalf("read current_database: %v", err)
 	}
-	if !strings.Contains(strings.ToLower(dbName), "test") {
-		t.Fatalf("refuse destructive integration test on database %q", dbName)
+	lower := strings.ToLower(dbName)
+	if lower == "_test" || !strings.HasSuffix(lower, "_test") {
+		t.Fatalf("refuse destructive integration test on database %q (name must end in _test)", dbName)
 	}
 }

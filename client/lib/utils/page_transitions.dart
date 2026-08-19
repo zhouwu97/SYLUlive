@@ -1,5 +1,6 @@
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+
+import '../theme/app_motion.dart';
 
 /// 自定义页面转场路由：右滑推入 + 淡入淡出
 /// 支持预测性返回手势预览（Android 14+）
@@ -9,7 +10,7 @@ class SlideFadeRoute<T> extends PageRouteBuilder<T> {
 
   SlideFadeRoute({
     required this.builder,
-    this.duration = const Duration(milliseconds: 320),
+    this.duration = AppMotion.page,
   }) : super(
           transitionDuration: duration,
           reverseTransitionDuration: duration,
@@ -34,7 +35,7 @@ class SharedSlideRoute<T> extends PageRouteBuilder<T> {
 
   SharedSlideRoute({
     required this.builder,
-    this.duration = const Duration(milliseconds: 360),
+    this.duration = AppMotion.page,
   }) : super(
           transitionDuration: duration,
           reverseTransitionDuration: duration,
@@ -64,6 +65,9 @@ class _SlideFadeTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      return child;
+    }
     // animation: 推进 0→1，返回（含预测性手势）1→0
     // secondaryAnimation: 由 Navigator 内部驱动前一页快照的渲染，这里不需要操作
     // Navigator 会在手势返回时自动渲染前一页在下方，当前页滑出即可
@@ -71,11 +75,16 @@ class _SlideFadeTransition extends StatelessWidget {
       position: Tween<Offset>(
         begin: const Offset(0.3, 0), // 从右侧 30% 处滑入
         end: Offset.zero,
-      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: AppMotion.incoming,
+        reverseCurve: AppMotion.outgoing,
+      )),
       child: FadeTransition(
         opacity: CurvedAnimation(
           parent: animation,
-          curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+          curve: const Interval(0.0, 0.5, curve: AppMotion.incoming),
+          reverseCurve: const Interval(0.5, 1.0, curve: AppMotion.outgoing),
         ),
         child: child,
       ),
@@ -89,20 +98,24 @@ class BottomSheetRoute<T> extends PageRouteBuilder<T> {
 
   BottomSheetRoute({required this.builder})
       : super(
-          transitionDuration: const Duration(milliseconds: 300),
-          reverseTransitionDuration: const Duration(milliseconds: 250),
+          transitionDuration: AppMotion.overlay,
+          reverseTransitionDuration: AppMotion.fast,
           opaque: false,
           allowSnapshotting: false,
           pageBuilder: (context, animation, secondaryAnimation) =>
               builder(context),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+              return child;
+            }
             return SlideTransition(
               position:
                   Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
                       .animate(
                 CurvedAnimation(
                   parent: animation,
-                  curve: Curves.easeOutCubic,
+                  curve: AppMotion.incoming,
+                  reverseCurve: AppMotion.outgoing,
                 ),
               ),
               child: child,

@@ -96,12 +96,8 @@ class AppComposerBar extends StatelessWidget {
         (isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight);
     final effectiveIconColor = iconColor ??
         (isDark ? AppColors.iconNeutralDark : AppColors.iconNeutralLight);
-    final effectiveEnabledSendColor = enabledSendColor ??
-        (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight);
-    final effectiveEnabledSendIconColor = enabledSendIconColor ??
-        (isDark
-            ? AppColors.messageOutgoingTextDark
-            : AppColors.messageOutgoingTextLight);
+    final effectiveEnabledSendColor = enabledSendColor ?? AppColors.brandPrimary;
+    final effectiveEnabledSendIconColor = enabledSendIconColor ?? Colors.white;
     final effectiveDisabledSendColor = disabledSendColor ??
         (isDark ? AppColors.disabledControlDark : AppColors.disabledControlLight);
     final effectiveDisabledSendIconColor = disabledSendIconColor ??
@@ -218,47 +214,53 @@ class AppComposerBar extends StatelessWidget {
             valueListenable: textController,
             builder: (context, value, _) {
               final sendEnabled = !sending && canSend(value);
+              final reduceMotion =
+                  MediaQuery.maybeOf(context)?.disableAnimations ?? false;
               return SizedBox(
                 key: sendContainerKey,
                 width: 44,
                 height: 44,
                 child: Center(
-                  child: SizedBox(
-                    width: sendEnabled ? 40 : 38,
-                    height: sendEnabled ? 40 : 38,
-                    child: IconButton.filled(
-                      key: sendKey,
-                      tooltip: sendTooltip,
-                      onPressed: sendEnabled ? onSend : null,
-                      padding: EdgeInsets.zero,
-                      style: IconButton.styleFrom(
-                        fixedSize: Size(
-                          sendEnabled ? 40 : 38,
-                          sendEnabled ? 40 : 38,
+                  child: AnimatedScale(
+                    scale: sendEnabled ? 1.0 : 0.94,
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: IconButton.filled(
+                        key: sendKey,
+                        tooltip: sendTooltip,
+                        onPressed: sendEnabled ? onSend : null,
+                        padding: EdgeInsets.zero,
+                        style: IconButton.styleFrom(
+                          fixedSize: const Size(40, 40),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: sendEnabled
+                              ? effectiveEnabledSendColor
+                              : effectiveDisabledSendColor,
+                          foregroundColor: sendEnabled
+                              ? effectiveEnabledSendIconColor
+                              : effectiveDisabledSendIconColor,
+                          disabledBackgroundColor: effectiveDisabledSendColor,
+                          disabledForegroundColor: effectiveDisabledSendIconColor,
                         ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        backgroundColor: sendEnabled
-                            ? effectiveEnabledSendColor
-                            : effectiveDisabledSendColor,
-                        foregroundColor: sendEnabled
-                            ? effectiveEnabledSendIconColor
-                            : effectiveDisabledSendIconColor,
-                        disabledBackgroundColor: effectiveDisabledSendColor,
-                        disabledForegroundColor: effectiveDisabledSendIconColor,
-                      ),
-                      icon: sending
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: effectiveEnabledSendIconColor,
+                        icon: sending
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: effectiveEnabledSendIconColor,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                size: 20,
                               ),
-                            )
-                          : Icon(
-                              Icons.send_rounded,
-                              size: sendEnabled ? 20 : 19,
-                            ),
+                      ),
                     ),
                   ),
                 ),

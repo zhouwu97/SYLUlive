@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 
 class CampusTheme {
-  static const Color bg = Color(0xFFFFFAF4);
-  static const Color darkBg = Color(0xFF111315);
+  static const Color bg = AppColors.surfacePrimaryLight;
+  static const Color darkBg = AppColors.surfacePrimaryDark;
 
   static Color pageBackground(BuildContext context) {
     return Theme.of(context).brightness == Brightness.dark ? darkBg : bg;
   }
 
-  static const Color card = Color(0xFFFFFFFF);
-  static const Color darkCard = Color(0xFF1E2226);
+  static const Color card = AppColors.surfaceSecondaryLight;
+  static const Color darkCard = AppColors.surfaceSecondaryDark;
 
-  static const Color text = Color(0xFF1F2328);
-  static const Color subText = Color(0xFF747B82);
+  static const Color text = AppColors.textPrimaryLight;
+  static const Color subText = AppColors.textSecondaryLight;
 
-  static const Color primary = Color(0xFF147C72);
+  static const Color primary = AppColors.brandPrimary;
   static const Color primaryLight = Color(0xFFEAF6F3);
 
-  static const Color border = Color(0xFFE2EFEA);
-  static const Color softBorder = Color(0xFFE8EEE9);
+  static const Color border = AppColors.borderNormalLight;
+  static const Color softBorder = AppColors.borderSubtleLight;
 
   static const Color blue = Color(0xFF2F80ED);
   static const Color orange = Color(0xFFF2994A);

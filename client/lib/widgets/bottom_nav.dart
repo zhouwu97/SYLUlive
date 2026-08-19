@@ -85,83 +85,87 @@ class BottomNavWrapper extends StatelessWidget {
                     children: [
                       // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
                       Positioned.fill(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: visualIndexListenable,
-                          builder: (context, visualIndex, child) {
-                            return Align(
-                              alignment: Alignment.centerLeft,
-                              child: Transform.translate(
-                                offset: Offset(itemWidth * visualIndex, 0),
-                                child: SizedBox(
-                                  width: itemWidth,
-                                  child: Center(
-                                    child: Container(
-                                      width: 48,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            primaryColor.withValues(
-                                                alpha: 0.18),
-                                            primaryColor.withValues(
-                                                alpha: 0.07),
+                        child: RepaintBoundary(
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: visualIndexListenable,
+                            builder: (context, visualIndex, child) {
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Transform.translate(
+                                  offset: Offset(itemWidth * visualIndex, 0),
+                                  child: SizedBox(
+                                    width: itemWidth,
+                                    child: Center(
+                                      child: Container(
+                                        width: 48,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              primaryColor.withValues(
+                                                  alpha: 0.18),
+                                              primaryColor.withValues(
+                                                  alpha: 0.07),
+                                            ],
+                                          ),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: primaryColor.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: primaryColor.withValues(
+                                                alpha: 0.12,
+                                              ),
+                                              blurRadius: 14,
+                                              offset: const Offset(0, 5),
+                                            ),
                                           ],
                                         ),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: primaryColor.withValues(
-                                            alpha: 0.1,
-                                          ),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: primaryColor.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            blurRadius: 14,
-                                            offset: const Offset(0, 5),
-                                          ),
-                                        ],
                                       ),
                                     ),
                                   ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            const icons = [
+                              Icons.home_rounded,
+                              Icons.storefront_rounded,
+                              Icons.calendar_month_rounded,
+                              Icons.apartment_rounded,
+                              Icons.person_rounded,
+                            ];
+                            const labels = ['首页', '集市', '课表', '校园', '我'];
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: List.generate(
+                                icons.length,
+                                (index) => _labeledItem(
+                                  icons[index],
+                                  labels[index],
+                                  index,
+                                  context,
+                                  primaryColor,
+                                  itemWidth,
+                                  visualIndex,
+                                  badges[index] == true,
                                 ),
                               ),
                             );
                           },
                         ),
-                      ),
-                      ValueListenableBuilder<double>(
-                        valueListenable: visualIndexListenable,
-                        builder: (context, visualIndex, child) {
-                          const icons = [
-                            Icons.home_rounded,
-                            Icons.storefront_rounded,
-                            Icons.calendar_month_rounded,
-                            Icons.apartment_rounded,
-                            Icons.person_rounded,
-                          ];
-                          const labels = ['首页', '集市', '课表', '校园', '我'];
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: List.generate(
-                              icons.length,
-                              (index) => _labeledItem(
-                                icons[index],
-                                labels[index],
-                                index,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                                badges[index] == true,
-                              ),
-                            ),
-                          );
-                        },
                       ),
                     ],
                   ),
@@ -213,88 +217,92 @@ class BottomNavWrapper extends StatelessWidget {
                     alignment: Alignment.center,
                     children: [
                       Positioned.fill(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: visualIndexListenable,
-                          builder: (context, visualIndex, child) {
-                            return Align(
-                              alignment: Alignment.centerLeft,
-                              child: Transform.translate(
-                                offset: Offset(itemWidth * visualIndex, 0),
-                                child: SizedBox(
-                                  width: itemWidth,
-                                  child: Center(
-                                    child: Container(
-                                      width: 56,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: isDark
-                                              ? [
-                                                  primaryColor.withValues(
-                                                    alpha: 0.24,
-                                                  ),
-                                                  primaryColor.withValues(
-                                                    alpha: 0.1,
-                                                  ),
-                                                ]
-                                              : [
-                                                  const Color(0xFFF3FBF8),
-                                                  const Color(0xFFE5F5F0),
-                                                ],
-                                        ),
-                                        borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(
-                                          color: primaryColor.withValues(
-                                            alpha: isDark ? 0.26 : 0.12,
+                        child: RepaintBoundary(
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: visualIndexListenable,
+                            builder: (context, visualIndex, child) {
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Transform.translate(
+                                  offset: Offset(itemWidth * visualIndex, 0),
+                                  child: SizedBox(
+                                    width: itemWidth,
+                                    child: Center(
+                                      child: Container(
+                                        width: 56,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: isDark
+                                                ? [
+                                                    primaryColor.withValues(
+                                                      alpha: 0.24,
+                                                    ),
+                                                    primaryColor.withValues(
+                                                      alpha: 0.1,
+                                                    ),
+                                                  ]
+                                                : [
+                                                    const Color(0xFFF3FBF8),
+                                                    const Color(0xFFE5F5F0),
+                                                  ],
                                           ),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
+                                          borderRadius: BorderRadius.circular(18),
+                                          border: Border.all(
                                             color: primaryColor.withValues(
-                                              alpha: isDark ? 0.18 : 0.1,
+                                              alpha: isDark ? 0.26 : 0.12,
                                             ),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 5),
                                           ),
-                                        ],
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: primaryColor.withValues(
+                                                alpha: isDark ? 0.18 : 0.1,
+                                              ),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            const icons = [
+                              Icons.home_rounded,
+                              Icons.storefront_rounded,
+                              Icons.calendar_month_rounded,
+                              Icons.apartment_rounded,
+                              Icons.person_rounded,
+                            ];
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: List.generate(
+                                icons.length,
+                                (index) => _iconOnly(
+                                  icons[index],
+                                  index,
+                                  context,
+                                  primaryColor,
+                                  itemWidth,
+                                  visualIndex,
+                                  badges[index] == true,
                                 ),
                               ),
                             );
                           },
                         ),
-                      ),
-                      ValueListenableBuilder<double>(
-                        valueListenable: visualIndexListenable,
-                        builder: (context, visualIndex, child) {
-                          const icons = [
-                            Icons.home_rounded,
-                            Icons.storefront_rounded,
-                            Icons.calendar_month_rounded,
-                            Icons.apartment_rounded,
-                            Icons.person_rounded,
-                          ];
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: List.generate(
-                              icons.length,
-                              (index) => _iconOnly(
-                                icons[index],
-                                index,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                                badges[index] == true,
-                              ),
-                            ),
-                          );
-                        },
                       ),
                     ],
                   );
@@ -427,11 +435,11 @@ class BottomNavWrapper extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
     final softenedT = Curves.easeOutCubic.transform(activeT);
-    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+    final inactiveColor = isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
 
     return _NavItemVisualState(
       color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
-      fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,
+      fontWeight: FontWeight.w600,
     );
   }
 }

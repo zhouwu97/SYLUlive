@@ -196,9 +196,9 @@ class PostReplyComposerController extends ChangeNotifier {
     _handoff = PostReplyInputHandoff.emojiToKeyboard;
     notifyListeners();
     _focusAfterLayout();
-    // 保险超时：仅防状态永远卡住，不作为动画时长。提高至 750ms 兼容慢速 IME。
+    // 保险超时：仅防状态永远卡住，不作为动画时长。
     _handoffTimer = Timer(
-      const Duration(milliseconds: 750),
+      const Duration(milliseconds: 400),
       () {
         if (_disposing || generation != _handoffGeneration) return;
         if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_motion.dart';
+
 class SectionFloatingDock extends StatelessWidget {
   final Color accentColor;
   final bool isDark;
@@ -26,7 +28,7 @@ class SectionFloatingDock extends StatelessWidget {
       children: [
         _buildRefreshButton(),
         const SizedBox(height: 10),
-        _buildComposeButton(),
+        _buildComposeButton(context),
       ],
     );
   }
@@ -75,12 +77,16 @@ class SectionFloatingDock extends StatelessWidget {
     );
   }
 
-  Widget _buildComposeButton() {
+  Widget _buildComposeButton(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final duration = reduceMotion ? Duration.zero : AppMotion.fast;
+
     return GestureDetector(
       onTap: onCompose,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
+        duration: duration,
+        curve: AppMotion.incoming,
         width: compact ? 52 : 76,
         height: compact ? 52 : 48,
         decoration: BoxDecoration(
@@ -95,26 +101,35 @@ class SectionFloatingDock extends StatelessWidget {
           ],
         ),
         child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.add_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
-              if (!compact) ...[
-                const SizedBox(width: 4),
-                const Text(
-                  '发帖',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+          child: ClipRect(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+                AnimatedSwitcher(
+                  duration: duration,
+                  transitionBuilder: (child, animation) =>
+                      FadeTransition(opacity: animation, child: child),
+                  child: compact
+                      ? const SizedBox.shrink()
+                      : const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: Text(
+                            '发帖',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                 ),
               ],
-            ],
+            ),
           ),
         ),
       ),

@@ -8,6 +8,7 @@ import '../providers/post_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/user_home_screen.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
@@ -142,10 +143,12 @@ class _PostCardState extends State<PostCard>
       borderRadius: isDesktop ? 16 : 12,
       blur: 8,
       opacity: 1,
-      backgroundColor: isDark ? const Color(0xE6171B24) : Colors.white,
+      backgroundColor: isDark
+          ? AppColors.surfaceSecondaryDark
+          : AppColors.surfaceSecondaryLight,
       borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.10)
-          : const Color(0xFFEEF0F5),
+          ? AppColors.borderNormalDark
+          : AppColors.borderNormalLight,
       onTap: widget.onTap,
       child: Padding(
         padding: EdgeInsets.all(isDesktop ? 16 : 12),
@@ -216,7 +219,9 @@ class _PostCardState extends State<PostCard>
                         style: TextStyle(
                           fontSize: isDesktop ? 12 : 10,
                           height: 1.1,
-                          color: isDark ? Colors.white54 : Colors.grey[700],
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondaryLight,
                         ),
                       ),
                     ],
@@ -273,7 +278,9 @@ class _PostCardState extends State<PostCard>
               maxLines: contentMaxLines,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: isDark ? Colors.white70 : Colors.black87,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
                 height: isDesktop ? 1.4 : 1.3,
                 fontSize: isDesktop ? 15 : 13,
               ),
@@ -320,8 +327,8 @@ class _PostCardState extends State<PostCard>
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFFF3F4F6),
+            ? AppColors.surfaceMutedDark
+            : AppColors.surfaceMutedLight,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -329,7 +336,9 @@ class _PostCardState extends State<PostCard>
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w500,
-          color: isDark ? Colors.white70 : const Color(0xFF60646C),
+          color: isDark
+              ? AppColors.textSecondaryDark
+              : AppColors.textSecondaryLight,
         ),
         overflow: TextOverflow.ellipsis,
       ),
@@ -345,8 +354,8 @@ class _PostCardState extends State<PostCard>
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFF3F4F6),
+              ? AppColors.surfaceMutedDark
+              : AppColors.surfaceMutedLight,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
@@ -354,7 +363,9 @@ class _PostCardState extends State<PostCard>
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white60 : const Color(0xFF60646C),
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
           ),
         ),
       ),
@@ -799,7 +810,7 @@ class _PostCardState extends State<PostCard>
                   size: 16,
                   color: post.isLiked
                       ? const Color(0xFFFF6B6B)
-                      : (isDark ? Colors.white38 : Colors.grey[500]),
+                      : (isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -808,7 +819,7 @@ class _PostCardState extends State<PostCard>
                     fontSize: 12,
                     color: post.isLiked
                         ? const Color(0xFFFF6B6B)
-                        : (isDark ? Colors.white38 : Colors.grey[500]),
+                        : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
                   ),
                 ),
               ],
@@ -829,14 +840,14 @@ class _PostCardState extends State<PostCard>
                 Icon(
                   Icons.chat_bubble_outline,
                   size: 16,
-                  color: isDark ? Colors.white38 : Colors.grey[500],
+                  color: isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '${post.replyCount}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white38 : Colors.grey[500],
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                   ),
                 ),
               ],

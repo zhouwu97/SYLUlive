@@ -380,20 +380,25 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。
+  /// 最佳努力：读取失败（如测试用 Fake Provider）时静默跳过，不影响页面。
   Future<void> _saveCurrentTabAsLastPage() async {
-    if (context.read<ThemeProvider>().startupDestination !=
-        StartupDestinationMode.lastPage) {
-      return;
+    try {
+      if (context.read<ThemeProvider>().startupDestination !=
+          StartupDestinationMode.lastPage) {
+        return;
+      }
+      final accountId = context.read<AuthProvider>().user?.id;
+      if (accountId == null || accountId <= 0) return;
+      await RootPageStateStore.instance.saveLastPage(
+        RestorablePageState(
+          type: RestorablePageType.rootTab,
+          arguments: <String, dynamic>{'index': _currentIndex},
+          accountId: accountId,
+        ),
+      );
+    } catch (_) {
+      // 忽略：不影响 Tab 切换。
     }
-    final accountId = context.read<AuthProvider>().user?.id;
-    if (accountId == null || accountId <= 0) return;
-    await RootPageStateStore.instance.saveLastPage(
-      RestorablePageState(
-        type: RestorablePageType.rootTab,
-        arguments: <String, dynamic>{'index': _currentIndex},
-        accountId: accountId,
-      ),
-    );
   }
 
   @override

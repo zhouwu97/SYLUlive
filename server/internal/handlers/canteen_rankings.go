@@ -105,6 +105,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	}
 
 	cacheKey := "rankings:" + sortMode
+	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
 		return
@@ -166,7 +167,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			"total":        len(items),
 		},
 	}
-	canteenDiscoveryCache.Set(cacheKey, resp)
+	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)
 }
 
@@ -521,6 +522,7 @@ func itoa(v int) string {
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
 	cacheKey := "home:v1"
+	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
 		return
@@ -602,6 +604,6 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		"ranking_entry": rankingEntry,
 		"feed":          feed,
 	}
-	canteenDiscoveryCache.Set(cacheKey, resp)
+	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)
 }

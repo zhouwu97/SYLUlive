@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
+import '../../theme/app_colors.dart';
 import 'section_tab_bar.dart';
 
 /// 版块标签筛选栏（全部 / tag1 / tag2 / ... + 筛选按钮）。
@@ -28,42 +29,37 @@ class SectionTagFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final tags = section.enabledTags;
     if (tags.isEmpty) return const SizedBox.shrink();
-
     return SizedBox(
       height: 40,
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: Row(
         children: [
-          Positioned.fill(
-            right: 50,
+          Expanded(
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-              itemCount: tags.length + 1, // +1 for "全部"
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              itemCount: tags.length + 1,
               separatorBuilder: (_, __) => const SizedBox(width: 6),
               itemBuilder: (context, index) {
                 if (index == 0) {
+                  final isAll = selectedTagId == null;
                   return _buildChip(
                     label: '全部',
-                    selected: selectedTagId == null,
+                    selected: isAll,
                     onTap: () => onTagChanged(null),
                   );
                 }
                 final tag = tags[index - 1];
+                final isSelected = selectedTagId == tag.id;
                 return _buildChip(
                   label: tag.name,
-                  selected: selectedTagId == tag.id,
+                  selected: isSelected,
                   onTap: () => onTagChanged(tag.id),
                 );
               },
             ),
           ),
-          // 右侧排序按钮
-          Positioned(
-            top: 4,
-            right: 12,
-            child: _buildSortMenuButton(context),
-          ),
+          _buildSortMenuButton(context),
+          const SizedBox(width: 8),
         ],
       ),
     );
@@ -84,7 +80,7 @@ class SectionTagFilterBar extends StatelessWidget {
               ? accentColor.withValues(alpha: isDark ? 0.20 : 0.12)
               : (isDark
                   ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFF4F6F8)),
+                  : AppColors.surfaceMutedLight),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
@@ -94,7 +90,7 @@ class SectionTagFilterBar extends StatelessWidget {
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected
                 ? accentColor
-                : (isDark ? Colors.white54 : const Color(0xFF667085)),
+                : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
           ),
         ),
       ),
@@ -107,7 +103,7 @@ class SectionTagFilterBar extends StatelessWidget {
       tooltip: '排序方式',
       position: PopupMenuPosition.under,
       offset: const Offset(0, 4),
-      color: isDark ? const Color(0xFF171B24) : Colors.white,
+      color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       itemBuilder: (context) => kSectionSortOptions
           .map((o) => PopupMenuItem<String>(

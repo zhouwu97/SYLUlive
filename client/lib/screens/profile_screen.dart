@@ -65,10 +65,7 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
+class _ProfileScreenState extends State<ProfileScreen> {
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
@@ -80,13 +77,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = Tween<double>(begin: 1, end: 1).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
@@ -134,12 +124,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   void _loadPrefs() {
     final tp = context.read<ThemeProvider>();
     if (mounted) setState(() => _startOnTimetable = tp.startOnTimetable);
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadUnreadCount() async {

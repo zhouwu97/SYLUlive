@@ -191,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen>
     )..addListener(_handleMainTabAnimationTick);
     _contentTabController = AnimationController(
       vsync: this,
-      duration: AppMotion.reveal,
+      duration: AppMotion.normal,
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
@@ -1532,7 +1532,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     Future<void> contentFuture = Future<void>.value();
     if (plan.shouldReveal) {
-      _contentTabController.duration = AppMotion.reveal;
+      _contentTabController.duration = AppMotion.normal;
       _contentTabController.value = 0;
       contentFuture = _contentTabController.forward(from: 0).orCancel;
     } else {

@@ -5,8 +5,8 @@ import 'app_radius.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class AppTheme {
-  // 主题色
-  static const Color primaryColor = AppColors.accentIndigo;
+  // 主题色 — 全局统一为品牌青绿
+  static const Color primaryColor = AppColors.brandPrimary;
   static const Color secondaryColor = AppColors.accentPurple;
   static const Color accentColor = AppColors.accentPink;
 
@@ -76,6 +76,22 @@ class AppTheme {
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: scheme.primary,
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(
@@ -108,10 +124,31 @@ class AppTheme {
         ),
       ),
       // Tab 栏
-      tabBarTheme: const TabBarThemeData(
-        labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(fontSize: 14),
+      tabBarTheme: TabBarThemeData(
+        labelColor: scheme.primary,
+        unselectedLabelColor: brightness == Brightness.dark
+            ? AppColors.textSecondaryDark
+            : AppColors.textSecondaryLight,
+        indicatorColor: scheme.primary,
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontSize: 14),
         indicatorSize: TabBarIndicatorSize.label,
+      ),
+      // 进度条
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: scheme.primary,
+        linearTrackColor: scheme.primary.withValues(alpha: 0.15),
+      ),
+      // Switch
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return Colors.white;
+          return null;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return scheme.primary;
+          return null;
+        }),
       ),
       // 导航栏
       navigationBarTheme: NavigationBarThemeData(

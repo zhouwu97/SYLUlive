@@ -227,3 +227,24 @@ func TestEmojiFavoriteServicePutsNewestFavoriteFirst(t *testing.T) {
 		t.Fatalf("最新收藏未排在首位: %+v", items)
 	}
 }
+
+func TestEmojiFavoriteServiceCreatesFromPublicImage(t *testing.T) {
+	db := newEmojiFavoriteServiceTestDB(t)
+	dir := t.TempDir()
+	t.Setenv("UPLOAD_DIR", dir)
+	source := createEmojiSourceFile(t, db, dir, 7)
+	service := NewEmojiFavoriteService(db)
+
+	created, err := service.CreateFromPublicImage(context.Background(), 8, source.Path)
+	if err != nil {
+		t.Fatalf("从公共图片创建自定义收藏失败: %v", err)
+	}
+	if created.Kind != models.EmojiFavoriteKindCustom || created.AssetID == nil {
+		t.Fatalf("创建的公共图片表情视图错误: %+v", created)
+	}
+	items, err := service.List(context.Background(), 8)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("列出公共图片收藏错误: len=%d err=%v", len(items), err)
+	}
+}
+

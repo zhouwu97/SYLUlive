@@ -503,7 +503,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           img.localPath != null) {
         try {
           final file = File(img.localPath!);
-          if (!await file.exists()) continue;
+          if (!file.existsSync()) {
+            hasUploadError = true;
+            if (mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布')),
+              );
+            }
+            break;
+          }
 
           final bytes = await file.readAsBytes();
           final fileName =
@@ -552,11 +561,21 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             );
           } else {
             hasUploadError = true;
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('部分图片上传失败，请检查网络后重试')),
+              );
+            }
             break;
           }
         } catch (e) {
           debugPrint('Error uploading draft image during submit: $e');
           hasUploadError = true;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('部分图片上传失败，请检查网络后重试')),
+            );
+          }
           break;
         }
       }
@@ -565,9 +584,6 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     if (hasUploadError) {
       if (mounted) {
         setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('部分图片上传失败，请检查网络后重试')),
-        );
       }
       return;
     }
@@ -580,6 +596,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       images: finalImages,
       tags: _selectedTags,
       recommendedDishes: _recommendedDishes,
+      baseUpdatedAt: _baseRatingUpdatedAt,
     );
 
     if (!mounted) return;

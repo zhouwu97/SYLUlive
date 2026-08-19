@@ -138,17 +138,22 @@ class CanteenProvider with ChangeNotifier {
     List<String> images = const [],
     List<String> tags = const [],
     List<String> recommendedDishes = const [],
+    DateTime? baseUpdatedAt,
   }) async {
     try {
+      final payload = <String, dynamic>{
+        'star': star,
+        'comment': comment,
+        'images': json.encode(images),
+        'tags': tags,
+        'recommended_dishes': recommendedDishes,
+      };
+      if (baseUpdatedAt != null) {
+        payload['base_updated_at'] = baseUpdatedAt.toUtc().toIso8601String();
+      }
       final response = await _dio.post(
         '/canteens/$id/rate',
-        data: {
-          'star': star,
-          'comment': comment,
-          'images': json.encode(images),
-          'tags': tags,
-          'recommended_dishes': recommendedDishes,
-        },
+        data: payload,
       );
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {

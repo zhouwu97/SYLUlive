@@ -248,7 +248,8 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       widget.onNeedLogin();
       return;
     }
-    controller.toggleEmojiPanel();
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    controller.toggleEmojiPanel(keyboardInset: keyboardInset);
   }
 
   Future<void> _pickImage() async {

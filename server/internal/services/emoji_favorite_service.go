@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,6 +136,47 @@ func (s *EmojiFavoriteService) CreateBuiltin(ctx context.Context, userID uint, s
 
 func (s *EmojiFavoriteService) CreateCustom(ctx context.Context, userID, fileID uint) (*EmojiFavoriteView, error) {
 	return s.createCustom(ctx, userID, fileID, false)
+}
+
+func (s *EmojiFavoriteService) CreateFromPublicImage(ctx context.Context, userID uint, imagePath string) (*EmojiFavoriteView, error) {
+	if userID == 0 || strings.TrimSpace(imagePath) == "" {
+		return nil, errors.New("user id and image path are required")
+	}
+	cleanPath := strings.TrimSpace(imagePath)
+	if idx := strings.Index(cleanPath, "/uploads/"); idx != -1 {
+		cleanPath = cleanPath[idx:]
+	} else if !strings.HasPrefix(cleanPath, "/") {
+		cleanPath = "/" + cleanPath
+	}
+
+	var source models.File
+	if err := s.db.WithContext(ctx).Where("path = ?", cleanPath).First(&source).Error; err != nil {
+		fullPath, pathErr := s.resolveUploadPath(cleanPath)
+		if pathErr != nil {
+			return nil, fmt.Errorf("%w: 图片路径非法", ErrInvalidImageFileReference)
+		}
+		raw, readErr := os.ReadFile(fullPath)
+		if readErr != nil {
+			return nil, fmt.Errorf("%w: 图片文件不存在", ErrInvalidImageFileReference)
+		}
+		mimeType := http.DetectContentType(raw)
+		if !strings.HasPrefix(mimeType, "image/") {
+			return nil, fmt.Errorf("%w: 文件不是图片", ErrInvalidImageFileReference)
+		}
+		hashBytes := sha256.Sum256(raw)
+		source = models.File{
+			Hash:        hex.EncodeToString(hashBytes[:]),
+			Path:        cleanPath,
+			MimeType:    mimeType,
+			Size:        int64(len(raw)),
+			AccessScope: models.FileAccessPublic,
+			Status:      "active",
+		}
+		if err := s.db.WithContext(ctx).Create(&source).Error; err != nil {
+			return nil, err
+		}
+	}
+	return s.createCustom(ctx, userID, source.ID, true)
 }
 
 func (s *EmojiFavoriteService) createCustom(ctx context.Context, userID, fileID uint, messageAccess bool) (*EmojiFavoriteView, error) {

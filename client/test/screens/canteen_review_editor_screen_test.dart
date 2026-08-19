@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/canteen_review_draft.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
@@ -375,4 +376,62 @@ void main() {
     final draftAfter = await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(draftAfter, isNull);
   });
+
+  testWidgets('草稿中的本地图片丢失时阻止发布并保留草稿', (tester) async {
+    var rateCalled = false;
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/rate' && options.method == 'POST') {
+        rateCalled = true;
+        return _json('{"message":"评价已保存"}', 200);
+      }
+      if (options.path == '/canteens/1/dishes') {
+        return _json('[]', 200);
+      }
+      return _json('{}', 200);
+    });
+
+    // 预置包含不存在本地图片路径的草稿
+    await draftRepository.saveDraft(
+      CanteenReviewDraft(
+        userId: 101,
+        canteenId: 1,
+        star: 4,
+        comment: '草稿带图测试',
+        tags: const ['味道不错'],
+        recommendedDishes: const ['牛肉面'],
+        images: const [
+          CanteenReviewDraftImage(
+            type: ReviewDraftImageType.localPending,
+            localPath: '/non/existent/path/to/missing_image.jpg',
+          ),
+        ],
+        updatedAt: DateTime.now(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 点击发布评价
+    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // 验证：阻止调用发布接口
+    expect(rateCalled, isFalse);
+    // 验证：弹出丢失提示
+    expect(find.text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布'), findsOneWidget);
+    // 验证：草稿仍然保留，未被误删
+    final draftAfter = await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    expect(draftAfter, isNotNull);
+    expect(draftAfter!.comment, '草稿带图测试');
+  });
 }
+

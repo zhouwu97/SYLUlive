@@ -178,19 +178,23 @@ class AppComposerBar extends StatelessWidget {
                       color: effectiveHintColor,
                     ),
                     suffixIconConstraints: const BoxConstraints(
-                      minWidth: 40,
-                      maxWidth: 44,
+                      minWidth: 44,
+                      maxWidth: 48,
                       minHeight: 44,
                       maxHeight: 44,
                     ),
                     suffixIcon: SizedBox(
                       key: emojiKey,
-                      width: 40,
+                      width: 44,
                       height: 44,
                       child: IconButton(
                         tooltip: emojiPanelVisible ? '打开键盘' : '选择表情',
                         onPressed: onEmojiPressed,
                         padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
                         icon: Icon(
                           emojiPanelVisible
                               ? Icons.keyboard_alt_outlined
@@ -238,7 +242,7 @@ class AppComposerBar extends StatelessWidget {
                         padding: EdgeInsets.zero,
                         style: IconButton.styleFrom(
                           fixedSize: const Size(40, 40),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          tapTargetSize: MaterialTapTargetSize.padded,
                           backgroundColor: sendEnabled
                               ? effectiveEnabledSendColor
                               : effectiveDisabledSendColor,

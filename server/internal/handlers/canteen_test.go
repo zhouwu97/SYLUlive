@@ -734,3 +734,61 @@ func TestCanteenRouterRegistration(t *testing.T) {
 	}
 }
 
+func TestCanteenRateUpdatesTimestampAndOptimisticLock(t *testing.T) {
+	db := newCanteenTestDB(t)
+	handler := &CanteenHandler{db: db}
+	user := createCanteenTestUser(t, db, 10, "Student10")
+	now := time.Now()
+	user.StudentVerifiedAt = &now
+	user.EduBound = true
+	db.Save(&user)
+
+	canteen := models.Canteen{Name: "第一食堂", Verified: true, CreatedBy: 1}
+	db.Create(&canteen)
+
+	// 1. 第一次评价
+	body1 := `{"star": 5, "comment": "很好吃", "tags": ["clean"], "recommended_dishes": ["牛肉面"]}`
+	w1 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("首次评价失败: %d %s", w1.Code, w1.Body.String())
+	}
+	var resp1 struct {
+		Rating models.CanteenRating `json:"rating"`
+	}
+	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
+		t.Fatal(err)
+	}
+	if resp1.Rating.ID == 0 || resp1.Rating.CreatedAt.IsZero() || resp1.Rating.UpdatedAt.IsZero() {
+		t.Fatalf("返回评价时间戳未正确填充: %+v", resp1.Rating)
+	}
+	firstUpdatedAt := resp1.Rating.UpdatedAt
+
+	// 等待一小段时间确保时间戳有区分
+	time.Sleep(10 * time.Millisecond)
+
+	// 2. 第二次修改评价
+	body2 := `{"star": 4, "comment": "味道变淡了", "tags": ["good_value"], "recommended_dishes": ["小炒肉"]}`
+	w2 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("二次评价失败: %d %s", w2.Code, w2.Body.String())
+	}
+	var resp2 struct {
+		Rating models.CanteenRating `json:"rating"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatal(err)
+	}
+	if !resp2.Rating.UpdatedAt.After(firstUpdatedAt) && !resp2.Rating.UpdatedAt.Equal(firstUpdatedAt) {
+		t.Fatalf("二次评价 UpdatedAt 应该更新: first=%v, second=%v", firstUpdatedAt, resp2.Rating.UpdatedAt)
+	}
+
+	// 3. 传入陈旧的 base_updated_at 应该触发 409 Conflict
+	staleBaseTime := firstUpdatedAt.Add(-2 * time.Hour).Format(time.RFC3339)
+	body3 := fmt.Sprintf(`{"star": 3, "comment": "冲突旧草稿", "base_updated_at": "%s"}`, staleBaseTime)
+	w3 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body3)
+	if w3.Code != http.StatusConflict {
+		t.Fatalf("陈旧草稿应触发 409 conflict, got %d, body: %s", w3.Code, w3.Body.String())
+	}
+}
+
+

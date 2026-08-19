@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,10 +9,13 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
+import '../../models/publish_image_item.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../services/post_draft_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
@@ -50,29 +55,31 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
   int? _selectedTagId;
-  final List<XFile> _selectedImages = [];
-  final List<PostImage> _existingImages = [];
+
+  // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
+  final List<PublishImageItem> _images = [];
+  int _localImageSeq = 0;
+
+  String _nextLocalImageId() {
+    _localImageSeq++;
+    return 'local-${DateTime.now().millisecondsSinceEpoch}-$_localImageSeq';
+  }
+
+  // C-1 草稿：防抖自动保存，发布成功清理。
+  final PostDraftService _draftService = PostDraftService();
+  Timer? _draftDebounce;
+  static const Duration _draftDebounceDuration = Duration(milliseconds: 800);
 
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin 抽象成员实现
   // ---------------------------------------------------------------------------
 
   @override
-  List<XFile> get selectedImages => _selectedImages;
-
-  @override
-  List<PostImage> get existingImages => _existingImages;
-
-  @override
-  void onImageAdded(XFile image) => setState(() => _selectedImages.add(image));
-
-  @override
-  void onNewImageRemoved(int index) =>
-      setState(() => _selectedImages.removeAt(index));
-
-  @override
-  void onExistingImageRemoved(int index) =>
-      setState(() => _existingImages.removeAt(index));
+  void onImageAdded(XFile image) {
+    _scheduleDraftSave();
+    setState(
+        () => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
+  }
 
   // ---------------------------------------------------------------------------
   // 辅助状态
@@ -85,11 +92,73 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
   }
 
-  int get _totalImageCount => _existingImages.length + _selectedImages.length;
+  int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
       _canUploadUnlimitedImages || _totalImageCount < _maxImages;
+
+  // ---- 统一图片操作 ----
+
+  void _removeImage(String id) {
+    _scheduleDraftSave();
+    setState(() => _images.removeWhere((e) => e.id == id));
+  }
+
+  /// 拖拽排序：把 dragged 移到 target 所在位置（语义见 reorderImages）。
+  void _moveImage(String draggedId, String targetId) {
+    reorderImages(_images, draggedId, targetId);
+    _scheduleDraftSave();
+    setState(() {});
+  }
+
+  /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
+  /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试）。
+  Future<bool> _uploadLocalImages(PostProvider postProvider) {
+    return uploadImagesConcurrently(
+      _images,
+      maxConcurrent: 3,
+      upload: (item) => postProvider.uploadImage(
+        item.localFile!,
+        onProgress: (sent, total) {
+          if (total > 0) {
+            item.progress = sent / total;
+            if (mounted) setState(() {});
+          }
+        },
+      ),
+      onStateChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
+  void _retryImage(String id) {
+    for (final item in _images) {
+      if (item.id == id && item.source == PublishImageSource.local) {
+        item.fileId = null;
+        item.uploadState = PublishImageUploadState.waiting;
+        item.progress = 0;
+      }
+    }
+    setState(() {});
+  }
+
+  /// 按 UI 顺序组装 file_ids（上传完成后调用；未成功上传的 local 返回 null）。
+  List<int>? _orderedFileIds() {
+    final fileIds = <int>[];
+    for (final item in _images) {
+      switch (item.source) {
+        case PublishImageSource.existing:
+          fileIds.add(item.existingImage!.fileId);
+        case PublishImageSource.local:
+          if (item.fileId == null) return null;
+          fileIds.add(item.fileId!);
+      }
+    }
+    return fileIds;
+  }
 
   int get _charCount => _contentController.text.length;
 
@@ -137,7 +206,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (post != null) {
       _titleController.text = post.title;
       _contentController.text = post.content;
-      _existingImages.addAll(post.images);
+      _images.addAll(post.images.map(PublishImageItem.existing));
       _selectedTagId = post.waterTagId;
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
@@ -146,6 +215,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         : 'campus_life';
     _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
+    if (!_isEditing) {
+      unawaited(_restoreDraft());
+    }
     // 加载版块列表供标签选择
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<WaterSectionProvider>();
@@ -155,6 +227,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   @override
   void dispose() {
+    _draftDebounce?.cancel();
+    unawaited(_persistDraft()); // 退出前落盘当前草稿（编辑态不保存）
     _titleController.removeListener(_onTitleChanged);
     _contentController.removeListener(_onContentChanged);
     _titleWarningController.dispose();
@@ -165,6 +239,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   void _onTitleChanged() {
+    _scheduleDraftSave();
     if (!_titleNeedsAttention || _titleController.text.trim().isEmpty) {
       return;
     }
@@ -173,50 +248,83 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     setState(() => _titleNeedsAttention = false);
   }
 
-  void _onContentChanged() => setState(() {});
+  void _onContentChanged() {
+    _scheduleDraftSave();
+    setState(() {});
+  }
+
+  // ── C-1 草稿 ─────────────────────────────────────────────────────
+
+  Future<void> _restoreDraft() async {
+    final draft = await _draftService.load();
+    if (draft == null || draft.isEmpty || !mounted) return;
+    if (_titleController.text.isEmpty) {
+      _titleController.text = draft.title;
+    }
+    if (_contentController.text.isEmpty) {
+      _contentController.text = draft.content;
+    }
+    if (_selectedPostType == 'campus_life' && draft.postType.isNotEmpty) {
+      _selectedPostType = draft.postType;
+    }
+    _selectedTagId ??= draft.waterTagId;
+    for (final path in draft.draftImagePaths) {
+      final file = File(path);
+      if (await file.exists()) {
+        _images.add(PublishImageItem.local(XFile(path), _nextLocalImageId()));
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// 防抖自动保存草稿（标题/正文/图片变化时调用）。
+  void _scheduleDraftSave() {
+    if (_isEditing) return;
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(_draftDebounceDuration, _persistDraft);
+  }
+
+  Future<void> _persistDraft() async {
+    if (_isEditing) return;
+    final draft = PostDraft(
+      title: _titleController.text.trim(),
+      content: _contentController.text.trim(),
+      postType: _selectedPostType,
+      waterTagId: _selectedTagId,
+      draftImagePaths: _images
+          .where((e) => e.source == PublishImageSource.local)
+          .map((e) => e.localFile!.path)
+          .toList(),
+      updatedAt: DateTime.now(),
+    );
+    if (draft.isEmpty) {
+      await _draftService.clear();
+      return;
+    }
+    await _draftService.save(draft);
+  }
 
   // ---------------------------------------------------------------------------
   // 校验
   // ---------------------------------------------------------------------------
 
   bool _validate() {
-    final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final isFormValid = _formKey.currentState!.validate();
-    if (title.isEmpty) {
-      _showTitleRequiredHint();
-      return false;
-    }
+    // C-1：标题可选，正文 required。
     if (content.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('写点内容再发布吧'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('写点内容再发布吧', context: context);
       }
       return false;
     }
     if (content.length > _maxContentLength) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正文最多 2000 字'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('正文最多 2000 字', context: context);
       }
       return false;
     }
     return isFormValid;
-  }
-
-  void _showTitleRequiredHint() {
-    if (!mounted) return;
-    _titleFocusNode.requestFocus();
-    setState(() => _titleNeedsAttention = true);
-    _titleWarningController.forward(from: 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -235,34 +343,25 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     try {
       final postProvider = context.read<PostProvider>();
 
-      final List<int> fileIds = [];
-      bool hasUploadError = false;
-      for (final image in _selectedImages) {
-        final fileId = await postProvider.uploadImage(image);
-        if (fileId != null) {
-          fileIds.add(fileId);
-        } else {
-          hasUploadError = true;
-          break;
-        }
-      }
-
-      if (hasUploadError) {
+      // C-3：并发上传本地图（失败项可重试，不提交）。
+      if (!await _uploadLocalImages(postProvider)) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片上传失败，请检查网络或图片是否过大'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppFeedback.error('图片上传失败，请点击图片重试', context: context);
         }
         return;
       }
 
-      final mergedFileIds = [
-        ..._existingImages.map((image) => image.fileId),
-        ...fileIds,
-      ];
+      // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
+      final fileIds = _orderedFileIds();
+      if (fileIds == null) {
+        if (mounted) {
+          AppFeedback.error(
+            '图片上传失败，请检查网络或图片是否过大',
+            context: context,
+          );
+        }
+        return;
+      }
 
       final result = _isEditing
           ? await postProvider.updatePost(
@@ -274,7 +373,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               waterTagId: _selectedTagId,
               price: 0,
               contact: '',
-              fileIds: mergedFileIds,
+              fileIds: fileIds,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -284,27 +383,25 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               waterTagId: _selectedTagId,
               price: null,
               contact: null,
-              fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
+              fileIds: fileIds.isNotEmpty ? fileIds : null,
             );
 
       if (!mounted) return;
       if (result.success) {
+        _draftDebounce?.cancel();
+        unawaited(_draftService.clear()); // 发布成功清理草稿
         _showSubmitSuccessFeedback(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_userFacingPostError(result.errorMessage)),
-            backgroundColor: Colors.red,
-          ),
+        AppFeedback.error(
+          _userFacingPostError(result.errorMessage),
+          context: context,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('发布失败：$e'), backgroundColor: Colors.red),
-        );
+        AppFeedback.error('发布失败：$e', context: context);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -353,26 +450,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              lines.first,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            for (final line in lines.skip(1)) ...[
-              const SizedBox(height: 2),
-              Text(line),
-            ],
-          ],
-        ),
-      ),
-    );
+    AppFeedback.success(lines.join('\n'), context: context);
   }
 
   // ---------------------------------------------------------------------------
@@ -756,12 +834,12 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                   child: PublishImageGrid(
-                    existingImages: _existingImages,
-                    selectedImages: _selectedImages,
+                    images: _images,
                     canAddMore: canAddMoreImages,
-                    onAddImage: showImageSourceDialog,
-                    onRemoveNewImage: onNewImageRemoved,
-                    onRemoveExistingImage: onExistingImageRemoved,
+                    onAdd: showImageSourceDialog,
+                    onRemove: _removeImage,
+                    onReorder: _moveImage,
+                    onRetry: _retryImage,
                     compact: true,
                   ),
                 ),

@@ -17,6 +17,7 @@ const tokenVersionCacheTTL = 60 * time.Second
 
 type cachedSessionState struct {
 	tokenVersion      int
+	role              models.Role
 	legalConsentState models.LegalConsentState
 	expiresAt         time.Time
 }
@@ -88,9 +89,14 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if state.role != models.Role(claims.Role) {
+			writeAPIError(c, http.StatusUnauthorized, "role_changed", "账号权限已更新，请重新登录")
+			c.Abort()
+			return
+		}
 
 		c.Set("user_id", claims.UserID)
-		c.Set("role", claims.Role)
+		c.Set("role", string(state.role))
 		if legalConsentEnforcement == LegalConsentEnforcementHard && isCommunityWriteRequest(c) {
 			var accepted int64
 			if err := db.Model(&models.UserLegalConsent{}).
@@ -153,7 +159,7 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			})
 			if err == nil && token.Valid {
 				if state, err := getCachedSessionState(db, claims.UserID); err == nil {
-					if state.tokenVersion != claims.TokenVersion {
+					if state.tokenVersion != claims.TokenVersion || state.role != models.Role(claims.Role) {
 						c.Next()
 						return
 					}
@@ -162,7 +168,7 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 					}
 					if legalConsentEnforcement != LegalConsentEnforcementHard || state.legalConsentState == models.LegalConsentStateActive {
 						c.Set("user_id", claims.UserID)
-						c.Set("role", claims.Role)
+						c.Set("role", string(state.role))
 					}
 				}
 			}
@@ -186,7 +192,7 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 	tokenVersionCache.Unlock()
 
 	var user models.User
-	if err := db.Select("id", "token_version", "legal_consent_revoked_at", "edu_authorized").First(&user, userID).Error; err != nil {
+	if err := db.Select("id", "token_version", "role", "legal_consent_revoked_at", "edu_authorized").First(&user, userID).Error; err != nil {
 		return cachedSessionState{}, err
 	}
 	legalConsentState, err := models.LegalConsentStateForUser(db, user)
@@ -196,6 +202,7 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 
 	state := cachedSessionState{
 		tokenVersion:      user.TokenVersion,
+		role:              user.Role,
 		legalConsentState: legalConsentState,
 		expiresAt:         now.Add(tokenVersionCacheTTL),
 	}

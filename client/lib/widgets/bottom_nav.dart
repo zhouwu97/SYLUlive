@@ -1,26 +1,24 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 
 class _NavItemVisualState {
   const _NavItemVisualState({
     required this.color,
-    required this.scale,
-    required this.opacity,
     required this.fontWeight,
   });
 
   final Color color;
-  final double scale;
-  final double opacity;
   final FontWeight fontWeight;
 }
 
 class BottomNavWrapper extends StatelessWidget {
   final int currentIndex;
-  final double visualIndex;
+  final ValueListenable<double> visualIndexListenable;
   final Function(int) onTap;
   final AuthProvider authProvider;
   final Map<int, bool> badges;
@@ -28,7 +26,7 @@ class BottomNavWrapper extends StatelessWidget {
   const BottomNavWrapper({
     super.key,
     required this.currentIndex,
-    required this.visualIndex,
+    required this.visualIndexListenable,
     required this.onTap,
     required this.authProvider,
     this.badges = const {},
@@ -49,7 +47,7 @@ class BottomNavWrapper extends StatelessWidget {
   // 标准模式：毛玻璃底栏 紧贴底部 + 紧凑
   Widget _buildBlurNav(BuildContext context, bool isDark) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final primaryColor = Theme.of(context).primaryColor;
+    const primaryColor = AppColors.brandPrimary;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -70,8 +68,9 @@ class BottomNavWrapper extends StatelessWidget {
                     bottom: bottomSafe > 0 ? bottomSafe : 2,
                   ),
                   decoration: BoxDecoration(
-                    color: (isDark ? const Color(0xFF1A1A2E) : Colors.white)
-                        .withValues(alpha: 0.85),
+                    color:
+                        (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
+                            .withValues(alpha: 0.85),
                     border: Border(
                       top: BorderSide(
                         color: isDark
@@ -84,78 +83,89 @@ class BottomNavWrapper extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 指示器位置由 HomeScreen 的连续进度统一驱动。
-                      Positioned(
-                        left: itemWidth * visualIndex,
-                        width: itemWidth,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: 48,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: primaryColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                      // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: visualIndexListenable,
+                            builder: (context, visualIndex, child) {
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Transform.translate(
+                                  offset: Offset(itemWidth * visualIndex, 0),
+                                  child: SizedBox(
+                                    width: itemWidth,
+                                    child: Center(
+                                      child: Container(
+                                        width: 48,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              primaryColor.withValues(
+                                                  alpha: 0.18),
+                                              primaryColor.withValues(
+                                                  alpha: 0.07),
+                                            ],
+                                          ),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: primaryColor.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: primaryColor.withValues(
+                                                alpha: 0.12,
+                                              ),
+                                              blurRadius: 14,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _labeledItem(
-                            Icons.home_rounded,
-                            '首页',
-                            0,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[0] == true,
-                          ),
-                          _labeledItem(
-                            Icons.storefront_rounded,
-                            '集市',
-                            1,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[1] == true,
-                          ),
-                          _labeledItem(
-                            Icons.calendar_month_rounded,
-                            '课表',
-                            2,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[2] == true,
-                          ),
-                          _labeledItem(
-                            Icons.apartment_rounded,
-                            '校园',
-                            3,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[3] == true,
-                          ),
-                          _labeledItem(
-                            Icons.person_rounded,
-                            '我',
-                            4,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[4] == true,
-                          ),
-                        ],
+                      RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            const icons = [
+                              Icons.home_rounded,
+                              Icons.storefront_rounded,
+                              Icons.calendar_month_rounded,
+                              Icons.apartment_rounded,
+                              Icons.person_rounded,
+                            ];
+                            const labels = ['首页', '集市', '课表', '校园', '我'];
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: List.generate(
+                                icons.length,
+                                (index) => _labeledItem(
+                                  icons[index],
+                                  labels[index],
+                                  index,
+                                  context,
+                                  primaryColor,
+                                  itemWidth,
+                                  visualIndex,
+                                  badges[index] == true,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -170,7 +180,7 @@ class BottomNavWrapper extends StatelessWidget {
 
   // 悬浮模式：连成一块的弧形 Dock
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
-    final primaryColor = Theme.of(context).primaryColor;
+    const primaryColor = AppColors.brandPrimary;
 
     return SafeArea(
       top: false,
@@ -190,7 +200,7 @@ class BottomNavWrapper extends StatelessWidget {
                 border: Border.all(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFFE2EFEA),
+                      : AppColors.borderNormalLight,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -206,76 +216,93 @@ class BottomNavWrapper extends StatelessWidget {
                   return Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 选中项的背景指示器
-                      Positioned(
-                        left: itemWidth * visualIndex,
-                        width: itemWidth,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: 56,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF147C72)
-                                      .withValues(alpha: 0.2)
-                                  : const Color(0xFFEAF6F3),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: visualIndexListenable,
+                            builder: (context, visualIndex, child) {
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Transform.translate(
+                                  offset: Offset(itemWidth * visualIndex, 0),
+                                  child: SizedBox(
+                                    width: itemWidth,
+                                    child: Center(
+                                      child: Container(
+                                        width: 56,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: isDark
+                                                ? [
+                                                    primaryColor.withValues(
+                                                      alpha: 0.24,
+                                                    ),
+                                                    primaryColor.withValues(
+                                                      alpha: 0.1,
+                                                    ),
+                                                  ]
+                                                : [
+                                                    const Color(0xFFF3FBF8),
+                                                    const Color(0xFFE5F5F0),
+                                                  ],
+                                          ),
+                                          borderRadius: BorderRadius.circular(18),
+                                          border: Border.all(
+                                            color: primaryColor.withValues(
+                                              alpha: isDark ? 0.26 : 0.12,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: primaryColor.withValues(
+                                                alpha: isDark ? 0.18 : 0.1,
+                                              ),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _iconOnly(
-                            Icons.home_rounded,
-                            0,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[0] == true,
-                          ),
-                          _iconOnly(
-                            Icons.storefront_rounded,
-                            1,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[1] == true,
-                          ),
-                          _iconOnly(
-                            Icons.calendar_month_rounded,
-                            2,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[2] == true,
-                          ),
-                          _iconOnly(
-                            Icons.apartment_rounded,
-                            3,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[3] == true,
-                          ),
-                          _iconOnly(
-                            Icons.person_rounded,
-                            4,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[4] == true,
-                          ),
-                        ],
+                      RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            const icons = [
+                              Icons.home_rounded,
+                              Icons.storefront_rounded,
+                              Icons.calendar_month_rounded,
+                              Icons.apartment_rounded,
+                              Icons.person_rounded,
+                            ];
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: List.generate(
+                                icons.length,
+                                (index) => _iconOnly(
+                                  icons[index],
+                                  index,
+                                  context,
+                                  primaryColor,
+                                  itemWidth,
+                                  visualIndex,
+                                  badges[index] == true,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ],
                   );
@@ -316,42 +343,32 @@ class BottomNavWrapper extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Transform.scale(
-                scale: visualState.scale,
-                alignment: Alignment.center,
-                child: Opacity(
-                  opacity: visualState.opacity,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Icon(icon, color: visualState.color, size: 22),
-                      if (showBadge)
-                        Positioned(
-                          top: -2,
-                          right: -4,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: visualState.color, size: 22),
+                  if (showBadge)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 2),
-              Opacity(
-                opacity: visualState.opacity,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: visualState.color,
-                    fontWeight: visualState.fontWeight,
-                    fontSize: 10,
-                  ),
+              Text(
+                label,
+                style: TextStyle(
+                  color: visualState.color,
+                  fontWeight: visualState.fontWeight,
+                  fontSize: 10,
                 ),
               ),
             ],
@@ -385,31 +402,24 @@ class BottomNavWrapper extends StatelessWidget {
         width: width,
         height: 44,
         child: Center(
-          child: Transform.scale(
-            scale: visualState.scale,
-            alignment: Alignment.center,
-            child: Opacity(
-              opacity: visualState.opacity,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(icon, color: visualState.color, size: 24),
-                  if (showBadge)
-                    Positioned(
-                      top: 0,
-                      right: -2,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, color: visualState.color, size: 24),
+              if (showBadge)
+                Positioned(
+                  top: 0,
+                  right: -2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
                     ),
-                ],
-              ),
-            ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -425,13 +435,11 @@ class BottomNavWrapper extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
     final softenedT = Curves.easeOutCubic.transform(activeT);
-    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+    final inactiveColor = isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
 
     return _NavItemVisualState(
-      color: Color.lerp(inactiveColor, const Color(0xFF147C72), softenedT)!,
-      scale: 1.0 + 0.08 * softenedT,
-      opacity: 0.72 + 0.28 * softenedT,
-      fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,
+      color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
+      fontWeight: FontWeight.w600,
     );
   }
 }

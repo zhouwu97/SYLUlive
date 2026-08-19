@@ -304,12 +304,12 @@ func validateTagDescription(value string) string {
 func (h *WaterSectionHandler) currentUserOr401(c *gin.Context) (*models.User, bool) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return nil, false
 	}
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return nil, false
 	}
 	return &user, true
@@ -879,6 +879,15 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 
 	if err := h.db.Save(&section).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存版块失败"})
+		return
+	}
+	if err := services.ClaimPublicImagePaths(h.db,
+		section.CoverURL,
+		section.CoverPortraitURL,
+		section.CoverLandscapeURL,
+		section.CoverSquareURL,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "公开版块图片失败"})
 		return
 	}
 	after := waterSectionSnapshot(section)
@@ -1601,7 +1610,7 @@ func (h *WaterSectionHandler) SubmitSectionIconReview(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return
 	}
 
@@ -1712,7 +1721,7 @@ func (h *WaterSectionHandler) CancelSectionIconReview(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录", "code": "authentication_required"})
 		return
 	}
 
@@ -1779,6 +1788,9 @@ func (h *WaterSectionHandler) AdminApproveSectionIconReview(c *gin.Context) {
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.WaterSection{}).Where("id = ?", review.SectionID).
 			Update("avatar_url", review.NewAvatarURL).Error; err != nil {
+			return err
+		}
+		if err := services.ClaimPublicImagePaths(tx, review.NewAvatarURL); err != nil {
 			return err
 		}
 

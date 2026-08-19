@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
@@ -25,6 +26,37 @@ class _BoardState {
   int revision = 0;
   DateTime? lastSuccessfulRefreshAt;
   bool isRecoveringExpiredSession = false;
+}
+
+/// 一次可见性变更中被移除的帖子快照（FEED-3 撤销用）。
+class _FeedRemovedEntry {
+  _FeedRemovedEntry({
+    required this.boardKey,
+    required this.post,
+    required this.originalIndex,
+    required this.revisionAtMutation,
+  });
+
+  final String boardKey;
+  final Post post;
+  final int originalIndex;
+  // 记录变更提交后该 board 的 revision，用于撤销时的 revision 安全检查。
+  int revisionAtMutation;
+}
+
+/// 可见性变更（不感兴趣 / 不看TA）的撤销记录，用于 Snackbar「撤销」。
+class FeedVisibilityUndo {
+  const FeedVisibilityUndo._({
+    required this.isAuthorHide,
+    required this.postId,
+    required this.authorId,
+    required List<_FeedRemovedEntry> removed,
+  }) : _removed = removed;
+
+  final bool isAuthorHide;
+  final int postId;
+  final int authorId;
+  final List<_FeedRemovedEntry> _removed;
 }
 
 /// 创建帖子的返回结果
@@ -96,15 +128,106 @@ Map<String, dynamic> buildPostListParams({
 }
 
 @visibleForTesting
-bool usesHomeFeedV2(
-        {required int boardId,
-        required String sort,
-        String? type,
-        int? tagId}) =>
-    boardId == 1 &&
-    (type == null || type.trim().isEmpty) &&
-    tagId == null &&
-    (sort == 'all' || sort == 'time');
+bool usesHomeFeedV2({
+  required int boardId,
+  required String sort,
+  String? type,
+  int? tagId,
+}) {
+  final normalizedType = type?.trim() ?? '';
+  return boardId == 1 &&
+      normalizedType.isEmpty &&
+      tagId == null &&
+      (sort == 'all' || sort == 'time');
+}
+
+/// 乐观点赞变更的结果。
+enum LikeMutationStatus {
+  /// 服务端确认成功，乐观状态已生效。
+  success,
+
+  /// 网络失败，已回滚到变更前快照。
+  failed,
+
+  /// 服务端返回明确状态冲突，已按服务端 reconcile 结果收敛。
+  conflict,
+
+  /// 同一帖子已有变更在途，本次调用未发起任何请求。
+  pending,
+}
+
+class LikeMutationResult {
+  const LikeMutationResult.success({
+    required this.originalPost,
+    required this.optimisticPost,
+  })  : status = LikeMutationStatus.success,
+        reconciledPost = null;
+
+  const LikeMutationResult.failed({
+    required this.originalPost,
+    required this.optimisticPost,
+  })  : status = LikeMutationStatus.failed,
+        reconciledPost = null;
+
+  const LikeMutationResult.conflict({
+    required this.originalPost,
+    required this.optimisticPost,
+    required this.reconciledPost,
+  }) : status = LikeMutationStatus.conflict;
+
+  const LikeMutationResult.pending()
+      : status = LikeMutationStatus.pending,
+        originalPost = null,
+        optimisticPost = null,
+        reconciledPost = null;
+
+  final LikeMutationStatus status;
+
+  /// 调用时传入的帖子快照（失败时用于恢复视图）。
+  final Post? originalPost;
+
+  /// 乐观应用后的副本（成功时用于同步视图）。
+  final Post? optimisticPost;
+
+  /// 冲突 reconcile 得到的服务端状态（冲突时优先使用）。
+  final Post? reconciledPost;
+}
+
+/// 评论点赞请求结果（低层网络封装返回值）。
+class ReplyLikeRequestResult {
+  const ReplyLikeRequestResult({
+    required this.success,
+    required this.conflict,
+    this.errorMessage,
+  });
+
+  /// 请求是否成功（2xx）。
+  final bool success;
+
+  /// 服务端是否返回明确业务冲突（4xx），如评论/帖子已删除。
+  final bool conflict;
+
+  final String? errorMessage;
+}
+
+/// 后台新鲜度探测结果：只暂存，不覆写可见列表。
+class FreshnessProbeResult {
+  const FreshnessProbeResult({
+    required this.posts,
+    required this.pinnedPosts,
+    required this.algorithmVersion,
+    required this.newPostCount,
+    required this.fetchedAt,
+  });
+
+  final List<Post> posts;
+  final List<Post> pinnedPosts;
+  final String algorithmVersion;
+
+  /// 相对当前可见列表，第一页新增的帖子数量（仅“最新”信息流可信）。
+  final int newPostCount;
+  final DateTime fetchedAt;
+}
 
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
@@ -112,6 +235,7 @@ class PostProvider extends ChangeNotifier {
 
   final Map<String, _BoardState> _boards = {};
   final Map<String, Future<void>> _inflightRequests = {};
+  final Map<int, Post> _canonicalPosts = {};
   final int _activeBoardId = 1;
 
   PostProvider(this._dio, {bool enableCache = true})
@@ -146,11 +270,27 @@ class PostProvider extends ChangeNotifier {
   _BoardState get _board => _ensureBoard(_activeBoardId);
 
   List<Post> postsFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+      {String sort = 'time', String? type, int? tagId}) {
+    final posts =
+        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+    for (final post in posts) {
+      _canonicalPosts[post.id] = post;
+    }
+    return posts;
+  }
+
   List<Post> pinnedPostsFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
+      {String sort = 'time', String? type, int? tagId}) {
+    final posts =
+        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
+    for (final post in posts) {
+      _canonicalPosts[post.id] = post;
+    }
+    return posts;
+  }
+
+  /// 返回当前已加载帖子状态，供卡片避免维护第二份点赞快照。
+  Post? postFor(int postId) => _canonicalPosts[postId];
   bool isLoadingFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).isLoading;
@@ -160,6 +300,11 @@ class PostProvider extends ChangeNotifier {
   bool hasMoreFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasMore;
+
+  /// 读取指定信息流的错误，不与当前活跃 sort 混用。
+  String? errorFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).error;
 
   int requestVersionFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
@@ -191,6 +336,27 @@ class PostProvider extends ChangeNotifier {
       _boards.remove(key);
     }
 
+    notifyListeners();
+  }
+
+  /// 清除首页 Feed 缓存与状态（H1.5：账号隔离）。
+  ///
+  /// 首页（board 1）内容可能受 UserHiddenAuthor / not_interested 个性化影响，
+  /// 因此登录 / 退出 / 切换账号 / 隐藏或恢复作者后必须整体失效，避免账号 A 的
+  /// 个性化缓存被账号 B 读到。同时 bump requestVersion，丢弃在途旧请求的写入。
+  Future<void> invalidateHomeFeedCaches() async {
+    final keys = _boards.keys.where((key) => key.startsWith('1|')).toList();
+    for (final key in keys) {
+      _boards[key]?.requestVersion++;
+      _boards.remove(key);
+    }
+    if (_enableCache) {
+      try {
+        await PostCacheService.clearBoard(1);
+      } catch (e) {
+        debugPrint('清除首页 Feed 缓存失败: $e');
+      }
+    }
     notifyListeners();
   }
 
@@ -364,7 +530,10 @@ class PostProvider extends ChangeNotifier {
             type: type,
             tagId: tagId,
           );
-        } else if (sort != 'time') {
+        } else {
+          // 非 HomeV2：服务器第一页是权威快照，直接替换。
+          // 之前 sort=time 的增量 merge 会保留服务器已删除/已下沉的缓存帖子
+          // （"分类页出现服务器已没有的旧帖子"），且服务器返回空页时旧缓存永久残留。
           board.posts = newPosts;
           await _savePostsToCache(
             boardId,
@@ -373,39 +542,6 @@ class PostProvider extends ChangeNotifier {
             type: type,
             tagId: tagId,
           );
-        } else if (newPosts.isNotEmpty) {
-          // 第四步：增量合并 — 更新已有帖子，插入新帖子
-          bool changed = false;
-          final existingIndexMap = {
-            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
-          };
-          final uniqueNew = <Post>[];
-
-          for (final np in newPosts) {
-            final idx = existingIndexMap[np.id];
-            if (idx != null) {
-              board.posts[idx] = np; // 更新已有帖子
-              changed = true;
-            } else {
-              uniqueNew.add(np); // 全新帖子
-            }
-          }
-
-          if (uniqueNew.isNotEmpty) {
-            board.posts = [...uniqueNew, ...board.posts];
-            changed = true;
-          }
-
-          if (changed) {
-            // 写回缓存
-            await _savePostsToCache(
-              boardId,
-              sort,
-              board.posts,
-              type: type,
-              tagId: tagId,
-            );
-          }
         }
 
         final total = (data['total'] as num?)?.toInt();
@@ -424,6 +560,7 @@ class PostProvider extends ChangeNotifier {
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
       }
+      board.error = AppFeedback.dioErrorMessage(e);
       debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
       if (cachedFeed != null &&
@@ -436,6 +573,7 @@ class PostProvider extends ChangeNotifier {
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
       }
+      board.error = e.toString();
       debugPrint('增量拉取异常(board=$boardId)');
     }
 
@@ -618,6 +756,7 @@ class PostProvider extends ChangeNotifier {
     board.currentPage = 1;
     board.hasMore = true;
     board.hasCacheLoaded = true;
+    board.error = null;
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
@@ -686,7 +825,11 @@ class PostProvider extends ChangeNotifier {
         succeeded = true;
       }
     } on DioException catch (e) {
+      board.error = AppFeedback.dioErrorMessage(e);
       debugPrint('刷新失败(board=$boardId): ${e.message}');
+    } catch (e) {
+      board.error = e.toString();
+      debugPrint('刷新异常(board=$boardId): $e');
     }
 
     if (requestVersion == board.requestVersion) {
@@ -879,22 +1022,39 @@ class PostProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<int?> uploadImage(XFile file) async {
+  /// 上传图片，返回 file_id。
+  ///
+  /// [onProgress] 提供 (sent, total)。优先用 `MultipartFile.fromFile` 流式上传，
+  /// 避免整文件 `readAsBytes` 占用内存；Web/无路径时回退 bytes。
+  Future<int?> uploadImage(
+    XFile file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     try {
-      final bytes = await file.readAsBytes();
       final rawName = file.name.trim().isNotEmpty
           ? file.name.trim()
           : file.path.split('/').last;
       final filename = _safeUploadFilename(rawName);
 
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-        ),
-      });
+      final MultipartFile multipartFile;
+      final path = file.path;
+      final pathUsable = path.isNotEmpty &&
+          !path.startsWith('blob:') &&
+          await File(path).exists();
+      if (pathUsable) {
+        multipartFile = await MultipartFile.fromFile(path, filename: filename);
+      } else {
+        final bytes = await file.readAsBytes();
+        multipartFile = MultipartFile.fromBytes(bytes, filename: filename);
+      }
 
-      final response = await _dio.post('/upload', data: formData);
+      final formData = FormData.fromMap({'file': multipartFile});
+
+      final response = await _dio.post(
+        '/upload',
+        data: formData,
+        onSendProgress: onProgress,
+      );
       if (response.statusCode == 200 && response.data != null) {
         return response.data['file_id'] as int?;
       }
@@ -1088,6 +1248,292 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  // ---- 评论点赞网络层 ----
+  // 只做低层网络封装；乐观更新 / pending / rollback 由 PostDetailScreen 负责。
+
+  /// 点赞评论。返回 (success, conflict)。
+  /// conflict=true 表示服务端明确拒绝（4xx 业务错误，如评论已删除）。
+  Future<ReplyLikeRequestResult> likeReply(int replyId) async {
+    return _sendReplyLike('/replies/$replyId/like', like: true);
+  }
+
+  /// 取消点赞评论。返回 (success, conflict)。
+  Future<ReplyLikeRequestResult> unlikeReply(int replyId) async {
+    return _sendReplyLike('/replies/$replyId/like', like: false);
+  }
+
+  Future<ReplyLikeRequestResult> _sendReplyLike(
+    String path, {
+    required bool like,
+  }) async {
+    try {
+      final response = like ? await _dio.post(path) : await _dio.delete(path);
+      if (response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300) {
+        return const ReplyLikeRequestResult(success: true, conflict: false);
+      }
+      return const ReplyLikeRequestResult(success: false, conflict: true);
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final isConflict = statusCode != null && statusCode >= 400 && statusCode < 500;
+      return ReplyLikeRequestResult(
+        success: false,
+        conflict: isConflict,
+        errorMessage: AppFeedback.dioErrorMessage(e, fallback: '评论点赞失败'),
+      );
+    } catch (e) {
+      debugPrint('评论点赞请求异常: $e');
+      return const ReplyLikeRequestResult(
+        success: false,
+        conflict: false,
+        errorMessage: '评论点赞失败',
+      );
+    }
+  }
+
+  // ---- 统一乐观点赞状态机 ----
+  // Feed 卡片、详情页共用同一套 mutation，禁止各 Widget 各自维护第二份点赞状态。
+
+  final Set<int> _pendingLikePostIds = {};
+
+  /// 该帖子是否已有一次点赞变更在途（防连点）。
+  bool isLikePending(int postId) => _pendingLikePostIds.contains(postId);
+
+  /// 对帖子执行一次乐观点赞/取消点赞。
+  ///
+  /// 立即翻转 [post] 的点赞状态并同步到所有已加载信息流，然后请求服务端；
+  /// 网络失败回滚旧快照；服务端明确状态冲突时通过单次 GET 做 reconcile，
+  /// 以服务端状态为准（不做整页重新拉取）。
+  Future<LikeMutationResult> toggleLikeOptimistic(Post post) async {
+    final postId = post.id;
+    if (_pendingLikePostIds.contains(postId)) {
+      return const LikeMutationResult.pending();
+    }
+    _pendingLikePostIds.add(postId);
+
+    final targetLiked = !post.isLiked;
+    final optimistic = post.copyWith(
+      isLiked: targetLiked,
+      likeCount: (post.likeCount + (targetLiked ? 1 : -1)).clamp(0, 1 << 30),
+    );
+    _replacePostInBoards(optimistic);
+    notifyListeners();
+
+    try {
+      if (targetLiked) {
+        await _dio.post('/posts/$postId/like');
+      } else {
+        await _dio.delete('/posts/$postId/like');
+      }
+      return LikeMutationResult.success(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final data = e.response?.data;
+      final isExplicitConflict = statusCode != null &&
+          statusCode >= 400 &&
+          statusCode < 500 &&
+          data is Map &&
+          data['error'] != null;
+      if (isExplicitConflict) {
+        // 服务端明确拒绝（例如“已经点赞/未点赞”）：单次 REST reconcile，
+        // 用服务端状态覆盖，而不是盲目回滚成本地旧快照。
+        final reconciled = await _reconcilePost(postId);
+        if (reconciled != null) {
+          _replacePostInBoards(reconciled);
+          notifyListeners();
+          return LikeMutationResult.conflict(
+            originalPost: post,
+            optimisticPost: optimistic,
+            reconciledPost: reconciled,
+          );
+        }
+      }
+      // 网络错误或 reconcile 失败：回滚旧快照。
+      _replacePostInBoards(post);
+      notifyListeners();
+      return LikeMutationResult.failed(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } catch (e) {
+      _replacePostInBoards(post);
+      notifyListeners();
+      return LikeMutationResult.failed(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } finally {
+      _pendingLikePostIds.remove(postId);
+    }
+  }
+
+  Future<Post?> _reconcilePost(int postId) async {
+    try {
+      final response = await _dio.get('/posts/$postId');
+      if (response.statusCode != 200 || response.data is! Map) return null;
+      return Post.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('点赞冲突 reconcile 失败: $e');
+      return null;
+    }
+  }
+
+  // ---- 后台新鲜度探测 ----
+  // 自动刷新只做“探测 + 暂存”，绝不直接覆写用户正在阅读的可见列表；
+  // 是否应用由页面（顶部温和更新 / “内容有更新”浮条）决定。
+
+  final Map<String, FreshnessProbeResult> _pendingFreshSnapshots = {};
+  final Map<String, Future<FreshnessProbeResult?>> _probeInflight = {};
+
+  /// 是否有尚未应用的探测快照（供页面显示“内容有更新”浮条）。
+  bool hasPendingFreshSnapshot(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _pendingFreshSnapshots.containsKey(
+        _stateKey(boardId, sort, type, tagId: tagId),
+      );
+
+  /// 拉取第一页做新鲜度探测：列表内容不变时返回 null，变化时暂存快照并返回。
+  ///
+  /// 探测受 [requestVersion] 保护：期间用户手动刷新或切换了信息流，
+  /// 过期响应会被丢弃，不会污染新列表。
+  Future<FreshnessProbeResult?> probeFreshness({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) {
+    final key = _stateKey(boardId, sort, type, tagId: tagId);
+    final reqKey = 'probe_$key';
+    final inflight = _probeInflight[reqKey];
+    if (inflight != null) return inflight;
+
+    final future = _probeInternal(
+      boardId: boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
+    _probeInflight[reqKey] = future;
+    return future.whenComplete(() {
+      if (_probeInflight[reqKey] == future) {
+        _probeInflight.remove(reqKey);
+      }
+    });
+  }
+
+  Future<FreshnessProbeResult?> _probeInternal({
+    required int boardId,
+    required String sort,
+    String? type,
+    int? tagId,
+  }) async {
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final requestVersion = board.requestVersion;
+    try {
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+        'scene': 'refresh',
+        'capabilities': 'poll_v1',
+      };
+      if (usesHomeFeedV2(
+          boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        params['feed_version'] = 3;
+      }
+      if (tagId != null) {
+        params['tag_id'] = tagId;
+      }
+      final response = await _dio.get(
+        _postsEndpoint(sort, type: type),
+        queryParameters: params,
+      );
+      if (requestVersion != board.requestVersion) return null;
+      if (response.statusCode != 200) return null;
+
+      final posts = ((response.data['posts'] as List?) ?? [])
+          .map((e) => Post.fromJson(e))
+          .toList();
+      final pinned = ((response.data['pinned_posts'] as List?) ?? [])
+          .map((e) => Post.fromJson(e))
+          .toList();
+      final algorithmVersion =
+          response.data['algorithm_version']?.toString() ?? '';
+
+      final currentIds = board.posts.take(20).map((p) => p.id).toSet();
+      final newIds = posts.take(20).map((p) => p.id).toSet();
+      final pinnedChanged = !setEquals(
+        board.pinnedPosts.map((p) => p.id).toSet(),
+        pinned.map((p) => p.id).toSet(),
+      );
+      final hasChanges = !setEquals(currentIds, newIds) || pinnedChanged;
+      if (!hasChanges) return null;
+
+      final result = FreshnessProbeResult(
+        posts: posts,
+        pinnedPosts: pinned,
+        algorithmVersion: algorithmVersion,
+        newPostCount: newIds.difference(currentIds).length,
+        fetchedAt: DateTime.now(),
+      );
+      _pendingFreshSnapshots[_stateKey(boardId, sort, type, tagId: tagId)] =
+          result;
+      return result;
+    } catch (e) {
+      debugPrint('新鲜度探测失败(board=$boardId, sort=$sort): $e');
+      return null;
+    }
+  }
+
+  /// 应用暂存的新快照（用户点击“内容有更新”后调用）。
+  ///
+  /// 覆盖列表并同步持久化缓存；滚动回顶由调用方负责。
+  Future<bool> applyPendingFreshSnapshot({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) async {
+    final key = _stateKey(boardId, sort, type, tagId: tagId);
+    final pending = _pendingFreshSnapshots.remove(key);
+    if (pending == null) return false;
+
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    board.posts = pending.posts;
+    board.pinnedPosts = pending.pinnedPosts;
+    board.algorithmVersion = pending.algorithmVersion;
+    board.sessionId = null;
+    board.currentPage = 2;
+    board.hasMore = pending.posts.length >= 20;
+    board.lastSuccessfulRefreshAt = pending.fetchedAt;
+    board.revision++;
+    await _savePostsToCache(
+      boardId,
+      sort,
+      board.posts,
+      type: type,
+      tagId: tagId,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// 丢弃暂存快照（切换信息流或页面销毁时调用，避免陈旧快照被误应用）。
+  void clearPendingFreshSnapshot({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) {
+    _pendingFreshSnapshots.remove(_stateKey(boardId, sort, type, tagId: tagId));
+  }
+
   /// 供外部在获取到最新帖子数据（如浏览量增加）时更新本地缓存，保持内外一致
   void updatePostInCache(Post updated) {
     applyExternalPostUpdate(updated);
@@ -1101,6 +1547,7 @@ class PostProvider extends ChangeNotifier {
 
   /// 从全部已加载列表和置顶区移除帖子，并同步持久化缓存。
   void removeExternalPost(int postId) {
+    _canonicalPosts.remove(postId);
     var changed = false;
     for (final entry in _boards.entries) {
       final keyParts = entry.key.split('|');
@@ -1127,6 +1574,7 @@ class PostProvider extends ChangeNotifier {
   }
 
   void _replacePostInBoards(Post updated) {
+    _canonicalPosts[updated.id] = updated;
     for (final entry in _boards.entries) {
       final keyParts = entry.key.split('|');
       final boardId = int.tryParse(keyParts.first) ?? 0;
@@ -1152,5 +1600,166 @@ class PostProvider extends ChangeNotifier {
         _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       }
     }
+  }
+
+  // ── FEED-3 乐观可见性 ─────────────────────────────────────────────
+
+  /// 是否属于首页主 Tab（sort ∈ all/time/featured/following 且无版块 type）。
+  bool _isMainFeedBoard(String key) {
+    final parts = key.split('|');
+    if (parts.length < 3) return false;
+    final sort = parts[1];
+    final type = parts[2];
+    if (type.isNotEmpty) return false;
+    return sort == 'all' ||
+        sort == 'time' ||
+        sort == 'featured' ||
+        sort == 'following';
+  }
+
+  void _syncBoardCacheAfterMutation(String key, _BoardState board) {
+    if (!_enableCache) return;
+    final keyParts = key.split('|');
+    final boardId = int.tryParse(keyParts.first) ?? 0;
+    final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+    final type =
+        keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+    final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+        ? int.tryParse(keyParts[3])
+        : null;
+    _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+  }
+
+  void _restoreRemoved(List<_FeedRemovedEntry> removed) {
+    for (final entry in removed) {
+      final board = _boards[entry.boardKey];
+      if (board == null) continue;
+      final index = entry.originalIndex.clamp(0, board.posts.length);
+      board.posts.insert(index, entry.post);
+      _canonicalPosts[entry.post.id] = entry.post;
+      board.revision++;
+    }
+  }
+
+  /// 乐观「不感兴趣」：本地立即从 all 信息流移除该帖，成功后返回撤销记录；
+  /// 服务端失败则回滚。source 为用户点击时所在 Tab（仅用于分析）。
+  Future<FeedVisibilityUndo?> markPostNotInterestedOptimistic(
+    Post post, {
+    required String source,
+  }) async {
+    final removed = <_FeedRemovedEntry>[];
+    for (final entry in _boards.entries) {
+      if (!_isMainFeedBoard(entry.key) || entry.key.split('|')[1] != 'all') {
+        continue;
+      }
+      final board = entry.value;
+      final index = board.posts.indexWhere((p) => p.id == post.id);
+      if (index < 0) continue;
+      final removedPost = board.posts[index];
+      board.posts.removeAt(index);
+      board.revision++;
+      removed.add(_FeedRemovedEntry(
+        boardKey: entry.key,
+        post: removedPost,
+        originalIndex: index,
+        revisionAtMutation: board.revision,
+      ));
+      _syncBoardCacheAfterMutation(entry.key, board);
+    }
+    if (removed.isNotEmpty) notifyListeners();
+
+    try {
+      await _dio.put(
+        ApiConstants.feedNotInterestedPath(post.id),
+        queryParameters: {'source': source},
+      );
+    } catch (_) {
+      _restoreRemoved(removed);
+      if (removed.isNotEmpty) notifyListeners();
+      return null;
+    }
+    return FeedVisibilityUndo._(
+      isAuthorHide: false,
+      postId: post.id,
+      authorId: 0,
+      removed: removed,
+    );
+  }
+
+  /// 乐观「不看 TA」：本地立即从 all/time/featured/following 移除该作者全部帖子。
+  Future<FeedVisibilityUndo?> hideAuthorOptimistic(int authorId) async {
+    final removed = <_FeedRemovedEntry>[];
+    for (final entry in _boards.entries) {
+      if (!_isMainFeedBoard(entry.key)) continue;
+      final board = entry.value;
+      final boardRemoved = <_FeedRemovedEntry>[];
+      for (var i = board.posts.length - 1; i >= 0; i--) {
+        if (board.posts[i].authorId == authorId) {
+          boardRemoved.add(_FeedRemovedEntry(
+            boardKey: entry.key,
+            post: board.posts[i],
+            originalIndex: i,
+            revisionAtMutation: board.revision,
+          ));
+          board.posts.removeAt(i);
+        }
+      }
+      if (boardRemoved.isNotEmpty) {
+        board.revision++;
+        // 撤销的 revision 基准取变更提交后的 board revision。
+        for (final e in boardRemoved) {
+          e.revisionAtMutation = board.revision;
+        }
+        removed.addAll(boardRemoved);
+        _syncBoardCacheAfterMutation(entry.key, board);
+      }
+    }
+    if (removed.isNotEmpty) notifyListeners();
+
+    try {
+      await _dio.put(ApiConstants.feedHiddenAuthorPath(authorId));
+    } catch (_) {
+      _restoreRemoved(removed);
+      if (removed.isNotEmpty) notifyListeners();
+      return null;
+    }
+    return FeedVisibilityUndo._(
+      isAuthorHide: true,
+      postId: 0,
+      authorId: authorId,
+      removed: removed,
+    );
+  }
+
+  /// 撤销一次可见性变更（Snackbar「撤销」）。
+  ///
+  /// Revision 安全：仅当相关 board 的 revision 与变更时一致才原位插回；
+  /// 若期间 Feed 已刷新（revision 变化），只调 API 撤销、不插回旧数据，
+  /// 由下一次刷新与服务端对齐。
+  Future<bool> undoFeedVisibility(FeedVisibilityUndo undo) async {
+    try {
+      if (undo.isAuthorHide) {
+        await _dio.delete(ApiConstants.feedHiddenAuthorPath(undo.authorId));
+      } else {
+        await _dio.delete(ApiConstants.feedNotInterestedPath(undo.postId));
+      }
+    } catch (_) {
+      // API 撤销失败时保持当前隐藏状态，避免 UI 与服务端语义相反。
+      return false;
+    }
+
+    final allSame = undo._removed.every((entry) {
+      final board = _boards[entry.boardKey];
+      return board != null && board.revision == entry.revisionAtMutation;
+    });
+    if (!allSame) return true;
+
+    _restoreRemoved(undo._removed);
+    for (final entry in undo._removed) {
+      final board = _boards[entry.boardKey];
+      if (board != null) _syncBoardCacheAfterMutation(entry.boardKey, board);
+    }
+    notifyListeners();
+    return true;
   }
 }

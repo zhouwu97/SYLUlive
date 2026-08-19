@@ -133,6 +133,118 @@ def test_policy_query_planner_treats_missing_credit_as_failed_course_flow():
     assert "school_undergraduate_retake_policy" in plan.preferred_document_types
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["奖学金怎么评", "挂科影响奖学金吗"],
+)
+def test_policy_query_planner_routes_scholarship_questions_to_v08_documents(
+    question: str,
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert plan.intent == "scholarship_selection"
+    assert plan.allow_historical is False
+    assert plan.preferred_document_types[0] == (
+        "school_undergraduate_scholarship_policy"
+    )
+    assert {"奖学金评审", "申报制", "综合测评", "专业年级排名"}.issubset(
+        plan.expanded_terms
+    )
+    assert "school_undergraduate_retake_policy" not in plan.preferred_document_types
+
+
+@pytest.mark.parametrize(
+    ("question", "intent", "document_type"),
+    [
+        ("国家助学金怎么申请", "hardship_aid", "school_national_grant_policy"),
+        ("生源地贷款怎么办", "student_loan", "school_student_loan_policy"),
+        ("孤儿减免需要什么材料", "orphan_aid", "school_orphan_aid_policy"),
+        ("勤工助学一小时多少钱", "work_study", "school_work_study_policy"),
+    ],
+)
+def test_policy_query_planner_routes_direct_aid_policy_names(
+    question: str, intent: str, document_type: str
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert plan.intent == intent
+    assert document_type in plan.preferred_document_types
+    assert plan.expanded_terms
+
+
+@pytest.mark.parametrize(
+    ("question", "document_type"),
+    [
+        ("学位证怎么拿", "school_bachelor_degree_requirement"),
+        ("计算机专业都学啥", "official_major_profile"),
+        ("通信工程以后干什么", "official_major_profile"),
+        ("能换到别的专业吗", "school_undergraduate_major_transfer_policy"),
+        ("考试带小抄怎么处理", "school_exam_misconduct_policy"),
+        ("毕业要满足什么", "school_undergraduate_status_policy"),
+        ("比赛获奖能改课程成绩吗", "school_competition_course_grade_reward_policy"),
+        ("论文奖励成绩需要什么材料", "school_competition_grade_reward_forms"),
+        ("国奖怎么评", "school_national_scholarship_policy"),
+        ("励志奖要什么条件", "school_national_inspirational_scholarship_policy"),
+        ("贫困生怎么认定", "school_financial_hardship_recognition_policy"),
+        ("临时补助怎么申请", "school_grant_and_temporary_aid_policy"),
+        ("孤儿能免学费住宿费吗", "school_orphan_aid_policy"),
+        ("校内兼职一小时多少钱", "school_work_study_policy"),
+    ],
+)
+def test_policy_query_planner_routes_colloquial_questions_to_owned_documents(
+    question: str, document_type: str
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert document_type in plan.preferred_document_types
+    assert plan.exact_terms or plan.expanded_terms
+
+
+@pytest.mark.parametrize(
+    ("question", "first_document_type"),
+    [
+        ("国奖怎么评", "school_national_scholarship_policy"),
+        ("励志奖要什么条件", "school_national_inspirational_scholarship_policy"),
+        ("国家助学金咋申请", "school_national_grant_policy"),
+        ("论文奖励成绩需要什么材料", "school_competition_grade_reward_forms"),
+    ],
+)
+def test_policy_query_planner_prioritizes_the_specific_policy_named_by_user(
+    question: str, first_document_type: str
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert plan.preferred_document_types[0] == first_document_type
+
+
+def test_policy_query_planner_expands_colloquial_profile_and_degree_terms_for_lexical_recall():
+    profile = PolicyQueryPlanner().invoke("计算机专业都学啥")
+    degree = PolicyQueryPlanner().invoke("学位证怎么拿")
+
+    assert profile.normalized_question == "计算机科学与技术专业都学啥"
+    assert "计算机科学与技术" in profile.exact_terms
+    assert "学士学位" in degree.expanded_terms
+    assert "学位授予" in degree.expanded_terms
+
+
+def test_python_policy_contract_matches_the_knowledge_base_contract():
+    service_contract = (
+        Path(__file__).parents[1]
+        / "app"
+        / "chains"
+        / "policy_query_contract_v0.8.json"
+    ).read_text(encoding="utf-8")
+    knowledge_contract = (
+        Path(__file__).parents[2]
+        / "knowledge-base"
+        / "sylu-academic-policy"
+        / "v0.8"
+        / "policy_query_contract_v0.8.json"
+    ).read_text(encoding="utf-8")
+
+    assert json.loads(service_contract) == json.loads(knowledge_contract)
+
+
 def test_shadow_index_switch_disables_vector_and_records_channel_metrics():
     candidate = _candidate(1, 1, "school_undergraduate_status_policy")
     store = _FakeSearchStore(

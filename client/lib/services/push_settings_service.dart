@@ -1,13 +1,11 @@
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import '../platform/contracts/push_client.dart';
-
-import '../platform/app_platform.dart';
-import '../platform/platform_capabilities.dart';
-import '../providers/auth_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+import '../platform/contracts/push_client.dart';
+import '../platform/platform_capabilities.dart';
+import '../providers/auth_provider.dart';
 
 class RemotePushEnableResult {
   final bool permissionGranted;
@@ -21,11 +19,71 @@ class RemotePushEnableResult {
   });
 }
 
+class RemotePushSnapshot {
+  final bool supported;
+  final bool optedIn;
+  final bool notificationsEnabled;
+  final String? registrationId;
+  final String? aliasState;
+  final bool privateChannelExists;
+  final bool privateChannelBlocked;
+  final bool diagnosticsAvailable;
+  final String? diagnosticsError;
+
+  const RemotePushSnapshot({
+    required this.supported,
+    required this.optedIn,
+    required this.notificationsEnabled,
+    this.registrationId,
+    this.aliasState,
+    required this.privateChannelExists,
+    required this.privateChannelBlocked,
+    this.diagnosticsAvailable = true,
+    this.diagnosticsError,
+  });
+}
+
+enum ResolvedPushStatus {
+  disabled,
+  diagnosticsUnavailable,
+  permissionDenied,
+  registrationFailed,
+  configuring,
+  channelUnavailable,
+  channelBlocked,
+  ready,
+}
+
+ResolvedPushStatus resolveRemotePushStatus(RemotePushSnapshot snapshot) {
+  if (!snapshot.supported || !snapshot.optedIn) {
+    return ResolvedPushStatus.disabled;
+  }
+  if (!snapshot.diagnosticsAvailable) {
+    return ResolvedPushStatus.diagnosticsUnavailable;
+  }
+  if (!snapshot.notificationsEnabled) {
+    return ResolvedPushStatus.permissionDenied;
+  }
+  if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
+    return ResolvedPushStatus.registrationFailed;
+  }
+  if (snapshot.aliasState == 'pending_bind') {
+    return ResolvedPushStatus.configuring;
+  }
+  if (!snapshot.privateChannelExists) {
+    return ResolvedPushStatus.channelUnavailable;
+  }
+  if (snapshot.privateChannelBlocked) {
+    return ResolvedPushStatus.channelBlocked;
+  }
+  return ResolvedPushStatus.ready;
+}
+
 typedef RemotePushRegistration = Future<RemotePushEnableResult> Function(
   AuthProvider auth,
 );
 
-/// 远程推送主动选择状态。默认关闭，避免旧 Token 被误认为新授权。
+/// 远程推送主动选择状态与原生通知通道交互服务。
 class PushSettingsService {
   PushSettingsService._();
 
@@ -40,7 +98,8 @@ class PushSettingsService {
   static Future<RemotePushEnableResult>? _registrationFuture;
   static String? _registrationUserId;
 
-  static Future<AppPreferencesStore> _prefs() => AppPreferencesStore.getInstance();
+  static Future<AppPreferencesStore> _prefs() =>
+      AppPreferencesStore.getInstance();
 
   static Future<bool> isEnabled() async {
     if (!PlatformCapabilities.current.supportsJPush) return false;
@@ -79,8 +138,32 @@ class PushSettingsService {
     );
   }
 
+  /// 打开系统应用通知总设置
+  static Future<bool> openAppNotificationSettings() async {
+    if (!PlatformCapabilities.current.supportsJPush) return false;
+    try {
+      final ok = await _aliasChannel.invokeMethod<bool>(
+        'openAppNotificationSettings',
+      );
+      if (ok == true) return true;
+    } catch (_) {}
+    return await requestSystemNotificationPermission();
+  }
+
+  /// 打开系统特定通知渠道（如 private_message 私信渠道）设置
+  static Future<bool> openNotificationChannelSettings(String channelId) async {
+    if (!PlatformCapabilities.current.supportsJPush) return false;
+    try {
+      final ok = await _aliasChannel.invokeMethod<bool>(
+        'openNotificationChannelSettings',
+        {'channelId': channelId},
+      );
+      if (ok == true) return true;
+    } catch (_) {}
+    return await openAppNotificationSettings();
+  }
+
   /// 同一账号的注册请求共享 Future，避免设置页和生命周期恢复重复初始化 JPush。
-  /// 注册失败时清理 Future，保留后续重试能力。
   static Future<RemotePushEnableResult> registerOnce(AuthProvider auth) {
     final userId = auth.user?.id.toString();
     final existing = _registrationFuture;
@@ -169,6 +252,44 @@ class PushSettingsService {
       // 服务端已完成原子关闭；原生链路会在下次启动读取本地状态后停止恢复。
     }
     return result;
+  }
+
+  static Future<RemotePushSnapshot> getPushSnapshot() async {
+    final supported = PlatformCapabilities.current.supportsJPush;
+    if (!supported) {
+      return const RemotePushSnapshot(
+        supported: false,
+        optedIn: false,
+        notificationsEnabled: false,
+        privateChannelExists: false,
+        privateChannelBlocked: false,
+        diagnosticsAvailable: true,
+      );
+    }
+    final optedIn = await isEnabled();
+    Map<String, dynamic> native = {};
+    bool diagnosticsAvailable = true;
+    String? diagnosticsError;
+    try {
+      final result = await _aliasChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      native = result ?? {};
+    } catch (e) {
+      diagnosticsAvailable = false;
+      diagnosticsError = e.toString();
+    }
+
+    return RemotePushSnapshot(
+      supported: true,
+      optedIn: optedIn,
+      notificationsEnabled: native['notificationsEnabled'] == true,
+      registrationId: native['registrationId']?.toString(),
+      aliasState: native['storedAliasState']?.toString(),
+      privateChannelExists: native['privateMessageChannelExists'] == true,
+      privateChannelBlocked: native['privateMessageChannelBlocked'] == true,
+      diagnosticsAvailable: diagnosticsAvailable,
+      diagnosticsError: diagnosticsError,
+    );
   }
 
   static Future<void> clearLocal() async {

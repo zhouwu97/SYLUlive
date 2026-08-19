@@ -1,0 +1,279 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
+)
+
+var personalizationTestDBSeq int64
+
+func newPersonalizationTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	seq := atomic.AddInt64(&personalizationTestDBSeq, 1)
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:pers_%d?mode=memory&cache=shared", seq)), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&models.Post{}, &models.Like{}, &models.Reply{}, &models.FeedImpression{},
+		&models.UserFollow{}, &models.WaterSectionFollow{}, &models.WaterSection{},
+		&models.UserHiddenAuthor{}, &models.FeedFeedback{}, &models.WaterTeamRecruitment{},
+		&models.PostImage{}, &models.File{}, &models.FeedRankTrace{}, &models.Poll{},
+	))
+	return db
+}
+
+func personalizationPost(t *testing.T, db *gorm.DB, id, authorID uint, postType string, created time.Time) models.Post {
+	t.Helper()
+	p := models.Post{ID: id, BoardID: models.BoardShuitie, AuthorID: authorID, PostType: postType,
+		Title: fmt.Sprintf("帖%d", id), Content: "x", Status: models.PostStatusNormal, CreatedAt: created}
+	require.NoError(t, db.Create(&p).Error)
+	return p
+}
+
+func TestPersonalDeltaColdStartAndClamp(t *testing.T) {
+	now := time.Now()
+	c := HomeFeedCandidate{Post: models.Post{ID: 1, AuthorID: 1, PostType: "course_study", CreatedAt: now}}
+
+	// 冷启动：无信号 → 0。
+	empty := UserFeedFeatures{UserID: 1}
+	require.Equal(t, 0.0, ComputePersonalDelta(c, empty, now))
+
+	// 强信号 + 关注作者 48h 新帖 → 正向，但 clamp 到 0.20。
+	feat := UserFeedFeatures{
+		UserID:             1,
+		FollowedAuthors:    map[uint]bool{1: true},
+		RepliedAuthorCount: map[uint]float64{1: 5},
+		LikedAuthorCount:   map[uint]float64{1: 3},
+		OpenedAuthorCount:  map[uint]float64{1: 2},
+		LikedSectionCount:  map[string]float64{"course_study": 2},
+		OpenedSectionCount: map[string]float64{"course_study": 1},
+		HasSignal:          true,
+	}
+	delta := ComputePersonalDelta(c, feat, now)
+	require.LessOrEqual(t, delta, 0.20)
+
+	// 多个不同 session 曝光从未 open → 负向惩罚，clamp 到 -0.20。
+	featPenalized := UserFeedFeatures{
+		UserID:             1,
+		SeenSessionsByPost: map[uint]int{1: 5},
+		SeenOpenedPostIDs:  map[uint]bool{},
+		HasSignal:          true,
+	}
+	deltaP := ComputePersonalDelta(c, featPenalized, now)
+	require.LessOrEqual(t, deltaP, 0.0)
+	require.GreaterOrEqual(t, deltaP, -0.20)
+}
+
+func TestUserInRollout(t *testing.T) {
+	require.False(t, userInRollout(1, 0))
+	require.True(t, userInRollout(1, 100))
+	// 稳定：同一用户同百分比结果一致。
+	require.Equal(t, userInRollout(42, 10), userInRollout(42, 10))
+}
+
+// TestPersonalizationComputeNeeded cohort 门控：
+// shadow 全量计算；active rollout 只对命中分桶的用户计算。
+func TestPersonalizationComputeNeeded(t *testing.T) {
+	// shadow 开 → 无论 percent 多少都计算。
+	require.True(t, personalizationComputeNeeded(1, true, 0))
+	require.True(t, personalizationComputeNeeded(1, true, 100))
+	// 全关 → 不计算。
+	require.False(t, personalizationComputeNeeded(1, false, 0))
+	// percent=100 → 所有用户命中。
+	require.True(t, personalizationComputeNeeded(1, false, 100))
+	// 部分灰度 → 与分桶结果一致。
+	require.Equal(t, userInRollout(42, 10), personalizationComputeNeeded(42, false, 10))
+	require.Equal(t, userInRollout(7, 30), personalizationComputeNeeded(7, false, 30))
+}
+
+func TestApplyExploration(t *testing.T) {
+	now := time.Now()
+	var candidates []HomeFeedCandidate
+	var ranked []uint
+	for i := 1; i <= 30; i++ {
+		p := models.Post{ID: uint(i), AuthorID: 1, PostType: "campus_life", CreatedAt: now.Add(-time.Hour * time.Duration(i))}
+		candidates = append(candidates, HomeFeedCandidate{Post: p})
+		ranked = append(ranked, uint(i))
+	}
+	features := UserFeedFeatures{HasSignal: true}
+	out := applyExploration(ranked, candidates, features, now)
+	require.Len(t, out, 30)
+	// 槽位 4/10/16 被探索候选替换（不是原来的 5/11/17 的 id）。
+	require.NotEqual(t, uint(5), out[4])
+	require.NotEqual(t, uint(11), out[10])
+	require.NotEqual(t, uint(17), out[16])
+	// 其余槽位保持。
+	require.Equal(t, uint(1), out[0])
+	require.Equal(t, uint(2), out[1])
+}
+
+// TestApplyExplorationInvariants：探索必须是无损交换 ——
+// 长度不变、ID 集合不变、无重复 ID。
+func TestApplyExplorationInvariants(t *testing.T) {
+	now := time.Now()
+	buildInput := func() ([]uint, []HomeFeedCandidate) {
+		var candidates []HomeFeedCandidate
+		var ranked []uint
+		for i := 1; i <= 30; i++ {
+			p := models.Post{ID: uint(i), AuthorID: 1, PostType: "campus_life", CreatedAt: now.Add(-time.Hour * time.Duration(i))}
+			candidates = append(candidates, HomeFeedCandidate{Post: p})
+			ranked = append(ranked, uint(i))
+		}
+		return ranked, candidates
+	}
+
+	ranked, candidates := buildInput()
+	features := UserFeedFeatures{HasSignal: true}
+	out := applyExploration(ranked, candidates, features, now)
+
+	// 不变量 1：长度不变。
+	require.Equal(t, len(ranked), len(out))
+	// 不变量 2：ID 集合不变（set(before)==set(after)）。
+	beforeSet := map[uint]bool{}
+	for _, id := range ranked {
+		beforeSet[id] = true
+	}
+	afterSet := map[uint]bool{}
+	for _, id := range out {
+		afterSet[id] = true
+	}
+	require.Equal(t, len(beforeSet), len(afterSet), "探索后不应丢失任何帖子")
+	for id := range beforeSet {
+		require.True(t, afterSet[id], "探索后帖子 %d 丢失", id)
+	}
+	// 不变量 3：无重复 ID。
+	seen := map[uint]bool{}
+	for _, id := range out {
+		require.False(t, seen[id], "探索后出现重复帖子 ID %d", id)
+		seen[id] = true
+	}
+	// 不变量 4：top-20 之外的帖子允许被提升，但绝不能出现两个同 ID。
+	require.Len(t, out, len(ranked))
+}
+
+// TestApplyExplorationRequiresPositiveScore：探索分为 0 的帖子不得占用探索槽。
+// 构造所有候选都"无探索价值"（老帖 + 强版块/作者亲和），探索槽必须保持原位。
+func TestApplyExplorationRequiresPositiveScore(t *testing.T) {
+	now := time.Now()
+	var candidates []HomeFeedCandidate
+	var ranked []uint
+	for i := 1; i <= 30; i++ {
+		// 老帖（>48h）+ 用户已深度接触版块/作者 → 探索分必然为 0。
+		p := models.Post{ID: uint(i), AuthorID: 7, PostType: "dorm_life", CreatedAt: now.Add(-72 * time.Hour)}
+		candidates = append(candidates, HomeFeedCandidate{Post: p})
+		ranked = append(ranked, uint(i))
+	}
+	features := UserFeedFeatures{
+		HasSignal: true,
+		LikedSectionCount: map[string]float64{"dorm_life": 10},
+		LikedAuthorCount:  map[uint]float64{7: 10},
+	}
+	before := append([]uint(nil), ranked...)
+	out := applyExploration(ranked, candidates, features, now)
+	// 探索分为 0 → 无任何替换，顺序原样保留。
+	require.Equal(t, before, out, "探索分为 0 时不得提权任何帖子")
+}
+
+func TestBuildSnapshotShadowAndRollout(t *testing.T) {
+	db := newPersonalizationTestDB(t)
+	now := time.Now()
+
+	// 两个作者、两个版块、6 条新帖。
+	for i := uint(1); i <= 6; i++ {
+		author := uint(1)
+		if i > 3 {
+			author = 2
+		}
+		ptype := "course_study"
+		if i > 3 {
+			ptype = "campus_life"
+		}
+		personalizationPost(t, db, i, author, ptype, now.Add(-time.Duration(i)*time.Minute))
+	}
+
+	// 用户 A 关注作者 1（版块 course_study）；用户 B 关注作者 2（版块 campus_life）。
+	require.NoError(t, db.Create(&models.UserFollow{FollowerID: 101, FollowingID: 1}).Error)
+	require.NoError(t, db.Create(&models.UserFollow{FollowerID: 102, FollowingID: 2}).Error)
+
+	svc := NewHomeFeedServiceWithPoll(db)
+
+	// Shadow 开、percent=0 → 返回 baseline（个性化计算但用户顺序不变）。
+	svc.SetPersonalization(true, 0)
+	base, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, base)
+
+	// percent=100 → 用户进 rollout，返回个性化结果（仍为有效排序）。
+	svc.SetPersonalization(true, 100)
+	persA, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	persB, err := svc.BuildSnapshot(context.Background(), now, 102)
+	require.NoError(t, err)
+	require.NotEmpty(t, persA)
+	require.NotEmpty(t, persB)
+
+	// 兴趣不同的两个用户排序应不同（强关注信号下）。
+	require.NotEqual(t, persA, persB, "不同兴趣用户应产生不同个性化排序")
+}
+
+func TestBuildSnapshotShadowOffReturnsBaseline(t *testing.T) {
+	db := newPersonalizationTestDB(t)
+	now := time.Now()
+	for i := uint(1); i <= 4; i++ {
+		personalizationPost(t, db, i, 1, "course_study", now.Add(-time.Duration(i)*time.Minute))
+	}
+	svc := NewHomeFeedServiceWithPoll(db)
+	svc.SetPersonalization(false, 0)
+	ids, err := svc.BuildSnapshot(context.Background(), now, 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, ids)
+}
+
+// TestBuildSnapshotRolloutWithoutShadowActivates 回归 rollout 陷阱：
+// shadow=false 但 percent>0 时也必须进入计算路径并放量，而不是静默返回 baseline。
+func TestBuildSnapshotRolloutWithoutShadowActivates(t *testing.T) {
+	db := newPersonalizationTestDB(t)
+	now := time.Now()
+	for i := uint(1); i <= 6; i++ {
+		author := uint(1)
+		ptype := "course_study"
+		if i > 3 {
+			author = 2
+			ptype = "campus_life"
+		}
+		personalizationPost(t, db, i, author, ptype, now.Add(-time.Duration(i)*time.Minute))
+	}
+	// 用户 101 关注作者 1（course_study），且对帖子 1 有 2 个不同 session 的曝光但从未打开
+	// → SeenPenalty(-0.15) 会压低帖子 1，使个性化排序与 baseline 必然不同。
+	require.NoError(t, db.Create(&models.UserFollow{FollowerID: 101, FollowingID: 1}).Error)
+	for _, session := range []string{"s1", "s2"} {
+		require.NoError(t, db.Create(&models.FeedImpression{
+			UserID:        101,
+			PostID:        1,
+			FeedSessionID: session,
+			FeedKind:      "all",
+			CreatedAt:     now.Add(-time.Hour),
+		}).Error)
+	}
+
+	svc := NewHomeFeedServiceWithPoll(db)
+	svc.SetPersonalization(false, 0)
+	base, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, base)
+
+	// shadow=false + percent=100：修复前会直接返回 baseline（0% 生效）。
+	svc.SetPersonalization(false, 100)
+	pers, err := svc.BuildSnapshot(context.Background(), now, 101)
+	require.NoError(t, err)
+	require.NotEmpty(t, pers)
+	require.NotEqual(t, base, pers, "shadow=false 时 active rollout 也应生效")
+}

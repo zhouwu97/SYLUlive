@@ -46,7 +46,7 @@ def test_health_exposes_chain_identity_and_dependency_readiness(monkeypatch):
         assert response.status_code == 200
         payload = response.json()
         assert payload["chain_name"] == "shenliyuan_policy_rag"
-        assert payload["chain_version"] == "campus-assistant-release-v6"
+        assert payload["chain_version"] == "campus-assistant-release-v8"
         assert payload["dimensions"] == 384
         assert payload["dependencies_ready"]["embedding"] is True
         assert payload["dependencies_ready"]["lcel"] is True

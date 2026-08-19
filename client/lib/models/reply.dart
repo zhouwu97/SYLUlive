@@ -6,6 +6,8 @@ class Reply {
   final int id;
   final int postId;
   final int? parentReplyId;
+  final int? replyToUserId;
+  final int? replyToReplyId;
   final int authorId;
   final String content;
   final String? stickerId;
@@ -17,11 +19,15 @@ class Reply {
   final List<ReplyImage> images;
   final User? author;
   final DateTime createdAt;
+  /// 仅根评论：真实子回复总数（列表可能只携带前 N 条，其余懒加载）。
+  final int childReplyCount;
 
   Reply({
     required this.id,
     required this.postId,
     this.parentReplyId,
+    this.replyToUserId,
+    this.replyToReplyId,
     required this.authorId,
     required this.content,
     this.stickerId,
@@ -33,13 +39,18 @@ class Reply {
     this.images = const [],
     this.author,
     required this.createdAt,
+    this.childReplyCount = 0,
   });
+
+  bool get isDeleted => status == 'deleted';
 
   factory Reply.fromJson(Map<String, dynamic> json) {
     return Reply(
       id: json['id'] ?? 0,
       postId: json['post_id'] ?? 0,
       parentReplyId: json['parent_reply_id'],
+      replyToUserId: json['reply_to_user_id'],
+      replyToReplyId: json['reply_to_reply_id'],
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
       stickerId: json['sticker_id']?.toString(),
@@ -59,6 +70,7 @@ class Reply {
           [],
       author: json['author'] != null ? User.fromJson(json['author']) : null,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      childReplyCount: (json['child_reply_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -77,6 +89,48 @@ class Reply {
   bool get isSticker => hasSticker;
 
   String get stickerUrl => hasSticker ? '/stickers/$stickerId' : '';
+
+  /// 创建副本，仅覆盖显式传入的字段；其余字段（含 parentReplyId、images、
+  /// sticker、author、createdAt）完整保留。
+  Reply copyWith({
+    int? id,
+    int? postId,
+    int? parentReplyId,
+    int? replyToUserId,
+    int? replyToReplyId,
+    int? authorId,
+    String? content,
+    String? stickerId,
+    String? status,
+    int? likeCount,
+    bool? isLiked,
+    int? expEarned,
+    List<ExpAward>? expAwards,
+    List<ReplyImage>? images,
+    User? author,
+    DateTime? createdAt,
+    int? childReplyCount,
+  }) {
+    return Reply(
+      id: id ?? this.id,
+      postId: postId ?? this.postId,
+      parentReplyId: parentReplyId ?? this.parentReplyId,
+      replyToUserId: replyToUserId ?? this.replyToUserId,
+      replyToReplyId: replyToReplyId ?? this.replyToReplyId,
+      authorId: authorId ?? this.authorId,
+      content: content ?? this.content,
+      stickerId: stickerId ?? this.stickerId,
+      status: status ?? this.status,
+      likeCount: likeCount ?? this.likeCount,
+      isLiked: isLiked ?? this.isLiked,
+      expEarned: expEarned ?? this.expEarned,
+      expAwards: expAwards ?? this.expAwards,
+      images: images ?? this.images,
+      author: author ?? this.author,
+      createdAt: createdAt ?? this.createdAt,
+      childReplyCount: childReplyCount ?? this.childReplyCount,
+    );
+  }
 }
 
 // 回复图片模型

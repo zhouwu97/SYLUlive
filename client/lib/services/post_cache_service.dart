@@ -51,8 +51,9 @@ class PostCacheService {
     String? type,
     int? tagId,
   }) {
+    final normalizedType = type?.trim() ?? '';
     final usesHomeFeedV2 = boardId == 1 &&
-        (type == null || type.trim().isEmpty) &&
+        normalizedType.isEmpty &&
         tagId == null &&
         (sort == 'all' || sort == 'time');
     if (usesHomeFeedV2) {

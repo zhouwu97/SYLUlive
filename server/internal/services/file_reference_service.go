@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -69,7 +70,8 @@ func ValidateImageFileIDs(tx *gorm.DB, fileIDs []uint, maxCount int, ownerIDs ..
 	ordered := make([]models.File, 0, len(fileIDs))
 	for _, id := range fileIDs {
 		file := byID[id]
-		if len(ownerIDs) > 0 && ownerIDs[0] != 0 && file.UploaderID != 0 {
+		if len(ownerIDs) > 0 && ownerIDs[0] != 0 &&
+			file.AccessScope != models.FileAccessPublic && file.UploaderID != ownerIDs[0] {
 			var grants int64
 			if err := tx.Model(&models.FileUploadGrant{}).Where("file_id = ? AND user_id = ?", id, ownerIDs[0]).Count(&grants).Error; err != nil {
 				return nil, err
@@ -91,18 +93,136 @@ func ValidateImageFileIDs(tx *gorm.DB, fileIDs []uint, maxCount int, ownerIDs ..
 		}
 		ordered = append(ordered, file)
 	}
-	if len(ownerIDs) > 0 && ownerIDs[0] != 0 {
-		now := time.Now()
-		if err := tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
-			"status": "active", "claimed_at": &now,
-		}).Error; err != nil {
-			return nil, err
-		}
-	}
 	return ordered, nil
 }
 
-func imageDiskPath(publicPath string) (string, error) {
+// ClaimPublicImageFiles 在公开业务建立图片引用后，将文件升级为公开可读。
+// 这一步必须由业务事务显式调用，不能由 ValidateImageFileIDs 的纯校验动作隐式完成。
+func ClaimPublicImageFiles(tx *gorm.DB, fileIDs []uint) error {
+	return claimPublicFiles(tx, fileIDs)
+}
+
+func claimPublicFiles(tx *gorm.DB, fileIDs []uint) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	now := time.Now()
+	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+		"status":       "active",
+		"claimed_at":   &now,
+		"access_scope": models.FileAccessPublic,
+	}).Error
+}
+
+// ClaimPublicImagePaths 将直接保存 URL 的公开图片引用升级为 public。
+// 兼容 /uploads、uploads 和历史 /api/uploads 三种路径形态，并忽略 URL 查询串。
+// 外部图片 URL 不属于 files 表，保持 no-op。
+func ClaimPublicImagePaths(tx *gorm.DB, publicPaths ...string) error {
+	return claimPublicImagePathCandidates(tx, uploadReferenceCandidates(publicPaths...))
+}
+
+// ClaimPublicImagePathsForUser 仅允许文件上传者、被授权用户或已经公开的文件
+// 升级为公开引用，避免任意用户提交已知路径把他人的私信附件公开化。
+func ClaimPublicImagePathsForUser(tx *gorm.DB, userID uint, publicPaths ...string) error {
+	paths := uploadReferenceCandidates(publicPaths...)
+	if len(paths) == 0 {
+		return nil
+	}
+	var files []models.File
+	if err := tx.Where("path IN ?", paths).Find(&files).Error; err != nil {
+		return err
+	}
+	ids := make([]uint, 0, len(files))
+	for _, file := range files {
+		if file.AccessScope != models.FileAccessPublic && file.UploaderID != userID {
+			var grants int64
+			if err := tx.Model(&models.FileUploadGrant{}).
+				Where("file_id = ? AND user_id = ?", file.ID, userID).
+				Count(&grants).Error; err != nil {
+				return err
+			}
+			if grants == 0 {
+				return fmt.Errorf("%w: 无权引用文件 %d", ErrInvalidImageFileReference, file.ID)
+			}
+		}
+		ids = append(ids, file.ID)
+	}
+	return claimPublicFiles(tx, ids)
+}
+
+func claimPublicImagePathCandidates(tx *gorm.DB, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	var files []models.File
+	if err := tx.Select("id").Where("path IN ?", paths).Find(&files).Error; err != nil {
+		return err
+	}
+	ids := make([]uint, 0, len(files))
+	for _, file := range files {
+		ids = append(ids, file.ID)
+	}
+	return claimPublicFiles(tx, ids)
+}
+
+func uploadReferenceCandidates(publicPaths ...string) []string {
+	pathSet := make(map[string]struct{}, len(publicPaths)*2)
+	for _, raw := range publicPaths {
+		path, ok := normalizeUploadReference(raw)
+		if !ok {
+			continue
+		}
+		pathSet[path] = struct{}{}
+		if strings.HasPrefix(path, "/uploads/") {
+			pathSet[strings.TrimPrefix(path, "/")] = struct{}{}
+		} else {
+			pathSet["/"+path] = struct{}{}
+		}
+	}
+	if len(pathSet) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(pathSet))
+	for path := range pathSet {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+// ClaimPrivateFiles 在私有业务（如反馈附件）引用文件后激活文件，
+// 但保持 access_scope=private，避免反馈截图暴露到公开 /uploads。
+func ClaimPrivateFiles(tx *gorm.DB, fileIDs []uint) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	now := time.Now()
+	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+		"status":     "active",
+		"claimed_at": &now,
+	}).Error
+}
+
+// ClaimPrivateMessageFile 在私信引用附件后激活文件，但保持 private 访问范围。
+func ClaimPrivateMessageFile(tx *gorm.DB, fileID uint) error {
+	if fileID == 0 {
+		return fmt.Errorf("%w: 文件 ID 不能为 0", ErrInvalidImageFileReference)
+	}
+	now := time.Now()
+	result := tx.Model(&models.File{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+		"status":     "active",
+		"claimed_at": &now,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("%w: 文件记录不存在", ErrInvalidImageFileReference)
+	}
+	return nil
+}
+
+// ResolveUploadPath 将 /uploads/ 下的数据库路径解析为磁盘路径，并拒绝路径穿越。
+func ResolveUploadPath(uploadDir, publicPath string) (string, error) {
 	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(publicPath)))
 	if !strings.HasPrefix(clean, "/uploads/") && !strings.HasPrefix(clean, "uploads/") {
 		return "", ErrInvalidImageFileReference
@@ -111,9 +231,174 @@ func imageDiskPath(publicPath string) (string, error) {
 	if relative == "" || relative == "." || strings.HasPrefix(relative, "../") {
 		return "", ErrInvalidImageFileReference
 	}
-	uploadDir := strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
-	if uploadDir == "" {
-		uploadDir = "uploads"
+	root := strings.TrimSpace(uploadDir)
+	if root == "" {
+		root = strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
 	}
-	return filepath.Join(uploadDir, filepath.FromSlash(relative)), nil
+	if root == "" {
+		root = "uploads"
+	}
+	rootAbs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return "", err
+	}
+	fullAbs, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(relative)))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(rootAbs, fullAbs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", ErrInvalidImageFileReference
+	}
+	return fullAbs, nil
+}
+
+func normalizeUploadReference(raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	path := filepath.ToSlash(filepath.Clean(parsed.Path))
+	path = strings.TrimPrefix(path, "/api")
+	if !strings.HasPrefix(path, "/uploads/") && !strings.HasPrefix(path, "uploads/") {
+		return "", false
+	}
+	if strings.HasPrefix(path, "uploads/") {
+		path = "/" + path
+	}
+	return path, true
+}
+
+func imageDiskPath(publicPath string) (string, error) {
+	return ResolveUploadPath("", publicPath)
+}
+
+// HasActivePublicReferences 检查指定 fileID 是否仍存在有效公开业务引用。
+func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool, error) {
+	if fileID == 0 {
+		return false, nil
+	}
+	// 1. 菜品实拍 (approved)
+	if tx.Migrator().HasTable("canteen_dish_photos") {
+		var dishPhotoCount int64
+		if err := tx.Table("canteen_dish_photos").
+			Where("file_id = ? AND status = ?", fileID, models.DishPhotoStatusApproved).
+			Count(&dishPhotoCount).Error; err != nil {
+			return false, err
+		}
+		if dishPhotoCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 2. 帖子图片 (post_images join posts 有效状态)
+	if tx.Migrator().HasTable("post_images") && tx.Migrator().HasTable("posts") {
+		var postImageCount int64
+		if err := tx.Table("post_images AS pi").
+			Joins("JOIN posts p ON p.id = pi.post_id").
+			Where("pi.file_id = ? AND p.status IN ?", fileID,
+				[]models.PostStatus{
+					models.PostStatusNormal,
+					models.PostStatusSold,
+					models.PostStatusClosed,
+				}).
+			Count(&postImageCount).Error; err != nil {
+			return false, err
+		}
+		if postImageCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 2b. 回复图片 (reply_images join replies 有效状态)
+	if tx.Migrator().HasTable("reply_images") && tx.Migrator().HasTable("replies") {
+		var replyImageCount int64
+		if err := tx.Table("reply_images AS ri").
+			Joins("JOIN replies r ON r.id = ri.reply_id").
+			Where("ri.file_id = ? AND r.status = ?", fileID, models.ReplyStatusNormal).
+			Count(&replyImageCount).Error; err != nil {
+			return false, err
+		}
+		if replyImageCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 3. 自定义表情资产
+	if tx.Migrator().HasTable("user_emoji_assets") {
+		var emojiCount int64
+		if err := tx.Table("user_emoji_assets").Where("file_id = ?", fileID).Count(&emojiCount).Error; err != nil {
+			return false, err
+		}
+		if emojiCount > 0 {
+			return true, nil
+		}
+	}
+
+	// 4. 路径引用（食堂封面、评价、头像等）
+	if filePath != "" {
+		cleanPath := strings.TrimPrefix(filePath, "/")
+		if tx.Migrator().HasTable("canteens") {
+			var canteenCount int64
+			if err := tx.Table("canteens").Where("image = ? OR image = ?", filePath, "/"+cleanPath).Count(&canteenCount).Error; err != nil {
+				return false, err
+			}
+			if canteenCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("canteen_ratings") {
+			var ratingCount int64
+			if err := tx.Table("canteen_ratings").Where("images LIKE ? OR images LIKE ?", "%"+filePath+"%", "%"+cleanPath+"%").Count(&ratingCount).Error; err != nil {
+				return false, err
+			}
+			if ratingCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("users") {
+			var userCount int64
+			if err := tx.Table("users").Where("avatar = ? OR avatar = ?", filePath, "/"+cleanPath).Count(&userCount).Error; err != nil {
+				return false, err
+			}
+			if userCount > 0 {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// ReconcileFilePublicAccess 在公开业务引用移除后（如实拍下架、帖子删除等），
+// 检查并回收不再被任何公开业务引用的文件权限，降级为 private。
+func ReconcileFilePublicAccess(tx *gorm.DB, fileIDs ...uint) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	for _, id := range fileIDs {
+		if id == 0 {
+			continue
+		}
+		var file models.File
+		if err := tx.Select("id", "path", "access_scope").First(&file, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		if file.AccessScope != models.FileAccessPublic {
+			continue
+		}
+		hasPublic, err := HasActivePublicReferences(tx, file.ID, file.Path)
+		if err != nil {
+			return err
+		}
+		if !hasPublic {
+			if err := tx.Model(&models.File{}).Where("id = ?", file.ID).Update("access_scope", models.FileAccessPrivate).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

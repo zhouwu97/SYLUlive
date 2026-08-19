@@ -168,6 +168,11 @@ func (h *LikeHandler) LikeReply(c *gin.Context) {
 		if err := tx.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("like_count + 1")).Error; err != nil {
 			return err
 		}
+		// FEED-V5：total_likes_received 语义 = 用户所有公开内容收到的总点赞
+		// （post like + reply like），历史数据由一次性 rebuild 脚本补齐。
+		if err := tx.Model(&models.User{}).Where("id = ?", reply.AuthorID).Update("total_likes_received", gorm.Expr("total_likes_received + 1")).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -207,6 +212,10 @@ func (h *LikeHandler) UnlikeReply(c *gin.Context) {
 		}
 		if result.RowsAffected > 0 {
 			if err := tx.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("GREATEST(like_count - 1, 0)")).Error; err != nil {
+				return err
+			}
+			// FEED-V5：与 LikeReply 对称，取消评论点赞同步回退 total_likes_received。
+			if err := tx.Model(&models.User{}).Where("id = ?", reply.AuthorID).Update("total_likes_received", gorm.Expr("GREATEST(total_likes_received - 1, 0)")).Error; err != nil {
 				return err
 			}
 		}

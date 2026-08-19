@@ -41,6 +41,44 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
+type externalMCPHealthReader interface {
+	Healthy() bool
+	HealthStatus() mcpclient.ExternalMCPHealthStatus
+}
+
+type externalMCPHealthResponse struct {
+	Configured      bool   `json:"configured"`
+	Healthy         bool   `json:"healthy"`
+	ContractVersion string `json:"contract_version,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	AvailableTools  int    `json:"available_tools"`
+}
+
+func externalMCPHealthPayload(configured bool, client externalMCPHealthReader, registry *ai.ToolRegistry) externalMCPHealthResponse {
+	result := externalMCPHealthResponse{Configured: configured}
+	if !configured || client == nil || !client.Healthy() {
+		return result
+	}
+	status := client.HealthStatus()
+	if !status.Healthy {
+		return result
+	}
+	result.Healthy = true
+	result.ContractVersion = status.ContractVersion
+	result.Mode = status.Mode
+	for _, name := range []string{
+		"hy3_decision.explain_competition_candidates",
+		"hy3_decision.compare_competitions",
+		"hy3_decision.analyze_academic",
+		"hy3_decision.plan_student_week",
+	} {
+		if registry.HasTool(name) {
+			result.AvailableTools++
+		}
+	}
+	return result
+}
+
 const examPaperStorageJobAttemptTimeout = 15 * time.Second
 
 type examPaperStorageJobAttemptProcessor interface {
@@ -211,6 +249,8 @@ func main() {
 
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.UserEmojiAsset{},
+		&models.UserEmojiFavorite{},
 
 		&models.ExamPaper{},
 
@@ -270,7 +310,17 @@ func main() {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.CanteenDish{},
+		&models.CanteenDishPhoto{},
+		&models.CanteenRatingDishRecommendation{},
 		&models.UserFollow{},
+
+		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
+		&models.FeedFeedback{},
+		&models.UserHiddenAuthor{},
+		&models.FeedImpression{},
+		&models.FeedDailyMetrics{},
+		&models.FeedRankTrace{},
 
 		// 校园资讯
 		&models.CampusArticle{},
@@ -279,6 +329,7 @@ func main() {
 		&models.CompetitionCatalogPackage{},
 		&models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{},
+		&models.CompetitionLegacyDuplicateResolution{},
 		&models.CompetitionCatalogActivationSnapshot{},
 		&models.CompetitionEvent{},
 		&models.CompetitionEventAttachment{},
@@ -306,6 +357,9 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+	if err := ensureSecurityHardeningSchema(db); err != nil {
+		log.Fatal("安全加固数据库迁移失败:", err)
 	}
 	if err := models.BackfillCompetitionCatalogMetadata(db); err != nil {
 		log.Fatal("竞赛目录兼容数据回填失败:", err)
@@ -359,6 +413,15 @@ func main() {
 	}
 	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
 		log.Fatal("食堂名称唯一索引迁移失败:", err)
+	}
+	if err := models.EnsureCanteenDishSchema(db); err != nil {
+		log.Fatal("食堂菜品图库约束迁移失败:", err)
+	}
+	if err := models.MigratePendingCanteenDishPhotos(db); err != nil {
+		log.Fatal("待审核实拍数据迁移失败:", err)
+	}
+	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
+		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
 	}
 	if err := ensureAppReleaseIndexes(db); err != nil {
 		log.Fatal("应用发布索引迁移失败:", err)
@@ -517,6 +580,11 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
+	postHandler.SetFeedPersonalizationV5(cfg.HomeFeedV5PersonalizationShadow, cfg.HomeFeedV5PersonalizationPercent)
+	feedHandler := handlers.NewFeedHandler(db)
+	feedEventHandler := handlers.NewFeedEventHandler(db)
+	feedMetricsHandler := handlers.NewFeedMetricsHandler(db)
 	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
@@ -544,6 +612,7 @@ func main() {
 	likeHandler := handlers.NewLikeHandler(db)
 
 	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(cfg.JPushAppKey, cfg.JPushMasterSecret))
+	messageHandler.SetUploadDir(cfg.UploadDir)
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 
@@ -554,6 +623,9 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+
+	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
+	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
 
 	examPaperFiles, examPaperFileErr := services.NewExamPaperFileService(cfg.ExamPaperDir)
 	if examPaperFileErr != nil {
@@ -616,8 +688,11 @@ func main() {
 	majorHandler := handlers.NewMajorHandler(db)
 
 	canteenHandler := handlers.NewCanteenHandler(db)
+	canteenDishHandler := handlers.NewCanteenDishHandler(db)
+	canteenDishPhotoHandler := handlers.NewCanteenDishPhotoHandler(db)
+	canteenDishPhotoAdminHandler := handlers.NewCanteenDishPhotoAdminHandler(db)
 
-	feedbackHandler := handlers.NewFeedbackHandler(db)
+	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
 	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
@@ -681,7 +756,8 @@ func main() {
 
 	var ragClient *ai.RAGClient
 	var aiRuntime *ai.Runtime
-	var registeredAIToolCapabilities []string
+	var externalMCPClient *mcpclient.Client
+	var toolRegistry *ai.ToolRegistry
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -732,7 +808,8 @@ func main() {
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
 		if cfg.AIExternalMCPEnabled {
-			externalMCPClient, externalMCPErr := mcpclient.New(mcpclient.Config{
+			var externalMCPErr error
+			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{
 				Enabled:           true,
 				Transport:         cfg.AIExternalMCPTransport,
 				Command:           cfg.AIExternalMCPCommand,
@@ -796,16 +873,8 @@ func main() {
 						} else {
 							tools = append(tools, hy3Tools...)
 							for _, tool := range hy3Tools {
-								switch tool.Name() {
-								case "hy3_decision.explain_competition_candidates":
+								if tool.Name() == "hy3_decision.explain_competition_candidates" {
 									competitionHandler.SetCompetitionCandidateExplanationTool(tool)
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionExplain)
-								case "hy3_decision.compare_competitions":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionCompare)
-								case "hy3_decision.analyze_academic":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3AcademicAnalysis)
-								case "hy3_decision.plan_student_week":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3WeekPlan)
 								}
 							}
 						}
@@ -813,7 +882,8 @@ func main() {
 				}
 			}
 		}
-		toolRegistry, registryErr := ai.NewToolRegistry(db, tools...)
+		var registryErr error
+		toolRegistry, registryErr = ai.NewToolRegistry(db, tools...)
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
@@ -869,10 +939,12 @@ func main() {
 		cfg.AIEnabled,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			HourlyLimit:        cfg.AIHourlyMessageLimit,
-			MaxMessageChars:    cfg.AIMaxMessageChars,
-			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
-			ToolCapabilities:   registeredAIToolCapabilities,
+			HourlyLimit:           cfg.AIHourlyMessageLimit,
+			MaxMessageChars:       cfg.AIMaxMessageChars,
+			QuotaExemptUserIDs:    cfg.AIQuotaExemptUserIDs,
+			ExternalMCPConfigured: cfg.AIExternalMCPEnabled,
+			ExternalMCPHealth:     externalMCPClient,
+			ToolRegistry:          toolRegistry,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -883,6 +955,7 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
@@ -937,6 +1010,7 @@ func main() {
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
+				"external_mcp":    externalMCPHealthPayload(cfg.AIExternalMCPEnabled, externalMCPClient, toolRegistry),
 				"policy_rag": gin.H{
 					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
 					"langchain_rollout_percent": cfg.AILangChainRAGRolloutPercent,
@@ -1066,6 +1140,7 @@ func main() {
 
 		// 旧路径兼容一段时间
 		user.GET("/notifications", notificationHandler.GetNotifications)
+		user.GET("/notifications/replies/unread", notificationHandler.GetUnreadReplyNotifications)
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
 		user.GET("/notifications/unread-count", notificationHandler.GetUnreadCount)
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
@@ -1161,6 +1236,7 @@ func main() {
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
+	r.GET("/api/notifications/replies/unread", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadReplyNotifications)
 	r.GET("/api/notifications/unread-count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount)
 	r.GET("/api/notifications/unread_count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount) // keep for backwards compatibility just in case
 	r.POST("/api/notifications/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRead)
@@ -1181,6 +1257,10 @@ func main() {
 		posts.GET("/:id", postHandler.GetOne)
 
 		posts.GET("/:id/replies", replyHandler.GetList)
+
+		posts.GET("/:id/replies/:replyId/children", replyHandler.GetChildren)
+
+		posts.GET("/:id/replies/:replyId/context", replyHandler.GetReplyContext)
 
 	}
 
@@ -1384,6 +1464,22 @@ func main() {
 
 	}
 
+	// Feed 推荐路由（FEED-1 用户控制 + FEED-2 行为事件采集）
+
+	feed := r.Group("/api/feed")
+
+	feed.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+		feed.PUT("/posts/:post_id/not-interested", feedHandler.MarkNotInterested)
+		feed.DELETE("/posts/:post_id/not-interested", feedHandler.UndoNotInterested)
+		feed.PUT("/authors/:author_id/hidden", feedHandler.HideAuthor)
+		feed.DELETE("/authors/:author_id/hidden", feedHandler.RestoreAuthor)
+		feed.GET("/hidden-authors", feedHandler.GetHiddenAuthors)
+
+		feed.POST("/events/batch", feedEventHandler.RecordEventsBatch)
+	}
+
 	// 私信路由
 
 	messages := r.Group("/api/messages")
@@ -1396,6 +1492,8 @@ func main() {
 
 		messages.GET("/events", messageHandler.Events)
 
+		messages.GET("/files/:file_id", messageHandler.ServePrivateFile)
+
 		messages.GET("/users/:target_user_id/conversation", messageHandler.GetConversationWithUser)
 
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
@@ -1406,93 +1504,26 @@ func main() {
 
 		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
 
-		messages.GET("/unread_count", messageHandler.GetUnreadCount)
+	messages.GET("/unread_count", messageHandler.GetUnreadCount)
 
 	}
 
-	// 公告路由
-
-	announcements := r.Group("/api/announcements")
-
+	// 账号级自定义表情收藏路由。
+	emojiFavorites := r.Group("/api/emoji/favorites")
+	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
-
-		announcements.GET("", announcementHandler.GetList)
-
-		announcements.GET("/active", announcementHandler.GetActive)
-
+		emojiFavorites.GET("", emojiFavoriteHandler.List)
+		emojiFavorites.POST("", emojiFavoriteHandler.Create)
+		emojiFavorites.POST("/from-message", emojiFavoriteHandler.CreateFromMessage)
+		emojiFavorites.POST("/from-public-image", emojiFavoriteHandler.CreateFromPublicImage)
+		emojiFavorites.GET("/:id/file", emojiFavoriteHandler.ServeFile)
+		emojiFavorites.GET("/:id/thumbnail", emojiFavoriteHandler.ServeThumbnail)
+		emojiFavorites.DELETE("/:id", emojiFavoriteHandler.Delete)
 	}
 
-	announcementsAuth := announcements.Group("")
-
-	announcementsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-
-	{
-		// 静态路由必须在 /:id 之前注册
-		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
-		announcementsAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
-		announcementsAuth.POST("/read-all", announcementHandler.MarkAllRead)
-
-		announcementsAuth.GET("/:id", announcementHandler.GetOne)
-		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
-
-	}
-
-	announcementsAdmin := announcements.Group("")
-
-	announcementsAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-
-	{
-		announcementsAdmin.GET("/admin/list", announcementHandler.GetAdminList)
-
-		announcementsAdmin.POST("", announcementHandler.Create)
-
-		announcementsAdmin.PUT("/:id", announcementHandler.Update)
-
-		announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
-
-	}
-
-	// 公告别名路由：App 直连公网 IP 时，部分网络会卡住包含
-	// "announcement" 的明文 HTTP 路径；保留旧路径兼容，客户端走 notices。
-	notices := r.Group("/api/notices")
-
-	{
-
-		notices.GET("", announcementHandler.GetList)
-
-		notices.GET("/active", announcementHandler.GetActive)
-
-	}
-
-	noticesAuth := notices.Group("")
-
-	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-
-	{
-		// 静态路由必须在 /:id 之前注册
-		noticesAuth.GET("/unread", announcementHandler.GetUnread)
-		noticesAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
-		noticesAuth.POST("/read-all", announcementHandler.MarkAllRead)
-
-		noticesAuth.GET("/:id", announcementHandler.GetOne)
-		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
-
-	}
-
-	noticesAdmin := notices.Group("")
-
-	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-
-	{
-		noticesAdmin.GET("/admin/list", announcementHandler.GetAdminList)
-
-		noticesAdmin.POST("", announcementHandler.Create)
-
-		noticesAdmin.PUT("/:id", announcementHandler.Update)
-
-		noticesAdmin.DELETE("/:id", announcementHandler.Delete)
-
-	}
+	// 公告路由：/api/announcements 与 /api/notices 为同一资源别名，
+	// 注册逻辑见 announcement_routes.go。
+	registerAnnouncementRoutes(r, announcementHandler, db, cfg)
 
 	// 举报路由
 
@@ -1568,6 +1599,9 @@ func main() {
 		admin.GET("/candidates", invitationHandler.GetCandidates)
 		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
 
+		admin.GET("/feed/metrics", feedMetricsHandler.AdminMetrics)
+		admin.GET("/feed/metrics/baseline", feedMetricsHandler.AdminBaseline)
+
 		admin.GET("/members", invitationHandler.GetMembers)
 
 		admin.POST("/invite/:user_id", invitationHandler.Create)
@@ -1603,11 +1637,18 @@ func main() {
 		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)
 		if cfg.CompetitionCatalogV2Enabled {
 			admin.POST("/competition-catalog/baseline/export", competitionHandler.AdminExportCompetitionCatalogBaseline)
+			admin.POST("/competition-catalog/baseline/export-identity", competitionHandler.AdminExportCompetitionCatalogIdentityBaseline)
 			admin.POST("/competition-catalog/packages/validate", competitionHandler.AdminValidateCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/import", competitionHandler.AdminImportCompetitionCatalog)
 			admin.GET("/competition-catalog/packages", competitionHandler.AdminListCompetitionCatalogPackages)
+			admin.GET("/competition-catalog/legacy-resolutions", competitionHandler.AdminListCompetitionLegacyResolutions)
 			admin.GET("/competition-catalog/packages/:id", competitionHandler.AdminGetCompetitionCatalogPackage)
 			admin.GET("/competition-catalog/packages/:id/diff", competitionHandler.AdminDiffCompetitionCatalogPackage)
+			admin.POST("/competition-catalog/packages/:id/mappings/suggest", competitionHandler.AdminSuggestCompetitionCatalogLegacyMappings)
+			admin.GET("/competition-catalog/packages/:id/mappings", competitionHandler.AdminListCompetitionCatalogLegacyMappings)
+			admin.PUT("/competition-catalog/packages/:id/mappings/:mapping_id", competitionHandler.AdminReviewCompetitionCatalogLegacyMapping)
+			admin.POST("/competition-catalog/packages/:id/mappings/batch-confirm", competitionHandler.AdminBatchConfirmCompetitionCatalogLegacyMappings)
+			admin.POST("/competition-catalog/packages/:id/mappings/inherit", competitionHandler.AdminInheritCompetitionCatalogLegacyMappings)
 			admin.POST("/competition-catalog/packages/:id/preflight", competitionHandler.AdminPreflightCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/:id/activate", competitionHandler.AdminActivateCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/:id/rollback", competitionHandler.AdminRollbackCompetitionCatalog)
@@ -1846,8 +1887,17 @@ func main() {
 
 		canteen.GET("", canteenHandler.GetList)
 
+		// 食堂发现/排行聚合接口（公开）：
+		// /home 与 /rankings 是静态段，优先于 /:id 注册避免歧义。
+		canteen.GET("/home", canteenHandler.GetHome)
+		canteen.GET("/rankings", canteenHandler.GetRankings)
+
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
+
+		// 菜品图库公开接口
+		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
+		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
 
 	}
 
@@ -1867,6 +1917,14 @@ func main() {
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
+		// 菜品实拍审核与菜品管理
+		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
+		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
+
 	}
 
 	canteenAuth := canteen.Group("")
@@ -1880,6 +1938,9 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 
 		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
+
+		// 学生上传菜品实拍
+		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
 
 	}
 
@@ -1907,6 +1968,15 @@ func main() {
 
 		violationAdmin.PUT("/:id/appeal", teacherHandler.HandleAppeal)
 
+	}
+
+	// 管理员违规列表使用独立资源路径，普通用户接口永远只返回当前用户记录。
+	adminViolations := r.Group("/api/admin/violations")
+	adminViolations.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminViolations.GET("", teacherHandler.GetAdminViolations)
+		adminViolations.POST("", teacherHandler.AddViolation)
+		adminViolations.PUT("/:id/appeal", teacherHandler.HandleAppeal)
 	}
 
 	// 抽奖路由
@@ -1996,6 +2066,7 @@ func main() {
 		{
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
+			aiProtected.GET("/runs/:id/sources", aiRuntimeHandler.GetRunSources)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
 			aiProtected.POST("/runs/:id/consent", aiRuntimeHandler.SubmitRunConsent)
@@ -2007,27 +2078,49 @@ func main() {
 		}
 	}
 
-	// 版本信息
-
+	// 版本信息。/api/version 是旧客户端兼容适配器，发布版本统一从
+	// AppRelease 读取，避免与 /api/app/update 维护两套版本真相。
 	r.GET("/api/version", func(c *gin.Context) {
+		latest, err := appReleaseService.GetLatestPublished(c.Request.Context(), models.AppReleasePlatformAndroid, models.AppReleaseChannelStable)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "version_service_unavailable", "error": "版本服务暂不可用"})
+			return
+		}
 
-		c.JSON(http.StatusOK, gin.H{
-
-			"version": "1.6.2",
-
-			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
-
-			"force_update": false, // 保留兼容旧版逻辑
-
-			"download_url": "https://sylulive.online/uploads/app-release.apk",
-
+		response := gin.H{
+			"version":             "",
+			"min_version":         "",
+			"min_version_code":    int64(0),
+			"force_update":        false,
+			"download_url":        "",
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
+			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
+			"update_msg":          "",
+		}
+		if latest == nil {
+			c.JSON(http.StatusOK, response)
+			return
+		}
 
-			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
-
-			"update_msg": "1. 优化校园地图首次加载、复位与横屏查看\n2. 校历升级为可点击的结构化月历，支持教学周、假期和日期详情\n3. 校历支持离线回退、后台更新与官方原图核验",
-		})
-
+		currentVersionRaw := strings.TrimSpace(c.Query("version_code"))
+		if currentVersionRaw == "" {
+			currentVersionRaw = strings.TrimSpace(c.GetHeader("X-App-Version-Code"))
+		}
+		currentVersion, parseErr := strconv.ParseInt(currentVersionRaw, 10, 64)
+		forceUpdate := parseErr == nil && currentVersion > 0 && currentVersion < latest.MinimumSupportedVersionCode
+		downloadURL := "/api/app/releases/" + strconv.FormatUint(uint64(latest.ID), 10) + "/download"
+		if latest.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+			downloadURL = latest.ActionURL
+		}
+		response["version"] = latest.VersionName
+		// 旧协议只有字符串字段，使用同源的最低支持构建号，同时提供
+		// min_version_code 供能理解新协议的客户端使用。
+		response["min_version"] = strconv.FormatInt(latest.MinimumSupportedVersionCode, 10)
+		response["min_version_code"] = latest.MinimumSupportedVersionCode
+		response["force_update"] = forceUpdate
+		response["download_url"] = downloadURL
+		response["update_msg"] = latest.Changelog
+		c.JSON(http.StatusOK, response)
 	})
 
 	log.Println("服务器启动在 :8080")
@@ -2037,6 +2130,7 @@ func main() {
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
 	eduBindingRecoveryCron.Wait()
+	feedMetricsCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}
@@ -2051,23 +2145,21 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 	now := time.Now()
 
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
-
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-
-		db.Model(&existing).Updates(map[string]interface{}{
-
-			"password_hash": string(hashedPassword),
-
-			"nickname": "超级管理员",
-
-			"role": models.RoleSuperAdmin,
-
-			"credit_score": 100,
-
+		// 已存在的种子账号不因服务重启而覆盖密码或无条件轮换令牌；
+		// 只有角色真的发生变化时才通过统一 Service 失效旧会话。
+		if existing.Role != models.RoleSuperAdmin {
+			if err := services.UpdateUserRoleAndInvalidateToken(db, existing.ID, models.RoleSuperAdmin); err != nil {
+				log.Printf("系统超级管理员角色修复失败: %v", err)
+			}
+		}
+		if err := db.Model(&existing).Updates(map[string]interface{}{
+			"nickname":       "超级管理员",
+			"credit_score":   100,
 			"account_status": "active",
-
-			"cancelled_at": nil,
-		})
+			"cancelled_at":   nil,
+		}).Error; err != nil {
+			log.Printf("系统超级管理员状态更新失败: %v", err)
+		}
 		// 超管种子账号不经教务注册流程，但必须满足登录查询的已认证身份条件。
 		db.Model(&existing).
 			Where("student_verified_at IS NULL").
@@ -2098,22 +2190,60 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	}
 
-	// 已移除硬编码提升超级管理员代码
-
-	// 移除将其他超级管理员降级的代码，允许多个超级管理员共存
-
-	// db.Model(&models.User{}).
-
-	// 	Where("role = ? AND student_id <> ?", models.RoleSuperAdmin, studentID).
-
-	// 	Update("role", models.RoleUser)
-
-	db.Model(&models.User{}).
-		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
-		Update("role", models.RoleUser)
+	var legacyAdmin models.User
+	if err := db.Select("id", "role").Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).First(&legacyAdmin).Error; err == nil {
+		if err := services.UpdateUserRoleAndInvalidateToken(db, legacyAdmin.ID, models.RoleUser); err != nil {
+			log.Printf("遗留 admin 账号降权失败: %v", err)
+		}
+	}
 
 	log.Printf("系统超级管理员已就绪: %s", studentID)
 
+}
+
+// ensureSecurityHardeningSchema 建立文件访问范围和举报 pending 唯一约束，
+// 并把已有公开业务引用的文件回填为 public；未被公开引用的历史文件保持 private。
+func ensureSecurityHardeningSchema(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE files ADD COLUMN IF NOT EXISTS access_scope VARCHAR(16) NOT NULL DEFAULT 'private'`,
+		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
+		`UPDATE files SET access_scope = 'private' WHERE access_scope IS NULL OR access_scope = ''`,
+		`UPDATE files
+SET status = 'active', claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
+WHERE EXISTS (SELECT 1 FROM messages WHERE messages.file_id = files.id)`,
+		`UPDATE files SET access_scope = 'public'
+WHERE EXISTS (SELECT 1 FROM post_images WHERE post_images.file_id = files.id)
+   OR EXISTS (SELECT 1 FROM reply_images WHERE reply_images.file_id = files.id)
+   OR EXISTS (SELECT 1 FROM users WHERE users.avatar = files.path OR users.avatar LIKE files.path || '?%')
+   OR EXISTS (SELECT 1 FROM users WHERE users.background = files.path OR users.background LIKE files.path || '?%')
+   OR EXISTS (SELECT 1 FROM water_sections
+              WHERE water_sections.avatar_url = files.path
+                 OR water_sections.cover_url = files.path
+                 OR water_sections.cover_portrait_url = files.path
+                 OR water_sections.cover_landscape_url = files.path
+                 OR water_sections.cover_square_url = files.path)`,
+		`UPDATE files SET access_scope = 'public'
+WHERE EXISTS (SELECT 1 FROM canteens
+              WHERE canteens.verified = TRUE
+                AND (canteens.image = files.path
+                  OR canteens.image LIKE files.path || '?%'))
+   OR EXISTS (SELECT 1
+              FROM canteen_ratings
+              JOIN canteens ON canteens.id = canteen_ratings.canteen_id
+              WHERE canteens.verified = TRUE
+                AND (canteen_ratings.images LIKE '%' || files.path || '%'
+                  OR canteen_ratings.images LIKE '%/' || files.path || '%'))`,
+		`DROP INDEX IF EXISTS uq_pending_report_target`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
+ ON reports (reporter_id, target_type, target_id)
+ WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。

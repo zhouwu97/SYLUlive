@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../models/ai_capabilities.dart';
 import '../models/ai_conversation.dart';
+import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
@@ -13,6 +14,16 @@ import '../models/ai_source.dart';
 const int _maxCreateRunAttempts = 2;
 const Duration _firstRetryDelay = Duration(milliseconds: 400);
 const Duration _secondRetryDelay = Duration(milliseconds: 1200);
+
+class AiRunSources {
+  const AiRunSources({
+    this.sources = const [],
+    this.personalDataEvidence = const [],
+  });
+
+  final List<AiSource> sources;
+  final List<AiPersonalDataEvidence> personalDataEvidence;
+}
 
 /// 判断创建 Run 的失败是否属于可以用同一 request id 重试的链路问题。
 /// 400/401/403/422/429 等业务拒绝不重试：重试不会改变结果，只会浪费配额。
@@ -170,11 +181,36 @@ class AiAssistantService {
     );
   }
 
-
   Future<AiRun> getRun(String runId) async {
     final response = await _dio.get('/ai/runs/$runId');
     _expectStatus(response, 200);
     return AiRun.fromJson(_map(_map(response.data)['run']));
+  }
+
+  /// 恢复已完成 Run 的来源事件快照。
+  ///
+  /// 该接口是 additive contract；旧服务端暂未提供时由 Provider 继续走
+  /// 会话 DTO / chunk 正文 fallback，不会因为来源接口失败而隐藏回答正文。
+  Future<AiRunSources> getRunSources(String runId) async {
+    final response = await _dio.get('/ai/runs/$runId/sources');
+    _expectStatus(response, 200);
+    final data = _map(response.data);
+    final rawSources = data['sources'];
+    final sources = rawSources is! List
+        ? const <AiSource>[]
+        : rawSources
+            .whereType<Map>()
+            .map((item) => AiSource.fromJson(Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+    final rawEvidence = data['personal_data_evidence'];
+    final evidence = rawEvidence is! List
+        ? const <AiPersonalDataEvidence>[]
+        : rawEvidence
+            .whereType<Map>()
+            .map((item) => AiPersonalDataEvidence.fromJson(
+                Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+    return AiRunSources(sources: sources, personalDataEvidence: evidence);
   }
 
   Future<AiRun> cancelRun(String runId) async {

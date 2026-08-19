@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
+import '../models/startup_destination.dart';
+import '../services/root_page_state_service.dart';
+import '../utils/app_navigator.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
@@ -16,10 +21,60 @@ class NotificationsScreen extends StatefulWidget {
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with RouteAware {
+  PageRoute<dynamic>? _subscribedRoute;
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
   String? _errorMessage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPush() {
+    _saveCurrentPageAsLastPage();
+  }
+
+  @override
+  void dispose() {
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+    }
+    super.dispose();
+  }
+
+  /// 仅在 `lastPage` 模式下，把通知中心保存为 lastPage。
+  /// 最佳努力：读取失败（如测试用 Fake Provider）时静默跳过，不打断页面。
+  void _saveCurrentPageAsLastPage() {
+    try {
+      final theme = context.read<ThemeProvider>();
+      if (theme.startupDestination != StartupDestinationMode.lastPage) return;
+      final accountId = context.read<AuthProvider>().user?.id;
+      if (accountId == null || accountId <= 0) return;
+      unawaited(RootPageStateStore.instance.saveLastPage(
+        RestorablePageState(
+          type: RestorablePageType.notification,
+          arguments: <String, dynamic>{
+            'underlyingRootTab': currentHomeTabIndex.value,
+          },
+          accountId: accountId,
+        ),
+      ));
+    } catch (_) {
+      // 忽略：不影响正常浏览。
+    }
+  }
 
   @override
   void initState() {

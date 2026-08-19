@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_colors.dart';
 
 enum PublishType { waterPost, poll }
 
@@ -30,11 +31,13 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF181A21) : const Color(0xFFFFFCF8),
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -43,22 +46,32 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
         children: [
           Center(
             child: Container(
-              width: 38,
+              width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Theme.of(context).dividerColor,
+                color: isDark ? Colors.white24 : Colors.black12,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 16),
-          const Text('选择发布类型',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+          Text(
+            '选择发布类型',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF1F2328),
+            ),
+          ),
           const SizedBox(height: 4),
-          Text('内容会展示在首页，也可从对应版块查看',
-              style:
-                  TextStyle(fontSize: 13, color: Theme.of(context).hintColor)),
-          const SizedBox(height: 18),
+          Text(
+            '请选择你要发布的内容形式',
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white54 : const Color(0xFF747B82),
+            ),
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
@@ -66,7 +79,7 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
                   icon: Icons.edit_note,
                   title: '发布水帖',
                   description: '分享生活、学习\n求助与经验',
-                  color: const Color(0xFF16A34A),
+                  color: AppColors.brandPrimary,
                   onTap: () => _choose(PublishType.waterPost),
                 ),
               ),
@@ -76,7 +89,7 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
                   icon: Icons.how_to_vote_outlined,
                   title: '发起投票',
                   description: '创建单选或多选\n收集同学意见',
-                  color: const Color(0xFF7C3AED),
+                  color: AppColors.info,
                   onTap: () => _choose(PublishType.poll),
                 ),
               ),

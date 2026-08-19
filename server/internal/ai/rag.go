@@ -653,7 +653,9 @@ func normalizedExactTerms(terms []string) []string {
 
 func preferredDocumentTypeOrder(documentTypes []string) (string, []interface{}) {
 	if len(documentTypes) == 0 {
-		return "0", nil
+		// PostgreSQL 将 ORDER BY 0 解释为 select-list 的第 0 列，
+		// 会直接报错；typed NULL 是不改变排序的合法占位表达式。
+		return "NULL::integer", nil
 	}
 	var builder strings.Builder
 	builder.WriteString("CASE d.document_type")
@@ -909,7 +911,9 @@ func validateLegacyChunkCitations(answer string, chunks []RetrievedChunk) (strin
 	var output strings.Builder
 	cited := make([]RetrievedChunk, 0, len(chunks))
 	numberByChunk := make(map[uint64]int, len(chunks))
-	invalid := false
+	// “[来源]” 这类笼统占位符无法对应具体证据，不能作为可核验引用
+	// 写入历史会话；否则客户端既不能编号，也无法展示正确的来源卡片。
+	invalid := containsGenericCitationPlaceholder(answer)
 	for index := 0; index < len(answer); {
 		start := strings.Index(answer[index:], "[chunk:")
 		if start < 0 {
@@ -947,7 +951,9 @@ func validateLegacyChunkCitations(answer string, chunks []RetrievedChunk) (strin
 
 func validateNumberedCitations(answer string, chunks []RetrievedChunk) (string, []SourceCard, bool) {
 	allowed := make(map[int]RetrievedChunk, len(chunks))
-	invalid := strings.Contains(strings.ToLower(answer), "[chunk:") || strings.Contains(answer, "[R")
+	invalid := strings.Contains(strings.ToLower(answer), "[chunk:") ||
+		strings.Contains(answer, "[R") ||
+		containsGenericCitationPlaceholder(answer)
 	for _, chunk := range chunks {
 		if chunk.CitationNumber <= 0 {
 			invalid = true
@@ -989,10 +995,26 @@ func validateNumberedCitations(answer string, chunks []RetrievedChunk) (string, 
 		}
 		index = end + 1
 	}
-	if len(seen) == 0 || len(seen) != len(allowed) {
+	// 召回集合是模型可用证据的上界，不是必须逐条引用的清单。
+	// 回答可以只使用其中与实际结论相关的子集，但至少要有一条合法引用。
+	if len(seen) == 0 {
 		invalid = true
 	}
 	return answer, aggregateSourceCards(cited), invalid
+}
+
+func containsGenericCitationPlaceholder(answer string) bool {
+	lower := strings.ToLower(answer)
+	return strings.Contains(answer, "[来源]") || strings.Contains(lower, "[source]")
+}
+
+func stripUnbackedCitationMarkers(answer string) string {
+	cleaned, _, _ := ValidateCitations(answer, nil)
+	cleaned = strings.ReplaceAll(cleaned, "[来源]", "")
+	for _, marker := range []string{"[source]", "[Source]", "[SOURCE]"} {
+		cleaned = strings.ReplaceAll(cleaned, marker, "")
+	}
+	return cleaned
 }
 
 func aggregateSourceCards(chunks []RetrievedChunk) []SourceCard {

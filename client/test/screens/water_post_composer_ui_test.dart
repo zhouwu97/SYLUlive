@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -29,6 +30,9 @@ class FakePostProvider extends Fake
   String? lastTitle;
 
   @override
+  Post? postFor(int postId) => null;
+
+  @override
   Future<CreatePostResult> createPost({
     required int boardId,
     required String content,
@@ -51,7 +55,9 @@ class FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(XFile file) async => 1;
+  Future<int?> uploadImage(XFile file,
+          {void Function(int sent, int total)? onProgress}) async =>
+      1;
 }
 
 Widget buildComposerTestApp(FakePostProvider postProvider) {
@@ -128,7 +134,7 @@ void main() {
     expect(contentHint.style?.fontSize, 14.5);
   });
 
-  testWidgets('publish requires a title before submitting',
+  testWidgets('empty title with content publishes (title optional)',
       (WidgetTester tester) async {
     final postProvider = FakePostProvider();
 
@@ -140,12 +146,9 @@ void main() {
       '今天食堂二楼的窗口很好吃',
     );
     await tester.tap(find.text('发布'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(postProvider.createPostCalls, 0);
-
-    final titleHint = tester.widget<Text>(find.text('添加标题'));
-    expect(titleHint.style?.color, const Color(0xFFE5484D));
+    expect(postProvider.createPostCalls, 1, reason: '标题可选，有正文即可发布');
   });
 
   testWidgets('missing content after title shows validation message',

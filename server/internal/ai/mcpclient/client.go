@@ -47,6 +47,7 @@ type Client struct {
 	sessionMu         sync.Mutex
 	session           remoteSession
 	healthy           bool
+	healthStatus      ExternalMCPHealthStatus
 	tools             map[string]RemoteToolDefinition
 	lastProtocolError error
 }
@@ -156,6 +157,19 @@ func (client *Client) Healthy() bool {
 	return client.healthy && client.session != nil
 }
 
+// HealthStatus 返回当前已验证 Session 的安全状态，不包含传输或 Provider 配置。
+func (client *Client) HealthStatus() ExternalMCPHealthStatus {
+	if client == nil {
+		return ExternalMCPHealthStatus{}
+	}
+	client.sessionMu.Lock()
+	defer client.sessionMu.Unlock()
+	if !client.healthy || client.session == nil {
+		return ExternalMCPHealthStatus{}
+	}
+	return client.healthStatus
+}
+
 // Close 关闭 Session 和关联的 stdio 子进程；它可被多次安全调用。
 func (client *Client) Close() error {
 	if client == nil {
@@ -212,6 +226,10 @@ func (client *Client) ensureSession(ctx context.Context) error {
 	client.session = session
 	client.tools = validated
 	client.healthy = true
+	client.healthStatus = ExternalMCPHealthStatus{
+		Healthy: true, Mode: status.Mode, ContractVersion: status.ContractVersion,
+		AvailableTools: len(validated),
+	}
 	client.lastProtocolError = nil
 	client.sessionMu.Unlock()
 	return nil
@@ -226,6 +244,7 @@ func (client *Client) closeSession() error {
 	session := client.session
 	client.session = nil
 	client.healthy = false
+	client.healthStatus = ExternalMCPHealthStatus{}
 	client.tools = make(map[string]RemoteToolDefinition)
 	client.sessionMu.Unlock()
 	if session == nil {
@@ -412,7 +431,7 @@ var expectedRemoteToolContracts = map[string]string{
 	"compare_competitions":           "183668200d82156e6385342d747d229e5ab8fe49ba4351afaf8fccc9c896905c",
 	"explain_competition_candidates": "869bed351400771f7272b5c05b97d2c20875c7ddff0db65cb9d064b5c1f84721",
 	"compare_selected_competitions":  "b8e151f2e964f96dcbc5d533632da63f5adf9b7106f681d861edb7f05cc0b463",
-	"analyze_academic_snapshot":      "fc50ff6b196c409d59df53df777f49b265fd4bfa66e34969e5787527a38fad23",
+	"analyze_academic_snapshot":      "61e7fa7dec52c493305fb585d9c44aa6c8329a716c4b29359f3a480621898269",
 	"plan_student_week":              "0cb4a9c774ea6799b8f95945d89c21195c0cb228315ab73fd849259814cc7518",
 }
 

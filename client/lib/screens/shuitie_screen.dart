@@ -6,30 +6,44 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../app_bootstrap.dart';
 import '../config/api_constants.dart';
 import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
+import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
-import '../utils/screen_swipe.dart';
+import '../utils/app_feedback.dart';
+import '../utils/post_route.dart';
 import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
+import '../models/unread_reply_notification.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/feed_event_service.dart';
+import '../services/feed_session_service.dart';
+import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
+import '../services/reply_notification_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
-import '../widgets/home_tab_reveal.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
+import '../widgets/feed/feed_exposure_tracker.dart';
+import '../widgets/feed/feed_post_action_menu.dart';
+import '../widgets/report_sheet.dart';
+import '../widgets/reply_notification_reminder.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'create_post_screen.dart';
+import 'poll/poll_composer_screen.dart';
 import 'check_in_calendar_screen.dart';
 import 'competition_center_screen.dart';
 import 'edu_grade_screen.dart';
@@ -96,7 +110,12 @@ const List<FeedModeConfig> kFeedModes = [
 const int kDefaultFeedModeIndex = 1; // 综合
 
 class ShuitieScreen extends StatefulWidget {
-  const ShuitieScreen({super.key});
+  /// 可选注入仅用于测试；生产环境创建内部实例。
+  final FeedSessionService? feedSessionService;
+  final FeedEventService? feedEventService;
+
+  const ShuitieScreen(
+      {super.key, this.feedSessionService, this.feedEventService});
 
   @override
   State<ShuitieScreen> createState() => _ShuitieScreenState();
@@ -106,20 +125,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
 
+  // FEED-3：事件会话与批量上报（注入或内部默认）。
+  late final FeedSessionService _feedSessionService;
+  late final FeedEventService _feedEventService;
+
   late AnimationController _feedSwitchController;
   Animation<double>? _feedSettleAnimation;
-  double _feedDragProgress = 0;
   int? _feedTargetIndex;
+  double _feedVisualIndexValue = kDefaultFeedModeIndex.toDouble();
+  late final ValueNotifier<double> _feedVisualIndexListenable;
+  double _feedSwipeStartVisualIndex = kDefaultFeedModeIndex.toDouble();
   double _feedSwipeDx = 0;
-  bool _feedSwipeAccepted = false;
-  int _feedRevealSerial = 0;
-  bool _feedRevealActive = false;
   double? _pendingRestoredScrollOffset;
+
+  // 后台新鲜度探测：列表未在顶部时不直接覆写，显示“内容有更新”浮条。
+  bool _freshnessBannerVisible = false;
+  String _freshnessBannerLabel = '内容有更新';
+  // 桌面分屏模式：评论入口请求打开详情时聚焦评论输入框。
+  bool _selectedFocusReply = false;
+  static const double _freshnessNearTopThreshold = 160;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
+  Timer? _announcementDelayTimer;
   List<model.Announcement> _announcements = [];
   List<model.Announcement> _unreadAnnouncements = [];
+  List<UnreadReplyNotification> _unreadReplyNotifications = [];
+  int _unreadReplyCount = 0;
+  final Set<int> _openingUnreadReplyIds = <int>{};
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
   bool _checkinStatusLoading = false;
@@ -132,9 +165,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Post? _selectedPost;
   int? _selectedUserId;
 
+  // FEED-3 桌面分屏：当前打开帖子的 open/dwell 归因上下文。
+  _SplitOrigin? _splitOrigin;
+
   static const _autoRefreshInterval = Duration(seconds: 60);
-  static const _feedSwitchDuration = Duration(milliseconds: 480);
-  static const _feedSettleDuration = Duration(milliseconds: 220);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -144,13 +178,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   int get _currentModeIndex => kFeedModes.indexWhere((m) => m.key == _feedMode);
 
-  double get _feedVisualIndex {
-    final currentIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
-    final targetIndex = _feedTargetIndex;
-    if (targetIndex == null) return currentIndex.toDouble();
-    return currentIndex +
-        (targetIndex - currentIndex) * _feedDragProgress.clamp(0.0, 1.0);
+  double get _feedVisualIndex => _feedVisualIndexValue;
+
+  void _setFeedVisualIndex(double value) {
+    _feedVisualIndexValue =
+        value.clamp(0.0, (kFeedModes.length - 1).toDouble());
+    _feedVisualIndexListenable.value = _feedVisualIndexValue;
   }
 
   String? get _currentRemoteSort => _currentConfig.remoteSort;
@@ -166,15 +199,23 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void initState() {
     super.initState();
 
+    // FEED-3：首次进入 Feed 即开启一个事件会话。
+    _feedSessionService = widget.feedSessionService ?? FeedSessionService();
+    _feedSessionService.newSession();
+    _feedEventService =
+        widget.feedEventService ?? FeedEventService(getSharedDio());
+
     _feedScrollControllers = {
       for (final mode in kFeedModes)
         mode.key: ScrollController(keepScrollOffset: true),
     };
+    _feedVisualIndexListenable =
+        ValueNotifier<double>(_currentModeIndex.toDouble());
 
     WidgetsBinding.instance.addObserver(this);
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: _feedSettleDuration,
+      duration: AppMotion.tab,
     )..addListener(_handleFeedSettleTick);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _restoreCommunityState();
@@ -186,14 +227,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       _startAutoRefresh();
       _ensureCheckinStatusLoaded();
+      unawaited(_loadUnreadReplyNotifications());
 
       // 预热水帖版块缓存，供服务抽屉使用
       context.read<WaterSectionProvider>().loadSections();
 
       // 延迟加载其他非核心数据
-      Future.delayed(const Duration(seconds: 3), () {
+      _announcementDelayTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) {
-          _loadAnnouncements();
+          unawaited(_loadAnnouncements());
         }
       });
     });
@@ -203,13 +245,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        _refresh();
+        unawaited(_probeFeedFreshness());
       }
       _loadAnnouncements();
+      unawaited(_loadUnreadReplyNotifications());
       unawaited(_ensureCheckinStatusLoaded(force: true));
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
       unawaited(_persistCommunityState());
+      _feedEventService.flushNow(); // 应用进入后台时尝试清空事件队列
       _stopAutoRefresh();
     }
   }
@@ -224,6 +268,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _feedMode = state.mode;
       _pendingRestoredScrollOffset = state.scrollOffset;
     });
+    _setFeedVisualIndex(_currentModeIndex.toDouble());
     _scheduleRestoredScroll();
   }
 
@@ -256,9 +301,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
       if (!mounted) return;
       if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        _refresh();
+        unawaited(_probeFeedFreshness());
       }
       _loadAnnouncements();
+      unawaited(_loadUnreadReplyNotifications());
     });
   }
 
@@ -271,6 +317,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAutoRefresh();
+    _announcementDelayTimer?.cancel();
+    _announcementDelayTimer = null;
     unawaited(_persistCommunityState());
 
     for (final controller in _feedScrollControllers.values) {
@@ -282,6 +330,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _feedSwitchController
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
+    _feedVisualIndexListenable.dispose();
+    _feedEventService.dispose();
     super.dispose();
   }
 
@@ -386,49 +436,70 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _handleFeedSettleTick() {
-    final targetIndex = _feedTargetIndex;
     final animation = _feedSettleAnimation;
-    if (targetIndex == null || animation == null || !mounted) return;
-    setState(() {
-      _feedDragProgress = animation.value.clamp(0.0, 1.0);
-    });
+    if (animation == null || !mounted) return;
+    _setFeedVisualIndex(animation.value);
+  }
+
+  Future<void> _animateFeedIndicatorTo(
+    int targetIndex, {
+    double? begin,
+    Duration duration = AppMotion.tab,
+  }) async {
+    final start = (begin ?? _feedVisualIndex).clamp(
+      0.0,
+      (kFeedModes.length - 1).toDouble(),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _feedSwitchController.stop();
+      _feedSettleAnimation = null;
+      _setFeedVisualIndex(targetIndex.toDouble());
+      return;
+    }
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = duration;
+    final animation = Tween<double>(
+      begin: start,
+      end: targetIndex.toDouble(),
+    ).animate(CurvedAnimation(
+      parent: _feedSwitchController,
+      curve: AppMotion.movement,
+    ));
+    _feedSettleAnimation = animation;
+    _setFeedVisualIndex(start);
+    try {
+      await _feedSwitchController.forward(from: 0).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (mounted && identical(animation, _feedSettleAnimation)) {
+      _setFeedVisualIndex(targetIndex.toDouble());
+    }
   }
 
   Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
     if (newIndex < 0) return;
-    final oldIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final startVisual = _feedVisualIndex;
     unawaited(_persistCommunityState());
 
+    // 切换信息流时丢弃上一模式的暂存探测结果与浮条。
+    final previousSort = _currentRemoteSort;
+    if (previousSort != null) {
+      context
+          .read<PostProvider>()
+          .clearPendingFreshSnapshot(boardId: 1, sort: previousSort);
+    }
     _refreshFeedMode(mode);
-    _feedSwitchController.stop();
-    _feedSwitchController.duration = _feedSwitchDuration;
-
-    _feedSettleAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _feedSwitchController,
-        curve: const Interval(0.0, 0.58, curve: Curves.easeOutQuad),
-      ),
-    );
-
     setState(() {
       _feedMode = mode;
-      _feedTargetIndex = oldIndex;
-      _feedDragProgress = 1.0;
-      _feedRevealSerial++;
-      _feedRevealActive = true;
-    });
-
-    await _feedSwitchController.forward(from: 0);
-
-    if (!mounted) return;
-    setState(() {
-      _feedRevealActive = false;
       _feedTargetIndex = null;
-      _feedDragProgress = 0;
+      _freshnessBannerVisible = false;
     });
+
+    // 内容立即换，只有顶部 indicator 使用 120ms 的可 retarget 过渡。
+    await _animateFeedIndicatorTo(newIndex, begin: startVisual);
     unawaited(_persistCommunityState());
   }
 
@@ -459,24 +530,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<Post> _resolveVisiblePosts(List<Post> posts, String mode) {
     if (_searchQuery.isNotEmpty) return _searchResults;
 
-    List<Post> sortedPosts = List.from(posts);
-
-    // 排序逻辑已下沉至服务端，客户端只需原样返回
-    // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
-    if (mode == 'new') {
-      final now = DateTime.now();
-      final recent = sortedPosts
-          .where((post) => now.difference(post.createdAt).inDays < 3)
-          .toList();
-      if (recent.isNotEmpty) {
-        recent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return recent;
-      }
-      sortedPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return sortedPosts.take(12).toList();
-    }
-
-    return sortedPosts;
+    // UX-2.8：排序/过滤权威在服务端（sort=time/all/featured/following）。
+    // 客户端只做原样透传，不再做 3 天过滤、take(12) 或 createdAt 二次排序，
+    // 避免“最新”时间线与服务端不一致。
+    return posts;
   }
 
   Future<void> _refresh() async {
@@ -488,6 +545,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final postProvider = context.read<PostProvider>();
     await Future.wait([
       postProvider.refresh(boardId: 1, sort: sortAtStart),
+      _loadUnreadReplyNotifications(),
     ]);
     if (!mounted) return;
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
@@ -495,6 +553,232 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
     }
+  }
+
+  Future<void> _loadUnreadReplyNotifications() async {
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isLoggedIn) {
+      if (mounted &&
+          (_unreadReplyNotifications.isNotEmpty || _unreadReplyCount != 0)) {
+        setState(() {
+          _unreadReplyNotifications = [];
+          _unreadReplyCount = 0;
+        });
+      }
+      return;
+    }
+
+    final generation = authProvider.sessionGeneration;
+    try {
+      final page =
+          await ReplyNotificationService(authProvider.dio).fetchUnread();
+      if (!mounted ||
+          !authProvider.isLoggedIn ||
+          authProvider.sessionGeneration != generation) {
+        return;
+      }
+      setState(() {
+        _unreadReplyNotifications = page.items;
+        _unreadReplyCount = page.count;
+      });
+    } catch (error) {
+      debugPrint('加载未读回复失败: $error');
+      // 保留上一次成功状态。首次加载若失败则保持空状态，无需额外清空。
+    }
+  }
+
+  void _removeUnreadReply(int notificationId) {
+    if (!mounted) return;
+    setState(() {
+      _unreadReplyNotifications = _unreadReplyNotifications
+          .where((item) => item.id != notificationId)
+          .toList(growable: false);
+      _unreadReplyCount = _unreadReplyCount > 0
+          ? _unreadReplyCount - 1
+          : _unreadReplyNotifications.length;
+    });
+  }
+
+  Future<void> _handleUnreadReplyReminderPressed() async {
+    final items = List<UnreadReplyNotification>.of(_unreadReplyNotifications);
+    if (items.isEmpty) return;
+    if (items.length == 1) {
+      await _openUnreadReply(items.single);
+      return;
+    }
+    if (!mounted) return;
+    await showReplyNotificationList(
+      context,
+      items: items,
+      totalCount: _unreadReplyCount,
+      onSelected: (item) {
+        unawaited(_openUnreadReply(item));
+      },
+    );
+  }
+
+  Future<void> _openUnreadReply(UnreadReplyNotification item) async {
+    if (_openingUnreadReplyIds.contains(item.id)) return;
+    _openingUnreadReplyIds.add(item.id);
+    try {
+      final authProvider = context.read<AuthProvider>();
+      if (!authProvider.isLoggedIn) return;
+      final response = await authProvider.dio.get('/posts/${item.postId}');
+      if (response.statusCode != 200 ||
+          response.data is! Map<String, dynamic>) {
+        throw StateError('帖子响应格式错误');
+      }
+      final post = Post.fromJson(response.data as Map<String, dynamic>);
+      try {
+        await ReplyNotificationService(authProvider.dio).markRead(item.id);
+        _removeUnreadReply(item.id);
+      } catch (error) {
+        debugPrint('消费回复通知失败: $error');
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        buildPostDetailRoute(post, targetReplyId: item.relatedId),
+      );
+      if (mounted) unawaited(_loadUnreadReplyNotifications());
+    } on DioException catch (error) {
+      if (!mounted) return;
+      if (error.response?.statusCode == 404) {
+        try {
+          final authProvider = context.read<AuthProvider>();
+          await ReplyNotificationService(authProvider.dio).markRead(item.id);
+          _removeUnreadReply(item.id);
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '原帖已删除，已移除提醒');
+          }
+        } catch (markError) {
+          debugPrint('消费失效回复通知失败: $markError');
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '原帖已删除，但提醒清理失败', isError: true);
+          }
+        }
+      } else {
+        AppFeedback.showSnackBar(context, '打开帖子失败，请稍后重试', isError: true);
+      }
+    } catch (error) {
+      debugPrint('打开回复所属帖子失败: $error');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '打开帖子失败，请稍后重试', isError: true);
+      }
+    } finally {
+      _openingUnreadReplyIds.remove(item.id);
+    }
+  }
+
+  /// 后台自动刷新语义：先探测，不打断阅读。
+  ///
+  /// 用户接近顶部时温和应用（与手动刷新同一条路径）；
+  /// 已向下浏览时只暂存快照并显示“内容有更新”浮条，由用户决定何时应用。
+  Future<void> _probeFeedFreshness() async {
+    if (!_currentConfig.supportsRemoteLoading) return;
+    if (!_canLoadFeedMode(_feedMode)) return;
+    final modeAtStart = _feedMode;
+    final sortAtStart = _currentRemoteSort;
+    if (sortAtStart == null) return;
+    final postProvider = context.read<PostProvider>();
+
+    final controller = _feedScrollControllers[modeAtStart];
+    final nearTop = controller?.hasClients != true ||
+        controller!.offset < _freshnessNearTopThreshold;
+    if (nearTop) {
+      await _refresh();
+      return;
+    }
+
+    final result = await postProvider.probeFreshness(
+      boardId: 1,
+      sort: sortAtStart,
+    );
+    if (!mounted || result == null) return;
+    if (_feedMode != modeAtStart) {
+      // 探测期间用户切换了信息流：丢弃暂存，避免陈旧快照被误应用。
+      postProvider.clearPendingFreshSnapshot(boardId: 1, sort: sortAtStart);
+      return;
+    }
+    setState(() {
+      _freshnessBannerVisible = true;
+      // “最新”信息流的新增数量可信；其它排序可能变化，保守只提示有更新。
+      _freshnessBannerLabel = modeAtStart == 'new' && result.newPostCount > 0
+          ? '有 ${result.newPostCount} 条新内容'
+          : '内容有更新';
+    });
+  }
+
+  Future<void> _applyFreshnessBanner() async {
+    final sortAtStart = _currentRemoteSort;
+    if (sortAtStart == null) return;
+    final postProvider = context.read<PostProvider>();
+    final applied = await postProvider.applyPendingFreshSnapshot(
+      boardId: 1,
+      sort: sortAtStart,
+    );
+    if (!mounted) return;
+    if (applied) {
+      final controller = _feedScrollControllers[_feedMode];
+      if (controller?.hasClients == true) {
+        controller!.jumpTo(0);
+      }
+    }
+    setState(() {
+      _freshnessBannerVisible = false;
+    });
+  }
+
+  Widget _buildFreshnessBanner() {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('feed-freshness-banner-container'),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.45),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(19),
+        child: InkWell(
+          key: const ValueKey('feed-freshness-banner'),
+          borderRadius: BorderRadius.circular(19),
+          onTap: () => unawaited(_applyFreshnessBanner()),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.arrow_upward_rounded,
+                  size: 16,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _freshnessBannerLabel,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _ensureCheckinStatusLoaded({bool force = false}) async {
@@ -533,44 +817,31 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _handleFeedSwipeStart(DragStartDetails details) {
     _feedSwitchController.stop();
     _feedSwipeDx = 0;
-    _feedSwipeAccepted = isUpperContentSwipeStart(
-      details.globalPosition.dy,
-      MediaQuery.sizeOf(context).height,
-    );
-    if (_feedSwipeAccepted) {
-      setState(() {
-        _feedTargetIndex = null;
-        _feedDragProgress = 0;
-      });
-    }
-  }
-
-  void _handleFeedSwipeUpdate(DragUpdateDetails details) {
-    if (!_feedSwipeAccepted) return;
-    _feedSwipeDx += details.primaryDelta ?? 0;
-    final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
-    if (targetIndex == null) {
-      setState(() {
-        _feedTargetIndex = null;
-        _feedDragProgress = 0;
-      });
-      return;
-    }
-
-    _refreshFeedMode(kFeedModes[targetIndex].key);
+    _feedSwipeStartVisualIndex = _currentModeIndex.toDouble();
+    _setFeedVisualIndex(_feedSwipeStartVisualIndex);
     setState(() {
-      _feedTargetIndex = targetIndex;
-      _feedDragProgress = 0;
+      _feedTargetIndex = null;
     });
   }
 
-  Future<void> _handleFeedSwipe(DragEndDetails details) async {
-    final accepted = _feedSwipeAccepted;
-    _feedSwipeAccepted = false;
-    if (!accepted) {
+  void _handleFeedSwipeUpdate(DragUpdateDetails details) {
+    _feedSwipeDx += details.primaryDelta ?? 0;
+    final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
+    if (targetIndex == null) {
+      _feedTargetIndex = null;
+      _setFeedVisualIndex(_feedSwipeStartVisualIndex);
       return;
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+    final progress = (_feedSwipeDx.abs() / width).clamp(0.0, 1.0);
+    _feedTargetIndex = targetIndex;
+    _setFeedVisualIndex(
+      _feedSwipeStartVisualIndex + (_feedSwipeDx < 0 ? 1 : -1) * progress,
+    );
+  }
+
+  Future<void> _handleFeedSwipe(DragEndDetails details) async {
     final velocity = details.primaryVelocity ?? 0;
     final nextIndex = _targetFeedIndexForDx(
       velocity.abs() >= _feedTriggerVelocity ? velocity : _feedSwipeDx,
@@ -583,13 +854,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (shouldSwitch) {
       await _changeFeedMode(kFeedModes[nextIndex].key);
     } else {
-      await _settleFeedMode(
-        targetIndex: _feedTargetIndex,
-        begin: _feedDragProgress,
-        end: 0.0,
-        duration: _feedSettleDuration,
-        commit: false,
-      );
+      await _animateFeedIndicatorTo(_currentModeIndex);
+      _feedTargetIndex = null;
     }
   }
 
@@ -605,55 +871,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _settleFeedMode({
     int? targetIndex,
-    double begin = 0,
-    double end = 0,
-    Duration duration = _feedSettleDuration,
     required bool commit,
   }) async {
-    if (targetIndex == null || targetIndex == _currentModeIndex) {
-      if (mounted) {
-        setState(() {
-          _feedTargetIndex = null;
-          _feedDragProgress = 0;
-        });
-      }
+    if (commit && targetIndex != null && targetIndex != _currentModeIndex) {
+      await _changeFeedMode(kFeedModes[targetIndex].key);
       return;
     }
-
-    if (commit) {
-      unawaited(_persistCommunityState());
-      _refreshFeedMode(kFeedModes[targetIndex].key);
-    }
-
-    _feedSwitchController.stop();
-    _feedSwitchController.duration = duration;
-    _feedSettleAnimation = Tween<double>(
-      begin: begin.clamp(0.0, 1.0).toDouble(),
-      end: end.clamp(0.0, 1.0).toDouble(),
-    ).animate(CurvedAnimation(
-      parent: _feedSwitchController,
-      curve: Curves.easeOutQuad,
-    ));
-
-    setState(() {
-      _feedTargetIndex = targetIndex;
-      _feedDragProgress = begin.clamp(0.0, 1.0).toDouble();
-    });
-
-    await _feedSwitchController.forward(from: 0);
-    if (!mounted) return;
-
-    setState(() {
-      if (commit) {
-        _feedMode = kFeedModes[targetIndex].key;
-        _feedRevealSerial++;
-      }
-      _feedTargetIndex = null;
-      _feedDragProgress = 0;
-    });
-    if (commit) {
-      unawaited(_persistCommunityState());
-    }
+    await _animateFeedIndicatorTo(_currentModeIndex);
+    _feedTargetIndex = null;
   }
 
   void _openMessages() {
@@ -888,6 +1113,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         }
         _ensureCheckinStatusLoaded();
         _loadAnnouncements();
+        unawaited(_loadUnreadReplyNotifications());
       });
     }
 
@@ -966,6 +1192,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               initialPost: _selectedPost,
               isDesktopSplitMode: true,
               hideBackButton: true,
+              focusReplyComposer: _selectedFocusReply,
               onAuthorTap: _openUserInSplit,
             ),
     );
@@ -976,16 +1203,124 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  void _openPostInSplit(Post post) {
+  void _openPostInSplit(Post post,
+      {bool focusReply = false, String feedKind = '', int position = 0}) {
     if (!mounted) return;
+    _finalizeSplitDwell(newPostId: post.id);
+    _recordSplitOpen(post, feedKind: feedKind, position: position);
     setState(() {
       _selectedPost = post;
       _selectedUserId = null;
+      _selectedFocusReply = focusReply;
+    });
+    if (focusReply) {
+      // PostDetailScreen 在 initState 读取 focusReplyComposer 后重置，
+      // 避免同帖重复打开时再次弹键盘。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _selectedFocusReply) {
+          setState(() => _selectedFocusReply = false);
+        }
+      });
+    }
+  }
+
+  // ── FEED-3 open/dwell 归因 ───────────────────────────────────────
+
+  /// 结束当前分屏帖子的停留计时（切换到另一帖/用户/关闭时调用）。
+  void _finalizeSplitDwell({int? newPostId}) {
+    final prev = _splitOrigin;
+    _splitOrigin = null;
+    if (prev == null || (newPostId != null && prev.postId == newPostId)) {
+      return;
+    }
+    final dwellMs = DateTime.now().difference(prev.openedAt).inMilliseconds;
+    if (dwellMs > 0) {
+      _feedEventService.enqueue(FeedEvent(
+        feedSessionId: prev.sessionId,
+        feedKind: prev.feedKind,
+        algorithmVersion: prev.algorithm,
+        type: 'dwell',
+        postId: prev.postId,
+        dwellMs: dwellMs,
+      ));
+    }
+  }
+
+  /// 记录分屏打开事件的归因上下文。
+  void _recordSplitOpen(Post post,
+      {required String feedKind, required int position}) {
+    final sessionId = _feedSessionService.currentSessionId;
+    if (sessionId == null) return;
+    final kind = feedKind.isEmpty ? (_currentRemoteSort ?? 'all') : feedKind;
+    final algorithm =
+        PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: kind);
+    _feedEventService.enqueue(FeedEvent(
+      feedSessionId: sessionId,
+      feedKind: kind,
+      algorithmVersion: algorithm,
+      type: 'open',
+      postId: post.id,
+      position: position,
+    ));
+    _splitOrigin = _SplitOrigin(
+      postId: post.id,
+      sessionId: sessionId,
+      feedKind: kind,
+      algorithm: algorithm,
+      openedAt: DateTime.now(),
+    );
+  }
+
+  /// 移动端：打开详情前记 open，返回后记 dwell（不侵入详情页）。
+  void _openFeedDetail(Post post,
+      {required String sort, required int position}) {
+    final sessionId = _feedSessionService.currentSessionId;
+    final algorithm =
+        PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: sort);
+    final openedAt = DateTime.now();
+    if (sessionId != null) {
+      _feedEventService.enqueue(FeedEvent(
+        feedSessionId: sessionId,
+        feedKind: sort,
+        algorithmVersion: algorithm,
+        type: 'open',
+        postId: post.id,
+        position: position,
+      ));
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => post.isPoll
+            ? PollDetailScreen(
+                pollId: post.pollMeta!.id,
+                initialPost: post,
+              )
+            : PostDetailScreen(
+                postId: post.id,
+                isMarket: false,
+                initialPost: post,
+              ),
+      ),
+    ).then((_) {
+      if (sessionId == null || !mounted) return;
+      final dwellMs = DateTime.now().difference(openedAt).inMilliseconds;
+      if (dwellMs > 0) {
+        _feedEventService.enqueue(FeedEvent(
+          feedSessionId: sessionId,
+          feedKind: sort,
+          algorithmVersion: algorithm,
+          type: 'dwell',
+          postId: post.id,
+          dwellMs: dwellMs,
+        ));
+      }
     });
   }
 
   void _openUserInSplit(int userId) {
     if (!mounted) return;
+    _finalizeSplitDwell();
     if (MediaQuery.of(context).size.width <= 600) {
       Navigator.push(
         context,
@@ -997,6 +1332,116 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _selectedPost = null;
       _selectedUserId = userId;
     });
+  }
+
+  // ── FEED-3 卡片操作菜单 ──────────────────────────────────────────
+
+  Future<void> _handlePostAction(Post post, FeedPostAction action) async {
+    final postProvider = context.read<PostProvider>();
+    switch (action) {
+      case FeedPostAction.notInterested:
+        final source = _currentRemoteSort ?? 'all';
+        final undo = await postProvider.markPostNotInterestedOptimistic(
+          post,
+          source: source,
+        );
+        if (undo == null) {
+          _showFeedSnack('操作失败，请重试');
+          return;
+        }
+        _showUndoSnackBar(
+          message: '已减少此帖推荐',
+          onUndo: () => unawaited(_undoFeedVisibility(undo)),
+        );
+      case FeedPostAction.hideAuthor:
+        final undo = await postProvider.hideAuthorOptimistic(post.authorId);
+        if (undo == null) {
+          _showFeedSnack('操作失败，请重试');
+          return;
+        }
+        _showUndoSnackBar(
+          message: '已不再展示该用户',
+          onUndo: () => unawaited(_undoFeedVisibility(undo)),
+        );
+      case FeedPostAction.report:
+        showReportSheet(context, targetId: post.id, targetType: 'post');
+      case FeedPostAction.edit:
+        await _openEditPost(post);
+      case FeedPostAction.delete:
+        await _confirmDeletePost(post);
+    }
+  }
+
+  Future<void> _openEditPost(Post post) async {
+    if (post.isPoll) {
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PollComposerScreen(editingPost: post),
+        ),
+      );
+      return;
+    }
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: post.boardId,
+          defaultPostType: post.postType,
+          editingPost: post,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeletePost(Post post) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除帖子'),
+        content: const Text('删除后不可恢复，确定删除吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除', style: TextStyle(color: Color(0xFFE54848))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await context.read<PostProvider>().deletePost(post.id);
+    }
+  }
+
+  void _showUndoSnackBar({
+    required String message,
+    required VoidCallback onUndo,
+  }) {
+    if (!mounted) return;
+    AppFeedback.action(
+      message,
+      context: context,
+      actionLabel: '撤销',
+      onAction: onUndo,
+    );
+  }
+
+  void _showFeedSnack(String message) {
+    if (!mounted) return;
+    AppFeedback.error(message, context: context);
+  }
+
+  Future<void> _undoFeedVisibility(FeedVisibilityUndo undo) async {
+    final restored =
+        await context.read<PostProvider>().undoFeedVisibility(undo);
+    if (!restored && mounted) {
+      AppFeedback.error('撤销失败，当前隐藏状态未改变', context: context);
+    }
   }
 
   Widget _buildEmptyDetailState(bool isDark) {
@@ -1024,64 +1469,79 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 48.0;
-    final visualIndex = _feedVisualIndex;
     final activeColor = isDark ? Colors.white : Colors.black87;
     final inactiveColor = isDark ? Colors.white54 : Colors.black45;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
       height: 44,
-      child: Stack(
-        children: [
-          // 指示条跟随手势连续移动，而不是等状态切完再跳转。
-          Positioned(
-            left: visualIndex * tabWidth + (tabWidth - 22) / 2,
-            bottom: 3,
-            width: 22,
-            height: 3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-
-          Row(
-            children: List.generate(kFeedModes.length, (index) {
-              final config = kFeedModes[index];
-              final activeT = (1 - (visualIndex - index).abs()).clamp(
-                0.0,
-                1.0,
-              );
-              final color = Color.lerp(inactiveColor, activeColor, activeT)!;
-              final scale = 1.0 + 0.03 * activeT;
-
-              return SizedBox(
-                width: tabWidth,
-                height: 44,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _changeFeedMode(config.key),
-                  child: Center(
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Text(
-                        config.label,
-                        style: TextStyle(
-                          fontSize: 15 + 0.5 * activeT,
-                          fontWeight:
-                              activeT > 0.5 ? FontWeight.w800 : FontWeight.w500,
-                          color: color,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _feedVisualIndexListenable,
+        builder: (context, visualIndex, child) {
+          return Stack(
+            children: [
+              // 只有 indicator 订阅连续进度，内容状态在点击时立即更新。
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Transform.translate(
+                    offset: Offset(visualIndex * tabWidth, 0),
+                    child: SizedBox(
+                      width: tabWidth,
+                      height: 3,
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 3,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              );
-            }),
-          ),
-        ],
+              ),
+              Row(
+                children: List.generate(kFeedModes.length, (index) {
+                  final config = kFeedModes[index];
+                  final activeT = (1 - (visualIndex - index).abs()).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  final color =
+                      Color.lerp(inactiveColor, activeColor, activeT)!;
+
+                  return SizedBox(
+                    width: tabWidth,
+                    height: 44,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        unawaited(_changeFeedMode(config.key));
+                      },
+                      child: Center(
+                        child: Text(
+                          config.label,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: activeT > 0.5
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1255,7 +1715,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white70 : Colors.black87)),
                   const SizedBox(height: 4),
-                  Text('关注版块后会在这里看到更新',
+                  Text('关注的人和版块有新动态时，会显示在这里',
                       style: TextStyle(
                           fontSize: 13,
                           color: isDark ? Colors.white54 : Colors.black54)),
@@ -1263,34 +1723,28 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             )
           else if (posts.isNotEmpty)
-            ...posts.take(2).map((post) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: CommunityPostCard(
-                    post: post,
-                    onAuthorTap: _openUserInSplit,
-                    onTap: () {
-                      if (ResponsiveUtil.useDesktopShell(context)) {
-                        _openPostInSplit(post);
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => post.isPoll
-                                ? PollDetailScreen(
-                                    pollId: post.pollMeta!.id,
-                                    initialPost: post,
-                                  )
-                                : PostDetailScreen(
-                                    postId: post.id,
-                                    isMarket: false,
-                                    initialPost: post,
-                                  ),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                )),
+            ...posts.take(2).toList().asMap().entries.map((entry) {
+              final post = entry.value;
+              final position = entry.key;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: CommunityPostCard(
+                  post: post,
+                  onAuthorTap: _openUserInSplit,
+                  onPostAction: (action) => _handlePostAction(post, action),
+                  allowNotInterested: false,
+                  onTap: () {
+                    if (ResponsiveUtil.useDesktopShell(context)) {
+                      _openPostInSplit(post,
+                          feedKind: 'following', position: position);
+                    } else {
+                      _openFeedDetail(post,
+                          sort: 'following', position: position);
+                    }
+                  },
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -1521,7 +1975,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '关注的版块发布帖子后，会显示在这里',
+              '关注的人和版块有新动态时，会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1558,12 +2012,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       onHorizontalDragEnd: _handleFeedSwipe,
       onHorizontalDragCancel: () {
         _feedSwipeDx = 0;
-        _feedSwipeAccepted = false;
         unawaited(_settleFeedMode(
           targetIndex: _feedTargetIndex,
-          begin: _feedDragProgress,
-          end: 0.0,
-          duration: _feedSettleDuration,
           commit: false,
         ));
       },
@@ -1596,13 +2046,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     FeedModeConfig config,
     String sort,
   ) {
-    final feedList = Selector<PostProvider,
-        ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
+    final feedList = Selector<
+        PostProvider,
+        ({
+          List<Post> posts,
+          bool isLoading,
+          bool hasMore,
+          String? error,
+          int revision
+        })>(
       selector: (context, postProvider) {
         return (
           posts: postProvider.postsFor(1, sort: sort),
           isLoading: postProvider.isLoadingFor(1, sort: sort),
           hasMore: postProvider.hasMoreFor(1, sort: sort),
+          error: postProvider.errorFor(1, sort: sort),
           revision: postProvider.revisionFor(1, sort: sort),
         );
       },
@@ -1610,6 +2068,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final posts = data.posts;
         final isFeedLoading = data.isLoading;
         final feedHasMore = data.hasMore;
+        final feedError = data.error;
         final visiblePosts = _resolveVisiblePosts(posts, mode);
 
         final explicitPinnedPosts =
@@ -1625,43 +2084,63 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             .where((post) => !post.isActivePinned)
             .toList();
 
-        return NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            final canLoadMore =
-                mode != 'following' || context.read<AuthProvider>().isLoggedIn;
-            if (config.supportsRemoteLoading &&
-                notification.metrics.pixels >=
-                    notification.metrics.maxScrollExtent - 500 &&
-                feedHasMore &&
-                !isFeedLoading &&
-                canLoadMore) {
-              context.read<PostProvider>().loadPosts(
-                    boardId: 1,
-                    sort: sort,
-                  );
-            }
-            return false;
-          },
-          child: CustomScrollView(
-            key: PageStorageKey<String>('home-feed-scroll-$mode'),
-            controller: _feedScrollControllers[mode],
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              SliverPersistentHeader(
-                pinned: false,
-                floating: true,
-                delegate: _SliverSearchBarDelegate(
-                  vsync: this,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
-                    child: _buildSearchBar(isDark),
-                  ),
+        return Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                final canLoadMore =
+                    mode != 'following' || context.read<AuthProvider>().isLoggedIn;
+                if (config.supportsRemoteLoading &&
+                    notification.metrics.pixels >=
+                        notification.metrics.maxScrollExtent - 500 &&
+                    feedHasMore &&
+                    !isFeedLoading &&
+                    canLoadMore) {
+                  context.read<PostProvider>().loadPosts(
+                        boardId: 1,
+                        sort: sort,
+                      );
+                }
+                return false;
+              },
+              child: CustomScrollView(
+                key: PageStorageKey<String>('home-feed-scroll-$mode'),
+                controller: _feedScrollControllers[mode],
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-              ),
-              if (mode == 'following' && !_followingExpanded) ...[
+                slivers: [
+                  SliverPersistentHeader(
+                    pinned: true,
+                    floating: true,
+                    delegate: _SliverSearchBarDelegate(
+                      vsync: this,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                        child: _buildSearchBar(isDark),
+                      ),
+                    ),
+                  ),
+                  // 未读回复属于当前账号的跨排序提醒，不应因用户停留在“综合”而消失。
+                  if (_unreadReplyNotifications.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppSpacing.sm,
+                          AppSpacing.md,
+                          AppSpacing.xs,
+                        ),
+                        child: ReplyNotificationReminder(
+                          items: _unreadReplyNotifications,
+                          totalCount: _unreadReplyCount,
+                          onPressed: _handleUnreadReplyReminderPressed,
+                        ),
+                      ),
+                    ),
+                  if (mode == 'following' && !_followingExpanded) ...[
                 if (!context.read<AuthProvider>().isLoggedIn)
                   SliverToBoxAdapter(
                     child: _buildFollowingPlaceholder(isDark),
@@ -1691,6 +2170,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       child: CircularProgressIndicator(),
                     ),
                   )
+                else if (feedError != null && posts.isEmpty)
+                  SliverFillRemaining(
+                    child: _buildEmptyState(
+                      isDark,
+                      title: '帖子加载失败',
+                      subtitle: feedError,
+                      onRetry: _refresh,
+                    ),
+                  )
                 else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
                   SliverFillRemaining(
                     child: mode == 'following'
@@ -1700,7 +2188,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             title:
                                 _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
                             subtitle: _searchQuery.isNotEmpty
-                                ? '目前只按标题搜索，换个标题关键词试试'
+                                ? '目前只按帖子标题搜索，换个标题关键词试试'
                                 : '发布第一条帖子吧',
                             onRetry: _refresh,
                           ),
@@ -1753,34 +2241,51 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                   ],
                                 )
                               : null,
-                          child: HomeTabRevealItem(
-                            index: index,
-                            revealOrder: index,
+                          child: FeedExposureTracker(
+                            post: post,
+                            feedKind: sort,
+                            position: index,
+                            algorithmVersion:
+                                PostCacheService.expectedAlgorithmVersion(
+                              boardId: 1,
+                              sort: sort,
+                            ),
+                            sessionService: _feedSessionService,
+                            eventService: _feedEventService,
                             child: CommunityPostCard(
                               post: post,
                               onAuthorTap: _openUserInSplit,
+                              onPostAction: (action) =>
+                                  _handlePostAction(post, action),
+                              allowNotInterested: sort == 'all',
+                              onCommentTap: (commentPost) {
+                                if (ResponsiveUtil.useDesktopShell(context)) {
+                                  _openPostInSplit(commentPost,
+                                      focusReply: true);
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PostDetailScreen(
+                                        postId: commentPost.id,
+                                        isMarket: false,
+                                        initialPost: commentPost,
+                                        focusReplyComposer: true,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
                               onTap: () {
                                 if (_exitSearchInputMode()) {
                                   return;
                                 }
                                 if (ResponsiveUtil.useDesktopShell(context)) {
-                                  _openPostInSplit(post);
+                                  _openPostInSplit(post,
+                                      feedKind: sort, position: index);
                                 } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => post.isPoll
-                                          ? PollDetailScreen(
-                                              pollId: post.pollMeta!.id,
-                                              initialPost: post,
-                                            )
-                                          : PostDetailScreen(
-                                              postId: post.id,
-                                              isMarket: false,
-                                              initialPost: post,
-                                            ),
-                                    ),
-                                  );
+                                  _openFeedDetail(post,
+                                      sort: sort, position: index);
                                 }
                               },
                             ),
@@ -1805,17 +2310,38 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ],
           ),
-        );
-      },
+        ),
+        Positioned(
+          top: 52,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            reverseDuration: const Duration(milliseconds: 160),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.15),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: _freshnessBannerVisible
+                ? _buildFreshnessBanner()
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
+  },
+);
 
-    if (!_feedRevealActive) return feedList;
-
-    return HomeTabRevealScope(
-      animation: _feedSwitchController,
-      serial: _feedRevealSerial,
-      child: feedList,
-    );
+    // Feed 是高频筛选路径：内容立即替换，不对帖子逐条重播 reveal。
+    return feedList;
   }
 
   Widget _buildSearchBar(bool isDark) {
@@ -1829,6 +2355,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ? Colors.white.withValues(alpha: 0.12)
           : const Color(0xFFEEF0F5),
       child: TextField(
+        key: const ValueKey('feed-search-field'),
         controller: _searchController,
         focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
@@ -1839,7 +2366,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          hintText: '搜索账号、用户或帖子关键词',
+          hintText: '搜索帖子标题关键词',
           hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: _searchController.text.isEmpty
@@ -1915,7 +2442,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 }
 
-// ---- 搜索框折叠 SliverPersistentHeaderDelegate ----
+// ---- 搜索框固定 SliverPersistentHeaderDelegate ----
 class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final TickerProvider _vsync;
   final Widget child;
@@ -1927,7 +2454,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 46;
 
   @override
-  double get minExtent => 0;
+  double get minExtent => 46;
 
   @override
   FloatingHeaderSnapConfiguration get snapConfiguration =>
@@ -1961,6 +2488,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     return oldDelegate.child != child;
   }
 }
+
 
 class CheckInSuccessDialog extends StatelessWidget {
   final int streakDays;
@@ -2129,7 +2657,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                 child: FilledButton(
                   onPressed: () => Navigator.pop(context),
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF6366F1),
+                    backgroundColor: AppColors.brandPrimary,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -2151,4 +2679,21 @@ class CheckInSuccessDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+/// FEED-3 桌面分屏打开帖子的归因上下文。
+class _SplitOrigin {
+  _SplitOrigin({
+    required this.postId,
+    required this.sessionId,
+    required this.feedKind,
+    required this.algorithm,
+    required this.openedAt,
+  });
+
+  final int postId;
+  final String sessionId;
+  final String feedKind;
+  final String algorithm;
+  final DateTime openedAt;
 }

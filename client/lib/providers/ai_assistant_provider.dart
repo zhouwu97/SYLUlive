@@ -8,11 +8,13 @@ import '../models/ai_capabilities.dart';
 import '../models/ai_chat_message.dart';
 import '../models/ai_conversation.dart';
 import '../models/ai_personal_data_evidence.dart';
+import '../models/ai_quick_prompt.dart';
 import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
 import '../services/ai_assistant_service.dart';
+import '../utils/ai_citation_mapper.dart';
 
 enum AiConnectionState {
   idle,
@@ -57,14 +59,19 @@ int aiVisibleCharacterCount(String value) =>
 class AiAssistantProvider extends ChangeNotifier {
   final AiAssistantService _service;
   final Future<void> Function()? _deviceToolSync;
+  final Random _random;
 
   AiAssistantProvider(
     this._service, {
     AiCapabilities? initialCapabilities,
     Future<void> Function()? deviceToolSync,
+    Random? random,
   })  : _capabilities = initialCapabilities,
         _quota = initialCapabilities?.quota,
-        _deviceToolSync = deviceToolSync;
+        _deviceToolSync = deviceToolSync,
+        _random = random ?? Random() {
+    _syncQuickPrompts();
+  }
 
   AiCapabilities? _capabilities;
   AiQuota? _quota;
@@ -86,6 +93,8 @@ class AiAssistantProvider extends ChangeNotifier {
   bool _loadingConversations = false;
   bool _disposed = false;
   int _streamGeneration = 0;
+  List<AiQuickPrompt> _quickPrompts = const [];
+  String _quickPromptPoolKey = '';
 
   AiCapabilities? get capabilities => _capabilities;
   AiQuota? get quota => _quota;
@@ -161,15 +170,11 @@ class AiAssistantProvider extends ChangeNotifier {
     return '正在请求你的手机读取本地缓存';
   }
 
-  List<String> get quickPrompts {
-    final prompts = <String>[];
-    if (_capabilities?.features.policyRag == true) {
-      prompts.addAll(const ['补考成绩怎么算', '重修有什么规定', '奖学金怎么评', '校历如何安排']);
-    }
-    if (_capabilities?.features.scheduleWindows == true) {
-      prompts.addAll(const ['今天下午有课吗', '本周哪天空闲', '下周一有课吗', '找两小时空闲']);
-    }
-    return prompts;
+  List<AiQuickPrompt> get quickPrompts => List.unmodifiable(_quickPrompts);
+
+  void refreshQuickPrompts() {
+    _selectQuickPrompts(avoidCurrent: true);
+    _notify();
   }
 
   Future<void>? _bootstrapFuture;
@@ -208,6 +213,7 @@ class AiAssistantProvider extends ChangeNotifier {
       final result = await _service.getCapabilities();
       _capabilities = result;
       _quota = result.quota;
+      _syncQuickPrompts();
     } catch (_) {
       if (!silent) _error = '暂时无法读取 AI 服务状态';
     } finally {
@@ -246,6 +252,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _conversationId = null;
     _messages.clear();
     _resetRunState();
+    _selectQuickPrompts(avoidCurrent: true);
     _notify();
   }
 
@@ -476,7 +483,18 @@ class AiAssistantProvider extends ChangeNotifier {
       }
       if (run.state == 'completed') {
         _connectionState = AiConnectionState.completed;
-        _upsertAssistant(_streamedText, AiMessageStatus.completed);
+        final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
+        _upsertAssistant(
+          _streamedText,
+          AiMessageStatus.completed,
+          sources: _sources,
+          sourceRecoveryState: _sources.isEmpty
+              ? hasCitationMarkers
+                  ? AiSourceRecoveryState.loading
+                  : AiSourceRecoveryState.notNeeded
+              : AiSourceRecoveryState.loaded,
+        );
+        if (_sources.isEmpty) await _resolveSourcesForRun(runId);
         await _finishRun();
       } else if (run.state == 'failed' || run.state == 'expired') {
         _connectionState = AiConnectionState.failed;
@@ -548,9 +566,12 @@ class AiAssistantProvider extends ChangeNotifier {
         }
         break;
       case AiRunEventType.sources:
-        _sources = List<AiSource>.unmodifiable(event.sources);
+        _sources = List<AiSource>.unmodifiable(
+          deduplicateAiSources(event.sources),
+        );
         _upsertAssistant(_streamedText, AiMessageStatus.streaming,
             sources: _sources,
+            sourceRecoveryState: AiSourceRecoveryState.loaded,
             personalDataEvidence: _evidenceForRun(event.runId));
         break;
       case AiRunEventType.personalDataEvidence:
@@ -580,9 +601,18 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
         if (event.quota != null) _quota = event.quota;
+        final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
         _upsertAssistant(_streamedText, AiMessageStatus.completed,
             sources: _sources,
+            sourceRecoveryState: _sources.isEmpty
+                ? hasCitationMarkers
+                    ? AiSourceRecoveryState.loading
+                    : AiSourceRecoveryState.notNeeded
+                : AiSourceRecoveryState.loaded,
             personalDataEvidence: _evidenceForRun(event.runId));
+        if (_sources.isEmpty && event.runId.isNotEmpty) {
+          unawaited(_resolveSourcesForRun(event.runId));
+        }
         unawaited(_finishRun());
         break;
       case AiRunEventType.failed:
@@ -591,6 +621,9 @@ class AiAssistantProvider extends ChangeNotifier {
         if (_streamedText.isNotEmpty) {
           _upsertAssistant(_streamedText, AiMessageStatus.failed,
               sources: _sources,
+              sourceRecoveryState: _sources.isEmpty
+                  ? AiSourceRecoveryState.failed
+                  : AiSourceRecoveryState.loaded,
               personalDataEvidence: _evidenceForRun(event.runId));
         }
         break;
@@ -611,31 +644,145 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> _restoreSources(List<AiConversationMessage> history) async {
-    for (final message in history
-        .where((item) => item.role == 'assistant' && item.runId != null)) {
+    // 新 DTO 已直接携带 sources；只有旧历史缺少来源时才逐 Run 请求兼容
+    // endpoint，绝不再为每条历史消息 replay 一遍完整 SSE。
+    for (final message in history.where(
+      (item) => item.role == 'assistant' && item.runId != null,
+    )) {
+      final index = _messages.indexWhere((item) => item.id == message.id);
+      if (index < 0) continue;
+      final inlineSources = deduplicateAiSources(message.sources);
+      if (inlineSources.isNotEmpty) {
+        _messages[index] = _messages[index].copyWith(
+          sources: inlineSources,
+          sourceRecoveryState: AiSourceRecoveryState.loaded,
+          personalDataEvidence: message.personalDataEvidence,
+        );
+        if (message.personalDataEvidence.isNotEmpty) continue;
+      }
+      await _resolveSourcesForMessage(
+        messageId: message.id,
+        runId: message.runId!,
+        content: message.content,
+      );
+    }
+  }
+
+  Future<void> retryMessageSources(AiChatMessage message) async {
+    final runId = message.requestId.trim();
+    if (runId.isEmpty) return;
+    await _resolveSourcesForMessage(
+      messageId: message.id,
+      runId: runId,
+      content: message.content,
+      force: true,
+    );
+  }
+
+  Future<void> _resolveSourcesForRun(String runId) async {
+    final index = _messages.lastIndexWhere(
+      (item) => item.role == AiMessageRole.assistant && item.requestId == runId,
+    );
+    if (index < 0) return;
+    final message = _messages[index];
+    await _resolveSourcesForMessage(
+      messageId: message.id,
+      runId: runId,
+      content: message.content,
+    );
+  }
+
+  Future<void> _resolveSourcesForMessage({
+    required String messageId,
+    required String runId,
+    required String content,
+    bool force = false,
+  }) async {
+    final index = _messages.indexWhere((item) => item.id == messageId);
+    if (index < 0) return;
+    final current = _messages[index];
+    if (!force &&
+        current.sources.isNotEmpty &&
+        current.personalDataEvidence.isNotEmpty) {
+      return;
+    }
+    final hasCitationMarkers = hasAiCitationMarkers(content);
+    final chunkIds = extractAiChunkIds(content);
+
+    _messages[index] = current.copyWith(
+      sourceRecoveryState: AiSourceRecoveryState.loading,
+    );
+    _notify();
+
+    List<AiSource> resolved = deduplicateAiSources(current.sources);
+    List<AiPersonalDataEvidence> personalEvidence =
+        List<AiPersonalDataEvidence>.from(current.personalDataEvidence);
+    try {
+      final runSources = await _service.getRunSources(runId);
+      if (runSources.sources.isNotEmpty) {
+        resolved = deduplicateAiSources([
+          ...resolved,
+          ...runSources.sources,
+        ]);
+      }
+      _mergeEvidenceList(personalEvidence, runSources.personalDataEvidence);
+    } catch (_) {
+      // 旧服务端没有来源聚合接口时，继续按 chunk 读取兼容正文。
+    }
+
+    if (resolved.isEmpty && chunkIds.isNotEmpty) {
+      resolved = await _loadFallbackSources(chunkIds);
+    }
+    final resolvedChunkIds = resolved
+        .expand(
+          (source) => source.chunkIds.isNotEmpty
+              ? source.chunkIds
+              : (source.chunkId > 0 ? [source.chunkId] : const <int>[]),
+        )
+        .toSet();
+    final state = !hasCitationMarkers
+        ? AiSourceRecoveryState.notNeeded
+        : resolved.isNotEmpty &&
+                (chunkIds.isEmpty || chunkIds.every(resolvedChunkIds.contains))
+            ? AiSourceRecoveryState.loaded
+            : AiSourceRecoveryState.failed;
+    final latestIndex = _messages.indexWhere((item) => item.id == messageId);
+    if (latestIndex < 0) return;
+    _messages[latestIndex] = _messages[latestIndex].copyWith(
+      sources: resolved,
+      sourceRecoveryState: state,
+      personalDataEvidence: personalEvidence,
+    );
+    _mergePersonalDataEvidence(runId, personalEvidence);
+    if (_run?.id == runId) {
+      _sources = List<AiSource>.unmodifiable(resolved);
+    }
+    _notify();
+  }
+
+  Future<List<AiSource>> _loadFallbackSources(List<int> chunkIds) async {
+    final result = <AiSource>[];
+    for (final chunkId in chunkIds) {
       try {
-        List<AiSource> restored = const [];
-        final evidence = <AiPersonalDataEvidence>[];
-        await for (final event in _service.streamRunEvents(message.runId!)) {
-          if (event.type == AiRunEventType.sources) restored = event.sources;
-          if (event.type == AiRunEventType.personalDataEvidence) {
-            _mergeEvidenceList(evidence, event.personalDataEvidence);
-          }
-          if (_isTerminal(event.type)) break;
-        }
-        if (restored.isNotEmpty || evidence.isNotEmpty) {
-          final index = _messages.indexWhere((item) => item.id == message.id);
-          if (index >= 0) {
-            _messages[index] = _messages[index].copyWith(
-              sources: restored,
-              personalDataEvidence: evidence,
-            );
-          }
-        }
+        final content = await _service.getSourceContent(chunkId);
+        result.add(
+          AiSource(
+            type: AiSourceType.policy,
+            chunkId: chunkId,
+            chunkIds: [chunkId],
+            documentId: content.documentId,
+            title: content.title,
+            locators: [
+              if (content.sectionTitle.trim().isNotEmpty) content.sectionTitle,
+              if (content.locator.trim().isNotEmpty) content.locator,
+            ],
+          ),
+        );
       } catch (_) {
-        // 历史来源恢复失败不阻断正文展示。
+        // 单个 chunk 失败不阻断其它来源；最终由 failed 状态明确告知用户。
       }
     }
+    return deduplicateAiSources(result);
   }
 
   AiChatMessage _fromHistory(AiConversationMessage message) {
@@ -646,6 +793,11 @@ class AiAssistantProvider extends ChangeNotifier {
           message.role == 'user' ? AiMessageRole.user : AiMessageRole.assistant,
       content: message.content,
       status: AiMessageStatus.completed,
+      sources: deduplicateAiSources(message.sources),
+      sourceRecoveryState: message.sources.isNotEmpty
+          ? AiSourceRecoveryState.loaded
+          : AiSourceRecoveryState.notNeeded,
+      personalDataEvidence: message.personalDataEvidence,
       createdAt: message.createdAt ?? DateTime.now(),
     );
   }
@@ -654,6 +806,7 @@ class AiAssistantProvider extends ChangeNotifier {
     String text,
     AiMessageStatus status, {
     List<AiSource>? sources,
+    AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
   }) {
     if (text.isEmpty &&
@@ -670,6 +823,7 @@ class AiAssistantProvider extends ChangeNotifier {
         content: text.isEmpty ? _messages[index].content : text,
         status: status,
         sources: sources,
+        sourceRecoveryState: sourceRecoveryState,
         personalDataEvidence: personalDataEvidence,
       );
       return;
@@ -682,6 +836,8 @@ class AiAssistantProvider extends ChangeNotifier {
       status: status,
       createdAt: DateTime.now(),
       sources: sources ?? const [],
+      sourceRecoveryState:
+          sourceRecoveryState ?? AiSourceRecoveryState.notNeeded,
       personalDataEvidence: personalDataEvidence ?? const [],
     ));
   }
@@ -728,6 +884,53 @@ class AiAssistantProvider extends ChangeNotifier {
     if (_error == null) return;
     _error = null;
     _notify();
+  }
+
+  void _syncQuickPrompts() {
+    final features = _capabilities?.features;
+    final poolKey = [
+      features?.policyRag == true,
+      features?.scheduleWindows == true,
+      features?.hy3CompetitionCompare == true,
+      features?.supportsAcademicAnalysis == true,
+      features?.hy3WeekPlan == true,
+    ].join(':');
+    if (_quickPromptPoolKey == poolKey && _quickPrompts.isNotEmpty) return;
+    _quickPromptPoolKey = poolKey;
+    _selectQuickPrompts();
+  }
+
+  void _selectQuickPrompts({bool avoidCurrent = false}) {
+    final features = _capabilities?.features;
+    final pool = aiCommonQuestionBank.where((item) {
+      switch (item.feature) {
+        case AiQuickPromptFeature.policy:
+          return features?.policyRag == true;
+        case AiQuickPromptFeature.schedule:
+          return features?.scheduleWindows == true;
+        case AiQuickPromptFeature.competitionCompare:
+          // 这三项是空状态中的固定“快捷能力”，不进入“猜你想问”的轮换池。
+          return false;
+        case AiQuickPromptFeature.academicAnalysis:
+          return false;
+        case AiQuickPromptFeature.weekPlan:
+          return false;
+      }
+    }).toList();
+    if (pool.isEmpty) {
+      _quickPrompts = const [];
+      return;
+    }
+
+    if (avoidCurrent && pool.length > _quickPromptDisplayCount) {
+      final currentQuestions =
+          _quickPrompts.map((item) => item.question).toSet();
+      pool.removeWhere((item) => currentQuestions.contains(item.question));
+    }
+    pool.shuffle(_random);
+    _quickPrompts = List.unmodifiable(
+      pool.take(_quickPromptDisplayCount),
+    );
   }
 
   bool _isTerminal(AiRunEventType type) =>
@@ -825,6 +1028,8 @@ class AiAssistantProvider extends ChangeNotifier {
         return '回答服务暂时不可用，请稍后重试';
       case 'content_rejected':
         return '该问题暂时无法处理，请调整表述后重试';
+      case 'provider_request_rejected':
+        return '回答服务暂时未接受本次请求，请重试';
       case 'invalid_response':
       case 'unknown_provider_error':
         return '回答结果异常，请重新提问';
@@ -844,6 +1049,191 @@ class AiAssistantProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+
+const int _quickPromptDisplayCount = 4;
+
+const List<AiQuickPrompt> aiCommonQuestionBank = [
+  AiQuickPrompt(
+    category: '竞赛规划',
+    question: '对比适合我的竞赛',
+    feature: AiQuickPromptFeature.competitionCompare,
+  ),
+  AiQuickPrompt(
+    category: '学业分析',
+    question: '分析我的学业情况',
+    feature: AiQuickPromptFeature.academicAnalysis,
+  ),
+  AiQuickPrompt(
+    category: '学习计划',
+    question: '制定本周学习计划',
+    feature: AiQuickPromptFeature.weekPlan,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '挂科后怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '补考成绩怎么算',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '补考没过怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '重修有什么规定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '重修成绩如何记载',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '实践课不及格怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '缓考怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '课程免修怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '休学如何办理',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '复学需要什么材料',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '转专业有什么条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '退学有哪些规定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '最长修业年限是几年',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '奖学金怎么评',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '国家奖学金申请条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '励志奖学金申请条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '助学金怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '家庭经济困难如何认定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '勤工助学怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '学费交不起怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '应征入伍有哪些资助',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '孤儿学生有哪些资助',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '考试违纪怎么处理',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '毕业学位',
+    question: '学位授予有哪些条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '校历如何安排',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '今天下午有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '本周哪天空闲',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '下周一有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '找两小时空闲',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '明天第一节有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '这周末有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '今天晚上有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '下周哪天没课',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+];
 
 String _uuidV4() {
   final random = Random.secure();

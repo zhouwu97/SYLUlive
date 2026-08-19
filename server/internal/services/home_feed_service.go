@@ -1,20 +1,47 @@
 package services
 
 import (
-	"gorm.io/gorm"
-	"shenliyuan/internal/models"
+	"context"
+	"fmt"
 	"time"
+
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
 )
 
 type HomeFeedService struct {
 	db          *gorm.DB
 	includePoll bool
+	visibility  *FeedVisibilityService
+
+	// FEED-5：个性化 shadow 开关与 active rollout 百分比（由 handler 注入）。
+	personalizationShadow bool
+	rolloutPercent        int
+	// FEED-V5：v5 算法（reply_like 信号 + 去 raw view + dwell 衰减）。
+	v5Shadow       bool
+	v5RolloutPercent int
 }
 
-func NewHomeFeedService(db *gorm.DB) *HomeFeedService { return &HomeFeedService{db: db} }
+func NewHomeFeedService(db *gorm.DB) *HomeFeedService {
+	return &HomeFeedService{db: db, visibility: NewFeedVisibilityService(db)}
+}
 
 func NewHomeFeedServiceWithPoll(db *gorm.DB) *HomeFeedService {
-	return &HomeFeedService{db: db, includePoll: true}
+	return &HomeFeedService{db: db, includePoll: true, visibility: NewFeedVisibilityService(db)}
+}
+
+// SetPersonalization 配置 FEED-5 个性化：shadow 计算+trace（不改排序），percent 为
+// active rollout 百分比（0=仅 shadow）。
+func (s *HomeFeedService) SetPersonalization(shadow bool, percent int) {
+	s.personalizationShadow = shadow
+	s.rolloutPercent = percent
+}
+
+// SetPersonalizationV5 配置 FEED-V5 个性化：独立于 v4 的 shadow/rollout。
+func (s *HomeFeedService) SetPersonalizationV5(shadow bool, percent int) {
+	s.v5Shadow = shadow
+	s.v5RolloutPercent = percent
 }
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
@@ -26,12 +53,17 @@ func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 	err := query.Order("pinned_weight DESC").Order("pinned_at DESC").Order("id DESC").Limit(3).Find(&posts).Error
 	return posts, err
 }
-func (s *HomeFeedService) BuildSnapshot(now time.Time) ([]uint, error) {
+
+// BuildSnapshot 构建首页推荐快照。
+// userID > 0 时应用 Feed 负反馈过滤（不看TA 对所有 Tab 生效，不感兴趣仅 all 生效）。
+// FEED-5：shadow 个性化在此串联（UserFeatures → PersonalDelta → 探索 → trace）。
+func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, userID uint) ([]uint, error) {
 	base := func() *gorm.DB {
 		query := s.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 		if !s.includePoll {
 			query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
+		query = s.visibility.ApplyFeedVisibility(query, userID, "all", now)
 		return query
 	}
 	var posts []models.Post
@@ -118,7 +150,84 @@ func (s *HomeFeedService) BuildSnapshot(now time.Time) ([]uint, error) {
 	if len(ranked) > 500 {
 		ranked = ranked[:500]
 	}
-	return ranked, nil
+	// FEED-5/FEED-V5：先算 cohort，只有 shadow 或实际命中 rollout 的用户才做
+	// 特征聚合与个性化计算。否则配 10% 灰度时，100% 用户都会承担 BuildUserFeatures
+	// 的 7 组 DB 访问，数据库压力与全量上线无异（性能回归）。
+	v4InRollout := s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent)
+	v5InRollout := s.v5RolloutPercent > 0 && userInRollout(userID, s.v5RolloutPercent)
+	needV4Compute := personalizationComputeNeeded(userID, s.personalizationShadow, s.rolloutPercent)
+	needV5Compute := personalizationComputeNeeded(userID, s.v5Shadow, s.v5RolloutPercent)
+	if !needV4Compute && !needV5Compute {
+		return ranked, nil
+	}
+	baseline := ranked
+	features := s.BuildUserFeatures(ctx, userID, ids, now)
+
+	personalized := ranked
+	if needV4Compute {
+		for i := range candidates {
+			candidates[i].PersonalDelta = ComputePersonalDelta(candidates[i], features, now)
+		}
+		personalized = RankHomeFeed(candidates, now)
+		if s.includePoll {
+			personalized = applyPollDensity(personalized, pollByPost)
+		}
+		if len(personalized) > 500 {
+			personalized = personalized[:500]
+		}
+		personalized = applyExploration(personalized, candidates, features, now)
+	}
+
+	// FEED-V5：独立算法版本，v5 rollout 优先于 v4 rollout。
+	if needV5Compute {
+		v5Candidates := append([]HomeFeedCandidate(nil), candidates...)
+		for i := range v5Candidates {
+			v5Candidates[i].PersonalDelta = ComputePersonalDelta(v5Candidates[i], features, now)
+			ScoreHomeFeedCandidateV5(&v5Candidates[i], now)
+		}
+		v5Ranked := RankHomeFeedV5(v5Candidates, now)
+		if s.includePoll {
+			v5Ranked = applyPollDensity(v5Ranked, pollByPost)
+		}
+		if len(v5Ranked) > 500 {
+			v5Ranked = v5Ranked[:500]
+		}
+		v5Ranked = applyExploration(v5Ranked, v5Candidates, features, now)
+		if s.v5Shadow {
+			s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), v5Candidates, features, v5Ranked, now, personalizationAlgorithmVersionV5())
+		}
+		if v5InRollout {
+			return v5Ranked, nil
+		}
+		if s.v5Shadow {
+			// 纯 shadow 的 V5 实验：保持与 baseline 对照，抑制 v4 rollout 干扰。
+			return baseline, nil
+		}
+	}
+
+	if s.personalizationShadow {
+		s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, personalizationAlgorithmVersion())
+	}
+	if v4InRollout {
+		return personalized, nil
+	}
+	return baseline, nil
+}
+
+// personalizationComputeNeeded 判断用户是否进入个性化计算 cohort：
+// shadow 全量计算+trace；active rollout 只对命中分桶的用户计算。
+func personalizationComputeNeeded(userID uint, shadow bool, rolloutPercent int) bool {
+	return shadow || (rolloutPercent > 0 && userInRollout(userID, rolloutPercent))
+}
+
+// personalizationAlgorithmVersion 返回个性化算法版本标识（shadow 仍可用 v4 追踪）。
+func personalizationAlgorithmVersion() string {
+	return "home_all_v4_personalized"
+}
+
+// personalizationAlgorithmVersionV5 FEED-V5 算法版本标识。
+func personalizationAlgorithmVersionV5() string {
+	return "home_all_v5_personalized"
 }
 
 // applyPollDensity 保持推荐流可扫描性；内容不足时会在末尾保留一个投票入口。

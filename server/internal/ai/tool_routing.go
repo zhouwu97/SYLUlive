@@ -3,15 +3,23 @@ package ai
 import "strings"
 
 const (
-	modelToolHy3Academic    = "hy3_decision_analyze_academic"
 	modelToolHy3Competition = "hy3_decision_compare_competitions"
 	modelToolHy3WeekPlan    = "hy3_decision_plan_student_week"
 	modelToolCompetition    = "competition_search_catalog"
+	modelToolAcademicRisk   = "academic_get_risk_analysis"
 )
 
 // routeModelTools 根据用户意图缩小模型可见工具集合。
 // Hy3 能力缺失时只暴露同领域的普通校园工具，避免模型跨领域乱选工具。
 func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinition {
+	// 综合学业分析统一走服务端确定性学业工具，再由当前主模型生成叙事；
+	// 不再把个人成绩交给 Hy3 决策工具。
+	if isComprehensiveAcademicIntent(message) {
+		if selected := academicAnalysisToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
+		return academicToolDefinitions(definitions)
+	}
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
 		if isPersonalToolIntent(message) {
@@ -41,6 +49,76 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 	return selected
 }
 
+// requiredDecisionTool 将明确的个人决策意图转换为服务端完成条件。
+// 返回的名称使用模型可见别名，与 ToolDefinition.Name 保持一致。
+func requiredDecisionTool(message string, definitions []ToolDefinition) (string, bool) {
+	if isComprehensiveAcademicIntent(message) {
+		for _, definition := range definitions {
+			if definition.Name == modelToolAcademicRisk {
+				return modelToolAcademicRisk, true
+			}
+		}
+		// 旧注册表未包含内置综合工具时保留兼容性；生产注册表始终优先走上面的统一入口。
+		for _, definition := range definitions {
+			if definition.Name == "hy3_decision_analyze_academic" {
+				return definition.Name, true
+			}
+		}
+		return "", false
+	}
+	_, required := hy3RouteTargets(message)
+	if required == "" {
+		return "", false
+	}
+	for _, definition := range definitions {
+		if definition.Name == required {
+			return required, true
+		}
+	}
+	// Hy3 未注册时 routeModelTools 会保留内置学业工具降级路径；
+	// 这些工具的选择依赖具体数据集，不能强制成不存在的 Hy3 名称。
+	return "", false
+}
+
+func requiredDecisionToolForMessages(messages []Message, definitions []ToolDefinition) (string, bool) {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if messages[index].Role == "user" {
+			return requiredDecisionTool(messages[index].Content, definitions)
+		}
+	}
+	return "", false
+}
+
+// shouldRetrievePolicyForDecision 仅让明确同时询问校规的个人问题进入双依赖路径。
+// 单纯学业分析和周计划不应被弱相关政策资料污染。
+func shouldRetrievePolicyForDecision(message, requiredTool string) bool {
+	if requiredTool == "" {
+		return true
+	}
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return containsAny(normalized,
+		"规定", "政策", "办法", "申请条件", "能否申请", "是否可以申请",
+		"奖学金", "评奖", "转专业", "学位授予", "毕业条件")
+}
+
+// policyRetrievalQuery 为个人学业风险分析补充固定的校规检索语义。
+// 用户原问题仍原样进入生成提示；这里只让 Retriever 命中挂科后续处理的正式依据。
+func policyRetrievalQuery(message, requiredTool string) string {
+	message = strings.TrimSpace(message)
+	if isComprehensiveAcademicIntent(message) && requiredTool == modelToolAcademicRisk {
+		// 学业风险分析只需要个人数据事实；除非用户明确问校规，
+		// 不把政策召回混入模型上下文，避免建议被校规模板污染。
+		return ""
+	}
+	if isComprehensiveAcademicIntent(message) && requiredTool == "hy3_decision_analyze_academic" {
+		return "挂科了怎么办"
+	}
+	if shouldRetrievePolicyForDecision(message, requiredTool) {
+		return message
+	}
+	return ""
+}
+
 func academicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
 	selected := make([]ToolDefinition, 0, len(definitions))
 	for _, definition := range definitions {
@@ -50,6 +128,16 @@ func academicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
 	}
 	if len(selected) == 0 {
 		return definitions
+	}
+	return selected
+}
+
+func academicAnalysisToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, 1)
+	for _, definition := range definitions {
+		if definition.Name == modelToolAcademicRisk {
+			selected = append(selected, definition)
+		}
 	}
 	return selected
 }
@@ -106,18 +194,6 @@ func hy3RouteTargets(message string) (map[string]struct{}, string) {
 	if normalized == "" {
 		return nil, ""
 	}
-	hasAcademicTopic := containsAny(normalized, "学业", "成绩", "gpa", "绩点", "学分", "挂科")
-	explicitHy3Academic := strings.Contains(normalized, "hy3") && hasAcademicTopic
-	comprehensiveAcademic := containsAny(normalized, "综合分析", "学业分析", "分析学业", "学业评估") ||
-		(strings.Contains(normalized, "gpa") && strings.Contains(normalized, "学分"))
-	// 校园首页使用“分析我的学业情况，找出主要风险并给出改进建议”等自然语言，
-	// 不一定出现连续的“学业分析”，但仍然明确要求基于个人学业数据做判断。
-	comprehensiveAcademic = comprehensiveAcademic ||
-		(hasAcademicTopic && containsAny(normalized, "分析", "风险", "改进建议"))
-	if explicitHy3Academic || comprehensiveAcademic {
-		return map[string]struct{}{modelToolHy3Academic: {}}, modelToolHy3Academic
-	}
-
 	weekPlan := strings.Contains(normalized, "周计划") ||
 		strings.Contains(normalized, "运动计划") ||
 		(strings.Contains(normalized, "本周") && containsAny(normalized, "安排", "计划"))
@@ -134,6 +210,22 @@ func hy3RouteTargets(message string) (map[string]struct{}, string) {
 		}, modelToolHy3Competition
 	}
 	return nil, ""
+}
+
+func isComprehensiveAcademicIntent(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return false
+	}
+	hasAcademicTopic := containsAny(normalized, "学业", "成绩", "gpa", "绩点", "学分", "挂科")
+	if !hasAcademicTopic {
+		return false
+	}
+	return (strings.Contains(normalized, "hy3") && hasAcademicTopic) ||
+		containsAny(normalized, "综合分析", "学业分析", "分析学业", "学业评估") ||
+		(strings.Contains(normalized, "gpa") && strings.Contains(normalized, "学分")) ||
+		(containsAny(normalized, "风险", "改进建议") && containsAny(normalized, "分析", "找出", "判断")) ||
+		containsAny(normalized, "分析", "评估", "判断")
 }
 
 func containsAny(value string, candidates ...string) bool {

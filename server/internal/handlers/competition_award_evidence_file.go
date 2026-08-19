@@ -40,11 +40,12 @@ func (h *CompetitionHandler) UploadCompetitionAwardEvidence(c *gin.Context) {
 		return
 	}
 	defer source.Close()
-	mimeType, err := validateImageFile(source)
+	meta, err := validateImageFile(source)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	mimeType := meta.MimeType
 
 	hasher := sha256.New()
 	written, err := io.Copy(hasher, io.LimitReader(source, h.maxEvidenceFileSize+1))

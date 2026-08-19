@@ -116,7 +116,7 @@ func parseDryRunOptions(args []string, getenv environment, stderr io.Writer, for
 	flags := flag.NewFlagSet("dry-run", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	options := dryRunOptions{}
-	flags.StringVar(&options.Bundle, "bundle", defaultKnowledgePath("SYLUlive_AI官方全文导入包_v0.6.jsonl"), "JSONL 导入包")
+	flags.StringVar(&options.Bundle, "bundle", defaultKnowledgePath(defaultKnowledgeBundle), "JSONL 导入包")
 	flags.StringVar(&options.Manifest, "manifest", defaultManifestPath(), "版本清单")
 	flags.StringVar(&options.Inventory, "inventory", "", "离线数据库文档清单 JSON")
 	flags.StringVar(&options.Report, "report", "", "同时写入报告文件")

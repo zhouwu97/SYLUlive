@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
+import 'package:shenliyuan/utils/tab_transition_ledger.dart';
 import 'package:shenliyuan/widgets/home_tab_reveal.dart';
 
 void main() {
@@ -36,6 +37,34 @@ void main() {
     );
 
     expect(updateCheckStarted, isTrue);
+  });
+
+  test('root tab ledger rejects stale A→B→C completions and cancels safely',
+      () {
+    final ledger = TabTransitionLedger(itemCount: 5, initialIndex: 0);
+    final a = ledger.begin(1, commit: true, visualStart: 0);
+    final b = ledger.begin(2, commit: true, visualStart: 0.4);
+    final c = ledger.begin(3, commit: true, visualStart: 1.2);
+
+    expect(ledger.visitedTabs, containsAll(<int>[0, 1, 2, 3]));
+    expect(ledger.currentIndex, 3);
+    expect(ledger.complete(a), isFalse);
+    expect(ledger.complete(b), isFalse);
+    expect(ledger.complete(c), isTrue);
+    expect(ledger.currentIndex, 3);
+    expect(ledger.targetIndex, isNull);
+    expect(ledger.revealedTabs, containsAll(<int>[0, 3]));
+    expect(ledger.revealedTabs, isNot(contains(1)));
+    expect(ledger.revealedTabs, isNot(contains(2)));
+
+    // 重复点击当前 Tab 或取消一个未提交的手势，都不能把最终状态改回旧页。
+    ledger.cancel();
+    final cancelPlan = ledger.begin(2, commit: false, visualStart: 2.5);
+    ledger.cancel();
+    expect(ledger.complete(cancelPlan), isFalse);
+    expect(ledger.currentIndex, 3);
+    expect(ledger.visualIndex, 3);
+    expect(ledger.targetIndex, isNull);
   });
 
   double revealTranslationY(WidgetTester tester, Key childKey) {
@@ -74,7 +103,7 @@ void main() {
         .firstWhere((widget) => widget.transform.getTranslation().y > 0);
     final fade = tester.widget<Opacity>(find.byType(Opacity));
 
-    expect(startTransform.transform.getTranslation().y, 56);
+    expect(startTransform.transform.getTranslation().y, 8);
     expect(fade.opacity, lessThan(1));
 
     controller.value = 1;
@@ -135,6 +164,71 @@ void main() {
     for (final opacity in tester.widgetList<Opacity>(find.byType(Opacity))) {
       expect(opacity.opacity, 1);
     }
+  });
+
+  testWidgets('late mounted reveal item skips a completed first reveal',
+      (tester) async {
+    final controller = AnimationController(vsync: tester);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: HomeTabRevealScope(
+          animation: controller,
+          serial: 1,
+          child: const SizedBox(key: ValueKey('initial')),
+        ),
+      ),
+    );
+    controller.value = 1;
+    await tester.pump();
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: HomeTabRevealScope(
+          animation: controller,
+          serial: 1,
+          child: const HomeTabRevealItem(
+            index: 0,
+            child: SizedBox(key: ValueKey('late-item')),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('late-item')), findsOneWidget);
+    expect(find.byType(Transform), findsNothing);
+    expect(find.byType(Opacity), findsNothing);
+  });
+
+  testWidgets('reduced motion keeps opacity feedback and removes movement',
+      (tester) async {
+    final controller = AnimationController(vsync: tester);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: HomeTabRevealScope(
+            animation: controller,
+            serial: 1,
+            child: const HomeTabRevealItem(
+              index: 0,
+              child: SizedBox(key: ValueKey('reduced-item')),
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.value = 0.5;
+    await tester.pump();
+
+    expect(find.byType(Opacity), findsOneWidget);
+    expect(find.byType(Transform), findsNothing);
   });
 
   testWidgets('non-post header stays outside reveal item and does not move',

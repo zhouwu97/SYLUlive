@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"os"
 	"path/filepath"
@@ -72,4 +74,41 @@ func TestImageVariantRequest(t *testing.T) {
 	if variant != "" || original != "ab/hash.png" {
 		t.Fatalf("原图解析错误: variant=%q original=%q", variant, original)
 	}
+}
+
+func TestEnsureImageVariantSupportsGifFirstFrame(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "source.gif")
+	file, err := os.Create(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := image.NewPaletted(image.Rect(0, 0, 800, 400), []color.Color{color.RGBA{R: 255, A: 255}})
+	if err := gif.EncodeAll(file, &gif.GIF{Image: []*image.Paletted{frame}, Delay: []int{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	variant := filepath.Join(root, "source_thumb.gif")
+	if err := ensureImageVariant(original, variant, "image/gif", 480); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := gif.Decode(bytes.NewReader(mustReadFile(t, variant)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Bounds().Dx() != 480 || decoded.Bounds().Dy() != 240 {
+		t.Fatalf("GIF 缩略图尺寸=%v", decoded.Bounds())
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

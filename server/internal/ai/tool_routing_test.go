@@ -6,10 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRouteModelToolsPrefersHy3ForDecisionIntents(t *testing.T) {
+func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t *testing.T) {
 	definitions := []ToolDefinition{
 		{Name: "academic_resolve_context"},
 		{Name: "academic_get_grade_summary"},
+		{Name: "academic_get_risk_analysis"},
 		{Name: "competition_search_catalog"},
 		{Name: "hy3_decision_analyze_academic"},
 		{Name: "hy3_decision_compare_competitions"},
@@ -21,19 +22,19 @@ func TestRouteModelToolsPrefersHy3ForDecisionIntents(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "明确 Hy3 学业分析",
+			name:     "明确旧 Hy3 学业分析仍统一切换",
 			message:  "请用Hy3分析学业",
-			expected: []string{"hy3_decision_analyze_academic"},
+			expected: []string{"academic_get_risk_analysis"},
 		},
 		{
 			name:     "校园首页学业分析入口",
 			message:  "分析我的学业情况，找出主要风险并给出改进建议",
-			expected: []string{"hy3_decision_analyze_academic"},
+			expected: []string{"academic_get_risk_analysis"},
 		},
 		{
 			name:     "GPA 和学分综合分析",
 			message:  "计算我的 GPA 和学分情况",
-			expected: []string{"hy3_decision_analyze_academic"},
+			expected: []string{"academic_get_risk_analysis"},
 		},
 		{
 			name:     "学生周计划",
@@ -77,10 +78,10 @@ func TestRouteModelToolsKeepsPublicQuestionsAwayFromPersonalDataTools(t *testing
 	require.Equal(t, academicOnly, routeModelTools("计算我的 GPA 和学分情况", definitions))
 }
 
-func TestRouteModelToolsForMessagesKeepsHy3RouteAfterConsentResume(t *testing.T) {
+func TestRouteModelToolsForMessagesKeepsUnifiedAcademicRouteAfterResume(t *testing.T) {
 	definitions := []ToolDefinition{
 		{Name: "academic_resolve_context"},
-		{Name: "hy3_decision_analyze_academic"},
+		{Name: "academic_get_risk_analysis"},
 	}
 	messages := []Message{
 		{Role: "system", Content: "系统提示"},
@@ -89,7 +90,7 @@ func TestRouteModelToolsForMessagesKeepsHy3RouteAfterConsentResume(t *testing.T)
 		{Role: "tool", ToolCallID: "call_1", Content: `{"status":"waiting"}`},
 	}
 
-	require.Equal(t, []ToolDefinition{{Name: "hy3_decision_analyze_academic"}}, routeModelToolsForMessages(messages, definitions))
+	require.Equal(t, []ToolDefinition{{Name: "academic_get_risk_analysis"}}, routeModelToolsForMessages(messages, definitions))
 }
 
 func TestVerifiedPolicyRAGDoesNotDisablePersonalHy3Intent(t *testing.T) {
@@ -100,4 +101,22 @@ func TestVerifiedPolicyRAGDoesNotDisablePersonalHy3Intent(t *testing.T) {
 	require.True(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("重修有什么规定"), retakeChunks))
 	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("补考成绩怎么算"), weakChunks))
 	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("计算我的 GPA 和学分情况"), makeupChunks))
+}
+
+func TestPolicyRetrievalQueryForAcademicAnalysisTargetsFailedCourseRules(t *testing.T) {
+	query := policyRetrievalQuery(
+		"分析我的学业情况，找出主要风险并给出改进建议",
+		"academic_get_risk_analysis",
+	)
+	require.Empty(t, query)
+}
+
+func TestPolicyRetrievalQueryKeepsNonAcademicQuestion(t *testing.T) {
+	require.Equal(t, "奖学金有什么规定", policyRetrievalQuery("奖学金有什么规定", ""))
+}
+
+func TestCampusProcedureClaimRequiresCitation(t *testing.T) {
+	require.True(t, containsCampusProcedureClaim("请关注后续补考或重修安排"))
+	require.True(t, containsCampusProcedureClaim("按学院安排报名"))
+	require.False(t, containsCampusProcedureClaim("信号与系统目前未通过，建议优先复习"))
 }

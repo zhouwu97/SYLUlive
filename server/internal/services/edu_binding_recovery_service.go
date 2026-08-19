@@ -147,9 +147,6 @@ func (s *EduBindingRecoveryService) completeBinding(ctx context.Context, userID,
 			"edu_password":                   "",
 			"edu_cookie":                     "",
 		}
-		if user.StudentVerifiedAt == nil {
-			updates["token_version"] = gorm.Expr("token_version + 1")
-		}
 		if user.AccountStatus == "registration_pending" {
 			updates["account_status"] = "active"
 		}

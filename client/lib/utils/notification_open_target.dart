@@ -1,4 +1,80 @@
+import 'dart:convert';
+
 import 'package:shenliyuan/utils/private_message_notification.dart';
+
+const nativeNotificationOpenIdKey = '_native_notification_open_id';
+const notificationRecipientUserIdKey = 'recipient_user_id';
+
+enum NotificationAccountDecision {
+  waitForAuthentication,
+  allow,
+  reject,
+}
+
+NotificationAccountDecision notificationAccountDecision({
+  required bool authInitialized,
+  required int? currentUserId,
+  required int? recipientUserId,
+}) {
+  if (!authInitialized) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  if (currentUserId == null ||
+      recipientUserId == null ||
+      recipientUserId <= 0 ||
+      currentUserId != recipientUserId) {
+    return NotificationAccountDecision.reject;
+  }
+  return NotificationAccountDecision.allow;
+}
+
+class NativeNotificationOpen {
+  const NativeNotificationOpen({
+    required this.id,
+    required this.payload,
+    required this.openedAt,
+  });
+
+  final String id;
+  final Map<String, dynamic> payload;
+  final DateTime openedAt;
+
+  bool isExpired(
+    DateTime now, {
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    return now.difference(openedAt) > ttl;
+  }
+
+  static NativeNotificationOpen? parse(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+
+      final id = decoded['id']?.toString().trim() ?? '';
+      final payloadValue = decoded['payload'];
+      final openedAtMillis = intFromNotificationExtra(decoded['opened_at']);
+      if (id.isEmpty || payloadValue is! Map || openedAtMillis == null) {
+        return null;
+      }
+
+      return NativeNotificationOpen(
+        id: id,
+        payload: payloadValue.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+        openedAt: DateTime.fromMillisecondsSinceEpoch(openedAtMillis),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> payloadWithTrackingId() => {
+        ...payload,
+        nativeNotificationOpenIdKey: id,
+      };
+}
 
 enum NotificationOpenType {
   reply,
@@ -10,11 +86,15 @@ class NotificationOpenTarget {
     required this.createdAt,
     this.postId,
     this.replyId,
+    this.nativeOpenId,
+    this.recipientUserId,
   });
 
   final NotificationOpenType type;
   final int? postId;
   final int? replyId;
+  final String? nativeOpenId;
+  final int? recipientUserId;
   final DateTime createdAt;
 
   bool isExpired(
@@ -27,7 +107,8 @@ class NotificationOpenTarget {
   bool hasSameDestination(NotificationOpenTarget other) {
     return type == other.type &&
         postId == other.postId &&
-        replyId == other.replyId;
+        replyId == other.replyId &&
+        recipientUserId == other.recipientUserId;
   }
 
   static NotificationOpenTarget? parse(
@@ -52,6 +133,10 @@ class NotificationOpenTarget {
           type: NotificationOpenType.reply,
           postId: postId,
           replyId: replyId,
+          nativeOpenId: extras[nativeNotificationOpenIdKey]?.toString(),
+          recipientUserId: _positiveId(
+            extras[notificationRecipientUserIdKey],
+          ),
           createdAt: now ?? DateTime.now(),
         );
 

@@ -7,7 +7,7 @@ import '../providers/auth_provider.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
 import '../utils/grade_screen_registry.dart';
 import '../services/grade_reminder_service.dart';

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/image_upload_widget.dart';
@@ -16,7 +17,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   final TextEditingController _contentController = TextEditingController();
   final TextEditingController _contactController = TextEditingController();
   String _type = 'suggestion'; // 'bug' or 'suggestion'
-  List<String> _uploadedImages = [];
+  List<UploadedImage> _uploadedImages = [];
   bool _isSubmitting = false;
   int _charCount = 0;
 
@@ -53,7 +54,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         data: {
           'content': content,
           'type': _type,
-          'images': _uploadedImages,
+          'image_ids': _uploadedImages.map((e) => e.fileId).toList(),
           'contact': _contactController.text.trim(),
         },
       );
@@ -68,9 +69,20 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           AppFeedback.showSnackBar(context, '提交失败，请稍后重试', isError: true);
         }
       }
+    } on DioException catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          AppFeedback.dioErrorMessage(
+            e,
+            serviceName: '反馈服务',
+            fallback: '网络异常或接口未部署，反馈提交失败',
+          ),
+          isError: true,
+        );
+      }
     } catch (e) {
       if (mounted) {
-        AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失败', isError: true);
         AppFeedback.showSnackBar(context, '反馈提交失败: $e', isError: true);
       }
     } finally {
@@ -214,8 +226,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             const SizedBox(height: 12),
             ImageUploadWidget(
               maxImages: 4,
-              onImagesUploaded: (urls) {
-                setState(() => _uploadedImages = urls);
+              onImagesUploaded: (images) {
+                setState(() => _uploadedImages = images);
               },
             ),
             const SizedBox(height: 24),

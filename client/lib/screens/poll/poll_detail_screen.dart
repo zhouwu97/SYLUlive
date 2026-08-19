@@ -48,8 +48,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   bool _repliesLoading = false;
   String? _repliesError;
   bool _sending = false;
-  bool _liked = false;
-  int _likeCount = 0;
   late final PollService _service;
   late final PostReplyService _replyService;
 
@@ -58,8 +56,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     super.initState();
     _post = widget.initialPost;
     if (_post != null) {
-      _liked = _post!.isLiked;
-      _likeCount = _post!.likeCount;
       _loading = false;
     }
     final dio = context.read<AuthProvider>().dio;
@@ -100,8 +96,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       if (!mounted) return;
       setState(() {
         _post = post;
-        _liked = post.isLiked;
-        _likeCount = post.likeCount;
         _loading = false;
         _pollNotFound = false;
       });
@@ -144,8 +138,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       final response =
           await context.read<AuthProvider>().dio.get('/posts/$postId/replies');
       if (!mounted) return;
-      final replies =
-          (response.data as List).map((e) => Reply.fromJson(e)).toList();
+      // 分页重构后响应为 {replies, total, next_cursor} 对象。
+      final data = response.data;
+      final raw = data is Map ? data['replies'] : data;
+      final replies = (raw is List ? raw : const [])
+          .map((e) => Reply.fromJson(e as Map<String, dynamic>))
+          .toList();
       setState(() {
         _replies = replies;
         _repliesLoading = false;
@@ -202,37 +200,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       return false;
     } finally {
       if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  Future<void> _toggleLike() async {
-    if (!context.read<AuthProvider>().isLoggedIn || _post == null) return;
-    final next = !_liked;
-    setState(() {
-      _liked = next;
-      _likeCount += next ? 1 : -1;
-    });
-    try {
-      if (next) {
-        await context.read<AuthProvider>().dio.post('/posts/${_post!.id}/like');
-      } else {
-        await context
-            .read<AuthProvider>()
-            .dio
-            .delete('/posts/${_post!.id}/like');
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _liked = !next;
-          _likeCount += next ? -1 : 1;
-        });
-      }
-    }
-    if (mounted) {
-      _post = _post!.copyWith(isLiked: _liked, likeCount: _likeCount);
-      context.read<PostProvider>().applyExternalPostUpdate(_post!);
-      context.read<PollProvider>().applyExternalPostUpdate(_post!);
     }
   }
 
@@ -416,8 +383,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     if (result is Post && mounted) {
       setState(() {
         _post = result;
-        _liked = result.isLiked;
-        _likeCount = result.likeCount;
       });
       context.read<PostProvider>().applyExternalPostUpdate(result);
       context.read<PollProvider>().applyExternalPostUpdate(result);
@@ -433,8 +398,9 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     if (updated != null) {
       setState(() => _post = updated);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.mutationError(pollId) ?? '提前结束投票失败')),
+      AppFeedback.error(
+        provider.mutationError(pollId) ?? '提前结束投票失败',
+        context: context,
       );
     }
   }
@@ -526,8 +492,6 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                     onPostUpdated: (updated) {
                       setState(() {
                         _post = updated;
-                        _liked = updated.isLiked;
-                        _likeCount = updated.likeCount;
                       });
                     },
                     onAuthorTap: widget.onAuthorTap ??
@@ -597,12 +561,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           ),
           PostReplyComposer(
             controller: _replyComposerController,
-            replyCount: post.replyCount,
-            likeCount: _likeCount,
-            liked: _liked,
             sending: _sending,
             enabled: context.watch<AuthProvider>().isLoggedIn,
-            onToggleLike: _toggleLike,
             onSubmit: _sendReply,
             onNeedLogin: _openLogin,
           ),

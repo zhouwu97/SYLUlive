@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_quota.dart';
-import '../campus/campus_theme.dart';
 
 class AiQuotaBanner extends StatelessWidget {
   final AiQuota quota;
@@ -34,6 +33,7 @@ class AiQuotaBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 14, bottom: 8),
       child: Container(
@@ -41,19 +41,18 @@ class AiQuotaBanner extends StatelessWidget {
         height: 44,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: CampusTheme.primaryLight,
+          color: colors.primaryContainer,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
-            const Icon(Icons.info_outline_rounded,
-                size: 18, color: CampusTheme.primary),
+            Icon(Icons.info_outline_rounded, size: 18, color: colors.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 '$_message · 每次最多 $maxCharacters 字',
-                style: const TextStyle(
-                  color: CampusTheme.primary,
+                style: TextStyle(
+                  color: colors.onPrimaryContainer,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),

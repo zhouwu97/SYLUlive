@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -17,6 +18,19 @@ import (
 )
 
 const maxCompetitionCatalogBytes = 12 << 20
+
+type competitionLegacyResolutionDTO struct {
+	ID                      uint      `json:"id"`
+	IdentityHash            string    `json:"identity_hash"`
+	CanonicalEventID        uint      `json:"canonical_event_id"`
+	CanonicalCompetitionID  string    `json:"canonical_competition_id"`
+	CanonicalTitle          string    `json:"canonical_title"`
+	DuplicateEventID        uint      `json:"duplicate_event_id"`
+	Reason                  string    `json:"reason"`
+	DuplicatePreviousStatus string    `json:"duplicate_previous_status"`
+	ResolvedBy              uint      `json:"resolved_by"`
+	ResolvedAt              time.Time `json:"resolved_at"`
+}
 
 func (h *CompetitionHandler) AdminValidateCompetitionCatalog(c *gin.Context) {
 	userID, ok := currentUserID(c)
@@ -105,6 +119,49 @@ func (h *CompetitionHandler) AdminExportCompetitionCatalogBaseline(c *gin.Contex
 	c.JSON(http.StatusOK, document)
 }
 
+func (h *CompetitionHandler) AdminExportCompetitionCatalogIdentityBaseline(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	document, validation, err := services.NewCompetitionCatalogBaselineExporter(h.db).
+		ExportIdentity(c.Request.Context())
+	if err != nil {
+		result := "failed"
+		status := http.StatusInternalServerError
+		message := "导出旧赛事身份基线失败"
+		switch {
+		case errors.Is(err, services.ErrCatalogBaselineAlreadyExists):
+			status = http.StatusConflict
+			message = "已有活动目录包，不能重复建立首次身份基线"
+		case errors.Is(err, services.ErrCatalogBaselineEmpty):
+			status = http.StatusConflict
+			message = "没有经过重复归并审计的 canonical 旧赛事"
+		case errors.Is(err, services.ErrCatalogValidationFailed):
+			status = http.StatusUnprocessableEntity
+			message = "旧赛事身份基线未通过服务端校验"
+			result = "rejected"
+		}
+		_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+			ActorUserID: userID, Action: "catalog_identity_baseline_export",
+			Result: result, Detail: message,
+		}).Error
+		if errors.Is(err, services.ErrCatalogValidationFailed) {
+			c.JSON(status, gin.H{"error": message, "validation": validation})
+			return
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+		ActorUserID: userID, Action: "catalog_identity_baseline_export",
+		Result: "success", Detail: document.DatasetVersion,
+	}).Error
+	c.Header("Content-Disposition", "attachment; filename=legacy-identity-baseline-20260731.json")
+	c.Header("X-Catalog-Package-Hash", document.PackageHash)
+	c.JSON(http.StatusOK, document)
+}
+
 func (h *CompetitionHandler) AdminListCompetitionCatalogPackages(c *gin.Context) {
 	var packages []models.CompetitionCatalogPackage
 	if err := h.db.Order("id DESC").Find(&packages).Error; err != nil {
@@ -112,6 +169,69 @@ func (h *CompetitionHandler) AdminListCompetitionCatalogPackages(c *gin.Context)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": packages})
+}
+
+func (h *CompetitionHandler) AdminListCompetitionLegacyResolutions(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 50
+	}
+	query := h.db.Model(&models.CompetitionLegacyDuplicateResolution{})
+	var total, identityGroups int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计历史归并失败"})
+		return
+	}
+	if err := h.db.Model(&models.CompetitionLegacyDuplicateResolution{}).
+		Distinct("identity_hash").Count(&identityGroups).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计身份组失败"})
+		return
+	}
+	var resolutions []models.CompetitionLegacyDuplicateResolution
+	if err := query.Order("resolved_at DESC, id DESC").
+		Offset((page - 1) * pageSize).Limit(pageSize).Find(&resolutions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史归并失败"})
+		return
+	}
+	canonicalIDs := make([]uint, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		canonicalIDs = append(canonicalIDs, resolution.CanonicalEventID)
+	}
+	canonicalByID := make(map[uint]models.CompetitionEvent, len(canonicalIDs))
+	if len(canonicalIDs) > 0 {
+		var events []models.CompetitionEvent
+		if err := h.db.Where("id IN ?", canonicalIDs).Find(&events).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取 canonical 赛事失败"})
+			return
+		}
+		for _, event := range events {
+			canonicalByID[event.ID] = event
+		}
+	}
+	items := make([]competitionLegacyResolutionDTO, 0, len(resolutions))
+	for _, resolution := range resolutions {
+		canonical := canonicalByID[resolution.CanonicalEventID]
+		items = append(items, competitionLegacyResolutionDTO{
+			ID: resolution.ID, IdentityHash: resolution.IdentityHash,
+			CanonicalEventID:       resolution.CanonicalEventID,
+			CanonicalCompetitionID: canonical.CompetitionID, CanonicalTitle: canonical.Title,
+			DuplicateEventID: resolution.DuplicateEventID, Reason: resolution.Reason,
+			DuplicatePreviousStatus: resolution.DuplicatePreviousStatus,
+			ResolvedBy:              resolution.ResolvedBy, ResolvedAt: resolution.ResolvedAt,
+		})
+	}
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages == 0 {
+		totalPages = 1
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items": items, "total": total, "identity_groups": identityGroups,
+		"page": page, "page_size": pageSize, "total_pages": totalPages,
+	})
 }
 
 func (h *CompetitionHandler) AdminGetCompetitionCatalogPackage(c *gin.Context) {
@@ -125,6 +245,137 @@ func (h *CompetitionHandler) AdminGetCompetitionCatalogPackage(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, catalog)
+}
+
+func (h *CompetitionHandler) AdminSuggestCompetitionCatalogLegacyMappings(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	result, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		Suggest(c.Request.Context(), packageID)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_suggest", "success")
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *CompetitionHandler) AdminListCompetitionCatalogLegacyMappings(c *gin.Context) {
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	items, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		List(c.Request.Context(), packageID)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *CompetitionHandler) AdminReviewCompetitionCatalogLegacyMapping(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	mappingID, ok := parseUintParam(c, "mapping_id")
+	if !ok {
+		return
+	}
+	var request services.CompetitionCatalogLegacyMappingReviewRequest
+	if !decodeStrictJSONRequest(c, &request) {
+		return
+	}
+	mapping, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		Review(c.Request.Context(), packageID, mappingID, userID, request)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_review", request.ReviewStatus)
+	c.JSON(http.StatusOK, mapping)
+}
+
+func (h *CompetitionHandler) AdminBatchConfirmCompetitionCatalogLegacyMappings(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var request services.CompetitionCatalogLegacyMappingBatchConfirmRequest
+	if !decodeStrictJSONRequest(c, &request) {
+		return
+	}
+	confirmed, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		BatchConfirm(c.Request.Context(), packageID, userID, request)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_batch_confirm", "success")
+	c.JSON(http.StatusOK, gin.H{"confirmed": confirmed})
+}
+
+func (h *CompetitionHandler) AdminInheritCompetitionCatalogLegacyMappings(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var request services.CompetitionCatalogLegacyMappingInheritRequest
+	if !decodeStrictJSONRequest(c, &request) {
+		return
+	}
+	result, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		Inherit(c.Request.Context(), packageID, userID, request)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_inherit", "success")
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *CompetitionHandler) respondCompetitionCatalogMappingError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "目录包、映射或旧赛事不存在"})
+	case errors.Is(err, services.ErrCatalogLegacyMappingInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrCatalogActivePackageRequired),
+		errors.Is(err, services.ErrCatalogLegacyMappingConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "旧赛事映射操作失败"})
+	}
+}
+
+func (h *CompetitionHandler) writeCompetitionCatalogMappingAudit(
+	packageID uint,
+	userID uint,
+	action string,
+	result string,
+) {
+	_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+		PackageID: &packageID, ActorUserID: userID, Action: action, Result: result,
+	}).Error
 }
 
 func (h *CompetitionHandler) AdminDiffCompetitionCatalogPackage(c *gin.Context) {

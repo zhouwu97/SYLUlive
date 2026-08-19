@@ -20,6 +20,36 @@ jobs:
       - run: gofmt -d $(find . -name '*.go') | (! grep .)
       - run: go test ./...
 
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sylulive_integration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sylulive_integration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_DSN: postgres://postgres:postgres@127.0.0.1:5432/sylulive_integration_test?sslmode=disable
+      ALLOW_DESTRUCTIVE_INTEGRATION_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Run PostgreSQL concurrency integration tests
+        working-directory: server
+        run: go test -tags=integration ./internal/handlers -count=1
+
   edu-service:
     runs-on: ubuntu-latest
     defaults:

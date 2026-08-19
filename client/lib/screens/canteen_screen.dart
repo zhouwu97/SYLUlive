@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/api_constants.dart';
+import '../models/canteen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
@@ -146,7 +149,15 @@ class _CanteenScreenState extends State<CanteenScreen> {
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            onChanged: (value) => setState(() {}),
+            onChanged: (value) {
+              if (value.trim().isNotEmpty) {
+                final cp = context.read<CanteenProvider>();
+                if (cp.canteens.isEmpty && !cp.isLoading) {
+                  cp.loadCanteens();
+                }
+              }
+              setState(() {});
+            },
           ),
         ),
       );
@@ -154,6 +165,183 @@ class _CanteenScreenState extends State<CanteenScreen> {
   // ── Body ──────────────────────────────────────────────────────────
 
   Widget _buildBody(bool isDark) {
+    final query = _currentQuery?.toLowerCase();
+    if (query != null) {
+      return _buildSearchResults(isDark, query);
+    }
+    return _buildDiscoveryHome(isDark);
+  }
+
+  Widget _buildSearchResults(bool isDark, String query) {
+    return Consumer<CanteenProvider>(
+      builder: (_, provider, __) {
+        if (provider.isLoading && provider.canteens.isEmpty) {
+          return _buildSkeleton(isDark);
+        }
+        if (provider.canteens.isEmpty && provider.errorMessage != null) {
+          return CanteenEmptyState(
+            title: '加载失败',
+            subtitle: provider.errorMessage,
+            actionLabel: '重新加载',
+            onAction: () => provider.loadCanteens(),
+          );
+        }
+
+        final filtered = provider.canteens
+            .where((c) => c.name.toLowerCase().contains(query))
+            .toList();
+
+        if (filtered.isEmpty) {
+          return CanteenEmptyState(
+            icon: Icons.search_off_rounded,
+            title: '没有找到「$query」',
+            subtitle: '这家店还没有被收录',
+            actionLabel: '提交这家店',
+            onAction: () => _showAddCanteenSheet(isDark, query),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            _sectionHeader(isDark, '搜索结果 (${filtered.length})'),
+            for (var i = 0; i < filtered.length; i++)
+              Padding(
+                padding: EdgeInsets.only(
+                    bottom: i == filtered.length - 1 ? 0 : 12),
+                child: _buildSearchResultCard(
+                  isDark,
+                  filtered[i],
+                  rank: provider.canteens.indexOf(filtered[i]) + 1,
+                ),
+              ),
+            _buildListEndEntry(isDark),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchResultCard(bool isDark, Canteen canteen,
+      {required int rank}) {
+    return GestureDetector(
+      onTap: () => _openDetail(canteen.id, canteen.name),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark),
+          borderRadius: BorderRadius.circular(CanteenTheme.radiusLg),
+          border: Border.all(color: CanteenTheme.borderColor(isDark)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Hero(
+              tag: 'canteen-${canteen.id}',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+                child: SizedBox(
+                  width: 80,
+                  height: 76,
+                  child: canteen.image.isEmpty
+                      ? Container(
+                          color: CanteenTheme.surfaceMutedBg(isDark),
+                          alignment: Alignment.center,
+                          child: Icon(Icons.restaurant_rounded,
+                              size: 26,
+                              color: CanteenTheme.textTertiaryColor(isDark)),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: ApiConstants.fullUrl(canteen.image),
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(
+                            color: CanteenTheme.surfaceMutedBg(isDark),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.restaurant_rounded,
+                                size: 26,
+                                color: CanteenTheme.textTertiaryColor(isDark)),
+                          ),
+                          placeholder: (_, __) => Container(
+                            color: CanteenTheme.surfaceMutedBg(isDark),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    canteen.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: CanteenTheme.textPrimaryColor(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      Icon(Icons.star_rounded,
+                          size: 14, color: CanteenTheme.accentColor(isDark)),
+                      const SizedBox(width: 2),
+                      Text(
+                        canteen.averageStar > 0
+                            ? canteen.averageStar.toStringAsFixed(1)
+                            : '暂无评分',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: CanteenTheme.textPrimaryColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        canteen.ratingCount > 0
+                            ? '${canteen.ratingCount} 人评价'
+                            : '暂无评价',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CanteenTheme.textSecondaryColor(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (canteen.ratingCount > 0) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CanteenTheme.accentSoftColor(isDark),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '综合排行 #$rank',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: CanteenTheme.accentStrongColor(isDark),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscoveryHome(bool isDark) {
     return Consumer<CanteenDiscoveryProvider>(
       builder: (_, provider, __) {
         // 首次加载：骨架
@@ -170,31 +358,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
           );
         }
 
-        final query = _currentQuery?.toLowerCase();
-
-        // 搜索：过滤 feed 里的食堂/标签，保留服务端 rank（不显示假排名）。
-        final filteredFeed = query == null
-            ? provider.home.feed
-            : provider.home.feed
-                .where((f) =>
-                    f.canteenName.toLowerCase().contains(query) ||
-                    f.dishName.toLowerCase().contains(query) ||
-                    f.tags.any((t) => t.toLowerCase().contains(query)) ||
-                    f.title.toLowerCase().contains(query))
-                .toList();
-
-        final showHero = query == null && !provider.home.hero.isEmpty;
-        final showRankingEntry = query == null;
-
-        if (query != null && filteredFeed.isEmpty) {
-          return CanteenEmptyState(
-            icon: Icons.search_off_rounded,
-            title: '没有找到「$query」',
-            subtitle: '这家店还没有被收录',
-            actionLabel: '提交这家店',
-            onAction: () => _showAddCanteenSheet(isDark, query),
-          );
-        }
+        final showHero = !provider.home.hero.isEmpty;
+        final feed = provider.home.feed;
 
         final content = RefreshIndicator(
           onRefresh: () => provider.loadHome(),
@@ -212,17 +377,15 @@ class _CanteenScreenState extends State<CanteenScreen> {
                         provider.home.hero.canteenName),
                   ),
                 ),
-              if (showRankingEntry)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: CanteenRankingEntryCard(
-                    entry: provider.home.rankingEntry,
-                    onTap: _openRanking,
-                  ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: CanteenRankingEntryCard(
+                  entry: provider.home.rankingEntry,
+                  onTap: _openRanking,
                 ),
-              if (showHero || showRankingEntry)
-                _sectionHeader(isDark, query == null ? '为你推荐' : '搜索「$query」'),
-              if (filteredFeed.isEmpty)
+              ),
+              _sectionHeader(isDark, '为你推荐'),
+              if (feed.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 40),
                   child: CanteenEmptyState(
@@ -233,16 +396,16 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   ),
                 )
               else
-                for (var i = 0; i < filteredFeed.length; i++)
+                for (var i = 0; i < feed.length; i++)
                   Padding(
                     padding: EdgeInsets.only(
-                        bottom: i == filteredFeed.length - 1 ? 0 : 12),
+                        bottom: i == feed.length - 1 ? 0 : 12),
                     child: CanteenFeedItemCard(
-                      key: ValueKey(filteredFeed[i].id),
-                      item: filteredFeed[i],
+                      key: ValueKey(feed[i].id),
+                      item: feed[i],
                       onTap: () => _openDetail(
-                        filteredFeed[i].canteenId,
-                        filteredFeed[i].canteenName,
+                        feed[i].canteenId,
+                        feed[i].canteenName,
                       ),
                     ),
                   ),

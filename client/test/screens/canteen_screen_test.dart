@@ -11,23 +11,33 @@ import 'package:shenliyuan/screens/canteen_screen.dart';
 
 const _homeBody =
     '{"hero":{"type":"recommended_store","canteen_id":1,"canteen_name":"一食堂二楼",'
-    '"image":"/uploads/a.jpg","ranking_score":92.0,"average_star":4.8,"rating_count":86,'
+    '"image":"/uploads/a.jpg","ranking_score":86.0,"average_star":4.6,"rating_count":5,'
     '"title":"今日推荐","reason":"同学们常常提到\\u201c味道不错\\u201d","tags":["味道不错"]},'
-    '"ranking_entry":{"top":{"id":1,"name":"一食堂二楼","ranking_score":92.0},"total":2},'
+    '"ranking_entry":{"top":{"id":1,"name":"一食堂二楼","ranking_score":86.0},"total":3},'
     '"feed":['
     '{"id":"recent_photo:5","type":"recent_photo","canteen_id":2,"canteen_name":"二食堂",'
     '"dish_id":5,"dish_name":"红烧牛肉面","title":"同学最近实拍","images":["/uploads/p.jpg"]},'
     '{"id":"stable_choice:3","type":"stable_choice","canteen_id":3,"canteen_name":"三食堂面馆",'
-    '"ranking_score":84.0,"average_star":4.5,"rating_count":12,"title":"想吃稳一点？",'
-    '"reason":"评价样本较多，近期反馈比较稳定","tags":["分量足","出餐快"]}'
+    '"ranking_score":78.0,"average_star":4.3,"rating_count":3,"title":"想吃稳一点？",'
+    '"reason":"评价样本相对更多，结果受单条评价影响更小","tags":["分量足","出餐快"]}'
     ']}';
 
-/// 构造一个返回食堂首页数据的 Dio Adapter。
+const _canteensListBody =
+    '['
+    '{"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","verified":true,"created_by":1,"rating_count":5,"average_star":4.6,"ranking_score":86.0},'
+    '{"id":3,"name":"三食堂面馆","image":"","verified":true,"created_by":1,"rating_count":3,"average_star":4.3,"ranking_score":78.0},'
+    '{"id":4,"name":"川渝小吃（未进推荐流）","image":"/uploads/c.jpg","verified":true,"created_by":1,"rating_count":2,"average_star":4.0,"ranking_score":70.0}'
+    ']';
+
+/// 构造一个返回食堂首页与全量食堂数据的 Dio Adapter。
 Dio _buildDio() {
   final dio = Dio(BaseOptions(baseUrl: 'http://test'));
   dio.httpClientAdapter = FakeAdapter((options) async {
     if (options.path == '/canteens/home' && options.method == 'GET') {
       return _json(_homeBody);
+    }
+    if (options.path == '/canteens' && options.method == 'GET') {
+      return _json(_canteensListBody);
     }
     return ResponseBody.fromString('{"error":"not found"}', 404);
   });
@@ -82,7 +92,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requests.where((r) => r == 'GET /canteens/home'), hasLength(1));
-    // 旧整榜列表接口不应再被首页使用。
+    // 旧整榜列表接口不应在未搜索时被首页使用。
     expect(requests.where((r) => r == 'GET /canteens'), isEmpty);
     expect(find.text('校园食堂'), findsOneWidget);
   });
@@ -118,14 +128,17 @@ void main() {
     expect(find.byType(FloatingActionButton), findsNothing);
   });
 
-  testWidgets('搜索过滤信息流', (tester) async {
+  testWidgets('搜索时懒加载全量收录店铺，即使未入选推荐流也能搜到', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), '三食堂');
+    // 搜索未入选首页 Feed 的已收录店铺「川渝小吃」
+    await tester.enterText(find.byType(TextField), '川渝小吃');
     await tester.pumpAndSettle();
 
-    expect(find.text('三食堂面馆'), findsOneWidget);
+    expect(find.text('川渝小吃（未进推荐流）'), findsOneWidget);
+    expect(find.text('综合排行 #3'), findsOneWidget);
+    // 搜索结果页不应展示首页 Feed 卡片
     expect(find.text('红烧牛肉面'), findsNothing);
   });
 

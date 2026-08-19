@@ -576,21 +576,6 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	// 0. 乐观锁冲突检测（若提供了 base_updated_at 且服务端已有更新的评价版本）
-	if input.BaseUpdatedAt != nil && !input.BaseUpdatedAt.IsZero() {
-		var existing models.CanteenRating
-		if err := h.db.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&existing).Error; err == nil {
-			if existing.UpdatedAt.Truncate(time.Second).After(input.BaseUpdatedAt.Truncate(time.Second)) {
-				c.JSON(http.StatusConflict, gin.H{
-					"code":              "rating_conflict",
-					"error":             "评价已在其他设备更新，请刷新后重试",
-					"remote_updated_at": existing.UpdatedAt,
-				})
-				return
-			}
-		}
-	}
-
 	// 1. 体验标签白名单校验 & 去重 (最多 6 个)
 	var cleanedTags []string
 	seenTags := make(map[string]bool)
@@ -701,7 +686,23 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 
 	var savedRating models.CanteenRating
+	var conflictErr *time.Time
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var existing models.CanteenRating
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("canteen_id = ? AND user_id = ?", cid, userID).
+			First(&existing).Error; err == nil {
+			if input.BaseUpdatedAt != nil && !input.BaseUpdatedAt.IsZero() {
+				if existing.UpdatedAt.After(*input.BaseUpdatedAt) {
+					remoteTime := existing.UpdatedAt
+					conflictErr = &remoteTime
+					return errors.New("rating_conflict")
+				}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "canteen_id"}, {Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images", "tags", "updated_at"}),
@@ -731,6 +732,14 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 
 		return services.ClaimPublicImagePathsForUser(tx, userID, imagePaths...)
 	})
+	if conflictErr != nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":              "rating_conflict",
+			"error":             "评价已在其他设备更新，请刷新后重试",
+			"remote_updated_at": *conflictErr,
+		})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
 		return

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../config/admin_feature_flags.dart';
 import '../config/api_constants.dart';
 import '../app_bootstrap.dart';
 import '../models/post.dart';
@@ -157,6 +158,12 @@ class _HomeScreenState extends State<HomeScreen>
   set _mainVisualIndex(double value) => _mainTabLedger.visualIndex = value;
 
   Future<void> _checkAdminTasks(AuthProvider auth) async {
+    if (!AdminFeatureFlags.reviewEnabled) {
+      if (mounted && _hasAdminTasks) {
+        setState(() => _hasAdminTasks = false);
+      }
+      return;
+    }
     try {
       final futures = await Future.wait([
         auth.dio.get('/teachers/pending').catchError((_) =>
@@ -1820,7 +1827,7 @@ class _HomeScreenState extends State<HomeScreen>
               onTap: _onTabTapped,
               authProvider: authProvider,
               badges: {
-                4: _hasAdminTasks,
+                4: _hasAdminTasks && AdminFeatureFlags.reviewEnabled,
               },
             ),
       floatingActionButton: _currentIndex == 0 && useBottomNav

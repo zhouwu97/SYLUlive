@@ -417,9 +417,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     if (index >= 0) {
       final existing = _cache![index];
       if (repository != null && existing.serverId != null) {
-        try {
-          await repository!.delete(existing.serverId!);
-        } catch (_) {}
+        await repository!.delete(existing.serverId!);
       }
       _cache!.removeAt(index);
       await _persist();
@@ -428,11 +426,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     }
     var item = EmojiFavoriteItem.image(imageUrl);
     if (repository != null && _userId != null) {
-      try {
-        item = await repository!.createFromPublicImage(imageUrl);
-      } catch (_) {
-        // 服务端异常或网络不通时保留本地临时项
-      }
+      item = await repository!.createFromPublicImage(imageUrl);
     }
     _cache!.insert(0, item);
     _trimCache();

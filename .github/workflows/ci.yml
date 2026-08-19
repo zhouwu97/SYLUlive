@@ -38,6 +38,7 @@ jobs:
           --health-retries 10
     env:
       TEST_DATABASE_DSN: postgres://postgres:postgres@127.0.0.1:5432/sylulive_integration_test?sslmode=disable
+      ALLOW_DESTRUCTIVE_INTEGRATION_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
         with:

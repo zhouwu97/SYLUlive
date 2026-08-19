@@ -502,11 +502,25 @@ class EmojiFavoriteService extends ChangeNotifier {
   Future<bool> toggleImage(String imageUrl) =>
       _toggleImageRemoteAware(imageUrl.trim());
 
+  /// 冻结操作发起时的账号会话，然后 await load()，返回后校验会话未变。
+  ///
+  /// 关键：快照必须在 load() **之前** 冻结，否则若 load 期间发生切号，
+  /// 外层操作会以新账号（B）身份继续执行，把 A 发起的操作变成对 B 的操作。
+  /// 返回 null 表示 load 期间已切号——调用方必须放弃本次操作。
+  Future<_AccountSnapshot?> _loadSnapshotForOperation() async {
+    final expectedEpoch = _sessionEpoch;
+    final expectedUserId = _userId;
+    await load();
+    if (_AccountSnapshot.isStaleFor(this, expectedEpoch, expectedUserId)) {
+      return null;
+    }
+    return _AccountSnapshot.capture(this);
+  }
+
   Future<bool> _toggleStickerRemoteAware(String stickerId) async {
     if (stickerId.isEmpty) return false;
-    await load();
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) return false;
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) return false;
     final cache = List<EmojiFavoriteItem>.from(snap.items);
     final index = cache.indexWhere(
       (entry) =>
@@ -536,9 +550,8 @@ class EmojiFavoriteService extends ChangeNotifier {
 
   Future<bool> _toggleImageRemoteAware(String imageUrl) async {
     if (imageUrl.isEmpty) return false;
-    await load();
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) return false;
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) return false;
     final cache = List<EmojiFavoriteItem>.from(snap.items);
     final index = cache.indexWhere(
       (entry) =>
@@ -567,9 +580,8 @@ class EmojiFavoriteService extends ChangeNotifier {
   }
 
   Future<void> remove(EmojiFavoriteItem item) async {
-    await load();
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) return;
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) return;
     final cache = List<EmojiFavoriteItem>.from(snap.items);
     if (repository != null && item.serverId != null) {
       await repository!.delete(item.serverId!);
@@ -591,9 +603,8 @@ class EmojiFavoriteService extends ChangeNotifier {
   /// 添加收藏并置于列表首位，重复项不会产生第二条记录。
   Future<void> add(EmojiFavoriteItem item) async {
     if (item.key.endsWith(':')) return;
-    await load();
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) return;
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) return;
     await _addWithSnapshot(snap, item);
   }
 
@@ -612,8 +623,13 @@ class EmojiFavoriteService extends ChangeNotifier {
   }
 
   Future<EmojiFavoriteItem> addCustomFromUpload(int fileId) async {
-    await load();
-    final snap = _AccountSnapshot.capture(this);
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) {
+      throw const EmojiFavoriteException(
+        message: '账号已切换，请重试',
+        code: 'account_switched',
+      );
+    }
 
     var item = EmojiFavoriteItem.custom(fileId: fileId);
     if (repository != null && snap.userId != null) {
@@ -637,8 +653,8 @@ class EmojiFavoriteService extends ChangeNotifier {
         code: 'emoji_service_unavailable',
       );
     }
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) {
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) {
       throw const EmojiFavoriteException(
         message: '账号已切换，请重试',
         code: 'account_switched',
@@ -657,9 +673,8 @@ class EmojiFavoriteService extends ChangeNotifier {
 
   /// 删除失败时恢复到原始位置，用于撤销操作。
   Future<void> undo(EmojiFavoriteItem item, {int index = 0}) async {
-    await load();
-    final snap = _AccountSnapshot.capture(this);
-    if (snap.stale) return;
+    final snap = await _loadSnapshotForOperation();
+    if (snap == null) return;
     final cache = List<EmojiFavoriteItem>.from(snap.items);
     var restored = item;
     if (repository != null && snap.userId != null) {

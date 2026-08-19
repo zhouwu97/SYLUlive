@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,8 @@ func TestDishPhotoConcurrentApproval(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(20)
+
+	requireIntegrationTestDatabase(t, db)
 
 	// 隔离测试数据
 	cleanup := func() {
@@ -146,6 +149,8 @@ func TestDishPhotoConcurrentSameNameCreation(t *testing.T) {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(20)
 
+	requireIntegrationTestDatabase(t, db)
+
 	cleanup := func() {
 		db.Exec("DELETE FROM canteen_dish_photos")
 		db.Exec("DELETE FROM canteen_dishes")
@@ -259,6 +264,8 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(20)
 
+	requireIntegrationTestDatabase(t, db)
+
 	cleanup := func() {
 		db.Exec("DELETE FROM canteen_dish_photos")
 		db.Exec("DELETE FROM canteen_dishes")
@@ -331,5 +338,19 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	}
 	if okCount != 1 || conflictCount != 1 {
 		t.Fatalf("并发乐观锁断言失败: okCount=%d, conflictCount=%d, results=%v", okCount, conflictCount, results)
+	}
+}
+
+// requireIntegrationTestDatabase 是破坏性集成测试的硬保护：这些测试会清空
+// canteen_* / files / 部分 users 表，绝不能指向开发库或生产库。
+// 数据库名必须能看出是测试库（含 "test"），否则直接失败，绝不执行任何清表。
+func requireIntegrationTestDatabase(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var dbName string
+	if err := db.Raw("SELECT current_database()").Scan(&dbName).Error; err != nil {
+		t.Fatalf("read current_database: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(dbName), "test") {
+		t.Fatalf("refuse destructive integration test on database %q", dbName)
 	}
 }

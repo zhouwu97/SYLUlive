@@ -1820,7 +1820,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
 
         if (_post?.waterSectionFeatured == true) {
-          if (_post?.homeFeaturedPending == false) {
+          if (_post?.homeFeaturedPending == false && _post?.isFeatured != true) {
             entries.add(
               const AppPopupAction(
                 value: 'section_retry_home_feature',

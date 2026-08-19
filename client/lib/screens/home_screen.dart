@@ -251,6 +251,15 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  void _releaseStartupNavigationGateAfterPush() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_restoringInitialDeepPage) return;
+      setState(() {
+        _restoringInitialDeepPage = false;
+      });
+    });
+  }
+
   /// 首屏直接进入上次退出时的深层页面（私信/帖子/通知）。
   /// 使用 0ms 路由过渡与全屏门禁遮罩，确保冷启动恢复直达页面，不闪烁底层 Tab。
   void _pushRestoredDeepPage(RestorablePageState state) {
@@ -259,7 +268,6 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) setState(() => _restoringInitialDeepPage = false);
       return;
     }
-    Future<void>? future;
     switch (state.type) {
       case RestorablePageType.rootTab:
         if (mounted) setState(() => _restoringInitialDeepPage = false);
@@ -274,7 +282,7 @@ class _HomeScreenState extends State<HomeScreen>
           if (mounted) setState(() => _restoringInitialDeepPage = false);
           break;
         }
-        future = navigator.push<void>(
+        navigator.push<void>(
           PageRouteBuilder<void>(
             opaque: true,
             transitionDuration: Duration.zero,
@@ -294,13 +302,14 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
         );
+        _releaseStartupNavigationGateAfterPush();
       case RestorablePageType.post:
         final postId = state.arguments['postId'] as int?;
         if (postId == null || postId <= 0) {
           if (mounted) setState(() => _restoringInitialDeepPage = false);
           break;
         }
-        future = navigator.push<void>(
+        navigator.push<void>(
           PageRouteBuilder<void>(
             opaque: true,
             transitionDuration: Duration.zero,
@@ -309,8 +318,9 @@ class _HomeScreenState extends State<HomeScreen>
             pageBuilder: (_, __, ___) => PostDetailScreen(postId: postId),
           ),
         );
+        _releaseStartupNavigationGateAfterPush();
       case RestorablePageType.notification:
-        future = navigator.push<void>(
+        navigator.push<void>(
           PageRouteBuilder<void>(
             opaque: true,
             transitionDuration: Duration.zero,
@@ -319,22 +329,7 @@ class _HomeScreenState extends State<HomeScreen>
             pageBuilder: (_, __, ___) => const NotificationsScreen(),
           ),
         );
-    }
-
-    if (future != null) {
-      future.whenComplete(() {
-        if (mounted) {
-          setState(() {
-            _restoringInitialDeepPage = false;
-          });
-        }
-      });
-    } else {
-      if (mounted) {
-        setState(() {
-          _restoringInitialDeepPage = false;
-        });
-      }
+        _releaseStartupNavigationGateAfterPush();
     }
   }
 
@@ -1851,7 +1846,9 @@ class _HomeScreenState extends State<HomeScreen>
         normalHome,
         if (_restoringInitialDeepPage)
           const Positioned.fill(
-            child: StartupNavigationGate(),
+            child: StartupNavigationGate(
+              key: ValueKey('startup-navigation-gate'),
+            ),
           ),
       ],
     );

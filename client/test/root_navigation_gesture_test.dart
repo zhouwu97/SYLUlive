@@ -12,6 +12,7 @@ import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
+import 'package:shenliyuan/screens/notifications_screen.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
@@ -129,7 +130,7 @@ void main() {
     await _disposeHome(tester, page);
   });
 
-  testWidgets('恢复深层私信页面时先展示 StartupNavigationGate 遮罩，不闪烁底层 Tab', (tester) async {
+  testWidgets('恢复深层私信页面：Route 覆盖后即解除遮罩，返回首页绝不闪烁 Gate 与进度圈', (tester) async {
     const deepChat = RestorablePageState(
       type: RestorablePageType.chat,
       arguments: <String, dynamic>{
@@ -149,19 +150,93 @@ void main() {
     );
 
     // 第一帧（postFrameCallback 执行前）：StartupNavigationGate 遮罩存在，完全挡住底层内容
-    expect(find.byType(StartupNavigationGate), findsOneWidget);
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
 
     // 执行 postFrameCallback 后 0ms 压栈 ChatDetailScreen
     await tester.pump();
     expect(find.byType(ChatDetailScreen), findsOneWidget);
 
+    // 压栈下一帧：Route 已经覆盖，Gate 遮罩必须在此帧立即解除，无需等待深层页 pop
+    await tester.pump();
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+
     // 退出私信页面（模拟用户返回）
     Navigator.of(tester.element(find.byType(ChatDetailScreen))).pop();
     await tester.pumpAndSettle();
 
-    // 遮罩解除，正确显示 underlyingRootTab = 3 (校园)
-    expect(find.byType(StartupNavigationGate), findsNothing);
+    // 返回首页后：遮罩与转圈彻底不存在，干净展示 underlyingRootTab = 3 (校园)
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(_rootTabIndex(tester), 3);
+
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('恢复深层帖子页面：Route 覆盖后解除遮罩，pop 返回首页无残留遮罩与进度圈', (tester) async {
+    const deepPost = RestorablePageState(
+      type: RestorablePageType.post,
+      arguments: <String, dynamic>{
+        'postId': 88,
+        'underlyingRootTab': 1,
+      },
+      accountId: 1,
+    );
+
+    final page = await _pumpHome(
+      tester,
+      initialTab: 1,
+      initialDeepPage: deepPost,
+      settleAfterPump: false,
+    );
+
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
+
+    await tester.pump();
+    expect(find.byType(PostDetailScreen), findsOneWidget);
+
+    await tester.pump();
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+
+    Navigator.of(tester.element(find.byType(PostDetailScreen))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(_rootTabIndex(tester), 1);
+
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('恢复深层通知页面：Route 覆盖后解除遮罩，pop 返回首页无残留遮罩与进度圈', (tester) async {
+    const deepNotification = RestorablePageState(
+      type: RestorablePageType.notification,
+      arguments: <String, dynamic>{
+        'underlyingRootTab': 0,
+      },
+      accountId: 1,
+    );
+
+    final page = await _pumpHome(
+      tester,
+      initialTab: 0,
+      initialDeepPage: deepNotification,
+      settleAfterPump: false,
+    );
+
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
+
+    await tester.pump();
+    expect(find.byType(NotificationsScreen), findsOneWidget);
+
+    await tester.pump();
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(_rootTabIndex(tester), 0);
 
     await _disposeHome(tester, page);
   });

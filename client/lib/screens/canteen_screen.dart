@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
-import '../config/api_constants.dart';
-import '../models/canteen.dart';
+import '../models/canteen_home.dart';
 import '../providers/auth_provider.dart';
+import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
-import '../utils/responsive_util.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
-import '../widgets/canteen/canteen_ranking_card.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/canteen/canteen_hero_recommendation.dart';
+import '../widgets/canteen/canteen_ranking_entry.dart';
+import '../widgets/canteen/canteen_feed_item.dart';
 import '../widgets/image_upload_widget.dart';
 import 'canteen_detail_screen.dart';
+import 'canteen_ranking_screen.dart';
 
-/// 校园食堂页：轻量标题区 + 搜索 + 食堂排行（排版数字排名）。
-/// 无 FAB；提交入口放在搜索空态与列表末尾。
+/// 校园食堂发现首页：搜索 + 今日推荐(Hero) + 综合排行入口 + 推荐信息流。
+/// 首页帮助用户回答“现在吃什么”，完整排行榜降级为二级入口。
 class CanteenScreen extends StatefulWidget {
   const CanteenScreen({super.key});
 
@@ -30,7 +31,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<CanteenProvider>().loadCanteens();
+        context.read<CanteenDiscoveryProvider>().loadHome();
       }
     });
   }
@@ -46,10 +47,37 @@ class _CanteenScreenState extends State<CanteenScreen> {
     return query.isEmpty ? null : query;
   }
 
+  void _openRanking() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CanteenRankingScreen(),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      // 返回时轻量刷新首页（评价可能已变化）。
+      context.read<CanteenDiscoveryProvider>().loadHome();
+    });
+  }
+
+  void _openDetail(int canteenId, String canteenName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDetailScreen(
+          canteenId: canteenId,
+          canteenName: canteenName,
+        ),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      context.read<CanteenDiscoveryProvider>().loadHome();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = CanteenTheme.accentColor(isDark);
 
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
@@ -79,82 +107,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
             ),
           ),
           _buildSearchBar(isDark),
-          _buildSectionHeader(isDark, accent),
-          Expanded(child: _buildCanteenList(isDark)),
-        ],
-      ),
-    );
-  }
-
-  // ── Section header ────────────────────────────────────────────────
-
-  Widget _buildSectionHeader(bool isDark, Color accent) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
-      child: Row(
-        children: [
-          Text(
-            '食堂排行',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: CanteenTheme.textPrimaryColor(isDark),
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => _showSortInfo(isDark, accent),
-            child: Row(
-              children: [
-                Text(
-                  '综合排序',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: CanteenTheme.textTertiaryColor(isDark),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSortInfo(bool isDark, Color accent) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: CanteenTheme.surfaceBg(isDark),
-        title: Text(
-          '综合排序',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: CanteenTheme.textPrimaryColor(isDark),
-          ),
-        ),
-        content: const Text(
-          '综合排序采用加权评分，兼顾评分与评价人数，降低少量评价造成的排名波动。菜品和实拍数量仅供参考，不参与评分计算。',
-          style: TextStyle(fontSize: 13, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              '知道了',
-              style: TextStyle(
-                color: CanteenTheme.accentStrongColor(isDark),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
+          Expanded(child: _buildBody(isDark)),
         ],
       ),
     );
@@ -199,116 +152,111 @@ class _CanteenScreenState extends State<CanteenScreen> {
         ),
       );
 
-  // ── Canteen list ──────────────────────────────────────────────────
+  // ── Body ──────────────────────────────────────────────────────────
 
-  Widget _buildCanteenList(bool isDark) {
-    final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
-
-    return Consumer<CanteenProvider>(
+  Widget _buildBody(bool isDark) {
+    return Consumer<CanteenDiscoveryProvider>(
       builder: (_, provider, __) {
-        final query = _currentQuery?.toLowerCase();
-        final canteens = query == null
-            ? provider.canteens
-            : provider.canteens
-                .where((m) => m.name.toLowerCase().contains(query))
-                .toList();
-
-        // 首次加载：轻量骨架，不显示中央 spinner
-        if (provider.isLoading && provider.canteens.isEmpty) {
-          return _buildListSkeleton(isDark);
+        // 首次加载：骨架
+        if (provider.homeInitialLoading && !provider.hasHomeData) {
+          return _buildSkeleton(isDark);
         }
 
-        if (!provider.isLoading &&
-            provider.canteens.isEmpty &&
-            provider.errorMessage != null) {
+        if (!provider.hasHomeData && provider.homeError != null) {
           return CanteenEmptyState(
             title: '加载失败',
-            subtitle: provider.errorMessage,
+            subtitle: provider.homeError,
             actionLabel: '重新加载',
-            onAction: () => context.read<CanteenProvider>().loadCanteens(),
+            onAction: () => provider.loadHome(),
           );
         }
 
-        // 搜索无结果 → 提交 CTA
-        if (canteens.isEmpty && !provider.isLoading) {
-          if (query != null) {
-            return CanteenEmptyState(
-              icon: Icons.search_off_rounded,
-              title: '没有找到「$query」',
-              subtitle: '这家店还没有被收录',
-              actionLabel: '提交这家店',
-              onAction: () => _showAddCanteenSheet(isDark, query),
-            );
-          }
+        final query = _currentQuery?.toLowerCase();
+
+        // 搜索：过滤 feed 里的食堂/标签，保留服务端 rank（不显示假排名）。
+        final filteredFeed = query == null
+            ? provider.home.feed
+            : provider.home.feed
+                .where((f) =>
+                    f.canteenName.toLowerCase().contains(query) ||
+                    f.dishName.toLowerCase().contains(query) ||
+                    f.tags.any((t) => t.toLowerCase().contains(query)) ||
+                    f.title.toLowerCase().contains(query))
+                .toList();
+
+        final showHero = query == null && !provider.home.hero.isEmpty;
+        final showRankingEntry = query == null;
+
+        if (query != null && filteredFeed.isEmpty) {
           return CanteenEmptyState(
-            title: '暂无食堂',
-            subtitle: '成为第一个收录食堂的同学吧',
-            actionLabel: '提交食堂',
-            onAction: () => _showAddCanteenSheet(isDark),
+            icon: Icons.search_off_rounded,
+            title: '没有找到「$query」',
+            subtitle: '这家店还没有被收录',
+            actionLabel: '提交这家店',
+            onAction: () => _showAddCanteenSheet(isDark, query),
           );
         }
 
-        Widget buildCard(int index) {
-          final canteen = canteens[index];
-          return CanteenRankingCard(
-            rank: index + 1,
-            canteenId: canteen.id,
-            name: canteen.name,
-            imageUrl: canteen.image.isNotEmpty
-                ? ApiConstants.fullUrl(canteen.image)
-                : '',
-            averageStar: canteen.averageStar,
-            ratingCount: canteen.ratingCount,
-            dishCount: canteen.dishCount,
-            dishPhotoCount: canteen.dishPhotoCount,
-            onLongPress: isAdmin ? () => _confirmDelete(canteen) : null,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CanteenDetailScreen(
-                  canteenId: canteen.id,
-                  canteenName: canteen.name,
-                  dishCount: canteen.dishCount,
-                  dishPhotoCount: canteen.dishPhotoCount,
+        final content = RefreshIndicator(
+          onRefresh: () => provider.loadHome(),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              if (showHero)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: CanteenHeroRecommendationCard(
+                    hero: provider.home.hero,
+                    onTap: () => _openDetail(
+                        provider.home.hero.canteenId,
+                        provider.home.hero.canteenName),
+                  ),
                 ),
-              ),
-            ).then((_) {
-              if (!mounted) return;
-              context.read<CanteenProvider>().loadCanteens();
-            }),
-          );
-        }
-
-        final listContent = RefreshIndicator(
-          onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
-          child: ResponsiveUtil.isDesktop(context)
-              ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                  crossAxisCount:
-                      MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 16,
-                  itemCount: canteens.length + 1,
-                  itemBuilder: (_, index) {
-                    if (index < canteens.length) return buildCard(index);
-                    return _buildListEndEntry(isDark);
-                  },
+              if (showRankingEntry)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: CanteenRankingEntryCard(
+                    entry: provider.home.rankingEntry,
+                    onTap: _openRanking,
+                  ),
+                ),
+              if (showHero || showRankingEntry)
+                _sectionHeader(isDark, query == null ? '为你推荐' : '搜索「$query」'),
+              if (filteredFeed.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 40),
+                  child: CanteenEmptyState(
+                    title: '暂无推荐',
+                    subtitle: '成为第一个收录食堂的同学吧',
+                    actionLabel: '提交食堂',
+                    onAction: () => _showAddCanteenSheet(isDark),
+                  ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                  itemCount: canteens.length + 1,
-                  itemBuilder: (_, index) {
-                    if (index < canteens.length) return buildCard(index);
-                    return _buildListEndEntry(isDark);
-                  },
-                ),
+              else
+                for (var i = 0; i < filteredFeed.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                        bottom: i == filteredFeed.length - 1 ? 0 : 12),
+                    child: CanteenFeedItemCard(
+                      key: ValueKey(filteredFeed[i].id),
+                      item: filteredFeed[i],
+                      onTap: () => _openDetail(
+                        filteredFeed[i].canteenId,
+                        filteredFeed[i].canteenName,
+                      ),
+                    ),
+                  ),
+              _buildListEndEntry(isDark),
+            ],
+          ),
         );
 
-        if (provider.isLoading && provider.canteens.isNotEmpty) {
+        // 已有数据刷新：顶部轻量进度条（stale-while-refresh）
+        if (provider.homeRefreshing) {
           return Stack(
             children: [
-              listContent,
+              content,
               const Positioned(
                 top: 0,
                 left: 0,
@@ -318,61 +266,30 @@ class _CanteenScreenState extends State<CanteenScreen> {
             ],
           );
         }
-
-        return listContent;
+        return content;
       },
     );
   }
 
-  Widget _buildListSkeleton(bool isDark) {
-    final muted = CanteenTheme.surfaceMutedBg(isDark);
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 4,
-      separatorBuilder: (_, __) => const SizedBox(height: 18),
-      itemBuilder: (_, __) => Row(
+  Widget _sectionHeader(bool isDark, String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
+      child: Row(
         children: [
-          Container(
-            width: 104,
-            height: 96,
-            decoration: BoxDecoration(
-              color: muted,
-              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: CanteenTheme.textPrimaryColor(isDark),
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 120,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: muted,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  width: 96,
-                  height: 13,
-                  decoration: BoxDecoration(
-                    color: muted,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: 130,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: muted,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-              ],
+          const Spacer(),
+          Text(
+            '信息流基于真实评价与实拍',
+            style: TextStyle(
+              fontSize: 11,
+              color: CanteenTheme.textTertiaryColor(isDark),
             ),
           ),
         ],
@@ -380,7 +297,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
-  // 列表末尾的“提交新食堂”入口（无搜索时）
+  // 列表末尾的“提交新食堂”入口
   Widget _buildListEndEntry(bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
@@ -409,35 +326,57 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
-  Future<void> _confirmDelete(Canteen canteen) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除店铺'),
-        content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+  Widget _buildSkeleton(bool isDark) {
+    final muted = CanteenTheme.surfaceMutedBg(isDark);
+    Widget block({double? w, double? h}) => Container(
+          width: w,
+          height: h ?? 16,
+          decoration: BoxDecoration(
+            color: muted,
+            borderRadius: BorderRadius.circular(8),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+        );
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (_, __) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          block(w: 120),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: muted,
+                  borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    block(w: 110),
+                    const SizedBox(height: 10),
+                    block(w: 90, h: 13),
+                    const SizedBox(height: 8),
+                    block(w: 130),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-    final success =
-        await context.read<CanteenProvider>().deleteCanteen(canteen.id);
-    if (success && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('删除成功')));
-      context.read<CanteenProvider>().loadCanteens();
-    }
   }
 
-  // ── Add canteen sheet（保留原逻辑，token 换为 CanteenTheme）─────────
+  // ── Add canteen sheet（沿用原逻辑，token 换为 CanteenTheme）─────────
 
   Future<void> _showAddCanteenSheet(bool isDark, [String? prefill]) async {
     final auth = context.read<AuthProvider>();
@@ -496,7 +435,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                               borderRadius:
                                   BorderRadius.circular(CanteenTheme.radiusMd),
                             ),
-                            child: Icon(Icons.storefront_rounded, color: accent),
+                            child:
+                                Icon(Icons.storefront_rounded, color: accent),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -586,8 +526,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                   color: CanteenTheme.borderColor(isDark),
                                 ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(CanteenTheme.radiusMd),
+                                  borderRadius: BorderRadius.circular(
+                                      CanteenTheme.radiusMd),
                                 ),
                               ),
                               child: const Text('取消'),
@@ -629,7 +569,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                       if (!mounted || !sheetContext.mounted) {
                                         return;
                                       }
-                                      setModalState(() => submitting = false);
+                                      setModalState(
+                                          () => submitting = false);
                                       if (success) {
                                         Navigator.pop(sheetContext);
                                         ScaffoldMessenger.of(context)
@@ -640,8 +581,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                           ),
                                         );
                                         await context
-                                            .read<CanteenProvider>()
-                                            .loadCanteens();
+                                            .read<CanteenDiscoveryProvider>()
+                                            .loadHome();
                                       } else {
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
@@ -656,8 +597,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size.fromHeight(48),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(CanteenTheme.radiusMd),
+                                  borderRadius: BorderRadius.circular(
+                                      CanteenTheme.radiusMd),
                                 ),
                               ),
                               child: submitting

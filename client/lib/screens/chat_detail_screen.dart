@@ -535,28 +535,38 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _sendSticker(AppSticker sticker) {
     if (!_canStartOutgoingMessage) return;
     _reserveFirstContactAllowanceIfNeeded();
-    final sendFuture = context.read<MessageProvider>().sendStickerMessage(
+    final provider = context.read<MessageProvider>();
+    final sendFuture = provider.sendStickerMessage(
           widget.targetUser.id,
           sticker.id,
           senderId: context.read<AuthProvider>().user?.id,
         );
     _lastMessageActivity = DateTime.now();
     unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
-    unawaited(_completeOutgoingSend(sendFuture));
+    unawaited(_completeOutgoingSend(sendFuture).then((_) {
+      if (mounted && provider.messageError != null) {
+        AppFeedback.showSnackBar(context, provider.messageError!, isError: true);
+      }
+    }));
   }
 
   /// 收藏图片/GIF 点击即独立发送，不清空输入框里已输入的文字。
   void _sendFavorite(EmojiFavoriteItem favorite) {
     if (!_canStartOutgoingMessage) return;
     _reserveFirstContactAllowanceIfNeeded();
-    final sendFuture = context.read<MessageProvider>().sendFavoriteImageMessage(
+    final provider = context.read<MessageProvider>();
+    final sendFuture = provider.sendFavoriteImageMessage(
           widget.targetUser.id,
           favorite,
           senderId: context.read<AuthProvider>().user?.id,
         );
     _lastMessageActivity = DateTime.now();
     unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
-    unawaited(_completeOutgoingSend(sendFuture));
+    unawaited(_completeOutgoingSend(sendFuture).then((_) {
+      if (mounted && provider.messageError != null) {
+        AppFeedback.showSnackBar(context, provider.messageError!, isError: true);
+      }
+    }));
   }
 
   Future<void> _pickAndSendImage() async {

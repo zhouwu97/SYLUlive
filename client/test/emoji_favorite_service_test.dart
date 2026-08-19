@@ -159,4 +159,83 @@ void main() {
     expect(items.single.stickerId, 'account-8-sticker');
     expect(fetchCount, 2);
   });
+
+  test('migrates v1 favorites to v2 when user logs in and marks migration flag',
+      () async {
+    AppPreferencesStore.setMockInitialValues({
+      EmojiFavoriteService.storageKey: jsonEncode([
+        {'type': 'sticker', 'sticker_id': 'legacy-sticker'},
+        {'type': 'image', 'image_url': '/uploads/legacy.png'},
+      ]),
+    });
+
+    final service = EmojiFavoriteService(
+      userId: '100',
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    final items = await service.load();
+    expect(items, hasLength(2));
+    expect(items.map((e) => e.key), [
+      'sticker:legacy-sticker',
+      'image:/uploads/legacy.png',
+    ]);
+
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(
+      preferences.getBool('emoji_favorites_v1_migrated_100'),
+      isTrue,
+    );
+    // Legacy storageKey remains intact for disaster recovery
+    expect(preferences.getString(EmojiFavoriteService.storageKey), isNotNull);
+  });
+
+  test('toggleImage calls repository to create cloud favorite when user logged in',
+      () async {
+    AppPreferencesStore.setMockInitialValues({});
+    var createdFromPublicImage = false;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.path == '/emoji/favorites/from-public-image') {
+          createdFromPublicImage = true;
+          return ResponseBody.fromString(
+            jsonEncode({
+              'id': 99,
+              'kind': 'custom',
+              'file_id': 123,
+              'url': '/api/emoji/favorites/99/file',
+              'thumbnail_url': '/api/emoji/favorites/99/thumbnail',
+            }),
+            201,
+            headers: {
+              Headers.contentTypeHeader: ['application/json']
+            },
+          );
+        }
+        return ResponseBody.fromString(
+          jsonEncode({
+            'items': [],
+            'quota_used': 0,
+            'quota_limit': 52428800,
+            'favorite_limit': 80,
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+
+    final service = EmojiFavoriteService(
+      userId: '100',
+      repository: EmojiFavoriteRepository(dio),
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    expect(await service.toggleImage('/uploads/post_pic.png'), isTrue);
+    expect(createdFromPublicImage, isTrue);
+    final items = await service.load();
+    expect(items.first.serverId, 99);
+  });
 }
+

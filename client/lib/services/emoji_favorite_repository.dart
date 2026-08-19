@@ -100,6 +100,16 @@ class EmojiFavoriteRepository {
     return _itemFromResponse(response.data);
   }
 
+  Future<EmojiFavoriteItem> createFromPublicImage(String imageUrl) async {
+    final response = await _request(
+      () => _dio.post(
+        '/emoji/favorites/from-public-image',
+        data: <String, dynamic>{'image_url': imageUrl},
+      ),
+    );
+    return _itemFromResponse(response.data);
+  }
+
   Future<void> delete(int favoriteId) async {
     await _request(() => _dio.delete('/emoji/favorites/$favoriteId'));
   }

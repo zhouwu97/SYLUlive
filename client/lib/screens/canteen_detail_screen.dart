@@ -164,9 +164,62 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       );
     }
     if (_canteenData == null || _canteenData!['canteen'] == null) {
+      final errorMessage =
+          context.watch<CanteenProvider>().errorMessage ?? '加载食堂详情失败，请检查网络后重试';
       return Scaffold(
-        appBar: AppBar(title: Text(widget.canteenName)),
-        body: const Center(child: Text('加载失败')),
+        backgroundColor: CanteenTheme.pageBg(isDark),
+        appBar: AppBar(
+          title: Text(widget.canteenName),
+          backgroundColor: CanteenTheme.surfaceBg(isDark),
+        ),
+        body: RefreshIndicator(
+          onRefresh: _loadInitial,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.wifi_off_rounded,
+                          size: 56,
+                          color: isDark ? Colors.white38 : Colors.black38,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          errorMessage,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: _loadInitial,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('重新加载'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

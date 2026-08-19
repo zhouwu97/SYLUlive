@@ -73,8 +73,8 @@ class CanteenReviewDraftRepository {
 
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) return null;
-      final draft = CanteenReviewDraft.fromJson(decoded);
+      if (decoded is! Map) return null;
+      final draft = CanteenReviewDraft.fromJson(Map<String, dynamic>.from(decoded));
       if (draft.isEmpty) {
         await store.remove(key);
         return null;

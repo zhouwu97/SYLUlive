@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -528,11 +529,12 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 
 	var input struct {
-		Star              int      `json:"star" binding:"required,min=1,max=5"`
-		Comment           string   `json:"comment" binding:"max=500"`
-		Images            string   `json:"images"`
-		Tags              []string `json:"tags"`
-		RecommendedDishes []string `json:"recommended_dishes"`
+		Star              int        `json:"star" binding:"required,min=1,max=5"`
+		Comment           string     `json:"comment" binding:"max=500"`
+		Images            string     `json:"images"`
+		Tags              []string   `json:"tags"`
+		RecommendedDishes []string   `json:"recommended_dishes"`
+		BaseUpdatedAt     *time.Time `json:"base_updated_at"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -572,6 +574,21 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 			"code":  "edu_binding_required",
 		})
 		return
+	}
+
+	// 0. 乐观锁冲突检测（若提供了 base_updated_at 且服务端已有更新的评价版本）
+	if input.BaseUpdatedAt != nil && !input.BaseUpdatedAt.IsZero() {
+		var existing models.CanteenRating
+		if err := h.db.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&existing).Error; err == nil {
+			if existing.UpdatedAt.Truncate(time.Second).After(input.BaseUpdatedAt.Truncate(time.Second)) {
+				c.JSON(http.StatusConflict, gin.H{
+					"code":              "rating_conflict",
+					"error":             "评价已在其他设备更新，请刷新后重试",
+					"remote_updated_at": existing.UpdatedAt,
+				})
+				return
+			}
+		}
 	}
 
 	// 1. 体验标签白名单校验 & 去重 (最多 6 个)
@@ -672,6 +689,7 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
+	now := time.Now()
 	rating := models.CanteenRating{
 		CanteenID: uint(cid),
 		UserID:    userID,
@@ -679,29 +697,29 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		Comment:   input.Comment,
 		Images:    normalizedImagesJSON,
 		Tags:      tagsJSON,
+		UpdatedAt: now,
 	}
 
+	var savedRating models.CanteenRating
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "canteen_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images", "tags"}),
+			DoUpdates: clause.AssignmentColumns([]string{"star", "comment", "images", "tags", "updated_at"}),
 		}).Create(&rating).Error; err != nil {
 			return err
 		}
 
-		var savedRating models.CanteenRating
 		if err := tx.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&savedRating).Error; err != nil {
 			return err
 		}
-		rating.ID = savedRating.ID
 
-		if err := tx.Where("rating_id = ?", rating.ID).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
+		if err := tx.Where("rating_id = ?", savedRating.ID).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
 			return err
 		}
 
 		for _, recItem := range cleanedRecs {
 			rec := models.CanteenRatingDishRecommendation{
-				RatingID:       rating.ID,
+				RatingID:       savedRating.ID,
 				DishName:       recItem.DishName,
 				NormalizedName: recItem.NormalizedName,
 				DishID:         recItem.DishID,
@@ -718,9 +736,9 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	rating.RecommendedDishNames = cleanedDishNames
+	savedRating.RecommendedDishNames = cleanedDishNames
 	canteenDiscoveryCache.Invalidate() // 评价变更影响排行/首页
-	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": rating})
+	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": savedRating})
 }
 
 // DeleteCanteen 管理员删除食堂（驳回并扣除10经验）

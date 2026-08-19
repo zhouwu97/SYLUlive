@@ -328,4 +328,35 @@ void main() {
     // 无独立卡片容器
     expect(find.byType(Card), findsNothing);
   });
+
+  testWidgets('首屏加载失败时展示重新加载按钮与错误提示，点击重试可恢复数据', (tester) async {
+    var callCount = 0;
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        callCount++;
+        if (callCount == 1) {
+          return _json('{"error":"network error"}', 500);
+        }
+        return _json(_detailJson(ratingCount: 1), 200);
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_buildApp(dio));
+    await tester.pumpAndSettle();
+
+    // 验证：显示错误提示与重新加载按钮
+    expect(find.widgetWithText(FilledButton, '重新加载'), findsOneWidget);
+    expect(find.byIcon(Icons.wifi_off_rounded), findsOneWidget);
+
+    // 点击“重新加载”
+    await tester.tap(find.widgetWithText(FilledButton, '重新加载'));
+    await tester.pumpAndSettle();
+
+    // 验证：重试成功，正常渲染食堂详情与评价区
+    expect(find.text('我家有面'), findsOneWidget);
+    expect(find.text('用户评价'), findsOneWidget);
+    expect(callCount, 2);
+  });
 }

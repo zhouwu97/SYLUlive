@@ -106,7 +106,7 @@ class PostReplyComposerController extends ChangeNotifier {
     }
 
     if (inset > 0) {
-      if (inset > _stableKeyboardHeight) {
+      if (inset >= 100) {
         _stableKeyboardHeight = inset;
       }
       if (_bottomPanel != PostReplyBottomPanel.emoji) {

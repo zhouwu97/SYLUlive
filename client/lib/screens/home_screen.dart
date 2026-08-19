@@ -9,26 +9,31 @@ import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
 import '../app_bootstrap.dart';
 import '../models/post.dart';
+import '../models/startup_destination.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
-import '../services/diagnostic_log_service.dart';
 import '../services/root_page_state_service.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
+import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
-import '../utils/screen_swipe.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/responsive_util.dart';
+import '../utils/tab_transition_ledger.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
 import 'campus_screen.dart';
 import 'profile_screen.dart';
+import 'chat_detail_screen.dart';
+import 'post_detail_screen.dart';
+import 'notifications_screen.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
 import 'publish/publish_type_sheet.dart';
@@ -48,9 +53,28 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   await initializeUpdateCheck();
 }
 
+/// 公告中断语义：只有 urgent 可以弹窗主动打断用户。
+///
+/// urgent → modal；important → banner / badge；normal → badge / 公告中心。
+/// important + modal 属于无效组合（服务端 has_urgent 也只统计 urgent），
+/// 客户端弹窗候选严格收敛为 urgent。
+@visibleForTesting
+bool isModalAnnouncementCandidate(Map<String, dynamic> item) {
+  final priority = item['priority']?.toString() ?? '';
+  final displayMode = item['display_mode']?.toString() ?? '';
+  return priority == 'urgent' &&
+      (displayMode == 'modal' || displayMode.isEmpty);
+}
+
 class HomeScreen extends StatefulWidget {
   final int initialTab;
-  const HomeScreen({super.key, this.initialTab = 0});
+
+  /// `lastPage` 模式下首屏要直接进入的深层页面（私信/帖子/通知）。
+  ///
+  /// 非空时 HomeScreen 以正确 [initialTab] 打底，在首帧后推入该页面，
+  /// 返回后落在对应的 root tab。
+  final RestorablePageState? initialDeepPage;
+  const HomeScreen({super.key, this.initialTab = 0, this.initialDeepPage});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -77,22 +101,33 @@ class HomeTabKeepAliveStage extends StatelessWidget {
   }
 }
 
+/// 启动恢复遮罩：在首屏深层页面（私信/帖子/通知）未完全覆盖前呈现，
+/// 彻底避免底层 root tab 闪烁 1 帧。
+class StartupNavigationGate extends StatelessWidget {
+  const StartupNavigationGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
-  int _currentIndex = 0;
+    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
+  late final TabTransitionLedger _mainTabLedger;
+  PageRoute<dynamic>? _subscribedRoute;
   bool _publishOpening = false;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
-  late final Set<int> _visitedTabs;
   final Map<int, Widget> _tabPages = {};
   late final AnimationController _mainTabController;
   late final AnimationController _contentTabController;
+  late final ValueNotifier<double> _mainVisualIndexListenable;
   Animation<double>? _mainTabAnimation;
-  double _mainVisualIndex = 0;
   double _mainAnimationStartVisualIndex = 0;
   double _mainAnimationEndVisualIndex = 0;
-  int? _mainTargetIndex;
-  int _tabTransitionSerial = 0;
-  double _mainSwipeDx = 0;
   Timer? _announcementTimer;
   Timer? _announcementRetryTimer;
   Timer? _initialUpdateFallbackTimer;
@@ -103,11 +138,23 @@ class _HomeScreenState extends State<HomeScreen>
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
   late final bool _hasWidgetTabOverride;
+  bool _restoringInitialDeepPage = false;
 
   // Unread badge state
   int _unreadBadgeCount = 0;
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
+
+  int get _currentIndex => _mainTabLedger.currentIndex;
+  set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
+  Set<int> get _visitedTabs => _mainTabLedger.visitedTabs;
+  Set<int> get _revealedTabs => _mainTabLedger.revealedTabs;
+  int? get _mainTargetIndex => _mainTabLedger.targetIndex;
+  set _mainTargetIndex(int? value) => _mainTabLedger.targetIndex = value;
+  int get _tabTransitionSerial => _mainTabLedger.serial;
+  set _tabTransitionSerial(int value) => _mainTabLedger.serial = value;
+  double get _mainVisualIndex => _mainTabLedger.visualIndex;
+  set _mainVisualIndex(double value) => _mainTabLedger.visualIndex = value;
 
   Future<void> _checkAdminTasks(AuthProvider auth) async {
     try {
@@ -154,81 +201,135 @@ class _HomeScreenState extends State<HomeScreen>
   // Fallback polling interval (keep until JPush trigger is implemented)
   static const _announcementPollInterval = Duration(minutes: 15);
   static const _announcementRetryDelay = Duration(seconds: 15);
-  static const _mainSwitchDistanceThreshold = 0.30;
-  static const _mainSwitchVelocityThreshold = 620.0;
-  Offset? _navigationSwipeStart;
-  DateTime? _navigationSwipeStartTime;
-  int? _navigationSwipePointer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _hasWidgetTabOverride = consumeWidgetTabSwitch();
-    _currentIndex = _hasWidgetTabOverride ? 2 : widget.initialTab;
+    _mainTabLedger = TabTransitionLedger(
+      itemCount: 5,
+      initialIndex:
+          (_hasWidgetTabOverride ? 2 : widget.initialTab).clamp(0, 4).toInt(),
+    );
     _mainVisualIndex = _currentIndex.toDouble();
-    _visitedTabs = {_currentIndex};
+    currentHomeTabIndex.value = _currentIndex;
+    _mainVisualIndexListenable = ValueNotifier(_mainVisualIndex);
     _mainTabController = AnimationController(
       vsync: this,
-      duration: AppMotion.nav,
+      duration: AppMotion.tab,
     )..addListener(_handleMainTabAnimationTick);
     _contentTabController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: AppMotion.normal,
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!_hasWidgetTabOverride) {
-        await _restoreRootTab();
+    // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
+    // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
+    final deepPage = widget.initialDeepPage;
+    _restoringInitialDeepPage = deepPage != null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _bootstrapHome();
+      if (deepPage != null) {
+        _pushRestoredDeepPage(deepPage);
       }
-      if (mounted) _bootstrapHome();
     });
   }
 
-  Future<void> _restoreRootTab() async {
-    try {
-      final restored = await RootPageStateStore.instance.readRootTab();
-      if (!mounted || restored == null || restored == _currentIndex) return;
+  void _releaseStartupNavigationGateAfterPush() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_restoringInitialDeepPage) return;
       setState(() {
-        _currentIndex = restored;
-        _mainVisualIndex = restored.toDouble();
-        _mainAnimationStartVisualIndex = _mainVisualIndex;
-        _mainAnimationEndVisualIndex = _mainVisualIndex;
-        _visitedTabs.add(restored);
-        _getOrCreateTabPage(restored);
+        _restoringInitialDeepPage = false;
       });
-      _updateBackgroundForTab(restored);
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '页面状态恢复失败',
-        summary: '无法恢复上次首页位置',
-        detail: error.toString(),
-        eventCode: 'navigation_root_state_restore_failed',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'failure',
-      );
-    }
+    });
   }
 
-  Future<void> _persistRootTab(int index) async {
-    try {
-      await RootPageStateStore.instance.saveRootTab(index);
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '页面状态保存失败',
-        summary: '无法保存当前首页位置',
-        detail: error.toString(),
-        eventCode: 'navigation_root_state_save_failed',
-        category: 'navigation',
-        operation: 'save',
-        result: 'failure',
-      );
+  /// 首屏直接进入上次退出时的深层页面（私信/帖子/通知）。
+  /// 使用 0ms 路由过渡与全屏门禁遮罩，确保冷启动恢复直达页面，不闪烁底层 Tab。
+  void _pushRestoredDeepPage(RestorablePageState state) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      if (mounted) setState(() => _restoringInitialDeepPage = false);
+      return;
+    }
+    switch (state.type) {
+      case RestorablePageType.rootTab:
+        if (mounted) setState(() => _restoringInitialDeepPage = false);
+        return;
+      case RestorablePageType.chat:
+        final conversationId = state.arguments['conversationId'] as int?;
+        final targetUserId = state.arguments['targetUserId'] as int?;
+        if (conversationId == null ||
+            conversationId <= 0 ||
+            targetUserId == null ||
+            targetUserId <= 0) {
+          if (mounted) setState(() => _restoringInitialDeepPage = false);
+          break;
+        }
+        navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            settings: RouteSettings(
+              name: '/messages/conversations/$conversationId',
+            ),
+            pageBuilder: (_, __, ___) => ChatDetailScreen(
+              conversationId: conversationId,
+              targetUser: User(
+                id: targetUserId,
+                studentId: '',
+                nickname: (state.arguments['targetNickname'] ?? '').toString(),
+                avatar: (state.arguments['targetAvatar'] ?? '').toString(),
+                createdAt: DateTime.now(),
+              ),
+            ),
+          ),
+        );
+        _releaseStartupNavigationGateAfterPush();
+      case RestorablePageType.post:
+        final postId = state.arguments['postId'] as int?;
+        if (postId == null || postId <= 0) {
+          if (mounted) setState(() => _restoringInitialDeepPage = false);
+          break;
+        }
+        navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            settings: const RouteSettings(name: '/post/detail'),
+            pageBuilder: (_, __, ___) => PostDetailScreen(postId: postId),
+          ),
+        );
+        _releaseStartupNavigationGateAfterPush();
+      case RestorablePageType.notification:
+        navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            settings: const RouteSettings(name: '/notifications'),
+            pageBuilder: (_, __, ___) => const NotificationsScreen(),
+          ),
+        );
+        _releaseStartupNavigationGateAfterPush();
     }
   }
 
@@ -281,10 +382,15 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     widgetTabSwitch.removeListener(_onWidgetTabSwitch);
+    final subscribedRoute = _subscribedRoute;
+    if (subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+    }
     _mainTabController
       ..removeListener(_handleMainTabAnimationTick)
       ..dispose();
     _contentTabController.dispose();
+    _mainVisualIndexListenable.dispose();
     _announcementTimer?.cancel();
     _announcementRetryTimer?.cancel();
     _initialUpdateFallbackTimer?.cancel();
@@ -302,10 +408,42 @@ class _HomeScreenState extends State<HomeScreen>
       _currentIndex = widget.initialTab;
       _mainTargetIndex = null;
       _mainVisualIndex = _currentIndex.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
       _mainAnimationStartVisualIndex = _mainVisualIndex;
       _mainAnimationEndVisualIndex = _mainVisualIndex;
       _visitedTabs.add(_currentIndex);
+      _revealedTabs.add(_currentIndex);
       _getOrCreateTabPage(_currentIndex);
+      currentHomeTabIndex.value = _currentIndex;
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // 从深层页面（私信/帖子/通知）返回：底层 root tab 重新可见，
+    // 由它自己保存「上次退出页面」，替代私信里硬编码的课表 index。
+    _saveCurrentTabAsLastPage();
+  }
+
+  /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。
+  /// 最佳努力：读取失败（如测试用 Fake Provider）时静默跳过，不影响页面。
+  Future<void> _saveCurrentTabAsLastPage() async {
+    try {
+      if (context.read<ThemeProvider>().startupDestination !=
+          StartupDestinationMode.lastPage) {
+        return;
+      }
+      final accountId = context.read<AuthProvider>().user?.id;
+      if (accountId == null || accountId <= 0) return;
+      await RootPageStateStore.instance.saveLastPage(
+        RestorablePageState(
+          type: RestorablePageType.rootTab,
+          arguments: <String, dynamic>{'index': _currentIndex},
+          accountId: accountId,
+        ),
+      );
+    } catch (_) {
+      // 忽略：不影响 Tab 切换。
     }
   }
 
@@ -469,20 +607,8 @@ class _HomeScreenState extends State<HomeScreen>
           final id = _announcementId(item);
           if (_dismissedAnnouncementIds.contains(id)) return false;
           if (_seenAnnouncementIds.contains(id)) return false;
-          final priority = item['priority']?.toString() ?? '';
-          final displayMode = item['display_mode']?.toString() ?? '';
-          return (priority == 'urgent' || priority == 'important') &&
-              (displayMode == 'modal' || displayMode.isEmpty);
+          return isModalAnnouncementCandidate(item);
         }).toList();
-
-        // Sort: urgent before important
-        candidates.sort((a, b) {
-          final pa = a['priority']?.toString() ?? '';
-          final pb = b['priority']?.toString() ?? '';
-          if (pa == 'urgent' && pb != 'urgent') return -1;
-          if (pa != 'urgent' && pb == 'urgent') return 1;
-          return 0;
-        });
 
         if (candidates.isNotEmpty) {
           final top = candidates.first;
@@ -1436,11 +1562,10 @@ class _HomeScreenState extends State<HomeScreen>
     if (_mainTargetIndex == null || animation == null || !mounted) return;
 
     final progress = animation.value.clamp(0.0, 1.0);
-    setState(() {
-      _mainVisualIndex = _mainAnimationStartVisualIndex +
-          (_mainAnimationEndVisualIndex - _mainAnimationStartVisualIndex) *
-              progress;
-    });
+    _mainVisualIndex = _mainAnimationStartVisualIndex +
+        (_mainAnimationEndVisualIndex - _mainAnimationStartVisualIndex) *
+            progress;
+    _mainVisualIndexListenable.value = _mainVisualIndex;
   }
 
   void _updateBackgroundForTab(int index) {
@@ -1450,21 +1575,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _switchTab(int index) {
     if (_currentIndex == index) return;
-    _tabTransitionSerial++;
-    _contentTabController.stop();
-    _mainTabController.stop();
-    if (mounted) {
-      setState(() {
-        _currentIndex = index;
-        _mainTargetIndex = null;
-        _mainVisualIndex = index.toDouble();
-        _mainAnimationStartVisualIndex = _mainVisualIndex;
-        _mainAnimationEndVisualIndex = _mainVisualIndex;
-        _visitedTabs.add(index);
-      });
-    }
-    _updateBackgroundForTab(index);
-    unawaited(_persistRootTab(index));
+    unawaited(_settleMainTab(
+      targetIndex: index,
+      duration: AppMotion.tab,
+      commit: true,
+    ));
   }
 
   void _onTabTapped(int index) {
@@ -1483,7 +1598,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (_mainTargetIndex != null) {
         await _settleMainTab(
           targetIndex: targetIndex,
-          duration: AppMotion.nav,
+          duration: AppMotion.tab,
           commit: false,
         );
       }
@@ -1492,7 +1607,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     await _settleMainTab(
       targetIndex: targetIndex,
-      duration: AppMotion.nav,
+      duration: AppMotion.tab,
       commit: true,
     );
   }
@@ -1525,120 +1640,21 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  void _startNavigationSwipe(PointerDownEvent event, double screenHeight) {
-    if (_navigationSwipePointer != null ||
-        !isBottomNavigationSwipeStart(event.position.dy, screenHeight)) {
-      return;
-    }
-    _mainTabController.stop();
-    _navigationSwipePointer = event.pointer;
-    _navigationSwipeStart = event.position;
-    _navigationSwipeStartTime = DateTime.now();
-    _mainSwipeDx = 0;
-    setState(() {
-      _mainTargetIndex = null;
-      _mainVisualIndex = _currentIndex.toDouble();
-      _mainAnimationStartVisualIndex = _mainVisualIndex;
-      _mainAnimationEndVisualIndex = _mainVisualIndex;
-    });
-  }
-
-  void _updateNavigationSwipe(PointerMoveEvent event) {
-    if (event.pointer != _navigationSwipePointer ||
-        _navigationSwipeStart == null) {
-      return;
-    }
-
-    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
-    final targetIndex = _targetMainIndexForDx(_mainSwipeDx);
-    if (targetIndex == null) {
-      setState(() {
-        _mainTargetIndex = null;
-        _mainVisualIndex = _currentIndex.toDouble();
-      });
-      return;
-    }
-
-    setState(() {
-      _visitedTabs.add(targetIndex);
-      _getOrCreateTabPage(targetIndex);
-      _mainTargetIndex = targetIndex;
-      // 拖动阶段只锁定目标页；底栏在页面切换完成后再补动画。
-    });
-  }
-
-  void _finishNavigationSwipe(PointerUpEvent event) {
-    if (event.pointer != _navigationSwipePointer ||
-        _navigationSwipeStart == null ||
-        _navigationSwipeStartTime == null) {
-      return;
-    }
-
-    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
-    final elapsed = DateTime.now().difference(_navigationSwipeStartTime!);
-    final seconds = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
-    final velocity = seconds <= 0 ? 0.0 : _mainSwipeDx / seconds;
-    final targetIndex = _targetMainIndexForDx(
-      velocity.abs() >= _mainSwitchVelocityThreshold ? velocity : _mainSwipeDx,
-    );
-    final width = MediaQuery.sizeOf(context).width;
-    final progress = (_mainSwipeDx.abs() / width).clamp(0.0, 1.0);
-    final shouldSwitch = targetIndex != null &&
-        (progress >= _mainSwitchDistanceThreshold ||
-            velocity.abs() >= _mainSwitchVelocityThreshold);
-    _resetNavigationSwipe();
-
-    if (shouldSwitch) {
-      unawaited(_settleMainTab(
-        targetIndex: targetIndex,
-        duration: AppMotion.nav,
-        commit: true,
-      ));
-    } else {
-      unawaited(_settleMainTab(
-        targetIndex: _mainTargetIndex,
-        duration: AppMotion.nav,
-        commit: false,
-      ));
-    }
-  }
-
-  void _cancelNavigationSwipe(PointerCancelEvent event) {
-    if (event.pointer == _navigationSwipePointer) {
-      _resetNavigationSwipe();
-      unawaited(_settleMainTab(
-        targetIndex: _mainTargetIndex,
-        duration: AppMotion.nav,
-        commit: false,
-      ));
-    }
-  }
-
-  void _resetNavigationSwipe() {
-    _navigationSwipePointer = null;
-    _navigationSwipeStart = null;
-    _navigationSwipeStartTime = null;
-    _mainSwipeDx = 0;
-  }
-
-  int? _targetMainIndexForDx(double dx) {
-    if (dx == 0) return null;
-    final direction = dx < 0 ? 1 : -1;
-    final targetIndex = _currentIndex + direction;
-    if (targetIndex < 0 || targetIndex > 4) return null;
-    return targetIndex;
-  }
-
   Future<void> _settleMainTab({
     int? targetIndex,
-    Duration duration = AppMotion.nav,
+    Duration duration = AppMotion.tab,
     required bool commit,
   }) async {
     if (targetIndex == null || targetIndex == _currentIndex) {
+      _mainTabLedger.cancel();
+      _mainTabController.stop();
+      _contentTabController.stop();
       if (mounted) {
         setState(() {
           _mainTargetIndex = null;
           _mainVisualIndex = _currentIndex.toDouble();
+          _mainVisualIndexListenable.value = _mainVisualIndex;
+          _contentTabController.value = 1;
         });
       }
       return;
@@ -1647,11 +1663,15 @@ class _HomeScreenState extends State<HomeScreen>
     _mainTabController.stop();
     _mainTabController.duration = duration;
     _contentTabController.stop();
-    _contentTabController.duration = const Duration(milliseconds: 380);
-    final serial = ++_tabTransitionSerial;
     final fromIndex = _currentIndex;
     final visualStart = _mainVisualIndex;
-    final visualEnd = commit ? targetIndex.toDouble() : fromIndex.toDouble();
+    final target = targetIndex;
+    final plan = _mainTabLedger.begin(
+      target,
+      commit: commit,
+      visualStart: visualStart,
+    );
+    final visualEnd = commit ? target.toDouble() : fromIndex.toDouble();
     _mainTabAnimation = Tween<double>(
       begin: 0,
       end: 1,
@@ -1662,43 +1682,55 @@ class _HomeScreenState extends State<HomeScreen>
     ));
 
     setState(() {
-      _visitedTabs.add(targetIndex);
-      _getOrCreateTabPage(targetIndex);
-      _mainTargetIndex = targetIndex;
+      _getOrCreateTabPage(target);
       _mainAnimationStartVisualIndex = visualStart;
       _mainAnimationEndVisualIndex = visualEnd;
       _mainVisualIndex = visualStart;
-      if (commit) {
-        _currentIndex = targetIndex;
-      }
+      _mainVisualIndexListenable.value = _mainVisualIndex;
     });
 
     if (commit) {
-      _updateBackgroundForTab(targetIndex);
-      unawaited(_persistRootTab(targetIndex));
+      _updateBackgroundForTab(target);
     }
 
-    if (commit) {
-      try {
-        await _contentTabController.forward(from: 0).orCancel;
-      } on TickerCanceled {
-        return;
-      }
-      if (!mounted || serial != _tabTransitionSerial) return;
+    Future<void> contentFuture = Future<void>.value();
+    if (plan.shouldReveal) {
+      _contentTabController.duration = AppMotion.normal;
+      _contentTabController.value = 0;
+      contentFuture = _contentTabController.forward(from: 0).orCancel;
+    } else {
+      // 已访问页面直接显示，避免重复位移、scale 和 stagger。
+      _contentTabController.value = 1;
     }
 
-    if (visualStart != visualEnd) {
-      try {
-        await _mainTabController.forward(from: 0).orCancel;
-      } on TickerCanceled {
-        return;
-      }
+    Future<void> navigationFuture = Future<void>.value();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion) {
+      // Reduced Motion 仍保留内容 opacity 反馈，但 indicator 直接落位，
+      // 不让用户等待一段位置动画才能确认 Tab 状态。
+      _mainVisualIndex = visualEnd;
+      _mainVisualIndexListenable.value = _mainVisualIndex;
+    } else if (visualStart != visualEnd) {
+      navigationFuture = _mainTabController.forward(from: 0).orCancel;
     }
-    if (!mounted) return;
+
+    try {
+      // 导航 indicator 与首次内容 reveal 同时开始，不能串行等待内容。
+      await Future.wait<void>([contentFuture, navigationFuture]);
+    } on TickerCanceled {
+      return;
+    }
+
+    if (!mounted || !_mainTabLedger.complete(plan)) return;
+
+    // 真正的 Tab 切换已提交：发布当前 index，并（lastPage 模式下）保存。
+    currentHomeTabIndex.value = _currentIndex;
+    unawaited(_saveCurrentTabAsLastPage());
 
     setState(() {
       _mainTargetIndex = null;
       _mainVisualIndex = _currentIndex.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
       _mainAnimationStartVisualIndex = _mainVisualIndex;
       _mainAnimationEndVisualIndex = _mainVisualIndex;
     });
@@ -1733,12 +1765,9 @@ class _HomeScreenState extends State<HomeScreen>
             break;
           }
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(globalAward == null
-                ? '投票发布成功'
-                : '投票发布成功 · 全站经验 +${globalAward.exp}'),
-          ),
+        AppFeedback.success(
+          globalAward == null ? '投票发布成功' : '投票发布成功 · 全站经验 +${globalAward.exp}',
+          context: context,
         );
       }
       if (result != null) {
@@ -1771,55 +1800,57 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: useBottomNav
-          ? (event) => _startNavigationSwipe(event, screenHeight)
-          : null,
-      onPointerMove: useBottomNav ? _updateNavigationSwipe : null,
-      onPointerUp: useBottomNav ? _finishNavigationSwipe : null,
-      onPointerCancel: useBottomNav ? _cancelNavigationSwipe : null,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBody: true,
-        extendBodyBehindAppBar: true,
-        body: Stack(
-          children: [
-            // 实际内容区
-            useSideRail
-                ? _buildWideLayout(bottomSafe, authProvider, false)
-                : _buildNarrowLayout(bottomSafe, authProvider),
-          ],
-        ),
-        bottomNavigationBar: useSideRail
-            ? null
-            : BottomNavWrapper(
-                currentIndex: _currentIndex,
-                visualIndex: _mainVisualIndex,
-                onTap: _onTabTapped,
-                authProvider: authProvider,
-                badges: {
-                  4: _hasAdminTasks,
-                },
-              ),
-        floatingActionButton: _currentIndex == 0 && useBottomNav
-            ? Padding(
-                padding: EdgeInsets.only(
-                  bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
-                ),
-                child: FloatingActionButton(
-                  heroTag: 'home_fab',
-                  onPressed: () => _showPublishTypeSheet(context),
-                  backgroundColor: const Color(0xFF16A34A),
-                  elevation: 4,
-                  shape: const CircleBorder(),
-                  child: const Icon(Icons.add, color: Colors.white, size: 32),
-                ),
-              )
-            : null,
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    final normalHome = Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          // 实际内容区
+          useSideRail
+              ? _buildWideLayout(bottomSafe, authProvider, false)
+              : _buildNarrowLayout(bottomSafe, authProvider),
+        ],
       ),
+      bottomNavigationBar: useSideRail
+          ? null
+          : BottomNavWrapper(
+              currentIndex: _currentIndex,
+              visualIndexListenable: _mainVisualIndexListenable,
+              onTap: _onTabTapped,
+              authProvider: authProvider,
+              badges: {
+                4: _hasAdminTasks,
+              },
+            ),
+      floatingActionButton: _currentIndex == 0 && useBottomNav
+          ? Padding(
+              padding: EdgeInsets.only(
+                bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
+              ),
+              child: FloatingActionButton(
+                heroTag: 'home_fab',
+                onPressed: () => _showPublishTypeSheet(context),
+                backgroundColor: const Color(0xFF16A34A),
+                elevation: 4,
+                shape: const CircleBorder(),
+                child: const Icon(Icons.add, color: Colors.white, size: 32),
+              ),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+
+    return Stack(
+      children: [
+        normalHome,
+        if (_restoringInitialDeepPage)
+          const Positioned.fill(
+            child: StartupNavigationGate(
+              key: ValueKey('startup-navigation-gate'),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1909,6 +1940,7 @@ class _HomeScreenState extends State<HomeScreen>
             key: _contentKey,
             animation: _contentTabController,
             serial: _tabTransitionSerial,
+            revealEnabled: !_revealedTabs.contains(_currentIndex),
             child: ClipRRect(
               child: IndexedStack(
                 index: _currentIndex,
@@ -1926,6 +1958,7 @@ class _HomeScreenState extends State<HomeScreen>
       key: _contentKey,
       animation: _contentTabController,
       serial: _tabTransitionSerial,
+      revealEnabled: !_revealedTabs.contains(_currentIndex),
       child: HomeTabKeepAliveStage(
         index: _currentIndex,
         children: _buildLazyTabChildren(),

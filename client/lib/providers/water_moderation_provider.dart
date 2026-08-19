@@ -4,6 +4,21 @@ import 'package:flutter/foundation.dart';
 import '../models/water_moderation.dart';
 import '../services/water_moderation_service.dart';
 
+/// 版块加精操作结果：ok 表示版块精华已生效；homePending 表示首页推荐审核已提交；warning 表示部分成功警告。
+class FeaturePostOutcome {
+  const FeaturePostOutcome({
+    required this.ok,
+    this.homePending = false,
+    this.warning,
+    this.error,
+  });
+
+  final bool ok;
+  final bool homePending;
+  final String? warning;
+  final String? error;
+}
+
 /// 水帖版块内容管理 Provider
 class WaterModerationProvider extends ChangeNotifier {
   final WaterModerationService _service;
@@ -30,7 +45,6 @@ class WaterModerationProvider extends ChangeNotifier {
     _mutesBySlug.clear();
     _logsBySlug.clear();
     _error = null;
-    notifyListeners();
   }
 
   List<WaterSectionMute> mutesOf(String slug) => _mutesBySlug[slug] ?? [];
@@ -65,18 +79,39 @@ class WaterModerationProvider extends ChangeNotifier {
         await _service.unpinPost(sectionSlug: sectionSlug, postId: postId));
   }
 
-  Future<bool> featurePost({
+  /// 返回 [FeaturePostOutcome]：homePending 由服务端回传的 home_application 决定，
+  /// 不再乐观假定“首页推荐待审核”一定成立。支持 partial success 的 warning 消息。
+  Future<FeaturePostOutcome> featurePost({
     required String sectionSlug,
     required int postId,
     required String reason,
   }) async {
-    return _operation(() async {
-      await _service.featurePost(
+    _isOperating = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final data = await _service.featurePost(
         sectionSlug: sectionSlug,
         postId: postId,
         reason: reason,
       );
-    });
+      _isOperating = false;
+      final home = data?['home_application'];
+      final homePending = home is Map && home['status'] == 'pending';
+      final warning = data?['warning'] as String?;
+      notifyListeners();
+      return FeaturePostOutcome(ok: true, homePending: homePending, warning: warning);
+    } on DioException catch (e) {
+      _isOperating = false;
+      _error = _mapOperationError(e);
+      notifyListeners();
+      return FeaturePostOutcome(ok: false, error: _error);
+    } catch (e) {
+      _isOperating = false;
+      _error = '操作失败，请稍后重试';
+      notifyListeners();
+      return FeaturePostOutcome(ok: false, error: _error);
+    }
   }
 
   Future<bool> unfeaturePost({
@@ -193,6 +228,10 @@ class WaterModerationProvider extends ChangeNotifier {
         return '没有该操作权限';
       case 409:
         return '当前状态已变化，请刷新后重试';
+      case 500:
+        // 透传服务端真实错误（如“已设为版块精华，首页推荐提交失败”）
+        final message = _extractError(e.response?.data);
+        return message ?? '操作失败，请稍后重试';
     }
     switch (e.type) {
       case DioExceptionType.connectionTimeout:

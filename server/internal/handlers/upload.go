@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	xdraw "golang.org/x/image/draw"
@@ -23,34 +24,102 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func validateImageFile(src io.ReadSeeker) (string, error) {
+// ValidatedImageMetadata 一次校验得到的完整图片元数据，避免对同一文件重复解码。
+type ValidatedImageMetadata struct {
+	MimeType string
+	Width    int
+	Height   int
+}
+
+// canonicalImageExt 根据检测出的真实 MIME 返回规范化扩展名，纠正
+// “PNG 内容 + .jpg 文件名”这类 MIME/磁盘扩展名不一致的问题。
+func canonicalImageExt(mimeType string) string {
+	switch mimeType {
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	default: // image/jpeg 及未知的图片类型统一落到 .jpg
+		return ".jpg"
+	}
+}
+
+const (
+	maxImageDimension = 12000
+	maxImagePixels    = 50_000_000
+)
+
+func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
+	var meta ValidatedImageMetadata
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+		return meta, err
 	}
 
 	header := make([]byte, 512)
 	n, _ := src.Read(header)
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+		return meta, err
 	}
 
 	mimeType := http.DetectContentType(header[:n])
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif":
 	default:
-		return "", fmt.Errorf("只支持 jpg/png/gif 图片")
+		return meta, fmt.Errorf("只支持 jpg/png/gif 图片")
 	}
 
-	if _, _, err := image.DecodeConfig(src); err != nil {
-		_, _ = src.Seek(0, io.SeekStart)
-		return "", fmt.Errorf("图片文件损坏或格式不支持")
+	config, _, err := image.DecodeConfig(src)
+	_, _ = src.Seek(0, io.SeekStart)
+	if err != nil {
+		return meta, fmt.Errorf("图片文件损坏或格式不支持")
 	}
 
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return "", err
+	if config.Width <= 0 || config.Height <= 0 {
+		return meta, fmt.Errorf("图片尺寸无效")
+	}
+	if config.Width > maxImageDimension || config.Height > maxImageDimension ||
+		int64(config.Width)*int64(config.Height) > maxImagePixels {
+		return meta, fmt.Errorf("图片分辨率过高")
 	}
 
-	return mimeType, nil
+	meta = ValidatedImageMetadata{
+		MimeType: mimeType,
+		Width:    config.Width,
+		Height:   config.Height,
+	}
+	return meta, nil
+}
+
+func atomicWriteFile(dstPath string, src io.Reader) error {
+	dir := filepath.Dir(dstPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(dstPath)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := io.Copy(tmpFile, src); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("写入文件失败: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("同步文件失败: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("关闭临时文件失败: %w", err)
+	}
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("原子重命名失败: %w", err)
+	}
+	return nil
 }
 
 // UploadHandler 上传处理器
@@ -81,25 +150,32 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	var file models.File
 	variant, originalRelative := imageVariantRequest(relative)
 	if variant == "" {
-		if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
+		if err := h.db.Where("path = ? AND access_scope = ?", path, models.FileAccessPublic).First(&file).Error; err != nil {
 			c.Status(http.StatusNotFound)
 			c.Writer.WriteHeaderNow()
 			return
 		}
 	} else {
 		originalPath := "/uploads/" + originalRelative
-		if err := h.db.Where("path = ?", originalPath).First(&file).Error; err != nil {
+		if err := h.db.Where("path = ? AND access_scope = ?", originalPath, models.FileAccessPublic).First(&file).Error; err != nil {
 			c.Status(http.StatusNotFound)
 			c.Writer.WriteHeaderNow()
 			return
 		}
 	}
-	fullPath := filepath.Join(h.uploadDir, filepath.FromSlash(relative))
+	fullPath, err := services.ResolveUploadPath(h.uploadDir, path)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
 	if variant != "" {
-		originalFullPath := filepath.Join(
-			h.uploadDir,
-			filepath.FromSlash(originalRelative),
-		)
+		originalFullPath, err := services.ResolveUploadPath(h.uploadDir, "/uploads/"+originalRelative)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			c.Writer.WriteHeaderNow()
+			return
+		}
 		maxDimension := 480
 		if variant == "medium" {
 			maxDimension = 1280
@@ -146,10 +222,6 @@ func ensureImageVariant(
 	if _, err := os.Stat(variantPath); err == nil {
 		return nil
 	}
-	if mimeType == "image/gif" {
-		return os.ErrNotExist
-	}
-
 	source, err := os.Open(originalPath)
 	if err != nil {
 		return err
@@ -195,6 +267,8 @@ func ensureImageVariant(
 		err = jpeg.Encode(temp, resized, &jpeg.Options{Quality: 82})
 	case "image/png":
 		err = png.Encode(temp, resized)
+	case "image/gif":
+		err = gif.Encode(temp, resized, &gif.Options{NumColors: 256})
 	default:
 		err = fmt.Errorf("不支持生成缩略图的格式: %s", mimeType)
 	}
@@ -239,10 +313,12 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	defer src.Close()
 
-	if _, err := validateImageFile(src); err != nil {
+	meta, err := validateImageFile(src)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	canonicalExt := canonicalImageExt(meta.MimeType)
 
 	// 计算SHA256哈希
 	hash := sha256.New()
@@ -257,7 +333,11 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	err = h.db.Where("hash = ?", hashStr).First(&existing).Error
 	if err == nil {
 		// 确认磁盘文件仍然存在再复用，防止"数据库有记录但物理文件丢失"返回 404。
-		diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+		diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
+		if pathErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "文件路径记录非法"})
+			return
+		}
 		if _, statErr := os.Stat(diskPath); statErr == nil {
 			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
@@ -271,7 +351,36 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 			})
 			return
 		}
-		// 磁盘文件丢失 → 不返回旧记录，继续执行下面的保存逻辑用本次上传内容写回。
+		// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置，保证所有历史引用与返回 URL 仍然有效。
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
+			return
+		}
+		if err := atomicWriteFile(diskPath, src); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复文件失败"})
+			return
+		}
+		updates := map[string]interface{}{
+			"size":      file.Size,
+			"mime_type": meta.MimeType,
+			"width":     meta.Width,
+			"height":    meta.Height,
+		}
+		if err := h.db.Model(&existing).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新文件记录失败"})
+			return
+		}
+		if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"file_id": existing.ID,
+			"url":     existing.Path,
+			"hash":    existing.Hash,
+			"reused":  false,
+		})
+		return
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -280,37 +389,30 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 创建上传目录
+	// 保存新文件（使用规范化扩展名，与真实内容一致）
 	dir1 := filepath.Join(h.uploadDir, hashStr[:2])
-	if err := os.MkdirAll(dir1, 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建上传目录失败"})
+	dstPath := filepath.Join(dir1, hashStr+canonicalExt)
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
 		return
 	}
-
-	// 保存文件
-	dstPath := filepath.Join(dir1, hashStr+ext)
-	dst, err := os.Create(dstPath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件失败"})
-		return
-	}
-	defer dst.Close()
-
-	src.Seek(0, 0)
-	if _, err := io.Copy(dst, src); err != nil {
+	if err := atomicWriteFile(dstPath, src); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
 	}
 
 	// 创建文件记录
 	fileRecord := models.File{
-		Hash:       hashStr,
-		Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-		Size:       file.Size,
-		MimeType:   getMimeType(ext),
-		RefCount:   1,
-		UploaderID: c.GetUint("user_id"),
-		Status:     "temporary",
+		Hash:        hashStr,
+		Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
+		Size:        file.Size,
+		MimeType:    meta.MimeType,
+		Width:       meta.Width,
+		Height:      meta.Height,
+		RefCount:    1,
+		UploaderID:  c.GetUint("user_id"),
+		Status:      "temporary",
+		AccessScope: models.FileAccessPrivate,
 	}
 
 	if err := h.createOrGetFile(&fileRecord); err != nil {
@@ -371,11 +473,13 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			continue
 		}
 
-		if _, err := validateImageFile(src); err != nil {
+		meta, err := validateImageFile(src)
+		if err != nil {
 			src.Close()
 			results = append(results, gin.H{"error": err.Error() + ": " + file.Filename})
 			continue
 		}
+		canonicalExt := canonicalImageExt(meta.MimeType)
 
 		hash := sha256.New()
 		io.Copy(hash, src)
@@ -385,7 +489,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		// 相同内容直接复用已有文件记录，跳过磁盘写入
 		var existing models.File
 		if err := h.db.Where("hash = ?", hashStr).First(&existing).Error; err == nil {
-			diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+			diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
+			if pathErr != nil {
+				continue
+			}
 			if _, statErr := os.Stat(diskPath); statErr == nil {
 				if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
@@ -400,33 +507,53 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 				createdFiles = append(createdFiles, existing)
 				continue
 			}
-			// 磁盘文件丢失，继续执行后面的保存逻辑用本次上传内容写回。
-		}
-
-		// 创建上传目录
-		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
-		if err := os.MkdirAll(dir1, 0755); err != nil {
-			results = append(results, gin.H{"error": "创建目录失败"})
+			// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置
+			err = func() error {
+				src2, err := file.Open()
+				if err != nil {
+					return fmt.Errorf("恢复文件时读取失败")
+				}
+				defer src2.Close()
+				return atomicWriteFile(diskPath, src2)
+			}()
+			if err != nil {
+				results = append(results, gin.H{"error": err.Error()})
+				continue
+			}
+			updates := map[string]interface{}{
+				"size":      file.Size,
+				"mime_type": meta.MimeType,
+				"width":     meta.Width,
+				"height":    meta.Height,
+			}
+			if err := h.db.Model(&existing).Updates(updates).Error; err != nil {
+				results = append(results, gin.H{"error": "更新文件记录失败"})
+				continue
+			}
+			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+				return
+			}
+			results = append(results, gin.H{
+				"file_id": existing.ID,
+				"url":     existing.Path,
+				"hash":    existing.Hash,
+				"reused":  false,
+			})
+			createdFiles = append(createdFiles, existing)
 			continue
 		}
 
-		// 保存文件
-		dstPath := filepath.Join(dir1, hashStr+ext)
+		// 保存新文件（使用规范化扩展名，与真实内容一致）
+		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
+		dstPath := filepath.Join(dir1, hashStr+canonicalExt)
 		err = func() error {
 			src2, err := file.Open()
 			if err != nil {
 				return fmt.Errorf("保存文件时读取失败")
 			}
 			defer src2.Close()
-
-			dst, err := os.Create(dstPath)
-			if err != nil {
-				return fmt.Errorf("保存文件失败")
-			}
-			defer dst.Close()
-
-			_, err = io.Copy(dst, src2)
-			return err
+			return atomicWriteFile(dstPath, src2)
 		}()
 
 		if err != nil {
@@ -436,13 +563,16 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 
 		// 创建文件记录
 		fileRecord := models.File{
-			Hash:       hashStr,
-			Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-			Size:       file.Size,
-			MimeType:   getMimeType(ext),
-			RefCount:   1,
-			UploaderID: c.GetUint("user_id"),
-			Status:     "temporary",
+			Hash:        hashStr,
+			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
+			Size:        file.Size,
+			MimeType:    meta.MimeType,
+			Width:       meta.Width,
+			Height:      meta.Height,
+			RefCount:    1,
+			UploaderID:  c.GetUint("user_id"),
+			Status:      "temporary",
+			AccessScope: models.FileAccessPrivate,
 		}
 		if err := h.createOrGetFile(&fileRecord); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
@@ -490,16 +620,3 @@ func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
 	}).Error
 }
 
-// getMimeType 根据扩展名获取MIME类型
-func getMimeType(ext string) string {
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	default:
-		return "application/octet-stream"
-	}
-}

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+
 /// 版块主 Tab 栏（推荐/最新/精华/关注）。
 /// 纯展示组件，通过回调通知外层切换 sort。
 class SectionTabBar extends StatelessWidget {
@@ -52,10 +54,10 @@ class SectionTabBar extends StatelessWidget {
           option.label,
           style: TextStyle(
             fontSize: 14,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            fontWeight: FontWeight.w600,
             color: selected
                 ? accentColor
-                : (isDark ? Colors.white54 : const Color(0xFF667085)),
+                : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
             height: 1.2,
           ),
         ),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,7 +124,7 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
 }
 
-func TestRuntimeAcceptsProductionMessageLimitAndRejectsHigherValue(t *testing.T) {
+func TestRuntimeAcceptsMessageLimitAt500AndRejectsAboveIt(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	config := RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
@@ -247,6 +248,26 @@ func TestRuntimeAnswersGreetingWithoutKnowledgeSources(t *testing.T) {
 	require.Len(t, messages, 2)
 	require.Contains(t, messages[1].Content, "你好")
 	require.NotContains(t, messages[1].Content, "资料不足")
+}
+
+func TestRuntimeStripsUnbackedCitationMarkersWithoutKnowledgeSources(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &MockProvider{Response: ChatResponse{
+		Content: "基于个人数据完成分析。[chunk:1] 结论如下。[来源]",
+	}}
+	runtime := newTestRuntime(t, db, provider, fixedRetriever{})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "解释一下学习方法",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+
+	var message models.AIConversationMessage
+	require.NoError(t, db.Where("run_id = ? AND role = ?", run.ID, "assistant").First(&message).Error)
+	require.Equal(t, "基于个人数据完成分析。 结论如下。", strings.TrimSpace(message.Content))
+	require.NotContains(t, message.Content, "chunk:")
+	require.NotContains(t, message.Content, "[来源]")
 }
 
 func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {

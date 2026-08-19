@@ -111,6 +111,71 @@ void main() {
     expect(identical(firstPair.first, cached), isTrue);
   });
 
+  test('从 Run 来源聚合接口恢复来源 DTO', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/ai/runs/run-1/sources');
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'sources': [
+                  {
+                    'type': 'policy',
+                    'primary_chunk_id': 18,
+                    'chunk_ids': [18, 19],
+                    'document_id': 4,
+                    'title': '奖助学金管理办法',
+                  },
+                ],
+                'personal_data_evidence': [
+                  {
+                    'source': 'hy3_mcp',
+                    'dataset': 'academic_analysis',
+                    'analysis_input': {
+                      'courses': [
+                        {
+                          'course_name': '信号与系统',
+                          'grade': 58,
+                          'credits': 3,
+                          'is_required': true,
+                          'passed': false,
+                        },
+                      ],
+                      'earned_credits': 25.5,
+                      'required_credits': 25.5,
+                      'erke_earned': 0,
+                      'erke_required': 0,
+                    },
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final sources = await AiAssistantService(dio).getRunSources('run-1');
+
+    expect(sources.sources, hasLength(1));
+    expect(sources.sources.single.chunkId, 18);
+    expect(sources.sources.single.chunkIds, [18, 19]);
+    expect(sources.sources.single.title, '奖助学金管理办法');
+    expect(sources.personalDataEvidence, hasLength(1));
+    expect(
+      sources.personalDataEvidence.single.academicCourses.single.name,
+      '信号与系统',
+    );
+    expect(
+      sources.personalDataEvidence.single.academicCourses.single.detail,
+      '成绩 58 · 3 学分 · 必修 · 未通过',
+    );
+  });
+
   test('一次性授权只提交 Run、scope 和决定', () async {
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
     dio.interceptors.add(

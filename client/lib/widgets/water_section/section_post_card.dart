@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,10 +6,10 @@ import '../../models/post.dart';
 import '../../models/user.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
-import '../../screens/image_viewer_screen.dart';
 import '../../screens/user_home_screen.dart';
-import '../../utils/post_image_cache.dart';
+import '../../theme/app_colors.dart';
 import '../cached_avatar.dart';
+import '../post_media/post_media_view.dart';
 
 /// 版块专用帖子卡片。
 ///
@@ -23,6 +22,7 @@ class SectionPostCard extends StatelessWidget {
   final Post post;
   final WaterSection section;
   final Color accentColor;
+  final bool? isDark;
   final VoidCallback? onTap;
   final ValueChanged<int>? onAuthorTap;
 
@@ -31,14 +31,14 @@ class SectionPostCard extends StatelessWidget {
     required this.post,
     required this.section,
     required this.accentColor,
+    this.isDark,
     this.onTap,
     this.onAuthorTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    final isDark = this.isDark ?? (Theme.of(context).brightness == Brightness.dark);
     // 若是当前登录用户，使用最新资料
     final authUser = context.watch<AuthProvider>().user;
     final isMyPost = authUser != null && post.author?.id == authUser.id;
@@ -65,12 +65,12 @@ class SectionPostCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xE8171B24) : Colors.white,
+          color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEEF0F5),
+                ? AppColors.borderNormalDark
+                : AppColors.borderNormalLight,
           ),
         ),
         child: Padding(
@@ -101,7 +101,7 @@ class SectionPostCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13.5,
                     height: 1.45,
-                    color: isDark ? Colors.white70 : const Color(0xFF3B4050),
+                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                   ),
                 ),
               if (post.teamRecruitment != null) ...[
@@ -354,95 +354,11 @@ class SectionPostCard extends StatelessWidget {
   }
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
-    final count = images.length;
-    final urls = images.map((img) => ApiConstants.fullUrl(img.url)).toList();
-
-    if (count == 1) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: GestureDetector(
-          onTap: () => _openImageViewer(context, urls, 0),
-          child: CachedNetworkImage(
-            cacheManager: PostImageCache.manager,
-            imageUrl: urls[0],
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              height: 200,
-              color: Colors.grey[300],
-            ),
-            errorWidget: (_, __, ___) => Container(
-              height: 200,
-              color: Colors.grey[300],
-              child: const Icon(Icons.image),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: count == 2 ? 2 : 3,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
-          childAspectRatio: 1,
-        ),
-        itemCount: count > 3 ? 3 : count,
-        itemBuilder: (context, index) {
-          if (index == 2 && count > 3) {
-            return GestureDetector(
-              onTap: () => _openImageViewer(context, urls, index),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CachedNetworkImage(
-                    cacheManager: PostImageCache.manager,
-                    imageUrl: urls[index],
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.grey[300]),
-                  ),
-                  Container(
-                    color: Colors.black54,
-                    alignment: Alignment.center,
-                    child: Text(
-                      '+${count - 2}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          return GestureDetector(
-            onTap: () => _openImageViewer(context, urls, index),
-            child: CachedNetworkImage(
-              cacheManager: PostImageCache.manager,
-              imageUrl: urls[index],
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(color: Colors.grey[300]),
-            ),
-          );
-        },
-      ),
-    );
+    return PostMediaView(images: images);
   }
 
   Widget _buildBottomActions(BuildContext context, bool isDark) {
-    final mutedColor = isDark ? Colors.white30 : const Color(0xFFA8B0BF);
+    final mutedColor = isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
     return Row(
       children: [
         // 分享
@@ -514,20 +430,6 @@ class SectionPostCard extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => UserHomeScreen(userId: author.id)),
-    );
-  }
-
-  void _openImageViewer(
-    BuildContext context,
-    List<String> urls,
-    int initialIndex,
-  ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            ImageViewerScreen(imageUrls: urls, initialIndex: initialIndex),
-      ),
     );
   }
 

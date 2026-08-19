@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/ai_personal_data_permission_service.dart';
+import '../../utils/app_feedback.dart';
 
 /// 配置校园 Agent 跨会话访问个人数据时的长期授权偏好。
 class CampusPersonalDataPermissionScreen extends StatefulWidget {
@@ -97,8 +98,7 @@ class _CampusPersonalDataPermissionScreenState
       });
     } on AiPersonalDataPermissionException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        AppFeedback.error(error.message, context: context);
       }
     } finally {
       if (mounted && accountUserId == _accountUserId) {
@@ -216,7 +216,7 @@ class _CampusPersonalDataPermissionScreenState
         AiPersonalDataPermissionScope.academicCloudStorage =>
           '允许校园 Agent 使用已保存的服务端成绩和课表快照。',
         AiPersonalDataPermissionScope.externalModelAnalysis =>
-          '允许将经过最小化和去身份处理的专业年级、课程成绩、学分、课表时间及二课摘要发送给外部 Hy3 模型分析。不会发送姓名、学号、密码、Cookie 或 Token。',
+          '允许将经过最小化和去身份处理的专业年级、课程成绩、学分、课表时间及二课摘要发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。不会发送姓名、学号、密码、Cookie 或 Token。',
       };
 
   IconData _scopeIcon(AiPersonalDataPermissionScope scope) => switch (scope) {

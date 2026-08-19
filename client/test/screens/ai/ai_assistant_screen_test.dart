@@ -90,6 +90,80 @@ void main() {
     expect(find.text('毕业清单'), findsNothing);
   });
 
+  testWidgets('AI 页面暗色主题下控件保持可渲染', (tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: FakeAuthProvider(),
+          ),
+          ChangeNotifierProvider<EduProvider>.value(
+            value: FakeEduProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: AiAssistantScreen(
+            service: FakeAiAssistantService(),
+            dio: Dio(),
+            capabilities: AiCapabilities.fromJson(const {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('校园问答'), findsWidgets);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('Hy3 能力决定三个业务入口是否可见', (tester) async {
+    Widget buildScreen(Map<String, dynamic> features) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthProvider>.value(
+              value: FakeAuthProvider(),
+            ),
+            ChangeNotifierProvider<EduProvider>.value(
+              value: FakeEduProvider(),
+            ),
+          ],
+          child: MaterialApp(
+            home: AiAssistantScreen(
+              service: FakeAiAssistantService(),
+              dio: Dio(),
+              capabilities: AiCapabilities.fromJson({
+                'enabled': true,
+                'access_allowed': true,
+                'chat_enabled': true,
+                'features': features,
+              }),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(
+      buildScreen(const {
+        'hy3_competition_compare': true,
+        'hy3_academic_analysis': true,
+        'hy3_week_plan': true,
+      }),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('对比适合我的竞赛'), findsOneWidget);
+    expect(find.text('分析我的学业情况'), findsOneWidget);
+    expect(find.text('制定本周学习计划'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(buildScreen(const {}));
+    await tester.pumpAndSettle();
+
+    expect(find.text('对比适合我的竞赛'), findsNothing);
+    expect(find.text('分析我的学业情况'), findsNothing);
+    expect(find.text('制定本周学习计划'), findsNothing);
+  });
+
   testWidgets('个人历史在页面重建后恢复且切换账号立即隔离', (tester) async {
     final secure = _FakeBlobStore();
     PersonalConversationStore storeFor(String accountKey) =>
@@ -167,7 +241,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 公共模式输入为空时隐藏计数器。
-    expect(find.text('0/200'), findsNothing);
+    expect(find.text('0/500'), findsNothing);
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
@@ -202,7 +276,7 @@ void main() {
 
     await tester.tap(find.text('校园问答'));
     await tester.pump();
-    expect(find.text('8001/200'), findsOneWidget);
+    expect(find.text('8001/500'), findsOneWidget);
   });
 }
 

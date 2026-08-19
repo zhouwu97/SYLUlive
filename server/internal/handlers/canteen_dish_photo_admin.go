@@ -1,0 +1,407 @@
+package handlers
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// dishRejectReasons 驳回原因 code 枚举（管理员不手输）。
+var dishRejectReasons = map[string]bool{
+	"unrelated":      true, // 与菜品不符
+	"blurry":         true, // 图片过于模糊
+	"duplicate":      true, // 重复图片
+	"privacy":        true, // 包含明显个人隐私
+	"advertisement":  true, // 广告 / 二维码
+	"inappropriate":  true, // 不适宜内容
+	"other":          true, // 其他
+}
+
+// CanteenDishPhotoAdminHandler 菜品实拍审核接口。
+type CanteenDishPhotoAdminHandler struct {
+	db *gorm.DB
+}
+
+func NewCanteenDishPhotoAdminHandler(db *gorm.DB) *CanteenDishPhotoAdminHandler {
+	return &CanteenDishPhotoAdminHandler{db: db}
+}
+
+// AdminListPendingDishPhotos 管理员待审核实拍列表。
+// GET /api/canteens/dish-photos/pending
+func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishPhotos(c *gin.Context) {
+	type pendingRow struct {
+		PhotoID        uint      `json:"photo_id"`
+		DishID         uint      `json:"dish_id"`
+		DishName       string    `json:"dish_name"`
+		CanteenID      uint      `json:"canteen_id"`
+		CanteenName    string    `json:"canteen_name"`
+		Image          string    `json:"image"`
+		UploaderName   string    `json:"uploader_name"`
+		UploaderID     uint      `json:"uploader_id"`
+		CreatedAt      time.Time `json:"created_at"`
+		ApprovedCount  int       `json:"approved_count"`
+	}
+
+	var rows []pendingRow
+	err := h.db.Table("canteen_dish_photos AS p").
+		Joins("JOIN canteen_dishes d ON d.id = p.dish_id").
+		Joins("JOIN canteens cn ON cn.id = d.canteen_id").
+		Joins("JOIN files f ON f.id = p.file_id").
+		Joins("JOIN users u ON u.id = p.user_id").
+		Select(`p.id AS photo_id, p.dish_id, d.name AS dish_name,
+			cn.id AS canteen_id, cn.name AS canteen_name,
+			f.path AS image, u.nickname AS uploader_name, p.user_id AS uploader_id,
+			p.created_at,
+			(SELECT COUNT(*) FROM canteen_dish_photos x WHERE x.dish_id = p.dish_id AND x.status = ?) AS approved_count`,
+			models.DishPhotoStatusApproved).
+		Where("p.status = ?", models.DishPhotoStatusPending).
+		Order("p.created_at ASC").
+		Scan(&rows).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核实拍失败"})
+		return
+	}
+	if rows == nil {
+		rows = []pendingRow{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": rows})
+}
+
+// ApproveDishPhoto 审核通过实拍：pending → approved，文件转 public。
+// POST /api/canteens/dish-photos/:photoId/approve
+func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+
+	var photo models.CanteenDishPhoto
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&photo, photoID).Error; err != nil {
+			return err
+		}
+		if photo.Status != models.DishPhotoStatusPending {
+			return errDishPhotoAlreadyReviewed
+		}
+
+		var dish models.CanteenDish
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, photo.DishID).Error; err != nil {
+			return err
+		}
+
+		var approvedCount int64
+		if err := tx.Model(&models.CanteenDishPhoto{}).
+			Where("dish_id = ? AND status = ?", dish.ID, models.DishPhotoStatusApproved).
+			Count(&approvedCount).Error; err != nil {
+			return err
+		}
+		if approvedCount >= 3 {
+			return errDishGalleryFull
+		}
+
+		now := time.Now()
+		if err := tx.Model(&photo).Updates(map[string]interface{}{
+			"status":      models.DishPhotoStatusApproved,
+			"reviewed_by": adminID,
+			"reviewed_at": &now,
+		}).Error; err != nil {
+			return err
+		}
+		// 公开业务建立引用后才将文件升级为 public
+		if err := services.ClaimPublicImageFiles(tx, []uint{photo.FileID}); err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID),
+			Action: "通过菜品实拍", Target: dish.Name,
+			Detail: fmt.Sprintf("通过菜品实拍（photo ID: %d），上传者 %d", photo.ID, photo.UserID),
+		}).Error
+	})
+	if err != nil {
+		respondDishPhotoAdminError(c, err)
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "已通过", "photo_id": photo.ID})
+}
+
+// RejectDishPhoto 驳回实拍：pending → rejected，文件保持 private。
+// POST /api/canteens/dish-photos/:photoId/reject  body: {"reason": "blurry"}
+func (h *CanteenDishPhotoAdminHandler) RejectDishPhoto(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	var input struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供驳回原因"})
+		return
+	}
+	if !dishRejectReasons[input.Reason] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "驳回原因不合法"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+
+	var photo models.CanteenDishPhoto
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&photo, photoID).Error; err != nil {
+			return err
+		}
+		if photo.Status != models.DishPhotoStatusPending {
+			return errDishPhotoAlreadyReviewed
+		}
+		var dish models.CanteenDish
+		if err := tx.First(&dish, photo.DishID).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&photo).Updates(map[string]interface{}{
+			"status":        models.DishPhotoStatusRejected,
+			"reviewed_by":   adminID,
+			"reviewed_at":   &now,
+			"reject_reason": input.Reason,
+		}).Error; err != nil {
+			return err
+		}
+		// 不调用 ClaimPublicImageFiles；文件保持 private（若已被 ClaimPrivateFiles 激活则保持 active/private）
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID),
+			Action: "驳回菜品实拍", Target: dish.Name,
+			Detail: fmt.Sprintf("驳回菜品实拍（photo ID: %d）原因 %s，上传者 %d", photo.ID, input.Reason, photo.UserID),
+		}).Error
+	})
+	if err != nil {
+		respondDishPhotoAdminError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已驳回", "photo_id": photo.ID})
+}
+
+// ArchiveDishPhoto 下架实拍：approved → archived，业务不再展示，并回收孤儿文件公开权限。
+// POST /api/canteens/dish-photos/:photoId/archive
+func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+
+	var photo models.CanteenDishPhoto
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&photo, photoID).Error; err != nil {
+			return err
+		}
+		if photo.Status != models.DishPhotoStatusApproved {
+			return errDishPhotoAlreadyReviewed
+		}
+		var dish models.CanteenDish
+		if err := tx.First(&dish, photo.DishID).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&photo).Updates(map[string]interface{}{
+			"status":      models.DishPhotoStatusArchived,
+			"reviewed_by": adminID,
+			"reviewed_at": &now,
+		}).Error; err != nil {
+			return err
+		}
+		// 检查若无其他有效公开业务引用，回收 File public 权限降级为 private
+		if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID),
+			Action: "下架菜品实拍", Target: dish.Name,
+			Detail: fmt.Sprintf("下架菜品实拍（photo ID: %d）", photo.ID),
+		}).Error
+	})
+	if err != nil {
+		respondDishPhotoAdminError(c, err)
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "已下架", "photo_id": photo.ID})
+}
+
+// AdminGetDishPhotoDetail 管理员查看单张实拍详情（含上传者信息）。
+// GET /api/canteens/dish-photos/:photoId
+func (h *CanteenDishPhotoAdminHandler) AdminGetDishPhotoDetail(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	type detailRow struct {
+		ID           uint      `json:"id"`
+		DishID       uint      `json:"dish_id"`
+		DishName     string    `json:"dish_name"`
+		FileID       uint      `json:"file_id"`
+		Image        string    `json:"image"`
+		UploaderID   uint      `json:"uploader_id"`
+		UploaderName string    `json:"uploader_name"`
+		Status       string    `json:"status"`
+		CreatedAt    time.Time `json:"created_at"`
+	}
+	var row detailRow
+	err = h.db.Table("canteen_dish_photos AS p").
+		Joins("JOIN canteen_dishes d ON d.id = p.dish_id").
+		Joins("JOIN files f ON f.id = p.file_id").
+		Joins("JOIN users u ON u.id = p.user_id").
+		Select(`p.id, p.dish_id, d.name AS dish_name, p.file_id,
+			f.path AS image, p.user_id AS uploader_id, u.nickname AS uploader_name,
+			p.status, p.created_at`).
+		Where("p.id = ?", photoID).
+		Scan(&row).Error
+	if err != nil || row.ID == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "实拍记录不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, row)
+}
+
+// AdminUpdateDish 管理员修改菜品：重命名 / 隐藏。
+// PATCH /api/canteens/dishes/:dishId  body: {"name": "..."} 或 {"status": "hidden"}
+func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
+	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	var input struct {
+		Name   *string `json:"name"`
+		Status *string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+	if input.Name == nil && input.Status == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 name 或 status"})
+		return
+	}
+	if input.Status != nil && *input.Status != models.DishStatusActive && *input.Status != models.DishStatusHidden {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status 只能为 active 或 hidden"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+
+	var dish models.CanteenDish
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dishID).Error; err != nil {
+			return err
+		}
+		if input.Name != nil {
+			name := strings.TrimSpace(*input.Name)
+			if name == "" {
+				return errInvalidDishName
+			}
+			if utils.CountGraphemes(name) > 100 {
+				return errDishNameTooLong
+			}
+			normalized := utils.NormalizeDishName(name)
+			// 同食堂重名检查（唯一索引兜底）
+			var conflict int64
+			if err := tx.Model(&models.CanteenDish{}).
+				Where("canteen_id = ? AND normalized_name = ? AND id <> ?", dish.CanteenID, normalized, dish.ID).
+				Count(&conflict).Error; err != nil {
+				return err
+			}
+			if conflict > 0 {
+				return errDishNameConflict
+			}
+			if err := tx.Model(&dish).Updates(map[string]interface{}{
+				"name": name, "normalized_name": normalized,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		if input.Status != nil {
+			if err := tx.Model(&dish).Update("status", *input.Status).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID),
+			Action: dishUpdateAction(input.Name != nil, input.Status != nil), Target: dish.Name,
+			Detail: fmt.Sprintf("修改菜品（dish ID: %d）", dish.ID),
+		}).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "菜品不存在"})
+		case errors.Is(err, errInvalidDishName):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能为空"})
+		case errors.Is(err, errDishNameTooLong):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能超过 100 个字符"})
+		case errors.Is(err, errDishNameConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在同名菜品"})
+		case isUniqueConstraintError(err):
+			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在同名菜品"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "修改菜品失败"})
+		}
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "已更新", "dish": dish})
+}
+
+// ── 辅助 ────────────────────────────────────────────────────────────
+
+func dishUpdateAction(hasName, hasStatus bool) string {
+	switch {
+	case hasName && hasStatus:
+		return "修改菜品"
+	case hasName:
+		return "重命名菜品"
+	default:
+		return "修改菜品状态"
+	}
+}
+
+func adminNickname(tx *gorm.DB, adminID uint) string {
+	var admin models.User
+	if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+		return ""
+	}
+	return admin.Nickname
+}
+
+func respondDishPhotoAdminError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "实拍记录不存在"})
+	case errors.Is(err, errDishPhotoAlreadyReviewed):
+		c.JSON(http.StatusConflict, gin.H{"code": "already_reviewed", "error": "该实拍已被处理"})
+	case errors.Is(err, errDishGalleryFull):
+		c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张审核实拍"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
+	}
+}
+
+// errDishNameTooLong 菜名超长。
+var errDishNameTooLong = errors.New("dish name too long")
+
+// errDishNameConflict 同食堂重名。
+var errDishNameConflict = errors.New("dish name conflict")

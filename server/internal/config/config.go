@@ -13,26 +13,30 @@ import (
 
 // Config 应用配置
 type Config struct {
-	JWTSecret                     string // JWT密钥
-	DSN                           string // 数据库连接字符串
-	UploadDir                     string // 文件上传目录
-	CompetitionAwardEvidenceDir   string // 竞赛证明材料私有目录
-	ExamPaperDir                  string // 试卷私有文件目录
-	ExamPaperStorageMode          string // 试卷文件存储模式
-	ExamPaperStorageBaseURL       string // 试卷文件服务地址
-	ExamPaperStorageSigningSecret string // 试卷文件签名密钥
-	ExamPaperStorageReceiptSecret string // 试卷上传回执密钥
-	MaxFileSize                   int64  // 最大文件大小(字节)
-	EduServiceURL                 string // Python教务服务地址
-	SMTPHost                      string // SMTP 地址
-	SMTPPort                      string // SMTP 端口
-	SMTPUser                      string // SMTP 用户名
-	SMTPPass                      string // SMTP 密码/授权码
-	SMTPFrom                      string // 发件人邮箱
-	JPushAppKey                   string // 极光推送 AppKey
-	JPushMasterSecret             string // 极光推送 MasterSecret
-	SuperAdminID                  string // 超级管理员账号
-	SuperAdminPass                string // 超级管理员密码
+	JWTSecret                      string // JWT密钥
+	DSN                            string // 数据库连接字符串
+	UploadDir                      string // 文件上传目录
+	HomeFeedPersonalizationShadow  bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
+	HomeFeedPersonalizationPercent int    // FEED-5 个性化 active rollout 百分比（0~100）
+	HomeFeedV5PersonalizationShadow  bool // FEED-V5 个性化 shadow
+	HomeFeedV5PersonalizationPercent int // FEED-V5 个性化 active rollout 百分比（0~100）
+	CompetitionAwardEvidenceDir    string // 竞赛证明材料私有目录
+	ExamPaperDir                   string // 试卷私有文件目录
+	ExamPaperStorageMode           string // 试卷文件存储模式
+	ExamPaperStorageBaseURL        string // 试卷文件服务地址
+	ExamPaperStorageSigningSecret  string // 试卷文件签名密钥
+	ExamPaperStorageReceiptSecret  string // 试卷上传回执密钥
+	MaxFileSize                    int64  // 最大文件大小(字节)
+	EduServiceURL                  string // Python教务服务地址
+	SMTPHost                       string // SMTP 地址
+	SMTPPort                       string // SMTP 端口
+	SMTPUser                       string // SMTP 用户名
+	SMTPPass                       string // SMTP 密码/授权码
+	SMTPFrom                       string // 发件人邮箱
+	JPushAppKey                    string // 极光推送 AppKey
+	JPushMasterSecret              string // 极光推送 MasterSecret
+	SuperAdminID                   string // 超级管理员账号
+	SuperAdminPass                 string // 超级管理员密码
 
 	AIEnabled                              bool     // AI 总开关
 	AIProvider                             string   // AI Provider 名称
@@ -85,6 +89,12 @@ type Config struct {
 	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
 	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
 	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
+	ReviewEnabled                       bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
+}
+
+// IsReviewEnabled 返回当前是否启用了前置审核链路。
+func IsReviewEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("REVIEW_ENABLED")), "true")
 }
 
 const (
@@ -294,13 +304,9 @@ func Load() *Config {
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
-	// 兼容旧部署的 20 字限制与线上 500 字配置；默认值保持 200。
-	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 200, 20, 500)
+	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 500, 1, 500)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
 	aiUnlimitedStudentIDs := splitNonEmpty(os.Getenv("AI_UNLIMITED_STUDENT_IDS"))
-	if len(aiUnlimitedStudentIDs) == 0 {
-		aiUnlimitedStudentIDs = []string{"2403130233"}
-	}
 	aiQuotaExemptUserIDs := envPositiveUintList("AI_QUOTA_EXEMPT_USER_IDS")
 	aiUserBudgetLimitMicroYuan := envInt64InRange("AI_USER_BUDGET_LIMIT_MICRO_YUAN", 10_000_000, 1, 1_000_000_000)
 	aiReserveMicroYuan := envInt64InRange("AI_RESERVE_MICRO_YUAN", 20_000, 1, aiUserBudgetLimitMicroYuan)
@@ -362,26 +368,30 @@ func Load() *Config {
 	}
 
 	return &Config{
-		JWTSecret:                     jwtSecret,
-		DSN:                           dsn,
-		UploadDir:                     uploadDir,
-		CompetitionAwardEvidenceDir:   competitionAwardEvidenceDir,
-		ExamPaperDir:                  examPaperDir,
-		ExamPaperStorageMode:          examPaperStorageMode,
-		ExamPaperStorageBaseURL:       examPaperStorageBaseURL,
-		ExamPaperStorageSigningSecret: examPaperStorageSigningSecret,
-		ExamPaperStorageReceiptSecret: examPaperStorageReceiptSecret,
-		MaxFileSize:                   10 * 1024 * 1024, // 10MB
-		EduServiceURL:                 eduServiceURL,
-		SMTPHost:                      smtpHost,
-		SMTPPort:                      smtpPort,
-		SMTPUser:                      smtpUser,
-		SMTPPass:                      smtpPass,
-		SMTPFrom:                      smtpFrom,
-		JPushAppKey:                   jpushAppKey,
-		JPushMasterSecret:             jpushMasterSecret,
-		SuperAdminID:                  superAdminID,
-		SuperAdminPass:                superAdminPass,
+	JWTSecret:                      jwtSecret,
+	DSN:                            dsn,
+	UploadDir:                      uploadDir,
+	HomeFeedPersonalizationShadow:  homeFeedShadow(),
+	HomeFeedPersonalizationPercent: homeFeedPercent(),
+	HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
+	HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
+		CompetitionAwardEvidenceDir:    competitionAwardEvidenceDir,
+		ExamPaperDir:                   examPaperDir,
+		ExamPaperStorageMode:           examPaperStorageMode,
+		ExamPaperStorageBaseURL:        examPaperStorageBaseURL,
+		ExamPaperStorageSigningSecret:  examPaperStorageSigningSecret,
+		ExamPaperStorageReceiptSecret:  examPaperStorageReceiptSecret,
+		MaxFileSize:                    10 * 1024 * 1024, // 10MB
+		EduServiceURL:                  eduServiceURL,
+		SMTPHost:                       smtpHost,
+		SMTPPort:                       smtpPort,
+		SMTPUser:                       smtpUser,
+		SMTPPass:                       smtpPass,
+		SMTPFrom:                       smtpFrom,
+		JPushAppKey:                    jpushAppKey,
+		JPushMasterSecret:              jpushMasterSecret,
+		SuperAdminID:                   superAdminID,
+		SuperAdminPass:                 superAdminPass,
 
 		AIEnabled:                              aiEnabled,
 		AIProvider:                             aiProvider,
@@ -432,6 +442,7 @@ func Load() *Config {
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
+		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
 	}
 }
 
@@ -681,4 +692,48 @@ func ensurePrivateDirsOutsidePublicUploads(uploadDir string, privateDirs ...stri
 		}
 	}
 	return nil
+}
+
+// homeFeedShadow 读取 FEED-5 个性化 shadow 开关（默认开启：计算 + trace，不改排序）。
+func homeFeedShadow() bool {
+	v := os.Getenv("HOME_FEED_PERSONALIZATION_SHADOW")
+	return !(v == "0" || strings.EqualFold(v, "false"))
+}
+
+// homeFeedPercent 读取 FEED-5 个性化 active rollout 百分比（默认 0）。
+func homeFeedPercent() int {
+	v := os.Getenv("HOME_FEED_PERSONALIZATION_PERCENT")
+	if v == "" {
+		return 0
+	}
+	p, err := strconv.Atoi(v)
+	if err != nil || p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
+}
+
+// homeFeedV5Shadow 读取 FEED-V5 个性化 shadow 开关（默认关闭：V5 不主动上线）。
+func homeFeedV5Shadow() bool {
+	v := os.Getenv("HOME_FEED_V5_PERSONALIZATION_SHADOW")
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// homeFeedV5Percent 读取 FEED-V5 个性化 active rollout 百分比（默认 0）。
+func homeFeedV5Percent() int {
+	v := os.Getenv("HOME_FEED_V5_PERSONALIZATION_PERCENT")
+	if v == "" {
+		return 0
+	}
+	p, err := strconv.Atoi(v)
+	if err != nil || p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
 }

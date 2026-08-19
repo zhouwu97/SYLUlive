@@ -1,7 +1,7 @@
 ---
 title: "沈阳理工大学校助学金与临时困难补助政策（2023）"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "2023 年校助学金与临时困难补助办法"
 document_type: "school_grant_and_temporary_aid_policy"
 department: "沈阳理工大学学生处"

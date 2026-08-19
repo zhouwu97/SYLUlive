@@ -1,10 +1,9 @@
-/// 提高课程卡片组件。
-///
-/// 使用中性颜色，不标记为风险或必选项。
-
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';
 
+/// 提高课程卡片组件。
+///
+/// 使用中性颜色，不标记为风险或必选项。
 class ImprovementCourseCard extends StatelessWidget {
   final EduRequirementCourse course;
 

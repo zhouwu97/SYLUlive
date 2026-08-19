@@ -1,7 +1,7 @@
 ---
 title: "国家助学贷款政策调整（2024）"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "2024 年国家助学贷款政策调整通知"
 document_type: "school_student_loan_policy"
 department: "沈阳理工大学学生处"

@@ -230,6 +230,10 @@ class _AdminFeaturedApplicationsScreenState
                       '申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
                   Text('理由：${item['reason'] ?? ''}'),
                   Text('状态：${item['status'] ?? ''}'),
+                  Text(
+                    '来源：${item['source'] == 'moderator' ? '版主推荐' : '用户申请'}'
+                    '${item['section_id'] != null ? ' · 来自版块 #${item['section_id']}' : ''}',
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,

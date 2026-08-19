@@ -54,21 +54,69 @@ class AiCampusEvidenceCard extends StatelessWidget {
       title: const Text('个人数据来源', style: TextStyle(fontSize: 14)),
       children: evidence
           .map(
-            (item) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                item.datasetLabel.isEmpty
-                    ? item.sourceLabel
-                    : '${item.datasetLabel}：${item.sourceLabel}',
-              ),
-              subtitle: Text(
-                '更新于 ${AiEvidenceCard._time(item.fetchedAt)}'
-                '${item.isStale ? ' · 已过期' : ''}',
-              ),
-            ),
+            (item) => _PersonalEvidenceDetails(item: item),
           )
           .toList(growable: false),
+    );
+  }
+}
+
+class _PersonalEvidenceDetails extends StatelessWidget {
+  const _PersonalEvidenceDetails({required this.item});
+
+  final AiPersonalDataEvidence item;
+
+  @override
+  Widget build(BuildContext context) {
+    final courses = item.academicCourses;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              item.datasetLabel.isEmpty
+                  ? item.sourceLabel
+                  : '${item.datasetLabel}：${item.sourceLabel}',
+            ),
+            subtitle: Text(
+              item.fetchedAt == null
+                  ? (item.isStale ? '数据时间未知 · 已过期' : '数据时间未知')
+                  : '更新于 ${AiEvidenceCard._time(item.fetchedAt)}'
+                      '${item.isStale ? ' · 已过期' : ''}',
+            ),
+          ),
+          if (item.academicCreditSummary.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                item.academicCreditSummary,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          for (final course in courses)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: Text(course.name)),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      course.detail,
+                      textAlign: TextAlign.end,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

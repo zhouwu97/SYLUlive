@@ -1,13 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
+import '../models/exam_schedule.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
+import '../services/exam_schedule_repository.dart';
+import '../providers/course_schedule_provider.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
+import '../utils/app_feedback.dart';
+import '../utils/campus_today.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
@@ -16,6 +24,7 @@ import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
 import '../widgets/campus/campus_news_section_header.dart';
 import '../widgets/campus/campus_news_card.dart';
+import '../widgets/campus/campus_today_card.dart';
 
 import 'campus_article_detail_screen.dart';
 import 'ai/ai_assistant_screen.dart';
@@ -23,8 +32,11 @@ import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
 import 'competition_center_screen.dart';
+import 'course_schedule_screen.dart';
 import 'edu_screen.dart';
-import 'teacher_rate_screen.dart';
+import 'exam_schedule_screen.dart';
+import 'canteen_screen.dart';
+import 'campus_ranking_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
 
 class CampusScreen extends StatefulWidget {
@@ -32,14 +44,22 @@ class CampusScreen extends StatefulWidget {
   final CampusArticleService? articleService;
   final AiAssistantService? aiService;
 
-  const CampusScreen({super.key, this.articleService, this.aiService});
+  /// 可选时钟注入仅用于测试；生产环境使用真实时间。
+  final DateTime Function()? nowProvider;
+
+  const CampusScreen({
+    super.key,
+    this.articleService,
+    this.aiService,
+    this.nowProvider,
+  });
 
   @override
   State<CampusScreen> createState() => _CampusScreenState();
 }
 
 class _CampusScreenState extends State<CampusScreen>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   @override
   bool get wantKeepAlive => true;
 
@@ -51,6 +71,12 @@ class _CampusScreenState extends State<CampusScreen>
   CampusArticleSummary? _latestArticle;
   String? _latestError;
   bool _latestLoaded = false;
+
+  // 今日卡片（UX-5）
+  List<CampusTodayItem> _todayItems = [];
+  List<CourseBlock> _cachedTodayCourses = const [];
+  List<ExamModel> _cachedTodayExams = const [];
+  Timer? _todayTimer;
 
   // 最近文章列表
   List<CampusArticleSummary> _recentArticles = [];
@@ -64,10 +90,40 @@ class _CampusScreenState extends State<CampusScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final dio = getSharedDio();
     _articleService = widget.articleService ?? CampusArticleService(dio);
     _aiService = widget.aiService ?? AiAssistantService(dio);
     _loadAll();
+    _startTodayTimer();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _todayTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startTodayTimer();
+      _recomputeTodayItems();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _todayTimer?.cancel();
+      _todayTimer = null;
+    }
+  }
+
+  void _startTodayTimer() {
+    if (_todayTimer != null) return;
+    _todayTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _recomputeTodayItems(),
+    );
   }
 
   @override
@@ -82,13 +138,18 @@ class _CampusScreenState extends State<CampusScreen>
   }
 
   Future<void> _loadAll({bool force = false}) async {
-    if (force) _loadFuture = null;
+    if (force) {
+      _loadFuture = null;
+      _cachedTodayCourses = const [];
+      _cachedTodayExams = const [];
+    }
     if (_loadFuture != null) return _loadFuture!;
     final generation = ++_loadGeneration;
     _loadFuture = Future.wait([
       _loadLatest(generation),
       _loadRecent(generation),
       _loadAiCapabilities(generation),
+      _loadTodayItems(generation),
     ]).whenComplete(() {
       if (_loadGeneration == generation) {
         _loadFuture = null;
@@ -180,8 +241,9 @@ class _CampusScreenState extends State<CampusScreen>
     final hasOldData =
         isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
     if (hasOldData) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${isLatest ? '头条' : '资讯'}刷新失败: $message')),
+      AppFeedback.error(
+        '${isLatest ? '头条' : '资讯'}刷新失败: $message',
+        context: context,
       );
     } else {
       setState(() {
@@ -194,6 +256,81 @@ class _CampusScreenState extends State<CampusScreen>
         }
       });
     }
+  }
+
+  // ── 今日卡片（UX-5）───────────────────────────────────────────────
+  // 数据只来自已有 Provider / 本地缓存 / 已加载 Snapshot，禁止在 build 中
+  // 发起网络请求；计时器只重算已缓存数据，不会在后台触发网络请求。
+  DateTime _currentTime() => widget.nowProvider?.call() ?? DateTime.now();
+
+  Future<void> _loadTodayItems(int generation) async {
+    CourseScheduleProvider? schedule;
+    try {
+      schedule = context.read<CourseScheduleProvider>();
+    } catch (_) {
+      // 宿主未挂载课表 Provider 时，课程项独立降级隐藏。
+    }
+
+    if (schedule != null) {
+      try {
+        if (schedule.semesterStart == null) {
+          await schedule.loadSemesterStart();
+        }
+        if (schedule.courses.isEmpty) {
+          await schedule.loadCachedCoursesIfAvailable();
+        }
+        final week = schedule.getAcademicWeek(_currentTime());
+        _cachedTodayCourses = week == null
+            ? const []
+            : schedule.courses
+                .where((course) => schedule!.isCourseActive(course, week))
+                .toList(growable: false);
+      } catch (_) {
+        _cachedTodayCourses = const [];
+      }
+    } else {
+      _cachedTodayCourses = const [];
+    }
+
+    try {
+      _cachedTodayExams =
+          (await ExamScheduleRepository().load()).toList(growable: false);
+    } catch (_) {
+      _cachedTodayExams = const [];
+    }
+
+    if (mounted && _loadGeneration == generation) {
+      _recomputeTodayItems(generation: generation);
+    }
+  }
+
+  void _recomputeTodayItems({int? generation}) {
+    if (!mounted || (generation != null && generation != _loadGeneration)) {
+      return;
+    }
+    final entries = buildCampusTodayEntries(
+      now: _currentTime(),
+      courses: _cachedTodayCourses,
+      exams: _cachedTodayExams,
+    );
+    final items = entries
+        .map(
+          (entry) => CampusTodayItem(
+            id: entry.id,
+            icon: entry.kind == CampusTodayEntryKind.course
+                ? Icons.menu_book_rounded
+                : Icons.edit_calendar_rounded,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            onTap: () => _openPage(
+              entry.kind == CampusTodayEntryKind.course
+                  ? const CourseScheduleScreen()
+                  : const ExamScheduleScreen(),
+            ),
+          ),
+        )
+        .toList(growable: false);
+    setState(() => _todayItems = items);
   }
 
   String _currentSemesterText() {
@@ -255,6 +392,8 @@ class _CampusScreenState extends State<CampusScreen>
     super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    // 今日卡片有数据才显示；其存在时下方模块的入场动画索引整体后移一格。
+    final todayShown = _todayItems.isNotEmpty;
 
     return Scaffold(
       backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
@@ -275,15 +414,25 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 0,
                       child: CampusHeader(semester: _currentSemesterText()),
                     ),
+                    if (todayShown) ...[
+                      const SizedBox(height: 10),
+                      HomeTabRevealItem(
+                        index: 1,
+                        child: CampusTodayCard(
+                          items: _todayItems,
+                          isDark: isDark,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     HomeTabRevealItem(
-                      index: 1,
+                      index: todayShown ? 2 : 1,
                       child: _buildLatestCard(isDark),
                     ),
                     if (_aiCapabilities != null) ...[
                       const SizedBox(height: 12),
                       HomeTabRevealItem(
-                        index: 2,
+                        index: todayShown ? 3 : 2,
                         child: CampusAiEntryCard(
                           capabilities: _aiCapabilities!,
                           isDark: isDark,
@@ -293,11 +442,14 @@ class _CampusScreenState extends State<CampusScreen>
                     ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 2 : 3,
+                      index: _aiCapabilities == null
+                          ? (todayShown ? 3 : 2)
+                          : (todayShown ? 4 : 3),
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
-                        onRateTap: () => _openPage(const TeacherRateScreen()),
+                        onCanteenTap: () => _openPage(const CanteenScreen()),
+                        onRateTap: () => _openPage(const CampusRankingScreen()),
                         onTeamTap: () =>
                             _openPage(const TeamRecruitmentCenterScreen()),
                         onMapTap: () => _openPage(const CampusMapTabPage()),
@@ -306,13 +458,10 @@ class _CampusScreenState extends State<CampusScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 3 : 4,
-                      child: CampusNewsSectionHeader(
-                        isDark: isDark,
-                        onCompetitionTap: () =>
-                            _openPage(const CompetitionCenterScreen()),
-                      ),
+                    CampusNewsSectionHeader(
+                      isDark: isDark,
+                      onCompetitionTap: () =>
+                          _openPage(const CompetitionCenterScreen()),
                     ),
                     const SizedBox(height: 6),
                   ]),
@@ -321,10 +470,7 @@ class _CampusScreenState extends State<CampusScreen>
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
-                  child: HomeTabRevealItem(
-                    index: _aiCapabilities == null ? 4 : 5,
-                    child: _buildRecentList(isDark),
-                  ),
+                  child: _buildRecentList(isDark),
                 ),
               ),
             ],

@@ -47,6 +47,18 @@ func decodeInvitationResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 	return response
 }
 
+func decodePaginatedResponse(t *testing.T, recorder *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("接口状态码 = %d，响应 = %s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("解析接口响应失败: %v", err)
+	}
+	return response
+}
+
 func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newInvitationResponseTestDB(t)
@@ -96,12 +108,16 @@ func TestGetCandidatesReturnsStudentIDAndAvatar(t *testing.T) {
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidates(context)
-	response := decodeInvitationResponse(t, recorder)
+	response := decodePaginatedResponse(t, recorder)
 
-	if len(response) != 1 {
-		t.Fatalf("候选人数量 = %d，期望 1，响应 = %s", len(response), recorder.Body.String())
+	items, ok := response["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("候选人数量 = %d，期望 1，响应 = %s", len(items), recorder.Body.String())
 	}
-	candidate := response[0]
+	candidate, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("候选人资料格式不正确: %s", recorder.Body.String())
+	}
 	if candidate["student_id"] != "20260001" || candidate["avatar"] != "candidate.png" {
 		t.Fatalf("候选人学号或头像不正确: %s", recorder.Body.String())
 	}
@@ -122,9 +138,14 @@ func TestGetCandidatesSupportsInternalIDSearch(t *testing.T) {
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates?q=42", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidates(context)
-	response := decodeInvitationResponse(t, recorder)
+	response := decodePaginatedResponse(t, recorder)
 
-	if len(response) != 1 || response[0]["id"] != float64(42) {
+	items, ok := response["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("按内部 ID 搜索候选人失败: %s", recorder.Body.String())
+	}
+	candidate, ok := items[0].(map[string]interface{})
+	if !ok || candidate["id"] != float64(42) {
 		t.Fatalf("按内部 ID 搜索候选人失败: %s", recorder.Body.String())
 	}
 }

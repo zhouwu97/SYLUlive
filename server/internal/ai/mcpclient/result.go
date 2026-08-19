@@ -13,6 +13,14 @@ type RemoteToolDefinition struct {
 	OutputSchema json.RawMessage
 }
 
+// ExternalMCPHealthStatus 是通过状态工具和固定 Schema 校验后的安全诊断视图。
+type ExternalMCPHealthStatus struct {
+	Healthy         bool
+	Mode            string
+	ContractVersion string
+	AvailableTools  int
+}
+
 // ExternalMCPClient 是业务包装工具所依赖的稳定接口。
 // 业务层不会直接接触 MCP SDK Session 或子进程对象。
 type ExternalMCPClient interface {

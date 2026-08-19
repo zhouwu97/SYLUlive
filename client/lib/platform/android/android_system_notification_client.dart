@@ -3,7 +3,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../contracts/system_notification_client.dart';
 
 class AndroidSystemNotificationClient implements SystemNotificationClient {
-  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
   @override
@@ -12,22 +13,24 @@ class AndroidSystemNotificationClient implements SystemNotificationClient {
   }) async {
     if (_ready) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
 
     await _plugin.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (response) {
-        if (response.payload != null && response.payload!.isNotEmpty) {
-          try {
-            final payload = jsonDecode(response.payload!);
-            if (payload is Map<String, dynamic>) {
-              onNotificationTap(payload);
-            }
-          } catch (_) {}
-        }
+        _dispatchPayload(response.payload, onNotificationTap);
       },
     );
+
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp ?? false) {
+      _dispatchPayload(
+        launchDetails?.notificationResponse?.payload,
+        onNotificationTap,
+      );
+    }
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -44,6 +47,21 @@ class AndroidSystemNotificationClient implements SystemNotificationClient {
       await androidPlugin.createNotificationChannel(channel);
     }
     _ready = true;
+  }
+
+  static void _dispatchPayload(
+    String? raw,
+    void Function(Map<String, dynamic> payload) onNotificationTap,
+  ) {
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        onNotificationTap(
+          decoded.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+    } catch (_) {}
   }
 
   @override

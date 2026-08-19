@@ -44,10 +44,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     try {
       final dio = context.read<AuthProvider>().dio;
-      // We don't have a single count API, but we can try to fetch the lists lightweightly
-      // or just set -- if it's too slow. For now we will fetch them asynchronously.
       final futures = await Future.wait([
-        dio.get('/reports'),
+        dio.get('/reports', queryParameters: {'status': 'pending'}),
         dio.get('/admin/featured-applications'),
         dio.get('/teachers/pending'),
         dio.get('/majors/pending'),
@@ -208,9 +206,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         _AdminActionPill(
                           icon: Icons.library_books_outlined,
                           iconColor: Colors.deepOrange,
-                          title: '\u8bd5\u5377\u5ba1\u6838',
-                          subtitle:
-                              '\u5f85\u5ba1\u6838\u4e0e\u5df2\u53d1\u5e03\u8bd5\u5377\u7ba1\u7406',
+                          title: '试卷审核',
+                          subtitle: '待审核与已发布试卷管理',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -388,7 +385,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
-              title: '\u8bd5\u5377',
+              title: '试卷',
               count: _examPapersCount,
               isLoading: _isLoading,
               isDark: isDark,

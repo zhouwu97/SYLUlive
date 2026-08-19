@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
+import 'app_radius.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class AppTheme {
-  // 主题色
-  static const Color primaryColor = Color(0xFF6366F1);
-  static const Color secondaryColor = Color(0xFF8B5CF6);
-  static const Color accentColor = Color(0xFFEC4899);
+  // 主题色 — 全局统一为品牌青绿
+  static const Color primaryColor = AppColors.brandPrimary;
+  static const Color secondaryColor = AppColors.info;
+  static const Color accentColor = AppColors.warning;
 
   // 圆角 — 国产 UI 紧凑风格
-  static const double borderRadius = 12.0;
-  static const double borderRadiusSmall = 8.0;
-  static const double borderRadiusLarge = 16.0;
+  static const double borderRadius = AppRadius.md;
+  static const double borderRadiusSmall = AppRadius.sm;
+  static const double borderRadiusLarge = AppRadius.lg;
 
   // 阴影
   static const double shadowBlur = 10.0;
@@ -31,8 +33,10 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
-      canvasColor: brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
+      scaffoldBackgroundColor:
+          brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
+      canvasColor:
+          brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
       fontFamily: 'NotoSansCJKsc',
       fontFamilyFallback: const [
         'Noto Color Emoji',
@@ -72,6 +76,22 @@ class AppTheme {
           textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: scheme.primary,
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(
@@ -98,16 +118,37 @@ class AppTheme {
         ),
       ),
       // 底部弹窗
-      bottomSheetTheme: BottomSheetThemeData(
-        shape: const RoundedRectangleBorder(
+      bottomSheetTheme: const BottomSheetThemeData(
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
       ),
       // Tab 栏
       tabBarTheme: TabBarThemeData(
+        labelColor: scheme.primary,
+        unselectedLabelColor: brightness == Brightness.dark
+            ? AppColors.textSecondaryDark
+            : AppColors.textSecondaryLight,
+        indicatorColor: scheme.primary,
         labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(fontSize: 14),
         indicatorSize: TabBarIndicatorSize.label,
+      ),
+      // 进度条
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: scheme.primary,
+        linearTrackColor: scheme.primary.withValues(alpha: 0.15),
+      ),
+      // Switch
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return Colors.white;
+          return null;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return scheme.primary;
+          return null;
+        }),
       ),
       // 导航栏
       navigationBarTheme: NavigationBarThemeData(

@@ -24,12 +24,14 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
+import 'providers/canteen_discovery_provider.dart';
 import 'providers/social_provider.dart';
 import 'providers/water_section_provider.dart';
 import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
 import 'models/user.dart';
+import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
@@ -41,7 +43,7 @@ import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
-import 'theme/AppTheme.dart';
+import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
@@ -51,11 +53,14 @@ import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
 import 'services/root_page_state_service.dart';
+import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
+import 'services/emoji_favorite_repository.dart';
+import 'services/emoji_favorite_service.dart';
 import 'features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'features/ai_device_bridge/device_tool_worker.dart';
 import 'platform/platform_bootstrap.dart';
@@ -199,6 +204,7 @@ Future<void> appBootstrap() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await _initializeNativeNotificationOpenBridge();
 
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
@@ -353,6 +359,9 @@ bool _privateMessageNotificationsReady = false;
 const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
+const MethodChannel _notificationOpenChannel = MethodChannel(
+  'shenliyuan/notification_open',
+);
 
 // ── 移除 Flutter 侧 Alias 绑定状态追踪（统一由原生状态机管理） ──
 
@@ -366,6 +375,115 @@ final PendingNotificationOpen _pendingNotificationOpen =
 
 bool _jpushHandlersRegistered = false;
 bool _pendingNotificationProcessScheduled = false;
+bool _nativeNotificationOpenBridgeReady = false;
+bool _checkingNativeNotificationOpen = false;
+
+Future<void> _initializeNativeNotificationOpenBridge() async {
+  if (_nativeNotificationOpenBridgeReady) return;
+  _nativeNotificationOpenBridgeReady = true;
+
+  _notificationOpenChannel.setMethodCallHandler((call) async {
+    if (call.method != 'onNotificationOpen') {
+      throw MissingPluginException('未知通知点击方法: ${call.method}');
+    }
+
+    final raw = call.arguments;
+    if (raw is String && raw.isNotEmpty) {
+      await _handleNativeNotificationOpen(raw);
+    }
+    return true;
+  });
+
+  await _checkNativeNotificationOpen();
+}
+
+Future<void> _checkNativeNotificationOpen() async {
+  if (_checkingNativeNotificationOpen) return;
+  _checkingNativeNotificationOpen = true;
+  try {
+    final raw = await _notificationOpenChannel
+        .invokeMethod<String>('getPendingNotificationOpen');
+    if (raw != null && raw.isNotEmpty) {
+      await _handleNativeNotificationOpen(raw);
+    }
+  } on MissingPluginException {
+    // 非 Android 平台没有原生通知点击桥。
+  } catch (e) {
+    debugPrint('读取原生待处理通知失败: $e');
+  } finally {
+    _checkingNativeNotificationOpen = false;
+  }
+}
+
+Future<void> _handleNativeNotificationOpen(String raw) async {
+  final event = NativeNotificationOpen.parse(raw);
+  if (event == null) {
+    debugPrint('忽略格式无效的原生通知点击事件');
+    return;
+  }
+  if (event.isExpired(DateTime.now())) {
+    debugPrint('忽略已过期的原生通知点击: ${event.id}');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
+
+  final payload = event.payloadWithTrackingId();
+  final extras = extractJPushExtras(payload);
+  final recipientUserId = intFromNotificationExtra(
+    extras[notificationRecipientUserIdKey],
+  );
+  final accountDecision = _notificationAccountDecision(recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint('丢弃账号归属不匹配的原生通知点击: recipient=$recipientUserId');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
+
+  final type = extras['type']?.toString();
+
+  switch (type) {
+    case 'private_message':
+      final target = privateMessageTargetFromLocalPayload(jsonEncode(payload));
+      if (target == null) {
+        await _ackNativeNotificationOpen(event.id);
+        return;
+      }
+      await _clearPrivateMessageNotifications(target.conversationId);
+      _openPrivateMessage(target);
+      return;
+    case 'reply':
+      final target = NotificationOpenTarget.parse(payload);
+      if (target == null) {
+        await _ackNativeNotificationOpen(event.id);
+        return;
+      }
+      _storeOrOpenNotificationTarget(target);
+      return;
+    default:
+      debugPrint('忽略未知原生通知点击: type=$type');
+      await _ackNativeNotificationOpen(event.id);
+  }
+}
+
+Future<void> _ackNativeNotificationOpen(String? eventId) async {
+  if (eventId == null || eventId.isEmpty) return;
+  try {
+    final acknowledged = await _notificationOpenChannel.invokeMethod<bool>(
+          'ackNotificationOpen',
+          {'id': eventId},
+        ) ??
+        false;
+    if (acknowledged) {
+      Future<void>.delayed(Duration.zero, _checkNativeNotificationOpen)
+          .ignore();
+    }
+  } catch (e) {
+    debugPrint('确认原生通知点击失败: $e');
+  }
+}
 
 void _ensureJPushHandlersRegistered() {
   if (_jpushHandlersRegistered) return;
@@ -446,6 +564,19 @@ bool _isDuplicateNotificationOpen(
 }
 
 void _navigateToNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     _pendingNotificationOpen.store(target);
@@ -456,15 +587,12 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
   final now = DateTime.now();
   if (_isDuplicateNotificationOpen(target, now)) {
     debugPrint('忽略重复的通知跳转: ${target.type}');
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
     return;
   }
 
   _lastOpenedNotificationTarget = target;
   _lastOpenedNotificationAt = now;
-
-  // 尝试拉起 App
-  const channel = MethodChannel('shenliyuan/foreground');
-  channel.invokeMethod('bringToForeground').catchError((e) {});
 
   navigator.popUntil((route) => route.isFirst);
 
@@ -478,6 +606,7 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
             builder: (_) => const NotificationsScreen(),
           ),
         );
+        _ackNativeNotificationOpen(target.nativeOpenId).ignore();
         return;
       }
 
@@ -489,11 +618,26 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
           ),
         ),
       );
+      _ackNativeNotificationOpen(target.nativeOpenId).ignore();
       return;
   }
 }
 
 void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    _schedulePendingNotificationProcessing();
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
 
   if (navigator != null) {
@@ -503,6 +647,25 @@ void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
 
   _pendingNotificationOpen.store(target);
   _schedulePendingNotificationProcessing();
+}
+
+NotificationAccountDecision _notificationAccountDecision(
+  int? recipientUserId,
+) {
+  final context = appNavigatorKey.currentContext;
+  if (context == null) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  final authProvider = context.read<AuthProvider>();
+  if (authProvider.isLoggedIn &&
+      !(authProvider.user?.legalConsentsActive ?? false)) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  return notificationAccountDecision(
+    authInitialized: authProvider.isInitialized,
+    currentUserId: authProvider.isLoggedIn ? authProvider.user?.id : null,
+    recipientUserId: recipientUserId,
+  );
 }
 
 void _schedulePendingNotificationProcessing() {
@@ -686,6 +849,14 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
+  if (_notificationAccountDecision(target.recipientUserId) !=
+      NotificationAccountDecision.allow) {
+    debugPrint(
+      '跳过非当前账号的私信处理: recipient=${target.recipientUserId}',
+    );
+    return true;
+  }
+
   if (opened) {
     await _clearPrivateMessageNotifications(target.conversationId);
     _openPrivateMessage(target);
@@ -777,6 +948,7 @@ Future<void> _showPrivateMessageLocalNotification(
         'sender_name': target.displayName,
         'sender_avatar': target.senderAvatar,
         'message_id': target.messageId,
+        notificationRecipientUserIdKey: target.recipientUserId,
       },
     );
     debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
@@ -797,9 +969,18 @@ Future<void> _clearPrivateMessageNotifications(int conversationId) async {
 }
 
 void _openPrivateMessage(PrivateMessageTarget target) {
-  // 尝试拉起 App
-  const channel = MethodChannel('shenliyuan/foreground');
-  channel.invokeMethod('bringToForeground').catchError((e) {});
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
 
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
@@ -813,13 +994,50 @@ void _openPrivateMessage(PrivateMessageTarget target) {
   _navigateToPrivateMessage(target);
 }
 
+PrivateMessageTarget? _lastOpenedPrivateMessageTarget;
+DateTime? _lastOpenedPrivateMessageAt;
+
+bool _isDuplicatePrivateMessageOpen(
+  PrivateMessageTarget target,
+  DateTime now,
+) {
+  final previous = _lastOpenedPrivateMessageTarget;
+  final previousAt = _lastOpenedPrivateMessageAt;
+  if (previous == null || previousAt == null) return false;
+
+  return previous.sameConversation(target) &&
+      previous.messageId == target.messageId &&
+      now.difference(previousAt) < const Duration(seconds: 2);
+}
+
 void _navigateToPrivateMessage(PrivateMessageTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     debugPrint('❌ navigate: navigator is null');
     return;
   }
   final resolvedTarget = _resolvePrivateMessageTarget(target);
+  final now = DateTime.now();
+  if (_isDuplicatePrivateMessageOpen(resolvedTarget, now)) {
+    debugPrint('忽略重复的私信通知跳转: ${resolvedTarget.conversationId}');
+    _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
+    return;
+  }
+  _lastOpenedPrivateMessageTarget = resolvedTarget;
+  _lastOpenedPrivateMessageAt = now;
   debugPrint(
     '🧭 navigate: push conv=${resolvedTarget.conversationId} sender=${resolvedTarget.senderId}',
   );
@@ -833,6 +1051,7 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
       } else {
         unawaited(provider?.refreshMessages() ?? Future<void>.value());
       }
+      _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
       return;
     }
     final route = MaterialPageRoute<void>(
@@ -857,6 +1076,7 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
       navigator.push(route);
       debugPrint('✅ navigate: push 成功');
     }
+    _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
   } catch (e) {
     debugPrint('❌ navigate: push 失败 - $e');
   }
@@ -1030,7 +1250,34 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
-        ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
+          create: (_) {
+            final service = EmojiFavoriteService(
+              repository: EmojiFavoriteRepository(dio),
+            );
+            EmojiFavoriteService.configureSharedInstance(service);
+            return service;
+          },
+          update: (_, auth, service) {
+            final nextUserId = auth.user?.id.toString();
+            service!.syncSessionUser(nextUserId);
+            if (nextUserId != null) {
+              unawaited(service.syncFromServer());
+            }
+            EmojiFavoriteService.configureSharedInstance(service);
+            return service;
+          },
+        ),
+        ChangeNotifierProvider(create: (_) {
+          final postProvider = PostProvider(dio);
+          // H1.5：登录/退出/切换账号时清除首页 Feed 缓存与状态，
+          // 避免账号 A 的个性化首页缓存被账号 B 读到。
+          AccountSessionCleanupCoordinator.instance.register(
+            postProvider,
+            () => postProvider.invalidateHomeFeedCaches(),
+          );
+          return postProvider;
+        }),
         ChangeNotifierProxyProvider<PostProvider, PollProvider>(
           create: (_) => PollProvider(PollService(dio)),
           update: (_, posts, polls) => polls!..bindPostProvider(posts),
@@ -1066,6 +1313,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+        ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
         ChangeNotifierProvider(
@@ -1424,8 +1672,10 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     required bool fillScreen,
     required double blur,
   }) {
+    Widget imageLayer;
+
     if (fillScreen) {
-      return Image(
+      imageLayer = Image(
         image: imageProvider,
         fit: BoxFit.cover,
         alignment: alignment,
@@ -1434,35 +1684,53 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         ),
       );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.06,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: Image(
-              image: imageProvider,
-              fit: BoxFit.cover,
-              alignment: alignment,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-              ),
+    } else {
+      imageLayer = Stack(
+        fit: StackFit.expand,
+        children: [
+          // 补齐屏幕空白区域
+          Image(
+            image: imageProvider,
+            fit: BoxFit.cover,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => Container(
+              color:
+                  isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
             ),
           ),
+          // 保留完整背景主体
+          Image(
+            image: imageProvider,
+            fit: BoxFit.contain,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+
+    final effectiveBlur = blur.clamp(0.0, 30.0);
+
+    if (effectiveBlur <= 0.01) {
+      return imageLayer;
+    }
+
+    // 模糊会从图片边缘采样，略微放大，避免四周出现透明边或暗边。
+    final scale = 1.0 + effectiveBlur / 300.0;
+
+    return ClipRect(
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: effectiveBlur,
+          sigmaY: effectiveBlur,
         ),
-        Image(
-          image: imageProvider,
-          fit: BoxFit.contain,
-          alignment: alignment,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        child: Transform.scale(
+          scale: scale,
+          child: imageLayer,
         ),
-      ],
+      ),
     );
   }
 
@@ -1485,19 +1753,88 @@ class AuthWrapper extends StatefulWidget {
 @visibleForTesting
 class HomeInitialTabResolver {
   int? _initialTab;
+  int? _cachedUserId;
+  StartupDestinationMode? _cachedMode;
 
-  int resolve(ThemeProvider themeProvider) {
-    return _initialTab ??= themeProvider.startOnTimetable ? 2 : 0;
+  /// 解析 `lastPage` 深层类型（chat/post/notification）时要打底的根 tab。
+  static const int homeTabs = 5;
+
+  int resolve(
+    ThemeProvider themeProvider, {
+    int? userId,
+    RestorablePageState? lastPage,
+  }) {
+    final mode = themeProvider.startupDestination;
+    if (_initialTab != null &&
+        _cachedUserId == userId &&
+        _cachedMode == mode) {
+      return _initialTab!;
+    }
+    _cachedUserId = userId;
+    _cachedMode = mode;
+    return _initialTab = initialTabFor(mode, lastPage);
+  }
+
+  void reset() {
+    _initialTab = null;
+    _cachedUserId = null;
+    _cachedMode = null;
+  }
+
+  /// 从启动模式与上次页面推断打底 root tab 索引（纯函数，便于测试）。
+  @visibleForTesting
+  static int initialTabFor(
+    StartupDestinationMode mode,
+    RestorablePageState? lastPage,
+  ) {
+    return switch (mode) {
+      StartupDestinationMode.timetable => 2,
+      StartupDestinationMode.lastPage => _rootIndexFor(lastPage),
+      _ => 0,
+    };
+  }
+
+  static int _rootIndexFor(RestorablePageState? state) {
+    if (state == null) return 0;
+    final dynamic raw = switch (state.type) {
+      RestorablePageType.rootTab => state.arguments['index'],
+      RestorablePageType.chat ||
+      RestorablePageType.post ||
+      RestorablePageType.notification =>
+        state.arguments['underlyingRootTab'],
+    };
+    final index = raw is num ? raw.toInt() : int.tryParse('$raw');
+    if (index == null || index < 0 || index >= homeTabs) return 0;
+    return index;
   }
 }
+
+/// 启动期一次解析出的导航计划：打底的 root tab 与可选的首屏深层页面。
+///
+/// `deepPage != null` 时视觉上直接进入该页面，返回后落到 [rootTabIndex]。
+class StartupNavigationPlan {
+  const StartupNavigationPlan({
+    required this.rootTabIndex,
+    this.deepPage,
+  });
+
+  final int rootTabIndex;
+  final RestorablePageState? deepPage;
+}
+
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
   bool _legalConsentDialogVisible = false;
-  int? _conversationRestoreScheduledForUserId;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
+
+  /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
+  StartupNavigationPlan? _startupPlan;
+  int? _planUserId;
+  int? _resolvingUserId;
+  int _startupResolveGeneration = 0;
 
   @override
   void initState() {
@@ -1518,37 +1855,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       if (authProvider.isLoggedIn &&
           (authProvider.user?.legalConsentsActive ?? false)) {
         _ensureJPush(authProvider);
-        _checkNativePrivateMessage();
       }
+      _checkNativeNotificationOpen();
       _processPendingPrivateMessageOpen();
       _schedulePendingNotificationProcessing();
-    }
-  }
-
-  bool _checkingNativePrivateMessage = false;
-
-  Future<void> _checkNativePrivateMessage() async {
-    if (_checkingNativePrivateMessage) return;
-    _checkingNativePrivateMessage = true;
-
-    try {
-      final payload = await _privateMessageNotificationChannel
-          .invokeMethod<String>('getPendingPrivateMessage');
-
-      if (payload == null || payload.isEmpty) return;
-
-      final target = privateMessageTargetFromLocalPayload(payload);
-      if (target == null) {
-        debugPrint('原生私信通知参数解析失败: $payload');
-        return;
-      }
-
-      await _clearPrivateMessageNotifications(target.conversationId);
-      _openPrivateMessage(target);
-    } catch (e) {
-      debugPrint('读取原生待处理私信失败: $e');
-    } finally {
-      _checkingNativePrivateMessage = false;
     }
   }
 
@@ -1572,83 +1882,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  void _scheduleConversationRestore(AuthProvider authProvider) {
-    final userId = authProvider.user?.id;
-    if (userId == null ||
-        userId <= 0 ||
-        _conversationRestoreScheduledForUserId == userId) {
-      return;
-    }
-    _conversationRestoreScheduledForUserId = userId;
-    unawaited(_restoreLastConversation(userId));
-  }
-
-  Future<void> _restoreLastConversation(int userId) async {
-    // 给原生通知、JPush 回调和小组件深链留出优先处理窗口。
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (!mounted || context.read<AuthProvider>().user?.id != userId) return;
-
-    try {
-      final state = await RootPageStateStore.instance.readConversation(
-        accountId: userId,
-      );
-      if (!mounted || state == null) return;
-
-      final navigator = appNavigatorKey.currentState;
-      final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
-          _pendingNotificationOpen.target != null ||
-          widgetTabSwitch.value > 0;
-      if (navigator == null || navigator.canPop() || externalTargetPending) {
-        await RootPageStateStore.instance.clearConversation();
-        return;
-      }
-
-      navigator.push(
-        MaterialPageRoute<void>(
-          settings: RouteSettings(
-            name: '/messages/conversations/${state.conversationId}',
-          ),
-          builder: (_) => ChatDetailScreen(
-            conversationId: state.conversationId,
-            targetUser: User(
-              id: state.targetUserId,
-              studentId: '',
-              nickname: state.targetNickname,
-              avatar: state.targetAvatar,
-              createdAt: DateTime.now(),
-            ),
-          ),
-        ),
-      );
-      DiagnosticLogService.instance.record(
-        level: 'info',
-        source: '导航',
-        type: '私信会话已恢复',
-        summary: '已恢复上次打开的私信会话并重新拉取消息',
-        detail: '',
-        eventCode: 'navigation_conversation_restored',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'success',
-        route: '/messages/conversations/:id',
-        metadata: <String, Object?>{
-          'conversationId': state.conversationId,
-        },
-      );
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '私信页面状态恢复失败',
-        summary: '无法恢复上次打开的私信会话',
-        detail: error.toString(),
-        eventCode: 'navigation_conversation_state_restore_failed',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'failure',
-      );
-    }
-  }
 
   void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
     if (_legalConsentDialogVisible) return;
@@ -1710,9 +1943,16 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
             if (PlatformCapabilities.current.supportsJPush) {
-              _checkNativePrivateMessage();
+              _checkNativeNotificationOpen();
             }
-            _scheduleConversationRestore(authProvider);
+          });
+        } else if (!authProvider.isLoggedIn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _processPendingPrivateMessageOpen();
+            _schedulePendingNotificationProcessing();
+            if (PlatformCapabilities.current.supportsJPush) {
+              _checkNativeNotificationOpen();
+            }
           });
         }
 
@@ -1728,9 +1968,99 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const PrivacyCenterScreen(restricted: true);
         }
 
-        return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));
+        final userId = authProvider.user?.id;
+        // lastPage 模式需要先异步解析启动计划，期间显示加载门禁，
+        // 避免 HomeScreen 先以错误的 root tab 构建、再闪成目标页面。
+        if (tp.startupDestination == StartupDestinationMode.lastPage &&
+            userId != null &&
+            userId > 0) {
+          if (_startupPlan == null || _planUserId != userId) {
+            _resolveStartupPlan(userId);
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return HomeScreen(
+            initialTab: _startupPlan!.rootTabIndex,
+            initialDeepPage: _startupPlan!.deepPage,
+          );
+        }
+
+        // home / timetable（或 lastPage 但无有效用户）：同步可解，不设门禁。
+        // 同时丢弃已解析的 lastPage 计划，避免日后切回 lastPage 时复活旧深层页。
+        _startupPlan = null;
+        _planUserId = null;
+        final resolvedPlan = StartupNavigationPlan(
+          rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
+        );
+        return HomeScreen(
+          initialTab: resolvedPlan.rootTabIndex,
+          initialDeepPage: resolvedPlan.deepPage,
+        );
       },
     );
+  }
+
+  /// 异步解析 `lastPage` 启动计划：读取上次页面，计算打底 root tab 与
+  /// 可选的首屏深层页面。外部导航目标（通知/私信/小组件）优先，抑制深层页。
+  Future<void> _resolveStartupPlan(int userId) async {
+    if (_resolvingUserId == userId) return;
+    _resolvingUserId = userId;
+    final currentGen = ++_startupResolveGeneration;
+
+    try {
+      final tp = context.read<ThemeProvider>();
+      if (tp.startupDestination != StartupDestinationMode.lastPage) return;
+      if (context.read<AuthProvider>().user?.id != userId) return;
+
+      final externalTargetPending =
+          _pendingPrivateMessageOpen.target != null ||
+              _pendingNotificationOpen.target != null ||
+              widgetTabSwitch.value > 0;
+
+      RestorablePageState? state;
+      if (!externalTargetPending) {
+        try {
+          state = await RootPageStateStore.instance.readLastPage(
+            accountId: userId,
+          );
+        } catch (error) {
+          DiagnosticLogService.instance.record(
+            level: 'warning',
+            source: '存储',
+            type: '上次页面恢复失败',
+            summary: '无法恢复上次退出时的页面',
+            detail: error.toString(),
+            eventCode: 'navigation_last_page_restore_failed',
+            category: 'navigation',
+            operation: 'restore',
+            result: 'failure',
+          );
+        }
+      }
+
+      if (!mounted) return;
+      if (currentGen != _startupResolveGeneration) return;
+      if (context.read<AuthProvider>().user?.id != userId) return;
+
+      setState(() {
+        _planUserId = userId;
+        _startupPlan = StartupNavigationPlan(
+          rootTabIndex: _homeInitialTabResolver.resolve(
+            tp,
+            userId: userId,
+            lastPage: state,
+          ),
+          deepPage: state == null || state.type == RestorablePageType.rootTab
+              ? null
+              : state,
+        );
+      });
+    } finally {
+      if (_resolvingUserId == userId) {
+        _resolvingUserId = null;
+      }
+    }
   }
 }
 

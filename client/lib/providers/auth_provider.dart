@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:dio/dio.dart';
@@ -11,6 +12,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
 import '../platform/contracts/secure_store.dart';
+import '../platform/contracts/system_notification_client.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -284,6 +286,8 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _initialized = false;
   Future<void>? _initializationFuture;
+  Future<void>? _sessionExpiryFuture;
+  Future<void> _authMutationTail = Future<void>.value();
   int _sessionGeneration = 0;
   int _accountSessionEpoch = 0;
   bool _applyingConsentRestriction = false;
@@ -323,7 +327,16 @@ class AuthProvider extends ChangeNotifier {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          _applyAuthHeader();
+          final token = _token;
+          options.extra['authSessionGeneration'] = _sessionGeneration;
+          options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
+          options.extra['requestHadAuth'] = token != null && token.isNotEmpty;
+          if (token != null && token.isNotEmpty) {
+            // 将凭据写入本次请求，避免全局 headers 在异步切换会话时串值。
+            options.headers['Authorization'] = 'Bearer $token';
+          } else {
+            options.headers.remove('Authorization');
+          }
           handler.next(options);
         },
         onError: (error, handler) {
@@ -337,7 +350,17 @@ class AuthProvider extends ChangeNotifier {
               uriPath.startsWith('/edu/') ||
               uriPath.startsWith('/api/edu/');
 
-          if (status == 401 && _token != null) {
+          final requestHadAuth =
+              error.requestOptions.extra['requestHadAuth'] == true;
+          final requestGeneration =
+              error.requestOptions.extra['authSessionGeneration'];
+          final requestFingerprint =
+              error.requestOptions.extra['authTokenFingerprint'];
+          final isCurrentSessionRequest = requestHadAuth &&
+              requestGeneration == _sessionGeneration &&
+              requestFingerprint == _tokenFingerprint(_token);
+
+          if (status == 401 && requestHadAuth) {
             if (isEduApi) {
               // 教务会话失效不导致 App 登录失效
               handler.next(error);
@@ -347,10 +370,15 @@ class AuthProvider extends ChangeNotifier {
             // 非教务接口，判定为 App 401
             final isTargetError = errorCode == 'invalid_token' ||
                 errorCode == 'token_version_expired' ||
-                errorCode == 'authentication_required';
+                errorCode == 'authentication_required' ||
+                errorCode == 'role_changed';
 
-            if (errorCode != null && !isTargetError) {
-              // 其他 401（比如密码错误等）不清除会话
+            if (!isTargetError || !isCurrentSessionRequest) {
+              // 未分类业务 401，以及旧会话请求的 401，都不能清除当前会话。
+              if (isTargetError && !isCurrentSessionRequest) {
+                debugPrint(
+                    '忽略旧会话 401: requestGen=$requestGeneration currentGen=$_sessionGeneration');
+              }
               handler.next(error);
               return;
             }
@@ -372,9 +400,7 @@ class AuthProvider extends ChangeNotifier {
                 'errorCode': errorCode?.toString() ?? 'unknown',
               },
             );
-            // 统一走 _clearLocalSession，与手动退出相同路径
-            // 不 await — 拦截器内部不能阻塞
-            _clearLocalSession(clearPushAlias: true);
+            _expireCurrentSession(_sessionGeneration, _token!);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -399,6 +425,32 @@ class AuthProvider extends ChangeNotifier {
         (_) => initializeStoredAuth(),
       );
     }
+  }
+
+  static String? _tokenFingerprint(String? token) {
+    if (token == null || token.isEmpty) return null;
+    return sha256.convert(utf8.encode(token)).toString().substring(0, 8);
+  }
+
+  Future<T> _enqueueAuthMutation<T>(Future<T> Function() mutation) {
+    final next = _authMutationTail.then((_) => mutation());
+    _authMutationTail = next.then<void>((_) {}, onError: (_, __) {});
+    return next;
+  }
+
+  Future<void> _expireCurrentSession(int generation, String token) {
+    if (_sessionExpiryFuture != null) return _sessionExpiryFuture!;
+    _sessionExpiryFuture = _enqueueAuthMutation(() async {
+      if (_sessionGeneration != generation || _token != token) return;
+      await _clearLocalSession(
+        clearPushAlias: true,
+        closeAccountContext: true,
+        expectedGeneration: generation,
+        expectedToken: token,
+        skipMutationQueue: true,
+      );
+    }).whenComplete(() => _sessionExpiryFuture = null);
+    return _sessionExpiryFuture!;
   }
 
   Future<void> initializeStoredAuth() {
@@ -572,10 +624,21 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
-    await _credentialStore.write(
-      token: candidate.token,
-      userJson: jsonEncode(candidate.user.toJson()),
-    );
+    await _enqueueAuthMutation(() async {
+      await _credentialStore.write(
+        token: candidate.token,
+        userJson: jsonEncode(candidate.user.toJson()),
+      );
+      // 新会话完整落盘后清除旧的退出墓碑，防止下次冷启动被墓碑再次清掉。
+      // 墓碑只在平台凭据存储路径下被启动逻辑读取，注入凭据存储（Web/测试）不涉及。
+      if (_usesPlatformCredentialStore) {
+        final prefs = await AppPreferencesStore.getInstance();
+        if (prefs.containsKey('auth_force_logged_out') &&
+            !await prefs.remove('auth_force_logged_out')) {
+          throw StateError('清除认证退出墓碑失败');
+        }
+      }
+    });
     if (candidate.user.legalConsentsActive) {
       await KeepAliveService.instance.syncAuthToken(candidate.token);
       await GradeReminderService.instance.syncRuntimeConfig(
@@ -645,6 +708,7 @@ class AuthProvider extends ChangeNotifier {
     await _saveAuthCandidate(candidate);
     if (_user != null && _user!.id != candidate.user.id) {
       await _sessionCleanupCoordinator.closeCurrentSession();
+      await _clearAccountNotificationState();
     }
     _commitAuthSession(candidate);
     _setAuthState(AuthState.authenticated);
@@ -880,10 +944,10 @@ class AuthProvider extends ChangeNotifier {
         ..['edu_authorized'] = false
         ..['edu_session_state'] = 'revoked';
       final nextUser = User.fromJson(userJson);
-      await _credentialStore.write(
-        token: _token!,
-        userJson: jsonEncode(nextUser.toJson()),
-      );
+      await _enqueueAuthMutation(() => _credentialStore.write(
+            token: _token!,
+            userJson: jsonEncode(nextUser.toJson()),
+          ));
       _user = nextUser;
       _sessionGeneration++;
       await _clearConsentDependentLocalData(currentUser);
@@ -908,7 +972,24 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _clearLocalSession({
     required bool clearPushAlias,
     bool closeAccountContext = true,
+    int? expectedGeneration,
+    String? expectedToken,
+    bool skipMutationQueue = false,
   }) async {
+    if (expectedGeneration != null &&
+        (_sessionGeneration != expectedGeneration || _token != expectedToken)) {
+      return;
+    }
+    if (!skipMutationQueue) {
+      await _enqueueAuthMutation(() => _clearLocalSession(
+            clearPushAlias: clearPushAlias,
+            closeAccountContext: closeAccountContext,
+            expectedGeneration: expectedGeneration,
+            expectedToken: expectedToken,
+            skipMutationQueue: true,
+          ));
+      return;
+    }
     final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
 
@@ -922,6 +1003,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {}
 
     // 认证凭据清除成功后再提交内存状态。
+    await _clearAccountNotificationState();
     _token = null;
     _user = null;
     if (_authState != AuthState.expired) {
@@ -964,6 +1046,22 @@ class AuthProvider extends ChangeNotifier {
           .invokeMethod('clearAlias');
     } catch (e) {
       debugPrint('清除 JPush Alias 失败: ${e.runtimeType}');
+    }
+  }
+
+  Future<void> _clearAccountNotificationState() async {
+    if (!kIsWeb) {
+      try {
+        await const MethodChannel('shenliyuan/notification_open')
+            .invokeMethod('clearPendingNotificationOpen');
+      } catch (e) {
+        debugPrint('清除账号通知点击队列失败: ${e.runtimeType}');
+      }
+    }
+    try {
+      await SystemNotificationClient.current().cancelAll();
+    } catch (e) {
+      debugPrint('清除账号本地通知失败: ${e.runtimeType}');
     }
   }
 
@@ -1071,10 +1169,10 @@ class AuthProvider extends ChangeNotifier {
 
     final nextUser = User.fromJson(userJson);
 
-    await _credentialStore.write(
-      token: token,
-      userJson: jsonEncode(nextUser.toJson()),
-    );
+    await _enqueueAuthMutation(() => _credentialStore.write(
+          token: token,
+          userJson: jsonEncode(nextUser.toJson()),
+        ));
 
     _commitUserSnapshot(nextUser);
     notifyListeners();

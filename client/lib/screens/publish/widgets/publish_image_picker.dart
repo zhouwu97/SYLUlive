@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../utils/app_feedback.dart';
+
 /// Mixin that provides image picking logic for publish forms.
 ///
-/// The host [State] must implement the abstract getters/setters so the mixin
-/// can read the current image lists and trigger rebuilds.
+/// The host [State] must implement [canAddMoreImages] and [onImageAdded];
+/// C-2 unified image model means the host decides how to turn the picked
+/// [XFile] into a list item.
 mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   static final ImagePicker _picker = ImagePicker();
 
@@ -12,12 +15,8 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   // Abstract – the host State supplies these
   // ---------------------------------------------------------------------------
 
-  List<XFile> get selectedImages;
-  List<dynamic> get existingImages; // List<PostImage> in practice
   bool get canAddMoreImages;
   void onImageAdded(XFile image);
-  void onNewImageRemoved(int index);
-  void onExistingImageRemoved(int index);
 
   // ---------------------------------------------------------------------------
   // Pick a single image from the given source
@@ -31,12 +30,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
       final length = await image.length();
       if (length > 10 * 1024 * 1024) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片大小不能超过 10MB'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppFeedback.error('图片大小不能超过 10MB', context: context);
         }
         return;
       }
@@ -47,9 +41,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('最多只能添加 9 张图片')));
+          AppFeedback.info('最多只能添加 9 张图片', context: context);
         }
       }
     } catch (e) {

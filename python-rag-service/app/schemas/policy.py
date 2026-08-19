@@ -26,30 +26,28 @@ class PolicyRAGInput(StrictSchema):
 
 
 class PolicyRule(StrictSchema):
-    statement: str = Field(min_length=1, max_length=4_000)
-    citation_ids: list[str] = Field(min_length=1, max_length=10)
+    statement: str = Field(min_length=1, max_length=500)
+    citation_ids: list[str] = Field(min_length=1, max_length=5)
 
 
 class PolicyCitation(StrictSchema):
     reference_id: str = Field(pattern=r"^R[1-9][0-9]?$", max_length=3)
-    quote: str = Field(min_length=4, max_length=1_000)
+    quote: str = Field(min_length=4, max_length=240)
 
 
 class PolicyAnswer(StrictSchema):
     """模型的结构化输出；引用仍是单次请求内的临时编号。"""
 
-    answer: str = Field(min_length=1, max_length=8_000)
-    current_rules: list[PolicyRule] = Field(default_factory=list, max_length=20)
-    historical_rules: list[PolicyRule] = Field(default_factory=list, max_length=20)
-    warnings: list[str] = Field(default_factory=list, max_length=20)
-    citations: list[PolicyCitation] = Field(min_length=1, max_length=10)
+    answer: str = Field(min_length=1, max_length=800)
+    current_rules: list[PolicyRule] = Field(default_factory=list, max_length=3)
+    historical_rules: list[PolicyRule] = Field(default_factory=list, max_length=2)
+    warnings: list[str] = Field(default_factory=list, max_length=5)
+    citations: list[PolicyCitation] = Field(min_length=1, max_length=3)
     confidence: Literal["low", "medium", "high"]
 
     @model_validator(mode="after")
     def validate_reference_graph(self) -> "PolicyAnswer":
         citation_ids = [item.reference_id for item in self.citations]
-        if len(citation_ids) != len(set(citation_ids)):
-            raise ValueError("duplicate temporary citation")
         declared = set(citation_ids)
         used = {
             citation_id
@@ -58,8 +56,6 @@ class PolicyAnswer(StrictSchema):
         }
         if not used.issubset(declared):
             raise ValueError("rule contains undeclared temporary citation")
-        if not used:
-            raise ValueError("structured answer has no cited rule")
         return self
 
 

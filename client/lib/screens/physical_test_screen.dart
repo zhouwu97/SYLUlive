@@ -7,10 +7,10 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 import '../features/campus_data/storage/physical_cache_store.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
-import '../features/campus_data/storage/physical_cache_store.dart';
 import '../utils/sign_utils.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
@@ -502,7 +502,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                                   textAlign: TextAlign.center),
                               trailing: _currentYear == y
                                   ? const Icon(Icons.check,
-                                      color: Color(0xFF6366F1))
+                                      color: AppColors.brandPrimary)
                                   : const SizedBox(width: 24),
                               onTap: () {
                                 Navigator.pop(context);
@@ -555,7 +555,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             width: dialogWidth,
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
             decoration: BoxDecoration(
-              color: isDark ? Colors.grey[900] : Colors.white,
+              color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
@@ -578,7 +578,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : Colors.black87,
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight,
                         ),
                       ),
                     ),
@@ -588,9 +590,13 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         onPressed: () => Navigator.of(dialogContext).pop(),
-                        icon: Icon(Icons.close_rounded,
-                            size: 21,
-                            color: isDark ? Colors.white70 : Colors.black54),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 21,
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondaryLight,
+                        ),
                       ),
                     ),
                   ],
@@ -618,7 +624,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     backgroundColor: Colors.white,
                     eyeStyle: const QrEyeStyle(
                       eyeShape: QrEyeShape.square,
-                      color: Color(0xFF6366F1),
+                      color: AppColors.brandPrimary,
                     ),
                     dataModuleStyle: const QrDataModuleStyle(
                       dataModuleShape: QrDataModuleShape.square,
@@ -632,7 +638,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                   ),
                 ),
                 const SizedBox(height: 7),
@@ -640,7 +648,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   '学号：${widget.username}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                   ),
                 ),
               ],
@@ -659,7 +669,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         borderRadius: 16,
         child: Row(
           children: [
-            const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
+            const Icon(Icons.qr_code_2, size: 20, color: AppColors.brandPrimary),
             const SizedBox(width: 10),
             const Text(
               '体测身份码',
@@ -670,14 +680,18 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               '查看',
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             ),
             const SizedBox(width: 2),
             Icon(
               Icons.chevron_right,
               size: 18,
-              color: isDark ? Colors.white54 : Colors.grey[600],
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
             ),
           ],
         ),
@@ -686,23 +700,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Widget _buildSummaryCard(_YearData data, bool isDark) {
-    Color gradeColor;
-    Color gradeBg;
-    if (data.totalGrade == '优秀' ||
-        data.totalGrade == '良好' ||
-        data.totalGrade == '正常') {
-      gradeColor = const Color(0xFF32A866);
-      gradeBg = const Color(0xFFE8F7EF);
-    } else if (data.totalGrade == '及格') {
-      gradeColor = const Color(0xFF5B6EE1);
-      gradeBg = const Color(0xFFEEF0FF);
-    } else if (data.totalGrade == '不及格') {
-      gradeColor = const Color(0xFFE45757);
-      gradeBg = const Color(0xFFFDECEC);
-    } else {
-      gradeColor = const Color(0xFF8A8F9C);
-      gradeBg = isDark ? Colors.white10 : const Color(0xFFF6F7FB);
-    }
+    final gradeColor = AppColors.gradeStatusColor(data.totalGrade);
+    final gradeBg =
+        AppColors.gradeStatusSurface(data.totalGrade, isDark: isDark);
 
     return GlassContainer(
       padding: const EdgeInsets.all(16),
@@ -739,9 +739,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           const SizedBox(height: 6),
           Text(
             '${data.totalScore} 分',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
             ),
           ),
           const SizedBox(height: 10),
@@ -751,14 +754,16 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 '当前采用：${_currentYear.isNotEmpty ? _currentYear : ""}年体测标准',
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                 ),
               ),
               const Spacer(),
               const Text(
                 '评分标准',
                 style: TextStyle(
-                  color: Color(0xFF5B6EE1),
+                  color: AppColors.brandPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -783,7 +788,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         ),
         style: ElevatedButton.styleFrom(
           elevation: 0,
-          backgroundColor: const Color(0xFF6366F1),
+          backgroundColor: AppColors.brandPrimary,
           disabledBackgroundColor:
               isDark ? Colors.white10 : const Color(0xFFE1E5EE),
           foregroundColor: Colors.white,
@@ -831,7 +836,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isDark ? Colors.white10 : const Color(0xFFEEF0F4),
+          color: isDark
+              ? AppColors.surfaceMutedDark
+              : AppColors.surfaceMutedLight,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
@@ -842,14 +849,18 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white70 : const Color(0xFF596170),
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             ),
             const SizedBox(width: 4),
             Icon(
               Icons.swap_horiz_rounded,
               size: 16,
-              color: isDark ? Colors.white70 : const Color(0xFF596170),
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
             ),
           ],
         ),
@@ -861,7 +872,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       List<_GymScoreItem> scores, bool isDark, int displayMode) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.grey[850] : Colors.white,
+        color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -869,20 +880,15 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           final index = entry.key;
           final item = entry.value;
 
-          Color gradeColor;
-          Color gradeBg;
-          if (item.grade == '优秀' || item.grade == '良好' || item.grade == '正常') {
-            gradeColor = const Color(0xFF32A866);
-            gradeBg = const Color(0xFFE8F7EF);
-          } else if (item.grade == '及格') {
-            gradeColor = const Color(0xFF5B6EE1);
-            gradeBg = const Color(0xFFEEF0FF);
-          } else if (item.grade == '不及格') {
-            gradeColor = const Color(0xFFE45757);
-            gradeBg = const Color(0xFFFDECEC);
+          final Color gradeColor;
+          final Color gradeBg;
+          if (displayMode == 0) {
+            gradeColor = AppColors.scoreColor(item.score);
+            gradeBg = AppColors.scoreSurface(item.score, isDark: isDark);
           } else {
-            gradeColor = const Color(0xFF8A8F9C);
-            gradeBg = isDark ? Colors.white10 : const Color(0xFFF6F7FB);
+            gradeColor = AppColors.gradeStatusColor(item.grade);
+            gradeBg =
+                AppColors.gradeStatusSurface(item.grade, isDark: isDark);
           }
 
           Widget rightWidget;
@@ -938,8 +944,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                               color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF20232A),
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight,
                             ),
                           ),
                           if (w.isNotEmpty) ...[
@@ -949,8 +955,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                               style: TextStyle(
                                 fontSize: 11,
                                 color: isDark
-                                    ? Colors.white54
-                                    : const Color(0xFF8E94A3),
+                                    ? AppColors.iconMutedDark
+                                    : AppColors.textMutedLight,
                               ),
                             ),
                           ],
@@ -963,7 +969,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
                       ),
                     ),
                     const SizedBox(width: 18),
@@ -981,7 +989,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 Divider(
                   height: 1,
                   thickness: 1,
-                  color: isDark ? Colors.white12 : const Color(0xFFEEF0F4),
+                  color: isDark
+                      ? AppColors.borderSubtleDark
+                      : AppColors.borderSubtleLight,
                   indent: 16,
                   endIndent: 16,
                 ),
@@ -1018,7 +1028,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               icon: const Icon(Icons.refresh),
               label: const Text('重试'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6366F1),
+                backgroundColor: AppColors.brandPrimary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),

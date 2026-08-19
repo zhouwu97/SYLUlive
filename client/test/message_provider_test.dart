@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
+import 'package:shenliyuan/services/emoji_favorite_service.dart';
 
 void main() {
   test('resolves an existing conversation before loading its messages',
@@ -597,6 +598,73 @@ void main() {
     expect(requestData?['sticker_id'], 'sticker-1');
     expect(provider.messages, hasLength(1));
     expect(confirmed?.isMixedTextSticker, isTrue);
+  });
+
+  test('sendFavoriteImageMessage reuses the existing file id without upload',
+      () async {
+    final dio = Dio();
+    Map<String, dynamic>? requestData;
+    var uploadRequests = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/upload') {
+            uploadRequests++;
+            handler.reject(_unexpectedRequest(options));
+            return;
+          }
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            requestData = Map<String, dynamic>.from(options.data as Map);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: _messageJson(
+                  id: 103,
+                  clientMessageId: requestData!['client_message_id'] as String,
+                ),
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final confirmed = await provider.sendFavoriteImageMessage(
+      3,
+      const EmojiFavoriteItem.custom(fileId: 77),
+      senderId: 8,
+    );
+
+    expect(confirmed?.id, 103);
+    expect(requestData?['file_id'], 77);
+    expect(requestData?['content'], '');
+    expect(uploadRequests, 0);
+  });
+
+  test('sendFavoriteImageMessage with invalid fileId sets messageError and returns null',
+      () async {
+    final dio = Dio();
+    final provider = MessageProvider(dio);
+
+    final result = await provider.sendFavoriteImageMessage(
+      3,
+      const EmojiFavoriteItem.image('https://example.com/invalid.png'),
+      senderId: 8,
+    );
+
+    expect(result, isNull);
+    expect(provider.messageError, '该收藏数据已失效，请重新收藏');
   });
 
   test('sendMessage allows multiple requests to remain in flight', () async {

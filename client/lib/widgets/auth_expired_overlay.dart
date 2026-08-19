@@ -1,5 +1,8 @@
-import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:flutter/material.dart';
+
+import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 
 class AuthExpiredOverlay extends StatefulWidget {
   final VoidCallback onDismiss;
@@ -20,22 +23,28 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  bool _isExiting = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: AppMotion.overlay,
     );
-    _fadeAnimation = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: AppMotion.incoming,
+      reverseCurve: AppMotion.outgoing,
+    );
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
+      begin: const Offset(0, 0.08),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: AppMotion.incoming,
+      reverseCurve: AppMotion.outgoing,
+    ));
     _controller.forward();
   }
 
@@ -45,9 +54,38 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
     super.dispose();
   }
 
+  Future<void> _handleDismiss() async {
+    if (_isExiting) return;
+    _isExiting = true;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (!reduceMotion && mounted) {
+      _controller.duration = AppMotion.fast;
+      await _controller.reverse();
+    }
+    if (mounted) {
+      widget.onDismiss();
+    }
+  }
+
+  Future<void> _handleRelogin() async {
+    if (_isExiting) return;
+    _isExiting = true;
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (!reduceMotion && mounted) {
+      _controller.duration = AppMotion.fast;
+      await _controller.reverse();
+    }
+    if (mounted) {
+      widget.onRelogin();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -66,28 +104,28 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                     end: Alignment.bottomRight,
                     colors: isDark
                         ? [
-                            const Color(0xFF1A1A2E).withOpacity(0.95),
-                            const Color(0xFF16213E).withOpacity(0.95),
+                            AppColors.surfaceSecondaryDark.withValues(alpha: 0.95),
+                            AppColors.surfaceFocusedDark.withValues(alpha: 0.95),
                           ]
                         : [
-                            Colors.white.withOpacity(0.95),
-                            Colors.white.withOpacity(0.9),
+                            AppColors.surfaceSecondaryLight.withValues(alpha: 0.95),
+                            AppColors.surfaceFocusedLight.withValues(alpha: 0.90),
                           ],
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
                       color: isDark
-                          ? Colors.black.withOpacity(0.5)
-                          : Colors.purple.withOpacity(0.2),
+                          ? Colors.black.withValues(alpha: 0.5)
+                          : primary.withValues(alpha: 0.12),
                       blurRadius: 30,
                       spreadRadius: 5,
                     ),
                   ],
                   border: Border.all(
                     color: isDark
-                        ? Colors.white.withOpacity(0.1)
-                        : Colors.purple.withOpacity(0.2),
+                        ? AppColors.borderNormalDark
+                        : AppColors.borderNormalLight,
                     width: 1,
                   ),
                 ),
@@ -130,8 +168,8 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
                                         color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
+                                            ? AppColors.textPrimaryDark
+                                            : AppColors.textPrimaryLight,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -140,19 +178,20 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: isDark
-                                            ? Colors.white60
-                                            : Colors.black54,
+                                            ? AppColors.textSecondaryDark
+                                            : AppColors.textSecondaryLight,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               IconButton(
-                                onPressed: widget.onDismiss,
+                                onPressed: _handleDismiss,
                                 icon: Icon(
                                   Icons.close,
-                                  color:
-                                      isDark ? Colors.white60 : Colors.black38,
+                                  color: isDark
+                                      ? AppColors.iconMutedDark
+                                      : AppColors.iconMutedLight,
                                 ),
                               ),
                             ],
@@ -162,7 +201,7 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                             children: [
                               Expanded(
                                 child: _GlassButton(
-                                  onPressed: widget.onDismiss,
+                                  onPressed: _handleDismiss,
                                   isDark: isDark,
                                   child: const Text('暂时不管'),
                                 ),
@@ -170,10 +209,10 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _GradientButton(
-                                  onPressed: widget.onRelogin,
+                                  onPressed: _handleRelogin,
                                   colors: [
-                                    Colors.purple[400]!,
-                                    Colors.purple[600]!,
+                                    primary,
+                                    primary.withValues(alpha: 0.85),
                                   ],
                                   child: const Text(
                                     '重新登录',
@@ -222,13 +261,13 @@ class _GlassButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             color: isDark
-                ? Colors.white.withOpacity(0.1)
-                : Colors.black.withOpacity(0.05),
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isDark
-                  ? Colors.white.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.1),
+                  ? AppColors.borderNormalDark
+                  : AppColors.borderNormalLight,
             ),
           ),
           child: Center(child: child),
@@ -267,7 +306,7 @@ class _GradientButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: colors[0].withOpacity(0.4),
+                color: colors[0].withValues(alpha: 0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),

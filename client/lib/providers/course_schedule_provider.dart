@@ -466,6 +466,28 @@ class CourseScheduleProvider extends ChangeNotifier {
     return true;
   }
 
+  DateTime? _lastFetchedAt;
+
+  /// 最近一次课表同步时间（来自保险箱快照 fetchedAt）；无缓存时为 null。
+  DateTime? get lastFetchedAt => _lastFetchedAt;
+
+  /// 读取保险箱快照的 fetchedAt 作为「上次同步」展示（无网络请求）。
+  Future<DateTime?> loadLastFetchedAt() async {
+    final operation = _captureOperationContext();
+    if (operation == null) return null;
+    final store = await _resolveOperationStore(operation);
+    if (store == null || !_isCurrentOperation(operation)) return null;
+    try {
+      final snapshot = await store.readSnapshot();
+      if (!_isCurrentOperation(operation) || snapshot == null) return null;
+      _lastFetchedAt = snapshot.fetchedAt;
+      return _lastFetchedAt;
+    } catch (error) {
+      debugPrint('读取课表同步时间失败: ${error.runtimeType}');
+      return null;
+    }
+  }
+
   Future<int> applyFetchedCourses(
     List<Map<String, dynamic>> rawCourses, {
     bool resetHidden = false,

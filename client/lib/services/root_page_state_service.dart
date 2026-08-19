@@ -86,25 +86,13 @@ class RootPageStateStore {
   RootPageStateStore({AppPreferencesStore? preferences})
       : _preferences = preferences;
 
-  static const rootTabKey = 'navigation_last_root_tab';
   static const communityFeedModeKey = 'navigation_community_feed_mode';
   static const communityFeedScrollKey = 'navigation_community_feed_scroll';
   static const conversationKey = 'navigation_last_conversation';
-  static final instance = RootPageStateStore();
+  static const lastPageKey = 'startup_last_page_v1';
+  static RootPageStateStore instance = RootPageStateStore();
 
   final AppPreferencesStore? _preferences;
-
-  Future<int?> readRootTab() async {
-    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
-    final value = preferences.getInt(rootTabKey);
-    return value != null && value >= 0 && value <= 4 ? value : null;
-  }
-
-  Future<void> saveRootTab(int index) async {
-    if (index < 0 || index > 4) return;
-    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
-    await preferences.setInt(rootTabKey, index);
-  }
 
   Future<CommunityFeedState?> readCommunityFeedState({
     required Set<String> validModes,
@@ -155,5 +143,142 @@ class RootPageStateStore {
   Future<void> clearConversation() async {
     final preferences = _preferences ?? await AppPreferencesStore.getInstance();
     await preferences.remove(conversationKey);
+  }
+
+  // ── 统一 Last Page 恢复 ──────────────────────────────────────────────
+
+  /// 保存当前可恢复页面状态。仅在 `lastPage` 模式下有意义。
+  Future<void> saveLastPage(RestorablePageState state) async {
+    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
+    await preferences.setString(lastPageKey, jsonEncode(state.toJson()));
+  }
+
+  /// 读取上次退出时的页面状态（账号隔离）。
+  Future<RestorablePageState?> readLastPage({
+    required int accountId,
+  }) async {
+    if (accountId <= 0) return null;
+    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
+    return _readLastPageSync(preferences, accountId);
+  }
+
+  /// 同步版本，用于启动路径中偏好已加载的场景。
+  RestorablePageState? readLastPageSync(
+    AppPreferencesStore preferences, {
+    required int accountId,
+  }) {
+    if (accountId <= 0) return null;
+    return _readLastPageSync(preferences, accountId);
+  }
+
+  static RestorablePageState? _readLastPageSync(
+    AppPreferencesStore preferences,
+    int accountId,
+  ) {
+    final raw = preferences.getString(lastPageKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final state = RestorablePageState.fromJson(jsonDecode(raw));
+      return state?.accountId == accountId ? state : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 清除保存的页面状态（退出登录 / 切换模式时调用）。
+  Future<void> clearLastPage() async {
+    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
+    await preferences.remove(lastPageKey);
+  }
+}
+
+/// 可恢复页面类型。
+///
+/// 只记录可以安全重建的页面。Modal、BottomSheet、图片查看器等不保存。
+enum RestorablePageType {
+  rootTab,
+  chat,
+  post,
+  notification,
+}
+
+/// 统一的可恢复页面状态。
+///
+/// 替代旧的 [RestorableConversationState]，支持多种页面类型。
+class RestorablePageState {
+  const RestorablePageState({
+    required this.type,
+    required this.arguments,
+    required this.accountId,
+    this.version = 1,
+  });
+
+  final RestorablePageType type;
+  final Map<String, dynamic> arguments;
+  final int accountId;
+  final int version;
+
+  bool get isValid => accountId > 0;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'type': type.name,
+        'arguments': arguments,
+        'accountId': accountId,
+        'version': version,
+      };
+
+  static RestorablePageState? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final typeName = value['type']?.toString();
+    final type = _parseType(typeName);
+    if (type == null) return null;
+    final accountId = _positiveInt(value['accountId']);
+    if (accountId == null) return null;
+    final arguments = value['arguments'];
+    final parsedArgs = arguments is Map<String, dynamic>
+        ? arguments
+        : <String, dynamic>{};
+    final version = (value['version'] is num)
+        ? (value['version'] as num).toInt()
+        : 1;
+    final state = RestorablePageState(
+      type: type,
+      arguments: parsedArgs,
+      accountId: accountId,
+      version: version,
+    );
+    return state.isValid ? state : null;
+  }
+
+  static RestorablePageType? _parseType(String? name) {
+    if (name == null) return null;
+    for (final t in RestorablePageType.values) {
+      if (t.name == name) return t;
+    }
+    return null;
+  }
+
+  static int? _positiveInt(Object? value) {
+    final parsed = value is num ? value.toInt() : int.tryParse('$value');
+    return parsed != null && parsed > 0 ? parsed : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is RestorablePageState &&
+      other.type == type &&
+      other.accountId == accountId &&
+      other.version == version &&
+      _mapsEqual(other.arguments, arguments);
+
+  @override
+  int get hashCode => Object.hash(type, accountId, version);
+
+  static bool _mapsEqual(Map<String, dynamic> a, Map<String, dynamic> b) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (a[key] != b[key]) return false;
+    }
+    return true;
   }
 }

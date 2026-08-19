@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"shenliyuan/internal/models"
@@ -20,7 +22,7 @@ func TestTeacherDetailIncludesRatingAuthorIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Teacher{}, &models.TeacherRating{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Teacher{}, &models.TeacherRating{}, &models.Report{}); err != nil {
 		t.Fatalf("migrate tables: %v", err)
 	}
 
@@ -87,5 +89,66 @@ func TestTeacherDetailIncludesRatingAuthorIdentity(t *testing.T) {
 	}
 	if !actual.IsOwn {
 		t.Fatal("current user's rating should be marked as own")
+	}
+}
+
+func TestTeacherRatingReportPersistsEscapedSnapshotAndRejectsDuplicate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Teacher{}, &models.TeacherRating{}, &models.Report{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+	reporter := models.User{StudentID: "reporter", PasswordHash: "hash", Nickname: "Reporter"}
+	owner := models.User{StudentID: "rating-owner", PasswordHash: "hash", Nickname: "Owner"}
+	if err := db.Create(&reporter).Error; err != nil {
+		t.Fatalf("create reporter: %v", err)
+	}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	teacher := models.Teacher{Name: "Report teacher", Course: "Course", Verified: true}
+	if err := db.Create(&teacher).Error; err != nil {
+		t.Fatalf("create teacher: %v", err)
+	}
+	rating := models.TeacherRating{
+		TeacherID: teacher.ID,
+		UserID:    owner.ID,
+		Star:      2,
+		Comment:   "老师说：\"不合适\"",
+		Status:    "normal",
+	}
+	if err := db.Create(&rating).Error; err != nil {
+		t.Fatalf("create rating: %v", err)
+	}
+
+	handler := NewTeacherHandler(db)
+	call := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Set("user_id", reporter.ID)
+		context.Params = gin.Params{{Key: "id", Value: "1"}}
+		context.Request = httptest.NewRequest(http.MethodPost, "/api/teachers/rating/1/report", bytes.NewBufferString(`{"reason":"存在辱骂内容"}`))
+		context.Request.Header.Set("Content-Type", "application/json")
+		handler.ReportRating(context)
+		return recorder
+	}
+
+	first := call()
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first report status=%d body=%s", first.Code, first.Body.String())
+	}
+	var report models.Report
+	if err := db.Where("reporter_id = ? AND target_type = ? AND target_id = ?", reporter.ID, "teacher_rating", rating.ID).First(&report).Error; err != nil {
+		t.Fatalf("load report: %v", err)
+	}
+	if !json.Valid([]byte(report.TargetSnapshot)) || !strings.Contains(report.TargetSnapshot, `老师说：\"不合适\"`) {
+		t.Fatalf("snapshot is not valid escaped JSON: %s", report.TargetSnapshot)
+	}
+	second := call()
+	if second.Code != http.StatusConflict {
+		t.Fatalf("duplicate report status=%d body=%s", second.Code, second.Body.String())
 	}
 }

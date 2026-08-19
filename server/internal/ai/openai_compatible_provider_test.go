@@ -2,11 +2,57 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestOpenAICompatibleProviderForcesRequiredTool(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Tools []struct {
+				Function ToolDefinition `json:"function"`
+			} `json:"tools"`
+			ToolChoice struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tool_choice"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("解析请求失败: %v", err)
+		}
+		if len(payload.Tools) != 1 || payload.Tools[0].Function.Name != "hy3_decision_analyze_academic" {
+			t.Fatalf("工具定义错误: %#v", payload.Tools)
+		}
+		if payload.ToolChoice.Function.Name != "hy3_decision_analyze_academic" {
+			t.Fatalf("未强制所需工具: %#v", payload.ToolChoice)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"hy3_decision_analyze_academic\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := ToolDefinition{Name: "hy3_decision_analyze_academic", Parameters: map[string]interface{}{"type": "object"}}
+	stream, err := provider.Start(context.Background(), ProviderRequest{
+		Messages: []Message{{Role: "user", Content: "分析我的学业"}},
+		Tools:    []ToolDefinition{definition}, RequiredTool: definition.Name,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	event, err := stream.Next(context.Background())
+	if err != nil || event.Type != ProviderEventToolCallStarted || event.ToolName != definition.Name {
+		t.Fatalf("tool event = %#v err=%v", event, err)
+	}
+}
 
 func TestOpenAICompatibleProviderContract(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +92,18 @@ func TestOpenAICompatibleProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 	_, err = provider.Chat(context.Background(), ChatRequest{})
 	if err == nil || strings.Contains(err.Error(), "remote-sensitive-detail") {
 		t.Fatalf("错误不应泄露远端响应体: %v", err)
+	}
+}
+
+func TestOpenAICompatibleProviderDoesNotTreatRequestErrorAsContentRejection(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		err := providerHTTPError(status)
+		if class := providerErrorClass(err); class != ProviderErrorRequestRejected {
+			t.Fatalf("HTTP %d class = %s", status, class)
+		}
+		if strings.Contains(err.Error(), ProviderErrorRejected) {
+			t.Fatalf("HTTP %d 不应被标记为内容拦截: %v", status, err)
+		}
 	}
 }
 

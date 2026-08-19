@@ -180,7 +180,7 @@ type FeaturedApplication struct {
 	SectionFeaturedID *uint      `gorm:"index" json:"section_featured_id"`
 	Reason            string     `gorm:"size:1000" json:"reason"`
 	Status            string     `gorm:"size:20;default:'pending';index" json:"status"`
-	ReviewerID        uint       `gorm:"index" json:"reviewer_id"`
+	ReviewerID        *uint      `gorm:"index" json:"reviewer_id,omitempty"`
 	ReviewReason      string     `gorm:"size:1000" json:"review_reason"`
 	IsMalicious       bool       `gorm:"default:false" json:"is_malicious"`
 	PenaltyPoints     int        `gorm:"default:0" json:"penalty_points"`
@@ -188,7 +188,7 @@ type FeaturedApplication struct {
 	ReviewedAt        *time.Time `json:"reviewed_at"`
 	Post              Post       `gorm:"foreignKey:PostID" json:"post,omitempty"`
 	Applicant         User       `gorm:"foreignKey:ApplicantID" json:"applicant,omitempty"`
-	Reviewer          User       `gorm:"foreignKey:ReviewerID" json:"reviewer,omitempty"`
+	Reviewer          *User      `gorm:"foreignKey:ReviewerID" json:"reviewer,omitempty"`
 }
 
 func (FeaturedApplication) TableName() string { return "featured_applications" }

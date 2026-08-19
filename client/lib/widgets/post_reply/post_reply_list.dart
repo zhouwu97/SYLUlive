@@ -16,6 +16,8 @@ class PostReplyList extends StatelessWidget {
     this.onAuthorTap,
     this.onMore,
     this.onLongPress,
+    this.onLike,
+    this.isLikePending,
   });
 
   final List<Reply> replies;
@@ -23,6 +25,8 @@ class PostReplyList extends StatelessWidget {
   final ValueChanged<int>? onAuthorTap;
   final ValueChanged<Reply>? onMore;
   final ValueChanged<Reply>? onLongPress;
+  final ValueChanged<Reply>? onLike;
+  final bool Function(int replyId)? isLikePending;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +77,8 @@ class PostReplyList extends StatelessWidget {
                 onAuthorTap == null ? null : () => onAuthorTap!(reply.authorId),
             onMore: onMore == null ? null : () => onMore!(reply),
             onLongPress: onLongPress == null ? null : () => onLongPress!(reply),
+            onLike: onLike == null ? null : () => onLike!(reply),
+            likePending: isLikePending?.call(reply.id) ?? false,
           ),
           if (childrenByParent[reply.id]?.isNotEmpty == true)
             _ChildReplySummary(
@@ -96,6 +102,8 @@ class PostReplyItem extends StatelessWidget {
     this.onLongPress,
     this.onStickerLongPress,
     this.onImageLongPress,
+    this.onLike,
+    this.likePending = false,
   });
 
   final Reply reply;
@@ -105,6 +113,8 @@ class PostReplyItem extends StatelessWidget {
   final VoidCallback? onLongPress;
   final ValueChanged<AppSticker>? onStickerLongPress;
   final ValueChanged<String>? onImageLongPress;
+  final VoidCallback? onLike;
+  final bool likePending;
 
   @override
   Widget build(BuildContext context) {
@@ -186,12 +196,18 @@ class PostReplyItem extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
+                    if (onLike != null) _ReplyLikeButton(
+                      reply: reply,
+                      pending: likePending,
+                      onTap: onLike!,
+                    ),
                     if (onMore != null)
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: onMore,
+                        // 48dp 最小触控目标。
                         child: Padding(
-                          padding: const EdgeInsets.all(4),
+                          padding: const EdgeInsets.all(16),
                           child: Icon(
                             Icons.more_horiz,
                             size: 16,
@@ -376,6 +392,68 @@ class _ReplyLevelBadge extends StatelessWidget {
           fontSize: 8,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+}
+
+/// 评论点赞按钮：图标 16px、点击区域 ≥40×40、pending 时禁用连点。
+/// 自身拦截点击，绝不触发外层 onReply。
+class _ReplyLikeButton extends StatelessWidget {
+  const _ReplyLikeButton({
+    required this.reply,
+    required this.pending,
+    required this.onTap,
+  });
+
+  final Reply reply;
+  final bool pending;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = reply.isLiked
+        ? Theme.of(context).primaryColor
+        : (isDark ? Colors.white38 : Colors.grey[400]!);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: pending ? null : onTap,
+      child: Padding(
+        // 图标 16px，但点击区域通过 Padding 撑到 40×40 以上，方便点按。
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 140),
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: animation,
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: Icon(
+                reply.isLiked ? Icons.favorite : Icons.favorite_border,
+                key: ValueKey('reply-like-icon-${reply.id}-${reply.isLiked}'),
+                size: 16,
+                color: reply.isLiked
+                    ? activeColor
+                    : (isDark ? Colors.white38 : Colors.grey[400]),
+              ),
+            ),
+            const SizedBox(width: 4),
+            if (reply.likeCount > 0)
+              Text(
+                '${reply.likeCount}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: reply.isLiked
+                      ? activeColor
+                      : (isDark ? Colors.white38 : Colors.grey[400]),
+                ),
+              ),
+          ],
         ),
       ),
     );

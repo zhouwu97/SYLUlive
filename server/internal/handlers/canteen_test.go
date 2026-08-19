@@ -18,18 +18,35 @@ import (
 
 func newCanteenTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	name := strings.NewReplacer("/", "_", "\\", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.File{},
+		&models.FileUploadGrant{},
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.CanteenDish{},
+		&models.CanteenDishPhoto{},
+		&models.CanteenRatingDishRecommendation{},
 		&models.AdminLog{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
+	}
+	// 与生产 EnsureRatingInteractionSchema 对齐：建立 (canteen_id,user_id) 唯一约束，
+	// 使 Rate 的 ON CONFLICT upsert 在 SQLite 测试库中同样生效。
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_canteen_rating_user
+		ON canteen_ratings (canteen_id, user_id)
+	`).Error; err != nil {
+		t.Fatalf("create canteen rating unique index: %v", err)
+	}
+	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
+		t.Fatalf("create canteen rating recommendation index: %v", err)
 	}
 	return db
 }
@@ -187,15 +204,18 @@ func TestCanteenDetailSortFilterAndMyVote(t *testing.T) {
 	createCanteenTestUser(t, db, 1, "Alice")
 	createCanteenTestUser(t, db, 2, "Bob")
 	createCanteenTestUser(t, db, 3, "Cathy")
+	createCanteenTestUser(t, db, 4, "David")
+	createCanteenTestUser(t, db, 5, "Eve")
 	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
 	}
+	// (canteen_id,user_id) 唯一约束下，每个用户只能一条评价。
 	ratings := []models.CanteenRating{
 		{CanteenID: canteen.ID, UserID: 2, Star: 5, Comment: "   ", HelpfulCount: 10},
 		{CanteenID: canteen.ID, UserID: 3, Star: 4, Comment: "有参考价值", Images: `["/uploads/a.png"]`, HelpfulCount: 5},
-		{CanteenID: canteen.ID, UserID: 2, Star: 4, Comment: "   ", HelpfulCount: 5},
-		{CanteenID: canteen.ID, UserID: 2, Star: 1, Comment: "踩雷", UnhelpfulCount: 1},
+		{CanteenID: canteen.ID, UserID: 4, Star: 4, Comment: "   ", HelpfulCount: 5},
+		{CanteenID: canteen.ID, UserID: 5, Star: 1, Comment: "踩雷", UnhelpfulCount: 1},
 	}
 	if err := db.Create(&ratings).Error; err != nil {
 		t.Fatalf("create ratings: %v", err)
@@ -362,7 +382,7 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 		2,
 		`{"star":5,"comment":"很好"}`,
 	)
-	if ratingAfterApproval.Code != http.StatusCreated {
+	if ratingAfterApproval.Code != http.StatusOK {
 		t.Fatalf("verified canteen should accept ratings: %d %s", ratingAfterApproval.Code, ratingAfterApproval.Body.String())
 	}
 }
@@ -376,4 +396,399 @@ func sameStringPtr(a, b *string) bool {
 		return a == nil && b == nil
 	}
 	return *a == *b
+}
+
+func TestCanteenRateWithTagsAndDishRecommendations(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "Alice")
+	now := time.Now()
+	if err := db.Model(&models.User{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		"student_verified_at": now,
+		"edu_bound":           true,
+	}).Error; err != nil {
+		t.Fatalf("bind edu: %v", err)
+	}
+
+	canteen := models.Canteen{Name: "第一食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+
+	dish1 := models.CanteenDish{CanteenID: canteen.ID, Name: "牛肉面", NormalizedName: "牛肉面", Status: models.DishStatusActive, CreatedBy: 1}
+	dish2 := models.CanteenDish{CanteenID: canteen.ID, Name: "炸酱面", NormalizedName: "炸酱面", Status: models.DishStatusActive, CreatedBy: 1}
+	if err := db.Create(&dish1).Error; err != nil {
+		t.Fatalf("create dish1: %v", err)
+	}
+	if err := db.Create(&dish2).Error; err != nil {
+		t.Fatalf("create dish2: %v", err)
+	}
+
+	handler := NewCanteenHandler(db)
+
+	// 1. 成功提交评价（包含已有菜品、自由文本菜名、去重与多余空格处理）
+	resp := performCanteenRequest(
+		t,
+		handler.Rate,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		1,
+		`{
+			"star": 5,
+			"comment": "非常好吃",
+			"images": "[\"/uploads/img1.jpg\",\"/uploads/img2.jpg\"]",
+			"tags": ["taste_good", "portion_enough", "taste_good"],
+			"recommended_dishes": ["牛肉面", " 炸酱面 ", "自创特色麻辣香锅", "牛肉面"]
+		}`,
+	)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("rate status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	// 2. 通过 GetDetail 检验返回数据中的 tags 及 recommended_dishes
+	detailResp := performCanteenRequest(
+		t,
+		handler.GetDetail,
+		http.MethodGet,
+		fmt.Sprintf("/api/canteens/%d", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		1,
+		"",
+	)
+	if detailResp.Code != http.StatusOK {
+		t.Fatalf("get detail status=%d body=%s", detailResp.Code, detailResp.Body.String())
+	}
+	var detailData struct {
+		Ratings  []models.CanteenRating `json:"ratings"`
+		MyRating *models.CanteenRating  `json:"my_rating"`
+	}
+	if err := json.Unmarshal(detailDataBytes(detailResp.Body.Bytes()), &detailData); err != nil {
+		t.Fatalf("unmarshal detail: %v", err)
+	}
+	if len(detailData.Ratings) != 1 {
+		t.Fatalf("expected 1 rating, got %d", len(detailData.Ratings))
+	}
+	r := detailData.Ratings[0]
+	if !strings.Contains(r.Tags, "taste_good") || !strings.Contains(r.Tags, "portion_enough") {
+		t.Fatalf("expected tags in rating, got %s", r.Tags)
+	}
+	if len(r.RecommendedDishNames) != 3 {
+		t.Fatalf("expected 3 recommended dish names, got %+v", r.RecommendedDishNames)
+	}
+	if detailData.MyRating == nil || len(detailData.MyRating.RecommendedDishNames) != 3 {
+		t.Fatalf("expected my_rating to have 3 recommendations, got %+v", detailData.MyRating)
+	}
+
+	// 验证已有菜品匹配到了 DishID，自由输入的菜名 DishID 为 nil
+	var recRecords []models.CanteenRatingDishRecommendation
+	db.Where("rating_id = ?", r.ID).Order("id ASC").Find(&recRecords)
+	if len(recRecords) != 3 {
+		t.Fatalf("expected 3 rec records in db, got %d", len(recRecords))
+	}
+	if recRecords[0].DishID == nil || *recRecords[0].DishID != dish1.ID {
+		t.Fatalf("expected rec[0] to match dish1 ID %d, got %+v", dish1.ID, recRecords[0].DishID)
+	}
+	if recRecords[1].DishID == nil || *recRecords[1].DishID != dish2.ID {
+		t.Fatalf("expected rec[1] to match dish2 ID %d, got %+v", dish2.ID, recRecords[1].DishID)
+	}
+	if recRecords[2].DishID != nil {
+		t.Fatalf("expected rec[2] (free-text) DishID to be nil, got %+v", recRecords[2].DishID)
+	}
+
+	// 3. 修改评价：更改推荐菜为只有 牛肉面，并更新标签
+	updateResp := performCanteenRequest(
+		t,
+		handler.Rate,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		1,
+		`{
+			"star": 4,
+			"comment": "改版后稍微淡了一点",
+			"images": "[]",
+			"tags": ["price_fair"],
+			"recommended_dishes": ["牛肉面"]
+		}`,
+	)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update rate status=%d body=%s", updateResp.Code, updateResp.Body.String())
+	}
+
+	// 验证关系表已清空旧推荐，仅保留 1 条
+	var recCount int64
+	db.Model(&models.CanteenRatingDishRecommendation{}).Where("rating_id = ?", r.ID).Count(&recCount)
+	if recCount != 1 {
+		t.Fatalf("expected 1 recommendation after update, got %d", recCount)
+	}
+}
+
+func TestCanteenRateValidationRules(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "Alice")
+	now := time.Now()
+	if err := db.Model(&models.User{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		"student_verified_at": now,
+		"edu_bound":           true,
+	}).Error; err != nil {
+		t.Fatalf("bind edu: %v", err)
+	}
+
+	c1 := models.Canteen{Name: "食堂1", Image: "/uploads/c1.png", CreatedBy: 1, Verified: true}
+	db.Create(&c1)
+
+	handler := NewCanteenHandler(db)
+
+	tests := []struct {
+		name       string
+		body       string
+		expectCode int
+		errSub     string
+	}{
+		{
+			name:       "0星打分拒绝",
+			body:       `{"star":0,"comment":"差评"}`,
+			expectCode: http.StatusBadRequest,
+		},
+		{
+			name:       "6星打分拒绝",
+			body:       `{"star":6,"comment":"超赞"}`,
+			expectCode: http.StatusBadRequest,
+		},
+		{
+			name:       "非法标签拒绝",
+			body:       `{"star":5,"tags":["illegal_tag"]}`,
+			expectCode: http.StatusBadRequest,
+			errSub:     "评价标签不合法",
+		},
+		{
+			name:       "标签超过6个拒绝",
+			body:       `{"star":5,"tags":["taste_good","portion_enough","price_fair","serving_fast","queue_long","clean","service_warm"]}`,
+			expectCode: http.StatusBadRequest,
+			errSub:     "最多选择6个体验标签",
+		},
+		{
+			name:       "图片超过3张拒绝",
+			body:       `{"star":5,"images":"[\"1.jpg\",\"2.jpg\",\"3.jpg\",\"4.jpg\"]"}`,
+			expectCode: http.StatusBadRequest,
+			errSub:     "最多只能上传3张评价图片",
+		},
+		{
+			name:       "推荐菜超过3个拒绝",
+			body:       `{"star":5,"recommended_dishes":["菜品1","菜品2","菜品3","菜品4"]}`,
+			expectCode: http.StatusBadRequest,
+			errSub:     "最多只能推荐3道菜品",
+		},
+		{
+			name:       "推荐菜名超过30字拒绝",
+			body:       `{"star":5,"recommended_dishes":["超长菜名超长菜名超长菜名超长菜名超长菜名超长菜名超长菜名超长菜名超长菜名超长菜名!"]}`,
+			expectCode: http.StatusBadRequest,
+			errSub:     "推荐菜名不能超过30个字符",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := performCanteenRequest(
+				t,
+				handler.Rate,
+				http.MethodPost,
+				fmt.Sprintf("/api/canteens/%d/rate", c1.ID),
+				gin.Params{{Key: "id", Value: fmt.Sprint(c1.ID)}},
+				1,
+				tt.body,
+			)
+			if resp.Code != tt.expectCode {
+				t.Fatalf("expected code %d, got %d, body: %s", tt.expectCode, resp.Code, resp.Body.String())
+			}
+			if tt.errSub != "" && !strings.Contains(resp.Body.String(), tt.errSub) {
+				t.Fatalf("expected body to contain %q, got %s", tt.errSub, resp.Body.String())
+			}
+		})
+	}
+}
+
+func detailDataBytes(b []byte) []byte {
+	return b
+}
+
+func setupCanteenTestRouter(db *gorm.DB) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	canteenHandler := NewCanteenHandler(db)
+	canteenDishHandler := NewCanteenDishHandler(db)
+	canteenDishPhotoHandler := NewCanteenDishPhotoHandler(db)
+	canteenDishPhotoAdminHandler := NewCanteenDishPhotoAdminHandler(db)
+
+	canteen := r.Group("/api/canteens")
+	{
+		canteen.GET("", canteenHandler.GetList)
+		canteen.GET("/:id", canteenHandler.GetDetail)
+		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
+		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
+	}
+
+	canteenAdmin := canteen.Group("")
+	{
+		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
+		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
+		canteenAdmin.DELETE("/:id/pending", canteenHandler.RejectCanteen)
+		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
+		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
+
+		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
+		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
+	}
+
+	canteenAuth := canteen.Group("")
+	{
+		canteenAuth.POST("", canteenHandler.Create)
+		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
+		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
+		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
+	}
+
+	return r
+}
+
+func TestCanteenRouterRegistration(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "Alice")
+	canteen := models.Canteen{Name: "第一食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+
+	r := setupCanteenTestRouter(db)
+
+	// 1. 已审核食堂 + 无菜品：GET /api/canteens/:id/dishes -> 200 []
+	req1 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID), nil)
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w1.Code, w1.Body.String())
+	}
+	var emptyList []interface{}
+	if err := json.Unmarshal(w1.Body.Bytes(), &emptyList); err != nil || len(emptyList) != 0 {
+		t.Fatalf("expected empty list [], got: %s", w1.Body.String())
+	}
+
+	// 2. 不存在食堂：GET /api/canteens/9999/dishes -> 404
+	req2 := httptest.NewRequest(http.MethodGet, "/api/canteens/9999/dishes", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 for non-existent canteen, got %d", w2.Code)
+	}
+
+	// 3. 添加一道已审核菜品与实拍
+	file := models.File{
+		ID:         1001,
+		Path:       "/uploads/beef.jpg",
+		Hash:       "hash-1001",
+		Size:       1024,
+		MimeType:   "image/jpeg",
+		UploaderID: 1,
+	}
+	db.Create(&file)
+
+	dish := models.CanteenDish{
+		CanteenID:      canteen.ID,
+		Name:           "招牌牛肉面",
+		NormalizedName: "招牌牛肉面",
+		Status:         models.DishStatusActive,
+		CreatedBy:      1,
+	}
+	db.Create(&dish)
+
+	photo := models.CanteenDishPhoto{
+		DishID: dish.ID,
+		FileID: file.ID,
+		UserID: 1,
+		Status: models.DishPhotoStatusApproved,
+	}
+	db.Create(&photo)
+
+	// 4. 已审核食堂 + 有菜品：GET /api/canteens/:id/dishes -> 200 非空数组
+	req3 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID), nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body: %s", w3.Code, w3.Body.String())
+	}
+	var dishList []map[string]interface{}
+	if err := json.Unmarshal(w3.Body.Bytes(), &dishList); err != nil || len(dishList) != 1 {
+		t.Fatalf("expected 1 dish in list, got: %s", w3.Body.String())
+	}
+	if dishList[0]["name"] != "招牌牛肉面" {
+		t.Fatalf("expected dish name '招牌牛肉面', got: %v", dishList[0]["name"])
+	}
+
+	// 5. 验证单菜品详情路由：GET /api/canteens/:canteenId/dishes/:dishId -> 200
+	req4 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/canteens/%d/dishes/%d", canteen.ID, dish.ID), nil)
+	w4 := httptest.NewRecorder()
+	r.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for single dish detail, got %d, body: %s", w4.Code, w4.Body.String())
+	}
+}
+
+func TestCanteenRateUpdatesTimestampAndOptimisticLock(t *testing.T) {
+	db := newCanteenTestDB(t)
+	handler := &CanteenHandler{db: db}
+	user := createCanteenTestUser(t, db, 10, "Student10")
+	now := time.Now()
+	user.StudentVerifiedAt = &now
+	user.EduBound = true
+	db.Save(&user)
+
+	canteen := models.Canteen{Name: "第一食堂", Verified: true, CreatedBy: 1}
+	db.Create(&canteen)
+
+	// 1. 第一次评价
+	body1 := `{"star": 5, "comment": "很好吃", "tags": ["clean"], "recommended_dishes": ["牛肉面"]}`
+	w1 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("首次评价失败: %d %s", w1.Code, w1.Body.String())
+	}
+	var resp1 struct {
+		Rating models.CanteenRating `json:"rating"`
+	}
+	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
+		t.Fatal(err)
+	}
+	if resp1.Rating.ID == 0 || resp1.Rating.CreatedAt.IsZero() || resp1.Rating.UpdatedAt.IsZero() {
+		t.Fatalf("返回评价时间戳未正确填充: %+v", resp1.Rating)
+	}
+	firstUpdatedAt := resp1.Rating.UpdatedAt
+
+	// 等待一小段时间确保时间戳有区分
+	time.Sleep(10 * time.Millisecond)
+
+	// 2. 第二次修改评价
+	body2 := `{"star": 4, "comment": "味道变淡了", "tags": ["good_value"], "recommended_dishes": ["小炒肉"]}`
+	w2 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("二次评价失败: %d %s", w2.Code, w2.Body.String())
+	}
+	var resp2 struct {
+		Rating models.CanteenRating `json:"rating"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatal(err)
+	}
+	if !resp2.Rating.UpdatedAt.After(firstUpdatedAt) {
+		t.Fatalf("二次评价 UpdatedAt 应该更新: first=%v, second=%v", firstUpdatedAt, resp2.Rating.UpdatedAt)
+	}
+
+	// 3. 传入陈旧的 base_updated_at 应该触发 409 Conflict
+	staleBaseTime := firstUpdatedAt.Add(-2 * time.Hour).Format(time.RFC3339)
+	body3 := fmt.Sprintf(`{"star": 3, "comment": "冲突旧草稿", "base_updated_at": "%s"}`, staleBaseTime)
+	w3 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body3)
+	if w3.Code != http.StatusConflict {
+		t.Fatalf("陈旧草稿应触发 409 conflict, got %d, body: %s", w3.Code, w3.Body.String())
+	}
 }

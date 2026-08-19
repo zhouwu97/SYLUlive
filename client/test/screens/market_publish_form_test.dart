@@ -33,6 +33,9 @@ class _FakePostProvider extends Fake
   List<String>? lastMarketTags;
 
   @override
+  Post? postFor(int postId) => null;
+
+  @override
   Future<CreatePostResult> createPost({
     required int boardId,
     required String content,
@@ -57,7 +60,9 @@ class _FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(XFile file) async => 1;
+  Future<int?> uploadImage(XFile file,
+          {void Function(int sent, int total)? onProgress}) async =>
+      1;
 }
 
 Widget _buildMarketForm({

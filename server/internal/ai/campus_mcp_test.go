@@ -17,6 +17,22 @@ type fixedPersonalSnapshotReader struct {
 	err    error
 }
 
+type academicAnalysisSnapshotReader struct {
+	results map[academic.DatasetType]academic.ContextResult
+}
+
+func (reader academicAnalysisSnapshotReader) CurrentCredentialGeneration(context.Context, uint) (uint, error) {
+	return 1, nil
+}
+
+func (reader academicAnalysisSnapshotReader) LookupLatest(_ context.Context, _ uint, dataset academic.DatasetType, _ uint) (academic.SnapshotLookup, error) {
+	result, ok := reader.results[dataset]
+	if !ok {
+		return academic.SnapshotLookup{}, nil
+	}
+	return academic.SnapshotLookup{Found: true, Result: result}, nil
+}
+
 func (reader fixedPersonalSnapshotReader) LookupErke(context.Context, uint) (academic.SnapshotLookup, error) {
 	return reader.lookup, reader.err
 }
@@ -192,6 +208,38 @@ func TestCampusMCPPermissionFailureIsNotReportedAsUserDenial(t *testing.T) {
 	require.Nil(t, wait)
 	require.Equal(t, academic.DataStatusFailed, results[academic.DatasetGrades].Status)
 	require.Contains(t, results[academic.DatasetGrades].Warnings, "权限服务暂时不可用，请稍后重试")
+}
+
+func TestCampusMCPAcademicRiskAnalysisKeepsObservedRiskAndCoverageBoundary(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data:   json.RawMessage(`{"grades":[{"course_name":"大学物理B2","credits":3,"fraction":45}]}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetCreditRequirements: {
+			Data:   json.RawMessage(`{"earned_credits":30.5,"required_credits":30.5}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetAcademicSituation: {
+			Data:   json.RawMessage(`{"earned_credits":30.5,"required_credits":30.5}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetErke: {
+			Data:   json.RawMessage(`{"graduation_gap":0}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}))
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
+		context.Background(), 7, json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	envelope := value.(CampusToolResult)
+	data := envelope.Data.(map[string]interface{})
+	require.Equal(t, "incomplete", data["risk_level"])
+	require.Contains(t, data["risks"], "发现 1 门未通过课程（大学物理B2）")
+	require.Equal(t, 3, data["available_dataset_count"])
 }
 
 type countingAcademicSnapshotReader struct {

@@ -1,11 +1,11 @@
+import 'package:flutter/material.dart';
+import '../../models/edu_credit_requirement.dart';
+import '../../theme/app_colors.dart';
+import 'academic_requirement_card.dart';
+
 /// 学分要求总览组件。
 ///
 /// 展示全部学分模块列表，含标题和加载/缓存/错误状态。
-
-import 'package:flutter/material.dart';
-import '../../models/edu_credit_requirement.dart';
-import 'academic_requirement_card.dart';
-
 class AcademicRequirementOverview extends StatefulWidget {
   final EduCreditRequirementOverview? requirements;
   final bool isLoading;
@@ -34,8 +34,10 @@ class _AcademicRequirementOverviewState
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    final titleColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
@@ -57,14 +59,12 @@ class _AcademicRequirementOverviewState
                 ),
                 const SizedBox(width: 8),
                 if (widget.isBackgroundRefresh)
-                  SizedBox(
+                  const SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: isDark
-                          ? const Color(0xFF7ED6C5)
-                          : const Color(0xFF147C72),
+                      color: AppColors.brandPrimary,
                     ),
                   ),
               ],

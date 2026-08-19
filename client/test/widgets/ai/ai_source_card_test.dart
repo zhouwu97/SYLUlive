@@ -36,7 +36,7 @@ void main() {
     );
 
     expect(find.textContaining('chunk:18'), findsNothing);
-    expect(find.textContaining('来源'), findsOneWidget);
+    expect(find.textContaining('[1]'), findsAtLeastNWidgets(1));
     expect(find.textContaining('[1][2]'), findsOneWidget);
     expect(tester.widget<Text>(find.text(title)).maxLines, 2);
 

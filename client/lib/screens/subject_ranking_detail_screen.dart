@@ -346,8 +346,8 @@ class _SubjectRankingDetailScreenState
 
   Color _rankColor(int index) {
     if (index == 0) return RankingTokens.rankGold;
-    if (index == 1) return const Color(0xFF6366F1);
-    if (index == 2) return const Color(0xFF14B8A6);
+    if (index == 1) return RankingTokens.rankSilver;
+    if (index == 2) return RankingTokens.rankBronze;
     return const Color(0xFF9CA3AF);
   }
 }

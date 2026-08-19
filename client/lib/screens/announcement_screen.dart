@@ -11,6 +11,8 @@ import '../config/api_constants.dart';
 import '../models/announcement.dart' as model;
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../widgets/glass_container.dart';
 
 class AnnouncementScreen extends StatefulWidget {
@@ -22,27 +24,19 @@ class AnnouncementScreen extends StatefulWidget {
   State<AnnouncementScreen> createState() => _AnnouncementScreenState();
 }
 
-class _AnnouncementScreenState extends State<AnnouncementScreen>
-    with SingleTickerProviderStateMixin {
+class _AnnouncementScreenState extends State<AnnouncementScreen> {
   List<model.Announcement> _announcements = [];
   Set<int> _unreadAnnouncementIds = {};
   bool _isLoading = true;
-  late AnimationController _animationController;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
     _loadAnnouncements();
-    _animationController.forward();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -232,18 +226,13 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
         body: Stack(
           children: [
             Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-            FadeTransition(
-              opacity: CurvedAnimation(
-                parent: _animationController,
-                curve: Curves.easeOut,
-              ),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _announcements.isEmpty
-                      ? _buildEmptyState(isDark)
-                      : RefreshIndicator(
-                          onRefresh: _loadAnnouncements,
-                          child: ListView(
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _announcements.isEmpty
+                    ? _buildEmptyState(isDark)
+                    : RefreshIndicator(
+                        onRefresh: _loadAnnouncements,
+                        child: ListView(
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
                             children: [
@@ -297,7 +286,6 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                             ],
                           ),
                         ),
-            ),
           ],
         ),
       ),
@@ -427,13 +415,19 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final staggerMs = (widget.index * 25).clamp(0, 50);
+
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 300 + (widget.index * 50).clamp(0, 300)),
-      curve: Curves.easeOutCubic,
+      duration: reduceMotion
+          ? Duration.zero
+          : Duration(milliseconds: 160 + staggerMs),
+      curve: AppMotion.incoming,
       builder: (context, value, child) {
         return Transform.translate(
-          offset: Offset(0, 20 * (1 - value)),
+          offset: Offset(0, 6 * (1 - value)),
           child: Opacity(opacity: value, child: child),
         );
       },
@@ -448,13 +442,13 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                 ? const Color(0x99A32020)
                 : const Color(0xFFFDF0F0))
             : (widget.isDark
-                ? const Color(0xE61F2430)
-                : const Color(0xFFFDFBFF)),
+                ? AppColors.surfaceSecondaryDark
+                : AppColors.surfaceSecondaryLight),
         borderColor: widget.emphasized
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
             : (widget.isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : const Color(0xFFE8E3F1)),
+                ? AppColors.borderNormalDark
+                : AppColors.borderNormalLight),
         onTap: widget.emphasized
             ? () {
                 if (mounted) {

@@ -15,6 +15,7 @@ import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
@@ -183,6 +184,10 @@ Post _postWithImages({
 }
 
 class FakeDio extends Fake implements Dio {
+  /// children 懒加载接口被调用的次数（51-children 死锁回归测试用）。
+  static int childrenRequestCount = 0;
+  static final requestedPaths = <String>[];
+
   @override
   Future<Response<T>> get<T>(
     String path, {
@@ -192,11 +197,16 @@ class FakeDio extends Fake implements Dio {
     CancelToken? cancelToken,
     void Function(int, int)? onReceiveProgress,
   }) async {
+    requestedPaths.add(path);
     if (path.startsWith('/posts/104/replies') ||
         path.startsWith('/posts/105/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/104') || path.startsWith('/posts/105')) {
       final hasContact = path.startsWith('/posts/104');
@@ -228,7 +238,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/102/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/102')) {
       return Response<T>(
@@ -243,7 +257,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/103/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/103')) {
       return Response<T>(
@@ -261,7 +279,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/101/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/101')) {
       return Response<T>(
@@ -320,64 +342,68 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/100/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [
-          ...List.generate(
-              30,
-              (index) => {
-                    "id": 10 + index,
-                    "post_id": 100,
-                    "content": "Padding top level reply $index",
-                    "author_id": 2,
-                    "author": {
-                      "id": 2,
-                      "nickname": "User2",
-                      "avatar": "http://example.com/avatar.png",
-                      "student_id": "2"
-                    },
-                    "created_at": "2026-01-01T00:00:00.000Z"
-                  }),
-          {
-            "id": 1,
-            "post_id": 100,
-            "content": "First level reply",
-            "author_id": 2,
-            "author": {
+        data: {
+          'replies': <dynamic>[
+            ...List.generate(
+                30,
+                (index) => {
+                      "id": 10 + index,
+                      "post_id": 100,
+                      "content": "Padding top level reply $index",
+                      "author_id": 2,
+                      "author": {
+                        "id": 2,
+                        "nickname": "User2",
+                        "avatar": "http://example.com/avatar.png",
+                        "student_id": "2"
+                      },
+                      "created_at": "2026-01-01T00:00:00.000Z"
+                    }),
+            {
+              "id": 1,
+              "post_id": 100,
+              "content": "First level reply",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            },
+            {
               "id": 2,
-              "nickname": "User2",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "2"
+              "post_id": 100,
+              "parent_reply_id": 1,
+              "content": "Second level reply",
+              "author_id": 3,
+              "author": {
+                "id": 3,
+                "nickname": "User3",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "3"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
             },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          },
-          {
-            "id": 2,
-            "post_id": 100,
-            "parent_reply_id": 1,
-            "content": "Second level reply",
-            "author_id": 3,
-            "author": {
+            {
               "id": 3,
-              "nickname": "User3",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "3"
-            },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          },
-          {
-            "id": 3,
-            "post_id": 100,
-            "parent_reply_id": 1,
-            "content": "Target second level reply",
-            "author_id": 4,
-            "author": {
-              "id": 4,
-              "nickname": "User4",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "4"
-            },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          }
-        ] as dynamic,
+              "post_id": 100,
+              "parent_reply_id": 1,
+              "content": "Target second level reply",
+              "author_id": 4,
+              "author": {
+                "id": 4,
+                "nickname": "User4",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "4"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'total': 33,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/100')) {
       return Response<T>(
@@ -388,6 +414,174 @@ class FakeDio extends Fake implements Dio {
           "content": "Content",
           "author_id": 1,
           "created_at": "2026-01-01T00:00:00.000Z"
+        } as dynamic,
+      );
+    }
+    // 帖子 106：根评论带 51 条子回复的懒加载死锁回归 fixture。
+    if (path.startsWith('/posts/106/replies/') && path.endsWith('/children')) {
+      childrenRequestCount++;
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 751,
+              "post_id": 106,
+              "parent_reply_id": 7,
+              "content": "lazy-child-51",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/106/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 7,
+              "post_id": 106,
+              "content": "big thread root",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "child_reply_count": 51,
+              "created_at": "2026-01-01T00:00:00.000Z"
+            },
+            ...List.generate(
+                50,
+                (i) => {
+                      "id": 701 + i,
+                      "post_id": 106,
+                      "parent_reply_id": 7,
+                      "content": "child-${i + 1}",
+                      "author_id": 2,
+                      "author": {
+                        "id": 2,
+                        "nickname": "User2",
+                        "avatar": "http://example.com/avatar.png",
+                        "student_id": "2"
+                      },
+                      "created_at": "2026-01-01T00:00:00.000Z"
+                    }),
+          ],
+          'total': 52,
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/106')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          "id": 106,
+          "title": "懒加载测试帖",
+          "content": "Content",
+          "board_id": 1,
+          "author_id": 1,
+          "post_type": "",
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "images": <dynamic>[],
+        } as dynamic,
+      );
+    }
+    // 帖子 107：通知深链目标不在已加载列表时的 context 定位 fixture。
+    if (path.startsWith('/posts/107/replies/') && path.endsWith('/context')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'reply': {
+            "id": 900,
+            "post_id": 107,
+            "parent_reply_id": 800,
+            "content": "context-target-child",
+            "author_id": 3,
+            "author": {
+              "id": 3,
+              "nickname": "User3",
+              "avatar": "",
+              "student_id": "3"
+            },
+            "created_at": "2026-01-01T00:00:00.000Z"
+          },
+          'root_reply': {
+            "id": 800,
+            "post_id": 107,
+            "content": "context-root",
+            "author_id": 2,
+            "author": {
+              "id": 2,
+              "nickname": "User2",
+              "avatar": "",
+              "student_id": "2"
+            },
+            "child_reply_count": 1,
+            "created_at": "2026-01-01T00:00:00.000Z"
+          },
+          'root_reply_id': 800,
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107/replies/') && path.endsWith('/children')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 900,
+              "post_id": 107,
+              "parent_reply_id": 800,
+              "content": "context-target-child",
+              "author_id": 3,
+              "author": {
+                "id": 3,
+                "nickname": "User3",
+                "avatar": "",
+                "student_id": "3"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[],
+          'total': 1,
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          "id": 107,
+          "title": "深链定位测试帖",
+          "content": "Content",
+          "board_id": 1,
+          "author_id": 1,
+          "post_type": "",
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "images": <dynamic>[],
         } as dynamic,
       );
     }
@@ -413,12 +607,18 @@ class FakeAuthProvider extends Fake
       );
 
   @override
+  String? get token => 'test-token';
+
+  @override
   Dio get dio => _dio;
 }
 
 class FakePostProvider extends Fake
     with ChangeNotifier
     implements PostProvider {
+  @override
+  Post? postFor(int postId) => null;
+
   @override
   void updatePostInCache(Post post) {}
 }
@@ -554,6 +754,36 @@ void main() {
 
     // 断言高亮状态已消失
     expect(clearedDecoration.color, Colors.transparent);
+  });
+
+  testWidgets('详情页不再请求或显示未读回复提醒', (WidgetTester tester) async {
+    FakeDio.requestedPaths.clear();
+    final post = Post(
+      id: 102,
+      title: '普通帖子',
+      content: '帖子内容',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    expect(
+      FakeDio.requestedPaths,
+      isNot(contains('/posts/102/notifications/unread')),
+    );
+    expect(find.textContaining('未读回复'), findsNothing);
+    expect(find.text('全部标记已读'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('PostDetailScreen renders three images with shared media view',
@@ -743,9 +973,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
-
     final sendButton = find.byKey(const ValueKey('post-reply-send-button'));
     expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
 
@@ -766,7 +993,7 @@ void main() {
     expect(enabledSendButton.onPressed, isNotNull);
     expect(
       enabledSendButton.style?.backgroundColor?.resolve({}),
-      const Color(0xFF6B8EFF),
+      AppTheme.primaryColor,
     );
     expect(tester.takeException(), isNull);
   });
@@ -786,8 +1013,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('post-reply-input')),
       '0000',
@@ -838,8 +1063,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pumpAndSettle();
     await tester.tap(
@@ -890,8 +1113,6 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('写下你的想法...').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pumpAndSettle();
     expect(find.byType(AppEmojiPanel), findsOneWidget);
@@ -910,6 +1131,96 @@ void main() {
       find.byKey(const ValueKey('post-reply-send-button')),
     );
     expect(sendButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('楼中楼超过50条子回复时首次懒加载不被自身loading锁挡住', (tester) async {
+    FakeDio.childrenRequestCount = 0;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = Post(
+      id: 106,
+      title: '懒加载测试帖',
+      content: 'Content',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    // 根评论只带了 50 条子回复，但真实总数 51 → 出现"共 51 条回复"入口。
+    expect(find.textContaining('共 51 条回复'), findsOneWidget);
+
+    await tester.tap(find.textContaining('共 51 条回复'));
+    await tester.pumpAndSettle();
+
+    // 死锁修复：children 请求必须真正发出。
+    // 修复前 loadMoreChildren 首句 `if (sheetChildrenLoading) return` 被初始化的
+    // loading=true 挡住，请求永远不发、spinner 永远转。
+    expect(FakeDio.childrenRequestCount, 1);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('相关回复共 51 条'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('通知深链目标不在已加载列表时通过 context 打开线程 sheet 定位', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = Post(
+      id: 107,
+      title: '深链定位测试帖',
+      content: 'Content',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(
+              create: (_) => FakeAuthProvider()),
+          ChangeNotifierProvider<PostProvider>(
+              create: (_) => FakePostProvider()),
+          ChangeNotifierProvider<ThemeProvider>(
+              create: (_) => FakeThemeProvider()),
+        ],
+        child: MaterialApp(
+          home: PostDetailScreen(
+            postId: 107,
+            initialPost: post,
+            targetReplyId: 900, // 不在列表分页里的子回复目标
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 目标不在列表 → context 接口 → 直接打开楼中楼 sheet 锚定目标。
+    expect(find.text('评论详情'), findsOneWidget);
+    expect(find.textContaining('context-root'), findsOneWidget);
+    expect(find.textContaining('context-target-child'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

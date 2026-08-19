@@ -222,7 +222,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
 	needsEduCredentialCleanup := user.IsEduAuthorized()
@@ -400,7 +400,7 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
 	randomPassword, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("cancelled-%d-%d", user.ID, time.Now().UnixNano())), bcrypt.DefaultCost)

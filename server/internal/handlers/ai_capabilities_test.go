@@ -24,6 +24,21 @@ func (capabilitiesEmptyPolicyRetriever) Retrieve(context.Context, string) (ai.Re
 	return ai.RetrievalResult{}, nil
 }
 
+type capabilitiesTool struct{ name string }
+
+func (tool capabilitiesTool) Name() string    { return tool.name }
+func (tool capabilitiesTool) Version() string { return "test" }
+func (tool capabilitiesTool) Definition() ai.ToolDefinition {
+	return ai.ToolDefinition{Name: tool.name, Parameters: map[string]interface{}{"type": "object"}}
+}
+func (tool capabilitiesTool) Execute(context.Context, uint, json.RawMessage) (interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+
+type capabilitiesExternalMCPHealth struct{ healthy bool }
+
+func (health *capabilitiesExternalMCPHealth) Healthy() bool { return health.healthy }
+
 func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID uint, role ...string) map[string]interface{} {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -78,7 +93,7 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
 	}
-	if body["max_message_chars"] != float64(200) {
+	if body["max_message_chars"] != float64(500) {
 		t.Fatalf("default max_message_chars mismatch: %#v", body)
 	}
 }
@@ -91,6 +106,69 @@ func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
 	}
 	if features["schedule_windows"] != false {
 		t.Fatalf("retired schedule skill must stay unavailable: %#v", features)
+	}
+}
+
+func TestAICapabilitiesReportsOnlyHealthyRegisteredHy3Features(t *testing.T) {
+	registry, err := ai.NewToolRegistry(nil,
+		capabilitiesTool{name: "hy3_decision.explain_competition_candidates"},
+		capabilitiesTool{name: "hy3_decision.compare_competitions"},
+		capabilitiesTool{name: "hy3_decision.analyze_academic"},
+		capabilitiesTool{name: "hy3_decision.plan_student_week"},
+		capabilitiesTool{name: "academic.get_risk_analysis"},
+	)
+	if err != nil {
+		t.Fatalf("create tool registry: %v", err)
+	}
+	health := &capabilitiesExternalMCPHealth{healthy: true}
+	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
+		ExternalMCPConfigured: true,
+		ExternalMCPHealth:     health,
+		ToolRegistry:          registry,
+	})
+
+	body := requestAICapabilities(t, handler, 99)
+	features := body["features"].(map[string]interface{})
+	for _, name := range []string{
+		"hy3_competition_explain", "hy3_competition_compare", "hy3_week_plan",
+	} {
+		if features[name] != true {
+			t.Fatalf("feature %s should be available: %#v", name, features)
+		}
+	}
+	if features["hy3_academic_analysis"] != false {
+		t.Fatalf("legacy Hy3 academic feature must be disabled: %#v", features)
+	}
+	if features["academic_analysis"] != true {
+		t.Fatalf("built-in academic analysis should be available: %#v", features)
+	}
+
+	health.healthy = false
+	body = requestAICapabilities(t, handler, 99)
+	features = body["features"].(map[string]interface{})
+	for _, name := range []string{
+		"hy3_competition_explain", "hy3_competition_compare", "hy3_week_plan",
+	} {
+		if features[name] != false {
+			t.Fatalf("feature %s must fail closed: %#v", name, features)
+		}
+	}
+	if features["academic_analysis"] != true {
+		t.Fatalf("built-in academic analysis must not depend on external MCP health: %#v", features)
+	}
+}
+
+func TestAICapabilitiesReportsBuiltInAcademicAnalysisWithoutExternalMCP(t *testing.T) {
+	registry, err := ai.NewToolRegistry(nil, capabilitiesTool{name: "academic.get_risk_analysis"})
+	if err != nil {
+		t.Fatalf("create tool registry: %v", err)
+	}
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, AICapabilitiesOptions{
+		ToolRegistry: registry,
+	}), 99)
+	features := body["features"].(map[string]interface{})
+	if features["academic_analysis"] != true || features["hy3_academic_analysis"] != false {
+		t.Fatalf("academic capability should be unified and external-independent: %#v", features)
 	}
 }
 
@@ -123,12 +201,6 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	}
 	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
 		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 200,
-		ToolCapabilities: []string{
-			AIToolHy3CompetitionCompare,
-			AIToolHy3AcademicAnalysis,
-			AIToolHy3WeekPlan,
-			"unknown_tool_must_not_leak",
-		},
 	})
 	body := requestAICapabilities(t, handler, user.ID)
 	if body["chat_enabled"] != true || body["access_allowed"] != true {
@@ -137,21 +209,5 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	quota, ok := body["quota"].(map[string]interface{})
 	if !ok || quota["unlimited"] != true || quota["remaining"] != float64(3) {
 		t.Fatalf("unexpected unlimited quota: %#v", body["quota"])
-	}
-	features, ok := body["features"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("features = %#v, want object", body["features"])
-	}
-	for _, capability := range []string{
-		AIToolHy3CompetitionCompare,
-		AIToolHy3AcademicAnalysis,
-		AIToolHy3WeekPlan,
-	} {
-		if features[capability] != true {
-			t.Fatalf("registered capability %s must be true: %#v", capability, features)
-		}
-	}
-	if _, leaked := features["unknown_tool_must_not_leak"]; leaked {
-		t.Fatalf("unknown capabilities must not be exposed: %#v", features)
 	}
 }

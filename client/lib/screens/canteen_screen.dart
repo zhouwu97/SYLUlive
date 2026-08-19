@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/canteen_home.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';

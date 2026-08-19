@@ -235,13 +235,11 @@ func (h *CanteenHandler) BuildHomeFeed(entries []canteenRankingEntry, mean float
 			lastCanteen = item.CanteenID
 			lastType = item.Type
 			progressed = true
-			if seenCanteenCount[item.CanteenID] >= 2 {
-				// 该店本屏出现满 2 次后，从所有候选池移除。
-				recommendations = removeCanteen(recommendations, item.CanteenID)
-				stable = removeCanteen(stable, item.CanteenID)
-				trending = removeCanteen(trending, item.CanteenID)
-				photoItems = removePhotoCanteen(photoItems, item.CanteenID)
-			}
+			// 每店信息流最多出现 1 次（避免同店刷屏，也避免首页同 tag 的 Hero 冲突）。
+			recommendations = removeCanteen(recommendations, item.CanteenID)
+			stable = removeCanteen(stable, item.CanteenID)
+			trending = removeCanteen(trending, item.CanteenID)
+			photoItems = removePhotoCanteen(photoItems, item.CanteenID)
 		}
 		if !progressed {
 			break
@@ -254,7 +252,7 @@ func (h *CanteenHandler) BuildHomeFeed(entries []canteenRankingEntry, mean float
 func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map[uint]int, lastCanteen uint, lastType string) *canteenFeedItem {
 	for i := range pool {
 		e := pool[i]
-		if seen[e.ID] >= 2 {
+		if seen[e.ID] >= 1 {
 			continue
 		}
 		if lastCanteen == e.ID {
@@ -289,7 +287,7 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]int, lastCanteen uint, lastType string, mean float64) *canteenFeedItem {
 	for i := range pool {
 		e := pool[i]
-		if seen[e.ID] >= 2 || lastCanteen == e.ID || lastType == "stable_choice" {
+		if seen[e.ID] >= 1 || lastCanteen == e.ID || lastType == "stable_choice" {
 			continue
 		}
 		tags := h.aggregateSummaryTags(e.ID, summaryTagDays, 2)
@@ -318,7 +316,7 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]int, lastCanteen uint, lastType string, mean float64) *canteenFeedItem {
 	for i := range pool {
 		e := pool[i]
-		if seen[e.ID] >= 2 || lastCanteen == e.ID || lastType == "trending" {
+		if seen[e.ID] >= 1 || lastCanteen == e.ID || lastType == "trending" {
 			continue
 		}
 		recent := h.recentReviewCount(e.ID, 7)
@@ -403,7 +401,7 @@ type canteenPhotoItem struct {
 func pickPhoto(pool []canteenPhotoItem, seen map[uint]int, lastCanteen uint, lastType string) *canteenFeedItem {
 	for i := range pool {
 		p := pool[i]
-		if seen[p.CanteenID] >= 2 || lastCanteen == p.CanteenID {
+		if seen[p.CanteenID] >= 1 || lastCanteen == p.CanteenID {
 			continue
 		}
 		return &canteenFeedItem{
@@ -478,7 +476,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		for _, t := range tags {
 			tagNames = append(tagNames, t.Name)
 		}
-		h := &canteenFeedItem{
+		heroItem := &canteenFeedItem{
 			ID:           fmt.Sprintf("recommended_store:%d:v1", e.ID),
 			Type:         "recommended_store",
 			CanteenID:    e.ID,
@@ -491,7 +489,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			RatingCount:  e.RatingCount,
 			Tags:         tagNames,
 		}
-		hero = h
+		hero = heroItem
 		break
 	}
 
@@ -511,7 +509,12 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		"total": rankTotal,
 	}
 
-	feed := h.BuildHomeFeed(entries, mean, 8)
+	// 信息流排除 Hero 已展示的食堂，避免同店重复刷屏，也避免首页 Hero(同一 tag) 冲突。
+	feedEntries := entries
+	if hero != nil {
+		feedEntries = removeCanteen(entries, hero.CanteenID)
+	}
+	feed := h.BuildHomeFeed(feedEntries, mean, 8)
 
 	resp := gin.H{
 		"generated_at":   time.Now(),

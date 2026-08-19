@@ -191,7 +191,6 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
     return CachedNetworkImage(
       imageUrl: ApiConstants.fullUrl(widget.item.image),
       fit: BoxFit.cover,
-      cacheWidth: 250,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),
     );

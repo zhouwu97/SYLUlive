@@ -5,30 +5,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_screen.dart';
 
-/// 构造一个返回固定食堂列表的 Dio Adapter。
+const _homeBody =
+    '{"hero":{"type":"recommended_store","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"image":"/uploads/a.jpg","ranking_score":92.0,"average_star":4.8,"rating_count":86,'
+    '"title":"今日推荐","reason":"同学们常常提到\\u201c味道不错\\u201d","tags":["味道不错"]},'
+    '"ranking_entry":{"top":{"id":1,"name":"一食堂二楼","ranking_score":92.0},"total":2},'
+    '"feed":['
+    '{"id":"recent_photo:5","type":"recent_photo","canteen_id":2,"canteen_name":"二食堂",'
+    '"dish_id":5,"dish_name":"红烧牛肉面","title":"同学最近实拍","images":["/uploads/p.jpg"]},'
+    '{"id":"stable_choice:3","type":"stable_choice","canteen_id":3,"canteen_name":"三食堂面馆",'
+    '"ranking_score":84.0,"average_star":4.5,"rating_count":12,"title":"想吃稳一点？",'
+    '"reason":"评价样本较多，近期反馈比较稳定","tags":["分量足","出餐快"]}'
+    ']}';
+
+/// 构造一个返回食堂首页数据的 Dio Adapter。
 Dio _buildDio() {
   final dio = Dio(BaseOptions(baseUrl: 'http://test'));
   dio.httpClientAdapter = FakeAdapter((options) async {
-    if (options.path == '/canteens' && options.method == 'GET') {
-      return ResponseBody.fromString(
-        '[{"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","verified":true,'
-        '"created_by":1,"rating_count":86,"average_star":4.8,'
-        '"dish_count":12,"dish_photo_count":26},'
-        '{"id":2,"name":"二食堂","image":"","verified":true,"created_by":1,'
-        '"rating_count":3,"average_star":5.0,"dish_count":0,"dish_photo_count":0}]',
-        200,
-        headers: {
-          Headers.contentTypeHeader: [Headers.jsonContentType],
-        },
-      );
+    if (options.path == '/canteens/home' && options.method == 'GET') {
+      return _json(_homeBody);
     }
     return ResponseBody.fromString('{"error":"not found"}', 404);
   });
   return dio;
 }
+
+ResponseBody _json(String body) => ResponseBody.fromString(
+      body,
+      200,
+      headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+    );
 
 class FakeAdapter implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions options) _handler;
@@ -44,89 +54,79 @@ class FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-Widget _buildApp() {
-  final dio = _buildDio();
+Widget _buildApp([Dio? dio]) {
+  final d = dio ?? _buildDio();
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
-      ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
+      ChangeNotifierProvider(create: (_) => CanteenProvider(d)),
+      ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(d)),
+      ChangeNotifierProvider(create: (_) => AuthProvider(d)),
     ],
     child: const MaterialApp(home: CanteenScreen()),
   );
 }
 
 void main() {
-  testWidgets('进入页面加载食堂且仅请求 /canteens', (tester) async {
+  testWidgets('进入页面请求 /canteens/home（发现聚合），不请求旧整榜', (tester) async {
     final requests = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
       requests.add('${options.method} ${options.path}');
-      if (options.path == '/canteens' && options.method == 'GET') {
-        return ResponseBody.fromString(
-          '[{"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","verified":true,'
-          '"created_by":1,"rating_count":86,"average_star":4.8}]',
-          200,
-          headers: {
-            Headers.contentTypeHeader: [Headers.jsonContentType],
-          },
-        );
+      if (options.path == '/canteens/home' && options.method == 'GET') {
+        return _json(_homeBody);
       }
       return ResponseBody.fromString('{"error":"not found"}', 404);
     });
 
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
-          ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
-        ],
-        child: const MaterialApp(home: CanteenScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildApp(dio));
     await tester.pumpAndSettle();
 
-    expect(requests.where((r) => r == 'GET /canteens'), hasLength(1));
-    expect(requests.where((r) => r.contains('/teachers')), isEmpty);
-    expect(requests.where((r) => r.contains('/majors')), isEmpty);
+    expect(requests.where((r) => r == 'GET /canteens/home'), hasLength(1));
+    // 旧整榜列表接口不应再被首页使用。
+    expect(requests.where((r) => r == 'GET /canteens'), isEmpty);
     expect(find.text('校园食堂'), findsOneWidget);
-    expect(find.text('一食堂二楼'), findsOneWidget);
   });
 
-  testWidgets('无 FAB，列表末尾提供提交食堂入口', (tester) async {
+  testWidgets('首页展示 Hero 今日推荐与综合排行入口', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    // FAB 已删除
+    expect(find.text('今日推荐'), findsOneWidget);
+    expect(find.text('一食堂二楼'), findsWidgets); // Hero + 排行入口 Top1
+    expect(find.text('综合排行'), findsOneWidget);
+    // 首页不再以整榜数字排名渲染（不存在 01/02 榜单数字）。
+    expect(find.text('01'), findsNothing);
+  });
+
+  testWidgets('推荐信息流渲染多类型 Card（实拍 + 稳妥选择）', (tester) async {
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('同学最近实拍'), findsOneWidget);
+    expect(find.textContaining('红烧牛肉面'), findsOneWidget);
+
+    // 第二张卡（稳妥选择）在折叠区外，向上滚动后断言。
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('想吃稳一点？'), findsOneWidget);
+    expect(find.text('三食堂面馆'), findsOneWidget);
+  });
+
+  testWidgets('无 FAB', (tester) async {
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
     expect(find.byType(FloatingActionButton), findsNothing);
-    // 列表末尾的提交入口
-    expect(find.textContaining('提交新的食堂'), findsOneWidget);
   });
 
-  testWidgets('菜品统计在卡片中渲染', (tester) async {
+  testWidgets('搜索过滤信息流', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('12 道菜 · 26 张实拍'), findsOneWidget);
-    expect(find.text('暂无同学实拍'), findsOneWidget);
-  });
-
-  testWidgets('排名使用排版数字且无 badge 容器', (tester) async {
-    await tester.pumpWidget(_buildApp());
+    await tester.enterText(find.byType(TextField), '三食堂');
     await tester.pumpAndSettle();
 
-    expect(find.text('01'), findsOneWidget);
-    expect(find.text('02'), findsOneWidget);
-  });
-
-  testWidgets('搜索过滤食堂', (tester) async {
-    await tester.pumpWidget(_buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField), '一食堂');
-    await tester.pumpAndSettle();
-
-    expect(find.text('一食堂二楼'), findsOneWidget);
-    expect(find.text('二食堂'), findsNothing);
+    expect(find.text('三食堂面馆'), findsOneWidget);
+    expect(find.text('红烧牛肉面'), findsNothing);
   });
 
   testWidgets('搜索无结果时提供提交这家店 CTA', (tester) async {

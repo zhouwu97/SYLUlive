@@ -969,6 +969,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               'targetUserId': widget.targetUser.id,
               'targetNickname': widget.targetUser.nickname,
               'targetAvatar': widget.targetUser.avatar,
+              // 打底的 root tab：从私信返回时落回用户原本所在的一级页面，
+              // 不猜父页面。
+              'underlyingRootTab': currentHomeTabIndex.value,
             },
             accountId: accountId,
           ),
@@ -992,20 +995,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _clearRestorableConversation() async {
     try {
       await RootPageStateStore.instance.clearConversation();
-      // 从私信返回后，更新 lastPage 为上一级页面（课表 tab）。
-      final mode = context.read<ThemeProvider>().startupDestination;
-      final accountId = context.read<AuthProvider>().user?.id;
-      if (mode == StartupDestinationMode.lastPage &&
-          accountId != null &&
-          accountId > 0) {
-        await RootPageStateStore.instance.saveLastPage(
-          RestorablePageState(
-            type: RestorablePageType.rootTab,
-            arguments: const <String, dynamic>{'index': 2},
-            accountId: accountId,
-          ),
-        );
-      }
+      // 从私信返回后不再猜上一级页面：底层重新可见的页面（HomeScreen）
+      // 会通过 didPopNext 自行保存它当前的 root tab 为 lastPage，
+      // 因此这里只清除会话状态，不再硬编码写「课表」。
     } catch (error) {
       DiagnosticLogService.instance.record(
         level: 'warning',

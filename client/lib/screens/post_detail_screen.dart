@@ -7,6 +7,9 @@ import 'package:provider/provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../models/startup_destination.dart';
+import '../services/root_page_state_service.dart';
+import '../utils/app_navigator.dart';
 import '../theme/app_motion.dart';
 import '../config/api_constants.dart';
 import '../config/market_contact_type.dart';
@@ -170,7 +173,8 @@ class _PinPostDialogState extends State<_PinPostDialog> {
   }
 }
 
-class _PostDetailScreenState extends State<PostDetailScreen> {
+class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
+  PageRoute<dynamic>? _subscribedRoute;
   late Dio _dio;
   Post? _post;
   List<Reply> _replies = [];
@@ -208,6 +212,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final Map<int, bool> _pendingReplyLikeTargets = {};
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPush() {
+    _saveCurrentPageAsLastPage();
+  }
+
+  @override
   void initState() {
     super.initState();
     _replyComposerActivity = Listenable.merge([
@@ -232,6 +254,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// 仅在 `lastPage` 模式下，把当前帖子详情保存为 lastPage。
+  void _saveCurrentPageAsLastPage() {
+    final theme = context.read<ThemeProvider>();
+    if (theme.startupDestination != StartupDestinationMode.lastPage) return;
+    final accountId = context.read<AuthProvider>().user?.id;
+    if (accountId == null || accountId <= 0 || widget.postId <= 0) return;
+    unawaited(RootPageStateStore.instance.saveLastPage(
+      RestorablePageState(
+        type: RestorablePageType.post,
+        arguments: <String, dynamic>{
+          'postId': widget.postId,
+          'underlyingRootTab': currentHomeTabIndex.value,
+        },
+        accountId: accountId,
+      ),
+    ));
+  }
+
   Future<void> _loadWaterSectionPermission({bool forceRefresh = false}) async {
     final post = _post ?? widget.initialPost;
     if (post == null || post.boardId != 1 || post.postType.isEmpty) return;
@@ -243,6 +283,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+    }
     _replyComposerController.dispose();
     _highlightTimer?.cancel();
     super.dispose();

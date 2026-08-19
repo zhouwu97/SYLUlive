@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,10 @@ import (
 
 	"shenliyuan/internal/models"
 )
+
+// 注意：本单元测试文件使用内存 SQLite (glebarez/sqlite) 进行逻辑回归。
+// 生产环境 PostgreSQL 的 partial unique index (`WHERE status='pending'`)
+// 以及 pgconn.PgError (Code 23505) 并发路径由代码防范逻辑与 PostgreSQL DDL 合约保证。
 
 func newFeaturedTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -259,5 +264,105 @@ func TestAdminGetFeaturedApplications_PreloadPostAuthor(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "张三") {
 		t.Fatalf("expected response body to contain author nickname '张三', got: %s", body)
+	}
+}
+
+// 6. 测试 FeaturePost 部分成功 (Partial Success 200 + warning)
+func TestWaterModeration_FeaturePost_PartialSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newFeaturedTestDB(t)
+	modHandler := NewWaterModerationHandler(db)
+
+	section := models.WaterSection{Slug: "tech", Title: "科技", Status: "active"}
+	db.Create(&section)
+
+	operator := models.User{StudentID: "mod2", Role: models.RoleUser}
+	db.Create(&operator)
+
+	mod := models.WaterSectionModerator{SectionID: section.ID, UserID: operator.ID, CanPinPost: true}
+	db.Create(&mod)
+
+	post := models.Post{Title: "Tech Post", PostType: "tech", BoardID: models.BoardShuitie, Status: models.PostStatusNormal}
+	db.Create(&post)
+
+	// 删除 featured_applications 表模拟首页推荐提交失败
+	db.Exec("DROP TABLE featured_applications")
+
+	r := gin.New()
+	r.POST("/api/water/sections/:slug/posts/:post_id/feature", func(c *gin.Context) {
+		c.Set("user_id", operator.ID)
+		modHandler.FeaturePost(c)
+	})
+
+	w := httptest.NewRecorder()
+	reqBody, _ := json.Marshal(map[string]string{"reason": "优质科技帖"})
+	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/water/sections/tech/posts/%d/feature", post.ID), bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	// 应返回 HTTP 200 且包含 warning
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK on partial success, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["warning"] == nil || !strings.Contains(resp["warning"].(string), "首页推荐提交失败") {
+		t.Fatalf("expected warning message in response, got %v", resp["warning"])
+	}
+
+	// 确认版块精华表成功新建且状态为 active
+	var feat models.WaterSectionFeaturedPost
+	if err := db.Where("section_id = ? AND post_id = ?", section.ID, post.ID).First(&feat).Error; err != nil {
+		t.Fatalf("expected WaterSectionFeaturedPost to be created, got error: %v", err)
+	}
+	if feat.Status != models.SectionFeaturedStatusActive {
+		t.Fatalf("expected featured status active, got %s", feat.Status)
+	}
+}
+
+// 7. 测试 UnfeaturePost 事务异常时抛出 500
+func TestWaterModeration_UnfeaturePost_TransactionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newFeaturedTestDB(t)
+	modHandler := NewWaterModerationHandler(db)
+
+	section := models.WaterSection{Slug: "news", Title: "新闻", Status: "active"}
+	db.Create(&section)
+
+	operator := models.User{StudentID: "mod3", Role: models.RoleUser}
+	db.Create(&operator)
+
+	mod := models.WaterSectionModerator{SectionID: section.ID, UserID: operator.ID, CanPinPost: true}
+	db.Create(&mod)
+
+	post := models.Post{Title: "News Post", PostType: "news", BoardID: models.BoardShuitie, Status: models.PostStatusNormal}
+	db.Create(&post)
+
+	featured := models.WaterSectionFeaturedPost{
+		SectionID:  section.ID,
+		PostID:     post.ID,
+		FeaturedBy: operator.ID,
+		Reason:     "News",
+		Status:     models.SectionFeaturedStatusActive,
+	}
+	db.Create(&featured)
+
+	// 删表导致事务失败
+	db.Exec("DROP TABLE featured_applications")
+
+	r := gin.New()
+	r.DELETE("/api/water/sections/:slug/posts/:post_id/feature", func(c *gin.Context) {
+		c.Set("user_id", operator.ID)
+		modHandler.UnfeaturePost(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/api/water/sections/news/posts/%d/feature", post.ID), nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 on transaction failure, got %d", w.Code)
 	}
 }

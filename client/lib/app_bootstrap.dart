@@ -1754,23 +1754,67 @@ class AuthWrapper extends StatefulWidget {
 class HomeInitialTabResolver {
   int? _initialTab;
 
-  int resolve(ThemeProvider themeProvider) {
-    return _initialTab ??= switch (themeProvider.startupDestination) {
+  /// 解析 `lastPage` 深层类型（chat/post/notification）时要打底的根 tab。
+  static const int homeTabs = 5;
+
+  int resolve(ThemeProvider themeProvider, {RestorablePageState? lastPage}) {
+    return _initialTab ??=
+        initialTabFor(themeProvider.startupDestination, lastPage);
+  }
+
+  /// 从启动模式与上次页面推断打底 root tab 索引（纯函数，便于测试）。
+  @visibleForTesting
+  static int initialTabFor(
+    StartupDestinationMode mode,
+    RestorablePageState? lastPage,
+  ) {
+    return switch (mode) {
       StartupDestinationMode.timetable => 2,
-      // home 和 lastPage 的基础 tab 都是 0。
-      // lastPage 的 rootTab index 和深层路由由 _scheduleLastPageRestore 处理。
+      StartupDestinationMode.lastPage => _rootIndexFor(lastPage),
       _ => 0,
     };
   }
+
+  static int _rootIndexFor(RestorablePageState? state) {
+    if (state == null) return 0;
+    final dynamic raw = switch (state.type) {
+      RestorablePageType.rootTab => state.arguments['index'],
+      RestorablePageType.chat ||
+      RestorablePageType.post ||
+      RestorablePageType.notification =>
+        state.arguments['underlyingRootTab'],
+    };
+    final index = raw is num ? raw.toInt() : int.tryParse('$raw');
+    if (index == null || index < 0 || index >= homeTabs) return 0;
+    return index;
+  }
 }
+
+/// 启动期一次解析出的导航计划：打底的 root tab 与可选的首屏深层页面。
+///
+/// `deepPage != null` 时视觉上直接进入该页面，返回后落到 [rootTabIndex]。
+class StartupNavigationPlan {
+  const StartupNavigationPlan({
+    required this.rootTabIndex,
+    this.deepPage,
+  });
+
+  final int rootTabIndex;
+  final RestorablePageState? deepPage;
+}
+
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
   bool _legalConsentDialogVisible = false;
-  bool _lastPageRestoreScheduled = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
+
+  /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
+  StartupNavigationPlan? _startupPlan;
+  int? _planUserId;
+  bool _planResolving = false;
 
   @override
   void initState() {
@@ -1881,7 +1925,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             if (PlatformCapabilities.current.supportsJPush) {
               _checkNativeNotificationOpen();
             }
-            _scheduleLastPageRestore(authProvider);
           });
         } else if (!authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1905,102 +1948,89 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const PrivacyCenterScreen(restricted: true);
         }
 
+        final userId = authProvider.user?.id;
+        // lastPage 模式需要先异步解析启动计划，期间显示加载门禁，
+        // 避免 HomeScreen 先以错误的 root tab 构建、再闪成目标页面。
+        if (tp.startupDestination == StartupDestinationMode.lastPage &&
+            userId != null &&
+            userId > 0) {
+          if (_startupPlan == null || _planUserId != userId) {
+            _resolveStartupPlan(userId);
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return HomeScreen(
+            initialTab: _startupPlan!.rootTabIndex,
+            initialDeepPage: _startupPlan!.deepPage,
+          );
+        }
+
+        // home / timetable（或 lastPage 但无有效用户）：同步可解，不设门禁。
+        // 同时丢弃已解析的 lastPage 计划，避免日后切回 lastPage 时复活旧深层页。
+        _startupPlan = null;
+        _planUserId = null;
+        final resolvedPlan = StartupNavigationPlan(
+          rootTabIndex: _homeInitialTabResolver.resolve(tp),
+        );
         return HomeScreen(
-          initialTab: _homeInitialTabResolver.resolve(tp),
+          initialTab: resolvedPlan.rootTabIndex,
+          initialDeepPage: resolvedPlan.deepPage,
         );
       },
     );
   }
 
-  /// 仅在 [StartupDestinationMode.lastPage] 且无外部导航目标时执行。
-  void _scheduleLastPageRestore(AuthProvider authProvider) {
-    if (_lastPageRestoreScheduled) return;
-    final userId = authProvider.user?.id;
-    if (userId == null || userId <= 0) return;
-    final tp = context.read<ThemeProvider>();
-    if (tp.startupDestination != StartupDestinationMode.lastPage) return;
-    _lastPageRestoreScheduled = true;
-    unawaited(_restoreLastPage(userId));
-  }
-
-  Future<void> _restoreLastPage(int userId) async {
-    if (!mounted || context.read<AuthProvider>().user?.id != userId) return;
-
-    // 外部导航目标优先于 lastPage 恢复。
-    final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
-        _pendingNotificationOpen.target != null ||
-        widgetTabSwitch.value > 0;
-    if (externalTargetPending) return;
-
+  /// 异步解析 `lastPage` 启动计划：读取上次页面，计算打底 root tab 与
+  /// 可选的首屏深层页面。外部导航目标（通知/私信/小组件）优先，抑制深层页。
+  Future<void> _resolveStartupPlan(int userId) async {
+    if (_planResolving) return;
+    _planResolving = true;
     try {
-      final state = await RootPageStateStore.instance.readLastPage(
-        accountId: userId,
-      );
-      if (!mounted || state == null) return;
+      final tp = context.read<ThemeProvider>();
+      if (tp.startupDestination != StartupDestinationMode.lastPage) return;
+      if (context.read<AuthProvider>().user?.id != userId) return;
 
-      final navigator = appNavigatorKey.currentState;
-      if (navigator == null || navigator.canPop()) return;
+      final externalTargetPending =
+          _pendingPrivateMessageOpen.target != null ||
+              _pendingNotificationOpen.target != null ||
+              widgetTabSwitch.value > 0;
 
-      switch (state.type) {
-        case RestorablePageType.rootTab:
-          // rootTab 已由 HomeInitialTabResolver 处理，无需额外 push。
-          break;
-        case RestorablePageType.chat:
-          final conversationId = state.arguments['conversationId'] as int?;
-          final targetUserId = state.arguments['targetUserId'] as int?;
-          if (conversationId == null ||
-              conversationId <= 0 ||
-              targetUserId == null ||
-              targetUserId <= 0) {
-            break;
-          }
-          navigator.push(
-            MaterialPageRoute<void>(
-              settings: RouteSettings(
-                name: '/messages/conversations/$conversationId',
-              ),
-              builder: (_) => ChatDetailScreen(
-                conversationId: conversationId,
-                targetUser: User(
-                  id: targetUserId,
-                  studentId: '',
-                  nickname:
-                      (state.arguments['targetNickname'] ?? '').toString(),
-                  avatar: (state.arguments['targetAvatar'] ?? '').toString(),
-                  createdAt: DateTime.now(),
-                ),
-              ),
-            ),
+      RestorablePageState? state;
+      if (!externalTargetPending) {
+        try {
+          state = await RootPageStateStore.instance.readLastPage(
+            accountId: userId,
           );
-        case RestorablePageType.post:
-          final postId = state.arguments['postId'] as int?;
-          if (postId == null || postId <= 0) break;
-          navigator.push(
-            MaterialPageRoute<void>(
-              settings: const RouteSettings(name: '/post/detail'),
-              builder: (_) => PostDetailScreen(postId: postId),
-            ),
+        } catch (error) {
+          DiagnosticLogService.instance.record(
+            level: 'warning',
+            source: '存储',
+            type: '上次页面恢复失败',
+            summary: '无法恢复上次退出时的页面',
+            detail: error.toString(),
+            eventCode: 'navigation_last_page_restore_failed',
+            category: 'navigation',
+            operation: 'restore',
+            result: 'failure',
           );
-        case RestorablePageType.notification:
-          navigator.push(
-            MaterialPageRoute<void>(
-              settings: const RouteSettings(name: '/notifications'),
-              builder: (_) => const NotificationsScreen(),
-            ),
-          );
+        }
       }
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '上次页面恢复失败',
-        summary: '无法恢复上次退出时的页面',
-        detail: error.toString(),
-        eventCode: 'navigation_last_page_restore_failed',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'failure',
-      );
+
+      if (!mounted) return;
+      if (context.read<AuthProvider>().user?.id != userId) return;
+
+      setState(() {
+        _planUserId = userId;
+        _startupPlan = StartupNavigationPlan(
+          rootTabIndex: _homeInitialTabResolver.resolve(tp, lastPage: state),
+          deepPage: state == null || state.type == RestorablePageType.rootTab
+              ? null
+              : state,
+        );
+      });
+    } finally {
+      _planResolving = false;
     }
   }
 }

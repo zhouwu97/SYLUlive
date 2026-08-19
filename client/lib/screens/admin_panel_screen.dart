@@ -4,10 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
-import '../config/admin_feature_flags.dart';
 import 'dart:io' show File;
 import 'admin_reports_screen.dart';
-import 'admin/canteen_dish_photo_review_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
 import 'admin_featured_applications_screen.dart';
@@ -46,27 +44,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     try {
       final dio = context.read<AuthProvider>().dio;
-      if (!AdminFeatureFlags.reviewEnabled) {
-        final reportsRes = await dio
-            .get('/reports', queryParameters: {'status': 'pending'}).catchError(
-                (_) => Response(
-                    requestOptions: RequestOptions(path: ''), data: []));
-        if (!mounted) return;
-        int getCount(Response res) {
-          if (res.data is List) return (res.data as List).length;
-          return 0;
-        }
-        setState(() {
-          _reportsCount = getCount(reportsRes);
-          _featuredCount = 0;
-          _reviewTasksCount = 0;
-          _adminTasksCount = 0;
-          _examPapersCount = 0;
-          _isLoading = false;
-        });
-        return;
-      }
-
       final futures = await Future.wait([
         dio.get('/reports', queryParameters: {'status': 'pending'}),
         dio.get('/admin/featured-applications'),
@@ -169,34 +146,32 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                           const AdminWaterSectionsScreen()))
                               .then((_) => _loadCounts()),
                         ),
-                        if (AdminFeatureFlags.reviewEnabled) ...[
-                          _AdminActionPill(
-                            icon: Icons.star_border,
-                            iconColor: Colors.amber,
-                            title: '精华申请',
-                            subtitle: '内容推荐与审核',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminFeaturedApplicationsScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                          _AdminActionPill(
-                            icon: Icons.image_search,
-                            iconColor: Colors.deepPurple,
-                            title: '版块图标审核',
-                            subtitle: '版主上传图标审核',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminWaterIconReviewScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                        ],
+                        _AdminActionPill(
+                          icon: Icons.star_border,
+                          iconColor: Colors.amber,
+                          title: '精华申请',
+                          subtitle: '内容推荐与审核',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminFeaturedApplicationsScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.image_search,
+                          iconColor: Colors.deepPurple,
+                          title: '版块图标审核',
+                          subtitle: '版主上传图标审核',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminWaterIconReviewScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.history,
                           iconColor: Colors.teal,
@@ -211,65 +186,51 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         ),
                       ],
                     ),
-                    if (AdminFeatureFlags.reviewEnabled)
-                      _AdminSectionGroup(
-                        title: '审核代办',
-                        isDark: isDark,
-                        children: [
-                          _AdminActionPill(
-                            icon: Icons.person_search,
-                            iconColor: Colors.indigo,
-                            title: '教师审核',
-                            subtitle: '教师词条提交审核',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminReviewTasksScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                          _AdminActionPill(
-                            icon: Icons.library_books_outlined,
-                            iconColor: Colors.deepOrange,
-                            title: '试卷审核',
-                            subtitle: '待审核与已发布试卷管理',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminExamPapersScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                          _AdminActionPill(
-                            icon: Icons.school_outlined,
-                            iconColor: Colors.pink,
-                            title: '专业审核',
-                            subtitle: '专业信息提交审核',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminReviewTasksScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                          _AdminActionPill(
-                            icon: Icons.restaurant_menu_rounded,
-                            iconColor: Colors.deepOrange,
-                            title: '菜品实拍审核',
-                            subtitle: '学生投稿实拍审核',
-                            isDark: isDark,
-                            onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            const CanteenDishPhotoReviewScreen()))
-                                .then((_) => _loadCounts()),
-                          ),
-                        ],
-                      ),
+                    _AdminSectionGroup(
+                      title: '审核代办',
+                      isDark: isDark,
+                      children: [
+                        _AdminActionPill(
+                          icon: Icons.person_search,
+                          iconColor: Colors.indigo,
+                          title: '教师审核',
+                          subtitle: '教师词条提交审核',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminReviewTasksScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.library_books_outlined,
+                          iconColor: Colors.deepOrange,
+                          title: '试卷审核',
+                          subtitle: '待审核与已发布试卷管理',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminExamPapersScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.school_outlined,
+                          iconColor: Colors.pink,
+                          title: '专业审核',
+                          subtitle: '专业信息提交审核',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminReviewTasksScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                      ],
+                    ),
                     _AdminSectionGroup(
                       title: '管理员协作',
                       isDark: isDark,
@@ -400,53 +361,51 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           builder: (_) => const AdminReportsScreen()))
                   .then((_) => _loadCounts()),
             ),
-            if (AdminFeatureFlags.reviewEnabled) ...[
-              _AdminMetricPill(
-                title: '精华',
-                count: _featuredCount,
-                isLoading: _isLoading,
-                isDark: isDark,
-                onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                const AdminFeaturedApplicationsScreen()))
-                    .then((_) => _loadCounts()),
-              ),
-              _AdminMetricPill(
-                title: '审核',
-                count: _reviewTasksCount,
-                isLoading: _isLoading,
-                isDark: isDark,
-                onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AdminReviewTasksScreen()))
-                    .then((_) => _loadCounts()),
-              ),
-              _AdminMetricPill(
-                title: '试卷',
-                count: _examPapersCount,
-                isLoading: _isLoading,
-                isDark: isDark,
-                onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AdminExamPapersScreen()))
-                    .then((_) => _loadCounts()),
-              ),
-              _AdminMetricPill(
-                title: '管理员代办',
-                count: _adminTasksCount,
-                isLoading: _isLoading,
-                isDark: isDark,
-                onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AdminReviewTasksScreen()))
-                    .then((_) => _loadCounts()),
-              ),
-            ],
+            _AdminMetricPill(
+              title: '精华',
+              count: _featuredCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const AdminFeaturedApplicationsScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '审核',
+              count: _reviewTasksCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminReviewTasksScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '试卷',
+              count: _examPapersCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminExamPapersScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '管理员代办',
+              count: _adminTasksCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminReviewTasksScreen()))
+                  .then((_) => _loadCounts()),
+            ),
           ],
         ),
       ],

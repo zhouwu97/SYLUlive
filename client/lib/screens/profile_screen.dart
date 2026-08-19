@@ -24,7 +24,6 @@ import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
-import '../config/admin_feature_flags.dart';
 import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
@@ -629,11 +628,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.admin_panel_settings,
             iconColor: Colors.red,
             title: '管理处',
-            subtitle: AdminFeatureFlags.reviewEnabled && adminTodo > 0
+            subtitle: adminTodo > 0
                 ? '处理举报、审核教师和专业 · $adminTodo 条待办'
                 : '处理举报与社区治理',
-            badgeText:
-                AdminFeatureFlags.reviewEnabled && adminTodo > 0 ? '$adminTodo' : null,
+            badgeText: adminTodo > 0 ? '$adminTodo' : null,
             onTap: () {
               Navigator.push(
                 context,
@@ -761,9 +759,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     AuthProvider auth,
     dynamic user,
   ) async {
-    if (!AdminFeatureFlags.reviewEnabled) {
-      return const {'admin': 0, 'super': 0};
-    }
     Future<List<dynamic>> loadList(String path) async {
       try {
         final response = await auth.dio.get(path);

@@ -71,3 +71,82 @@ func EnsureCanteenDishSchema(db *gorm.DB) error {
 	}
 	return nil
 }
+
+// MigratePendingCanteenDishPhotos 迁移现存 pending 实拍图片：
+// 对于每道菜：
+//   已有 approved 数 = N
+//   剩余容量 = 3 - N (若 N >= 3 则容量为 0)
+//   按 created_at ASC 取最多剩余容量个 pending -> approved，并将其对应 File 设为 public
+//   超出 3 张的其余 pending -> archived
+func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var dishIDs []uint
+		if err := tx.Model(&CanteenDishPhoto{}).
+			Where("status = ?", DishPhotoStatusPending).
+			Distinct().
+			Pluck("dish_id", &dishIDs).Error; err != nil {
+			return err
+		}
+		if len(dishIDs) == 0 {
+			return nil
+		}
+
+		for _, dishID := range dishIDs {
+			var approvedCount int64
+			if err := tx.Model(&CanteenDishPhoto{}).
+				Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusApproved).
+				Count(&approvedCount).Error; err != nil {
+				return err
+			}
+			capacity := 3 - int(approvedCount)
+			if capacity < 0 {
+				capacity = 0
+			}
+
+			var pendingPhotos []CanteenDishPhoto
+			if err := tx.Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusPending).
+				Order("created_at ASC, id ASC").
+				Find(&pendingPhotos).Error; err != nil {
+				return err
+			}
+
+			var toApproveIDs []uint
+			var toApproveFileIDs []uint
+			var toArchiveIDs []uint
+
+			for i, p := range pendingPhotos {
+				if i < capacity {
+					toApproveIDs = append(toApproveIDs, p.ID)
+					toApproveFileIDs = append(toApproveFileIDs, p.FileID)
+				} else {
+					toArchiveIDs = append(toArchiveIDs, p.ID)
+				}
+			}
+
+			if len(toApproveIDs) > 0 {
+				if err := tx.Model(&CanteenDishPhoto{}).
+					Where("id IN ?", toApproveIDs).
+					Update("status", DishPhotoStatusApproved).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&File{}).
+					Where("id IN ?", toApproveFileIDs).
+					Updates(map[string]interface{}{
+						"status":       "active",
+						"access_scope": FileAccessPublic,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			if len(toArchiveIDs) > 0 {
+				if err := tx.Model(&CanteenDishPhoto{}).
+					Where("id IN ?", toArchiveIDs).
+					Update("status", DishPhotoStatusArchived).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+

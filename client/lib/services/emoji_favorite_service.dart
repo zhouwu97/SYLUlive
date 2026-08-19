@@ -594,6 +594,16 @@ class EmojiFavoriteService extends ChangeNotifier {
     await load();
     final snap = _AccountSnapshot.capture(this);
     if (snap.stale) return;
+    await _addWithSnapshot(snap, item);
+  }
+
+  /// 用调用方持有的账号快照原子地写入收藏，绝不在远程 await 之后重新捕获当前账号，
+  /// 避免把旧账号（A）的结果写进新账号（B）的本地缓存。
+  Future<void> _addWithSnapshot(
+    _AccountSnapshot snap,
+    EmojiFavoriteItem item,
+  ) async {
+    if (snap.stale) return;
     final cache = List<EmojiFavoriteItem>.from(snap.items);
     cache.removeWhere((entry) => entry.key == item.key);
     cache.insert(0, item);
@@ -602,11 +612,21 @@ class EmojiFavoriteService extends ChangeNotifier {
   }
 
   Future<EmojiFavoriteItem> addCustomFromUpload(int fileId) async {
+    await load();
+    final snap = _AccountSnapshot.capture(this);
+
     var item = EmojiFavoriteItem.custom(fileId: fileId);
-    if (repository != null && _userId != null) {
+    if (repository != null && snap.userId != null) {
       item = await repository!.createCustom(fileId);
+      if (snap.stale) {
+        throw const EmojiFavoriteException(
+          message: '账号已切换，请重试',
+          code: 'account_switched',
+        );
+      }
     }
-    await add(item);
+
+    await _addWithSnapshot(snap, item);
     return item;
   }
 
@@ -625,7 +645,13 @@ class EmojiFavoriteService extends ChangeNotifier {
       );
     }
     final item = await repository!.createFromMessage(messageId);
-    await add(item);
+    if (snap.stale) {
+      throw const EmojiFavoriteException(
+        message: '账号已切换，请重试',
+        code: 'account_switched',
+      );
+    }
+    await _addWithSnapshot(snap, item);
     return item;
   }
 

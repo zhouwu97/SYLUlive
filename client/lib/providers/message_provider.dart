@@ -581,12 +581,26 @@ class MessageProvider extends ChangeNotifier {
     EmojiFavoriteItem favorite, {
     String content = '',
     int? senderId,
-  }) {
-    final fileId = favorite.fileId;
-    if (favorite.type != EmojiFavoriteType.image ||
-        fileId == null ||
-        fileId <= 0) {
-      return Future.value(null);
+  }) async {
+    var fileId = favorite.fileId;
+    if (favorite.type != EmojiFavoriteType.image) {
+      return null;
+    }
+    if (fileId == null || fileId <= 0) {
+      try {
+        await EmojiFavoriteService.instance.syncFromServer();
+        final items = await EmojiFavoriteService.instance.load();
+        final synced = items.firstWhere(
+          (item) => item.key == favorite.key,
+          orElse: () => favorite,
+        );
+        fileId = synced.fileId;
+      } catch (_) {}
+    }
+    if (fileId == null || fileId <= 0) {
+      _messageError = '该收藏数据已失效，请重新收藏';
+      notifyListeners();
+      return null;
     }
     return sendMessage(
       targetUserId,

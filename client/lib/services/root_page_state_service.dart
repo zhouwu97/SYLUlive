@@ -90,7 +90,7 @@ class RootPageStateStore {
   static const communityFeedScrollKey = 'navigation_community_feed_scroll';
   static const conversationKey = 'navigation_last_conversation';
   static const lastPageKey = 'startup_last_page_v1';
-  static final instance = RootPageStateStore();
+  static RootPageStateStore instance = RootPageStateStore();
 
   final AppPreferencesStore? _preferences;
 

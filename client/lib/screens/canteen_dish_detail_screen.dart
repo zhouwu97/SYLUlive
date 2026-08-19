@@ -72,73 +72,82 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     if (photoId == null) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final uploaderName = photo['uploader_name'] ?? photo['nickname'] ?? '同学';
-    final createdAt = photo['created_at']?.toString() ?? '';
+    final initialUploaderName = photo['uploader_name'] ?? photo['nickname'] ?? '同学';
+    final initialCreatedAt = photo['created_at']?.toString() ?? '';
 
     final confirm = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        decoration: BoxDecoration(
-          color: CanteenTheme.surfaceBg(isDark),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: CanteenTheme.borderColor(isDark),
-                    borderRadius: BorderRadius.circular(999),
+      builder: (sheetCtx) => FutureBuilder<Map<String, dynamic>?>(
+        future: context.read<CanteenProvider>().adminGetDishPhotoDetail(photoId),
+        builder: (ctx, snapshot) {
+          final detail = snapshot.data;
+          final uploaderName = detail?['uploader_name'] ?? initialUploaderName;
+          final createdAt = detail?['created_at']?.toString() ?? initialCreatedAt;
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: BoxDecoration(
+              color: CanteenTheme.surfaceBg(isDark),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: CanteenTheme.borderColor(isDark),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                '管理已发布实拍',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: CanteenTheme.textPrimaryColor(isDark),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '上传者：$uploaderName' +
-                    (createdAt.isNotEmpty ? ' · $createdAt' : ''),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: CanteenTheme.textSecondaryColor(isDark),
-                ),
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () => Navigator.pop(sheetCtx, true),
-                icon: const Icon(Icons.archive_outlined, size: 18),
-                label: const Text('下架此实拍（释放名额）'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(46),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                  const SizedBox(height: 18),
+                  Text(
+                    '管理已发布实拍',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: CanteenTheme.textPrimaryColor(isDark),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '上传者：$uploaderName' +
+                        (createdAt.isNotEmpty ? ' · $createdAt' : ''),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: CanteenTheme.textSecondaryColor(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(sheetCtx, true),
+                    icon: const Icon(Icons.archive_outlined, size: 18),
+                    label: const Text('下架此实拍（释放名额）'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(46),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: () => Navigator.pop(sheetCtx, false),
+                    child: const Text('取消'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => Navigator.pop(sheetCtx, false),
-                child: const Text('取消'),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
 

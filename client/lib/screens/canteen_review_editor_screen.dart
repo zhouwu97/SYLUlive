@@ -173,14 +173,14 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
   }
 
-  void _applyDraft(CanteenReviewDraft draft) {
+  void _applyDraft(CanteenReviewDraft draft, {DateTime? rebaseTo}) {
     setState(() {
       _star = draft.star;
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
       _recommendedDishes = List.from(draft.recommendedDishes);
       _draftImages = List.from(draft.images);
-      _baseRatingUpdatedAt = draft.baseRatingUpdatedAt;
+      _baseRatingUpdatedAt = rebaseTo ?? draft.baseRatingUpdatedAt;
       _isDirty = false;
     });
   }
@@ -251,7 +251,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         '${updatedAt.hour.toString().padLeft(2, '0')}:${updatedAt.minute.toString().padLeft(2, '0')}';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已恢复你 $timeStr 保存的草稿'),
+        content: Text('已恢复 $timeStr 保存的草稿'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -261,12 +261,28 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     CanteenReviewDraft draft,
     Map<String, dynamic> existing,
   ) {
-    showDialog<void>(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final remoteUpdated = _baseRatingUpdatedAt;
+    showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('发现草稿冲突'),
-        content: const Text('该评价已在其他设备更新。你有一份本地草稿，请选择继续使用哪一份内容：'),
+        backgroundColor: CanteenTheme.surfaceBg(isDark),
+        title: Text(
+          '发现评价冲突',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: CanteenTheme.textPrimaryColor(isDark),
+          ),
+        ),
+        content: Text(
+          '你的评价在其他设备已有更新。是否恢复本地草稿并基于最新版本继续编辑？',
+          style: TextStyle(
+            fontSize: 14,
+            color: CanteenTheme.textSecondaryColor(isDark),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -278,7 +294,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
-              _applyDraft(draft);
+              _applyDraft(draft, rebaseTo: remoteUpdated);
             },
             child: const Text('恢复本机草稿'),
           ),
@@ -589,7 +605,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
 
     // 2. 调用 Rate 接口
-    final success = await canteenProvider.rateCanteen(
+    final result = await canteenProvider.rateCanteen(
       widget.canteenId,
       star: _star,
       comment: _commentController.text.trim(),
@@ -602,7 +618,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     if (!mounted) return;
     setState(() => _isSubmitting = false);
 
-    if (success) {
+    if (result.success) {
       // 3. 发布成功：清除草稿与本地草稿图片目录
       await _draftRepo.deleteDraft(
         userId: _userId,
@@ -617,7 +633,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         Navigator.of(context).pop(true);
       }
     } else {
-      if (canteenProvider.errorCode == 'rating_conflict' && mounted) {
+      if (result.errorCode == 'rating_conflict' && mounted) {
+        if (result.remoteUpdatedAt != null) {
+          _baseRatingUpdatedAt = result.remoteUpdatedAt;
+        }
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final resolveAction = await showDialog<String>(
           context: context,
@@ -632,7 +651,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               ),
             ),
             content: Text(
-              '当前评价已在其他设备更新。你可以选择强制覆盖为当前内容，或放弃本次修改退出。',
+              '当前评价已在其他设备更新。你可以选择强制覆盖为当前内容，或保留当前草稿并退出。',
               style: TextStyle(
                 fontSize: 14,
                 color: CanteenTheme.textSecondaryColor(isDark),
@@ -640,8 +659,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogCtx, 'cancel'),
-                child: const Text('放弃并退出'),
+                onPressed: () => Navigator.pop(dialogCtx, 'save_and_exit'),
+                child: const Text('保留草稿并退出'),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogCtx, 'overwrite'),
@@ -655,13 +674,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           _baseRatingUpdatedAt = null;
           await _submitReview();
           return;
-        } else if (resolveAction == 'cancel' && mounted) {
-          Navigator.of(context).pop(false);
+        } else if (resolveAction == 'save_and_exit' && mounted) {
+          await _saveDraftNow();
+          if (mounted) {
+            Navigator.of(context).pop(false);
+          }
           return;
         }
       }
 
-      final errMsg = canteenProvider.errorMessage ?? '提交失败，请稍后重试';
+      final errMsg = result.errorMessage ?? canteenProvider.errorMessage ?? '提交失败，请稍后重试';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errMsg)),
       );

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 func newDishPhotoTestDB(t *testing.T) *gorm.DB {
@@ -251,7 +253,7 @@ func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	if arch.Code != http.StatusOK {
 		t.Fatalf("archive status=%d body=%s", arch.Code, arch.Body.String())
 	}
-	// archived 后公共列表不可见；文件保持 public（不 revoke）
+	// archived 后公共列表不可见；孤立文件无其他公开引用应被回收为 private
 	listResp := performDishPhotoRequest(t, dishHandler.ListDishes, http.MethodGet,
 		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 0, "")
@@ -260,8 +262,8 @@ func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	}
 	var fileAfterArchive models.File
 	db.First(&fileAfterArchive, fileA.ID)
-	if fileAfterArchive.AccessScope != models.FileAccessPublic {
-		t.Fatalf("archived file scope=%s want public (no revoke)", fileAfterArchive.AccessScope)
+	if fileAfterArchive.AccessScope != models.FileAccessPrivate {
+		t.Fatalf("archived orphan file scope=%s want private after reconcile", fileAfterArchive.AccessScope)
 	}
 }
 
@@ -574,3 +576,142 @@ func TestAdminDishUpdateRenameAndHide(t *testing.T) {
 		t.Fatalf("empty name status=%d", empty.Code)
 	}
 }
+
+func TestAdminArchiveDishPhotoReconcilesFilePublicAccess(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	createVerifiedUser(t, db, 2, "学生A")
+
+	canteen := models.Canteen{Name: "八食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "水饺", NormalizedName: "水饺", Status: models.DishStatusActive, CreatedBy: 2}
+	db.Create(&dish)
+
+	// 上传实拍 1（文件 201）
+	f1 := createTestFile(t, db, 201, 2, models.FileAccessPrivate)
+	p1 := models.CanteenDishPhoto{DishID: dish.ID, FileID: f1.ID, UserID: 2, Status: models.DishPhotoStatusApproved}
+	db.Create(&p1)
+	services.ClaimPublicImageFiles(db, []uint{f1.ID})
+
+	var fileBefore models.File
+	db.First(&fileBefore, f1.ID)
+	if fileBefore.AccessScope != models.FileAccessPublic {
+		t.Fatalf("fileBefore scope=%s want public", fileBefore.AccessScope)
+	}
+
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	archiveResp := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", p1.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(p1.ID)}}, 1, "")
+	if archiveResp.Code != http.StatusOK {
+		t.Fatalf("archive status=%d body=%s", archiveResp.Code, archiveResp.Body.String())
+	}
+
+	// 孤儿文件无其他公开引用，应被降级为 private
+	var fileAfter models.File
+	db.First(&fileAfter, f1.ID)
+	if fileAfter.AccessScope != models.FileAccessPrivate {
+		t.Fatalf("fileAfter scope=%s want private after reconcile", fileAfter.AccessScope)
+	}
+}
+
+func TestAdminGetDishPhotoDetail(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	createVerifiedUser(t, db, 2, "张三同学")
+
+	canteen := models.Canteen{Name: "九食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "排骨饭", NormalizedName: "排骨饭", Status: models.DishStatusActive, CreatedBy: 2}
+	db.Create(&dish)
+
+	f1 := createTestFile(t, db, 202, 2, models.FileAccessPublic)
+	p1 := models.CanteenDishPhoto{DishID: dish.ID, FileID: f1.ID, UserID: 2, Status: models.DishPhotoStatusApproved}
+	db.Create(&p1)
+
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	resp := performDishPhotoRequest(t, admin.AdminGetDishPhotoDetail, http.MethodGet,
+		fmt.Sprintf("/api/canteens/dish-photos/%d", p1.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(p1.ID)}}, 1, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &data); err != nil {
+		t.Fatalf("json parse: %v", err)
+	}
+	if data["uploader_name"] != "张三同学" {
+		t.Fatalf("uploader_name=%v want 张三同学", data["uploader_name"])
+	}
+	if fmt.Sprint(data["uploader_id"]) != "2" {
+		t.Fatalf("uploader_id=%v want 2", data["uploader_id"])
+	}
+}
+
+func TestDishGalleryCapacityReopensAfterArchive(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	createVerifiedUser(t, db, 2, "学生A")
+	createVerifiedUser(t, db, 3, "学生B")
+	createVerifiedUser(t, db, 4, "学生C")
+	createVerifiedUser(t, db, 5, "学生D")
+
+	canteen := models.Canteen{Name: "十食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "麻婆豆腐", NormalizedName: "麻婆豆腐", Status: models.DishStatusActive, CreatedBy: 2}
+	db.Create(&dish)
+
+	f1 := createTestFile(t, db, 301, 2, models.FileAccessPrivate)
+	f2 := createTestFile(t, db, 302, 3, models.FileAccessPrivate)
+	f3 := createTestFile(t, db, 303, 4, models.FileAccessPrivate)
+
+	submit := NewCanteenDishPhotoHandler(db)
+	r1 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		2, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f1.ID))
+	r2 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		3, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f2.ID))
+	r3 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		4, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f3.ID))
+	if r1.Code != http.StatusCreated || r2.Code != http.StatusCreated || r3.Code != http.StatusCreated {
+		t.Fatalf("setup 3 photos failed: r1=%d r2=%d r3=%d", r1.Code, r2.Code, r3.Code)
+	}
+
+	// 尝试上传第 4 张 → 409
+	f4 := createTestFile(t, db, 304, 5, models.FileAccessPrivate)
+	r4 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		5, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f4.ID))
+	if r4.Code != http.StatusConflict {
+		t.Fatalf("4th photo want 409 got %d", r4.Code)
+	}
+
+	// 管理员下架第 1 张
+	var photo1 models.CanteenDishPhoto
+	db.Where("dish_id = ? AND file_id = ?", dish.ID, f1.ID).First(&photo1)
+
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	archResp := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", photo1.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo1.ID)}}, 1, "")
+	if archResp.Code != http.StatusOK {
+		t.Fatalf("archive status=%d", archResp.Code)
+	}
+
+	// 再次上传第 4 张 → 应该成功 201！
+	r4Retry := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		5, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f4.ID))
+	if r4Retry.Code != http.StatusCreated {
+		t.Fatalf("retry 4th photo want 201 got %d body=%s", r4Retry.Code, r4Retry.Body.String())
+	}
+}
+

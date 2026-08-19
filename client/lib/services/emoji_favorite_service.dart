@@ -285,7 +285,9 @@ class EmojiFavoriteService extends ChangeNotifier {
 
     final rawV1 = preferences.getString(storageKey);
     final merged = <EmojiFavoriteItem>[...currentItems];
+    var hadV1 = false;
     if (rawV1?.isNotEmpty == true) {
+      hadV1 = true;
       try {
         final decoded = jsonDecode(rawV1!);
         if (decoded is List) {
@@ -299,15 +301,17 @@ class EmojiFavoriteService extends ChangeNotifier {
       } catch (_) {
         // 忽略损坏的旧数据
       }
-      // 首次迁移后彻底清除无账号前缀的全局旧 key，防止后续切换登录其他账号时重复摄入
-      await preferences.remove(storageKey);
     }
 
+    // 安全时序：1. 成功写 v2 账号缓存 -> 2. 写 migrated 标记 -> 3. 最后删除旧 v1
     await preferences.setString(
       accountStorageKey,
       jsonEncode(merged.map((item) => item.toJson()).toList()),
     );
     await preferences.setBool(flagKey, true);
+    if (hadV1) {
+      await preferences.remove(storageKey);
+    }
     return merged;
   }
 
@@ -332,7 +336,38 @@ class EmojiFavoriteService extends ChangeNotifier {
     try {
       final page = await repository!.fetchFavorites();
       if (sessionEpoch != _sessionEpoch) return;
-      final serverItems = page.items;
+      final serverItems = List<EmojiFavoriteItem>.from(page.items);
+
+      // 将本地尚未上云的旧收藏（serverId == null）上传至服务端
+      if (_cache != null && _userId != null) {
+        for (final local in _cache!) {
+          if (local.serverId == null) {
+            try {
+              EmojiFavoriteItem? uploaded;
+              if (local.type == EmojiFavoriteType.sticker &&
+                  local.stickerId != null &&
+                  local.stickerId!.isNotEmpty) {
+                uploaded = await repository!.createBuiltin(local.stickerId!);
+              } else if (local.fileId != null && local.fileId! > 0) {
+                uploaded = await repository!.createCustom(local.fileId!);
+              } else if (local.imageUrl != null && local.imageUrl!.isNotEmpty) {
+                uploaded = await repository!.createFromPublicImage(local.imageUrl!);
+              }
+              if (uploaded != null) {
+                final existIdx = serverItems.indexWhere((m) => m.key == uploaded!.key);
+                if (existIdx >= 0) {
+                  serverItems[existIdx] = uploaded;
+                } else {
+                  serverItems.add(uploaded);
+                }
+              }
+            } catch (e) {
+              debugPrint('Error uploading local favorite to cloud: $e');
+            }
+          }
+        }
+      }
+
       final merged = <EmojiFavoriteItem>[...serverItems];
       if (_cache != null) {
         for (final local in _cache!) {

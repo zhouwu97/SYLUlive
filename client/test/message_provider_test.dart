@@ -652,6 +652,21 @@ void main() {
     expect(uploadRequests, 0);
   });
 
+  test('sendFavoriteImageMessage with invalid fileId sets messageError and returns null',
+      () async {
+    final dio = Dio();
+    final provider = MessageProvider(dio);
+
+    final result = await provider.sendFavoriteImageMessage(
+      3,
+      const EmojiFavoriteItem.image('https://example.com/invalid.png'),
+      senderId: 8,
+    );
+
+    expect(result, isNull);
+    expect(provider.messageError, '该收藏数据已失效，请重新收藏');
+  });
+
   test('sendMessage allows multiple requests to remain in flight', () async {
     final dio = Dio();
     final responseGate = Completer<void>();

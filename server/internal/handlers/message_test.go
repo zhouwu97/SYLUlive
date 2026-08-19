@@ -54,6 +54,8 @@ func newMessageTestDB(t *testing.T) *gorm.DB {
 		&models.UserFollow{},
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.UserEmojiAsset{},
+		&models.UserEmojiFavorite{},
 		&models.Conversation{},
 		&models.Message{},
 	); err != nil {

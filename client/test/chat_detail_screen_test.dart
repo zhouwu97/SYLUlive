@@ -165,7 +165,9 @@ void main() {
       (tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
-    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+    // Composer 的 SafeArea 读取 MediaQuery.padding.bottom（保持键盘外的手势区）；
+    // 用 view.padding 模拟系统手势区 inset。
+    tester.view.padding = const FakeViewPadding(bottom: 24);
     addTearDown(tester.view.reset);
 
     final provider = MessageProvider(_chatDio());
@@ -179,6 +181,179 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       0,
     );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'first input tap with a 24dp gesture inset does not drop the composer',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final before =
+        tester.getRect(find.byKey(const ValueKey('chat-composer'))).bottom;
+    expect(find.byKey(const ValueKey('chat-bottom-viewport')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+
+    // 点击输入框、IME 尚未产生 viewInsets 的第一帧：Composer 的 bottom 必须
+    // 保持原位，不能因 panel 切到 keyboard 而瞬间撤掉系统手势区掉下去。
+    await tester.tap(input);
+    await tester.pump();
+
+    final after =
+        tester.getRect(find.byKey(const ValueKey('chat-composer'))).bottom;
+    expect(after, closeTo(before, 0.5));
+    expect(after, closeTo(876, 1));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'keyboard rise frames move the composer monotonically without dipping',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    final composer = find.byKey(const ValueKey('chat-composer'));
+    final bottomAtRest = tester.getRect(composer).bottom;
+
+    await tester.tap(find.byKey(const ValueKey('chat-input')));
+    await tester.pump();
+    // 第一帧（无 IME）：保持原位，不先向下掉。
+    expect(
+      tester.getRect(composer).bottom,
+      closeTo(bottomAtRest, 0.5),
+    );
+
+    // 0 → 40 → 120 → 240 → 356：Composer 单调上移，任何一帧都不先向下。
+    double previous = tester.getRect(composer).bottom;
+    final risingFrames = [0.0, 40.0, 120.0, 240.0, 356.0];
+    for (final inset in risingFrames) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+      final bottom = tester.getRect(composer).bottom;
+      expect(
+        bottom,
+        lessThanOrEqualTo(previous + 0.5),
+        reason: 'composer dipped when IME inset reached $inset',
+      );
+      previous = bottom;
+    }
+    expect(previous, lessThan(bottomAtRest - 300));
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'keyboard opened then collapsed reopens cleanly on the next tap',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(
+      tester,
+      provider,
+      theme: ThemeData(
+        platform: TargetPlatform.android,
+        useMaterial3: true,
+      ),
+    );
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+
+    // 1) 打开键盘
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    // 2) IME 升起再系统收起：旧输入的 Focus 会话必须彻底结束
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await _pumpFrames(tester, count: 2);
+    expect(focusNode.hasFocus, isFalse);
+
+    // 3) 再次点击输入框：一次干净的新输入会话，IME 被重新唤起
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('dragging further past the latest edge opens the keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    expect(focusNode.hasFocus, isFalse);
+
+    // reverse 列表 offset 0 即最新消息；继续向最新方向（负向 overscroll）拖动
+    await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'overscroll at the latest edge does not reopen when drag starts with keyboard open',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(
+      tester,
+      provider,
+      theme: ThemeData(
+        platform: TargetPlatform.android,
+        useMaterial3: true,
+      ),
+    );
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+
+    // 打开键盘并模拟 IME 可见
+    await tester.tap(input);
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+    expect(focusNode.hasFocus, isTrue);
+
+    // 键盘打开时开始拖动到最新边缘：ScrollStart 判定输入面板活跃，
+    // 关闭 overscroll→弹键盘 的允许位，同一次手势不得重新弹起键盘。
+    final setClientBefore = tester.testTextInput.log
+        .where((call) => call.method == 'TextInput.setClient')
+        .length;
+    await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+    await tester.pump();
+    final setClientAfter = tester.testTextInput.log
+        .where((call) => call.method == 'TextInput.setClient')
+        .length;
+
+    // 没有重新建立 IME 会话（未重新弹起键盘）
+    expect(setClientAfter, setClientBefore);
     await _disposeChat(tester, provider);
   });
 
@@ -289,8 +464,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
     // Emoji → Keyboard 交接期间面板保持原位直到 IME 覆盖；测试环境无 IME，
-    // 依赖 400ms 保险超时切回键盘，因此这里推过超时再断言面板关闭。
-    await tester.pump(const Duration(milliseconds: 450));
+    // 依赖 750ms 保险超时切回键盘，因此这里推过超时再断言面板关闭。
+    await tester.pump(const Duration(milliseconds: 800));
     expect(find.byType(AppEmojiPanel), findsNothing);
     // 交接完成后 viewport 跟随真实 inset（无 IME 时为 0），
     // 内容回到屏幕底部，而不是残留 stableKeyboardHeight 悬空。

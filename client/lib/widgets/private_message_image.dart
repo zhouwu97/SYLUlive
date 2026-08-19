@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +48,11 @@ class PrivateMessageImage extends StatefulWidget {
   /// 点击失败卡触发的重新加载；为空时仅重新解码/重新请求当前来源。
   final VoidCallback? onRetry;
 
+  /// 图片点击（打开大图等）。仅在展示尺寸解析完成后才可触发：
+  /// 服务端给定宽高、或本地/网络 intrinsic 尺寸解析成功，且 [onTap] 非空时，
+  /// 可点击区域严格等于渲染出的图片框，避免"点图片旁边空白也打开"。
+  final VoidCallback? onTap;
+
   const PrivateMessageImage({
     super.key,
     this.networkUrl,
@@ -62,6 +68,7 @@ class PrivateMessageImage extends StatefulWidget {
     this.minWidth = 96,
     this.cacheManager,
     this.onRetry,
+    this.onTap,
   });
 
   @override
@@ -72,6 +79,8 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
   Size? _intrinsic;
   bool _localFailed = false;
   int _loadAttempt = 0;
+  ImageStream? _networkStream;
+  ImageStreamListener? _networkStreamListener;
 
   @override
   void initState() {
@@ -92,9 +101,28 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     }
   }
 
-  /// 服务端没给宽高时，使用轻量级文件头解析器提取尺寸，不将整图读入内存。
-  Future<void> _resolveIntrinsic() async {
-    if (widget.serverWidth > 0 && widget.serverHeight > 0) return;
+  @override
+  void dispose() {
+    _networkStream?.removeListener(_networkStreamListener!);
+    super.dispose();
+  }
+
+  bool get _hasServerSize =>
+      widget.serverWidth > 0 && widget.serverHeight > 0;
+
+  /// 服务端没给宽高时，从本地文件头或网络图片解码解析出真实 intrinsic 尺寸。
+  void _resolveIntrinsic() {
+    if (_hasServerSize) return;
+    final localPath = widget.localPath;
+    if (localPath != null && localPath.isNotEmpty) {
+      _resolveLocalIntrinsic();
+    } else {
+      _resolveNetworkIntrinsic();
+    }
+  }
+
+  /// 本地文件：使用轻量级文件头解析器提取尺寸，不将整图读入内存。
+  Future<void> _resolveLocalIntrinsic() async {
     final localPath = widget.localPath;
     if (localPath == null || localPath.isEmpty) return;
     try {
@@ -108,8 +136,56 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     }
   }
 
+  /// 网络图片：通过 ImageProvider.resolve() 解码拿到真实宽高，
+  /// 避免服务端缺宽高时误用固定 260×260 透明布局框。
+  void _resolveNetworkIntrinsic() {
+    _networkStream?.removeListener(_networkStreamListener!);
+    _networkStream = null;
+    final url = widget.networkUrl;
+    if (url == null || url.isEmpty) return;
+    final fullUrl = ApiConstants.fullUrl(url);
+    final key = widget.cacheKey ??
+        PrivateMessageMediaCache.cacheKeyFor(
+          fullUrl,
+          accountId: widget.accountId,
+        );
+    final provider = CachedNetworkImageProvider(
+      fullUrl,
+      headers: widget.httpHeaders,
+      cacheManager:
+          widget.cacheManager ?? PrivateMessageMediaCache.instance.manager,
+      cacheKey: key,
+    );
+    final stream = provider.resolve(const ImageConfiguration());
+    late ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        final image = info.image;
+        final width = image.width.toDouble();
+        final height = image.height.toDouble();
+        if (!mounted || _hasServerSize || _intrinsic != null) {
+          stream.removeListener(listener);
+          return;
+        }
+        if (width <= 0 || height <= 0) {
+          stream.removeListener(listener);
+          return;
+        }
+        setState(() => _intrinsic = ui.Size(width, height));
+        stream.removeListener(listener);
+      },
+      onError: (error, stackTrace) {
+        // 尺寸解析失败不阻塞：图片仍沿正常渲染路径展示（此时无精确点击区）。
+        stream.removeListener(listener);
+      },
+    );
+    _networkStream = stream;
+    _networkStreamListener = listener;
+    stream.addListener(listener);
+  }
+
   Size? get _sourceSize {
-    if (widget.serverWidth > 0 && widget.serverHeight > 0) {
+    if (_hasServerSize) {
       return Size(
         widget.serverWidth.toDouble(),
         widget.serverHeight.toDouble(),
@@ -209,21 +285,29 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
       imageContent = _buildNetwork(colors, display);
     }
 
-    // 有展示尺寸：独立气泡，图片自带圆角。
+    // 无任何可用来源：中性失败卡（失败卡自带"点击重试"，不受外层开大图约束）。
+    if (imageContent == null) {
+      return _buildFailureCard(colors, compact: true);
+    }
+
+    // 点击打开大图只绑定到渲染出的精确图片框：服务端给宽高、或本地/网络
+    // intrinsic 解析成功（display != null）时才可触发，避免"点图片旁空白也打开"。
+    final openViewerTap = display != null ? widget.onTap : null;
+
+    Widget box;
     if (display != null) {
-      return SizedBox(
+      // 已解析出精确展示尺寸：可点击区域 == 视觉图片尺寸。
+      box = SizedBox(
         width: display.width,
         height: display.height,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: imageContent ?? _buildSizedPlaceholder(colors, display),
+          child: imageContent,
         ),
       );
-    }
-
-    // 尚无展示尺寸（网络图且服务端未给宽高）：用 contain 等比展示，不裁切。
-    if (imageContent != null) {
-      return SizedBox(
+    } else {
+      // 网络图且尺寸尚未解析：用 contain 等比展示且不裁切，但不可点击打开大图。
+      box = SizedBox(
         width: widget.maxWidth,
         height: widget.maxHeight.clamp(120, 260),
         child: ClipRRect(
@@ -233,8 +317,10 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
       );
     }
 
-    // 无任何可用来源：中性失败卡。
-    return _buildFailureCard(colors, compact: true);
+    return GestureDetector(
+      onTap: openViewerTap,
+      child: box,
+    );
   }
 
   Widget _buildNetwork(ColorScheme colors, Size? display) {

@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
+import '../models/startup_destination.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
@@ -77,6 +78,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _stableKeyboardHeight = _fallbackKeyboardHeight;
   Timer? _messageFocusHighlightTimer;
   bool _hasObservedKeyboardHeight = false;
+  double _lastKeyboardInset = 0;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
   ChatInputHandoff _handoff = ChatInputHandoff.none;
   int _handoffGeneration = 0;
@@ -100,6 +102,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int? _lastObservedServerMessageId;
   int _newMessageCount = 0;
   int? _messageFocusHighlightId;
+  bool _allowLatestEdgeKeyboardGesture = false;
+  double _latestEdgeOverscroll = 0;
+  static const double _latestEdgeKeyboardTrigger = 28;
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
   static const double _fallbackKeyboardHeight = 300;
@@ -307,9 +312,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         return;
       }
 
+      final previousInset = _lastKeyboardInset;
+      _lastKeyboardInset = keyboardInset;
+
       if (keyboardInset <= 0) {
         _cancelHandoff();
         if (_bottomPanel == ChatBottomPanel.keyboard) {
+          // 键盘曾经真实可见（previousInset > 0）后降到 0：彻底结束旧输入会话，
+          // 确保 Focus 不残留，下一次点击是一次干净的新输入会话。
+          if (previousInset > 0 && _inputFocusNode.hasFocus) {
+            _inputFocusNode.unfocus();
+          }
           setState(() => _bottomPanel = ChatBottomPanel.none);
         }
         return;
@@ -427,6 +440,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         80) {
       _loadOlderMessages();
     }
+  }
+
+  /// 已处最新消息边缘继续向最新方向 overscroll（reverse 列表即 minScrollExtent≈0）
+  /// 时弹起键盘。是否允许在 ScrollStart 时决定：键盘打开期间拖列表收键盘，
+  /// IME 刚降到 0 的同一次拖动不得重新弹起。
+  bool _handleMessageScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _latestEdgeOverscroll = 0;
+      _allowLatestEdgeKeyboardGesture =
+          !_inputPanelActive &&
+          !_inputFocusNode.hasFocus &&
+          _keyboardViewportHeight <= 0 &&
+          !_isComposerBlocked;
+    } else if (notification is OverscrollNotification &&
+        _allowLatestEdgeKeyboardGesture &&
+        notification.metrics.pixels <=
+            notification.metrics.minScrollExtent + 0.5 &&
+        notification.overscroll < 0) {
+      _latestEdgeOverscroll += -notification.overscroll;
+      if (_latestEdgeOverscroll >= _latestEdgeKeyboardTrigger) {
+        _allowLatestEdgeKeyboardGesture = false;
+        _latestEdgeOverscroll = 0;
+        _showKeyboard();
+        _jumpToLatestMessage();
+      }
+    } else if (notification is ScrollEndNotification) {
+      _latestEdgeOverscroll = 0;
+      _allowLatestEdgeKeyboardGesture = false;
+    }
+    return false;
   }
 
   Future<void> _loadOlderMessages() async {
@@ -681,6 +724,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _showKeyboard() {
     if (_isComposerBlocked) return;
+    final pinLatest = _isNearBottom;
     if (_isDesktopPlatform) {
       _inputFocusNode.requestFocus();
       return;
@@ -694,6 +738,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _bottomPanel = ChatBottomPanel.keyboard;
     });
     _inputFocusNode.requestFocus();
+    // 已在最新消息附近时固定一次最新位置，避免键盘首两帧 viewport 变化
+    // 使最新消息相对 Composer 漂移；翻旧消息则不强制拉回底部。
+    if (pinLatest) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _jumpToLatestMessage();
+      });
+    }
   }
 
   /// 发起 Emoji → Keyboard 交接：Emoji 保持显示直到 IME 稳定高度出现。
@@ -706,7 +757,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _inputFocusNode.requestFocus();
     // 保险超时：仅防状态永远卡住，不作为动画时长。
     _keyboardHandoffTimer = Timer(
-      const Duration(milliseconds: 400),
+      const Duration(milliseconds: 750),
       () {
         if (!mounted || generation != _handoffGeneration) return;
         if (_handoff == ChatInputHandoff.emojiToKeyboard) {
@@ -897,6 +948,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           targetAvatar: widget.targetUser.avatar,
         ),
       );
+      // 统一 lastPage 状态：仅当用户选择“上次退出页面”时才记录。
+      final mode = context.read<ThemeProvider>().startupDestination;
+      if (mode == StartupDestinationMode.lastPage) {
+        await RootPageStateStore.instance.saveLastPage(
+          RestorablePageState(
+            type: RestorablePageType.chat,
+            arguments: <String, dynamic>{
+              'conversationId': conversationId,
+              'targetUserId': widget.targetUser.id,
+              'targetNickname': widget.targetUser.nickname,
+              'targetAvatar': widget.targetUser.avatar,
+            },
+            accountId: accountId,
+          ),
+        );
+      }
     } catch (error) {
       DiagnosticLogService.instance.record(
         level: 'warning',
@@ -915,6 +982,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _clearRestorableConversation() async {
     try {
       await RootPageStateStore.instance.clearConversation();
+      // 从私信返回后，更新 lastPage 为上一级页面（课表 tab）。
+      final mode = context.read<ThemeProvider>().startupDestination;
+      final accountId = context.read<AuthProvider>().user?.id;
+      if (mode == StartupDestinationMode.lastPage &&
+          accountId != null &&
+          accountId > 0) {
+        await RootPageStateStore.instance.saveLastPage(
+          RestorablePageState(
+            type: RestorablePageType.rootTab,
+            arguments: const <String, dynamic>{'index': 2},
+            accountId: accountId,
+          ),
+        );
+      }
     } catch (error) {
       DiagnosticLogService.instance.record(
         level: 'warning',
@@ -1503,7 +1584,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       onTap: () {
         _collapseBottomPanelOnly();
       },
-      child: ListView.builder(
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleMessageScrollNotification,
+        child: ListView.builder(
           controller: _scrollController,
           reverse: true,
           padding: const EdgeInsets.fromLTRB(
@@ -1567,6 +1650,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               ],
             );
           }),
+      ),
     );
     return _wrapMessageBackdrop(
       Stack(
@@ -1850,53 +1934,56 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                         if (stickerUrl != null)
                           _buildStickerImage(stickerUrl, message.stickerId),
                         if (hasImage)
-                          GestureDetector(
+                          PrivateMessageImage(
                             key: ValueKey(
                               'message-image-${message.stableKey}',
                             ),
-                            onTap: (imageUrl == null &&
-                                    (localImagePath?.isNotEmpty ?? false) ==
-                                        false)
+                            networkUrl: message.imageUrl.isEmpty
                                 ? null
-                                : () {
-                                    _collapseBottomPanelOnly();
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => ImageViewerScreen(
-                                          imageUrls:
-                                              imageUrl == null ? [] : [imageUrl],
-                                          localPaths: localImagePath
-                                                      ?.isNotEmpty ==
-                                                  true
-                                              ? [localImagePath]
-                                              : null,
-                                          httpHeaders: privateMediaHeaders,
-                                          cacheManager: PrivateMessageMediaCache
-                                              .instance.manager,
-                                          cacheKeyBuilder: (url) =>
-                                              PrivateMessageMediaCache
-                                                  .cacheKeyFor(url),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                            child: PrivateMessageImage(
-                              networkUrl: message.imageUrl.isEmpty
-                                  ? null
-                                  : message.imageUrl,
-                              localPath:
-                                  localImagePath?.isNotEmpty == true
-                                      ? localImagePath
-                                      : null,
-                              fileId: message.fileId,
-                              serverWidth: message.file?.width ?? 0,
-                              serverHeight: message.file?.height ?? 0,
-                              httpHeaders: privateMediaHeaders,
-                              maxWidth: (MediaQuery.sizeOf(context).width *
-                                      0.64)
-                                  .clamp(120.0, 260.0),
-                            ),
+                                : message.imageUrl,
+                            localPath:
+                                localImagePath?.isNotEmpty == true
+                                    ? localImagePath
+                                    : null,
+                            fileId: message.fileId,
+                            serverWidth: message.file?.width ?? 0,
+                            serverHeight: message.file?.height ?? 0,
+                            httpHeaders: privateMediaHeaders,
+                            maxWidth: (MediaQuery.sizeOf(context).width *
+                                    0.64)
+                                .clamp(120.0, 260.0),
+                            // 打开大图：仅在 PrivateMessageImage 解析出精确
+                            // 展示尺寸后绑定到图片框，避免点旁边空白也打开。
+                            onTap:
+                                (imageUrl == null &&
+                                        (localImagePath?.isNotEmpty ?? false) ==
+                                            false)
+                                    ? null
+                                    : () {
+                                        _collapseBottomPanelOnly();
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ImageViewerScreen(
+                                              imageUrls: imageUrl == null
+                                                  ? []
+                                                  : [imageUrl],
+                                              localPaths: localImagePath
+                                                          ?.isNotEmpty ==
+                                                      true
+                                                  ? [localImagePath]
+                                                  : null,
+                                              httpHeaders: privateMediaHeaders,
+                                              cacheManager:
+                                                  PrivateMessageMediaCache
+                                                      .instance.manager,
+                                              cacheKeyBuilder: (url) =>
+                                                  PrivateMessageMediaCache
+                                                      .cacheKeyFor(url),
+                                            ),
+                                          ),
+                                        );
+                                      },
                           ),
                         if (message.hasTextContent)
                           Padding(
@@ -2238,15 +2325,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         inputBar,
       ],
     );
-    final panelHidden = _bottomPanel == ChatBottomPanel.none;
+    // Composer 的 bottom SafeArea 只跟随自定义 Emoji 面板取消：键盘真正出现前
+    // 保留系统手势区 padding；IME 升起后 MediaQuery.padding.bottom 随 viewInsets
+    // 自然降到 0，同时 BottomViewport 按真实 inset 增高，总高度连续交接，
+    // 避免"点击输入框先下沉再被推回"的几何跳变。Emoji 面板自带 SafeArea。
+    final customPanelVisible = _bottomPanel == ChatBottomPanel.emoji;
     final colors = Theme.of(context).colorScheme;
     // 保持 Composer 子树结构稳定，避免面板切换时重建 EditableText 并断开 IME。
     return ColoredBox(
       color: colors.surface,
       child: SafeArea(
         top: false,
-        bottom: panelHidden,
-        maintainBottomViewPadding: panelHidden,
+        bottom: !customPanelVisible,
+        maintainBottomViewPadding: false,
         child: composerContent,
       ),
     );

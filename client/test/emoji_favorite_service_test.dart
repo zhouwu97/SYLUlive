@@ -186,8 +186,12 @@ void main() {
       preferences.getBool('emoji_favorites_v1_migrated_100'),
       isTrue,
     );
-    // Legacy storageKey remains intact for disaster recovery
-    expect(preferences.getString(EmojiFavoriteService.storageKey), isNotNull);
+    // 迁移成功后：全局旧 v1 key 被清除，避免后续切换账号时被二次摄入；
+    // 数据落在该账号专属的 v2 缓存 key 下，作为灾备恢复依据。
+    expect(preferences.getString(EmojiFavoriteService.storageKey), isNull);
+    final migratedV2 = preferences.getString('emoji_favorites_cache_v2_100');
+    expect(migratedV2, isNotNull);
+    expect(jsonDecode(migratedV2!), hasLength(2));
   });
 
   test('toggleImage calls repository to create cloud favorite when user logged in',

@@ -194,7 +194,7 @@ func (h *CanteenDishPhotoAdminHandler) RejectDishPhoto(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回", "photo_id": photo.ID})
 }
 
-// ArchiveDishPhoto 下架实拍：approved → archived，业务不再展示；不 revoke 全局文件。
+// ArchiveDishPhoto 下架实拍：approved → archived，业务不再展示，并回收孤儿文件公开权限。
 // POST /api/canteens/dish-photos/:photoId/archive
 func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
 	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
@@ -224,7 +224,10 @@ func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		// 全局 SHA-256 去重：文件可能被其他公开业务引用，archive 只做业务隐藏。
+		// 检查若无其他有效公开业务引用，回收 File public 权限降级为 private
+		if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+			return err
+		}
 		return tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: adminNickname(tx, adminID),
 			Action: "下架菜品实拍", Target: dish.Name,
@@ -237,6 +240,42 @@ func (h *CanteenDishPhotoAdminHandler) ArchiveDishPhoto(c *gin.Context) {
 	}
 	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已下架", "photo_id": photo.ID})
+}
+
+// AdminGetDishPhotoDetail 管理员查看单张实拍详情（含上传者信息）。
+// GET /api/canteens/dish-photos/:photoId
+func (h *CanteenDishPhotoAdminHandler) AdminGetDishPhotoDetail(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	type detailRow struct {
+		ID           uint      `json:"id"`
+		DishID       uint      `json:"dish_id"`
+		DishName     string    `json:"dish_name"`
+		FileID       uint      `json:"file_id"`
+		Image        string    `json:"image"`
+		UploaderID   uint      `json:"uploader_id"`
+		UploaderName string    `json:"uploader_name"`
+		Status       string    `json:"status"`
+		CreatedAt    time.Time `json:"created_at"`
+	}
+	var row detailRow
+	err = h.db.Table("canteen_dish_photos AS p").
+		Joins("JOIN canteen_dishes d ON d.id = p.dish_id").
+		Joins("JOIN files f ON f.id = p.file_id").
+		Joins("JOIN users u ON u.id = p.user_id").
+		Select(`p.id, p.dish_id, d.name AS dish_name, p.file_id,
+			f.path AS image, p.user_id AS uploader_id, u.nickname AS uploader_name,
+			p.status, p.created_at`).
+		Where("p.id = ?", photoID).
+		Scan(&row).Error
+	if err != nil || row.ID == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "实拍记录不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, row)
 }
 
 // AdminUpdateDish 管理员修改菜品：重命名 / 隐藏。

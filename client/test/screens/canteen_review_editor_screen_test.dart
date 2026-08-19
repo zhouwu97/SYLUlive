@@ -433,5 +433,64 @@ void main() {
     expect(draftAfter, isNotNull);
     expect(draftAfter!.comment, '草稿带图测试');
   });
+
+  testWidgets('409 冲突：选择保留草稿并退出，草稿立即落盘且重新进入时完整保留', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/rate' && options.method == 'POST') {
+        return _json('{"code":"rating_conflict","error":"评价已在其他设备更新，请刷新后重试","remote_updated_at":"2026-08-19T20:00:00Z"}', 409);
+      }
+      if (options.path == '/canteens/1/dishes') {
+        return _json('[]', 200);
+      }
+      return _json('{}', 200);
+    });
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 填写评价内容
+    await tester.tap(find.byIcon(Icons.star_border_rounded).at(3));
+    await tester.enterText(find.byType(TextField).first, '冲突测试中的独家评价');
+    await tester.pumpAndSettle();
+
+    // 点击发布，触发 409 冲突
+    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.pumpAndSettle();
+
+    // 弹出 409 冲突对话框
+    expect(find.text('评价版本冲突'), findsOneWidget);
+    expect(find.text('保留草稿并退出'), findsOneWidget);
+    expect(find.text('强制覆盖'), findsOneWidget);
+
+    // 点击“保留草稿并退出”
+    await tester.tap(find.text('保留草稿并退出'));
+    await tester.pumpAndSettle();
+
+    // 验证草稿已被立即落盘
+    final savedDraft = await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    expect(savedDraft, isNotNull);
+    expect(savedDraft!.comment, '冲突测试中的独家评价');
+    expect(savedDraft.star, 4);
+
+    // 清空页面后重新进入编辑器，验证草稿完整恢复
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('冲突测试中的独家评价'), findsOneWidget);
+  });
 }
 

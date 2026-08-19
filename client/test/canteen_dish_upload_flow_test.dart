@@ -166,13 +166,13 @@ void main() {
     // 图片上传成功后，提交按钮可用
     final submitButton = tester.widget<FilledButton>(
       find.ancestor(
-        of: find.text('提交审核'),
+        of: find.text('确认上传'),
         matching: find.byType(FilledButton),
       ),
     );
     expect(submitButton.onPressed, isNotNull);
 
-    await tester.tap(find.text('提交审核'));
+    await tester.tap(find.text('确认上传'));
     await tester.pumpAndSettle();
 
     // 关键断言：请求 body 含 dish_name=锅包肉，且无 dish_id

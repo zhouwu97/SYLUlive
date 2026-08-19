@@ -126,4 +126,19 @@ void main() {
     expect(page.quotaLimit, 52428800);
     expect(page.favoriteLimit, 80);
   });
+
+  test('v1 legacy favorites migrate to first user and do not leak to second user', () async {
+    AppPreferencesStore.setMockInitialValues({
+      EmojiFavoriteService.storageKey: '[{"kind":"builtin","sticker_id":"legacy_s1"}]',
+    });
+
+    final serviceUser1 = EmojiFavoriteService(userId: 'user1');
+    final user1Items = await serviceUser1.load();
+    expect(user1Items.length, 1);
+    expect(user1Items.first.stickerId, 'legacy_s1');
+
+    final serviceUser2 = EmojiFavoriteService(userId: 'user2');
+    final user2Items = await serviceUser2.load();
+    expect(user2Items, isEmpty);
+  });
 }

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:shenliyuan/models/startup_destination.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 enum AppBackgroundMode {
@@ -53,6 +54,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _floatingNavBar = false;
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
+  StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   bool _marketIsListView = false;
 
   bool get isLoaded => _isLoaded;
@@ -71,7 +73,11 @@ class ThemeProvider extends ChangeNotifier {
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
+  /// 旧字段，保留一个版本供外部代码过渡。不再作为导航决策数据源。
   bool get startOnTimetable => _startOnTimetable;
+
+  /// 统一启动目标模式，替代旧 [startOnTimetable]。
+  StartupDestinationMode get startupDestination => _startupDestination;
   bool get marketIsListView => _marketIsListView;
 
   bool get hasBackground =>
@@ -175,6 +181,11 @@ class ThemeProvider extends ChangeNotifier {
       _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
       _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
       _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
+
+      // 旧 start_on_timetable → StartupDestinationMode 一次性迁移。
+      await StartupDestinationStore.migrateFromLegacy(prefs);
+      _startupDestination = StartupDestinationStore.read(prefs);
+
       _backgroundMode =
           _backgroundModeFromString(prefs.getString(_backgroundModeKey));
 
@@ -344,10 +355,28 @@ class ThemeProvider extends ChangeNotifier {
     await _tryDeleteLocalManagedFile(oldLandscape);
   }
 
+  /// 旧方法，仅保留兼容签名。内部同步写新 key。
   Future<void> setStartOnTimetable(bool v) async {
     _startOnTimetable = v;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_startOnTimetableKey, v);
+    // 同步新 key，保持一致。
+    final mode = v
+        ? StartupDestinationMode.timetable
+        : StartupDestinationMode.home;
+    _startupDestination = mode;
+    await StartupDestinationStore.write(prefs, mode);
+    notifyListeners();
+  }
+
+  /// 设置统一启动目标模式。
+  Future<void> setStartupDestination(StartupDestinationMode mode) async {
+    _startupDestination = mode;
+    final prefs = await AppPreferencesStore.getInstance();
+    await StartupDestinationStore.write(prefs, mode);
+    // 同步旧 key（过渡期兼容）。
+    _startOnTimetable = mode == StartupDestinationMode.timetable;
+    await prefs.setBool(_startOnTimetableKey, _startOnTimetable);
     notifyListeners();
   }
 

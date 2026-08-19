@@ -8,6 +8,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../models/startup_destination.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
@@ -70,6 +72,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
+  StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
   Future<Map<String, int>>? _adminOverviewFuture;
   Future<Response<dynamic>>? _invitationsFuture;
@@ -124,7 +127,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _loadPrefs() {
     final tp = context.read<ThemeProvider>();
-    if (mounted) setState(() => _startOnTimetable = tp.startOnTimetable);
+    if (mounted) {
+      setState(() {
+        _startOnTimetable = tp.startOnTimetable;
+        _startupDestination = tp.startupDestination;
+      });
+    }
   }
 
   Future<void> _loadUnreadCount() async {
@@ -935,23 +943,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       _buildSettingsRow(
         child: _buildSettingsTile(
-          icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
+          icon: _startupDestination == StartupDestinationMode.timetable
+              ? Icons.calendar_today
+              : _startupDestination == StartupDestinationMode.lastPage
+                  ? Icons.restore
+                  : Icons.home_rounded,
           iconColor: AppColors.brandPrimary,
-          title: '下次直接进入课表',
-          subtitle: _startOnTimetable ? '已开启' : '已关闭',
+          title: '启动页面',
+          subtitle: switch (_startupDestination) {
+            StartupDestinationMode.home => '首页',
+            StartupDestinationMode.timetable => '课表',
+            StartupDestinationMode.lastPage => '上次退出页面',
+          },
           isDark: isDark,
-          trailing: Switch(
-            value: _startOnTimetable,
-            activeColor: AppColors.brandPrimary,
-            onChanged: (v) {
-              context.read<ThemeProvider>().setStartOnTimetable(v);
-              if (mounted) setState(() => _startOnTimetable = v);
-            },
-          ),
+          onTap: () => _showStartupDestinationPicker(isDark),
         ),
       ),
     ];
     return _buildSectionLayout(context, '教务', items, isDark);
+  }
+
+  void _showStartupDestinationPicker(bool isDark) {
+    final colors = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      backgroundColor: colors.surface,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Widget buildOption(
+              StartupDestinationMode mode,
+              String title,
+              String subtitle,
+              IconData icon,
+            ) {
+              final selected = _startupDestination == mode;
+              return ListTile(
+                leading: Icon(icon, color: selected ? AppColors.brandPrimary : colors.onSurfaceVariant),
+                title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w600 : FontWeight.normal)),
+                subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+                trailing: selected
+                    ? Icon(Icons.check_rounded, color: AppColors.brandPrimary, size: 20)
+                    : null,
+                onTap: () {
+                  context.read<ThemeProvider>().setStartupDestination(mode);
+                  setSheetState(() {});
+                  if (mounted) setState(() => _startupDestination = mode);
+                  Navigator.pop(sheetContext);
+                },
+              );
+            }
+
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      '启动页面',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ),
+                  buildOption(
+                    StartupDestinationMode.home,
+                    '首页',
+                    '每次启动进入校园首页',
+                    Icons.home_rounded,
+                  ),
+                  buildOption(
+                    StartupDestinationMode.timetable,
+                    '课表',
+                    '每次启动直接进入当前课表',
+                    Icons.calendar_today,
+                  ),
+                  buildOption(
+                    StartupDestinationMode.lastPage,
+                    '上次退出页面',
+                    '重新打开 App 时恢复退出前所在页面',
+                    Icons.restore,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildSettingsSection(

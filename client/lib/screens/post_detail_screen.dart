@@ -1773,6 +1773,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _sectionUnpinPost();
         break;
       case 'section_feature':
+      case 'section_retry_home_feature':
         _sectionFeaturePost();
         break;
       case 'section_unfeature':
@@ -1818,17 +1819,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         );
 
-        entries.add(
-          AppPopupAction(
-            value: _post?.waterSectionFeatured == true
-                ? 'section_unfeature'
-                : 'section_feature',
-            label: _post?.waterSectionFeatured == true ? '取消版块精华' : '设为版块精华',
-            icon: _post?.waterSectionFeatured == true
-                ? Icons.star_border_rounded
-                : Icons.auto_awesome_rounded,
-          ),
-        );
+        if (_post?.waterSectionFeatured == true) {
+          if (_post?.homeFeaturedPending == false) {
+            entries.add(
+              const AppPopupAction(
+                value: 'section_retry_home_feature',
+                label: '重试首页推荐',
+                icon: Icons.campaign_outlined,
+              ),
+            );
+          }
+          entries.add(
+            const AppPopupAction(
+              value: 'section_unfeature',
+              label: '取消版块精华',
+              icon: Icons.star_border_rounded,
+            ),
+          );
+        } else {
+          entries.add(
+            const AppPopupAction(
+              value: 'section_feature',
+              label: '设为版块精华',
+              icon: Icons.auto_awesome_rounded,
+            ),
+          );
+        }
       }
 
       if (perm.canDeletePost) {

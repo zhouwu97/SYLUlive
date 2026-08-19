@@ -173,8 +173,11 @@ class MessageProvider extends ChangeNotifier {
     _drafts.remove(targetUserId);
   }
 
+  int _sessionGeneration = 0;
+
   void syncSessionUser(int? userId) {
     if (_sessionUserId == userId) return;
+    _sessionGeneration++;
     _stopRealtime();
     // 账号切换后清空私信媒体缓存，避免跨账号复用上一账号的私信图片。
     PrivateMessageMediaCache.instance.scopeByAccount(userId);
@@ -775,7 +778,7 @@ class MessageProvider extends ChangeNotifier {
   Future<void> _verifyRemoteMedia(Message message) async {
     final url = message.imageUrl;
     if (url.isEmpty) return;
-    final sessionGen = _sessionUserId;
+    final sessionGen = _sessionGeneration;
     final cancelToken = CancelToken();
     try {
       final response = await _dio.get<ResponseBody>(
@@ -783,7 +786,7 @@ class MessageProvider extends ChangeNotifier {
         options: Options(responseType: ResponseType.stream),
         cancelToken: cancelToken,
       );
-      if (sessionGen != _sessionUserId) return;
+      if (sessionGen != _sessionGeneration) return;
       final status = response.statusCode ?? 0;
       if (status >= 200 && status < 300) {
         cancelToken.cancel();
@@ -798,7 +801,7 @@ class MessageProvider extends ChangeNotifier {
         type: DioExceptionType.badResponse,
       );
     } on DioException catch (error) {
-      if (sessionGen != _sessionUserId) return;
+      if (sessionGen != _sessionGeneration) return;
       if (CancelToken.isCancel(error)) return;
       DiagnosticLogService.instance.record(
         level: 'error',
@@ -818,7 +821,7 @@ class MessageProvider extends ChangeNotifier {
         },
       );
     } catch (_) {
-      if (sessionGen != _sessionUserId) return;
+      if (sessionGen != _sessionGeneration) return;
       DiagnosticLogService.instance.record(
         level: 'error',
         source: 'pm',

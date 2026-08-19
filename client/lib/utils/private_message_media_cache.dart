@@ -24,9 +24,12 @@ class PrivateMessageMediaCache {
 
   CacheManager get manager {
     if (_customManager != null) return _customManager!;
+    final cacheName = _accountId != null
+        ? 'private_message_media_cache_$_accountId'
+        : 'private_message_media_cache_anon';
     return _defaultManager ??= CacheManager(
       Config(
-        'private_message_media_cache',
+        cacheName,
         stalePeriod: const Duration(days: 3),
         maxNrOfCacheObjects: 128,
       ),

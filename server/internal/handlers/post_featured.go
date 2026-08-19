@@ -158,11 +158,21 @@ func (h *PostHandler) GetFeaturedApplicationStatus(c *gin.Context) {
 		return
 	}
 	var app models.FeaturedApplication
-	err := h.db.Where("post_id = ? AND applicant_id = ? AND status = ?", postID, userID, "pending").First(&app).Error
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{"has_pending": true, "status": "pending"})
-	} else {
+	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&app).Error
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, gin.H{
+			"has_pending":    true,
+			"is_mine":        app.ApplicantID == userID,
+			"source":         app.Source,
+			"application_id": app.ID,
+			"status":         "pending",
+		})
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusOK, gin.H{"has_pending": false})
+	default:
+		log.Printf("[featured_application] 查询状态失败 post_id=%d: %v", postID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询申请状态失败"})
 	}
 }
 
@@ -184,7 +194,7 @@ func (h *PostHandler) GetMyFeaturedApplications(c *gin.Context) {
 func (h *PostHandler) AdminGetFeaturedApplications(c *gin.Context) {
 	status := strings.TrimSpace(c.DefaultQuery("status", "pending"))
 	query := h.db.Model(&models.FeaturedApplication{}).
-		Preload("Post").Preload("Applicant").Preload("Reviewer")
+		Preload("Post").Preload("Post.Author").Preload("Applicant").Preload("Reviewer")
 	if status != "" && status != "all" {
 		query = query.Where("status = ?", status)
 	}

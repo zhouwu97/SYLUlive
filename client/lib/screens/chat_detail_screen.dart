@@ -854,19 +854,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       height: height,
       child: ColoredBox(
         color: colors.surface,
-        child: AnimatedOpacity(
-          opacity: showEmojiPanel ? 1.0 : 0.0,
-          duration: (showEmojiPanel && !reduceMotion)
-              ? AppMotion.micro
-              : Duration.zero,
-          child: Offstage(
-            offstage: !showEmojiPanel,
-            child: IgnorePointer(
-              ignoring: !showEmojiPanel,
-              child: SafeArea(
-                top: false,
-                child: emojiPanel,
-              ),
+        child: Offstage(
+          offstage: !showEmojiPanel,
+          child: IgnorePointer(
+            ignoring: !showEmojiPanel,
+            child: SafeArea(
+              top: false,
+              child: emojiPanel,
             ),
           ),
         ),

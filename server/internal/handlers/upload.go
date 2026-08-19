@@ -95,22 +95,23 @@ func atomicWriteFile(dstPath string, src io.Reader) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
-	tmpPath := fmt.Sprintf("%s.tmp.%d", dstPath, os.Getpid())
-	dst, err := os.Create(tmpPath)
+	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(dstPath)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
+	tmpPath := tmpFile.Name()
+
+	if _, err := io.Copy(tmpFile, src); err != nil {
+		tmpFile.Close()
 		os.Remove(tmpPath)
 		return fmt.Errorf("写入文件失败: %w", err)
 	}
-	if err := dst.Sync(); err != nil {
-		dst.Close()
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
 		os.Remove(tmpPath)
 		return fmt.Errorf("同步文件失败: %w", err)
 	}
-	if err := dst.Close(); err != nil {
+	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("关闭临时文件失败: %w", err)
 	}

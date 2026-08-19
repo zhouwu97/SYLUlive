@@ -151,32 +151,40 @@ func (s *EmojiFavoriteService) CreateFromPublicImage(ctx context.Context, userID
 
 	var source models.File
 	if err := s.db.WithContext(ctx).Where("path = ?", cleanPath).First(&source).Error; err != nil {
-		fullPath, pathErr := s.resolveUploadPath(cleanPath)
-		if pathErr != nil {
-			return nil, fmt.Errorf("%w: 图片路径非法", ErrInvalidImageFileReference)
-		}
-		raw, readErr := os.ReadFile(fullPath)
-		if readErr != nil {
-			return nil, fmt.Errorf("%w: 图片文件不存在", ErrInvalidImageFileReference)
-		}
-		mimeType := http.DetectContentType(raw)
-		if !strings.HasPrefix(mimeType, "image/") {
-			return nil, fmt.Errorf("%w: 文件不是图片", ErrInvalidImageFileReference)
-		}
-		hashBytes := sha256.Sum256(raw)
-		source = models.File{
-			Hash:        hex.EncodeToString(hashBytes[:]),
-			Path:        cleanPath,
-			MimeType:    mimeType,
-			Size:        int64(len(raw)),
-			AccessScope: models.FileAccessPublic,
-			Status:      "active",
-		}
-		if err := s.db.WithContext(ctx).Create(&source).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fullPath, pathErr := s.resolveUploadPath(cleanPath)
+			if pathErr != nil {
+				return nil, fmt.Errorf("%w: 图片路径非法", ErrInvalidImageFileReference)
+			}
+			raw, readErr := os.ReadFile(fullPath)
+			if readErr != nil {
+				return nil, fmt.Errorf("%w: 图片文件不存在", ErrInvalidImageFileReference)
+			}
+			mimeType := http.DetectContentType(raw)
+			if !strings.HasPrefix(mimeType, "image/") {
+				return nil, fmt.Errorf("%w: 文件不是图片", ErrInvalidImageFileReference)
+			}
+			hashBytes := sha256.Sum256(raw)
+			source = models.File{
+				Hash:        hex.EncodeToString(hashBytes[:]),
+				Path:        cleanPath,
+				MimeType:    mimeType,
+				Size:        int64(len(raw)),
+				AccessScope: models.FileAccessPublic,
+				Status:      "active",
+			}
+			if err := s.db.WithContext(ctx).Create(&source).Error; err != nil {
+				return nil, err
+			}
+		} else {
 			return nil, err
 		}
+	} else {
+		if source.AccessScope != models.FileAccessPublic && !s.canReferenceFile(ctx, userID, source) {
+			return nil, fmt.Errorf("%w: 无权引用非公开图片", ErrInvalidImageFileReference)
+		}
 	}
-	return s.createCustom(ctx, userID, source.ID, true)
+	return s.createCustom(ctx, userID, source.ID, false)
 }
 
 func (s *EmojiFavoriteService) createCustom(ctx context.Context, userID, fileID uint, messageAccess bool) (*EmojiFavoriteView, error) {

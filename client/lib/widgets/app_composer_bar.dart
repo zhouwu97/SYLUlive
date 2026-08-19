@@ -232,40 +232,40 @@ class AppComposerBar extends StatelessWidget {
                         ? Duration.zero
                         : const Duration(milliseconds: 140),
                     curve: Curves.easeOutCubic,
-                    child: SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: IconButton.filled(
-                        key: sendKey,
-                        tooltip: sendTooltip,
-                        onPressed: sendEnabled ? onSend : null,
-                        padding: EdgeInsets.zero,
-                        style: IconButton.styleFrom(
-                          fixedSize: const Size(40, 40),
-                          tapTargetSize: MaterialTapTargetSize.padded,
-                          backgroundColor: sendEnabled
-                              ? effectiveEnabledSendColor
-                              : effectiveDisabledSendColor,
-                          foregroundColor: sendEnabled
-                              ? effectiveEnabledSendIconColor
-                              : effectiveDisabledSendIconColor,
-                          disabledBackgroundColor: effectiveDisabledSendColor,
-                          disabledForegroundColor: effectiveDisabledSendIconColor,
-                        ),
-                        icon: sending
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: effectiveEnabledSendIconColor,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.send_rounded,
-                                size: 20,
-                              ),
+                    child: IconButton.filled(
+                      key: sendKey,
+                      tooltip: sendTooltip,
+                      onPressed: sendEnabled ? onSend : null,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 44,
+                        minHeight: 44,
                       ),
+                      style: IconButton.styleFrom(
+                        fixedSize: const Size(44, 44),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: sendEnabled
+                            ? effectiveEnabledSendColor
+                            : effectiveDisabledSendColor,
+                        foregroundColor: sendEnabled
+                            ? effectiveEnabledSendIconColor
+                            : effectiveDisabledSendIconColor,
+                        disabledBackgroundColor: effectiveDisabledSendColor,
+                        disabledForegroundColor: effectiveDisabledSendIconColor,
+                      ),
+                      icon: sending
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: effectiveEnabledSendIconColor,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              size: 20,
+                            ),
                     ),
                   ),
                 ),

@@ -174,6 +174,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             hintColor: isDark
                 ? AppColors.iconMutedDark
                 : AppColors.iconMutedLight,
+            enabledSendColor: AppColors.brandPrimary,
             decorate: false,
           ),
           Builder(builder: (context) {

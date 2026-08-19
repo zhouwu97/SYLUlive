@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 
 func newCanteenTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	name := strings.NewReplacer("/", "_", "\\", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -778,7 +780,7 @@ func TestCanteenRateUpdatesTimestampAndOptimisticLock(t *testing.T) {
 	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
 		t.Fatal(err)
 	}
-	if !resp2.Rating.UpdatedAt.After(firstUpdatedAt) && !resp2.Rating.UpdatedAt.Equal(firstUpdatedAt) {
+	if !resp2.Rating.UpdatedAt.After(firstUpdatedAt) {
 		t.Fatalf("二次评价 UpdatedAt 应该更新: first=%v, second=%v", firstUpdatedAt, resp2.Rating.UpdatedAt)
 	}
 
@@ -788,6 +790,62 @@ func TestCanteenRateUpdatesTimestampAndOptimisticLock(t *testing.T) {
 	w3 := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 10, body3)
 	if w3.Code != http.StatusConflict {
 		t.Fatalf("陈旧草稿应触发 409 conflict, got %d, body: %s", w3.Code, w3.Body.String())
+	}
+}
+
+func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
+	db := newCanteenTestDB(t)
+	handler := NewCanteenHandler(db)
+
+	user := createCanteenTestUser(t, db, 11, "Student11")
+	now := time.Now()
+	user.StudentVerifiedAt = &now
+	user.EduBound = true
+	db.Save(&user)
+
+	canteen := models.Canteen{Name: "第二食堂", Verified: true, CreatedBy: 1}
+	db.Create(&canteen)
+
+	// 1. 初始化创建一条评价
+	initBody := `{"star": 5, "comment": "初始评价", "tags": ["clean"]}`
+	wInit := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 11, initBody)
+	if wInit.Code != http.StatusOK {
+		t.Fatalf("初始化评价失败: %d %s", wInit.Code, wInit.Body.String())
+	}
+	var initResp struct {
+		Rating models.CanteenRating `json:"rating"`
+	}
+	if err := json.Unmarshal(wInit.Body.Bytes(), &initResp); err != nil {
+		t.Fatal(err)
+	}
+	baseTime := initResp.Rating.UpdatedAt.Format(time.RFC3339Nano)
+
+	// 2. 两个 goroutine 带同一个 base_updated_at 同时提交修改
+	var wg sync.WaitGroup
+	results := make([]int, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"star": %d, "comment": "并发修改%d", "base_updated_at": "%s"}`, idx+3, idx, baseTime)
+			w := performCanteenRequest(t, handler.Rate, http.MethodPost, fmt.Sprintf("/api/canteens/%d/rate", canteen.ID), gin.Params{{Key: "id", Value: fmt.Sprintf("%d", canteen.ID)}}, 11, body)
+			results[idx] = w.Code
+		}(i)
+	}
+	wg.Wait()
+
+	// 断言：严格只有一个 200 OK，另一个必须是 409 Conflict
+	okCount := 0
+	conflictCount := 0
+	for _, code := range results {
+		if code == http.StatusOK {
+			okCount++
+		} else if code == http.StatusConflict {
+			conflictCount++
+		}
+	}
+	if okCount != 1 || conflictCount != 1 {
+		t.Fatalf("并发乐观锁断言失败: okCount=%d, conflictCount=%d, results=%v", okCount, conflictCount, results)
 	}
 }
 

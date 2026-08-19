@@ -241,5 +241,107 @@ void main() {
     final items = await service.load();
     expect(items.first.serverId, 99);
   });
+
+  test('迁移崩溃窗口：claim 归 A 时 B 不认领 v1，A 可继续完成且清理 claim/v1',
+      () async {
+    // 模拟 A 迁移中途崩溃：claim=A、v1 仍在、A 的 migrated 已写且 v2 已写，
+    // 但 remove(v1)/remove(claim) 尚未执行。
+    AppPreferencesStore.setMockInitialValues({
+      EmojiFavoriteService.storageKey: jsonEncode([
+        {'type': 'sticker', 'sticker_id': 'legacy-sticker'},
+      ]),
+      EmojiFavoriteService.migrationClaimKey: 'A',
+    });
+
+    // B 登录：claim 归 A，B 不得认领全局 v1
+    final serviceB = EmojiFavoriteService(
+      userId: 'B',
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+    final bItems = await serviceB.load();
+    expect(bItems, isEmpty);
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(
+      preferences.getString(EmojiFavoriteService.storageKey),
+      isNotNull,
+      reason: 'v1 仍归 A，B 不应消费',
+    );
+
+    // A 继续登录：claim==A 允许完成迁移，随后清理 v1 与 claim
+    final serviceA = EmojiFavoriteService(
+      userId: 'A',
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+    final aItems = await serviceA.load();
+    expect(aItems.map((e) => e.key), ['sticker:legacy-sticker']);
+    expect(preferences.getString(EmojiFavoriteService.storageKey), isNull);
+    expect(preferences.getString(EmojiFavoriteService.migrationClaimKey), isNull);
+  });
+
+  test('A 上传旧收藏途中切到 B：A 的同步结果不写入 B 的缓存键', () async {
+    // 预置 A 的本地旧收藏（serverId==null），触发 _syncRemote 的云端上传
+    AppPreferencesStore.setMockInitialValues({
+      'emoji_favorites_v1_migrated_A': true,
+      'emoji_favorites_cache_v2_A': jsonEncode([
+        {'type': 'sticker', 'sticker_id': 'legacy-A'},
+      ]),
+    });
+
+    final blockedBuiltin = Completer<ResponseBody>();
+    var uploads = 0;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.path == '/emoji/favorites' && options.method == 'POST') {
+          uploads++;
+          // 阻塞 A 的 createBuiltin，制造切号窗口
+          return blockedBuiltin.future;
+        }
+        return ResponseBody.fromString(
+          jsonEncode({'items': []}),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+
+    final service = EmojiFavoriteService(
+      userId: 'A',
+      repository: EmojiFavoriteRepository(dio),
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    // A 开始 load：读本地旧收藏 → 触发 sync，上传停在 createBuiltin
+    final loadA = service.load();
+    var ticks = 0;
+    while (uploads == 0 && ticks < 100) {
+      await Future<void>.delayed(Duration.zero);
+      ticks++;
+    }
+    expect(uploads, 1, reason: 'A 的上传必须进入阻塞窗口');
+
+    // 在 A 上传完成前切到 B
+    service.switchUser('B');
+
+    // 放行 A 的上传
+    blockedBuiltin.complete(
+      ResponseBody.fromString(
+        jsonEncode({
+          'id': 7,
+          'kind': 'builtin',
+          'sticker_id': 'legacy-A',
+        }),
+        201,
+        headers: {
+          Headers.contentTypeHeader: ['application/json']
+        },
+      ),
+    );
+    await loadA;
+
+    // A 的过时同步绝不能写入 B 的缓存键
+    final preferences = await AppPreferencesStore.getInstance();
+    expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
+  });
 }
 

@@ -161,6 +161,38 @@ bool _asBool(Object? value) {
   return value?.toString().toLowerCase() == 'true' || value == 1;
 }
 
+/// 一次异步操作开始时对当前账号的只读快照。
+///
+/// 所有跨网络 await 的收藏操作都以快照为准：若操作期间账号已切换
+/// （epoch 或 userId 变化），[stale] 变 true，操作应静默丢弃结果，
+/// 绝不触碰新账号的 `_cache`，也绝不把旧账号数据写入新账号缓存键。
+class _AccountSnapshot {
+  _AccountSnapshot.capture(EmojiFavoriteService service)
+      : service = service,
+        userId = service._userId,
+        cacheKey = service.accountStorageKey,
+        sessionEpoch = service._sessionEpoch,
+        items = service._cache == null
+            ? <EmojiFavoriteItem>[]
+            : List<EmojiFavoriteItem>.from(service._cache!);
+
+  final EmojiFavoriteService service;
+  final String? userId;
+  final String cacheKey;
+  final int sessionEpoch;
+  final List<EmojiFavoriteItem> items;
+
+  bool get stale =>
+      sessionEpoch != service._sessionEpoch || userId != service._userId;
+
+  static bool isStaleFor(
+    EmojiFavoriteService service,
+    int sessionEpoch,
+    String? userId,
+  ) =>
+      sessionEpoch != service._sessionEpoch || userId != service._userId;
+}
+
 /// 表情收藏存储。
 ///
 /// 收藏仅保存表情 ID 或服务端图片地址，不复制原图，避免偏好存储膨胀。
@@ -190,6 +222,10 @@ class EmojiFavoriteService extends ChangeNotifier {
 
   static const String storageKey = 'emoji_favorites_v1';
   static const int maxFavoriteCount = 80;
+
+  /// 全局 v1 迁移认领标记：记录当前正在/已经认领全局 v1 收藏的账号，
+  /// 防止 A 迁移中途崩溃后 B 把 A 的旧收藏认领走（见 [_migrateV1IfNeeded]）。
+  static const String migrationClaimKey = 'emoji_favorites_v1_claimed_user';
 
   final Future<AppPreferencesStore> Function() _preferencesLoader;
 
@@ -243,8 +279,16 @@ class EmojiFavoriteService extends ChangeNotifier {
     final cached = _cache;
     if (cached != null) return List.unmodifiable(cached);
 
+    // 解析完成前账号可能切换：锚定本次的目标账号与缓存键，切换后丢弃结果。
+    final targetUserId = _userId;
+    final targetEpoch = _sessionEpoch;
+    final targetKey = accountStorageKey;
+
     final preferences = await _preferences;
-    final raw = preferences.getString(accountStorageKey);
+    if (_AccountSnapshot.isStaleFor(this, targetEpoch, targetUserId)) {
+      return <EmojiFavoriteItem>[];
+    }
+    final raw = preferences.getString(targetKey);
     var items = <EmojiFavoriteItem>[];
     if (raw?.isNotEmpty == true) {
       try {
@@ -262,13 +306,25 @@ class EmojiFavoriteService extends ChangeNotifier {
       }
     }
 
-    if (_userId != null) {
-      items = await _migrateV1IfNeeded(preferences, items);
+    if (targetUserId != null) {
+      items = await _migrateV1IfNeeded(
+        preferences,
+        items,
+        targetUserId,
+        targetEpoch,
+      );
+    }
+    if (_AccountSnapshot.isStaleFor(this, targetEpoch, targetUserId)) {
+      return <EmojiFavoriteItem>[];
     }
 
     _cache = items.take(maxFavoriteCount).toList(growable: true);
     if (repository != null && _userId != null && !_remoteSynced) {
       await syncFromServer();
+    }
+    // sync 期间可能切号（_cache 已被清空）；重校验后丢弃过时结果，避免空指针/串号。
+    if (_AccountSnapshot.isStaleFor(this, targetEpoch, targetUserId)) {
+      return <EmojiFavoriteItem>[];
     }
     return List.unmodifiable(_cache!);
   }
@@ -276,10 +332,23 @@ class EmojiFavoriteService extends ChangeNotifier {
   Future<List<EmojiFavoriteItem>> _migrateV1IfNeeded(
     AppPreferencesStore preferences,
     List<EmojiFavoriteItem> currentItems,
+    String expectedUserId,
+    int expectedEpoch,
   ) async {
-    if (_userId == null) return currentItems;
-    final flagKey = 'emoji_favorites_v1_migrated_${_userId!}';
+    bool stale() =>
+        _AccountSnapshot.isStaleFor(this, expectedEpoch, expectedUserId);
+    if (stale()) return currentItems;
+
+    final flagKey = 'emoji_favorites_v1_migrated_$expectedUserId';
+    final cacheKey = 'emoji_favorites_cache_v2_$expectedUserId';
     if (preferences.getBool(flagKey) == true) {
+      return currentItems;
+    }
+
+    // 全局 claim：A 先认领全局 v1；若中途崩溃（migrated=true 与 remove(v1)
+    // 之间），claim 仍归 A，B 不允许把 A 的旧收藏认领走。
+    final claimed = preferences.getString(migrationClaimKey);
+    if (claimed != null && claimed != expectedUserId) {
       return currentItems;
     }
 
@@ -287,6 +356,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     final merged = <EmojiFavoriteItem>[...currentItems];
     var hadV1 = false;
     if (rawV1?.isNotEmpty == true) {
+      if (stale()) return currentItems;
       hadV1 = true;
       try {
         final decoded = jsonDecode(rawV1!);
@@ -303,14 +373,21 @@ class EmojiFavoriteService extends ChangeNotifier {
       }
     }
 
+    if (stale()) return currentItems;
+    if (hadV1) {
+      // 先声明归属再写数据，保证任意顺序崩溃都不会把 v1 交给他人。
+      await preferences.setString(migrationClaimKey, expectedUserId);
+    }
+    if (stale()) return currentItems;
     // 安全时序：1. 成功写 v2 账号缓存 -> 2. 写 migrated 标记 -> 3. 最后删除旧 v1
     await preferences.setString(
-      accountStorageKey,
+      cacheKey,
       jsonEncode(merged.map((item) => item.toJson()).toList()),
     );
     await preferences.setBool(flagKey, true);
     if (hadV1) {
       await preferences.remove(storageKey);
+      await preferences.remove(migrationClaimKey);
     }
     return merged;
   }
@@ -323,7 +400,7 @@ class EmojiFavoriteService extends ChangeNotifier {
       await running;
       return;
     }
-    final future = _syncRemote(_sessionEpoch);
+    final future = _syncRemote(_sessionEpoch, _userId!);
     _syncing = future;
     try {
       await future;
@@ -332,54 +409,65 @@ class EmojiFavoriteService extends ChangeNotifier {
     }
   }
 
-  Future<void> _syncRemote(int sessionEpoch) async {
+  Future<void> _syncRemote(int sessionEpoch, String expectedUserId) async {
+    final expectedCacheKey = 'emoji_favorites_cache_v2_$expectedUserId';
+    bool stale() => _AccountSnapshot.isStaleFor(this, sessionEpoch, expectedUserId);
+
     try {
       final page = await repository!.fetchFavorites();
-      if (sessionEpoch != _sessionEpoch) return;
+      if (stale()) return;
       final serverItems = List<EmojiFavoriteItem>.from(page.items);
+      final localCache = _cache == null
+          ? <EmojiFavoriteItem>[]
+          : List<EmojiFavoriteItem>.from(_cache!);
 
       // 将本地尚未上云的旧收藏（serverId == null）上传至服务端
-      if (_cache != null && _userId != null) {
-        for (final local in _cache!) {
-          if (local.serverId == null) {
-            try {
-              EmojiFavoriteItem? uploaded;
-              if (local.type == EmojiFavoriteType.sticker &&
-                  local.stickerId != null &&
-                  local.stickerId!.isNotEmpty) {
-                uploaded = await repository!.createBuiltin(local.stickerId!);
-              } else if (local.fileId != null && local.fileId! > 0) {
-                uploaded = await repository!.createCustom(local.fileId!);
-              } else if (local.imageUrl != null && local.imageUrl!.isNotEmpty) {
-                uploaded = await repository!.createFromPublicImage(local.imageUrl!);
-              }
-              if (uploaded != null) {
-                final existIdx = serverItems.indexWhere((m) => m.key == uploaded!.key);
-                if (existIdx >= 0) {
-                  serverItems[existIdx] = uploaded;
-                } else {
-                  serverItems.add(uploaded);
-                }
-              }
-            } catch (e) {
-              debugPrint('Error uploading local favorite to cloud: $e');
+      for (final local in localCache) {
+        if (stale()) return;
+        if (local.serverId == null) {
+          try {
+            EmojiFavoriteItem? uploaded;
+            if (local.type == EmojiFavoriteType.sticker &&
+                local.stickerId != null &&
+                local.stickerId!.isNotEmpty) {
+              uploaded = await repository!.createBuiltin(local.stickerId!);
+            } else if (local.fileId != null && local.fileId! > 0) {
+              uploaded = await repository!.createCustom(local.fileId!);
+            } else if (local.imageUrl != null && local.imageUrl!.isNotEmpty) {
+              uploaded = await repository!.createFromPublicImage(local.imageUrl!);
             }
+            if (stale()) return;
+            if (uploaded != null) {
+              final existIdx = serverItems.indexWhere((m) => m.key == uploaded!.key);
+              if (existIdx >= 0) {
+                serverItems[existIdx] = uploaded;
+              } else {
+                serverItems.add(uploaded);
+              }
+            }
+          } on EmojiFavoriteException {
+            // 单个失败不阻断其余上传
+          } on DioException {
+            // 兼容自定义仓储直接抛出的 Dio 异常
+          } catch (e) {
+            debugPrint('Error uploading local favorite to cloud: $e');
           }
         }
       }
 
+      if (stale()) return;
       final merged = <EmojiFavoriteItem>[...serverItems];
-      if (_cache != null) {
-        for (final local in _cache!) {
-          if (local.serverId == null && !merged.any((m) => m.key == local.key)) {
-            merged.add(local);
-          }
+      for (final local in localCache) {
+        if (local.serverId == null && !merged.any((m) => m.key == local.key)) {
+          merged.add(local);
         }
       }
-      _cache =
+      final next =
           _dedupe(merged).take(maxFavoriteCount).toList(growable: true);
+      if (stale()) return;
+      _cache = next;
       _remoteSynced = true;
-      await _persist();
+      await _persist(expectedCacheKey, next);
       notifyListeners();
     } on EmojiFavoriteException {
       // 离线时继续展示上一次缓存。
@@ -417,71 +505,80 @@ class EmojiFavoriteService extends ChangeNotifier {
   Future<bool> _toggleStickerRemoteAware(String stickerId) async {
     if (stickerId.isEmpty) return false;
     await load();
-    final index = _cache!.indexWhere(
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) return false;
+    final cache = List<EmojiFavoriteItem>.from(snap.items);
+    final index = cache.indexWhere(
       (entry) =>
           entry.type == EmojiFavoriteType.sticker &&
           entry.stickerId == stickerId,
     );
     if (index >= 0) {
-      final existing = _cache![index];
+      final existing = cache[index];
       if (repository != null && existing.serverId != null) {
         await repository!.delete(existing.serverId!);
+        if (snap.stale) return false;
       }
-      _cache!.removeAt(index);
-      await _persist();
-      notifyListeners();
+      cache.removeAt(index);
+      await _commit(snap, cache);
       return false;
     }
     var item = EmojiFavoriteItem.sticker(stickerId);
-    if (repository != null && _userId != null) {
+    if (repository != null && snap.userId != null) {
       item = await repository!.createBuiltin(stickerId);
+      if (snap.stale) return false;
     }
-    _cache!.insert(0, item);
-    _trimCache();
-    await _persist();
-    notifyListeners();
+    cache.insert(0, item);
+    _trimToMax(cache);
+    await _commit(snap, cache);
     return true;
   }
 
   Future<bool> _toggleImageRemoteAware(String imageUrl) async {
     if (imageUrl.isEmpty) return false;
     await load();
-    final index = _cache!.indexWhere(
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) return false;
+    final cache = List<EmojiFavoriteItem>.from(snap.items);
+    final index = cache.indexWhere(
       (entry) =>
           entry.type == EmojiFavoriteType.image &&
           (entry.imageUrl == imageUrl || entry.thumbnailUrl == imageUrl),
     );
     if (index >= 0) {
-      final existing = _cache![index];
+      final existing = cache[index];
       if (repository != null && existing.serverId != null) {
         await repository!.delete(existing.serverId!);
+        if (snap.stale) return false;
       }
-      _cache!.removeAt(index);
-      await _persist();
-      notifyListeners();
+      cache.removeAt(index);
+      await _commit(snap, cache);
       return false;
     }
     var item = EmojiFavoriteItem.image(imageUrl);
-    if (repository != null && _userId != null) {
+    if (repository != null && snap.userId != null) {
       item = await repository!.createFromPublicImage(imageUrl);
+      if (snap.stale) return false;
     }
-    _cache!.insert(0, item);
-    _trimCache();
-    await _persist();
-    notifyListeners();
+    cache.insert(0, item);
+    _trimToMax(cache);
+    await _commit(snap, cache);
     return true;
   }
 
   Future<void> remove(EmojiFavoriteItem item) async {
     await load();
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) return;
+    final cache = List<EmojiFavoriteItem>.from(snap.items);
     if (repository != null && item.serverId != null) {
       await repository!.delete(item.serverId!);
+      if (snap.stale) return;
     }
-    final before = _cache!.length;
-    _cache!.removeWhere((entry) => entry.key == item.key);
-    if (_cache!.length == before) return;
-    await _persist();
-    notifyListeners();
+    final before = cache.length;
+    cache.removeWhere((entry) => entry.key == item.key);
+    if (cache.length == before) return;
+    await _commit(snap, cache);
   }
 
   Future<bool> containsFile(int fileId) async {
@@ -495,11 +592,13 @@ class EmojiFavoriteService extends ChangeNotifier {
   Future<void> add(EmojiFavoriteItem item) async {
     if (item.key.endsWith(':')) return;
     await load();
-    _cache!.removeWhere((entry) => entry.key == item.key);
-    _cache!.insert(0, item);
-    _trimCache();
-    await _persist();
-    notifyListeners();
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) return;
+    final cache = List<EmojiFavoriteItem>.from(snap.items);
+    cache.removeWhere((entry) => entry.key == item.key);
+    cache.insert(0, item);
+    _trimToMax(cache);
+    await _commit(snap, cache);
   }
 
   Future<EmojiFavoriteItem> addCustomFromUpload(int fileId) async {
@@ -518,6 +617,13 @@ class EmojiFavoriteService extends ChangeNotifier {
         code: 'emoji_service_unavailable',
       );
     }
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) {
+      throw const EmojiFavoriteException(
+        message: '账号已切换，请重试',
+        code: 'account_switched',
+      );
+    }
     final item = await repository!.createFromMessage(messageId);
     await add(item);
     return item;
@@ -526,30 +632,45 @@ class EmojiFavoriteService extends ChangeNotifier {
   /// 删除失败时恢复到原始位置，用于撤销操作。
   Future<void> undo(EmojiFavoriteItem item, {int index = 0}) async {
     await load();
+    final snap = _AccountSnapshot.capture(this);
+    if (snap.stale) return;
+    final cache = List<EmojiFavoriteItem>.from(snap.items);
     var restored = item;
-    if (repository != null && _userId != null) {
+    if (repository != null && snap.userId != null) {
       if (item.type == EmojiFavoriteType.sticker &&
           item.stickerId?.isNotEmpty == true) {
         restored = await repository!.createBuiltin(item.stickerId!);
+        if (snap.stale) return;
       } else if (item.fileId != null && item.fileId! > 0) {
         restored = await repository!.createCustom(item.fileId!);
+        if (snap.stale) return;
       }
     }
-    _cache!.removeWhere(
+    cache.removeWhere(
       (entry) => entry.key == item.key || entry.key == restored.key,
     );
-    final target = index.clamp(0, _cache!.length).toInt();
-    _cache!.insert(target, restored);
-    _trimCache();
-    await _persist();
+    final target = index.clamp(0, cache.length).toInt();
+    cache.insert(target, restored);
+    _trimToMax(cache);
+    await _commit(snap, cache);
+  }
+
+  /// 仅在账号未切换时把结果写回内存并按快照缓存键持久化。
+  Future<void> _commit(
+    _AccountSnapshot snap,
+    List<EmojiFavoriteItem> items,
+  ) async {
+    if (snap.stale) return;
+    _cache = List<EmojiFavoriteItem>.from(items);
+    await _persist(snap.cacheKey, _cache!);
     notifyListeners();
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist(String cacheKey, List<EmojiFavoriteItem> items) async {
     final preferences = await _preferences;
     await preferences.setString(
-      accountStorageKey,
-      jsonEncode(_cache!.map((item) => item.toJson()).toList()),
+      cacheKey,
+      jsonEncode(items.map((item) => item.toJson()).toList()),
     );
   }
 
@@ -565,9 +686,9 @@ class EmojiFavoriteService extends ChangeNotifier {
     return result;
   }
 
-  void _trimCache() {
-    if (_cache!.length > maxFavoriteCount) {
-      _cache!.removeRange(maxFavoriteCount, _cache!.length);
+  void _trimToMax(List<EmojiFavoriteItem> cache) {
+    if (cache.length > maxFavoriteCount) {
+      cache.removeRange(maxFavoriteCount, cache.length);
     }
   }
 }

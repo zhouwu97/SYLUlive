@@ -770,23 +770,36 @@ class MessageProvider extends ChangeNotifier {
   /// 后台校验服务器图片资源是否真实可读（Authenticated GET）。
   ///
   /// 发送成功只是消息已确认；图片是否能在对方/重启后显示取决于服务器资源。
-  /// 这里收到首个字节即视为可用并取消下载，既不整张下载也避免本地文件
-  /// 长期掩盖服务器坏图；失败仅写入诊断日志 `pm_media_remote_verify_failed`。
+  /// 使用 ResponseType.stream 确认 HTTP Status (2xx) 后即可取消 Body 下载，
+  /// 避免 HTTP 404/500 错误响应体被误判为“图片可用”。
   Future<void> _verifyRemoteMedia(Message message) async {
     final url = message.imageUrl;
     if (url.isEmpty) return;
+    final sessionGen = _sessionUserId;
     final cancelToken = CancelToken();
     try {
-      await _dio.get<List<int>>(
+      final response = await _dio.get<ResponseBody>(
         ApiConstants.fullUrl(url),
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(responseType: ResponseType.stream),
         cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (received > 0) cancelToken.cancel();
-        },
+      );
+      if (sessionGen != _sessionUserId) return;
+      final status = response.statusCode ?? 0;
+      if (status >= 200 && status < 300) {
+        cancelToken.cancel();
+        return;
+      }
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: Response(
+          requestOptions: response.requestOptions,
+          statusCode: status,
+        ),
+        type: DioExceptionType.badResponse,
       );
     } on DioException catch (error) {
-      if (CancelToken.isCancel(error)) return; // 已收到首字节，视为可用
+      if (sessionGen != _sessionUserId) return;
+      if (CancelToken.isCancel(error)) return;
       DiagnosticLogService.instance.record(
         level: 'error',
         source: 'pm',
@@ -805,6 +818,7 @@ class MessageProvider extends ChangeNotifier {
         },
       );
     } catch (_) {
+      if (sessionGen != _sessionUserId) return;
       DiagnosticLogService.instance.record(
         level: 'error',
         source: 'pm',

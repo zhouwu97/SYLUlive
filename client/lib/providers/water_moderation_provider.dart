@@ -4,16 +4,18 @@ import 'package:flutter/foundation.dart';
 import '../models/water_moderation.dart';
 import '../services/water_moderation_service.dart';
 
-/// 版块加精操作结果：ok 表示版块精华已生效；homePending 表示首页推荐审核已提交。
+/// 版块加精操作结果：ok 表示版块精华已生效；homePending 表示首页推荐审核已提交；warning 表示部分成功警告。
 class FeaturePostOutcome {
   const FeaturePostOutcome({
     required this.ok,
     this.homePending = false,
+    this.warning,
     this.error,
   });
 
   final bool ok;
   final bool homePending;
+  final String? warning;
   final String? error;
 }
 
@@ -78,7 +80,7 @@ class WaterModerationProvider extends ChangeNotifier {
   }
 
   /// 返回 [FeaturePostOutcome]：homePending 由服务端回传的 home_application 决定，
-  /// 不再乐观假定“首页推荐待审核”一定成立。
+  /// 不再乐观假定“首页推荐待审核”一定成立。支持 partial success 的 warning 消息。
   Future<FeaturePostOutcome> featurePost({
     required String sectionSlug,
     required int postId,
@@ -96,8 +98,9 @@ class WaterModerationProvider extends ChangeNotifier {
       _isOperating = false;
       final home = data?['home_application'];
       final homePending = home is Map && home['status'] == 'pending';
+      final warning = data?['warning'] as String?;
       notifyListeners();
-      return FeaturePostOutcome(ok: true, homePending: homePending);
+      return FeaturePostOutcome(ok: true, homePending: homePending, warning: warning);
     } on DioException catch (e) {
       _isOperating = false;
       _error = _mapOperationError(e);

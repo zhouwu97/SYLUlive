@@ -299,6 +299,8 @@ class EmojiFavoriteService extends ChangeNotifier {
       } catch (_) {
         // 忽略损坏的旧数据
       }
+      // 首次迁移后彻底清除无账号前缀的全局旧 key，防止后续切换登录其他账号时重复摄入
+      await preferences.remove(storageKey);
     }
 
     await preferences.setString(

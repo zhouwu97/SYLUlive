@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/app_bootstrap.dart';
 import 'package:shenliyuan/models/startup_destination.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 
 void main() {
@@ -126,6 +128,40 @@ void main() {
         ),
         4,
       );
+    });
+  });
+
+  group('HomeInitialTabResolver instance resolve cache isolation', () {
+    testWidgets('switching userId or mode invalidates cache', (tester) async {
+      AppPreferencesStore.setMockInitialValues({});
+      final tp = ThemeProvider(loadOnStart: false);
+      await tp.loadThemeForTesting();
+      await tp.setStartupDestination(StartupDestinationMode.lastPage);
+
+      final resolver = HomeInitialTabResolver();
+      const lastPageUser1 = RestorablePageState(
+        type: RestorablePageType.rootTab,
+        arguments: <String, dynamic>{'index': 3},
+        accountId: 1,
+      );
+      const lastPageUser2 = RestorablePageState(
+        type: RestorablePageType.rootTab,
+        arguments: <String, dynamic>{'index': 4},
+        accountId: 2,
+      );
+
+      // User 1 resolves to tab 3
+      expect(resolver.resolve(tp, userId: 1, lastPage: lastPageUser1), 3);
+
+      // User 1 repeated call uses cached tab 3 even if lastPage changes
+      expect(resolver.resolve(tp, userId: 1, lastPage: lastPageUser2), 3);
+
+      // Switching to User 2 invalidates cache and resolves to tab 4
+      expect(resolver.resolve(tp, userId: 2, lastPage: lastPageUser2), 4);
+
+      // reset clears cache
+      resolver.reset();
+      expect(resolver.resolve(tp, userId: 2, lastPage: lastPageUser1), 3);
     });
   });
 }

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/api_constants.dart';
+import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 import '../widgets/image_upload_widget.dart';
@@ -39,10 +41,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
-    final data = await context
-        .read<CanteenProvider>()
-        .loadDishDetail(widget.canteenId, widget.dishId);
+    final provider = context.read<CanteenProvider>();
+    final data = await provider.loadDishDetail(widget.canteenId, widget.dishId);
     if (mounted) {
       setState(() {
         _data = data;
@@ -51,10 +51,12 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     }
   }
 
+  List<Map<String, dynamic>> get _photos {
+    return (_data?['photos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+  }
+
   List<String> get _photoImages {
-    final photos = (_data?['photos'] as List?)?.cast<Map<String, dynamic>>();
-    if (photos == null) return [];
-    return photos
+    return _photos
         .map((p) => p['image']?.toString() ?? '')
         .where((s) => s.isNotEmpty)
         .toList();
@@ -62,10 +64,104 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   int get _photoCount => _data?['photo_count'] ?? _photoImages.length;
 
+  Future<void> _handleAdminManagePhoto(int index) async {
+    final photos = _photos;
+    if (index < 0 || index >= photos.length) return;
+    final photo = photos[index];
+    final photoId = (photo['id'] as num?)?.toInt();
+    if (photoId == null) return;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final uploaderName = photo['uploader_name'] ?? photo['nickname'] ?? '同学';
+    final createdAt = photo['created_at']?.toString() ?? '';
+
+    final confirm = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: CanteenTheme.borderColor(isDark),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '管理已发布实拍',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: CanteenTheme.textPrimaryColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '上传者：$uploaderName' +
+                    (createdAt.isNotEmpty ? ' · $createdAt' : ''),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: CanteenTheme.textSecondaryColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(sheetCtx, true),
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                label: const Text('下架此实拍（释放名额）'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetCtx, false),
+                child: const Text('取消'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final provider = context.read<CanteenProvider>();
+      final ok = await provider.adminArchiveDishPhoto(photoId);
+      if (!mounted) return;
+      if (ok) {
+        AppFeedback.success('实拍已下架', context: context);
+        await _load();
+      } else {
+        AppFeedback.error(provider.errorMessage ?? '下架失败', context: context);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = CanteenTheme.accentColor(isDark);
+    final auth = context.watch<AuthProvider>();
+    final isAdmin =
+        auth.user?.isAdmin == true || auth.user?.isSuperAdmin == true;
 
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
@@ -111,8 +207,23 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                         color: CanteenTheme.textPrimaryColor(isDark),
                       ),
                     ),
+                    if (isAdmin && _photos.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 4),
+                        child: Text(
+                          '管理员提示：长按实拍图片可进行下架治理',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.redAccent.withAlpha(217),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 12),
-                    DishPhotoMosaic(imageUrls: _photoImages),
+                    DishPhotoMosaic(
+                      imageUrls: _photoImages,
+                      onLongPress: isAdmin ? _handleAdminManagePhoto : null,
+                    ),
                     const SizedBox(height: 16),
                     if (_photoCount >= 3)
                       _buildGalleryFull(isDark, accent)

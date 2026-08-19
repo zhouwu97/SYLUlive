@@ -469,6 +469,46 @@ func TestMigratePendingCanteenDishPhotos(t *testing.T) {
 	}
 }
 
+func TestMigratePendingCanteenDishPhotosSkipsMissingFiles(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	createVerifiedUser(t, db, 2, "学生A")
+	createVerifiedUser(t, db, 3, "学生B")
+
+	canteen := models.Canteen{Name: "七食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	db.Create(&canteen)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "酸菜鱼", NormalizedName: "酸菜鱼", Status: models.DishStatusActive, CreatedBy: 2}
+	db.Create(&dish)
+
+	// Pending 1: File 记录存在但磁盘文件被删除
+	fCorrupt := createTestFile(t, db, 110, 2, models.FileAccessPrivate)
+	diskPath := filepath.Join(os.Getenv("UPLOAD_DIR"), "photo-110.jpg")
+	_ = os.Remove(diskPath) // 模拟磁盘文件丢失
+
+	pCorrupt := models.CanteenDishPhoto{DishID: dish.ID, FileID: fCorrupt.ID, UserID: 2, Status: models.DishPhotoStatusPending, CreatedAt: time.Now().Add(-10 * time.Minute)}
+	db.Create(&pCorrupt)
+
+	// Pending 2: 真实有效文件
+	fValid := createTestFile(t, db, 111, 3, models.FileAccessPrivate)
+	pValid := models.CanteenDishPhoto{DishID: dish.ID, FileID: fValid.ID, UserID: 3, Status: models.DishPhotoStatusPending, CreatedAt: time.Now().Add(-5 * time.Minute)}
+	db.Create(&pValid)
+
+	if err := models.MigratePendingCanteenDishPhotos(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var photo1, photo2 models.CanteenDishPhoto
+	db.First(&photo1, pCorrupt.ID)
+	db.First(&photo2, pValid.ID)
+
+	if photo1.Status != models.DishPhotoStatusArchived {
+		t.Fatalf("corrupt photo status=%s want archived", photo1.Status)
+	}
+	if photo2.Status != models.DishPhotoStatusApproved {
+		t.Fatalf("valid photo status=%s want approved", photo2.Status)
+	}
+}
+
 func TestAdminDishUpdateRenameAndHide(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	createVerifiedUser(t, db, 1, "管理员")

@@ -1753,13 +1753,32 @@ class AuthWrapper extends StatefulWidget {
 @visibleForTesting
 class HomeInitialTabResolver {
   int? _initialTab;
+  int? _cachedUserId;
+  StartupDestinationMode? _cachedMode;
 
   /// 解析 `lastPage` 深层类型（chat/post/notification）时要打底的根 tab。
   static const int homeTabs = 5;
 
-  int resolve(ThemeProvider themeProvider, {RestorablePageState? lastPage}) {
-    return _initialTab ??=
-        initialTabFor(themeProvider.startupDestination, lastPage);
+  int resolve(
+    ThemeProvider themeProvider, {
+    int? userId,
+    RestorablePageState? lastPage,
+  }) {
+    final mode = themeProvider.startupDestination;
+    if (_initialTab != null &&
+        _cachedUserId == userId &&
+        _cachedMode == mode) {
+      return _initialTab!;
+    }
+    _cachedUserId = userId;
+    _cachedMode = mode;
+    return _initialTab = initialTabFor(mode, lastPage);
+  }
+
+  void reset() {
+    _initialTab = null;
+    _cachedUserId = null;
+    _cachedMode = null;
   }
 
   /// 从启动模式与上次页面推断打底 root tab 索引（纯函数，便于测试）。
@@ -1814,7 +1833,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
   StartupNavigationPlan? _startupPlan;
   int? _planUserId;
-  bool _planResolving = false;
+  int? _resolvingUserId;
+  int _startupResolveGeneration = 0;
 
   @override
   void initState() {
@@ -1971,7 +1991,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         _startupPlan = null;
         _planUserId = null;
         final resolvedPlan = StartupNavigationPlan(
-          rootTabIndex: _homeInitialTabResolver.resolve(tp),
+          rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
         );
         return HomeScreen(
           initialTab: resolvedPlan.rootTabIndex,
@@ -1984,8 +2004,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   /// 异步解析 `lastPage` 启动计划：读取上次页面，计算打底 root tab 与
   /// 可选的首屏深层页面。外部导航目标（通知/私信/小组件）优先，抑制深层页。
   Future<void> _resolveStartupPlan(int userId) async {
-    if (_planResolving) return;
-    _planResolving = true;
+    if (_resolvingUserId == userId) return;
+    _resolvingUserId = userId;
+    final currentGen = ++_startupResolveGeneration;
+
     try {
       final tp = context.read<ThemeProvider>();
       if (tp.startupDestination != StartupDestinationMode.lastPage) return;
@@ -2018,19 +2040,26 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       }
 
       if (!mounted) return;
+      if (currentGen != _startupResolveGeneration) return;
       if (context.read<AuthProvider>().user?.id != userId) return;
 
       setState(() {
         _planUserId = userId;
         _startupPlan = StartupNavigationPlan(
-          rootTabIndex: _homeInitialTabResolver.resolve(tp, lastPage: state),
+          rootTabIndex: _homeInitialTabResolver.resolve(
+            tp,
+            userId: userId,
+            lastPage: state,
+          ),
           deepPage: state == null || state.type == RestorablePageType.rootTab
               ? null
               : state,
         );
       });
     } finally {
-      _planResolving = false;
+      if (_resolvingUserId == userId) {
+        _resolvingUserId = null;
+      }
     }
   }
 }

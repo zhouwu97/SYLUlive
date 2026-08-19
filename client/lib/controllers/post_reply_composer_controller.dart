@@ -51,6 +51,8 @@ class PostReplyComposerController extends ChangeNotifier {
   bool _isOpen = false;
   PostReplyBottomPanel _bottomPanel = PostReplyBottomPanel.none;
   double _stableKeyboardHeight = 300;
+  double _lastKeyboardInset = 0;
+  bool _hasObservedKeyboardHeight = false;
   PostReplyInputHandoff _handoff = PostReplyInputHandoff.none;
   int _handoffGeneration = 0;
   Timer? _handoffTimer;
@@ -88,6 +90,9 @@ class PostReplyComposerController extends ChangeNotifier {
       );
 
   void updateKeyboardMetrics(double inset) {
+    final wasCollapsing = inset < _lastKeyboardInset;
+    _lastKeyboardInset = inset;
+
     // Emoji → Keyboard 交接期间保持 Emoji 可见，直到 IME 覆盖到稳定高度
     // 再完成交接；不让 Emoji 面板在 IME 升起途中让位造成空白板。
     if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {
@@ -106,8 +111,13 @@ class PostReplyComposerController extends ChangeNotifier {
     }
 
     if (inset > 0) {
-      if (inset >= 100) {
-        _stableKeyboardHeight = inset;
+      // 仅在非收起阶段且高度有效时更新稳定高度，防止在软键盘收起递减过程中将中间过渡值误写为稳定高度
+      if (!wasCollapsing &&
+          (inset > _stableKeyboardHeight || !_hasObservedKeyboardHeight)) {
+        if (inset >= 180 || !_hasObservedKeyboardHeight) {
+          _stableKeyboardHeight = inset;
+          _hasObservedKeyboardHeight = true;
+        }
       }
       if (_bottomPanel != PostReplyBottomPanel.emoji) {
         _bottomPanel = PostReplyBottomPanel.keyboard;
@@ -249,8 +259,10 @@ class PostReplyComposerController extends ChangeNotifier {
       return;
     }
     _cancelHandoff();
-    if (keyboardInset > 0) {
+    if (keyboardInset >= 180 ||
+        (keyboardInset > 0 && !_hasObservedKeyboardHeight)) {
       _stableKeyboardHeight = keyboardInset;
+      _hasObservedKeyboardHeight = true;
     }
     focusNode.unfocus();
     _isOpen = true;

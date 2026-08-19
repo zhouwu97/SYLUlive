@@ -617,6 +617,50 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         Navigator.of(context).pop(true);
       }
     } else {
+      if (canteenProvider.errorCode == 'rating_conflict' && mounted) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final resolveAction = await showDialog<String>(
+          context: context,
+          builder: (dialogCtx) => AlertDialog(
+            backgroundColor: CanteenTheme.surfaceBg(isDark),
+            title: Text(
+              '评价版本冲突',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: CanteenTheme.textPrimaryColor(isDark),
+              ),
+            ),
+            content: Text(
+              '当前评价已在其他设备更新。你可以选择强制覆盖为当前内容，或放弃本次修改退出。',
+              style: TextStyle(
+                fontSize: 14,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, 'cancel'),
+                child: const Text('放弃并退出'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogCtx, 'overwrite'),
+                child: const Text('强制覆盖'),
+              ),
+            ],
+          ),
+        );
+
+        if (resolveAction == 'overwrite') {
+          _baseRatingUpdatedAt = null;
+          await _submitReview();
+          return;
+        } else if (resolveAction == 'cancel' && mounted) {
+          Navigator.of(context).pop(false);
+          return;
+        }
+      }
+
       final errMsg = canteenProvider.errorMessage ?? '提交失败，请稍后重试';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errMsg)),

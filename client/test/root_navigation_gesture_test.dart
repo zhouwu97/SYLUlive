@@ -9,9 +9,12 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
+import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
+import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
+import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -125,6 +128,43 @@ void main() {
     expect(_rootTabIndex(tester), 2);
     await _disposeHome(tester, page);
   });
+
+  testWidgets('恢复深层私信页面时先展示 StartupNavigationGate 遮罩，不闪烁底层 Tab', (tester) async {
+    const deepChat = RestorablePageState(
+      type: RestorablePageType.chat,
+      arguments: <String, dynamic>{
+        'conversationId': 42,
+        'targetUserId': 3,
+        'targetNickname': '小明',
+        'underlyingRootTab': 3,
+      },
+      accountId: 1,
+    );
+
+    final page = await _pumpHome(
+      tester,
+      initialTab: 3,
+      initialDeepPage: deepChat,
+      settleAfterPump: false,
+    );
+
+    // 第一帧（postFrameCallback 执行前）：StartupNavigationGate 遮罩存在，完全挡住底层内容
+    expect(find.byType(StartupNavigationGate), findsOneWidget);
+
+    // 执行 postFrameCallback 后 0ms 压栈 ChatDetailScreen
+    await tester.pump();
+    expect(find.byType(ChatDetailScreen), findsOneWidget);
+
+    // 退出私信页面（模拟用户返回）
+    Navigator.of(tester.element(find.byType(ChatDetailScreen))).pop();
+    await tester.pumpAndSettle();
+
+    // 遮罩解除，正确显示 underlyingRootTab = 3 (校园)
+    expect(find.byType(StartupNavigationGate), findsNothing);
+    expect(_rootTabIndex(tester), 3);
+
+    await _disposeHome(tester, page);
+  });
 }
 
 Finder _navLabel(String label) {
@@ -143,6 +183,8 @@ int _rootTabIndex(WidgetTester tester) {
 Future<_HomeTestPage> _pumpHome(
   WidgetTester tester, {
   int initialTab = 0,
+  RestorablePageState? initialDeepPage,
+  bool settleAfterPump = true,
   Map<String, Object> prefs = const {},
 }) async {
   AppPreferencesStore.setMockInitialValues({...prefs});
@@ -191,12 +233,20 @@ Future<_HomeTestPage> _pumpHome(
       ChangeNotifierProvider<AppUpdateCoordinator>.value(
           value: updateCoordinator),
     ],
-    child: MaterialApp(home: HomeScreen(initialTab: initialTab)),
+    child: MaterialApp(
+      navigatorObservers: [appRouteObserver],
+      home: HomeScreen(
+        initialTab: initialTab,
+        initialDeepPage: initialDeepPage,
+      ),
+    ),
   );
   await tester.pumpWidget(widget);
-  await tester.pump();
-  // 消耗 _bootstrapHome 里的 500ms / 1200ms 延迟任务，避免测试结束时残留 Timer。
-  await tester.pump(const Duration(milliseconds: 1500));
+  if (settleAfterPump) {
+    await tester.pump();
+    // 消耗 _bootstrapHome 里的 500ms / 1200ms 延迟任务，避免测试结束时残留 Timer。
+    await tester.pump(const Duration(milliseconds: 1500));
+  }
   return _HomeTestPage(
     auth: auth,
     postProvider: postProvider,

@@ -101,6 +101,20 @@ class HomeTabKeepAliveStage extends StatelessWidget {
   }
 }
 
+/// 启动恢复遮罩：在首屏深层页面（私信/帖子/通知）未完全覆盖前呈现，
+/// 彻底避免底层 root tab 闪烁 1 帧。
+class StartupNavigationGate extends StatelessWidget {
+  const StartupNavigationGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   late final TabTransitionLedger _mainTabLedger;
@@ -124,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen>
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
   late final bool _hasWidgetTabOverride;
+  bool _restoringInitialDeepPage = false;
 
   // Unread badge state
   int _unreadBadgeCount = 0;
@@ -226,6 +241,7 @@ class _HomeScreenState extends State<HomeScreen>
     // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
     // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
     final deepPage = widget.initialDeepPage;
+    _restoringInitialDeepPage = deepPage != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _bootstrapHome();
@@ -236,12 +252,18 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   /// 首屏直接进入上次退出时的深层页面（私信/帖子/通知）。
+  /// 使用 0ms 路由过渡与全屏门禁遮罩，确保冷启动恢复直达页面，不闪烁底层 Tab。
   void _pushRestoredDeepPage(RestorablePageState state) {
     final navigator = Navigator.of(context);
-    if (navigator.canPop()) return;
+    if (navigator.canPop()) {
+      if (mounted) setState(() => _restoringInitialDeepPage = false);
+      return;
+    }
+    Future<void>? future;
     switch (state.type) {
       case RestorablePageType.rootTab:
-        break;
+        if (mounted) setState(() => _restoringInitialDeepPage = false);
+        return;
       case RestorablePageType.chat:
         final conversationId = state.arguments['conversationId'] as int?;
         final targetUserId = state.arguments['targetUserId'] as int?;
@@ -249,14 +271,18 @@ class _HomeScreenState extends State<HomeScreen>
             conversationId <= 0 ||
             targetUserId == null ||
             targetUserId <= 0) {
+          if (mounted) setState(() => _restoringInitialDeepPage = false);
           break;
         }
-        navigator.push(
-          MaterialPageRoute<void>(
+        future = navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
             settings: RouteSettings(
               name: '/messages/conversations/$conversationId',
             ),
-            builder: (_) => ChatDetailScreen(
+            pageBuilder: (_, __, ___) => ChatDetailScreen(
               conversationId: conversationId,
               targetUser: User(
                 id: targetUserId,
@@ -270,20 +296,45 @@ class _HomeScreenState extends State<HomeScreen>
         );
       case RestorablePageType.post:
         final postId = state.arguments['postId'] as int?;
-        if (postId == null || postId <= 0) break;
-        navigator.push(
-          MaterialPageRoute<void>(
+        if (postId == null || postId <= 0) {
+          if (mounted) setState(() => _restoringInitialDeepPage = false);
+          break;
+        }
+        future = navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
             settings: const RouteSettings(name: '/post/detail'),
-            builder: (_) => PostDetailScreen(postId: postId),
+            pageBuilder: (_, __, ___) => PostDetailScreen(postId: postId),
           ),
         );
       case RestorablePageType.notification:
-        navigator.push(
-          MaterialPageRoute<void>(
+        future = navigator.push<void>(
+          PageRouteBuilder<void>(
+            opaque: true,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
             settings: const RouteSettings(name: '/notifications'),
-            builder: (_) => const NotificationsScreen(),
+            pageBuilder: (_, __, ___) => const NotificationsScreen(),
           ),
         );
+    }
+
+    if (future != null) {
+      future.whenComplete(() {
+        if (mounted) {
+          setState(() {
+            _restoringInitialDeepPage = false;
+          });
+        }
+      });
+    } else {
+      if (mounted) {
+        setState(() {
+          _restoringInitialDeepPage = false;
+        });
+      }
     }
   }
 
@@ -1754,7 +1805,7 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    return Scaffold(
+    final normalHome = Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
@@ -1793,6 +1844,16 @@ class _HomeScreenState extends State<HomeScreen>
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+
+    return Stack(
+      children: [
+        normalHome,
+        if (_restoringInitialDeepPage)
+          const Positioned.fill(
+            child: StartupNavigationGate(),
+          ),
+      ],
     );
   }
 

@@ -357,6 +357,118 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
+  testWidgets('keyboard closed and dragging down does not open keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    expect(focusNode.hasFocus, isFalse);
+
+    // 向下拖动 100dp
+    await tester.drag(find.byType(ListView).first, const Offset(0, 100));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('keyboard open and dragging down >= 18dp collapses keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    // 向下拖动 60dp (超过 touch slop 后累计达标)
+    await tester.drag(find.byType(ListView).first, const Offset(0, 60));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isFalse);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('keyboard open and dragging up does not collapse keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    await tester.tap(input);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    // 向上拖动 50dp
+    await tester.drag(find.byType(ListView).first, const Offset(0, -50));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('emoji open and dragging down message area collapses emoji panel',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Offstage>(
+            find
+                .ancestor(
+                  of: find.byKey(const ValueKey('chat-emoji-panel')),
+                  matching: find.byType(Offstage),
+                )
+                .first,
+          )
+          .offstage,
+      isFalse,
+    );
+
+    // 在消息列表区域向下拖动 60dp
+    await tester.drag(find.byType(ListView).first, const Offset(0, 60));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+    expect(find.byKey(const ValueKey('chat-emoji-panel')), findsNothing);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'keyboard closed and not at latest edge: dragging up only scrolls without opening keyboard',
+      (tester) async {
+    final provider = MessageProvider(_chatDio(messages: _historyMessages()));
+    await _pumpChat(tester, provider);
+
+    final input = find.byKey(const ValueKey('chat-input'));
+    final focusNode = tester.widget<TextField>(input).focusNode!;
+    expect(focusNode.hasFocus, isFalse);
+
+    // 先向下滚一段距离查看历史（在 reverse 列表中正向 offset 为滚入历史）
+    await tester.drag(find.byType(ListView).first, const Offset(0, 300));
+    await tester.pump();
+
+    // 此时不在最新消息边缘（pixels > 0），向上拖动（Offset(0, -30)）只回滚消息，不触发键盘
+    await tester.drag(find.byType(ListView).first, const Offset(0, -30));
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+    await _disposeChat(tester, provider);
+  });
+
   testWidgets('single input tap restores the keyboard after composer relayout',
       (tester) async {
     final provider = MessageProvider(_chatDio());

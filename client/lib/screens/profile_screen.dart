@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/startup_destination.dart';
+import '../services/root_page_state_service.dart';
+import '../utils/app_navigator.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -990,6 +993,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     : null,
                 onTap: () {
                   context.read<ThemeProvider>().setStartupDestination(mode);
+                  if (mode == StartupDestinationMode.lastPage) {
+                    final userId = context.read<AuthProvider>().user?.id;
+                    if (userId != null && userId > 0) {
+                      unawaited(RootPageStateStore.instance.saveLastPage(
+                        RestorablePageState(
+                          type: RestorablePageType.rootTab,
+                          arguments: <String, dynamic>{'index': currentHomeTabIndex.value},
+                          accountId: userId,
+                        ),
+                      ));
+                    }
+                  }
                   setSheetState(() {});
                   if (mounted) setState(() => _startupDestination = mode);
                   Navigator.pop(sheetContext);

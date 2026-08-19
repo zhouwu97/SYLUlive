@@ -11,6 +11,7 @@ import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../utils/responsive_util.dart';
@@ -1298,17 +1299,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   height: 56,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF6366F1).withValues(alpha: 0.2),
-                        const Color(0xFF8B5CF6).withValues(alpha: 0.1),
-                      ],
-                    ),
+                    color: AppColors.brandPrimary.withValues(alpha: 0.12),
                   ),
                   child: const Padding(
                     padding: EdgeInsets.all(14),
                     child: CircularProgressIndicator(
-                      color: Color(0xFF818CF8),
+                      color: AppColors.brandPrimary,
                       strokeWidth: 3,
                     ),
                   ),

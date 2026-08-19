@@ -460,6 +460,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
+  Future<Reply?> _createReplyFromDraft(PostReplyDraft draft) async {
+    if (draft.isEmpty) return null;
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      _openReplyLogin();
+      return null;
+    }
+
+    final fileIds = <int>[];
+    if (draft.localImage != null) {
+      fileIds.add(
+        await _uploadLocalImage(
+          draft.localImage!.path,
+          draft.localImage!.name,
+        ),
+      );
+    } else if (draft.favoriteImage != null) {
+      fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!));
+    }
+    return _submitReplyContent(
+      content: draft.text,
+      stickerId: draft.sticker?.id,
+      fileIds: fileIds,
+      parentReplyId: draft.parentReplyId,
+      replyToUserId: draft.replyToUserId,
+      // 底部输入区回复的是根评论本身；楼中楼 sheet 会传精确目标。
+      replyToReplyId: draft.replyToReplyId ?? draft.parentReplyId,
+    );
+  }
+
   Future<bool> _sendReplyDraft(PostReplyDraft draft) async {
     if (_isSending || draft.isEmpty) return false;
     if (!context.read<AuthProvider>().isLoggedIn) {
@@ -469,26 +498,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     setState(() => _isSending = true);
     try {
-      final fileIds = <int>[];
-      if (draft.localImage != null) {
-        fileIds.add(
-          await _uploadLocalImage(
-            draft.localImage!.path,
-            draft.localImage!.name,
-          ),
-        );
-      } else if (draft.favoriteImage != null) {
-        fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!));
-      }
-      final created = await _submitReplyContent(
-        content: draft.text,
-        stickerId: draft.sticker?.id,
-        fileIds: fileIds,
-        parentReplyId: draft.parentReplyId,
-        replyToUserId: draft.replyToUserId,
-        // 底部输入区回复的是根评论本身；楼中楼 sheet 会传精确目标。
-        replyToReplyId: draft.replyToReplyId ?? draft.parentReplyId,
-      );
+      final created = await _createReplyFromDraft(draft);
       return created != null;
     } on DioException catch (error) {
       if (mounted) {
@@ -4119,10 +4129,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required Reply parentReply,
     required Reply? anchorReply,
   }) async {
+    _replyComposerController.close();
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final replyController = TextEditingController();
-    final replyFocus = FocusNode();
-    var replyTarget = anchorReply ?? parentReply;
+    final threadComposerController = PostReplyComposerController();
+    final initialTarget = anchorReply ?? parentReply;
+    threadComposerController.setReplyTarget(
+      parentReplyId: parentReply.id,
+      replyToUserId: initialTarget.authorId,
+      replyToReplyId: initialTarget.id,
+      replyToName: initialTarget.author?.nickname,
+    );
     var isSending = false;
 
     // 楼中楼 sheet 的子回复快照：初始取已在列表中的数据，剩余懒加载。
@@ -4201,26 +4218,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               if (sheetContentContext.mounted) setSheetState(() {});
             };
 
-            void selectReplyTarget(Reply target, {bool requestFocus = true}) {
-              if (target.isDeleted) return; // 已删除评论不可作为回复目标
-              setSheetState(() {
-                replyTarget = target;
-                final nickname = target.author?.nickname.trim() ?? '';
-                replyController.text = nickname.isEmpty ? '' : '@$nickname ';
-                replyController.selection = TextSelection.collapsed(
-                  offset: replyController.text.length,
-                );
-              });
-              if (requestFocus) {
-                replyFocus.requestFocus();
-              }
-            }
-
-            Future<void> sendReply() async {
-              if (isSending) return;
-              final content = replyController.text.trim();
-              if (content.isEmpty) return;
-              if (replyTarget.isDeleted) {
+            void selectReplyTarget(Reply target) {
+              if (target.isDeleted) {
                 AppFeedback.showSnackBar(
                   sheetContentContext,
                   '该评论已删除，无法回复',
@@ -4228,125 +4227,159 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 );
                 return;
               }
-
-              setSheetState(() => isSending = true);
-              Reply? created;
-              try {
-                created = await _submitReplyContent(
-                  content: content,
-                  parentReplyId: parentReply.id,
-                  replyToUserId: replyTarget.authorId,
-                  replyToReplyId: replyTarget.id,
-                );
-              } finally {
-                if (sheetContentContext.mounted) {
-                  setSheetState(() {
-                    isSending = false;
-                    if (created != null) {
-                      replyController.clear();
-                      replyTarget = parentReply;
-                      if (!sheetChildren.any((c) => c.id == created!.id)) {
-                        sheetChildren.add(created!);
-                        childrenTotal++;
-                      }
-                    }
-                  });
-                }
-              }
+              final nickname = target.author?.nickname.trim() ?? '';
+              threadComposerController.openReply(
+                parentReplyId: parentReply.id,
+                replyToUserId: target.authorId,
+                replyToReplyId: target.id,
+                replyToName: nickname,
+              );
             }
 
-            return AnimatedPadding(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(sheetContentContext).bottom,
-              ),
-              child: DraggableScrollableSheet(
-                initialChildSize: 0.72,
-                minChildSize: 0.50,
-                maxChildSize: 0.92,
-                expand: false,
-                builder: (context, scrollController) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF171B24) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        _buildReplyThreadSheetHeader(sheetContext, isDark),
-                        Expanded(
-                          child: CustomScrollView(
-                            controller: scrollController,
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                                  child: _buildSheetParentReply(
-                                    sheetContext,
-                                    parentReply,
-                                    isDark,
-                                    onReply: () =>
-                                        selectReplyTarget(parentReply),
-                                  ),
-                                ),
-                              ),
-                              SliverToBoxAdapter(
-                                child: _buildRelatedRepliesHeader(
-                                  childrenTotal,
-                                  isDark,
-                                ),
-                              ),
-                              SliverPadding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 16),
-                                sliver: _buildSheetChildrenList(
-                                  sheetContext,
-                                  sheetChildren,
-                                  isDark,
-                                  onReply: selectReplyTarget,
-                                  loading: sheetChildrenLoading,
-                                  error: sheetChildrenError,
-                                  hasMore: sheetChildrenCursor != null,
-                                  onLoadMore: loadMoreChildren,
-                                  highlightReplyId:
-                                      anchored ? anchorReply!.id : null,
-                                ),
-                              ),
-                            ],
+            return AnimatedBuilder(
+              animation: threadComposerController,
+              builder: (animContext, _) {
+                final isEmoji = threadComposerController.bottomPanel ==
+                    PostReplyBottomPanel.emoji;
+                final keyboardInset =
+                    MediaQuery.viewInsetsOf(sheetContentContext).bottom;
+                final bottomPadding = isEmoji ? 0.0 : keyboardInset;
+
+                return AnimatedPadding(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  padding: EdgeInsets.only(bottom: bottomPadding),
+                  child: DraggableScrollableSheet(
+                    initialChildSize: 0.72,
+                    minChildSize: 0.50,
+                    maxChildSize: 0.92,
+                    expand: false,
+                    builder: (context, scrollController) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF171B24)
+                              : Colors.white,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
                           ),
                         ),
-                        _buildSheetReplyInputBar(
-                          controller: replyController,
-                          focusNode: replyFocus,
-                          replyTarget: replyTarget,
-                          isSending: isSending,
-                          isDark: isDark,
-                          onTap: () {
-                            if (replyController.text.isEmpty &&
-                                !replyTarget.isDeleted) {
-                              selectReplyTarget(replyTarget,
-                                  requestFocus: false);
-                            }
-                          },
-                          onSend: sendReply,
+                        child: Column(
+                          children: [
+                            _buildReplyThreadSheetHeader(sheetContext, isDark),
+                            Expanded(
+                              child: CustomScrollView(
+                                controller: scrollController,
+                                slivers: [
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 12, 16, 16),
+                                      child: _buildSheetParentReply(
+                                        sheetContext,
+                                        parentReply,
+                                        isDark,
+                                        onReply: () =>
+                                            selectReplyTarget(parentReply),
+                                      ),
+                                    ),
+                                  ),
+                                  SliverToBoxAdapter(
+                                    child: _buildRelatedRepliesHeader(
+                                      childrenTotal,
+                                      isDark,
+                                    ),
+                                  ),
+                                  SliverPadding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16),
+                                    sliver: _buildSheetChildrenList(
+                                      sheetContext,
+                                      sheetChildren,
+                                      isDark,
+                                      onReply: selectReplyTarget,
+                                      loading: sheetChildrenLoading,
+                                      error: sheetChildrenError,
+                                      hasMore: sheetChildrenCursor != null,
+                                      onLoadMore: loadMoreChildren,
+                                      highlightReplyId:
+                                          anchored ? anchorReply!.id : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            PostReplyComposer(
+                              controller: threadComposerController,
+                              sending: isSending,
+                              enabled: context.watch<AuthProvider>().isLoggedIn,
+                              onSubmit: (draft) async {
+                                if (isSending) return false;
+                                setSheetState(() => isSending = true);
+                                try {
+                                  final created =
+                                      await _createReplyFromDraft(draft);
+                                  if (created != null) {
+                                    if (sheetContentContext.mounted) {
+                                      setSheetState(() {
+                                        if (!sheetChildren.any(
+                                            (c) => c.id == created.id)) {
+                                          sheetChildren.add(created);
+                                          childrenTotal++;
+                                        }
+                                      });
+                                    }
+                                    threadComposerController.setReplyTarget(
+                                      parentReplyId: parentReply.id,
+                                      replyToUserId: parentReply.authorId,
+                                      replyToReplyId: parentReply.id,
+                                      replyToName:
+                                          parentReply.author?.nickname,
+                                    );
+                                    return true;
+                                  }
+                                  return false;
+                                } on DioException catch (error) {
+                                  if (sheetContentContext.mounted) {
+                                    AppFeedback.showSnackBar(
+                                      sheetContentContext,
+                                      AppFeedback.dioErrorMessage(error,
+                                          fallback: '回复发送失败'),
+                                      isError: true,
+                                    );
+                                  }
+                                  return false;
+                                } catch (error) {
+                                  if (sheetContentContext.mounted) {
+                                    AppFeedback.showSnackBar(
+                                      sheetContentContext,
+                                      '回复发送失败',
+                                      isError: true,
+                                    );
+                                  }
+                                  return false;
+                                } finally {
+                                  if (sheetContentContext.mounted) {
+                                    setSheetState(() => isSending = false);
+                                  }
+                                }
+                              },
+                              onNeedLogin: _openReplyLogin,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
+                );
+              },
             );
           },
         );
       },
     );
 
-    replyController.dispose();
-    replyFocus.dispose();
+    threadComposerController.dispose();
   }
 
   Widget _buildReplyThreadSheetHeader(BuildContext sheetContext, bool isDark) {
@@ -4806,109 +4839,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetReplyInputBar({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required Reply replyTarget,
-    required bool isSending,
-    required bool isDark,
-    required VoidCallback onTap,
-    required VoidCallback onSend,
-  }) {
-    final targetName = replyTarget.author?.nickname.trim() ?? '';
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131720) : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEDEDED),
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 40),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : const Color(0xFFF5F6F8),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    minLines: 1,
-                    maxLines: 3,
-                    textInputAction: TextInputAction.newline,
-                    onTap: onTap,
-                    decoration: InputDecoration(
-                      hintText:
-                          targetName.isEmpty ? '说点什么...' : '回复 @$targetName',
-                      hintStyle: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white38 : Colors.grey[500],
-                      ),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                    ),
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.3,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: isSending ? null : onSend,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isSending
-                        ? (isDark ? Colors.white24 : Colors.grey[300])
-                        : const Color(0xFF6B8EFF),
-                    shape: BoxShape.circle,
-                  ),
-                  child: isSending
-                      ? const SizedBox(
-                          width: 17,
-                          height: 17,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.3,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.send_rounded,
-                          size: 19,
-                          color: Colors.white,
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// BottomSheet 内的回复点赞按钮：完整线程视图中展示点赞操作。
   Widget _buildSheetReplyLikeButton(Reply r, bool isDark) {
     final pending = _pendingReplyLikeTargets.containsKey(r.id);
@@ -5299,7 +5229,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
       return;
     }
-    _replyComposerController.open();
+    _replyComposerController.openRoot();
   }
 
   void _showReplyActionSheet(Reply r, bool isOwn, bool isDark) {

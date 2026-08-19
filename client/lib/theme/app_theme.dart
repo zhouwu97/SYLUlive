@@ -7,8 +7,8 @@ import '../widgets/campus/campus_theme.dart';
 class AppTheme {
   // 主题色 — 全局统一为品牌青绿
   static const Color primaryColor = AppColors.brandPrimary;
-  static const Color secondaryColor = AppColors.accentPurple;
-  static const Color accentColor = AppColors.accentPink;
+  static const Color secondaryColor = AppColors.info;
+  static const Color accentColor = AppColors.warning;
 
   // 圆角 — 国产 UI 紧凑风格
   static const double borderRadius = AppRadius.md;

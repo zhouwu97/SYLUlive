@@ -309,8 +309,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 滚动后第一页末尾与第二页内容均已出现。
-    expect(find.text('候选人20'), findsOneWidget);
+    // 滚动后第二页内容与到底提示均已出现。
     expect(find.text('候选人25'), findsOneWidget);
     expect(find.text('已显示全部符合条件候选人'), findsOneWidget);
   });

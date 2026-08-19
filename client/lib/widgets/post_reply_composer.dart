@@ -84,72 +84,6 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     );
   }
 
-  Widget _buildReplyTargetBanner(BuildContext context, bool isDark) {
-    final name = controller.replyToName;
-    if (name == null || name.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      key: const ValueKey('post-reply-target-banner'),
-      padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfacePrimaryDark
-            : AppColors.surfacePrimaryLight,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark
-                ? AppColors.composerDividerDark
-                : AppColors.composerDividerLight,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.reply_rounded,
-            size: 16,
-            color: isDark
-                ? AppColors.messageOutgoingDark
-                : AppColors.messageOutgoingLight,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '回复 $name',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isDark
-                    ? AppColors.textPrimaryDark
-                    : AppColors.textPrimaryLight,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 36,
-            height: 28,
-            child: IconButton(
-              key: const ValueKey('post-reply-cancel-target-button'),
-              tooltip: '取消回复',
-              padding: EdgeInsets.zero,
-              onPressed: controller.clearReplyTarget,
-              icon: Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: isDark
-                    ? AppColors.iconNeutralDark
-                    : AppColors.iconNeutralLight,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildComposer(
     BuildContext context,
     bool isEmoji,
@@ -164,7 +98,6 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildReplyTargetBanner(context, isDark),
           if (controller.sticker != null)
             StickerComposerPreview(
               sticker: controller.sticker!,
@@ -197,9 +130,9 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             focusNode: controller.focusNode,
             hintText: !widget.enabled
                 ? '登录后参与讨论'
-                : controller.replyToName == null
+                : (controller.parentReplyId == null
                     ? '写下你的想法...'
-                    : '写下回复...',
+                    : '写下回复...'),
             leadingTooltip: controller.localImage == null ? '添加图片' : '更换图片',
             onLeadingPressed:
                 widget.sending || _pickingImage ? null : _pickImage,

@@ -506,7 +506,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: const Color(0xFF6366F1),
+              backgroundColor: AppColors.brandPrimary,
               child: Text((t['name'] as String? ?? '?').substring(0, 1)),
             ),
             title: Text(t['name'] ?? ''),

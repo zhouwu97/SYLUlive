@@ -200,7 +200,12 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void clearReplyTarget() {
-    if (_parentReplyId == null && _replyToName == null) return;
+    if (_parentReplyId == null &&
+        _replyToName == null &&
+        _replyToUserId == null &&
+        _replyToReplyId == null) {
+      return;
+    }
     _parentReplyId = null;
     _replyToUserId = null;
     _replyToReplyId = null;
@@ -208,26 +213,33 @@ class PostReplyComposerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void close({bool clearDraft = false}) {
-    _cancelHandoff();
-    focusNode.unfocus();
-    _isOpen = false;
-    _bottomPanel = PostReplyBottomPanel.none;
-    if (clearDraft) clear();
-    notifyListeners();
-  }
-
-  void clear() {
+  void clearContent() {
     _cancelHandoff();
     textController.clear();
-    _parentReplyId = null;
-    _replyToUserId = null;
-    _replyToReplyId = null;
-    _replyToName = null;
     _sticker = null;
     _favoriteImage = null;
     _localImage = null;
     notifyListeners();
+  }
+
+  void close({bool clearDraft = false, bool preserveReplyTarget = false}) {
+    _cancelHandoff();
+    focusNode.unfocus();
+    _isOpen = false;
+    _bottomPanel = PostReplyBottomPanel.none;
+    if (clearDraft) {
+      if (preserveReplyTarget) {
+        clearContent();
+      } else {
+        clear();
+      }
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    clearContent();
+    clearReplyTarget();
   }
 
   void toggleEmojiPanel({double keyboardInset = 0}) {
@@ -255,7 +267,7 @@ class PostReplyComposerController extends ChangeNotifier {
     _focusAfterLayout();
     // 保险超时：仅防状态永远卡住，不作为动画时长。
     _handoffTimer = Timer(
-      const Duration(milliseconds: 400),
+      const Duration(milliseconds: 750),
       () {
         if (_disposing || generation != _handoffGeneration) return;
         if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {

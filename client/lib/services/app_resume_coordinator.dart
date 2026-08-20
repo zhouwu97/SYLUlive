@@ -7,6 +7,13 @@ import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import 'reply_notification_state.dart';
 
+class _VisibleRefreshEntry {
+  const _VisibleRefreshEntry(this.refresher, this.isVisible);
+
+  final Future<void> Function() refresher;
+  final bool Function()? isVisible;
+}
+
 /// 统一处理应用从后台恢复后的轻量同步。
 ///
 /// 页面自身仍然负责首次加载和可见页面的局部刷新；这里只负责跨页面共享的
@@ -21,13 +28,17 @@ class AppResumeCoordinator {
 
   DateTime? _backgroundAt;
   Future<void>? _runningRefresh;
-  final Set<Future<void> Function()> _visibleRefreshers =
-      <Future<void> Function()>{};
+  final Set<_VisibleRefreshEntry> _visibleRefreshers = <_VisibleRefreshEntry>{};
 
   /// 注册当前可见根页面的轻量刷新，返回值用于页面销毁时取消注册。
-  VoidCallback registerVisibleRefresh(Future<void> Function() refresher) {
-    _visibleRefreshers.add(refresher);
-    return () => _visibleRefreshers.remove(refresher);
+  /// [isVisible] 用于 KeepAlive 根页面，避免后台恢复时刷新不可见页面。
+  VoidCallback registerVisibleRefresh(
+    Future<void> Function() refresher, {
+    bool Function()? isVisible,
+  }) {
+    final entry = _VisibleRefreshEntry(refresher, isVisible);
+    _visibleRefreshers.add(entry);
+    return () => _visibleRefreshers.remove(entry);
   }
 
   void onLifecycleChanged(BuildContext context, AppLifecycleState state) {
@@ -82,9 +93,18 @@ class AppResumeCoordinator {
       () => messageProvider.loadConversations(silent: true),
     );
 
-    final visibleRefreshers = List<Future<void> Function()>.of(
-      _visibleRefreshers,
-    );
+    final visibleRefreshers = _visibleRefreshers
+        .where((entry) {
+          try {
+            return entry.isVisible?.call() ?? true;
+          } catch (error, stackTrace) {
+            debugPrint('恢复同步可见性判断失败: $error');
+            debugPrintStack(stackTrace: stackTrace);
+            return false;
+          }
+        })
+        .map((entry) => entry.refresher)
+        .toList(growable: false);
     await Future.wait(
       visibleRefreshers.map(
         (refresher) => _safeRun('当前页面同步', refresher),

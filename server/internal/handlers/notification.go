@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	notificationPageSize    = 30
-	notificationMaxPageSize = 50
+	notificationPageSize       = 30
+	notificationMaxPageSize    = 50
+	legacyNotificationPageSize = 100
 )
 
 type notificationCursor struct {
@@ -94,6 +95,10 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	paginationRequested := hasLimitParam || hasCursorParam
 
 	limit := notificationPageSize
+	if !paginationRequested {
+		// 无 query 的请求仍由旧客户端消费数组格式，保留历史最多 100 条行为。
+		limit = legacyNotificationPageSize
+	}
 	if raw := c.Query("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed <= 0 {
@@ -135,11 +140,15 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 			cursor.ID,
 		)
 	}
-	if err := query.Order("created_at desc, id desc").Limit(limit + 1).Find(&notifications).Error; err != nil {
+	queryLimit := limit
+	if paginationRequested {
+		queryLimit++
+	}
+	if err := query.Order("created_at desc, id desc").Limit(queryLimit).Find(&notifications).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取通知失败"})
 		return
 	}
-	hasMore := len(notifications) > limit
+	hasMore := paginationRequested && len(notifications) > limit
 	if hasMore {
 		notifications = notifications[:limit]
 	}

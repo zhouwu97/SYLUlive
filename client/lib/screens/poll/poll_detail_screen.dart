@@ -47,6 +47,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   bool _pollNotFound = false;
   bool _repliesLoading = false;
   String? _repliesError;
+  String? _repliesRefreshError;
   String? _repliesLoadMoreError;
   String? _repliesNextCursor;
   bool _repliesHasMore = false;
@@ -144,6 +145,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         } else {
           _repliesLoading = true;
           _repliesError = null;
+          _repliesRefreshError = null;
           _repliesNextCursor = null;
           _repliesHasMore = false;
         }
@@ -179,21 +181,35 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         _repliesHasMore = _repliesNextCursor != null;
         _repliesLoading = false;
         _loadingMoreReplies = false;
+        _repliesError = null;
+        _repliesRefreshError = null;
         _repliesLoadMoreError = null;
       });
     } on DioException catch (error) {
       if (mounted && requestVersion == _replyRequestVersion) {
+        final message = AppFeedback.dioErrorMessage(
+          error,
+          fallback: '加载评论失败',
+        );
         setState(() {
-          final message =
-              AppFeedback.dioErrorMessage(error, fallback: '加载评论失败');
           if (loadMore) {
             _loadingMoreReplies = false;
             _repliesLoadMoreError = message;
           } else {
             _repliesLoading = false;
-            _repliesError = message;
+            if (_replies.isEmpty) {
+              _repliesError = message;
+              _repliesRefreshError = null;
+            } else {
+              // 刷新失败时继续展示旧评论，错误通过轻提示反馈，避免内容闪空。
+              _repliesError = null;
+              _repliesRefreshError = message;
+            }
           }
         });
+        if (!loadMore && _replies.isNotEmpty && mounted) {
+          AppFeedback.showSnackBar(context, message, isError: true);
+        }
       }
     } catch (_) {
       if (mounted && requestVersion == _replyRequestVersion) {
@@ -203,9 +219,20 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
             _repliesLoadMoreError = '加载更多评论失败';
           } else {
             _repliesLoading = false;
-            _repliesError = '加载评论失败';
+            const message = '加载评论失败';
+            if (_replies.isEmpty) {
+              _repliesError = message;
+              _repliesRefreshError = null;
+            } else {
+              // 刷新失败时继续展示旧评论，错误通过轻提示反馈，避免内容闪空。
+              _repliesError = null;
+              _repliesRefreshError = message;
+            }
           }
         });
+        if (!loadMore && _replies.isNotEmpty && mounted) {
+          AppFeedback.showSnackBar(context, '加载评论失败', isError: true);
+        }
       }
     }
   }
@@ -577,6 +604,14 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                           child: const Text('重试'),
                         ),
                       ],
+                    ),
+                  if (_repliesRefreshError != null && _replies.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        '刷新失败，仍显示上次评论：$_repliesRefreshError',
+                        style: const TextStyle(color: Colors.red),
+                      ),
                     ),
                   if ((!_repliesLoading || _replies.isNotEmpty) &&
                       _repliesError == null) ...[

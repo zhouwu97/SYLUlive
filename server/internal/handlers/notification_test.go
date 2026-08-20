@@ -142,6 +142,68 @@ func TestNotificationHandlerCursorPagination(t *testing.T) {
 	}
 }
 
+func TestNotificationHandlerLegacyResponseKeepsHundredItemCapacity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Notification{}); err != nil {
+		t.Fatalf("迁移通知表失败: %v", err)
+	}
+	now := time.Now().UTC()
+	items := make([]models.Notification, 0, 50)
+	for index := 0; index < 50; index++ {
+		items = append(items, models.Notification{
+			ID:        uint(index + 1),
+			UserID:    1,
+			Type:      "reply",
+			Content:   "通知",
+			CreatedAt: now.Add(-time.Duration(index) * time.Minute),
+		})
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("写入通知失败: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	handler := NewNotificationHandler(db)
+	request := func(path string) (*httptest.ResponseRecorder, []byte) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		ctx.Set("user_id", uint(1))
+		handler.GetNotifications(ctx)
+		return recorder, recorder.Body.Bytes()
+	}
+
+	legacyRecorder, legacyBody := request("/notifications")
+	if legacyRecorder.Code != http.StatusOK {
+		t.Fatalf("旧接口状态码=%d，响应=%s", legacyRecorder.Code, legacyRecorder.Body.String())
+	}
+	var legacy []map[string]any
+	if err := json.Unmarshal(legacyBody, &legacy); err != nil {
+		t.Fatalf("解析旧数组响应失败: %v; body=%s", err, legacyRecorder.Body.String())
+	}
+	if len(legacy) != 50 {
+		t.Fatalf("旧接口返回=%d条，期望保留50条容量", len(legacy))
+	}
+
+	paginatedRecorder, paginatedBody := request("/notifications?limit=30")
+	if paginatedRecorder.Code != http.StatusOK {
+		t.Fatalf("分页接口状态码=%d，响应=%s", paginatedRecorder.Code, paginatedRecorder.Body.String())
+	}
+	var paginated struct {
+		Items   []map[string]any `json:"items"`
+		HasMore bool             `json:"has_more"`
+	}
+	if err := json.Unmarshal(paginatedBody, &paginated); err != nil {
+		t.Fatalf("解析分页响应失败: %v; body=%s", err, paginatedRecorder.Body.String())
+	}
+	if len(paginated.Items) != 30 || !paginated.HasMore {
+		t.Fatalf("分页响应=%d条，has_more=%v，期望30条且有下一页", len(paginated.Items), paginated.HasMore)
+	}
+}
+
 func TestGetUnreadReplyNotifications(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

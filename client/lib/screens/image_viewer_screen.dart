@@ -212,7 +212,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
     // 尝试直接下载原始字节
     try {
-      final response = await Dio().get<List<int>>(
+      // 保存原图允许更长的接收时间，但仍设置明确超时，避免弱网无限挂起。
+      final response = await Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      ).get<List<int>>(
         url,
         options: Options(
           responseType: ResponseType.bytes,
@@ -269,7 +276,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       cacheManager: widget.cacheManager ?? PostImageCache.manager,
       cacheKey: cacheKey,
     );
-    final stream = provider.resolve(const ImageConfiguration());
+    // fallback 也限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
+    final constrainedProvider = ResizeImage.resizeIfNeeded(
+      _maxGalleryDimension,
+      _maxGalleryDimension,
+      provider,
+    );
+    final stream = constrainedProvider.resolve(const ImageConfiguration());
     final completer = Completer<ui.Image?>();
     late ImageStreamListener listener;
     listener = ImageStreamListener(

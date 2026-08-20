@@ -5,6 +5,7 @@ class Canteen {
   final String name;
   final String image;
   final bool verified;
+  final String operatingStatus;
   final int createdBy;
   final int ratingCount;
   final int reviewerCount;
@@ -20,6 +21,7 @@ class Canteen {
     required this.name,
     required this.image,
     required this.verified,
+    this.operatingStatus = 'active',
     required this.createdBy,
     required this.ratingCount,
     this.reviewerCount = 0,
@@ -37,6 +39,9 @@ class Canteen {
       name: json['name'] ?? '',
       image: json['image'] ?? '',
       verified: json['verified'] ?? false,
+      operatingStatus: json['is_offline'] == true
+          ? 'offline'
+          : (json['operating_status']?.toString() ?? 'active'),
       createdBy: json['created_by'] ?? 0,
       ratingCount: json['rating_count'] ?? 0,
       reviewerCount: json['reviewer_count'] ?? json['rating_count'] ?? 0,
@@ -53,6 +58,8 @@ class Canteen {
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
     );
   }
+
+  bool get isOffline => operatingStatus == 'offline';
 }
 
 class CanteenRating {

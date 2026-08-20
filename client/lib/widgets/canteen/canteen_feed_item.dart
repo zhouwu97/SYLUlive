@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../../config/api_constants.dart';
 import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
 /// 推荐信息流条目：按 type 分支渲染。
 /// 店铺类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
@@ -127,7 +126,8 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
                       Row(
                         children: [
                           Icon(Icons.star_rounded,
-                              size: 14, color: CanteenTheme.accentColor(isDark)),
+                              size: 14,
+                              color: CanteenTheme.accentColor(isDark)),
                           const SizedBox(width: 2),
                           Text(
                             item.averageStar.toStringAsFixed(1),
@@ -280,8 +280,9 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   }
 
   Widget _thumb(bool isDark, String url) {
-    return CachedNetworkImage(
+    return CanteenStatusImage(
       imageUrl: url,
+      offline: widget.item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),
@@ -291,8 +292,9 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   Widget _buildImage(bool isDark) {
     final item = widget.item;
     if (item.image.isEmpty) return _placeholder(isDark);
-    return CachedNetworkImage(
+    return CanteenStatusImage(
       imageUrl: ApiConstants.fullUrl(item.image),
+      offline: item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),

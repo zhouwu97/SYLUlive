@@ -98,9 +98,22 @@ func TestCanteenAPIContractJSON(t *testing.T) {
 	if homeMap.Hero.CanteenID != canteenA.ID {
 		t.Fatalf("hero id=%d want %d", homeMap.Hero.CanteenID, canteenA.ID)
 	}
-	// 核心契约断言：ranking_score 必须在 0~100 尺度，且精确对齐 Bayesian 期望值。
-	// canteenA: 4.6 星 / 5 评价; canteenB: 3.75 星 / 4 评价. globalMean = (4.6 + 3.75)/2 = 4.175.
-	expectedRawA := services.BayesianRatingScore(4.6, 5, (4.6+3.75)/2.0, services.BayesianPriorWeight)
+	// 核心契约断言：ranking_score 必须在 0~100 尺度，且精确对齐当前有效样本语义。
+	// 有效样本可能包含诚信权重，因此测试从 handler 的聚合结果读取 n 与 C，避免把旧的
+	// “原始评价条数/未加权全局均值”重新固化成测试契约。
+	stats, err := handler.queryCanteenStats()
+	if err != nil {
+		t.Fatalf("query canteen stats: %v", err)
+	}
+	mean := globalMeanStars(stats)
+	var statsA canteenStatsRow
+	for _, row := range stats {
+		if row.ID == canteenA.ID {
+			statsA = row
+			break
+		}
+	}
+	expectedRawA := services.BayesianRatingScore(statsA.AverageStar, statsA.EffectiveSample, mean, services.BayesianPriorWeight)
 	expectedScoreA := services.BayesianScoreTo100(expectedRawA)
 	if math.Abs(homeMap.Hero.RankingScore-expectedScoreA) > 1e-6 {
 		t.Fatalf("hero ranking_score=%f want exact %f", homeMap.Hero.RankingScore, expectedScoreA)

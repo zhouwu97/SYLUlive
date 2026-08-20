@@ -10,6 +10,7 @@ class CanteenDetailHeader extends StatelessWidget {
   final int ratingCount;
   final int dishCount;
   final int dishPhotoCount;
+  final bool offline;
 
   const CanteenDetailHeader({
     super.key,
@@ -18,6 +19,7 @@ class CanteenDetailHeader extends StatelessWidget {
     required this.ratingCount,
     this.dishCount = 0,
     this.dishPhotoCount = 0,
+    this.offline = false,
   });
 
   @override
@@ -29,14 +31,50 @@ class CanteenDetailHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            name,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: CanteenTheme.textPrimaryColor(isDark),
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+              ),
+              if (offline)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF34383A)
+                        : const Color(0xFFF1F1F1),
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                  ),
+                  child: Text(
+                    '已下架',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white70 : const Color(0xFF777777),
+                    ),
+                  ),
+                ),
+            ],
           ),
+          if (offline) ...[
+            const SizedBox(height: 5),
+            Text(
+              '该店当前已下架，历史评价仅供参考',
+              style: TextStyle(
+                fontSize: 12,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [

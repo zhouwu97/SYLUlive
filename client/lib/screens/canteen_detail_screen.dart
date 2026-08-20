@@ -14,6 +14,7 @@ import '../widgets/canteen/canteen_detail_header.dart';
 import '../widgets/canteen/canteen_detail_skeleton.dart';
 import '../widgets/canteen/canteen_review_section.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/dish_gallery_section.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
@@ -67,6 +68,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   // 菜品/实拍统计：初值来自列表页入口快照，随后由图鉴区真实数据刷新
   late int _dishCount;
   late int _dishPhotoCount;
+
+  bool get _isOffline {
+    final raw = _canteenData?['canteen'];
+    if (raw is! Map) return false;
+    return raw['is_offline'] == true || raw['operating_status'] == 'offline';
+  }
 
   @override
   void initState() {
@@ -225,13 +232,21 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
 
     final rawV2Reviews = _canteenData!['reviews'];
-    final reviews = rawV2Reviews is List && rawV2Reviews.isNotEmpty
+    final normalizedV2 = rawV2Reviews is List
         ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
-        : (_canteenData!['ratings'] as List?)
-                ?.whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList() ??
-            <Map<String, dynamic>>[];
+        : <Map<String, dynamic>>[];
+    final v2UserIds = normalizedV2
+        .map((item) => (item['user_id'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet();
+    final legacyOnly = (_canteenData!['ratings'] as List?)
+            ?.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .where((item) =>
+                !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    final reviews = [...normalizedV2, ...legacyOnly];
     final ratingCount = (_canteenData!['reviewer_count'] as num?)?.toInt() ??
         (_canteenData!['rating_count'] as num?)?.toInt() ??
         0;
@@ -259,13 +274,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     ratingCount: ratingCount,
                     dishCount: _dishCount,
                     dishPhotoCount: _dishPhotoCount,
+                    offline: _isOffline,
                   ),
                   _buildDimensionSummary(isDark),
                   DishGallerySection(
                     canteenId: widget.canteenId,
                     canteenName: widget.canteenName,
                     onViewAll: _openDishList,
-                    onUpload: _openDishPhotoUpload,
+                    onUpload: _isOffline ? null : _openDishPhotoUpload,
                     onStatsChanged: (count, photos) {
                       if (!mounted) return;
                       if (count == _dishCount && photos == _dishPhotoCount) {
@@ -321,6 +337,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     },
                     onVote: _voteRating,
                     onWriteReview: _openReviewEditor,
+                    canWriteReview: !_isOffline,
                     onReport: _reportReview,
                   ),
                 ],
@@ -335,6 +352,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Map<String, dynamic> _normalizeV2Review(Map raw) {
     final source = Map<String, dynamic>.from(raw);
+    final scoreVersion = (source['score_version'] as num?)?.toInt() ?? 2;
     final dimensionScores = <String, dynamic>{
       'taste': source['taste_score'] ?? 0,
       'value': source['value_score'] ?? 0,
@@ -347,8 +365,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       'star': source['overall_score'] ?? 0,
       'user_name': source['user_name'] ?? '匿名同学',
       'user_avatar': source['user_avatar'] ?? '',
-      'dimension_scores': dimensionScores,
-      'is_v2': true,
+      if (scoreVersion >= 2) 'dimension_scores': dimensionScores,
+      'is_v2': scoreVersion >= 2,
+      'score_version': scoreVersion,
       'helpful_count': 0,
       'unhelpful_count': 0,
     };
@@ -524,8 +543,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             Hero(
               tag: 'canteen-${widget.canteenId}',
               child: hasImage
-                  ? CachedNetworkImage(
+                  ? CanteenStatusImage(
                       imageUrl: ApiConstants.fullUrl(imageUrl),
+                      offline: _isOffline,
                       fit: BoxFit.cover,
                       errorWidget: (_, __, ___) =>
                           _buildImagePlaceholder(isDark),
@@ -617,13 +637,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final bottom = MediaQuery.of(context).padding.bottom;
     final hasRating = _canteenData?['my_rating'] != null;
     final auth = context.watch<AuthProvider>();
-    final ratingHint = !auth.isLoggedIn
-        ? '登录后可评价'
-        : auth.user?.studentVerified != true
-            ? '绑定教务后可评价'
-            : hasRating
-                ? '修改我的评价...'
-                : '写下你的真实体验...';
+    final ratingHint = _isOffline
+        ? '该店已下架，历史评价仅供参考'
+        : !auth.isLoggedIn
+            ? '登录后可评价'
+            : auth.user?.studentVerified != true
+                ? '绑定教务后可评价'
+                : hasRating
+                    ? '修改我的评价...'
+                    : '写下你的真实体验...';
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
@@ -640,7 +662,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                onTap: _openReviewEditor,
+                onTap: _isOffline ? null : _openReviewEditor,
                 child: Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -662,7 +684,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ),
           const SizedBox(width: 10),
           FilledButton(
-            onPressed: _openReviewEditor,
+            onPressed: _isOffline ? null : _openReviewEditor,
             style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
@@ -690,6 +712,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         builder: (_) => CanteenDishListScreen(
           canteenId: widget.canteenId,
           canteenName: widget.canteenName,
+          offline: _isOffline,
         ),
       ),
     );
@@ -803,6 +826,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   // ── 打开评价编辑器全屏页 ────────────────────────────────────────
 
   Future<void> _openReviewEditor() async {
+    if (_isOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该店当前已下架，暂不能发布新的评价')),
+      );
+      return;
+    }
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)

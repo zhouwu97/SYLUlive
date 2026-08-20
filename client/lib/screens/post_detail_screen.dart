@@ -1620,23 +1620,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 SafeArea(child: _buildErrorView(isDark))
               else if (_post == null)
                 SafeArea(child: _buildEmptyView(isDark))
-              else if (widget.isMarket)
-                _buildMarketDetail(isDark)
               else
-                Column(
-                  children: [
-                    Expanded(
-                      child: _buildInputDismissRegion(
-                        child: _buildWaterDetail(isDark),
-                      ),
-                    ),
-                    _buildWaterReplyBar(isDark),
-                  ],
+                _buildKeyboardAwareDetail(
+                  child: widget.isMarket
+                      ? _buildMarketDetail(isDark)
+                      : Column(
+                          children: [
+                            Expanded(
+                              child: _buildInputDismissRegion(
+                                child: _buildWaterDetail(isDark),
+                              ),
+                            ),
+                            _buildWaterReplyBar(isDark),
+                          ],
+                        ),
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
+  ///
+  /// Emoji 面板已经是 Composer 的自定义底部面板，此时不能再叠加系统
+  /// viewInsets；Emoji → Keyboard handoff 会在 IME 稳定后由 controller 接管。
+  Widget _buildKeyboardAwareDetail({required Widget child}) {
+    return AnimatedBuilder(
+      animation: _replyComposerActivity,
+      child: child,
+      builder: (context, child) {
+        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+        final bottomInset =
+            _replyComposerController.showEmojiPanel ? 0.0 : keyboardInset;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: child,
+        );
+      },
     );
   }
 
@@ -1647,22 +1669,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       builder: (context, child) {
         final inputActive = _replyComposerController.focusNode.hasFocus ||
             _replyComposerController.showEmojiPanel;
-        if (!inputActive) return child!;
 
         return Stack(
           fit: StackFit.expand,
           children: [
             child!,
             Positioned.fill(
-              child: Semantics(
-                button: true,
-                label: '收起评论输入',
-                onTap: () => _replyComposerController.close(),
-                child: GestureDetector(
-                  key: const ValueKey('post-detail-input-dismiss-layer'),
-                  behavior: HitTestBehavior.opaque,
-                  excludeFromSemantics: true,
-                  onTap: () => _replyComposerController.close(),
+              child: IgnorePointer(
+                ignoring: !inputActive,
+                child: Semantics(
+                  button: true,
+                  enabled: inputActive,
+                  label: '收起评论输入',
+                  onTap: inputActive
+                      ? () => _replyComposerController.close()
+                      : null,
+                  child: GestureDetector(
+                    key: const ValueKey('post-detail-input-dismiss-layer'),
+                    behavior: HitTestBehavior.opaque,
+                    excludeFromSemantics: true,
+                    onTap: () => _replyComposerController.close(),
+                  ),
                 ),
               ),
             ),
@@ -2512,6 +2539,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildWaterDetail(bool isDark) {
     final p = _post!;
     return SingleChildScrollView(
+      key: const ValueKey('post-detail-scroll-view'),
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         children: [

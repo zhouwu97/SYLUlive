@@ -30,11 +30,19 @@ func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) map[uint]
 		Tags      string `gorm:"column:tags"`
 	}
 	var rows []ratingTagRow
-	_ = h.db.Table("canteen_ratings").
-		Select("canteen_id, tags").
-		Where("created_at >= ?", since).
-		Where("tags IS NOT NULL AND tags <> '' AND tags <> '[]'").
+	_ = h.db.Table("canteen_review_events AS e").
+		Select("e.canteen_id, e.tags").
+		Where("e.status = ? AND e.score_version >= ? AND e.created_at >= ?", models.ReviewEventStatusActive, 2, since).
+		Where("e.tags IS NOT NULL AND e.tags <> '' AND e.tags <> '[]'").
 		Scan(&rows).Error
+	var legacyRows []ratingTagRow
+	_ = h.db.Table("canteen_ratings AS r").
+		Select("r.canteen_id, r.tags").
+		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
+		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
+		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
+		Scan(&legacyRows).Error
+	rows = append(rows, legacyRows...)
 
 	canteenRaws := make(map[uint][]string, len(rows))
 	for _, r := range rows {
@@ -55,10 +63,17 @@ func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int
 	}
 	since := time.Now().AddDate(0, 0, -days)
 	var raws []string
-	err := h.db.Table("canteen_ratings").
-		Where("canteen_id = ? AND created_at >= ?", canteenID, since).
-		Where("tags IS NOT NULL AND tags <> '' AND tags <> '[]'").
-		Pluck("tags", &raws).Error
+	err := h.db.Table("canteen_review_events AS e").
+		Where("e.canteen_id = ? AND e.status = ? AND e.score_version >= ? AND e.created_at >= ?", canteenID, models.ReviewEventStatusActive, 2, since).
+		Where("e.tags IS NOT NULL AND e.tags <> '' AND e.tags <> '[]'").
+		Pluck("e.tags", &raws).Error
+	var legacyRaws []string
+	_ = h.db.Table("canteen_ratings AS r").
+		Where("r.canteen_id = ? AND (r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", canteenID, models.ReviewEventStatusActive, since).
+		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
+		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
+		Pluck("r.tags", &legacyRaws)
+	raws = append(raws, legacyRaws...)
 	if err != nil {
 		return nil
 	}
@@ -73,15 +88,23 @@ func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 	}
 	var rows []countRow
 	since := time.Now().AddDate(0, 0, -days)
-	_ = h.db.Table("canteen_ratings").
+	_ = h.db.Table("canteen_review_events").
 		Select("canteen_id, COUNT(*) as cnt").
-		Where("created_at >= ?", since).
+		Where("status = ? AND score_version >= ? AND created_at >= ?", models.ReviewEventStatusActive, 2, since).
 		Group("canteen_id").
 		Scan(&rows).Error
+	var legacyRows []countRow
+	_ = h.db.Table("canteen_ratings AS r").
+		Select("r.canteen_id, COUNT(*) as cnt").
+		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
+		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
+		Group("r.canteen_id").
+		Scan(&legacyRows).Error
+	rows = append(rows, legacyRows...)
 
 	counts := make(map[uint]int64, len(rows))
 	for _, r := range rows {
-		counts[r.CanteenID] = r.Cnt
+		counts[r.CanteenID] += r.Cnt
 	}
 	return counts
 }
@@ -89,9 +112,15 @@ func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 // recentReviewCount 统计某食堂近 days 天内的评价数。
 func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 	var n int64
-	h.db.Table("canteen_ratings").
-		Where("canteen_id = ? AND created_at >= ?", canteenID, time.Now().AddDate(0, 0, -days)).
+	h.db.Table("canteen_review_events").
+		Where("canteen_id = ? AND status = ? AND score_version >= 2 AND created_at >= ?", canteenID, models.ReviewEventStatusActive, time.Now().AddDate(0, 0, -days)).
 		Count(&n)
+	var legacyCount int64
+	h.db.Table("canteen_ratings AS r").
+		Where("r.canteen_id = ? AND (r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", canteenID, models.ReviewEventStatusActive, time.Now().AddDate(0, 0, -days)).
+		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
+		Count(&legacyCount)
+	n += legacyCount
 	return n
 }
 
@@ -119,7 +148,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	mean := globalMeanStars(rows)
 	entries := make([]canteenRankingEntry, 0, len(rows))
 	for _, r := range rows {
-		score := services.BayesianRatingScore(r.AverageStar, float64(r.RatingCount), mean, services.BayesianPriorWeight)
+		score := services.BayesianRatingScore(r.AverageStar, r.EffectiveSample, mean, services.BayesianPriorWeight)
 		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
 	}
 	sortRanking(entries, sortMode)
@@ -150,7 +179,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			AverageStar:    e.AverageStar,
 			RatingCount:    e.RatingCount,
 			RankingScore:   services.BayesianScoreTo100(e.RankingScore),
-			Confidence:     services.RatingConfidence(e.RatingCount),
+			Confidence:     services.RatingConfidenceEffective(e.EffectiveSample),
 			DishCount:      e.DishCount,
 			DishPhotoCount: e.DishPhotoCount,
 			SummaryTags:    tagMap[e.ID],
@@ -184,21 +213,22 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 
 // canteenFeedItem 首页信息流条目（对应客户端 CanteenFeedItem）。
 type canteenFeedItem struct {
-	ID           string   `json:"id"`
-	Type         string   `json:"type"`
-	CanteenID    uint     `json:"canteen_id"`
-	CanteenName  string   `json:"canteen_name"`
-	Image        string   `json:"image,omitempty"`
-	DishID       uint     `json:"dish_id,omitempty"`
-	DishName     string   `json:"dish_name,omitempty"`
-	Title        string   `json:"title"`
-	Reason       string   `json:"reason,omitempty"`
-	RankingScore float64  `json:"ranking_score,omitempty"`
-	AverageStar  float64  `json:"average_star,omitempty"`
-	RatingCount  int      `json:"rating_count,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Images       []string `json:"images,omitempty"`
-	CreatedAt    string   `json:"created_at,omitempty"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"`
+	CanteenID       uint     `json:"canteen_id"`
+	CanteenName     string   `json:"canteen_name"`
+	OperatingStatus string   `json:"operating_status"`
+	Image           string   `json:"image,omitempty"`
+	DishID          uint     `json:"dish_id,omitempty"`
+	DishName        string   `json:"dish_name,omitempty"`
+	Title           string   `json:"title"`
+	Reason          string   `json:"reason,omitempty"`
+	RankingScore    float64  `json:"ranking_score,omitempty"`
+	AverageStar     float64  `json:"average_star,omitempty"`
+	RatingCount     int      `json:"rating_count,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	Images          []string `json:"images,omitempty"`
+	CreatedAt       string   `json:"created_at,omitempty"`
 }
 
 // buildFeedReason 由近 30 天标签聚合生成一句稳定、可解释的推荐理由。
@@ -348,17 +378,18 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 			names[j] = t.Name
 		}
 		return &canteenFeedItem{
-			ID:           fmt.Sprintf("recommended_store:%d:v1", e.ID),
-			Type:         "recommended_store",
-			CanteenID:    e.ID,
-			CanteenName:  e.Name,
-			Image:        e.Image,
-			Title:        "今天可以优先看看",
-			Reason:       buildFeedReason(tags, e.AverageStar, e.RatingCount),
-			RankingScore: services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:  e.AverageStar,
-			RatingCount:  e.RatingCount,
-			Tags:         names,
+			ID:              fmt.Sprintf("recommended_store:%d:v1", e.ID),
+			Type:            "recommended_store",
+			CanteenID:       e.ID,
+			CanteenName:     e.Name,
+			OperatingStatus: e.OperatingStatus,
+			Image:           e.Image,
+			Title:           "今天可以优先看看",
+			Reason:          buildFeedReason(tags, e.AverageStar, e.RatingCount),
+			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:     e.AverageStar,
+			RatingCount:     e.RatingCount,
+			Tags:            names,
 		}
 	}
 	return nil
@@ -377,17 +408,18 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 			names[j] = t.Name
 		}
 		return &canteenFeedItem{
-			ID:           fmt.Sprintf("stable_choice:%d:v1", e.ID),
-			Type:         "stable_choice",
-			CanteenID:    e.ID,
-			CanteenName:  e.Name,
-			Image:        e.Image,
-			Title:        "想吃稳一点？",
-			Reason:       "评价样本相对更多，结果受单条评价影响更小",
-			RankingScore: services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:  e.AverageStar,
-			RatingCount:  e.RatingCount,
-			Tags:         names,
+			ID:              fmt.Sprintf("stable_choice:%d:v1", e.ID),
+			Type:            "stable_choice",
+			CanteenID:       e.ID,
+			CanteenName:     e.Name,
+			OperatingStatus: e.OperatingStatus,
+			Image:           e.Image,
+			Title:           "想吃稳一点？",
+			Reason:          "评价样本相对更多，结果受单条评价影响更小",
+			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:     e.AverageStar,
+			RatingCount:     e.RatingCount,
+			Tags:            names,
 		}
 	}
 	return nil
@@ -407,17 +439,18 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 			names[j] = t.Name
 		}
 		return &canteenFeedItem{
-			ID:           fmt.Sprintf("trending:%d:v1", e.ID),
-			Type:         "trending",
-			CanteenID:    e.ID,
-			CanteenName:  e.Name,
-			Image:        e.Image,
-			Title:        "最近大家也在吃",
-			Reason:       fmt.Sprintf("近 7 天新增 %d 条评价", recent),
-			RankingScore: services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:  e.AverageStar,
-			RatingCount:  e.RatingCount,
-			Tags:         names,
+			ID:              fmt.Sprintf("trending:%d:v1", e.ID),
+			Type:            "trending",
+			CanteenID:       e.ID,
+			CanteenName:     e.Name,
+			OperatingStatus: e.OperatingStatus,
+			Image:           e.Image,
+			Title:           "最近大家也在吃",
+			Reason:          fmt.Sprintf("近 7 天新增 %d 条评价", recent),
+			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:     e.AverageStar,
+			RatingCount:     e.RatingCount,
+			Tags:            names,
 		}
 	}
 	return nil
@@ -447,7 +480,7 @@ func (h *CanteenHandler) latestApprovedPhotos(limit int) []canteenPhotoItem {
 	if err := h.db.Table("canteen_dish_photos AS p").
 		Joins("JOIN files f ON f.id = p.file_id").
 		Joins("JOIN canteen_dishes d ON d.id = p.dish_id AND d.status = ?", models.DishStatusActive).
-		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ?", true).
+		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '')", true, models.CanteenOperatingActive).
 		Select("p.dish_id AS dish_id, d.name AS dish_name, d.canteen_id AS canteen_id, c.name AS canteen_name, f.path AS image, p.created_at AS created_at").
 		Where("p.status = ?", models.DishPhotoStatusApproved).
 		Order("p.created_at DESC, p.id DESC").
@@ -481,30 +514,32 @@ type canteenPhotoItem struct {
 
 // canteenHotDishItem 首页“同学最近在吃”的菜品卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
 type canteenHotDishItem struct {
-	ID            uint    `json:"id"`
-	Name          string  `json:"name"`
-	CanteenID     uint    `json:"canteen_id"`
-	CanteenName   string  `json:"canteen_name"`
-	CoverImage    string  `json:"cover_image,omitempty"`
-	PhotoCount    int     `json:"photo_count"`
-	AverageScore  float64 `json:"average_score"`
-	ReviewerCount int     `json:"reviewer_count"`
+	ID                     uint    `json:"id"`
+	Name                   string  `json:"name"`
+	CanteenID              uint    `json:"canteen_id"`
+	CanteenName            string  `json:"canteen_name"`
+	CanteenOperatingStatus string  `json:"canteen_operating_status"`
+	CoverImage             string  `json:"cover_image,omitempty"`
+	PhotoCount             int     `json:"photo_count"`
+	AverageScore           float64 `json:"average_score"`
+	ReviewerCount          int     `json:"reviewer_count"`
 }
 
 // hotDishes 首页热菜：先取有真实实拍的 active 菜品，再在 Go 层按诚信加权后的菜品摘要排序。
 func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 	type dishRow struct {
-		ID          uint   `gorm:"column:id"`
-		Name        string `gorm:"column:name"`
-		CanteenID   uint   `gorm:"column:canteen_id"`
-		CanteenName string `gorm:"column:canteen_name"`
-		CoverImage  string `gorm:"column:cover_image"`
-		PhotoCount  int    `gorm:"column:photo_count"`
+		ID                     uint   `gorm:"column:id"`
+		Name                   string `gorm:"column:name"`
+		CanteenID              uint   `gorm:"column:canteen_id"`
+		CanteenName            string `gorm:"column:canteen_name"`
+		CanteenOperatingStatus string `gorm:"column:canteen_operating_status"`
+		CoverImage             string `gorm:"column:cover_image"`
+		PhotoCount             int    `gorm:"column:photo_count"`
 	}
 	var rows []dishRow
 	if err := h.db.Table("canteen_dishes AS d").
-		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ?", true).
-		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name,
+		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '')", true, models.CanteenOperatingActive).
+		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name, c.operating_status AS canteen_operating_status,
 			(SELECT f.path FROM canteen_dish_photos p JOIN files f ON f.id = p.file_id
 			 WHERE p.dish_id = d.id AND p.status = ? ORDER BY p.sort_order, p.created_at, p.id LIMIT 1) AS cover_image,
 			(SELECT COUNT(*) FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?) AS photo_count`,
@@ -542,14 +577,15 @@ func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 	for _, row := range rows {
 		agg := services.ComputeDishAggregate(byDish[row.ID])
 		hot = append(hot, canteenHotDishItem{
-			ID:            row.ID,
-			Name:          row.Name,
-			CanteenID:     row.CanteenID,
-			CanteenName:   row.CanteenName,
-			CoverImage:    row.CoverImage,
-			PhotoCount:    row.PhotoCount,
-			AverageScore:  agg.AverageScore,
-			ReviewerCount: agg.ReviewerCount,
+			ID:                     row.ID,
+			Name:                   row.Name,
+			CanteenID:              row.CanteenID,
+			CanteenName:            row.CanteenName,
+			CanteenOperatingStatus: row.CanteenOperatingStatus,
+			CoverImage:             row.CoverImage,
+			PhotoCount:             row.PhotoCount,
+			AverageScore:           agg.AverageScore,
+			ReviewerCount:          agg.ReviewerCount,
 		})
 	}
 	sort.SliceStable(hot, func(i, j int) bool {
@@ -574,16 +610,17 @@ func pickPhoto(pool []canteenPhotoItem, seen map[uint]int, lastCanteen uint, las
 			continue
 		}
 		return &canteenFeedItem{
-			ID:          fmt.Sprintf("recent_photo:%d", pool[i].DishID),
-			Type:        "recent_photo",
-			CanteenID:   p.CanteenID,
-			CanteenName: p.CanteenName,
-			DishID:      p.DishID,
-			DishName:    p.DishName,
-			Title:       "同学最近实拍",
-			Reason:      p.DishName + " · 看看最近实际卖相",
-			Images:      []string{p.Image},
-			CreatedAt:   p.CreatedAt.Format("2006-01-02 15:04:05"),
+			ID:              fmt.Sprintf("recent_photo:%d", pool[i].DishID),
+			Type:            "recent_photo",
+			CanteenID:       p.CanteenID,
+			CanteenName:     p.CanteenName,
+			OperatingStatus: models.CanteenOperatingActive,
+			DishID:          p.DishID,
+			DishName:        p.DishName,
+			Title:           "同学最近实拍",
+			Reason:          p.DishName + " · 看看最近实际卖相",
+			Images:          []string{p.Image},
+			CreatedAt:       p.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 	}
 	return nil
@@ -626,7 +663,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	// 全部 verified 食堂（含无评价，用作冷启动）。
 	entries := make([]canteenRankingEntry, 0, len(rows))
 	for _, r := range rows {
-		score := services.BayesianRatingScore(r.AverageStar, float64(r.RatingCount), mean, services.BayesianPriorWeight)
+		score := services.BayesianRatingScore(r.AverageStar, r.EffectiveSample, mean, services.BayesianPriorWeight)
 		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
 	}
 	sortRanking(entries, "composite")
@@ -647,17 +684,18 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			tagNames = append(tagNames, t.Name)
 		}
 		heroItem := &canteenFeedItem{
-			ID:           fmt.Sprintf("recommended_store:%d:v1", e.ID),
-			Type:         "recommended_store",
-			CanteenID:    e.ID,
-			CanteenName:  e.Name,
-			Image:        e.Image,
-			Title:        "今日推荐",
-			Reason:       buildFeedReason(tags, e.AverageStar, e.RatingCount),
-			RankingScore: services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:  e.AverageStar,
-			RatingCount:  e.RatingCount,
-			Tags:         tagNames,
+			ID:              fmt.Sprintf("recommended_store:%d:v1", e.ID),
+			Type:            "recommended_store",
+			CanteenID:       e.ID,
+			CanteenName:     e.Name,
+			OperatingStatus: e.OperatingStatus,
+			Image:           e.Image,
+			Title:           "今日推荐",
+			Reason:          buildFeedReason(tags, e.AverageStar, e.RatingCount),
+			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:     e.AverageStar,
+			RatingCount:     e.RatingCount,
+			Tags:            tagNames,
 		}
 		hero = heroItem
 		break

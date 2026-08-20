@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../../config/api_constants.dart';
 import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
 /// 首页「今日推荐」Hero 卡：回答“今天吃什么”。
 /// 展示综合分、真实星级与评价人数、可解释的推荐理由与体验标签。
@@ -74,7 +73,8 @@ class _CanteenHeroRecommendationCardState
                   Hero(
                     tag: 'canteen-${h.canteenId}',
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
                       child: SizedBox(
                         width: 84,
                         height: 84,
@@ -200,8 +200,9 @@ class _CanteenHeroRecommendationCardState
             size: 28, color: CanteenTheme.textTertiaryColor(isDark)),
       );
     }
-    return CachedNetworkImage(
+    return CanteenStatusImage(
       imageUrl: ApiConstants.fullUrl(h.image),
+      offline: h.operatingStatus == 'offline',
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),

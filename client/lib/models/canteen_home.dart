@@ -16,6 +16,7 @@ class CanteenFeedItem {
   final String type;
   final int canteenId;
   final String canteenName;
+  final String operatingStatus;
   final int dishId;
   final String dishName;
 
@@ -36,6 +37,7 @@ class CanteenFeedItem {
     required this.type,
     this.canteenId = 0,
     this.canteenName = '',
+    this.operatingStatus = 'active',
     this.dishId = 0,
     this.dishName = '',
     this.image = '',
@@ -55,6 +57,7 @@ class CanteenFeedItem {
       type: json['type']?.toString() ?? '',
       canteenId: (json['canteen_id'] ?? 0).toInt(),
       canteenName: json['canteen_name']?.toString() ?? '',
+      operatingStatus: json['operating_status']?.toString() ?? 'active',
       dishId: (json['dish_id'] ?? 0).toInt(),
       dishName: json['dish_name']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
@@ -73,12 +76,14 @@ class CanteenFeedItem {
   bool get isTrending => type == CanteenFeedType.trendingStore;
   bool get isRecentPhoto => type == CanteenFeedType.recentPhoto;
   bool get isStable => type == CanteenFeedType.stableChoice;
+  bool get isOffline => operatingStatus == 'offline';
 }
 
 /// Hero 今日推荐卡。
 class CanteenHero {
   final int canteenId;
   final String canteenName;
+  final String operatingStatus;
   final String image;
   final double rankingScore;
   final double averageStar;
@@ -90,6 +95,7 @@ class CanteenHero {
   const CanteenHero({
     this.canteenId = 0,
     this.canteenName = '',
+    this.operatingStatus = 'active',
     this.image = '',
     this.rankingScore = 0,
     this.averageStar = 0,
@@ -104,6 +110,7 @@ class CanteenHero {
     return CanteenHero(
       canteenId: (json['canteen_id'] ?? 0).toInt(),
       canteenName: json['canteen_name']?.toString() ?? '',
+      operatingStatus: json['operating_status']?.toString() ?? 'active',
       image: json['image']?.toString() ?? '',
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
       averageStar: (json['average_star'] ?? 0).toDouble(),
@@ -150,6 +157,7 @@ class CanteenHotDish {
   final String name;
   final int canteenId;
   final String canteenName;
+  final String canteenOperatingStatus;
   final String coverImage;
   final int photoCount;
   final double averageScore;
@@ -160,6 +168,7 @@ class CanteenHotDish {
     required this.name,
     required this.canteenId,
     required this.canteenName,
+    this.canteenOperatingStatus = 'active',
     this.coverImage = '',
     this.photoCount = 0,
     this.averageScore = 0,
@@ -172,12 +181,16 @@ class CanteenHotDish {
       name: json['name']?.toString() ?? '',
       canteenId: (json['canteen_id'] ?? 0).toInt(),
       canteenName: json['canteen_name']?.toString() ?? '',
+      canteenOperatingStatus:
+          json['canteen_operating_status']?.toString() ?? 'active',
       coverImage: json['cover_image']?.toString() ?? '',
       photoCount: (json['photo_count'] ?? 0).toInt(),
       averageScore: (json['average_score'] ?? 0).toDouble(),
       reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
     );
   }
+
+  bool get isCanteenOffline => canteenOperatingStatus == 'offline';
 }
 
 /// 食堂发现首页完整数据。

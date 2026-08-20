@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,28 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND canteen_id = ? AND status = ?", input.TargetDishID, source.CanteenID, models.DishStatusActive).First(&target).Error; err != nil {
 			return err
 		}
+		// 先迁移源菜已有 alias；同名 alias 已经指向目标/其他实体时删除重复源行，
+		// 不把模糊匹配误升级成自动合并。
+		var sourceAliases []models.CanteenDishAlias
+		if err := tx.Where("dish_id = ?", source.ID).Find(&sourceAliases).Error; err != nil {
+			return err
+		}
+		for _, sourceAlias := range sourceAliases {
+			var conflict models.CanteenDishAlias
+			err := tx.Where("canteen_id = ? AND normalized_alias = ? AND id <> ?", sourceAlias.CanteenID, sourceAlias.NormalizedAlias, sourceAlias.ID).First(&conflict).Error
+			if err == nil {
+				if err := tx.Delete(&sourceAlias).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err := tx.Model(&sourceAlias).Update("dish_id", target.ID).Error; err != nil {
+				return err
+			}
+		}
 		alias := models.CanteenDishAlias{
 			CanteenID: source.CanteenID, DishID: target.ID, Alias: source.Name,
 			NormalizedAlias: utils.NormalizeDishName(source.Name), CreatedBy: adminID,
@@ -55,17 +78,68 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 		if err := tx.Where("dish_id = ?", source.ID).Order("created_at ASC, id ASC").Find(&photos).Error; err != nil {
 			return err
 		}
+		var archivedFileIDs []uint
 		for i := range photos {
 			if photos[i].Status == models.DishPhotoStatusApproved {
 				if approved >= 3 {
 					if err := tx.Model(&photos[i]).Updates(map[string]interface{}{"status": models.DishPhotoStatusArchived, "reviewed_by": adminID, "reviewed_at": time.Now()}).Error; err != nil {
 						return err
 					}
-					continue
+					archivedFileIDs = append(archivedFileIDs, photos[i].FileID)
+				} else {
+					approved++
 				}
-				approved++
 			}
 			if err := tx.Model(&photos[i]).Update("dish_id", target.ID).Error; err != nil {
+				return err
+			}
+		}
+		if err := services.ReconcileFilePublicAccess(tx, archivedFileIDs...); err != nil {
+			return err
+		}
+
+		// 到店评价与菜品关系表同样必须迁移；同一评价已经有目标关系时删除源重复行，
+		// 避免复合唯一键冲突并确保隐藏源菜不再被引用。
+		var sourceRelations []models.CanteenReviewEventDish
+		if err := tx.Where("dish_id = ?", source.ID).Find(&sourceRelations).Error; err != nil {
+			return err
+		}
+		for _, relation := range sourceRelations {
+			var conflict models.CanteenReviewEventDish
+			err := tx.Where("review_event_id = ? AND dish_id = ? AND id <> ?", relation.ReviewEventID, target.ID, relation.ID).First(&conflict).Error
+			if err == nil {
+				if err := tx.Delete(&relation).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err := tx.Model(&relation).Update("dish_id", target.ID).Error; err != nil {
+				return err
+			}
+		}
+
+		// 旧 /rate 推荐是弱引用，也要随实体迁移；同一评价同一标准化菜名已存在目标行时，
+		// 删除源重复行，保留唯一的推荐记录。
+		var sourceRecommendations []models.CanteenRatingDishRecommendation
+		if err := tx.Where("dish_id = ?", source.ID).Find(&sourceRecommendations).Error; err != nil {
+			return err
+		}
+		for _, recommendation := range sourceRecommendations {
+			var conflict models.CanteenRatingDishRecommendation
+			err := tx.Where("rating_id = ? AND normalized_name = ? AND id <> ?", recommendation.RatingID, recommendation.NormalizedName, recommendation.ID).First(&conflict).Error
+			if err == nil {
+				if err := tx.Delete(&recommendation).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err := tx.Model(&recommendation).Update("dish_id", target.ID).Error; err != nil {
 				return err
 			}
 		}

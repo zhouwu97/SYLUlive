@@ -1,20 +1,51 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+const (
+	// CanteenOperatingActive 表示食堂正常营业，可参与新评价、排行和推荐。
+	CanteenOperatingActive = "active"
+	// CanteenOperatingOffline 表示食堂暂时下架，历史数据保留但不参与当前发现体系。
+	CanteenOperatingOffline = "offline"
+)
 
 // Canteen 食堂/店铺
 type Canteen struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	Name           string    `gorm:"size:100;not null;index" json:"name"`
-	NormalizedName string    `gorm:"size:100;not null;default:''" json:"-"`
-	Image          string    `gorm:"size:500;not null" json:"image"` // 封面图
-	Verified       bool      `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
-	CreatedBy      uint      `gorm:"index" json:"created_by"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID              uint       `gorm:"primaryKey" json:"id"`
+	Name            string     `gorm:"size:100;not null;index" json:"name"`
+	NormalizedName  string     `gorm:"size:100;not null;default:''" json:"-"`
+	Image           string     `gorm:"size:500;not null" json:"image"` // 封面图
+	Verified        bool       `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
+	OperatingStatus string     `gorm:"size:20;not null;default:'active';index" json:"operating_status"`
+	OfflinedAt      *time.Time `json:"offlined_at,omitempty"`
+	OfflinedBy      *uint      `json:"-"`
+	OfflineReason   string     `gorm:"size:500" json:"-"`
+	IsOffline       bool       `gorm:"-" json:"is_offline"`
+	CreatedBy       uint       `gorm:"index" json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 
 	RatingCount int     `gorm:"-" json:"rating_count"`
 	AverageStar float64 `gorm:"-" json:"average_star"`
+}
+
+// NormalizeOperatingStatus 为历史数据库补齐状态，并计算只读 JSON 字段。
+func (c *Canteen) NormalizeOperatingStatus() {
+	if c.OperatingStatus == "" {
+		c.OperatingStatus = CanteenOperatingActive
+	}
+	c.IsOffline = c.OperatingStatus == CanteenOperatingOffline
+}
+
+// EnsureCanteenOperatingStatusSchema 是幂等的历史数据补齐迁移。
+func EnsureCanteenOperatingStatusSchema(db *gorm.DB) error {
+	return db.Model(&Canteen{}).
+		Where("operating_status IS NULL OR operating_status = ''").
+		Update("operating_status", CanteenOperatingActive).Error
 }
 
 // CanteenRating 食堂评价
@@ -30,6 +61,7 @@ type CanteenRating struct {
 	UnhelpfulCount int       `gorm:"not null;default:0" json:"unhelpful_count"` // 无用票数
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	Status         string    `gorm:"size:20;not null;default:'active';index" json:"status"`
 
 	// V2 摘要字段。旧客户端继续读取 Star；新版使用 EffectiveScore 与五维摘要。
 	EffectiveScore      float64 `gorm:"not null;default:0" json:"effective_score"`

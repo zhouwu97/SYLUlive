@@ -29,8 +29,25 @@ func TestComputeEffectiveUserRatingUsesRecentThree(t *testing.T) {
 		newEvent(3, 5, now.Add(-time.Hour)),
 		newEvent(4, 1, now.Add(-4*time.Hour)),
 	})
-	if got.Overall < 4.499999 || got.Overall > 4.500001 || got.EventCount != 3 || got.LatestEventID != 3 {
-		t.Fatalf("result=%+v want overall=4.5 count=3 latest=3", got)
+	if got.Overall < 4.499999 || got.Overall > 4.500001 || got.TotalEventCount != 4 || got.UsedEventCount != 3 || got.LatestEventID != 3 {
+		t.Fatalf("result=%+v want overall=4.5 total=4 used=3 latest=3", got)
+	}
+}
+
+func TestComputeEffectiveUserRatingExcludesLegacyEventFromDimensionScore(t *testing.T) {
+	now := time.Now()
+	legacy := models.CanteenReviewEvent{
+		ID: 1, OverallScore: 5, ScoreVersion: 1, Status: models.ReviewEventStatusActive,
+		CreatedAt: now.Add(-time.Hour),
+	}
+	v2 := models.CanteenReviewEvent{
+		ID: 2, TasteScore: 2, ValueScore: 2, QueueScore: 2, HygieneScore: 2, ServiceScore: 2,
+		OverallScore: 2, ScoreVersion: 2, Status: models.ReviewEventStatusActive,
+		CreatedAt: now,
+	}
+	got := ComputeEffectiveUserRating([]models.CanteenReviewEvent{legacy, v2})
+	if got.TotalEventCount != 2 || got.UsedEventCount != 1 || got.Overall != 2 || got.Taste != 2 {
+		t.Fatalf("legacy event polluted effective score: %+v", got)
 	}
 }
 
@@ -47,6 +64,16 @@ func TestComputeCanteenAggregateWeighted(t *testing.T) {
 	got := ComputeCanteenAggregate([]UserRatingSample{{Overall: 5, Weight: 1}, {Overall: 1, Weight: 0.5}})
 	if got.AverageScore != 3.6666666666666665 || got.ReviewerCount != 2 {
 		t.Fatalf("aggregate=%+v", got)
+	}
+}
+
+func TestComputeCanteenAggregateDoesNotUseLegacyZeroDimensions(t *testing.T) {
+	got := ComputeCanteenAggregate([]UserRatingSample{
+		{Overall: 5, Taste: 5, Weight: 1, HasDimensions: true},
+		{Overall: 4, Weight: 1, HasDimensions: false},
+	})
+	if got.AverageScore != 4.5 || got.TasteScore != 5 || got.DimensionEffectiveSample != 1 {
+		t.Fatalf("legacy sample polluted dimensions: %+v", got)
 	}
 }
 

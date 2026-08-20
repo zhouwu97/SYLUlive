@@ -75,12 +75,15 @@ class CanteenReviewEvent {
   final int userId;
   final CanteenReviewDimensions dimensions;
   final double overallScore;
+  final int scoreVersion;
   final String comment;
   final String userName;
   final String userAvatar;
   final int creditScore;
   final double creditWeight;
   final int historyCount;
+  final int helpfulCount;
+  final int unhelpfulCount;
   final DateTime? createdAt;
 
   const CanteenReviewEvent({
@@ -89,12 +92,15 @@ class CanteenReviewEvent {
     required this.userId,
     required this.dimensions,
     required this.overallScore,
+    this.scoreVersion = 2,
     required this.comment,
     required this.userName,
     required this.userAvatar,
     required this.creditScore,
     required this.creditWeight,
     required this.historyCount,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
     required this.createdAt,
   });
 
@@ -111,12 +117,15 @@ class CanteenReviewEvent {
         service: _int(json['service_score']),
       ),
       overallScore: _double(json['overall_score']),
+      scoreVersion: _int(json['score_version']),
       comment: json['comment']?.toString() ?? '',
       userName: json['user_name']?.toString() ?? '匿名同学',
       userAvatar: json['user_avatar']?.toString() ?? '',
       creditScore: _int(json['credit_score']),
       creditWeight: _double(json['credit_weight']),
       historyCount: _int(json['history_count']),
+      helpfulCount: _int(json['helpful_count']),
+      unhelpfulCount: _int(json['unhelpful_count']),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
     );
   }

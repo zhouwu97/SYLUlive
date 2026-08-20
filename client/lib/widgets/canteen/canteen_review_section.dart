@@ -24,6 +24,7 @@ class CanteenReviewSection extends StatelessWidget {
   final ValueChanged<String> onFilterChanged;
   final Future<void> Function(int ratingId, String vote) onVote;
   final VoidCallback onWriteReview;
+  final bool canWriteReview;
   final Future<void> Function(int reviewId)? onReport;
 
   const CanteenReviewSection({
@@ -40,6 +41,7 @@ class CanteenReviewSection extends StatelessWidget {
     required this.onFilterChanged,
     required this.onVote,
     required this.onWriteReview,
+    this.canWriteReview = true,
     this.onReport,
   });
 
@@ -261,9 +263,9 @@ class CanteenReviewSection extends StatelessWidget {
     return CanteenEmptyState(
       minHeight: 140,
       title: '还没有同学评价',
-      subtitle: '吃过这家？说两句真实体验，给其他同学参考。',
-      actionLabel: '写第一条评价',
-      onAction: onWriteReview,
+      subtitle: canWriteReview ? '吃过这家？说两句真实体验，给其他同学参考。' : '该店当前已下架，历史评价仅供参考。',
+      actionLabel: canWriteReview ? '写第一条评价' : null,
+      onAction: canWriteReview ? onWriteReview : null,
     );
   }
 }
@@ -472,7 +474,7 @@ class _ReviewItem extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}',
+                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -482,7 +484,7 @@ class _ReviewItem extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!isOwn && review['is_v2'] != true) ...[
+              if (!isOwn) ...[
                 _buildVoteButton(
                   icon: Icons.thumb_up_alt_outlined,
                   iconSelected: Icons.thumb_up_alt_rounded,
@@ -502,9 +504,9 @@ class _ReviewItem extends StatelessWidget {
                       ? null
                       : () => onVote(id, myVote == 'down' ? 'none' : 'down'),
                 ),
-              ] else if (!isOwn &&
-                  review['is_v2'] == true &&
-                  onReport != null) ...[
+              ],
+              if (!isOwn && onReport != null) ...[
+                const SizedBox(width: 4),
                 PopupMenuButton<String>(
                   tooltip: '更多操作',
                   padding: EdgeInsets.zero,

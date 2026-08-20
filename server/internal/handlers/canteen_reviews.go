@@ -552,6 +552,97 @@ func (h *CanteenHandler) loadCanteenReviews(canteenID uint, sortBy, filter strin
 	return all, nil
 }
 
+// loadMyLatestReviewPayload 返回编辑器所需的事件级数据。
+//
+// my_rating 是旧摘要模型，只适合旧客户端展示，不能作为 V2 编辑请求的权威来源；
+// 这里把事件、选中的菜以及该事件下的菜品评分一次性返回，避免编辑保存时把未回填的
+// 菜品关系误判为用户主动删除。
+func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[string]interface{}, error) {
+	if !h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) {
+		return nil, nil
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ? AND user_id = ? AND status = ? AND score_version >= ?", canteenID, userID, models.ReviewEventStatusActive, 2).
+		Order("created_at DESC, id DESC").First(&event).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || isCanteenReviewSchemaMissing(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	type selectedDishRow struct {
+		DishID uint   `gorm:"column:dish_id"`
+		Name   string `gorm:"column:name"`
+	}
+	selectedDishes := make([]selectedDishRow, 0, 3)
+	if h.db.Migrator().HasTable(&models.CanteenReviewEventDish{}) {
+		if err := h.db.Table("canteen_review_event_dishes AS relation").
+			Select("relation.dish_id, dish.name").
+			Joins("JOIN canteen_dishes AS dish ON dish.id = relation.dish_id").
+			Where("relation.review_event_id = ? AND dish.status = ?", event.ID, models.DishStatusActive).
+			Order("relation.id ASC").Find(&selectedDishes).Error; err != nil && !isCanteenReviewSchemaMissing(err) {
+			return nil, err
+		}
+	}
+
+	dishNames := make(map[uint]string, len(selectedDishes))
+	recommendedDishes := make([]map[string]interface{}, 0, len(selectedDishes))
+	for _, dish := range selectedDishes {
+		dishNames[dish.DishID] = dish.Name
+		recommendedDishes = append(recommendedDishes, map[string]interface{}{
+			"dish_id": dish.DishID,
+			"name":    dish.Name,
+		})
+	}
+
+	type dishReviewPayload struct {
+		DishID       uint   `json:"dish_id"`
+		DishName     string `json:"dish_name,omitempty"`
+		TasteScore   int    `json:"taste_score"`
+		ValueScore   int    `json:"value_score"`
+		PortionScore int    `json:"portion_score"`
+		Comment      string `json:"comment"`
+	}
+	dishReviews := make([]dishReviewPayload, 0, len(selectedDishes))
+	if h.db.Migrator().HasTable(&models.CanteenDishReviewEvent{}) {
+		var events []models.CanteenDishReviewEvent
+		if err := h.db.Where("canteen_review_event_id = ? AND status = ?", event.ID, models.ReviewEventStatusActive).
+			Order("id ASC").Find(&events).Error; err != nil && !isCanteenReviewSchemaMissing(err) {
+			return nil, err
+		} else if err == nil {
+			for _, item := range events {
+				dishReviews = append(dishReviews, dishReviewPayload{
+					DishID: item.DishID, DishName: dishNames[item.DishID],
+					TasteScore: item.TasteScore, ValueScore: item.ValueScore,
+					PortionScore: item.PortionScore, Comment: item.Comment,
+				})
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"review_event_id": event.ID,
+		"id":              event.ID,
+		"canteen_id":      event.CanteenID,
+		"user_id":         event.UserID,
+		"star":            event.OverallScore,
+		"overall_score":   event.OverallScore,
+		"taste_score":     event.TasteScore,
+		"value_score":     event.ValueScore,
+		"queue_score":     event.QueueScore,
+		"hygiene_score":   event.HygieneScore,
+		"service_score":   event.ServiceScore,
+		"comment":         event.Comment,
+		"images":          event.Images,
+		"tags":            event.Tags,
+		"score_version":   event.ScoreVersion,
+		"created_at":      event.CreatedAt,
+		"updated_at":      event.UpdatedAt,
+		"recommended_dishes": recommendedDishes,
+		"dish_reviews":       dishReviews,
+	}, nil
+}
+
 func populateReviewDishNames(db *gorm.DB, reviews []models.CanteenReviewEvent) {
 	ids := make([]uint, 0, len(reviews))
 	for _, review := range reviews {
@@ -994,7 +1085,8 @@ func ensureLegacyReviewEvent(tx *gorm.DB, canteenID, userID uint) error {
 	}
 
 	var rating models.CanteenRating
-	if err := tx.Where("canteen_id = ? AND user_id = ?", canteenID, userID).First(&rating).Error; err != nil {
+	if err := tx.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')",
+		canteenID, userID, models.ReviewEventStatusActive).First(&rating).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}

@@ -91,6 +91,10 @@ class CanteenHero {
   final String title;
   final String reason;
   final List<String> tags;
+  final Map<String, double> dimensionScores;
+  final int recentReviewCount;
+  final int reviewerCount;
+  final int visitReviewCount;
 
   const CanteenHero({
     this.canteenId = 0,
@@ -103,6 +107,10 @@ class CanteenHero {
     this.title = '',
     this.reason = '',
     this.tags = const [],
+    this.dimensionScores = const {},
+    this.recentReviewCount = 0,
+    this.reviewerCount = 0,
+    this.visitReviewCount = 0,
   });
 
   factory CanteenHero.fromJson(Map<String, dynamic>? json) {
@@ -118,6 +126,10 @@ class CanteenHero {
       title: json['title']?.toString() ?? '',
       reason: json['reason']?.toString() ?? '',
       tags: _toStrList(json['tags']),
+      dimensionScores: _toDoubleMap(json['dimension_scores']),
+      recentReviewCount: (json['recent_review_count'] ?? 0).toInt(),
+      reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
+      visitReviewCount: (json['visit_review_count'] ?? 0).toInt(),
     );
   }
 
@@ -199,12 +211,14 @@ class CanteenHomeData {
   final CanteenRankingEntry rankingEntry;
   final List<CanteenFeedItem> feed;
   final List<CanteenHotDish> hotDishes;
+  final int recentEffectiveReviewCount;
 
   const CanteenHomeData({
     this.hero = const CanteenHero(),
     this.rankingEntry = const CanteenRankingEntry(),
     this.feed = const [],
     this.hotDishes = const [],
+    this.recentEffectiveReviewCount = 0,
   });
 
   factory CanteenHomeData.fromJson(Map<String, dynamic> json) {
@@ -232,8 +246,18 @@ class CanteenHomeData {
               .map(CanteenHotDish.fromJson)
               .toList()
           : const [],
+      recentEffectiveReviewCount:
+          (json['recent_effective_review_count'] ?? 0).toInt(),
     );
   }
+}
+
+Map<String, double> _toDoubleMap(dynamic value) {
+  if (value is! Map) return const {};
+  return value.map((key, item) => MapEntry(
+        key.toString(),
+        item is num ? item.toDouble() : double.tryParse(item.toString()) ?? 0,
+      ));
 }
 
 List<String> _toStrList(dynamic value) {

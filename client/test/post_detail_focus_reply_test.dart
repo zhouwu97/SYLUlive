@@ -260,6 +260,42 @@ void main() {
     expect(field.focusNode?.hasFocus, isFalse, reason: '默认进入详情不应自动聚焦');
   });
 
+  testWidgets('输入未激活时不暴露收起输入的无障碍语义', (tester) async {
+    ExcludeSemantics dismissSemantics() {
+      return tester.widget<ExcludeSemantics>(
+        find.ancestor(
+          of: find.byKey(
+            const ValueKey('post-detail-input-dismiss-layer'),
+          ),
+          matching: find.byType(ExcludeSemantics),
+        ),
+      );
+    }
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+    expect(dismissSemantics().excluding, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+    expect(dismissSemantics().excluding, isFalse);
+
+    await tester.tapAt(tester.getCenter(find.text('测试内容')));
+    await tester.pumpAndSettle();
+    expect(dismissSemantics().excluding, isTrue);
+  });
+
   testWidgets('输入状态下点击正文会收起键盘并保留草稿', (tester) async {
     final initial = Post(
       id: 100,

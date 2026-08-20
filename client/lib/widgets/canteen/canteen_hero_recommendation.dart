@@ -8,7 +8,7 @@ import 'canteen_status_image.dart';
 /// 首页“今天吃什么”Hero 卡。
 ///
 /// 视觉上先让照片和可信综合分承担决策，再用三项体验维度解释分数；
-/// 维度数据缺失时回退到现有平均分，兼容旧服务端响应。
+/// 维度数据缺失时明确展示缺省状态，不把综合分伪装成五维数据。
 class CanteenHeroRecommendationCard extends StatefulWidget {
   final CanteenHero hero;
   final VoidCallback onTap;
@@ -174,39 +174,57 @@ class _CanteenHeroRecommendationCardState
     final count = h.recentReviewCount > 0
         ? h.recentReviewCount
         : (h.visitReviewCount > 0 ? h.visitReviewCount : h.ratingCount);
-    return count > 0 ? '近 7 天 $count 条有效反馈' : '近期暂无有效反馈';
+    return count > 0 ? '近 7 天 $count 条到店评价' : '近 7 天暂无到店评价';
   }
 
   Widget _buildDimensionRow(bool isDark) {
-    final values = [
+    final values = <(String, double?)>[
       ('味道', _dimensionValue('taste')),
       ('性价比', _dimensionValue('value')),
       ('排队效率', _dimensionValue('queue')),
     ];
-    return Row(
+    final hasAnyDimension = values.any((item) => item.$2 != null);
+    return Column(
       children: [
-        for (var i = 0; i < values.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              children: [
-                Text(
-                  values[i].$2 > 0 ? values[i].$2.toStringAsFixed(1) : '—',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: CanteenTheme.textPrimaryColor(isDark),
-                  ),
+        Row(
+          children: [
+            for (var i = 0; i < values.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      values[i].$2?.toStringAsFixed(1) ?? '—',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: CanteenTheme.textPrimaryColor(isDark),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      values[i].$1,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  values[i].$1,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ],
+        ),
+        if (!hasAnyDimension) ...[
+          const SizedBox(height: 8),
+          Text(
+            h.averageStar > 0
+                ? '综合评价 ${h.averageStar.toStringAsFixed(1)} · 五维数据待补充'
+                : '暂无足够五维评价',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 10,
+              color: CanteenTheme.textTertiaryColor(isDark),
             ),
           ),
         ],
@@ -214,9 +232,9 @@ class _CanteenHeroRecommendationCardState
     );
   }
 
-  double _dimensionValue(String key) {
+  double? _dimensionValue(String key) {
     final value = h.dimensionScores[key] ?? 0;
-    return value > 0 ? value : h.averageStar;
+    return value > 0 ? value : null;
   }
 
   CanteenHero get h => widget.hero;

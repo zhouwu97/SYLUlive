@@ -13,6 +13,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   final Dio _dio;
 
   CanteenHomeData _home = const CanteenHomeData();
+  bool _hasHomeResponse = false;
   bool _homeInitialLoading = false;
   bool _homeRefreshing = false;
   String? _homeError;
@@ -22,7 +23,9 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   bool get homeRefreshing => _homeRefreshing;
   String? get homeError => _homeError;
 
-  bool get hasHomeData => _home.feed.isNotEmpty || !_home.hero.isEmpty;
+  /// 合法的空首页也是已加载数据，不能因为没有 Hero / 菜品就反复显示骨架。
+  bool get hasHomeData =>
+      _hasHomeResponse || _home.feed.isNotEmpty || !_home.hero.isEmpty;
 
   // ── 排行 ──────────────────────────────────────────────────────────
   final Map<String, List<CanteenRankingItem>> _rankings = {};
@@ -31,7 +34,8 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   int? _rankingTotal;
   String _rankingSort = CanteenRankingSort.composite;
 
-  List<CanteenRankingItem> get rankingItems => _rankings[_rankingSort] ?? const [];
+  List<CanteenRankingItem> get rankingItems =>
+      _rankings[_rankingSort] ?? const [];
   bool get rankingLoading => _rankingLoading;
   String? get rankingError => _rankingError;
   int? get rankingTotal => _rankingTotal;
@@ -45,7 +49,8 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   /// 拉取首页。已有数据时为刷新（不进入骨架）。
   Future<void> loadHome({bool forceRefresh = true}) {
     if (_homeLoadFuture != null) return _homeLoadFuture!;
-    _homeLoadFuture = _loadHomeInternal().whenComplete(() => _homeLoadFuture = null);
+    _homeLoadFuture =
+        _loadHomeInternal().whenComplete(() => _homeLoadFuture = null);
     return _homeLoadFuture!;
   }
 
@@ -63,6 +68,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
       if (response.statusCode == 200 && response.data is Map) {
         _home = CanteenHomeData.fromJson(
             (response.data as Map).cast<String, dynamic>());
+        _hasHomeResponse = true;
       }
     } on DioException catch (e) {
       if (!hasHomeData) {
@@ -99,8 +105,8 @@ class CanteenDiscoveryProvider with ChangeNotifier {
     _rankingError = null;
     notifyListeners();
     try {
-      final response = await _dio.get('/canteens/rankings',
-          queryParameters: {'sort': sort});
+      final response =
+          await _dio.get('/canteens/rankings', queryParameters: {'sort': sort});
       if (response.statusCode == 200 && response.data is Map) {
         final data = (response.data as Map).cast<String, dynamic>();
         final rawItems = data['items'];

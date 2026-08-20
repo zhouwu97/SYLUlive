@@ -156,6 +156,29 @@ void main() {
     expect(await repository.loadDraft(userId: 101, canteenId: 1), isNull);
   });
 
+  test('部分五维草稿保存后恢复时保留未填写状态，不用旧星级补齐', () async {
+    await repository.saveDraft(
+      CanteenReviewDraft(
+        userId: 101,
+        canteenId: 1,
+        star: 5,
+        tasteScore: 5,
+        valueScore: 4,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    final draft =
+        await repository.loadDraft(userId: 101, canteenId: 1);
+
+    expect(draft, isNotNull);
+    final restored = draft!;
+    expect(restored.tasteScore, 5);
+    expect(restored.valueScore, 4);
+    expect(restored.queueScore, 0);
+    expect(restored.hygieneScore, 0);
+    expect(restored.serviceScore, 0);
+  });
+
   test('本地草稿图片复制与清理', () async {
     final dummyImage = File('${tempDir.path}/test_src.jpg');
     await dummyImage.writeAsString('image data');

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -30,7 +31,7 @@ func NewReportHandler(db *gorm.DB) *ReportHandler {
 
 // CreateReportInput 创建举报输入
 type CreateReportInput struct {
-	TargetType string `json:"target_type" binding:"required"` // post/reply/teacher_rating/major_rating
+	TargetType string `json:"target_type" binding:"required"` // post/reply/teacher_rating/major_rating/canteen_review/canteen_dish_photo
 	TargetID   uint   `json:"target_id" binding:"required"`
 	ReasonCode string `json:"reason_code"`
 	Reason     string `json:"reason" binding:"required"`
@@ -64,7 +65,7 @@ func (h *ReportHandler) Create(c *gin.Context) {
 // createReport 是统一举报写入逻辑，供新接口和旧兼容接口共同使用。
 // 兼容接口只负责解析 HTTP 输入，不直接调用另一个 Gin Handler。
 func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Report, error) {
-	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" {
+	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" && input.TargetType != "canteen_review" && input.TargetType != "canteen_dish_photo" {
 		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_target_type", message: "不支持的 target_type"}
 	}
 	if reasonLength := len([]rune(strings.TrimSpace(input.Reason))); reasonLength < 2 || reasonLength > 500 {
@@ -104,6 +105,28 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 		}
 		targetOwner = mr.UserID
 		payload, err := json.Marshal(gin.H{"star": mr.Star, "comment": mr.Comment})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
+	case "canteen_review":
+		var review models.CanteenReviewEvent
+		if err := db.Where("id = ? AND status = ?", input.TargetID, models.ReviewEventStatusActive).First(&review).Error; err != nil {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "食堂评价不存在或已隐藏"}
+		}
+		targetOwner = review.UserID
+		payload, err := json.Marshal(gin.H{"overall_score": review.OverallScore, "comment": review.Comment, "canteen_id": review.CanteenID})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
+	case "canteen_dish_photo":
+		var photo models.CanteenDishPhoto
+		if err := db.Where("id = ? AND status IN ?", input.TargetID, []string{models.DishPhotoStatusPending, models.DishPhotoStatusApproved}).First(&photo).Error; err != nil {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "菜品实拍不存在或已下架"}
+		}
+		targetOwner = photo.UserID
+		payload, err := json.Marshal(gin.H{"dish_id": photo.DishID, "file_id": photo.FileID})
 		if err != nil {
 			return models.Report{}, err
 		}
@@ -271,11 +294,66 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				targetUserID = mr.UserID
+			case "canteen_review":
+				var review models.CanteenReviewEvent
+				if err := tx.First(&review, report.TargetID).Error; err != nil {
+					return err
+				}
+				var linkedDishReviews []models.CanteenDishReviewEvent
+				if err := tx.Where("canteen_review_event_id = ? AND status = ?", review.ID, models.ReviewEventStatusActive).Find(&linkedDishReviews).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&review).Update("status", models.ReviewEventStatusHidden).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&models.CanteenDishReviewEvent{}).
+					Where("canteen_review_event_id = ?", review.ID).
+					Update("status", models.ReviewEventStatusHidden).Error; err != nil {
+					return err
+				}
+				targetUserID = review.UserID
+				if err := recomputeCanteenUserSummary(tx, review.CanteenID, review.UserID); err != nil {
+					return err
+				}
+				for _, dishReview := range linkedDishReviews {
+					if err := recomputeDishUserSummary(tx, dishReview.DishID, dishReview.UserID); err != nil {
+						return err
+					}
+				}
+			case "canteen_dish_photo":
+				var photo models.CanteenDishPhoto
+				if err := tx.First(&photo, report.TargetID).Error; err != nil {
+					return err
+				}
+				now := time.Now()
+				if err := tx.Model(&photo).Updates(map[string]interface{}{
+					"status":        models.DishPhotoStatusArchived,
+					"reviewed_by":   userID.(uint),
+					"reviewed_at":   &now,
+					"reject_reason": input.DeleteReason,
+				}).Error; err != nil {
+					return err
+				}
+				targetUserID = photo.UserID
 			default:
 				return fmt.Errorf("invalid_target_type")
 			}
 			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
 				return err
+			}
+			if report.TargetType == "canteen_review" || report.TargetType == "canteen_dish_photo" {
+				_, err := services.ApplyCanteenSanction(tx, report.ID, report.TargetType, report.TargetID, targetUserID, userID.(uint), report.ReasonCode)
+				if err != nil {
+					return err
+				}
+				if err := tx.Create(&models.AdminLog{
+					AdminID: userID.(uint),
+					Action:  "食堂内容举报确认",
+					Target:  fmt.Sprintf("%s#%d", report.TargetType, report.TargetID),
+					Detail:  fmt.Sprintf("确认举报并治理，原因 %s，扣诚信 %d", report.ReasonCode, services.CanteenPenaltyForReason(report.ReasonCode)),
+				}).Error; err != nil {
+					return err
+				}
 			}
 			// 同一目标的其他待处理举报不能再次触发删除、计数或申诉。
 			if err := tx.Model(&models.Report{}).

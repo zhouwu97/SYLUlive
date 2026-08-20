@@ -242,8 +242,8 @@ func (h *CanteenHandler) BuildHomeFeed(
 
 	// 1. 候选池按类型组织，各自按质量/新鲜度排序。
 	recommendations := make([]canteenRankingEntry, 0) // 有评价，按推荐分
-	stable := make([]canteenRankingEntry, 0)           // 样本较多
-	trending := make([]canteenRankingEntry, 0)         // 近 7 天评价数
+	stable := make([]canteenRankingEntry, 0)          // 样本较多
+	trending := make([]canteenRankingEntry, 0)        // 近 7 天评价数
 	for _, e := range entries {
 		if e.RatingCount == 0 {
 			continue
@@ -378,12 +378,12 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 		}
 		return &canteenFeedItem{
 			ID:           fmt.Sprintf("stable_choice:%d:v1", e.ID),
-			Type:        "stable_choice",
-			CanteenID:   e.ID,
-			CanteenName: e.Name,
-			Image:       e.Image,
-			Title:       "想吃稳一点？",
-			Reason:      "评价样本相对更多，结果受单条评价影响更小",
+			Type:         "stable_choice",
+			CanteenID:    e.ID,
+			CanteenName:  e.Name,
+			Image:        e.Image,
+			Title:        "想吃稳一点？",
+			Reason:       "评价样本相对更多，结果受单条评价影响更小",
 			RankingScore: services.BayesianScoreTo100(e.RankingScore),
 			AverageStar:  e.AverageStar,
 			RatingCount:  e.RatingCount,
@@ -408,12 +408,12 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 		}
 		return &canteenFeedItem{
 			ID:           fmt.Sprintf("trending:%d:v1", e.ID),
-			Type:        "trending",
-			CanteenID:   e.ID,
-			CanteenName: e.Name,
-			Image:       e.Image,
-			Title:       "最近大家也在吃",
-			Reason:      fmt.Sprintf("近 7 天新增 %d 条评价", recent),
+			Type:         "trending",
+			CanteenID:    e.ID,
+			CanteenName:  e.Name,
+			Image:        e.Image,
+			Title:        "最近大家也在吃",
+			Reason:       fmt.Sprintf("近 7 天新增 %d 条评价", recent),
 			RankingScore: services.BayesianScoreTo100(e.RankingScore),
 			AverageStar:  e.AverageStar,
 			RatingCount:  e.RatingCount,
@@ -479,6 +479,94 @@ type canteenPhotoItem struct {
 	CreatedAt   time.Time
 }
 
+// canteenHotDishItem 首页“同学最近在吃”的菜品卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
+type canteenHotDishItem struct {
+	ID            uint    `json:"id"`
+	Name          string  `json:"name"`
+	CanteenID     uint    `json:"canteen_id"`
+	CanteenName   string  `json:"canteen_name"`
+	CoverImage    string  `json:"cover_image,omitempty"`
+	PhotoCount    int     `json:"photo_count"`
+	AverageScore  float64 `json:"average_score"`
+	ReviewerCount int     `json:"reviewer_count"`
+}
+
+// hotDishes 首页热菜：先取有真实实拍的 active 菜品，再在 Go 层按诚信加权后的菜品摘要排序。
+func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
+	type dishRow struct {
+		ID          uint   `gorm:"column:id"`
+		Name        string `gorm:"column:name"`
+		CanteenID   uint   `gorm:"column:canteen_id"`
+		CanteenName string `gorm:"column:canteen_name"`
+		CoverImage  string `gorm:"column:cover_image"`
+		PhotoCount  int    `gorm:"column:photo_count"`
+	}
+	var rows []dishRow
+	if err := h.db.Table("canteen_dishes AS d").
+		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ?", true).
+		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name,
+			(SELECT f.path FROM canteen_dish_photos p JOIN files f ON f.id = p.file_id
+			 WHERE p.dish_id = d.id AND p.status = ? ORDER BY p.sort_order, p.created_at, p.id LIMIT 1) AS cover_image,
+			(SELECT COUNT(*) FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?) AS photo_count`,
+			models.DishPhotoStatusApproved, models.DishPhotoStatusApproved).
+		Where("d.status = ? AND EXISTS (SELECT 1 FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?)",
+			models.DishStatusActive, models.DishPhotoStatusApproved).
+		Scan(&rows).Error; err != nil {
+		return []canteenHotDishItem{}
+	}
+
+	ids := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	var summaries []models.CanteenDishRatingSummary
+	if len(ids) > 0 {
+		_ = h.db.Preload("User").Where("dish_id IN ?", ids).Find(&summaries).Error
+	}
+	byDish := make(map[uint][]services.DishRatingSample)
+	for _, summary := range summaries {
+		weight := 1.0
+		if summary.User != nil {
+			weight = services.ComputeCreditWeight(summary.User.CreditScore)
+		}
+		byDish[summary.DishID] = append(byDish[summary.DishID], services.DishRatingSample{
+			Overall: summary.EffectiveScore,
+			Taste:   summary.TasteScore,
+			Value:   summary.ValueScore,
+			Portion: summary.PortionScore,
+			Weight:  weight,
+		})
+	}
+
+	hot := make([]canteenHotDishItem, 0, len(rows))
+	for _, row := range rows {
+		agg := services.ComputeDishAggregate(byDish[row.ID])
+		hot = append(hot, canteenHotDishItem{
+			ID:            row.ID,
+			Name:          row.Name,
+			CanteenID:     row.CanteenID,
+			CanteenName:   row.CanteenName,
+			CoverImage:    row.CoverImage,
+			PhotoCount:    row.PhotoCount,
+			AverageScore:  agg.AverageScore,
+			ReviewerCount: agg.ReviewerCount,
+		})
+	}
+	sort.SliceStable(hot, func(i, j int) bool {
+		if hot[i].ReviewerCount != hot[j].ReviewerCount {
+			return hot[i].ReviewerCount > hot[j].ReviewerCount
+		}
+		if hot[i].AverageScore != hot[j].AverageScore {
+			return hot[i].AverageScore > hot[j].AverageScore
+		}
+		return hot[i].PhotoCount > hot[j].PhotoCount
+	})
+	if len(hot) > limit {
+		hot = hot[:limit]
+	}
+	return hot
+}
+
 func pickPhoto(pool []canteenPhotoItem, seen map[uint]int, lastCanteen uint, lastType string) *canteenFeedItem {
 	for i := range pool {
 		p := pool[i]
@@ -521,7 +609,7 @@ func itoa(v int) string {
 
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
-	cacheKey := "home:v1"
+	cacheKey := "home:v2"
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
@@ -597,12 +685,14 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		feedEntries = removeCanteen(entries, hero.CanteenID)
 	}
 	feed := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
+	hotDishes := h.hotDishes(4)
 
 	resp := gin.H{
 		"generated_at":  time.Now(),
 		"hero":          hero,
 		"ranking_entry": rankingEntry,
 		"feed":          feed,
+		"hot_dishes":    hotDishes,
 	}
 	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)

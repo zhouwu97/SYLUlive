@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/api_constants.dart';
 import '../models/canteen.dart';
+import '../models/canteen_home.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
@@ -14,6 +15,7 @@ import '../widgets/canteen/canteen_ranking_entry.dart';
 import '../widgets/canteen/canteen_feed_item.dart';
 import '../widgets/image_upload_widget.dart';
 import 'canteen_detail_screen.dart';
+import 'canteen_dish_detail_screen.dart';
 import 'canteen_ranking_screen.dart';
 
 /// 校园食堂发现首页：搜索 + 今日推荐(Hero) + 综合排行入口 + 推荐信息流。
@@ -208,8 +210,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
             _sectionHeader(isDark, '搜索结果 (${filtered.length})'),
             for (var i = 0; i < filtered.length; i++)
               Padding(
-                padding: EdgeInsets.only(
-                    bottom: i == filtered.length - 1 ? 0 : 12),
+                padding:
+                    EdgeInsets.only(bottom: i == filtered.length - 1 ? 0 : 12),
                 child: _buildSearchResultCard(
                   isDark,
                   filtered[i],
@@ -360,6 +362,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
 
         final showHero = !provider.home.hero.isEmpty;
         final feed = provider.home.feed;
+        final hotDishes = provider.home.hotDishes;
 
         final content = RefreshIndicator(
           onRefresh: () => provider.loadHome(),
@@ -372,11 +375,15 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: CanteenHeroRecommendationCard(
                     hero: provider.home.hero,
-                    onTap: () => _openDetail(
-                        provider.home.hero.canteenId,
+                    onTap: () => _openDetail(provider.home.hero.canteenId,
                         provider.home.hero.canteenName),
                   ),
                 ),
+              if (hotDishes.isNotEmpty) ...[
+                _sectionHeader(isDark, '同学最近在吃'),
+                _buildHotDishes(isDark, hotDishes),
+                const SizedBox(height: 16),
+              ],
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: CanteenRankingEntryCard(
@@ -398,8 +405,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
               else
                 for (var i = 0; i < feed.length; i++)
                   Padding(
-                    padding: EdgeInsets.only(
-                        bottom: i == feed.length - 1 ? 0 : 12),
+                    padding:
+                        EdgeInsets.only(bottom: i == feed.length - 1 ? 0 : 12),
                     child: CanteenFeedItemCard(
                       key: ValueKey(feed[i].id),
                       item: feed[i],
@@ -429,6 +436,119 @@ class _CanteenScreenState extends State<CanteenScreen> {
           );
         }
         return content;
+      },
+    );
+  }
+
+  Widget _buildHotDishes(bool isDark, List<CanteenHotDish> dishes) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: dishes.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.92,
+      ),
+      itemBuilder: (context, index) {
+        final dish = dishes[index];
+        return GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CanteenDishDetailScreen(
+                canteenId: dish.canteenId,
+                dishId: dish.id,
+                dishName: dish.name,
+                canteenName: dish.canteenName,
+              ),
+            ),
+          ),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: CanteenTheme.surfaceBg(isDark),
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+              border: Border.all(color: CanteenTheme.borderColor(isDark)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: dish.coverImage.isEmpty
+                      ? Container(
+                          color: CanteenTheme.surfaceMutedBg(isDark),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.ramen_dining_rounded,
+                            size: 30,
+                            color: CanteenTheme.textTertiaryColor(isDark),
+                          ),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(
+                            color: CanteenTheme.surfaceMutedBg(isDark),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.ramen_dining_rounded,
+                              color: CanteenTheme.textTertiaryColor(isDark),
+                            ),
+                          ),
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dish.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: CanteenTheme.textPrimaryColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.star_rounded,
+                              size: 14,
+                              color: CanteenTheme.accentColor(isDark)),
+                          const SizedBox(width: 2),
+                          Text(
+                            dish.averageScore > 0
+                                ? dish.averageScore.toStringAsFixed(1)
+                                : '暂无评分',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: CanteenTheme.textPrimaryColor(isDark),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${dish.reviewerCount}人评',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: CanteenTheme.textTertiaryColor(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       },
     );
   }
@@ -731,15 +851,13 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                       if (!mounted || !sheetContext.mounted) {
                                         return;
                                       }
-                                      setModalState(
-                                          () => submitting = false);
+                                      setModalState(() => submitting = false);
                                       if (success) {
                                         Navigator.pop(sheetContext);
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text(
-                                                '已提交审核，审核通过后会显示在食堂页'),
+                                            content: Text('已提交审核，审核通过后会显示在食堂页'),
                                           ),
                                         );
                                         await context

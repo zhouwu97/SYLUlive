@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +20,13 @@ import (
 
 // dishRejectReasons 驳回原因 code 枚举（管理员不手输）。
 var dishRejectReasons = map[string]bool{
-	"unrelated":      true, // 与菜品不符
-	"blurry":         true, // 图片过于模糊
-	"duplicate":      true, // 重复图片
-	"privacy":        true, // 包含明显个人隐私
-	"advertisement":  true, // 广告 / 二维码
-	"inappropriate":  true, // 不适宜内容
-	"other":          true, // 其他
+	"unrelated":     true, // 与菜品不符
+	"blurry":        true, // 图片过于模糊
+	"duplicate":     true, // 重复图片
+	"privacy":       true, // 包含明显个人隐私
+	"advertisement": true, // 广告 / 二维码
+	"inappropriate": true, // 不适宜内容
+	"other":         true, // 其他
 }
 
 // CanteenDishPhotoAdminHandler 菜品实拍审核接口。
@@ -41,16 +42,22 @@ func NewCanteenDishPhotoAdminHandler(db *gorm.DB) *CanteenDishPhotoAdminHandler 
 // GET /api/canteens/dish-photos/pending
 func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishPhotos(c *gin.Context) {
 	type pendingRow struct {
-		PhotoID        uint      `json:"photo_id"`
-		DishID         uint      `json:"dish_id"`
-		DishName       string    `json:"dish_name"`
-		CanteenID      uint      `json:"canteen_id"`
-		CanteenName    string    `json:"canteen_name"`
-		Image          string    `json:"image"`
-		UploaderName   string    `json:"uploader_name"`
-		UploaderID     uint      `json:"uploader_id"`
-		CreatedAt      time.Time `json:"created_at"`
-		ApprovedCount  int       `json:"approved_count"`
+		PhotoID       uint      `json:"photo_id"`
+		DishID        uint      `json:"dish_id"`
+		DishName      string    `json:"dish_name"`
+		CanteenID     uint      `json:"canteen_id"`
+		CanteenName   string    `json:"canteen_name"`
+		Image         string    `json:"image"`
+		UploaderName  string    `json:"uploader_name"`
+		UploaderID    uint      `json:"uploader_id"`
+		CreatedAt     time.Time `json:"created_at"`
+		ApprovedCount int       `json:"approved_count"`
+		DishStatus    string    `json:"dish_status"`
+		PossibleMatch []struct {
+			DishID     uint    `json:"dish_id"`
+			Name       string  `json:"name"`
+			MatchScore float64 `json:"match_score"`
+		} `json:"possible_matches,omitempty"`
 	}
 
 	var rows []pendingRow
@@ -62,7 +69,7 @@ func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishPhotos(c *gin.Context
 		Select(`p.id AS photo_id, p.dish_id, d.name AS dish_name,
 			cn.id AS canteen_id, cn.name AS canteen_name,
 			f.path AS image, u.nickname AS uploader_name, p.user_id AS uploader_id,
-			p.created_at,
+			p.created_at, d.status AS dish_status,
 			(SELECT COUNT(*) FROM canteen_dish_photos x WHERE x.dish_id = p.dish_id AND x.status = ?) AS approved_count`,
 			models.DishPhotoStatusApproved).
 		Where("p.status = ?", models.DishPhotoStatusPending).
@@ -74,6 +81,41 @@ func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishPhotos(c *gin.Context
 	}
 	if rows == nil {
 		rows = []pendingRow{}
+	}
+	for i := range rows {
+		var candidates []models.CanteenDish
+		if h.db.Where("canteen_id = ? AND status = ? AND id <> ?", rows[i].CanteenID, models.DishStatusActive, rows[i].DishID).
+			Find(&candidates).Error != nil {
+			continue
+		}
+		current := utils.NormalizeDishName(rows[i].DishName)
+		for _, candidate := range candidates {
+			normalized := utils.NormalizeDishName(candidate.Name)
+			if current == "" || normalized == "" {
+				continue
+			}
+			maxLen := len([]rune(current))
+			if otherLen := len([]rune(normalized)); otherLen > maxLen {
+				maxLen = otherLen
+			}
+			if maxLen == 0 {
+				continue
+			}
+			score := 1 - float64(runeEditDistance(current, normalized))/float64(maxLen)
+			if score >= 0.35 {
+				rows[i].PossibleMatch = append(rows[i].PossibleMatch, struct {
+					DishID     uint    `json:"dish_id"`
+					Name       string  `json:"name"`
+					MatchScore float64 `json:"match_score"`
+				}{DishID: candidate.ID, Name: candidate.Name, MatchScore: score})
+			}
+		}
+		sort.SliceStable(rows[i].PossibleMatch, func(a, b int) bool {
+			return rows[i].PossibleMatch[a].MatchScore > rows[i].PossibleMatch[b].MatchScore
+		})
+		if len(rows[i].PossibleMatch) > 3 {
+			rows[i].PossibleMatch = rows[i].PossibleMatch[:3]
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": rows})
 }
@@ -119,6 +161,12 @@ func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
 			"reviewed_at": &now,
 		}).Error; err != nil {
 			return err
+		}
+		// 新菜品以 pending 创建；首张实拍审核通过后同步激活菜品实体。
+		if dish.Status == models.DishStatusPending {
+			if err := tx.Model(&dish).Update("status", models.DishStatusActive).Error; err != nil {
+				return err
+			}
 		}
 		// 公开业务建立引用后才将文件升级为 public
 		if err := services.ClaimPublicImageFiles(tx, []uint{photo.FileID}); err != nil {

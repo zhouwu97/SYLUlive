@@ -313,6 +313,12 @@ func main() {
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.CanteenRatingDishRecommendation{},
+		&models.CanteenReviewEvent{},
+		&models.CanteenReviewEventDish{},
+		&models.CanteenDishReviewEvent{},
+		&models.CanteenDishRatingSummary{},
+		&models.CanteenDishAlias{},
+		&models.CanteenSanction{},
 		&models.UserFollow{},
 
 		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
@@ -422,6 +428,9 @@ func main() {
 	}
 	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
 		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
+	}
+	if err := models.EnsureCanteenReviewSchema(db); err != nil {
+		log.Fatal("食堂评价 V2 结构迁移失败:", err)
 	}
 	if err := ensureAppReleaseIndexes(db); err != nil {
 		log.Fatal("应用发布索引迁移失败:", err)
@@ -1504,7 +1513,7 @@ func main() {
 
 		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
 
-	messages.GET("/unread_count", messageHandler.GetUnreadCount)
+		messages.GET("/unread_count", messageHandler.GetUnreadCount)
 
 	}
 
@@ -1898,6 +1907,11 @@ func main() {
 		// 菜品图库公开接口
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
 		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
+		canteen.GET("/:id/reviews", canteenHandler.GetReviews)
+		canteen.GET("/:id/reviews/history/:userId", canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/reviewers/:userId/history", canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/dish-suggestions", canteenHandler.GetDishSuggestions)
+		canteen.GET("/dishes/:dishId/reviews", canteenHandler.GetDishReviews)
 
 	}
 
@@ -1924,6 +1938,7 @@ func main() {
 		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
+		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
 
 	}
 
@@ -1936,13 +1951,22 @@ func main() {
 		canteenAuth.POST("", canteenHandler.Create)
 
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
+		canteenAuth.POST("/:id/reviews", canteenHandler.CreateReview)
+		canteenAuth.PATCH("/reviews/:reviewId", canteenHandler.UpdateReview)
+		canteenAuth.POST("/dishes/:dishId/reviews", canteenHandler.CreateDishReview)
 
 		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
 
 		// 学生上传菜品实拍
 		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
+		canteenAuth.POST("/:id/dish-submissions", canteenDishPhotoHandler.SubmitDishPhotoV2)
 
 	}
+
+	// 评价编辑的语义化别名，供新客户端按计划文档使用；旧 /canteens/reviews/:reviewId 保留。
+	canteenReviewAuth := r.Group("/api/canteen-reviews")
+	canteenReviewAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	canteenReviewAuth.PATCH("/:reviewId", canteenHandler.UpdateReview)
 
 	// 违规管理
 

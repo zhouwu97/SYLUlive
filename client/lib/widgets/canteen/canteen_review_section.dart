@@ -24,6 +24,7 @@ class CanteenReviewSection extends StatelessWidget {
   final ValueChanged<String> onFilterChanged;
   final Future<void> Function(int ratingId, String vote) onVote;
   final VoidCallback onWriteReview;
+  final Future<void> Function(int reviewId)? onReport;
 
   const CanteenReviewSection({
     super.key,
@@ -39,6 +40,7 @@ class CanteenReviewSection extends StatelessWidget {
     required this.onFilterChanged,
     required this.onVote,
     required this.onWriteReview,
+    this.onReport,
   });
 
   @override
@@ -157,11 +159,11 @@ class CanteenReviewSection extends StatelessWidget {
                           review: reviews[i],
                           isDark: isDark,
                           isVoting: isVoting,
-                          isOwn:
-                              currentUserId != null &&
-                                  currentUserId ==
-                                      (reviews[i]['user_id'] as num?)?.toInt(),
+                          isOwn: currentUserId != null &&
+                              currentUserId ==
+                                  (reviews[i]['user_id'] as num?)?.toInt(),
                           onVote: onVote,
+                          onReport: onReport,
                         ),
                       ],
                     ],
@@ -274,6 +276,7 @@ class _ReviewItem extends StatelessWidget {
   final bool isVoting;
   final bool isOwn;
   final Future<void> Function(int ratingId, String vote) onVote;
+  final Future<void> Function(int reviewId)? onReport;
 
   const _ReviewItem({
     required this.review,
@@ -281,6 +284,7 @@ class _ReviewItem extends StatelessWidget {
     required this.isVoting,
     required this.isOwn,
     required this.onVote,
+    this.onReport,
   });
 
   @override
@@ -296,6 +300,9 @@ class _ReviewItem extends StatelessWidget {
     final imgList = _parseImageList(review['images']);
     final tagLabels = _parseTagLabels(review['tags']);
     final dishNames = _parseRecommendedDishNames(review);
+    final dimensionScores = review['dimension_scores'] is Map
+        ? Map<String, dynamic>.from(review['dimension_scores'] as Map)
+        : const <String, dynamic>{};
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -329,10 +336,22 @@ class _ReviewItem extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          if (dimensionScores.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 5,
+              children: [
+                _buildDimensionBadge('味道', dimensionScores['taste']),
+                _buildDimensionBadge('性价比', dimensionScores['value']),
+                _buildDimensionBadge('排队', dimensionScores['queue']),
+                _buildDimensionBadge('卫生', dimensionScores['hygiene']),
+                _buildDimensionBadge('服务', dimensionScores['service']),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Text(
-            content.trim().isNotEmpty
-                ? content
-                : '这位同学没有留下文字评价',
+            content.trim().isNotEmpty ? content : '这位同学没有留下文字评价',
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
@@ -453,7 +472,7 @@ class _ReviewItem extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  _reviewAuthorText(nickname, review['created_at']),
+                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -463,7 +482,7 @@ class _ReviewItem extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!isOwn) ...[
+              if (!isOwn && review['is_v2'] != true) ...[
                 _buildVoteButton(
                   icon: Icons.thumb_up_alt_outlined,
                   iconSelected: Icons.thumb_up_alt_rounded,
@@ -483,10 +502,44 @@ class _ReviewItem extends StatelessWidget {
                       ? null
                       : () => onVote(id, myVote == 'down' ? 'none' : 'down'),
                 ),
+              ] else if (!isOwn &&
+                  review['is_v2'] == true &&
+                  onReport != null) ...[
+                PopupMenuButton<String>(
+                  tooltip: '更多操作',
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) {
+                    if (value == 'report') onReport!(id);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'report', child: Text('举报该评价')),
+                  ],
+                ),
               ],
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDimensionBadge(String label, dynamic rawScore) {
+    final score = rawScore is num
+        ? rawScore.toDouble()
+        : double.tryParse('$rawScore') ?? 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '$label ${score.toStringAsFixed(1)}',
+        style: TextStyle(
+          fontSize: 10,
+          color: CanteenTheme.textSecondaryColor(isDark),
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

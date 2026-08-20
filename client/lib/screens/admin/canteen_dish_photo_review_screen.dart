@@ -87,8 +87,9 @@ class _CanteenDishPhotoReviewScreenState
       ),
     );
     if (reason == null || !mounted) return;
-    final success =
-        await context.read<CanteenProvider>().adminRejectDishPhoto(photoId, reason);
+    final success = await context
+        .read<CanteenProvider>()
+        .adminRejectDishPhoto(photoId, reason);
     if (!mounted) return;
     if (success) {
       setState(() => _items.removeWhere((i) => i['photo_id'] == photoId));
@@ -98,6 +99,48 @@ class _CanteenDishPhotoReviewScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('驳回失败，请稍后重试')),
       );
+    }
+  }
+
+  Future<void> _merge(Map<String, dynamic> item) async {
+    final sourceDishId = (item['dish_id'] as num?)?.toInt() ?? 0;
+    final rawMatches = item['possible_matches'];
+    if (sourceDishId == 0 || rawMatches is! List || rawMatches.isEmpty) return;
+    final matches = rawMatches.whereType<Map>().toList();
+    if (matches.isEmpty || !mounted) return;
+    final target = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('选择合并目标'),
+        children: matches.map((raw) {
+          final candidate = Map<String, dynamic>.from(raw);
+          final score =
+              ((candidate['match_score'] as num?)?.toDouble() ?? 0) * 100;
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, candidate),
+            child: Row(
+              children: [
+                Expanded(child: Text(candidate['name']?.toString() ?? '未命名菜品')),
+                Text('${score.toStringAsFixed(0)}%'),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+    final targetDishId = (target?['dish_id'] as num?)?.toInt() ?? 0;
+    if (targetDishId == 0 || !mounted) return;
+    final success = await context
+        .read<CanteenProvider>()
+        .adminMergeDish(sourceDishId, targetDishId);
+    if (!mounted) return;
+    if (success) {
+      setState(() => _items.removeWhere((i) => i['dish_id'] == sourceDishId));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已合并到目标菜品')));
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('合并失败，请稍后重试')));
     }
   }
 
@@ -208,6 +251,7 @@ class _CanteenDishPhotoReviewScreenState
           accent: accent,
           onApprove: () => _approve(item),
           onReject: () => _reject(item),
+          onMerge: () => _merge(item),
         );
       },
     );
@@ -235,6 +279,7 @@ class _ReviewCard extends StatelessWidget {
   final Color accent;
   final VoidCallback onApprove;
   final VoidCallback onReject;
+  final VoidCallback onMerge;
 
   const _ReviewCard({
     required this.item,
@@ -242,6 +287,7 @@ class _ReviewCard extends StatelessWidget {
     required this.accent,
     required this.onApprove,
     required this.onReject,
+    required this.onMerge,
   });
 
   @override
@@ -324,6 +370,23 @@ class _ReviewCard extends StatelessWidget {
                       color: RankingTokens.mutedColor(isDark),
                     ),
                   ),
+                if (item['possible_matches'] is List &&
+                    (item['possible_matches'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: onMerge,
+                    icon: const Icon(Icons.merge_type_rounded, size: 18),
+                    label: const Text('可能重复：选择合并目标'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(40),
+                      foregroundColor: accent,
+                      side: BorderSide(color: accent.withValues(alpha: 0.45)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [

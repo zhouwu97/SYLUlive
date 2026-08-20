@@ -522,14 +522,14 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"canteen":        canteen,
-		"ratings":        ratings,
-		"rating_count":   count,
-		"average_star":   avg,
-		"my_rating":      myRating,
+		"canteen":          canteen,
+		"ratings":          ratings,
+		"rating_count":     count,
+		"average_star":     avg,
+		"my_rating":        myRating,
 		"my_latest_review": myLatestReview,
-		"reviews":        reviews,
-		"reviewer_count": count,
+		"reviews":          reviews,
+		"reviewer_count":   count,
 		"visit_review_count": func() int {
 			if v2Stats == nil {
 				return int(count)

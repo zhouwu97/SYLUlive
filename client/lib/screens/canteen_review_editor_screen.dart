@@ -81,6 +81,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   List<CanteenDishSuggestion> _dishSuggestions = [];
   final Map<int, CanteenDishReviewInput> _dishReviews = {};
   final Map<int, String> _dishReviewNames = {};
+  final Map<String, int> _selectedDishIds = {};
 
   bool _isSubmitting = false;
   _DraftSaveStatus _saveStatus = _DraftSaveStatus.idle;
@@ -194,6 +195,13 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
       _recommendedDishes = List.from(draft.recommendedDishes);
+      _selectedDishIds
+        ..clear()
+        ..addEntries(
+          draft.dishReviews
+              .where((item) => item.dishId > 0 && item.name.trim().isNotEmpty)
+              .map((item) => MapEntry(item.name.toLowerCase(), item.dishId)),
+        );
       _dishReviews
         ..clear()
         ..addEntries(
@@ -212,7 +220,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         );
       _dishReviewNames
         ..clear()
-        ..addEntries(draft.dishReviews.map((item) => MapEntry(item.dishId, item.name)));
+        ..addEntries(
+            draft.dishReviews.map((item) => MapEntry(item.dishId, item.name)));
       _draftImages = List.from(draft.images);
       _baseRatingUpdatedAt = rebaseTo ?? draft.baseRatingUpdatedAt;
       _isDirty = false;
@@ -234,12 +243,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _commentController.text = comment;
       _selectedTags = tagsList;
       _recommendedDishes = dishNames;
+      _selectedDishIds
+        ..clear()
+        ..addEntries(_recommendedDishIdNames(existing));
       _dishReviews
         ..clear()
         ..addEntries(dishReviews.map((item) => MapEntry(item.dishId, item)));
       _dishReviewNames
         ..clear()
-        ..addEntries(dishReviews.map((item) => MapEntry(item.dishId, _dishNameForId(existing, item.dishId))));
+        ..addEntries(dishReviews.map((item) =>
+            MapEntry(item.dishId, _dishNameForId(existing, item.dishId))));
       _draftImages = imagesList
           .map((url) => CanteenReviewDraftImage(
                 type: ReviewDraftImageType.publishedRemote,
@@ -250,25 +263,30 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     });
   }
 
-  List<CanteenDishReviewInput> _parseDishReviews(Map<String, dynamic> existing) {
+  List<CanteenDishReviewInput> _parseDishReviews(
+      Map<String, dynamic> existing) {
     final raw = existing['dish_reviews'];
     if (raw is! List) return [];
-    return raw.whereType<Map>().map((item) {
-      final data = Map<String, dynamic>.from(item);
-      return CanteenDishReviewInput(
-        dishId: (data['dish_id'] as num?)?.toInt() ?? 0,
-        taste: (data['taste_score'] as num?)?.toInt() ??
-            (data['taste'] as num?)?.toInt() ??
-            0,
-        value: (data['value_score'] as num?)?.toInt() ??
-            (data['value'] as num?)?.toInt() ??
-            0,
-        portion: (data['portion_score'] as num?)?.toInt() ??
-            (data['portion'] as num?)?.toInt() ??
-            0,
-        comment: data['comment']?.toString() ?? '',
-      );
-    }).where((item) => item.dishId > 0).toList();
+    return raw
+        .whereType<Map>()
+        .map((item) {
+          final data = Map<String, dynamic>.from(item);
+          return CanteenDishReviewInput(
+            dishId: (data['dish_id'] as num?)?.toInt() ?? 0,
+            taste: (data['taste_score'] as num?)?.toInt() ??
+                (data['taste'] as num?)?.toInt() ??
+                0,
+            value: (data['value_score'] as num?)?.toInt() ??
+                (data['value'] as num?)?.toInt() ??
+                0,
+            portion: (data['portion_score'] as num?)?.toInt() ??
+                (data['portion'] as num?)?.toInt() ??
+                0,
+            comment: data['comment']?.toString() ?? '',
+          );
+        })
+        .where((item) => item.dishId > 0)
+        .toList();
   }
 
   List<CanteenReviewDraftDishReview> get _draftDishReviews =>
@@ -284,7 +302,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             '';
         return CanteenReviewDraftDishReview(
           dishId: review.dishId,
-          name: name ?? '',
+          name: name,
           taste: review.taste,
           value: review.value,
           portion: review.portion,
@@ -369,6 +387,20 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       }
     }
     return '';
+  }
+
+  Iterable<MapEntry<String, int>> _recommendedDishIdNames(
+      Map<String, dynamic> existing) sync* {
+    final raw = existing['recommended_dishes'];
+    if (raw is! List) return;
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final name = item['name']?.toString().trim() ?? '';
+      final dishId = (item['dish_id'] as num?)?.toInt() ?? 0;
+      if (name.isNotEmpty && dishId > 0) {
+        yield MapEntry(name.toLowerCase(), dishId);
+      }
+    }
   }
 
   void _showDraftRestoredToast(DateTime updatedAt) {
@@ -869,9 +901,9 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   List<int> get _recommendedDishIds => _recommendedDishes
-      .map(_findDish)
-      .whereType<CanteenDish>()
-      .map((dish) => dish.id)
+      .map(
+          (name) => _selectedDishIds[name.toLowerCase()] ?? _findDish(name)?.id)
+      .whereType<int>()
       .toList(growable: false);
 
   List<CanteenDishReviewInput> get _completedDishReviews => _dishReviews.values
@@ -1476,13 +1508,15 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  void _addRecommendedDish(String rawName) {
+  void _addRecommendedDish(String rawName, {int? dishId}) {
     final trimmed = rawName.trim();
     if (trimmed.isEmpty) return;
 
+    final resolvedDishId = dishId ?? _findDish(trimmed)?.id;
+
     // 自由输入只用于查找候选，不直接制造一个无法落库的菜名。
     // 新菜请从菜品页上传至少一张照片，进入 pending 审核后再回来选择。
-    if (_findDish(trimmed) == null) {
+    if (resolvedDishId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('该菜品尚未收录，请先上传菜品照片并等待审核')),
       );
@@ -1516,6 +1550,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
     setState(() {
       _recommendedDishes.add(trimmed);
+      _selectedDishIds[trimmed.toLowerCase()] = resolvedDishId;
+      _dishReviews.putIfAbsent(
+        resolvedDishId,
+        () => CanteenDishReviewInput(
+          dishId: resolvedDishId,
+          taste: 0,
+          value: 0,
+          portion: 0,
+        ),
+      );
       _dishInputController.clear();
       _dishSuggestions = [];
     });
@@ -1540,7 +1584,13 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void _removeRecommendedDish(int index) {
     if (index < 0 || index >= _recommendedDishes.length) return;
     setState(() {
-      _recommendedDishes.removeAt(index);
+      final removed = _recommendedDishes.removeAt(index);
+      final removedId = _selectedDishIds.remove(removed.toLowerCase()) ??
+          _findDish(removed)?.id;
+      if (removedId != null) {
+        _dishReviews.remove(removedId);
+        _dishReviewNames.remove(removedId);
+      }
     });
     _onFormChanged();
   }
@@ -1659,7 +1709,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           Text(
             _dishSuggestions.any((item) => item.isExact)
                 ? '匹配到菜品（点击快速填入）'
-                : '可能是这些菜（仅作提示）',
+                : '可能是这些菜（点击“就是这个”确认）',
             style: TextStyle(
               fontSize: 12,
               color: CanteenTheme.textTertiaryColor(isDark),
@@ -1670,25 +1720,53 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             spacing: 8,
             runSpacing: 8,
             children: _dishSuggestions.take(6).map((suggestion) {
-              return GestureDetector(
-                onTap: () => _addRecommendedDish(suggestion.name),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: suggestion.isExact
-                        ? CanteenTheme.accentSoftColor(isDark)
-                        : CanteenTheme.surfaceMutedBg(isDark),
-                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                    border: Border.all(color: CanteenTheme.borderColor(isDark)),
-                  ),
-                  child: Text(
+              return Semantics(
+                button: true,
+                label: '${suggestion.name}，点击确认绑定现有菜品',
+                child: GestureDetector(
+                  onTap: () => _addRecommendedDish(
                     suggestion.name,
-                    style: TextStyle(
-                      fontSize: 12,
+                    dishId: suggestion.dishId > 0 ? suggestion.dishId : null,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
                       color: suggestion.isExact
-                          ? CanteenTheme.accentStrongColor(isDark)
-                          : CanteenTheme.textSecondaryColor(isDark),
+                          ? CanteenTheme.accentSoftColor(isDark)
+                          : CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
+                      border: Border.all(
+                        color: CanteenTheme.borderColor(isDark),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          suggestion.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: suggestion.isExact
+                                ? CanteenTheme.accentStrongColor(isDark)
+                                : CanteenTheme.textSecondaryColor(isDark),
+                          ),
+                        ),
+                        if (!suggestion.isExact) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '就是这个',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: CanteenTheme.accentStrongColor(isDark),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),

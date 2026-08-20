@@ -43,7 +43,7 @@ void main() {
               isVoting: false,
               onSortChanged: (_) {},
               onFilterChanged: (_) {},
-              onVote: (_, __) async {},
+              onVote: (_, __, ___) async {},
               onWriteReview: () {},
               canWriteReview: false,
             ),

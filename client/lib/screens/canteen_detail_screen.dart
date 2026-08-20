@@ -793,16 +793,16 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       if (item is! Map) continue;
       final rating = item.cast<String, dynamic>();
       if ((rating['id'] as num?)?.toInt() != ratingId) continue;
-        final oldVote = rating['my_vote']?.toString();
-        var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
-        var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
-        if (oldVote == 'up') helpful--;
-        if (oldVote == 'down') unhelpful--;
-        if (newVote == 'up') helpful++;
-        if (newVote == 'down') unhelpful++;
-        rating['helpful_count'] = helpful < 0 ? 0 : helpful;
-        rating['unhelpful_count'] = unhelpful < 0 ? 0 : unhelpful;
-        rating['my_vote'] = newVote == 'none' ? null : newVote;
+      final oldVote = rating['my_vote']?.toString();
+      var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
+      var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
+      if (oldVote == 'up') helpful--;
+      if (oldVote == 'down') unhelpful--;
+      if (newVote == 'up') helpful++;
+      if (newVote == 'down') unhelpful++;
+      rating['helpful_count'] = helpful < 0 ? 0 : helpful;
+      rating['unhelpful_count'] = unhelpful < 0 ? 0 : unhelpful;
+      rating['my_vote'] = newVote == 'none' ? null : newVote;
     }
   }
 
@@ -818,9 +818,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       if (item is! Map) continue;
       final rating = item.cast<String, dynamic>();
       if ((rating['id'] as num?)?.toInt() != ratingId) continue;
-        rating['helpful_count'] = result['helpful_count'] ?? 0;
-        rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
-        rating['my_vote'] = result['my_vote'];
+      rating['helpful_count'] = result['helpful_count'] ?? 0;
+      rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
+      rating['my_vote'] = result['my_vote'];
     }
   }
 
@@ -857,8 +857,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
-          existingRating: _canteenData?['my_latest_review'] ??
-              _canteenData?['my_rating'],
+          existingRating:
+              _canteenData?['my_latest_review'] ?? _canteenData?['my_rating'],
         ),
       ),
     );

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../utils/app_feedback.dart';
 
@@ -92,7 +91,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '目标: ${report['target_type'] == 'reply' ? '评论' : '帖子'} #${report['target_id']}',
+                        '目标: ${_targetLabel(report['target_type']?.toString() ?? '')} #${report['target_id']}',
                         style: TextStyle(
                           fontSize: 13,
                           color: isDark ? Colors.white60 : Colors.grey[600],
@@ -100,7 +99,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '原因: ${report['reason'] ?? '未知'}',
+                        '原因: ${_reasonLabel(report)}',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -115,9 +114,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   controller: resultController,
                   maxLines: 2,
                   decoration: InputDecoration(
-                    labelText: '处理结果（必填，不会删除内容）',
+                    labelText: '处理备注（可选）',
                     hintText: '例如：举报不成立；已警告发布者；内容无需处理',
-                    helperText: '用于管理员处理记录，用户内容会保留。',
+                    helperText: '用于记录本次审核结论。',
                     helperMaxLines: 2,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -129,9 +128,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   controller: deleteReasonController,
                   maxLines: 2,
                   decoration: InputDecoration(
-                    labelText: '删除理由（选填，填写后将删除内容）',
+                    labelText: '治理原因（确认违规时必填）',
                     hintText: '例如：包含辱骂、人身攻击或违规联系方式',
-                    helperText: '留空表示不删除；填写后内容会被软删除，发布者申诉时可看到。',
+                    helperText: '确认违规后会下架内容，并按原因执行诚信治理。',
                     helperMaxLines: 3,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -146,16 +145,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               onPressed: () => Navigator.pop(ctx, 'ignored'),
               child: const Text('忽略', style: TextStyle(color: Colors.grey)),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, 'handled'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: deleteReasonController,
+              builder: (context, value, child) => ElevatedButton(
+                onPressed: value.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, 'handled'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
+                child: const Text('违规成立并治理'),
               ),
-              child: const Text('确认处理'),
             ),
           ],
         );
@@ -175,11 +180,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         },
       );
       if (mounted) {
-        final deleted = action == 'handled' &&
-            deleteReasonController.text.trim().isNotEmpty;
-        final message = deleted
-            ? '已处理并删除相关内容'
-            : (action == 'handled' ? '举报已处理' : '已忽略');
+        final message = action == 'handled' ? '已确认违规并完成治理' : '已忽略';
         setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -274,17 +275,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Widget _buildReportCard(dynamic report, bool isDark) {
-    final isReply = report['target_type'] == 'reply';
-    final reasonMap = {
-      'spam': '垃圾广告',
-      'porn': '色情低俗',
-      'violence': '暴力血腥',
-      'fake': '虚假信息',
-      'privacy': '侵犯隐私',
-      'harassment': '人身攻击',
-      'other': '其他',
-    };
-    final reasonLabel = reasonMap[report['reason']] ?? report['reason'] ?? '未知';
+    final targetType = report['target_type']?.toString() ?? '';
+    final isReply = targetType == 'reply';
+    final targetLabel = _targetLabel(targetType);
+    final reasonLabel = _reasonLabel(report);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -307,9 +301,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    isReply
-                        ? '评论 #${report['target_id']}'
-                        : '帖子 #${report['target_id']}',
+                    '$targetLabel #${report['target_id']}',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -388,16 +380,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Widget _buildHandledReportCard(dynamic report, bool isDark) {
     final isHandled = report['status'] == 'handled';
-    final reasonMap = {
-      'spam': '垃圾广告',
-      'porn': '色情低俗',
-      'violence': '暴力血腥',
-      'fake': '虚假信息',
-      'privacy': '侵犯隐私',
-      'harassment': '人身攻击',
-      'other': '其他',
-    };
-    final reasonLabel = reasonMap[report['reason']] ?? report['reason'] ?? '未知';
+    final reasonLabel = _reasonLabel(report);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -425,7 +408,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  isHandled ? '已删除' : '已忽略',
+                  isHandled ? '已治理' : '已忽略',
                   style: TextStyle(
                     fontSize: 11,
                     color: isHandled ? Colors.green[300] : Colors.grey[500],
@@ -448,5 +431,45 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         ),
       ),
     );
+  }
+
+  String _targetLabel(String type) {
+    const labels = {
+      'reply': '评论',
+      'post': '帖子',
+      'canteen_review': '食堂评价',
+      'canteen_rating': '历史食堂评价',
+      'canteen_dish_review': '菜品评价',
+      'canteen_dish_photo': '菜品实拍',
+    };
+    return labels[type] ?? '内容';
+  }
+
+  String _reasonLabel(dynamic report) {
+    const reasonMap = {
+      'spam': '垃圾广告',
+      'porn': '色情低俗',
+      'violence': '暴力血腥',
+      'fake': '虚假信息',
+      'privacy': '侵犯隐私',
+      'harassment': '人身攻击',
+      'fabricated': '捏造或失实',
+      'false': '虚假信息',
+      'unrelated': '与菜品无关',
+      'unrelated_photo': '图片与菜品无关',
+      'unrelated_content': '内容与目标无关',
+      'fake_dish': '虚假菜品',
+      'stolen_photo': '盗用图片',
+      'malicious': '恶意内容',
+      'malicious_repeat': '重复恶意内容',
+      'abuse': '辱骂或恶意内容',
+      'other': '其他',
+    };
+    final code = report['reason_code']?.toString();
+    final legacy = report['reason']?.toString();
+    return (code == null ? null : reasonMap[code]) ??
+        (legacy == null ? null : reasonMap[legacy]) ??
+        legacy ??
+        '未知';
   }
 }

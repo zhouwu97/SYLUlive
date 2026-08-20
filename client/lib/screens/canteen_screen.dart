@@ -21,7 +21,7 @@ import 'canteen_dish_detail_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
 
-/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近在吃。
+/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 更多推荐。
 /// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
 class CanteenScreen extends StatefulWidget {
   const CanteenScreen({super.key});
@@ -636,7 +636,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
               ],
               _sectionHeader(
                 isDark,
-                '同学最近在吃',
+                '更多推荐',
                 meta: '按可信度与新鲜度排序',
               ),
               if (feed.isEmpty)
@@ -703,22 +703,19 @@ class _CanteenScreenState extends State<CanteenScreen> {
         Expanded(
           flex: 9,
           child: Container(
-            constraints: const BoxConstraints(minHeight: 96),
+            constraints: const BoxConstraints(minHeight: 108),
             padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceBg(isDark),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: CanteenTheme.borderColor(isDark)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  CanteenTheme.surfaceBg(isDark),
-                  isDark
-                      ? CanteenTheme.surfaceBg(isDark)
-                      : const Color(0xFFFFF9EF),
-                ],
-              ),
+              gradient: isDark
+                  ? null
+                  : const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFFFFF), Color(0xFFFFF9EF)],
+                    ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

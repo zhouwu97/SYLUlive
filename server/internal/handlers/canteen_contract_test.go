@@ -139,9 +139,9 @@ func TestCanteenAPIContractJSON(t *testing.T) {
 			}
 		}
 		if f.Type == "recommended_store" {
-			// 确保推荐标题中性，不编造下饭等未判断属性
-			if f.Title != "今天可以优先看看" {
-				t.Fatalf("recommended_store title=%q want '今天可以优先看看'", f.Title)
+			// Title 仅为兼容字段，客户端不会把它当作店铺卡主标题。
+			if f.Title != "综合推荐" {
+				t.Fatalf("recommended_store title=%q want '综合推荐'", f.Title)
 			}
 		}
 	}

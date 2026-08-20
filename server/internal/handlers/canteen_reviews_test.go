@@ -117,6 +117,83 @@ func TestCreateReviewPreservesLegacyHistoryAndBlocksLegacyRate(t *testing.T) {
 	}
 }
 
+func TestGetDetailReturnsEventLevelPayloadForEditing(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "鸡排饭", NormalizedName: "鸡排饭",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID,
+		TasteScore: 5, ValueScore: 4, QueueScore: 3, HygieneScore: 4, ServiceScore: 5,
+		OverallScore: 4.35, Comment: "这次文字补充", Images: `["/uploads/review.jpg"]`,
+		Tags: `["taste_good"]`, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.CanteenReviewEventDish{
+		ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.CanteenDishReviewEvent{
+		DishID: dish.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4, PortionScore: 3,
+		OverallScore: 4, Comment: "分量足", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 1, CanteenReviewEventID: &event.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performCanteenRequest(t, h.GetDetail, http.MethodGet,
+		"/api/canteens/88", mapParams("id", "88"), user.ID, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Latest map[string]interface{} `json:"my_latest_review"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(body.Latest["review_event_id"].(float64)); got != int(event.ID) {
+		t.Fatalf("latest event id=%d want %d", got, event.ID)
+	}
+	recommended, ok := body.Latest["recommended_dishes"].([]interface{})
+	if !ok || len(recommended) != 1 {
+		t.Fatalf("recommended dishes=%v", body.Latest["recommended_dishes"])
+	}
+	dishReviews, ok := body.Latest["dish_reviews"].([]interface{})
+	if !ok || len(dishReviews) != 1 {
+		t.Fatalf("dish reviews=%v", body.Latest["dish_reviews"])
+	}
+}
+
+func TestEnsureLegacyReviewEventDoesNotResurrectHiddenRating(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	rating := models.CanteenRating{
+		CanteenID: canteen.ID, UserID: user.ID, Star: 1,
+		Comment: "已隐藏", Status: models.ReviewEventStatusHidden,
+	}
+	if err := h.db.Create(&rating).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLegacyReviewEvent(h.db, canteen.ID, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := h.db.Model(&models.CanteenReviewEvent{}).
+		Where("canteen_id = ? AND user_id = ?", canteen.ID, user.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("hidden legacy rating was copied into %d history events", count)
+	}
+}
+
 func TestGetReviewsDeduplicatesBeforeBestSortAndUsesStableCursor(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	verifiedAt := time.Now()
@@ -153,7 +230,9 @@ func TestGetReviewsDeduplicatesBeforeBestSortAndUsesStableCursor(t *testing.T) {
 	if second.Code != http.StatusOK {
 		t.Fatalf("second page status=%d body=%s", second.Code, second.Body.String())
 	}
-	var secondBody struct{ Items []models.CanteenReviewEvent `json:"items"` }
+	var secondBody struct {
+		Items []models.CanteenReviewEvent `json:"items"`
+	}
 	if err := json.Unmarshal(second.Body.Bytes(), &secondBody); err != nil {
 		t.Fatal(err)
 	}

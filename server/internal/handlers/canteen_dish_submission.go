@@ -111,6 +111,9 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 				if err := tx.Where("canteen_id = ? AND normalized_name = ?", canteenID, normalized).First(&dish).Error; err != nil {
 					return err
 				}
+				if dish.Status == models.DishStatusHidden {
+					return errDishNameHiddenConflict
+				}
 			}
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dish.ID).Error; err != nil {
@@ -137,6 +140,8 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能为空"})
 		case errors.Is(err, errDishGalleryFull):
 			c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张公开实拍"})
+		case errors.Is(err, errDishNameHiddenConflict):
+			c.JSON(http.StatusConflict, gin.H{"code": "dish_name_hidden_conflict", "error": "同名菜品曾被下架，请联系管理员恢复或合并后再投稿"})
 		case errors.Is(err, errCanteenOffline):
 			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能新增菜品或实拍"})
 		case errors.Is(err, services.ErrInvalidImageFileReference):
@@ -151,3 +156,5 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 		"photo":   gin.H{"id": photo.ID, "dish_id": photo.DishID, "status": photo.Status, "file_id": photo.FileID, "created_at": photo.CreatedAt},
 	})
 }
+
+var errDishNameHiddenConflict = errors.New("dish name conflicts with hidden dish")

@@ -19,9 +19,10 @@ import '../widgets/image_upload_widget.dart';
 import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
 import 'canteen_ranking_screen.dart';
+import 'canteen_review_editor_screen.dart';
 
-/// 校园食堂发现首页：搜索 + 今日推荐(Hero) + 综合排行入口 + 推荐信息流。
-/// 首页帮助用户回答“现在吃什么”，完整排行榜降级为二级入口。
+/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近在吃。
+/// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
 class CanteenScreen extends StatefulWidget {
   const CanteenScreen({super.key});
 
@@ -85,6 +86,30 @@ class _CanteenScreenState extends State<CanteenScreen> {
     });
   }
 
+  void _openReviewComposer() {
+    final hero = context.read<CanteenDiscoveryProvider>().home.hero;
+    if (hero.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('先加载一个食堂，再发布评价')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewEditorScreen(
+          canteenId: hero.canteenId,
+          canteenName: hero.canteenName,
+          canteenImage: hero.image,
+          averageStar: hero.averageStar,
+          ratingCount: hero.ratingCount,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) context.read<CanteenDiscoveryProvider>().loadHome();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -93,9 +118,19 @@ class _CanteenScreenState extends State<CanteenScreen> {
       backgroundColor: CanteenTheme.pageBg(isDark),
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text(
-          '校园食堂',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        title: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '校园食堂',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            SizedBox(height: 2),
+            Text(
+              '同学真实评价 · 菜品实拍',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
         centerTitle: true,
         elevation: 0,
@@ -103,22 +138,101 @@ class _CanteenScreenState extends State<CanteenScreen> {
         backgroundColor: CanteenTheme.pageBg(isDark),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
+        actions: [
+          IconButton(
+            onPressed: _openReviewComposer,
+            tooltip: '发布评价',
+            icon: const Icon(Icons.add_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Text(
-              '看看同学最近都在吃什么',
-              style: TextStyle(
-                fontSize: 12,
-                color: CanteenTheme.textSecondaryColor(isDark),
-              ),
-            ),
-          ),
           _buildSearchBar(isDark),
           Expanded(child: _buildBody(isDark)),
         ],
+      ),
+      bottomNavigationBar: _buildBottomNavigationBar(isDark),
+    );
+  }
+
+  Widget _buildBottomNavigationBar(bool isDark) {
+    final inactive = CanteenTheme.textTertiaryColor(isDark);
+    final active = CanteenTheme.accentStrongColor(isDark);
+    final items = [
+      (Icons.restaurant_rounded, '食堂', null),
+      (Icons.storefront_rounded, '店铺', _openRanking),
+      (Icons.ramen_dining_rounded, '菜品', _openFirstDish),
+      (Icons.rate_review_rounded, '评价', _openReviewComposer),
+    ];
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 66,
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark).withValues(alpha: 0.97),
+          border:
+              Border(top: BorderSide(color: CanteenTheme.borderColor(isDark))),
+        ),
+        child: Row(
+          children: [
+            for (final item in items)
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: item.$3 == null,
+                  label: item.$2,
+                  child: InkWell(
+                    onTap: item.$3,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          item.$1,
+                          size: 21,
+                          color: item.$3 == null ? active : inactive,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          item.$2,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: item.$3 == null
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: item.$3 == null ? active : inactive,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openFirstDish() {
+    final dishes = context.read<CanteenDiscoveryProvider>().home.hotDishes;
+    if (dishes.isEmpty) {
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂时没有可展示的菜品')),
+      );
+      return;
+    }
+    final dish = dishes.first;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishDetailScreen(
+          canteenId: dish.canteenId,
+          dishId: dish.id,
+          dishName: dish.name,
+          canteenName: dish.canteenName,
+        ),
       ),
     );
   }
@@ -141,7 +255,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
               color: CanteenTheme.textPrimaryColor(isDark),
             ),
             decoration: InputDecoration(
-              hintText: '搜索食堂、店铺',
+              hintText: '搜索食堂、店铺、菜品',
               hintStyle: TextStyle(
                 fontSize: 14,
                 color: CanteenTheme.textTertiaryColor(isDark),
@@ -490,6 +604,11 @@ class _CanteenScreenState extends State<CanteenScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
+              _sectionHeader(
+                isDark,
+                '今天吃什么',
+                meta: '综合真实评分与近期反馈',
+              ),
               if (showHero)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -499,19 +618,27 @@ class _CanteenScreenState extends State<CanteenScreen> {
                         provider.home.hero.canteenName),
                   ),
                 ),
-              if (hotDishes.isNotEmpty) ...[
-                _sectionHeader(isDark, '同学最近在吃'),
-                _buildHotDishes(isDark, hotDishes),
-                const SizedBox(height: 16),
-              ],
               Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: CanteenRankingEntryCard(
-                  entry: provider.home.rankingEntry,
-                  onTap: _openRanking,
+                padding: const EdgeInsets.only(bottom: 18),
+                child: _buildQuickRow(
+                  isDark,
+                  provider.home,
                 ),
               ),
-              _sectionHeader(isDark, '为你推荐'),
+              if (hotDishes.isNotEmpty) ...[
+                _sectionHeader(
+                  isDark,
+                  '热门菜品',
+                  meta: '菜品分不混入服务评分',
+                ),
+                _buildHotDishes(isDark, hotDishes),
+                const SizedBox(height: 18),
+              ],
+              _sectionHeader(
+                isDark,
+                '同学最近在吃',
+                meta: '按可信度与新鲜度排序',
+              ),
               if (feed.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 40),
@@ -560,6 +687,79 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
+  Widget _buildQuickRow(bool isDark, CanteenHomeData home) {
+    final count = home.recentEffectiveReviewCount;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 13,
+          child: CanteenRankingEntryCard(
+            entry: home.rankingEntry,
+            onTap: _openRanking,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 9,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 96),
+            padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
+            decoration: BoxDecoration(
+              color: CanteenTheme.surfaceBg(isDark),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: CanteenTheme.borderColor(isDark)),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  CanteenTheme.surfaceBg(isDark),
+                  isDark
+                      ? CanteenTheme.surfaceBg(isDark)
+                      : const Color(0xFFFFF9EF),
+                ],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '今日有效评价',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  count > 0 ? '$count' : '—',
+                  style: TextStyle(
+                    fontSize: 26,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                    color: CanteenTheme.accentStrongColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '同一用户多次评价不会重复刷权重',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.35,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildHotDishes(bool isDark, List<CanteenHotDish> dishes) {
     return GridView.builder(
       shrinkWrap: true,
@@ -597,15 +797,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
               children: [
                 Expanded(
                   child: dish.coverImage.isEmpty
-                      ? Container(
-                          color: CanteenTheme.surfaceMutedBg(isDark),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.ramen_dining_rounded,
-                            size: 30,
-                            color: CanteenTheme.textTertiaryColor(isDark),
-                          ),
-                        )
+                      ? _buildDishPlaceholder(isDark, index)
                       : CanteenStatusImage(
                           imageUrl: ApiConstants.fullUrl(dish.coverImage),
                           offline: dish.isCanteenOffline,
@@ -634,6 +826,16 @@ class _CanteenScreenState extends State<CanteenScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                           color: CanteenTheme.textPrimaryColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        dish.canteenName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: CanteenTheme.textTertiaryColor(isDark),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -674,7 +876,45 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
-  Widget _sectionHeader(bool isDark, String title) {
+  Widget _buildDishPlaceholder(bool isDark, int index) {
+    const palettes = [
+      [Color(0xFFF6C879), Color(0xFFF39A55)],
+      [Color(0xFFF2B093), Color(0xFFE97858)],
+      [Color(0xFFB9DCAE), Color(0xFF8FC696)],
+      [Color(0xFFF7DC8D), Color(0xFFF2BC52)],
+    ];
+    const icons = [
+      Icons.ramen_dining_rounded,
+      Icons.lunch_dining_rounded,
+      Icons.eco_rounded,
+      Icons.rice_bowl_rounded,
+    ];
+    final palette = palettes[index % palettes.length];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  palette[0].withValues(alpha: 0.45),
+                  palette[1].withValues(alpha: 0.55),
+                ]
+              : palette,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          icons[index % icons.length],
+          size: 48,
+          color: Colors.white.withValues(alpha: 0.88),
+          shadows: const [Shadow(color: Colors.black12, blurRadius: 10)],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(bool isDark, String title, {String? meta}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
       child: Row(
@@ -689,7 +929,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
           ),
           const Spacer(),
           Text(
-            '信息流基于真实评价与实拍',
+            meta ?? '信息流基于真实评价与实拍',
             style: TextStyle(
               fontSize: 11,
               color: CanteenTheme.textTertiaryColor(isDark),

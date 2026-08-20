@@ -60,9 +60,50 @@ class CanteenReviewDraftImage {
   }
 }
 
+/// 草稿中的单道菜品三维评分。
+///
+/// 菜名用于旧草稿和菜品列表尚未加载时恢复展示，dishId 用于恢复后准确提交。
+class CanteenReviewDraftDishReview {
+  final int dishId;
+  final String name;
+  final int taste;
+  final int value;
+  final int portion;
+  final String comment;
+
+  const CanteenReviewDraftDishReview({
+    required this.dishId,
+    required this.name,
+    required this.taste,
+    required this.value,
+    required this.portion,
+    this.comment = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'dish_id': dishId,
+        'name': name,
+        'taste': taste,
+        'value': value,
+        'portion': portion,
+        'comment': comment,
+      };
+
+  factory CanteenReviewDraftDishReview.fromJson(Map<String, dynamic> json) {
+    return CanteenReviewDraftDishReview(
+      dishId: (json['dish_id'] as num?)?.toInt() ?? 0,
+      name: json['name']?.toString() ?? '',
+      taste: (json['taste'] as num?)?.toInt() ?? 0,
+      value: (json['value'] as num?)?.toInt() ?? 0,
+      portion: (json['portion'] as num?)?.toInt() ?? 0,
+      comment: json['comment']?.toString() ?? '',
+    );
+  }
+}
+
 /// 食堂评价草稿
 class CanteenReviewDraft {
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
 
   final int schemaVersion;
   final int userId;
@@ -76,6 +117,7 @@ class CanteenReviewDraft {
   final String comment;
   final List<String> tags;
   final List<String> recommendedDishes;
+  final List<CanteenReviewDraftDishReview> dishReviews;
   final List<CanteenReviewDraftImage> images;
   final DateTime updatedAt;
 
@@ -95,6 +137,7 @@ class CanteenReviewDraft {
     this.comment = '',
     this.tags = const [],
     this.recommendedDishes = const [],
+    this.dishReviews = const [],
     this.images = const [],
     required this.updatedAt,
     this.baseRatingUpdatedAt,
@@ -111,6 +154,7 @@ class CanteenReviewDraft {
       comment.trim().isEmpty &&
       tags.isEmpty &&
       recommendedDishes.isEmpty &&
+      dishReviews.isEmpty &&
       images.isEmpty;
 
   CanteenReviewDraft copyWith({
@@ -126,6 +170,7 @@ class CanteenReviewDraft {
     String? comment,
     List<String>? tags,
     List<String>? recommendedDishes,
+    List<CanteenReviewDraftDishReview>? dishReviews,
     List<CanteenReviewDraftImage>? images,
     DateTime? updatedAt,
     DateTime? baseRatingUpdatedAt,
@@ -143,6 +188,7 @@ class CanteenReviewDraft {
       comment: comment ?? this.comment,
       tags: tags ?? this.tags,
       recommendedDishes: recommendedDishes ?? this.recommendedDishes,
+      dishReviews: dishReviews ?? this.dishReviews,
       images: images ?? this.images,
       updatedAt: updatedAt ?? this.updatedAt,
       baseRatingUpdatedAt: baseRatingUpdatedAt ?? this.baseRatingUpdatedAt,
@@ -162,6 +208,7 @@ class CanteenReviewDraft {
         'comment': comment,
         'tags': tags,
         'recommended_dishes': recommendedDishes,
+        'dish_reviews': dishReviews.map((e) => e.toJson()).toList(),
         'images': images.map((e) => e.toJson()).toList(),
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'base_rating_updated_at':
@@ -196,6 +243,12 @@ class CanteenReviewDraft {
       recommendedDishes: (json['recommended_dishes'] as List?)
               ?.map((e) => e.toString().trim())
               .where((e) => e.isNotEmpty)
+              .toList() ??
+          const [],
+      dishReviews: (json['dish_reviews'] as List?)
+              ?.filterMapJson((m) => CanteenReviewDraftDishReview.fromJson(
+                  Map<String, dynamic>.from(m as Map)))
+              .where((item) => item.dishId > 0)
               .toList() ??
           const [],
       images: (json['images'] as List?)

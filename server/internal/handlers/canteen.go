@@ -466,6 +466,7 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	}
 
 	var myRating *models.CanteenRating
+	var myLatestReview map[string]interface{}
 	if userID, exists := c.Get("user_id"); exists {
 		var rating models.CanteenRating
 		if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", id, userID, models.ReviewEventStatusActive).First(&rating).Error; err == nil {
@@ -485,6 +486,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 				}
 			}
 			myRating = &rating
+		}
+		if latest, latestErr := h.loadMyLatestReviewPayload(uint(id), userID.(uint)); latestErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取我的新版评价失败"})
+			return
+		} else {
+			myLatestReview = latest
 		}
 	}
 	// V2 评价流与 /reviews 共用同一套“先按用户取最新、再筛选、再排序”的语义，
@@ -520,6 +527,7 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		"rating_count":   count,
 		"average_star":   avg,
 		"my_rating":      myRating,
+		"my_latest_review": myLatestReview,
 		"reviews":        reviews,
 		"reviewer_count": count,
 		"visit_review_count": func() int {
@@ -1036,6 +1044,11 @@ func deleteCanteenDependencies(tx *gorm.DB, canteenID uint) error {
 		}
 	}
 	if len(eventIDs) > 0 {
+		// 模型没有依赖数据库级 cascade，永久删除食堂时显式清理 V2 投票，
+		// 避免 review_event_votes 残留并阻塞后续重建或造成孤儿数据。
+		if err := tx.Where("review_event_id IN ?", eventIDs).Delete(&models.CanteenReviewEventVote{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("review_event_id IN ?", eventIDs).Delete(&models.CanteenReviewEventDish{}).Error; err != nil {
 			return err
 		}

@@ -143,6 +143,9 @@ func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, photo.DishID).Error; err != nil {
 			return err
 		}
+		if dish.Status == models.DishStatusHidden {
+			return errDishHidden
+		}
 
 		var approvedCount int64
 		if err := tx.Model(&models.CanteenDishPhoto{}).
@@ -443,6 +446,8 @@ func respondDishPhotoAdminError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, gin.H{"code": "already_reviewed", "error": "该实拍已被处理"})
 	case errors.Is(err, errDishGalleryFull):
 		c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张审核实拍"})
+	case errors.Is(err, errDishHidden):
+		c.JSON(http.StatusConflict, gin.H{"code": "dish_hidden_requires_restore", "error": "该菜品已下架，请先恢复或合并菜品后再审核实拍"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
 	}
@@ -453,3 +458,6 @@ var errDishNameTooLong = errors.New("dish name too long")
 
 // errDishNameConflict 同食堂重名。
 var errDishNameConflict = errors.New("dish name conflict")
+
+// errDishHidden 下架菜品不能通过审核重新产生公开图片引用。
+var errDishHidden = errors.New("dish is hidden")

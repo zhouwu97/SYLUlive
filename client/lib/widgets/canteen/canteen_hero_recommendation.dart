@@ -5,8 +5,10 @@ import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
 
-/// 首页「今日推荐」Hero 卡：回答“今天吃什么”。
-/// 展示综合分、真实星级与评价人数、可解释的推荐理由与体验标签。
+/// 首页“今天吃什么”Hero 卡。
+///
+/// 视觉上先让照片和可信综合分承担决策，再用三项体验维度解释分数；
+/// 维度数据缺失时回退到现有平均分，兼容旧服务端响应。
 class CanteenHeroRecommendationCard extends StatefulWidget {
   final CanteenHero hero;
   final VoidCallback onTap;
@@ -42,102 +44,125 @@ class _CanteenHeroRecommendationCardState
         duration: AppMotion.micro,
         curve: AppMotion.standard,
         child: Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),
             borderRadius: BorderRadius.circular(CanteenTheme.radiusLg),
             border: Border.all(color: CanteenTheme.borderColor(isDark)),
           ),
-          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.auto_awesome_rounded,
-                      size: 16, color: CanteenTheme.accentColor(isDark)),
-                  const SizedBox(width: 6),
-                  Text(
-                    h.title.isEmpty ? '今日推荐' : h.title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: CanteenTheme.textPrimaryColor(isDark),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Stack(
                 children: [
                   Hero(
                     tag: 'canteen-${h.canteenId}',
-                    child: ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(CanteenTheme.radiusMd),
-                      child: SizedBox(
-                        width: 84,
-                        height: 84,
-                        child: _buildCover(isDark),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 176,
+                      child: _buildCover(isDark),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.52),
+                          ],
+                          stops: const [0.42, 1],
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 13,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          h.canteenName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: CanteenTheme.textPrimaryColor(isDark),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                h.canteenName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black38,
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _recentFeedbackLabel,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        _buildMetaRow(isDark),
-                        if (h.rankingScore > 0) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '综合分 ${h.rankingScore.round()}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: CanteenTheme.accentStrongColor(isDark),
-                            ),
+                        if (h.rankingScore > 0)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    h.rankingScore.round().toString(),
+                                    style: const TextStyle(
+                                      fontSize: 30,
+                                      height: 1,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 2),
+                                    child: Text(
+                                      '分',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                '可信综合分',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
                       ],
                     ),
                   ),
                 ],
               ),
-              if (h.reason.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  h.reason,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-              ],
-              if (h.tags.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: h.tags
-                      .map((t) => _tagChip(isDark, t))
-                      .toList(growable: false),
-                ),
-              ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(15, 14, 15, 15),
+                child: _buildDimensionRow(isDark),
+              ),
             ],
           ),
         ),
@@ -145,51 +170,56 @@ class _CanteenHeroRecommendationCardState
     );
   }
 
-  Widget _buildMetaRow(bool isDark) {
+  String get _recentFeedbackLabel {
+    final count = h.recentReviewCount > 0
+        ? h.recentReviewCount
+        : (h.visitReviewCount > 0 ? h.visitReviewCount : h.ratingCount);
+    return count > 0 ? '近 7 天 $count 条有效反馈' : '近期暂无有效反馈';
+  }
+
+  Widget _buildDimensionRow(bool isDark) {
+    final values = [
+      ('味道', _dimensionValue('taste')),
+      ('性价比', _dimensionValue('value')),
+      ('排队效率', _dimensionValue('queue')),
+    ];
     return Row(
       children: [
-        Icon(Icons.star_rounded,
-            size: 15, color: CanteenTheme.accentColor(isDark)),
-        const SizedBox(width: 3),
-        Text(
-          h.averageStar > 0 ? h.averageStar.toStringAsFixed(1) : '暂无评分',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: CanteenTheme.textPrimaryColor(isDark),
+        for (var i = 0; i < values.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  values[i].$2 > 0 ? values[i].$2.toStringAsFixed(1) : '—',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  values[i].$1,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(width: 7),
-        Text(
-          h.ratingCount > 0 ? '${h.ratingCount} 人评价' : '暂无评价',
-          style: TextStyle(
-            fontSize: 12,
-            color: CanteenTheme.textSecondaryColor(isDark),
-          ),
-        ),
+        ],
       ],
     );
   }
 
-  CanteenHero get h => widget.hero;
-
-  Widget _tagChip(bool isDark, String tag) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: CanteenTheme.accentSoftColor(isDark),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        tag,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: CanteenTheme.accentStrongColor(isDark),
-        ),
-      ),
-    );
+  double _dimensionValue(String key) {
+    final value = h.dimensionScores[key] ?? 0;
+    return value > 0 ? value : h.averageStar;
   }
+
+  CanteenHero get h => widget.hero;
 
   Widget _buildCover(bool isDark) {
     if (h.image.isEmpty) {

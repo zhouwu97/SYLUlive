@@ -80,6 +80,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   List<CanteenDish> _allDishes = [];
   List<CanteenDishSuggestion> _dishSuggestions = [];
   final Map<int, CanteenDishReviewInput> _dishReviews = {};
+  final Map<int, String> _dishReviewNames = {};
 
   bool _isSubmitting = false;
   _DraftSaveStatus _saveStatus = _DraftSaveStatus.idle;
@@ -193,6 +194,25 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
       _recommendedDishes = List.from(draft.recommendedDishes);
+      _dishReviews
+        ..clear()
+        ..addEntries(
+          draft.dishReviews.map(
+            (item) => MapEntry(
+              item.dishId,
+              CanteenDishReviewInput(
+                dishId: item.dishId,
+                taste: item.taste,
+                value: item.value,
+                portion: item.portion,
+                comment: item.comment,
+              ),
+            ),
+          ),
+        );
+      _dishReviewNames
+        ..clear()
+        ..addEntries(draft.dishReviews.map((item) => MapEntry(item.dishId, item.name)));
       _draftImages = List.from(draft.images);
       _baseRatingUpdatedAt = rebaseTo ?? draft.baseRatingUpdatedAt;
       _isDirty = false;
@@ -206,6 +226,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final imagesList = _parseImagesList(existing['images']);
     final tagsList = _parseTagsList(existing['tags']);
     final dishNames = _parseDishNames(existing);
+    final dishReviews = _parseDishReviews(existing);
 
     setState(() {
       _star = star;
@@ -213,6 +234,12 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _commentController.text = comment;
       _selectedTags = tagsList;
       _recommendedDishes = dishNames;
+      _dishReviews
+        ..clear()
+        ..addEntries(dishReviews.map((item) => MapEntry(item.dishId, item)));
+      _dishReviewNames
+        ..clear()
+        ..addEntries(dishReviews.map((item) => MapEntry(item.dishId, _dishNameForId(existing, item.dishId))));
       _draftImages = imagesList
           .map((url) => CanteenReviewDraftImage(
                 type: ReviewDraftImageType.publishedRemote,
@@ -222,6 +249,48 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _isDirty = false;
     });
   }
+
+  List<CanteenDishReviewInput> _parseDishReviews(Map<String, dynamic> existing) {
+    final raw = existing['dish_reviews'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((item) {
+      final data = Map<String, dynamic>.from(item);
+      return CanteenDishReviewInput(
+        dishId: (data['dish_id'] as num?)?.toInt() ?? 0,
+        taste: (data['taste_score'] as num?)?.toInt() ??
+            (data['taste'] as num?)?.toInt() ??
+            0,
+        value: (data['value_score'] as num?)?.toInt() ??
+            (data['value'] as num?)?.toInt() ??
+            0,
+        portion: (data['portion_score'] as num?)?.toInt() ??
+            (data['portion'] as num?)?.toInt() ??
+            0,
+        comment: data['comment']?.toString() ?? '',
+      );
+    }).where((item) => item.dishId > 0).toList();
+  }
+
+  List<CanteenReviewDraftDishReview> get _draftDishReviews =>
+      _dishReviews.values.map((review) {
+        final name = _allDishes
+                .where((dish) => dish.id == review.dishId)
+                .map((dish) => dish.name)
+                .firstOrNull ??
+            _dishReviewNames[review.dishId] ??
+            _recommendedDishes
+                .where((dish) => _findDish(dish)?.id == review.dishId)
+                .firstOrNull ??
+            '';
+        return CanteenReviewDraftDishReview(
+          dishId: review.dishId,
+          name: name ?? '',
+          taste: review.taste,
+          value: review.value,
+          portion: review.portion,
+          comment: review.comment,
+        );
+      }).toList();
 
   CanteenReviewDimensions _dimensionsFromJson(
     Map<String, dynamic> json, {
@@ -288,6 +357,18 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           .toList();
     }
     return [];
+  }
+
+  String _dishNameForId(Map<String, dynamic> existing, int dishId) {
+    final raw = existing['recommended_dishes'];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is Map && (item['dish_id'] as num?)?.toInt() == dishId) {
+          return item['name']?.toString() ?? '';
+        }
+      }
+    }
+    return '';
   }
 
   void _showDraftRestoredToast(DateTime updatedAt) {
@@ -392,6 +473,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       comment: _commentController.text,
       tags: _selectedTags,
       recommendedDishes: _recommendedDishes,
+      dishReviews: _draftDishReviews,
       images: _draftImages,
       updatedAt: DateTime.now(),
       baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -642,6 +724,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 comment: _commentController.text,
                 tags: _selectedTags,
                 recommendedDishes: _recommendedDishes,
+                dishReviews: _draftDishReviews,
                 images: updatedDraftImages,
                 updatedAt: DateTime.now(),
                 baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -1489,6 +1572,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         taste: taste ?? current.taste,
         value: value ?? current.value,
         portion: portion ?? current.portion,
+        comment: current.comment,
       );
     });
     _onFormChanged();
@@ -1587,9 +1671,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             runSpacing: 8,
             children: _dishSuggestions.take(6).map((suggestion) {
               return GestureDetector(
-                onTap: suggestion.isExact
-                    ? () => _addRecommendedDish(suggestion.name)
-                    : null,
+                onTap: () => _addRecommendedDish(suggestion.name),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

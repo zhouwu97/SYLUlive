@@ -38,7 +38,7 @@ func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) map[uint]
 	var legacyRows []ratingTagRow
 	_ = h.db.Table("canteen_ratings AS r").
 		Select("r.canteen_id, r.tags").
-		Where("r.created_at >= ?", since).
+		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
 		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
 		Scan(&legacyRows).Error
@@ -69,7 +69,7 @@ func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int
 		Pluck("e.tags", &raws).Error
 	var legacyRaws []string
 	_ = h.db.Table("canteen_ratings AS r").
-		Where("r.canteen_id = ? AND r.created_at >= ?", canteenID, since).
+		Where("r.canteen_id = ? AND (r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", canteenID, models.ReviewEventStatusActive, since).
 		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
 		Pluck("r.tags", &legacyRaws)
@@ -96,7 +96,7 @@ func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 	var legacyRows []countRow
 	_ = h.db.Table("canteen_ratings AS r").
 		Select("r.canteen_id, COUNT(*) as cnt").
-		Where("r.created_at >= ?", since).
+		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
 		Group("r.canteen_id").
 		Scan(&legacyRows).Error
@@ -104,7 +104,7 @@ func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 
 	counts := make(map[uint]int64, len(rows))
 	for _, r := range rows {
-		counts[r.CanteenID] = r.Cnt
+		counts[r.CanteenID] += r.Cnt
 	}
 	return counts
 }
@@ -117,7 +117,7 @@ func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 		Count(&n)
 	var legacyCount int64
 	h.db.Table("canteen_ratings AS r").
-		Where("r.canteen_id = ? AND r.created_at >= ?", canteenID, time.Now().AddDate(0, 0, -days)).
+		Where("r.canteen_id = ? AND (r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", canteenID, models.ReviewEventStatusActive, time.Now().AddDate(0, 0, -days)).
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
 		Count(&legacyCount)
 	n += legacyCount
@@ -179,7 +179,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			AverageStar:    e.AverageStar,
 			RatingCount:    e.RatingCount,
 			RankingScore:   services.BayesianScoreTo100(e.RankingScore),
-			Confidence:     services.RatingConfidence(e.RatingCount),
+			Confidence:     services.RatingConfidenceEffective(e.EffectiveSample),
 			DishCount:      e.DishCount,
 			DishPhotoCount: e.DishPhotoCount,
 			SummaryTags:    tagMap[e.ID],

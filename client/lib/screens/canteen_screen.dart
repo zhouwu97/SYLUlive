@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../models/canteen.dart';
 import '../models/canteen_home.dart';
+import '../models/canteen_dish.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
@@ -28,6 +31,9 @@ class CanteenScreen extends StatefulWidget {
 
 class _CanteenScreenState extends State<CanteenScreen> {
   final _searchCtrl = TextEditingController();
+  Timer? _searchTimer;
+  Map<String, dynamic>? _searchData;
+  bool _searchLoading = false;
 
   @override
   void initState() {
@@ -41,6 +47,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -151,13 +158,32 @@ class _CanteenScreenState extends State<CanteenScreen> {
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
             onChanged: (value) {
-              if (value.trim().isNotEmpty) {
-                final cp = context.read<CanteenProvider>();
-                if (cp.canteens.isEmpty && !cp.isLoading) {
-                  cp.loadCanteens();
-                }
+              _searchTimer?.cancel();
+              final query = value.trim();
+              if (query.isEmpty) {
+                setState(() {
+                  _searchData = null;
+                  _searchLoading = false;
+                });
+                return;
               }
-              setState(() {});
+              setState(() => _searchLoading = true);
+              _searchTimer = Timer(const Duration(milliseconds: 240), () async {
+                final provider = context.read<CanteenProvider>();
+                final result = await provider.searchCanteensAndDishes(query);
+                if (!mounted || _searchCtrl.text.trim() != query) return;
+                if (result == null) {
+                  // 旧服务端没有聚合搜索接口时降级到旧食堂列表，不影响基本发现。
+                  if (provider.canteens.isEmpty && !provider.isLoading) {
+                    await provider.loadCanteens();
+                  }
+                }
+                if (!mounted || _searchCtrl.text.trim() != query) return;
+                setState(() {
+                  _searchData = result;
+                  _searchLoading = false;
+                });
+              });
             },
           ),
         ),
@@ -174,6 +200,10 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   Widget _buildSearchResults(bool isDark, String query) {
+    if (_searchLoading) return _buildSkeleton(isDark);
+    if (_searchData != null) {
+      return _buildServerSearchResults(isDark, query, _searchData!);
+    }
     return Consumer<CanteenProvider>(
       builder: (_, provider, __) {
         if (provider.isLoading && provider.canteens.isEmpty) {
@@ -221,6 +251,79 @@ class _CanteenScreenState extends State<CanteenScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildServerSearchResults(
+      bool isDark, String query, Map<String, dynamic> data) {
+    final canteens = (data['canteens'] as List?)
+            ?.whereType<Map>()
+            .map((item) => Canteen.fromJson(Map<String, dynamic>.from(item)))
+            .toList() ??
+        <Canteen>[];
+    final dishes = (data['dishes'] as List?)
+            ?.whereType<Map>()
+            .map(
+                (item) => CanteenDish.fromJson(Map<String, dynamic>.from(item)))
+            .toList() ??
+        <CanteenDish>[];
+    if (canteens.isEmpty && dishes.isEmpty) {
+      return CanteenEmptyState(
+        icon: Icons.search_off_rounded,
+        title: '没有找到「$query」',
+        subtitle: '可以提交新的食堂，或等待菜品审核通过后再搜索',
+        actionLabel: '提交这家店',
+        onAction: () => _showAddCanteenSheet(isDark, query),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        if (canteens.isNotEmpty) ...[
+          _sectionHeader(isDark, '食堂 (${canteens.length})'),
+          for (var i = 0; i < canteens.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildSearchResultCard(isDark, canteens[i], rank: i + 1),
+            ),
+        ],
+        if (dishes.isNotEmpty) ...[
+          _sectionHeader(isDark, '菜品 (${dishes.length})'),
+          for (final dish in dishes) _buildDishSearchResult(isDark, dish),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDishSearchResult(bool isDark, CanteenDish dish) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      leading: CircleAvatar(
+        backgroundColor: CanteenTheme.accentSoftColor(isDark),
+        child: Icon(Icons.restaurant_menu_rounded,
+            color: CanteenTheme.accentStrongColor(isDark)),
+      ),
+      title: Text(dish.name,
+          style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: CanteenTheme.textPrimaryColor(isDark))),
+      subtitle: Text(
+        dish.canteenName.isEmpty ? '菜品' : '菜品 · ${dish.canteenName}',
+        style: TextStyle(color: CanteenTheme.textSecondaryColor(isDark)),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CanteenDishDetailScreen(
+            canteenId: dish.canteenId,
+            dishId: dish.id,
+            dishName: dish.name,
+            canteenName: dish.canteenName,
+          ),
+        ),
+      ),
     );
   }
 

@@ -61,6 +61,7 @@ type CanteenRating struct {
 	UnhelpfulCount int       `gorm:"not null;default:0" json:"unhelpful_count"` // 无用票数
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	Status         string    `gorm:"size:20;not null;default:'active';index" json:"status"`
 
 	// V2 摘要字段。旧客户端继续读取 Star；新版使用 EffectiveScore 与五维摘要。
 	EffectiveScore      float64 `gorm:"not null;default:0" json:"effective_score"`

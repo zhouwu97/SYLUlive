@@ -474,7 +474,7 @@ class _ReviewItem extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}',
+                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -484,7 +484,7 @@ class _ReviewItem extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!isOwn && review['is_v2'] != true) ...[
+              if (!isOwn) ...[
                 _buildVoteButton(
                   icon: Icons.thumb_up_alt_outlined,
                   iconSelected: Icons.thumb_up_alt_rounded,
@@ -504,9 +504,9 @@ class _ReviewItem extends StatelessWidget {
                       ? null
                       : () => onVote(id, myVote == 'down' ? 'none' : 'down'),
                 ),
-              ] else if (!isOwn &&
-                  review['is_v2'] == true &&
-                  onReport != null) ...[
+              ],
+              if (!isOwn && onReport != null) ...[
+                const SizedBox(width: 4),
                 PopupMenuButton<String>(
                   tooltip: '更多操作',
                   padding: EdgeInsets.zero,

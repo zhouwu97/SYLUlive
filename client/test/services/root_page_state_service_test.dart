@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
@@ -55,5 +57,29 @@ void main() {
 
     await store.clearConversation();
     expect(await store.readConversation(accountId: 7), isNull);
+  });
+
+  test('lastPage 迁移会把数字字符串归一化为 int', () async {
+    final preferences = MemoryPreferencesStore();
+    final store = RootPageStateStore(preferences: preferences);
+    await preferences.setString(
+      RootPageStateStore.lastPageKey,
+      jsonEncode({
+        'type': 'post',
+        'arguments': {
+          'postId': '123',
+          'underlyingRootTab': '1',
+        },
+        'accountId': 7,
+        'version': currentRestorablePageStateVersion,
+      }),
+    );
+
+    final state = await store.readLastPage(accountId: 7);
+    expect(state, isNotNull);
+    expect(state!.arguments['postId'], 123);
+    expect(state.arguments['postId'], isA<int>());
+    expect(state.arguments['underlyingRootTab'], 1);
+    expect(state.arguments['underlyingRootTab'], isA<int>());
   });
 }

@@ -267,32 +267,65 @@ class RestorablePageState {
     Map<String, dynamic> arguments,
     int version,
   ) {
-    if (version == currentRestorablePageStateVersion) {
-      return Map<String, dynamic>.from(arguments);
-    }
-    if (version != 1) return null;
-
-    // v1 只调整过字段命名，保留旧 camelCase 与历史 snake_case 两种写法。
     final migrated = Map<String, dynamic>.from(arguments);
-    void copyAlias(String current, String legacy) {
-      if (!migrated.containsKey(current) && migrated.containsKey(legacy)) {
-        migrated[current] = migrated[legacy];
+    if (version != currentRestorablePageStateVersion && version != 1) {
+      return null;
+    }
+
+    if (version == 1) {
+      // v1 只调整过字段命名，保留旧 camelCase 与历史 snake_case 两种写法。
+      void copyAlias(String current, String legacy) {
+        if (!migrated.containsKey(current) && migrated.containsKey(legacy)) {
+          migrated[current] = migrated[legacy];
+        }
+      }
+
+      copyAlias('conversationId', 'conversation_id');
+      copyAlias('targetUserId', 'target_user_id');
+      copyAlias('targetNickname', 'target_nickname');
+      copyAlias('targetAvatar', 'target_avatar');
+      copyAlias('postId', 'post_id');
+      copyAlias('underlyingRootTab', 'underlying_root_tab');
+
+      // 旧通知状态没有打底 tab 时安全回落到首页。
+      if (type == RestorablePageType.notification &&
+          !migrated.containsKey('underlyingRootTab')) {
+        migrated['underlyingRootTab'] = 0;
       }
     }
 
-    copyAlias('conversationId', 'conversation_id');
-    copyAlias('targetUserId', 'target_user_id');
-    copyAlias('targetNickname', 'target_nickname');
-    copyAlias('targetAvatar', 'target_avatar');
-    copyAlias('postId', 'post_id');
-    copyAlias('underlyingRootTab', 'underlying_root_tab');
+    final integerKeys = <String>[];
+    switch (type) {
+      case RestorablePageType.rootTab:
+        integerKeys.add('index');
+      case RestorablePageType.chat:
+        integerKeys
+          ..add('conversationId')
+          ..add('targetUserId')
+          ..add('underlyingRootTab');
+      case RestorablePageType.post:
+        integerKeys
+          ..add('postId')
+          ..add('underlyingRootTab');
+      case RestorablePageType.notification:
+        integerKeys.add('underlyingRootTab');
+    }
 
-    // 旧通知状态没有打底 tab 时安全回落到首页。
-    if (type == RestorablePageType.notification &&
-        !migrated.containsKey('underlyingRootTab')) {
-      migrated['underlyingRootTab'] = 0;
+    // 持久化 JSON 可能来自旧版本/原生桥接，统一把数字字符串变成 int，
+    // 避免校验阶段允许通过、恢复页面阶段却因 `as int` 类型不匹配而失败。
+    for (final key in integerKeys) {
+      if (!migrated.containsKey(key)) continue;
+      final normalized = _integerValue(migrated[key]);
+      if (normalized == null) return null;
+      migrated[key] = normalized;
     }
     return migrated;
+  }
+
+  static int? _integerValue(Object? raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString().trim() ?? '');
   }
 
   static bool _argumentsAreValid(

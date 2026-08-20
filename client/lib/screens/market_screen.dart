@@ -7,8 +7,10 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/app_resume_coordinator.dart';
 import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
+import '../utils/app_navigator.dart';
 import '../widgets/market_post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
@@ -66,6 +68,7 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _searchResults = [];
   String _typeFilter = 'all';
   int _searchGeneration = 0;
+  VoidCallback? _unregisterResumeRefresh;
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
@@ -78,6 +81,8 @@ class _MarketScreenState extends State<MarketScreen> {
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
           ? _marketPostTypes
           : widget.onlyPostTypes!;
+
+  String? get _selectedServerType => _typeFilter == 'all' ? null : _typeFilter;
 
   String get _defaultPublishTypeForCurrentView {
     if (_typeFilter != 'all' && _allowedTypes.contains(_typeFilter)) {
@@ -119,13 +124,23 @@ class _MarketScreenState extends State<MarketScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshCurrent,
+      isVisible: () => currentHomeTabIndex.value == 1,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PostProvider>().loadPosts(boardId: 2, sort: _sortType);
+      context.read<PostProvider>().loadPosts(
+            boardId: 2,
+            type: _selectedServerType,
+            sort: _sortType,
+          );
     });
   }
 
   @override
   void dispose() {
+    _unregisterResumeRefresh?.call();
     _searchDebounce?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
@@ -140,9 +155,21 @@ class _MarketScreenState extends State<MarketScreen> {
     }
     if (_scrollController.position.extentAfter < 560) {
       final provider = context.read<PostProvider>();
-      if (!provider.isLoadingFor(2, sort: _sortType) &&
-          provider.hasMoreFor(2, sort: _sortType)) {
-        provider.loadPosts(boardId: 2, sort: _sortType);
+      if (!provider.isLoadingFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          ) &&
+          provider.hasMoreFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          )) {
+        provider.loadPosts(
+          boardId: 2,
+          type: _selectedServerType,
+          sort: _sortType,
+        );
       }
     }
   }
@@ -201,7 +228,11 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> _refreshCurrent() async {
-    await context.read<PostProvider>().refresh(boardId: 2, sort: _sortType);
+    await context.read<PostProvider>().refresh(
+          boardId: 2,
+          type: _selectedServerType,
+          sort: _sortType,
+        );
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
     }
@@ -247,6 +278,8 @@ class _MarketScreenState extends State<MarketScreen> {
     });
     if (_searchQuery.isNotEmpty) {
       _runSearch(_searchQuery);
+    } else {
+      unawaited(_refreshCurrent());
     }
   }
 
@@ -561,13 +594,29 @@ class _MarketScreenState extends State<MarketScreen> {
       appBar: null,
       body: Consumer<PostProvider>(
         builder: (context, postProvider, child) {
-          final allPosts = postProvider.postsFor(2, sort: _sortType);
+          final allPosts = postProvider.postsFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          );
           final marketPosts = _buildMarketPosts(
             _searchQuery.isNotEmpty ? _searchResults : allPosts,
           );
-          final isLoading = postProvider.isLoadingFor(2, sort: _sortType);
-          final hasLoaded = postProvider.hasLoadedFor(2, sort: _sortType);
-          final feedError = postProvider.errorFor(2, sort: _sortType);
+          final isLoading = postProvider.isLoadingFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          );
+          final hasLoaded = postProvider.hasLoadedFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          );
+          final feedError = postProvider.errorFor(
+            2,
+            type: _selectedServerType,
+            sort: _sortType,
+          );
 
           if (isLoading && allPosts.isEmpty && !hasLoaded) {
             return const Center(child: CircularProgressIndicator());
@@ -1181,9 +1230,11 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
-              onPressed: () => context
-                  .read<PostProvider>()
-                  .refresh(boardId: 2, sort: _sortType),
+              onPressed: () => context.read<PostProvider>().refresh(
+                    boardId: 2,
+                    type: _selectedServerType,
+                    sort: _sortType,
+                  ),
               icon: const Icon(Icons.refresh),
               label: const Text('重试'),
             ),
@@ -1224,9 +1275,11 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
           ),
           TextButton(
-            onPressed: () => context
-                .read<PostProvider>()
-                .refresh(boardId: 2, sort: _sortType),
+            onPressed: () => context.read<PostProvider>().refresh(
+                  boardId: 2,
+                  type: _selectedServerType,
+                  sort: _sortType,
+                ),
             child: const Text('重试'),
           ),
         ],
@@ -1256,9 +1309,11 @@ class _MarketScreenState extends State<MarketScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
       child: Center(
         child: TextButton.icon(
-          onPressed: () => context
-              .read<PostProvider>()
-              .loadPosts(boardId: 2, sort: _sortType),
+          onPressed: () => context.read<PostProvider>().loadPosts(
+                boardId: 2,
+                type: _selectedServerType,
+                sort: _sortType,
+              ),
           icon: const Icon(Icons.refresh, size: 18),
           label: Text(
             '加载更多失败，点击重试',

@@ -7,10 +7,10 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/market_post_card.dart';
 import 'create_post_screen.dart';
-import 'login_screen.dart';
 import 'post_detail_screen.dart';
 
 abstract final class AppLayout {
@@ -58,12 +58,14 @@ class MarketScreen extends StatefulWidget {
 
 class _MarketScreenState extends State<MarketScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _searchDebounce;
   String _sortType = 'time';
   String _searchQuery = '';
   bool _isSearching = false;
   List<Post> _searchResults = [];
   String _typeFilter = 'all';
+  int _searchGeneration = 0;
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
@@ -116,6 +118,7 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostProvider>().loadPosts(boardId: 2, sort: _sortType);
     });
@@ -124,12 +127,29 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients ||
+        _searchQuery.isNotEmpty ||
+        _isSearching) {
+      return;
+    }
+    if (_scrollController.position.extentAfter < 560) {
+      final provider = context.read<PostProvider>();
+      if (!provider.isLoadingFor(2, sort: _sortType) &&
+          provider.hasMoreFor(2, sort: _sortType)) {
+        provider.loadPosts(boardId: 2, sort: _sortType);
+      }
+    }
+  }
+
   Future<void> _runSearch(String raw) async {
     final query = raw.trim();
+    final generation = ++_searchGeneration;
     if (!mounted) return;
 
     if (query.isEmpty) {
@@ -158,7 +178,9 @@ class _MarketScreenState extends State<MarketScreen> {
           limit: 100,
         );
 
-    if (!mounted || _searchQuery != query) return;
+    if (!mounted || generation != _searchGeneration || _searchQuery != query) {
+      return;
+    }
 
     if (mounted) {
       setState(() {
@@ -543,11 +565,16 @@ class _MarketScreenState extends State<MarketScreen> {
           final marketPosts = _buildMarketPosts(
             _searchQuery.isNotEmpty ? _searchResults : allPosts,
           );
+          final isLoading = postProvider.isLoadingFor(2, sort: _sortType);
+          final hasLoaded = postProvider.hasLoadedFor(2, sort: _sortType);
+          final feedError = postProvider.errorFor(2, sort: _sortType);
 
-          if (postProvider.isLoadingFor(2, sort: _sortType) &&
-              allPosts.isEmpty) {
+          if (isLoading && allPosts.isEmpty && !hasLoaded) {
             return const Center(child: CircularProgressIndicator());
           }
+
+          final initialError =
+              _searchQuery.isEmpty && allPosts.isEmpty && feedError != null;
 
           return Stack(
             children: [
@@ -560,6 +587,7 @@ class _MarketScreenState extends State<MarketScreen> {
               RefreshIndicator(
                 onRefresh: _refreshCurrent,
                 child: CustomScrollView(
+                  controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
                   ),
@@ -580,12 +608,26 @@ class _MarketScreenState extends State<MarketScreen> {
                           _buildCategoryRow(isDark),
                           const SizedBox(height: 8),
                           _buildSortFilterRow(isDark, marketPosts.length),
+                          if (_searchQuery.isEmpty &&
+                              feedError != null &&
+                              allPosts.isNotEmpty)
+                            _buildStaleErrorBanner(
+                              isDark,
+                              feedError,
+                            ),
                         ]),
                       ),
                     ),
                     if (_isSearching)
                       const SliverFillRemaining(
                         child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (initialError)
+                      SliverToBoxAdapter(
+                        child: _buildInitialErrorState(
+                          isDark,
+                          feedError,
+                        ),
                       )
                     else if (marketPosts.isEmpty)
                       SliverToBoxAdapter(
@@ -630,6 +672,17 @@ class _MarketScreenState extends State<MarketScreen> {
                           childCount: marketPosts.length,
                           itemBuilder: (context, index) =>
                               _buildMarketCard(marketPosts[index], true),
+                        ),
+                      ),
+                    if (_searchQuery.isEmpty &&
+                        !_isSearching &&
+                        marketPosts.isNotEmpty &&
+                        (isLoading || feedError != null))
+                      SliverToBoxAdapter(
+                        child: _buildPaginationFooter(
+                          isDark,
+                          isLoading: isLoading,
+                          error: feedError,
                         ),
                       ),
                     if (!_isSearching &&
@@ -967,7 +1020,7 @@ class _MarketScreenState extends State<MarketScreen> {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: AppMotion.duration(context, AppMotion.fast),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.center,
         decoration: BoxDecoration(
@@ -1086,6 +1139,132 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildInitialErrorState(bool isDark, String error) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        decoration: BoxDecoration(
+          color: _MarketTokens.cardBg(isDark),
+          borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
+          border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 40,
+              color: isDark ? Colors.white54 : Colors.grey[500],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '集市加载失败',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _MarketTokens.titleColor(isDark),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: _MarketTokens.subColor(isDark),
+              ),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: () => context
+                  .read<PostProvider>()
+                  .refresh(boardId: 2, sort: _sortType),
+              icon: const Icon(Icons.refresh),
+              label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaleErrorBanner(bool isDark, String error) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.orange.withValues(alpha: 0.12)
+            : const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark
+              ? Colors.orange.withValues(alpha: 0.25)
+              : const Color(0xFFF5C27A),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 18, color: Colors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '刷新失败，仍显示上次内容：$error',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.orange[100] : Colors.orange[900],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => context
+                .read<PostProvider>()
+                .refresh(boardId: 2, sort: _sortType),
+            child: const Text('重试'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaginationFooter(
+    bool isDark, {
+    required bool isLoading,
+    required String? error,
+  }) {
+    if (isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (error == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+      child: Center(
+        child: TextButton.icon(
+          onPressed: () => context
+              .read<PostProvider>()
+              .loadPosts(boardId: 2, sort: _sortType),
+          icon: const Icon(Icons.refresh, size: 18),
+          label: Text(
+            '加载更多失败，点击重试',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          ),
+        ),
       ),
     );
   }

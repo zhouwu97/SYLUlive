@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
@@ -59,7 +61,10 @@ void main() {
     test('account isolation: User A cannot read User B state', () async {
       const state = RestorablePageState(
         type: RestorablePageType.chat,
-        arguments: <String, dynamic>{'conversationId': 100},
+        arguments: <String, dynamic>{
+          'conversationId': 100,
+          'targetUserId': 200,
+        },
         accountId: 1,
       );
 
@@ -71,6 +76,51 @@ void main() {
       final readA = await store.readLastPage(accountId: 1);
       expect(readA, isNotNull);
       expect(readA!.arguments['conversationId'], 100);
+    });
+
+    test('v1 snake_case 状态会迁移到当前版本并校验参数', () async {
+      await prefs.setString(
+        RootPageStateStore.lastPageKey,
+        jsonEncode({
+          'type': 'chat',
+          'arguments': {
+            'conversation_id': 100,
+            'target_user_id': 200,
+          },
+          'accountId': 1,
+          'version': 1,
+        }),
+      );
+
+      final read = await store.readLastPage(accountId: 1);
+      expect(read, isNotNull);
+      expect(read!.version, currentRestorablePageStateVersion);
+      expect(read.arguments['conversationId'], 100);
+      expect(read.arguments['targetUserId'], 200);
+    });
+
+    test('未知版本或无效页面参数会被拒绝', () async {
+      await prefs.setString(
+        RootPageStateStore.lastPageKey,
+        jsonEncode({
+          'type': 'post',
+          'arguments': {'postId': 0},
+          'accountId': 1,
+          'version': currentRestorablePageStateVersion,
+        }),
+      );
+      expect(await store.readLastPage(accountId: 1), isNull);
+
+      await prefs.setString(
+        RootPageStateStore.lastPageKey,
+        jsonEncode({
+          'type': 'rootTab',
+          'arguments': {'index': 0},
+          'accountId': 1,
+          'version': currentRestorablePageStateVersion + 1,
+        }),
+      );
+      expect(await store.readLastPage(accountId: 1), isNull);
     });
 
     test('clearLastPage removes the stored page state', () async {

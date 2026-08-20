@@ -272,7 +272,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. 验证初始状态：0 / 3，展示快捷推荐
-    expect(find.text('0 / 3'), findsNWidgets(2));
+    expect(find.text('0 / 3'), findsOneWidget);
     expect(find.text('已有菜品（点击快速填入）：'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
 
@@ -308,7 +308,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 验证删除后恢复为空
-    expect(find.text('0 / 3'), findsNWidgets(2));
+    expect(find.text('0 / 3'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
   });
 

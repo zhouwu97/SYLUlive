@@ -16,10 +16,13 @@ import (
 )
 
 // SubmitDishPhotoV2 提交菜品实拍候选：新菜/新图先进入 pending，不会绕过审核公开。
-// 旧 SubmitDishPhoto 保留原行为，供旧客户端兼容。
 // POST /api/canteens/:id/dish-submissions
 func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
-	canteenID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	canteenIDStr := c.Param("id")
+	if canteenIDStr == "" {
+		canteenIDStr = c.Param("canteenId")
+	}
+	canteenID, err := strconv.ParseUint(canteenIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -58,6 +61,10 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 	}
 	if !user.IsStudentVerified() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "请先绑定教务账号后投稿", "code": "edu_binding_required"})
+		return
+	}
+	if muted, err := services.IsCanteenMuted(h.db, uid); err == nil && muted {
+		c.JSON(http.StatusForbidden, gin.H{"code": "canteen_submission_muted", "error": "因已确认的食堂内容违规，暂时不能提交食堂评价或菜品投稿"})
 		return
 	}
 	var canteen models.Canteen
@@ -109,11 +116,11 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dish.ID).Error; err != nil {
 			return err
 		}
-		var approvedCount int64
-		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status = ?", dish.ID, models.DishPhotoStatusApproved).Count(&approvedCount).Error; err != nil {
+		var galleryCount int64
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status IN ?", dish.ID, []string{models.DishPhotoStatusApproved, models.DishPhotoStatusPending}).Count(&galleryCount).Error; err != nil {
 			return err
 		}
-		if approvedCount >= 3 {
+		if galleryCount >= 3 {
 			return errDishGalleryFull
 		}
 		if _, err := services.ValidateImageFileIDs(tx, []uint{input.FileID}, 1, uid); err != nil {

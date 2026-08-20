@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/api_constants.dart';
@@ -7,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 import '../widgets/image_upload_widget.dart';
 
@@ -364,19 +366,77 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           for (final review in _reviews.take(3))
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Text(
-                '${review['user_name'] ?? '匿名同学'}：${(review['comment']?.toString().trim().isNotEmpty ?? false) ? review['comment'] : '这位同学没有留下文字评价'}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: CanteenTheme.textSecondaryColor(isDark),
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${review['user_name'] ?? '匿名同学'}：${(review['comment']?.toString().trim().isNotEmpty ?? false) ? review['comment'] : '这位同学没有留下文字评价'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ),
+                  if (context.read<AuthProvider>().user?.id !=
+                      (review['user_id'] as num?)?.toInt())
+                    PopupMenuButton<String>(
+                      tooltip: '举报评价',
+                      padding: EdgeInsets.zero,
+                      onSelected: (_) => _reportDishReview(
+                          (review['id'] as num?)?.toInt() ?? 0),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'report', child: Text('举报该评价')),
+                      ],
+                    ),
+                ],
               ),
             ),
         ],
       ),
+    );
+  }
+
+  Future<void> _reportDishReview(int reviewId) async {
+    if (reviewId == 0) return;
+    await showRatingReportSheet(
+      context: context,
+      targetType: 'canteen_dish_review',
+      targetId: reviewId,
+      onSubmit: (reasonCode, description) async {
+        try {
+          final response = await context.read<AuthProvider>().dio.post(
+            '/reports',
+            data: {
+              'target_type': 'canteen_dish_review',
+              'target_id': reviewId,
+              'reason_code': reasonCode,
+              'reason': description.trim().isEmpty
+                  ? '举报原因：$reasonCode'
+                  : description.trim(),
+            },
+          );
+          if (response.statusCode == 201 || response.statusCode == 200) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('举报已提交，感谢你的反馈')),
+              );
+            }
+            return true;
+          }
+        } on DioException catch (error) {
+          if (mounted) {
+            final message = error.response?.data is Map
+                ? error.response?.data['error']?.toString() ?? '举报提交失败'
+                : '举报提交失败';
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(message)));
+          }
+        }
+        return false;
+      },
     );
   }
 
@@ -635,7 +695,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                 ],
                 const SizedBox(height: 16),
                 Text(
-                  '请上传能清楚看到菜品主体的真实照片，上传后将直接展示。',
+                  '请上传能清楚看到菜品主体的真实照片。提交后会进入审核，审核通过后才会公开展示。',
                   style: TextStyle(
                     fontSize: 12,
                     color: CanteenTheme.textTertiaryColor(isDark),

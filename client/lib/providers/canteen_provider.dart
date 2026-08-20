@@ -62,6 +62,22 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>?> searchCanteensAndDishes(String query) async {
+    try {
+      final response = await _dio.get(
+        '/canteens/search',
+        queryParameters: {'q': query.trim()},
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error searching canteens and dishes: $e');
+    }
+    return null;
+  }
+
   Future<bool> addCanteen(String name, String image) async {
     try {
       final response = await _dio.post(
@@ -118,6 +134,25 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> voteReview({
+    required int reviewId,
+    required String vote,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/canteens/reviews/$reviewId/vote',
+        data: {'vote': vote},
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error voting canteen review: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> updateCanteenImage(
       int id, String imageUrl) async {
     try {
@@ -144,6 +179,36 @@ class CanteenProvider with ChangeNotifier {
       debugPrint('Error deleting canteen: $e');
       return false;
     }
+  }
+
+  Future<Map<String, dynamic>?> offlineCanteen(int id,
+      {String reason = ''}) async {
+    try {
+      final response = await _dio.post(
+        '/canteens/$id/offline',
+        data: {'reason': reason.trim()},
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error offlining canteen: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> onlineCanteen(int id) async {
+    try {
+      final response = await _dio.post('/canteens/$id/online');
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error onlining canteen: $e');
+    }
+    return null;
   }
 
   Future<CanteenRatingSubmitResult> rateCanteen(
@@ -202,6 +267,8 @@ class CanteenProvider with ChangeNotifier {
     required String comment,
     List<String> images = const [],
     List<String> tags = const [],
+    List<int> dishIds = const [],
+    List<String> dishNames = const [],
     List<CanteenDishReviewInput> dishReviews = const [],
     DateTime? baseUpdatedAt,
   }) async {
@@ -211,6 +278,8 @@ class CanteenProvider with ChangeNotifier {
       'comment': comment,
       'images': images,
       'tags': tags,
+      if (dishIds.isNotEmpty) 'dish_ids': dishIds,
+      if (dishNames.isNotEmpty) 'dish_names': dishNames,
       if (dishReviews.isNotEmpty)
         'dish_reviews': dishReviews.map((dish) => dish.toJson()).toList(),
       if (baseUpdatedAt != null)
@@ -239,6 +308,7 @@ class CanteenProvider with ChangeNotifier {
           comment: comment,
           images: images,
           tags: tags,
+          recommendedDishes: dishNames,
           baseUpdatedAt: baseUpdatedAt,
         );
       }
@@ -250,6 +320,7 @@ class CanteenProvider with ChangeNotifier {
           comment: comment,
           images: images,
           tags: tags,
+          recommendedDishes: dishNames,
           baseUpdatedAt: baseUpdatedAt,
         );
       }
@@ -276,6 +347,9 @@ class CanteenProvider with ChangeNotifier {
     required String comment,
     List<String> images = const [],
     List<String> tags = const [],
+    List<int> dishIds = const [],
+    List<String> dishNames = const [],
+    List<CanteenDishReviewInput> dishReviews = const [],
     DateTime? baseUpdatedAt,
   }) async {
     try {
@@ -286,6 +360,10 @@ class CanteenProvider with ChangeNotifier {
           'comment': comment,
           'images': images,
           'tags': tags,
+          if (dishIds.isNotEmpty) 'dish_ids': dishIds,
+          if (dishNames.isNotEmpty) 'dish_names': dishNames,
+          if (dishReviews.isNotEmpty)
+            'dish_reviews': dishReviews.map((dish) => dish.toJson()).toList(),
           if (baseUpdatedAt != null)
             'base_updated_at': baseUpdatedAt.toUtc().toIso8601String(),
         },

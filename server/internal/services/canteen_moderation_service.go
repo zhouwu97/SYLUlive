@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"shenliyuan/internal/models"
 
@@ -21,7 +22,7 @@ func CanteenPenaltyForReason(reasonCode string) int {
 	switch strings.ToLower(strings.TrimSpace(reasonCode)) {
 	case "fabricated", "false", "unrelated", "unrelated_photo", "unrelated_content":
 		return CanteenPenaltyNormal
-	case "malicious", "malicious_repeat", "fake_dish", "stolen_photo":
+	case "spam", "abuse", "harassment", "malicious", "malicious_repeat", "fake_dish", "stolen_photo":
 		return CanteenPenaltyMalice
 	default:
 		return 0
@@ -59,8 +60,16 @@ func ApplyCanteenSanction(tx *gorm.DB, reportID uint, targetType string, targetI
 		}
 		return false, err
 	}
-	result := tx.Model(&models.User{}).Where("id = ?", userID).
-		UpdateColumn("credit_score", gorm.Expr("CASE WHEN credit_score - ? < 0 THEN 0 ELSE credit_score - ? END", points, points))
+	updates := map[string]interface{}{
+		"credit_score": gorm.Expr("CASE WHEN credit_score - ? < 0 THEN 0 ELSE credit_score - ? END", points, points),
+	}
+	// 确认的恶意/骚扰类食堂内容同时临时禁止继续投稿；普通图片审核驳回
+	// 不会调用本函数，因此不会误伤正常用户。普通失实/无关举报只扣诚信，不禁投。
+	reason := strings.ToLower(strings.TrimSpace(reasonCode))
+	if reason != "fabricated" && reason != "false" && reason != "unrelated" && reason != "unrelated_photo" && reason != "unrelated_content" {
+		updates["canteen_muted_until"] = time.Now().Add(72 * time.Hour)
+	}
+	result := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -68,4 +77,13 @@ func ApplyCanteenSanction(tx *gorm.DB, reportID uint, targetType string, targetI
 		return false, fmt.Errorf("sanction user %d not found", userID)
 	}
 	return true, nil
+}
+
+// IsCanteenMuted 判断用户是否暂时不能提交食堂评价或菜品投稿。
+func IsCanteenMuted(tx *gorm.DB, userID uint) (bool, error) {
+	var user models.User
+	if err := tx.Select("id", "canteen_muted_until").First(&user, userID).Error; err != nil {
+		return false, err
+	}
+	return user.CanteenMutedUntil != nil && user.CanteenMutedUntil.After(time.Now()), nil
 }

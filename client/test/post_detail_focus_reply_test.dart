@@ -34,11 +34,11 @@ class _AuthProvider extends ChangeNotifier implements AuthProvider {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-Map<String, dynamic> _postJson() {
+Map<String, dynamic> _postJson({String content = '测试内容'}) {
   return {
     'id': 100,
     'title': '测试帖子',
-    'content': '测试内容',
+    'content': content,
     'board_id': 1,
     'author_id': 1,
     'created_at': '2026-08-01T00:00:00Z',
@@ -47,7 +47,10 @@ Map<String, dynamic> _postJson() {
   };
 }
 
-Dio _detailDio() {
+Dio _detailDio({
+  List<Map<String, dynamic>> replies = const [],
+  String postContent = '测试内容',
+}) {
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -58,7 +61,7 @@ Dio _detailDio() {
             Response(
               requestOptions: options,
               statusCode: 200,
-              data: _postJson(),
+              data: _postJson(content: postContent),
             ),
           );
           return;
@@ -69,8 +72,8 @@ Dio _detailDio() {
               requestOptions: options,
               statusCode: 200,
               data: <String, dynamic>{
-                'replies': <dynamic>[],
-                'total': 0,
+                'replies': replies,
+                'total': replies.length,
                 'next_cursor': '',
               },
             ),
@@ -86,8 +89,13 @@ Dio _detailDio() {
   return dio;
 }
 
-Widget _app(Post? initialPost, {required bool focusReplyComposer}) {
-  final dio = _detailDio();
+Widget _app(
+  Post? initialPost, {
+  required bool focusReplyComposer,
+  List<Map<String, dynamic>> replies = const [],
+  String postContent = '测试内容',
+}) {
+  final dio = _detailDio(replies: replies, postContent: postContent);
   final auth = _AuthProvider(client: dio);
   return MultiProvider(
     providers: [
@@ -112,6 +120,102 @@ Widget _app(Post? initialPost, {required bool focusReplyComposer}) {
 void main() {
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
+  });
+
+  testWidgets('点击评论回复不重置详情滚动位置', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: List.filled(90, '这是一段用于撑开帖子详情滚动区域的测试内容。').join('\n'),
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        postContent: initial.content,
+        replies: [
+          {
+            'id': 7,
+            'post_id': 100,
+            'author_id': 2,
+            'author': {
+              'id': 2,
+              'student_id': '2',
+              'nickname': '评论用户',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '可点击回复的评论',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
+    await tester.drag(scrollView, const Offset(0, -5000));
+    await tester.pumpAndSettle();
+
+    double scrollOffset() {
+      final scrollable = find.descendant(
+        of: scrollView,
+        matching: find.byType(Scrollable),
+      );
+      return tester.state<ScrollableState>(scrollable).position.pixels;
+    }
+
+    final before = scrollOffset();
+    expect(before, greaterThan(0));
+
+    await tester.tap(find.text('可点击回复的评论'));
+    await tester.pumpAndSettle();
+
+    expect(scrollOffset(), closeTo(before, 0.5));
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('post-reply-input')),
+          )
+          .focusNode
+          ?.hasFocus,
+      isTrue,
+    );
+  });
+
+  testWidgets('键盘弹出后评论输入框保持在键盘上方', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    await tester.tap(input);
+    await tester.pump();
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+    await tester.pump();
+
+    final inputRect = tester.getRect(input);
+    expect(inputRect.bottom, lessThanOrEqualTo(450.5));
   });
 
   testWidgets('focusReplyComposer=true 时评论输入框展开并获得焦点', (tester) async {
@@ -187,7 +291,7 @@ void main() {
     expect(field.controller?.text, '保留这段草稿');
     expect(
       find.byKey(const ValueKey('post-detail-input-dismiss-layer')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 
@@ -216,7 +320,7 @@ void main() {
     expect(find.byType(AppEmojiPanel), findsNothing);
     expect(
       find.byKey(const ValueKey('post-detail-input-dismiss-layer')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 

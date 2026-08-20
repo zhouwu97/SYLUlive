@@ -10,7 +10,7 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 import '../widgets/image_upload_widget.dart';
 
-/// 菜品详情页：实拍图库（1~3 张）+ 上传入口。无星级。
+/// 菜品详情页：菜品三维评价 + 实拍图库（1~3 张）+ 上传入口。
 class CanteenDishDetailScreen extends StatefulWidget {
   final int canteenId;
   final int dishId;
@@ -32,6 +32,7 @@ class CanteenDishDetailScreen extends StatefulWidget {
 
 class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   Map<String, dynamic>? _data;
+  List<Map<String, dynamic>> _reviews = [];
   bool _isLoading = true;
 
   @override
@@ -43,9 +44,11 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   Future<void> _load() async {
     final provider = context.read<CanteenProvider>();
     final data = await provider.loadDishDetail(widget.canteenId, widget.dishId);
+    final reviews = await provider.loadDishReviews(widget.dishId);
     if (mounted) {
       setState(() {
         _data = data;
+        _reviews = reviews ?? [];
         _isLoading = false;
       });
     }
@@ -72,24 +75,28 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     if (photoId == null) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final initialUploaderName = photo['uploader_name'] ?? photo['nickname'] ?? '同学';
+    final initialUploaderName =
+        photo['uploader_name'] ?? photo['nickname'] ?? '同学';
     final initialCreatedAt = photo['created_at']?.toString() ?? '';
 
     final confirm = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => FutureBuilder<Map<String, dynamic>?>(
-        future: context.read<CanteenProvider>().adminGetDishPhotoDetail(photoId),
+        future:
+            context.read<CanteenProvider>().adminGetDishPhotoDetail(photoId),
         builder: (ctx, snapshot) {
           final detail = snapshot.data;
           final uploaderName = detail?['uploader_name'] ?? initialUploaderName;
-          final createdAt = detail?['created_at']?.toString() ?? initialCreatedAt;
+          final createdAt =
+              detail?['created_at']?.toString() ?? initialCreatedAt;
 
           return Container(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceBg(isDark),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: SafeArea(
               child: Column(
@@ -134,7 +141,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(46),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusSm),
                       ),
                     ),
                   ),
@@ -216,6 +224,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                         color: CanteenTheme.textPrimaryColor(isDark),
                       ),
                     ),
+                    _buildRatingSummary(isDark, accent),
+                    if (_reviews.isNotEmpty) _buildReviewList(isDark),
                     if (isAdmin && _photos.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -240,6 +250,114 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       _buildUploadEntry(isDark, accent),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildRatingSummary(bool isDark, Color accent) {
+    // 旧服务端/旧测试没有 V2 菜品评分字段时不插入占位内容，保持图库首屏布局稳定。
+    final hasV2Data = _data?.containsKey('average_score') == true ||
+        _data?.containsKey('dimension_scores') == true ||
+        _data?.containsKey('reviewer_count') == true;
+    if (!hasV2Data) return const SizedBox.shrink();
+    final average = (_data?['average_score'] as num?)?.toDouble() ?? 0;
+    final count = (_data?['reviewer_count'] as num?)?.toInt() ?? 0;
+    final raw = _data?['dimension_scores'];
+    final scores =
+        raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
+    final dimensions = <({String key, String label})>[
+      (key: 'taste', label: '味道'),
+      (key: 'value', label: '性价比'),
+      (key: 'portion', label: '分量'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark),
+          borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+          border: Border.all(color: CanteenTheme.borderColor(isDark)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.star_rounded, size: 17, color: accent),
+                const SizedBox(width: 4),
+                Text(
+                  average > 0 ? average.toStringAsFixed(1) : '暂无评分',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '$count 人评价 · 味道 / 性价比 / 分量',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ],
+            ),
+            if (scores.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                children: dimensions.map((item) {
+                  final score = scores[item.key] is num
+                      ? (scores[item.key] as num).toDouble()
+                      : 0.0;
+                  return Text(
+                    '${item.label} ${score.toStringAsFixed(1)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: CanteenTheme.textSecondaryColor(isDark),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewList(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '菜品评价',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: CanteenTheme.textPrimaryColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final review in _reviews.take(3))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Text(
+                '${review['user_name'] ?? '匿名同学'}：${(review['comment']?.toString().trim().isNotEmpty ?? false) ? review['comment'] : '这位同学没有留下文字评价'}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: CanteenTheme.textSecondaryColor(isDark),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -414,125 +532,129 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: CanteenTheme.borderColor(isDark),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                '上传菜品实拍',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: CanteenTheme.textPrimaryColor(isDark),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                widget.dishId != null ? (widget.dishName ?? '这道菜') : '给这道菜起个名字',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: CanteenTheme.textSecondaryColor(isDark),
-                ),
-              ),
-              if (widget.dishId == null) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _dishNameCtrl,
-                  textInputAction: TextInputAction.done,
-                  maxLength: 40,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: '输入菜名，例如：锅包肉',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: CanteenTheme.textTertiaryColor(isDark),
-                    ),
-                    prefixIcon: const Icon(Icons.restaurant_rounded, size: 20),
-                    filled: true,
-                    fillColor: CanteenTheme.surfaceMutedBg(isDark),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(CanteenTheme.radiusMd),
-                      borderSide: BorderSide(
-                        color: CanteenTheme.borderColor(isDark),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(CanteenTheme.radiusMd),
-                      borderSide: BorderSide(
-                        color: CanteenTheme.borderColor(isDark),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(CanteenTheme.radiusMd),
-                      borderSide: BorderSide(color: accent, width: 1.4),
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.borderColor(isDark),
+                      borderRadius: BorderRadius.circular(99),
                     ),
                   ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '上传菜品实拍',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  widget.dishId != null
+                      ? (widget.dishName ?? '这道菜')
+                      : '给这道菜起个名字',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+                if (widget.dishId == null) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _dishNameCtrl,
+                    textInputAction: TextInputAction.done,
+                    maxLength: 40,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: '输入菜名，例如：锅包肉',
+                      hintStyle: TextStyle(
+                        fontSize: 13,
+                        color: CanteenTheme.textTertiaryColor(isDark),
+                      ),
+                      prefixIcon:
+                          const Icon(Icons.restaurant_rounded, size: 20),
+                      filled: true,
+                      fillColor: CanteenTheme.surfaceMutedBg(isDark),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusMd),
+                        borderSide: BorderSide(
+                          color: CanteenTheme.borderColor(isDark),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusMd),
+                        borderSide: BorderSide(
+                          color: CanteenTheme.borderColor(isDark),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusMd),
+                        borderSide: BorderSide(color: accent, width: 1.4),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  '请上传能清楚看到菜品主体的真实照片，上传后将直接展示。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: CanteenTheme.textTertiaryColor(isDark),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // 复用现有上传组件（单图）
+                _fileId == null
+                    ? ImageUploadWidget(
+                        maxImages: 1,
+                        largeCard: true,
+                        emptyTitle: '添加实拍',
+                        emptySubtitle: '建议上传清晰菜品照片',
+                        onImagesUploaded: (images) {
+                          if (images.isNotEmpty) {
+                            setState(() {
+                              _fileId = images.first.fileId;
+                              _selectedImage = images.first;
+                            });
+                          }
+                        },
+                      )
+                    : _buildSelectedImage(isDark, accent),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: _submitting || !_canSubmit ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
+                    ),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('确认上传'),
                 ),
               ],
-              const SizedBox(height: 16),
-              Text(
-                '请上传能清楚看到菜品主体的真实照片，上传后将直接展示。',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CanteenTheme.textTertiaryColor(isDark),
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 14),
-              // 复用现有上传组件（单图）
-              _fileId == null
-                  ? ImageUploadWidget(
-                      maxImages: 1,
-                      largeCard: true,
-                      emptyTitle: '添加实拍',
-                      emptySubtitle: '建议上传清晰菜品照片',
-                      onImagesUploaded: (images) {
-                        if (images.isNotEmpty) {
-                          setState(() {
-                            _fileId = images.first.fileId;
-                            _selectedImage = images.first;
-                          });
-                        }
-                      },
-                    )
-                  : _buildSelectedImage(isDark, accent),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: _submitting || !_canSubmit ? null : _submit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
-                  ),
-                ),
-                child: _submitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('确认上传'),
-              ),
-            ],
             ),
           ),
         ),
@@ -588,8 +710,8 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                       color: Colors.black54,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.close,
-                        size: 18, color: Colors.white),
+                    child:
+                        const Icon(Icons.close, size: 18, color: Colors.white),
                   ),
                 ),
               ),
@@ -625,12 +747,11 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
 
   Future<void> _submit() async {
     setState(() => _submitting = true);
-    final message = await widget.provider.submitDishPhoto(
+    final message = await widget.provider.submitDishSubmission(
       widget.canteenId,
       dishId: widget.dishId,
-      dishName: widget.dishId != null
-          ? widget.dishName
-          : _dishNameCtrl.text.trim(),
+      dishName:
+          widget.dishId != null ? widget.dishName : _dishNameCtrl.text.trim(),
       fileId: _fileId!,
     );
     if (!mounted) return;

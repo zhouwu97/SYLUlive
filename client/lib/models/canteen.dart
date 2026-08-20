@@ -7,7 +7,10 @@ class Canteen {
   final bool verified;
   final int createdBy;
   final int ratingCount;
+  final int reviewerCount;
+  final int visitReviewCount;
   final double averageStar;
+  final Map<String, double> dimensionScores;
   final int dishCount;
   final int dishPhotoCount;
   final double rankingScore;
@@ -19,7 +22,10 @@ class Canteen {
     required this.verified,
     required this.createdBy,
     required this.ratingCount,
+    this.reviewerCount = 0,
+    this.visitReviewCount = 0,
     required this.averageStar,
+    this.dimensionScores = const {},
     this.dishCount = 0,
     this.dishPhotoCount = 0,
     this.rankingScore = 0,
@@ -33,7 +39,15 @@ class Canteen {
       verified: json['verified'] ?? false,
       createdBy: json['created_by'] ?? 0,
       ratingCount: json['rating_count'] ?? 0,
+      reviewerCount: json['reviewer_count'] ?? json['rating_count'] ?? 0,
+      visitReviewCount: json['visit_review_count'] ?? json['rating_count'] ?? 0,
       averageStar: (json['average_star'] ?? 0).toDouble(),
+      dimensionScores: (json['dimension_scores'] is Map)
+          ? (json['dimension_scores'] as Map).map(
+              (key, value) =>
+                  MapEntry(key.toString(), (value as num?)?.toDouble() ?? 0),
+            )
+          : const {},
       dishCount: json['dish_count'] ?? 0,
       dishPhotoCount: json['dish_photo_count'] ?? 0,
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
@@ -55,6 +69,14 @@ class CanteenRating {
   final int helpfulCount;
   final int unhelpfulCount;
   final String? myVote;
+  final int tasteScore;
+  final int valueScore;
+  final int queueScore;
+  final int hygieneScore;
+  final int serviceScore;
+  final int creditScore;
+  final double creditWeight;
+  final int historyCount;
 
   CanteenRating({
     required this.id,
@@ -70,6 +92,14 @@ class CanteenRating {
     this.helpfulCount = 0,
     this.unhelpfulCount = 0,
     this.myVote,
+    this.tasteScore = 0,
+    this.valueScore = 0,
+    this.queueScore = 0,
+    this.hygieneScore = 0,
+    this.serviceScore = 0,
+    this.creditScore = 0,
+    this.creditWeight = 0,
+    this.historyCount = 0,
   });
 
   factory CanteenRating.fromJson(Map<String, dynamic> json) {
@@ -98,6 +128,14 @@ class CanteenRating {
       helpfulCount: json['helpful_count'] ?? 0,
       unhelpfulCount: json['unhelpful_count'] ?? 0,
       myVote: json['my_vote']?.toString(),
+      tasteScore: (json['taste_score'] ?? 0).toInt(),
+      valueScore: (json['value_score'] ?? 0).toInt(),
+      queueScore: (json['queue_score'] ?? 0).toInt(),
+      hygieneScore: (json['hygiene_score'] ?? 0).toInt(),
+      serviceScore: (json['service_score'] ?? 0).toInt(),
+      creditScore: (json['credit_score'] ?? 0).toInt(),
+      creditWeight: (json['credit_weight'] ?? 0).toDouble(),
+      historyCount: (json['history_count'] ?? 0).toInt(),
     );
   }
 }

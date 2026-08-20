@@ -280,4 +280,64 @@ void main() {
     expect(find.text('回复'), findsOneWidget);
     expect(find.text('3分钟前'), findsOneWidget);
   });
+
+  testWidgets('评论刷新失败时继续显示已有评论', (tester) async {
+    final dio = Dio();
+    var replyRequestCount = 0;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/polls/1') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: _pollJson(),
+          ),
+        );
+        return;
+      }
+      if (options.path == '/posts/1/replies') {
+        replyRequestCount++;
+        if (replyRequestCount == 1) {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'replies': <dynamic>[_replyJson()],
+                'total': 1,
+                'next_cursor': '',
+              },
+            ),
+          );
+        } else {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 503,
+                data: {'error': '评论服务暂时不可用'},
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      handler.reject(DioException(requestOptions: options));
+    }));
+
+    await tester.pumpWidget(
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, 560));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(replyRequestCount, 2);
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+    expect(find.textContaining('刷新失败，仍显示上次评论'), findsOneWidget);
+  });
 }

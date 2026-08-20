@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/startup_destination.dart';
+import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
 
@@ -80,16 +81,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<Map<String, int>>? _adminOverviewFuture;
   Future<Response<dynamic>>? _invitationsFuture;
   int? _loadedAccountSessionEpoch;
+  VoidCallback? _unregisterResumeRefresh;
 
   @override
   void initState() {
     super.initState();
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshAfterResume,
+      isVisible: () => currentHomeTabIndex.value == 4,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
       _loadPrefs();
       _fetchPostCount();
     });
+  }
+
+  @override
+  void dispose() {
+    _unregisterResumeRefresh?.call();
+    super.dispose();
   }
 
   @override
@@ -156,6 +169,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
       }
     } catch (_) {}
+  }
+
+  Future<void> _refreshAfterResume() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
+    await Future.wait<void>([
+      auth.refreshUser(),
+      _loadUnreadCount(),
+      _fetchPostCount(),
+    ]);
+    if (mounted) _loadPrefs();
   }
 
   @override

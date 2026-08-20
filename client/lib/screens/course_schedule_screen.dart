@@ -11,9 +11,10 @@ import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
+import '../services/app_resume_coordinator.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
-import '../utils/app_navigator.dart' show appNavigatorKey;
+import '../utils/app_navigator.dart' show appNavigatorKey, currentHomeTabIndex;
 import '../utils/responsive_util.dart';
 import 'course_schedule_settings_screen.dart';
 import 'home_widget_settings_screen.dart';
@@ -140,6 +141,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
       const CourseBackgroundKeepAliveStatus.unsupported();
   bool _backgroundKeepAliveBusy = false;
+  VoidCallback? _unregisterResumeRefresh;
   static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   // 有限分页：page 0 = 第1周，page n = 第 n+1 周。边界由 itemCount 提供，
@@ -178,6 +180,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     // 开学日在缓存加载后才可知，先无 initialPage，等 semesterStart 到位后由 _resetWeekPager 跳到正确教学周。
     _weekPageController = PageController();
     _loadSettings();
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshAfterResume,
+      isVisible: () => currentHomeTabIndex.value == 2,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
@@ -196,6 +203,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   @override
   void dispose() {
+    _unregisterResumeRefresh?.call();
     _weekPageController.dispose();
     super.dispose();
   }
@@ -240,6 +248,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       if (!context.read<AuthProvider>().isLoggedIn) return;
       await _syncCourseReminders(sc);
     } catch (_) {}
+  }
+
+  Future<void> _refreshAfterResume() async {
+    final auth = context.read<AuthProvider>();
+    final edu = context.read<EduProvider>();
+    final schedule = context.read<CourseScheduleProvider>();
+    final user = auth.user;
+    if (!auth.isLoggedIn || user == null || !edu.isBound) return;
+    schedule.setUserId(user.id.toString());
+    await schedule.loadCourses(forceRefresh: true);
+    if (mounted) {
+      await _syncCourseReminders(schedule);
+      if (mounted) {
+        setState(() => _hasCache = schedule.courses.isNotEmpty);
+      }
+    }
   }
 
   Future<void> _syncCourseReminders(CourseScheduleProvider sc) async {

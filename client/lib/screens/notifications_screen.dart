@@ -16,6 +16,21 @@ import '../utils/post_route.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
 
+@visibleForTesting
+bool canLoadMoreNotifications({
+  required bool hasMore,
+  required bool isLoading,
+  required bool isRefreshing,
+  required bool isLoadingMore,
+  required String? nextCursor,
+}) {
+  return hasMore &&
+      !isLoading &&
+      !isRefreshing &&
+      !isLoadingMore &&
+      nextCursor != null;
+}
+
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -107,7 +122,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients || !_hasMore || _isLoadingMore) return;
+    if (!_scrollController.hasClients ||
+        !canLoadMoreNotifications(
+          hasMore: _hasMore,
+          isLoading: _isLoading,
+          isRefreshing: _isRefreshing,
+          isLoadingMore: _isLoadingMore,
+          nextCursor: _nextCursor,
+        )) {
+      return;
+    }
     if (_scrollController.position.extentAfter < 480) {
       unawaited(_loadReplies(loadMore: true));
     }
@@ -136,7 +160,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       return;
     }
 
-    if (loadMore && (!_hasMore || _isLoadingMore || _nextCursor == null)) {
+    if (loadMore &&
+        !canLoadMoreNotifications(
+          hasMore: _hasMore,
+          isLoading: _isLoading,
+          isRefreshing: _isRefreshing,
+          isLoadingMore: _isLoadingMore,
+          nextCursor: _nextCursor,
+        )) {
       return;
     }
 
@@ -153,6 +184,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         } else {
           _isLoading = true;
           _isRefreshing = _notifications.isNotEmpty;
+          _isLoadingMore = false;
           _errorMessage = null;
           _loadMoreError = null;
         }

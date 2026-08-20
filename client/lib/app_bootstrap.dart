@@ -53,6 +53,8 @@ import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
 import 'services/root_page_state_service.dart';
+import 'services/retry_interceptor.dart';
+import 'services/app_resume_coordinator.dart';
 import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
@@ -1227,6 +1229,7 @@ Dio getSharedDio() {
         },
       ),
     );
+    dio.interceptors.add(SafeRetryInterceptor(dio));
     dio.interceptors.add(DiagnosticDioInterceptor());
 
     if (kDebugMode) {
@@ -1377,6 +1380,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    AppResumeCoordinator.instance.onLifecycleChanged(context, state);
     if (state == AppLifecycleState.resumed) {
       _checkDeepLink();
     }
@@ -1695,8 +1699,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
             alignment: alignment,
             gaplessPlayback: true,
             errorBuilder: (_, __, ___) => Container(
-              color:
-                  isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+              color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
             ),
           ),
           // 保留完整背景主体
@@ -1754,7 +1757,6 @@ class AuthWrapper extends StatefulWidget {
 class HomeInitialTabResolver {
   int? _initialTab;
   int? _cachedUserId;
-  StartupDestinationMode? _cachedMode;
 
   /// 解析 `lastPage` 深层类型（chat/post/notification）时要打底的根 tab。
   static const int homeTabs = 5;
@@ -1765,20 +1767,18 @@ class HomeInitialTabResolver {
     RestorablePageState? lastPage,
   }) {
     final mode = themeProvider.startupDestination;
-    if (_initialTab != null &&
-        _cachedUserId == userId &&
-        _cachedMode == mode) {
+    // 启动 tab 是一次性的会话决策；用户在当前会话中修改偏好，不应把
+    // 已经展示的根页面悄悄切走。切换账号时再重新解析。
+    if (_initialTab != null && _cachedUserId == userId) {
       return _initialTab!;
     }
     _cachedUserId = userId;
-    _cachedMode = mode;
     return _initialTab = initialTabFor(mode, lastPage);
   }
 
   void reset() {
     _initialTab = null;
     _cachedUserId = null;
-    _cachedMode = null;
   }
 
   /// 从启动模式与上次页面推断打底 root tab 索引（纯函数，便于测试）。
@@ -1821,7 +1821,6 @@ class StartupNavigationPlan {
   final int rootTabIndex;
   final RestorablePageState? deepPage;
 }
-
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
@@ -1881,7 +1880,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       _jpushSettingUp = false;
     }
   }
-
 
   void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
     if (_legalConsentDialogVisible) return;
@@ -2013,10 +2011,9 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       if (tp.startupDestination != StartupDestinationMode.lastPage) return;
       if (context.read<AuthProvider>().user?.id != userId) return;
 
-      final externalTargetPending =
-          _pendingPrivateMessageOpen.target != null ||
-              _pendingNotificationOpen.target != null ||
-              widgetTabSwitch.value > 0;
+      final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
+          _pendingNotificationOpen.target != null ||
+          widgetTabSwitch.value > 0;
 
       RestorablePageState? state;
       if (!externalTargetPending) {

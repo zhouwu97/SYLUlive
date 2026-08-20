@@ -481,9 +481,19 @@ func main() {
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
-	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
-	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
-	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
+	announcementBackfills := []struct {
+		name      string
+		statement string
+	}{
+		{name: "status", statement: `UPDATE announcements SET status = 'published' WHERE status = ''`},
+		{name: "display_mode", statement: `UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`},
+		{name: "priority", statement: `UPDATE announcements SET priority = 'normal' WHERE priority = ''`},
+	}
+	for _, backfill := range announcementBackfills {
+		if err := db.Exec(backfill.statement).Error; err != nil {
+			log.Fatal("公告字段回填失败（", backfill.name, "): ", err)
+		}
+	}
 
 	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
 	log.Println("跳过启动期全表统计回算")

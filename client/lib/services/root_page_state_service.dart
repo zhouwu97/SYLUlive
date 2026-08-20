@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import '../platform/contracts/preferences_store.dart';
 
+/// lastPage 持久化协议版本。读取时保留 v1 兼容迁移，未知未来版本直接丢弃。
+const int currentRestorablePageStateVersion = 2;
+const int _restorableHomeTabCount = 5;
+
 class CommunityFeedState {
   const CommunityFeedState({
     required this.mode,
@@ -149,8 +153,10 @@ class RootPageStateStore {
 
   /// 保存当前可恢复页面状态。仅在 `lastPage` 模式下有意义。
   Future<void> saveLastPage(RestorablePageState state) async {
+    final normalized = RestorablePageState.fromJson(state.toJson());
+    if (normalized == null) return;
     final preferences = _preferences ?? await AppPreferencesStore.getInstance();
-    await preferences.setString(lastPageKey, jsonEncode(state.toJson()));
+    await preferences.setString(lastPageKey, jsonEncode(normalized.toJson()));
   }
 
   /// 读取上次退出时的页面状态（账号隔离）。
@@ -210,7 +216,7 @@ class RestorablePageState {
     required this.type,
     required this.arguments,
     required this.accountId,
-    this.version = 1,
+    this.version = currentRestorablePageStateVersion,
   });
 
   final RestorablePageType type;
@@ -218,7 +224,7 @@ class RestorablePageState {
   final int accountId;
   final int version;
 
-  bool get isValid => accountId > 0;
+  bool get isValid => accountId > 0 && _argumentsAreValid(type, arguments);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'type': type.name,
@@ -235,19 +241,94 @@ class RestorablePageState {
     final accountId = _positiveInt(value['accountId']);
     if (accountId == null) return null;
     final arguments = value['arguments'];
-    final parsedArgs = arguments is Map<String, dynamic>
-        ? arguments
+    final parsedArgs = arguments is Map
+        ? Map<String, dynamic>.from(arguments)
         : <String, dynamic>{};
-    final version = (value['version'] is num)
-        ? (value['version'] as num).toInt()
-        : 1;
+    final version =
+        (value['version'] is num) ? (value['version'] as num).toInt() : 1;
+    if (version <= 0 || version > currentRestorablePageStateVersion) {
+      return null;
+    }
+    final migratedArgs = _migrateArguments(type, parsedArgs, version);
+    if (migratedArgs == null || !_argumentsAreValid(type, migratedArgs)) {
+      return null;
+    }
     final state = RestorablePageState(
       type: type,
-      arguments: parsedArgs,
+      arguments: migratedArgs,
       accountId: accountId,
-      version: version,
+      version: currentRestorablePageStateVersion,
     );
     return state.isValid ? state : null;
+  }
+
+  static Map<String, dynamic>? _migrateArguments(
+    RestorablePageType type,
+    Map<String, dynamic> arguments,
+    int version,
+  ) {
+    if (version == currentRestorablePageStateVersion) {
+      return Map<String, dynamic>.from(arguments);
+    }
+    if (version != 1) return null;
+
+    // v1 只调整过字段命名，保留旧 camelCase 与历史 snake_case 两种写法。
+    final migrated = Map<String, dynamic>.from(arguments);
+    void copyAlias(String current, String legacy) {
+      if (!migrated.containsKey(current) && migrated.containsKey(legacy)) {
+        migrated[current] = migrated[legacy];
+      }
+    }
+
+    copyAlias('conversationId', 'conversation_id');
+    copyAlias('targetUserId', 'target_user_id');
+    copyAlias('targetNickname', 'target_nickname');
+    copyAlias('targetAvatar', 'target_avatar');
+    copyAlias('postId', 'post_id');
+    copyAlias('underlyingRootTab', 'underlying_root_tab');
+
+    // 旧通知状态没有打底 tab 时安全回落到首页。
+    if (type == RestorablePageType.notification &&
+        !migrated.containsKey('underlyingRootTab')) {
+      migrated['underlyingRootTab'] = 0;
+    }
+    return migrated;
+  }
+
+  static bool _argumentsAreValid(
+    RestorablePageType type,
+    Map<String, dynamic> arguments,
+  ) {
+    int? readInt(Object? raw) {
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '');
+    }
+
+    bool validOptionalRootTab() {
+      final raw = arguments['underlyingRootTab'];
+      if (raw == null) return true;
+      final index = readInt(raw);
+      return index != null && index >= 0 && index < _restorableHomeTabCount;
+    }
+
+    switch (type) {
+      case RestorablePageType.rootTab:
+        final index = readInt(arguments['index']);
+        return index != null && index >= 0 && index < _restorableHomeTabCount;
+      case RestorablePageType.chat:
+        final conversationId = readInt(arguments['conversationId']);
+        final targetUserId = readInt(arguments['targetUserId']);
+        return conversationId != null &&
+            conversationId > 0 &&
+            targetUserId != null &&
+            targetUserId > 0 &&
+            validOptionalRootTab();
+      case RestorablePageType.post:
+        final postId = readInt(arguments['postId']);
+        return postId != null && postId > 0 && validOptionalRootTab();
+      case RestorablePageType.notification:
+        return validOptionalRootTab();
+    }
   }
 
   static RestorablePageType? _parseType(String? name) {

@@ -193,6 +193,50 @@ func TestDishPhotoSubmissionUsesPendingReviewAndGalleryLimit(t *testing.T) {
 	}
 }
 
+func TestHiddenDishCannotBeReusedOrApprovedThroughPhotoSubmission(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	student := createVerifiedUser(t, db, 2, "学生")
+	canteen := models.Canteen{Name: "隐藏菜测试店", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatal(err)
+	}
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "隐藏鸡排", NormalizedName: "隐藏鸡排",
+		Status: models.DishStatusHidden, CreatedBy: student.ID,
+	}
+	if err := db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := createTestFile(t, db, 901, student.ID, models.FileAccessPrivate)
+	submit := NewCanteenDishPhotoHandler(db)
+	response := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}}, student.ID,
+		fmt.Sprintf(`{"dish_name":"隐藏鸡排","file_id":%d}`, file.ID))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "dish_name_hidden_conflict") {
+		t.Fatalf("hidden name reuse status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	pending := models.CanteenDishPhoto{DishID: dish.ID, FileID: file.ID, UserID: student.ID, Status: models.DishPhotoStatusPending}
+	if err := db.Create(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	approved := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", pending.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(pending.ID)}}, 1, "")
+	if approved.Code != http.StatusConflict || !strings.Contains(approved.Body.String(), "dish_hidden_requires_restore") {
+		t.Fatalf("hidden approval status=%d body=%s", approved.Code, approved.Body.String())
+	}
+	if err := db.First(&pending, pending.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Status != models.DishPhotoStatusPending {
+		t.Fatalf("hidden photo status=%s want pending", pending.Status)
+	}
+}
+
 func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	createVerifiedUser(t, db, 1, "管理员")

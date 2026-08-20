@@ -72,7 +72,11 @@ class FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-Widget _buildApp([Dio? dio]) {
+Widget _buildApp({
+  Dio? dio,
+  ThemeData? theme,
+  double textScale = 1.0,
+}) {
   final d = dio ?? _buildDio();
   return MultiProvider(
     providers: [
@@ -80,7 +84,16 @@ Widget _buildApp([Dio? dio]) {
       ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(d)),
       ChangeNotifierProvider(create: (_) => AuthProvider(d)),
     ],
-    child: const MaterialApp(home: CanteenScreen()),
+    child: MaterialApp(
+      theme: theme,
+      home: const CanteenScreen(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    ),
   );
 }
 
@@ -96,7 +109,7 @@ void main() {
       return ResponseBody.fromString('{"error":"not found"}', 404);
     });
 
-    await tester.pumpWidget(_buildApp(dio));
+    await tester.pumpWidget(_buildApp(dio: dio));
     await tester.pumpAndSettle();
 
     expect(requests.where((r) => r == 'GET /canteens/home'), hasLength(1));
@@ -111,6 +124,20 @@ void main() {
 
     expect(find.text('今天吃什么'), findsOneWidget);
     expect(find.text('同学真实评价 · 菜品实拍'), findsOneWidget);
+
+    final scrollableFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          widget.axisDirection == AxisDirection.down &&
+          widget.physics is AlwaysScrollableScrollPhysics,
+    );
+    expect(scrollableFinder, findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('热门菜品'),
+      400,
+      scrollable: scrollableFinder,
+    );
+
     expect(find.text('热门菜品'), findsOneWidget);
     expect(find.text('今日有效评价'), findsOneWidget);
     expect(find.text('37'), findsOneWidget);
@@ -120,7 +147,7 @@ void main() {
     expect(find.text('01'), findsNothing);
   });
 
-  testWidgets('最近在吃信息流渲染多类型 Card（实拍 + 稳妥选择）', (tester) async {
+  testWidgets('更多推荐渲染多类型 Card，店名优先于推荐标签', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -129,16 +156,42 @@ void main() {
     expect(listFinder, findsOneWidget);
     await tester.fling(listFinder, const Offset(0, -900), 1200);
     await tester.pumpAndSettle();
-    expect(find.text('同学最近实拍'), findsOneWidget);
+    expect(find.text('最近实拍'), findsOneWidget);
     expect(find.textContaining('红烧牛肉面'), findsOneWidget);
-    expect(find.text('想吃稳一点？'), findsOneWidget);
+    expect(find.text('评价稳定'), findsOneWidget);
+    expect(find.text('综合 78'), findsOneWidget);
     expect(find.text('三食堂面馆'), findsOneWidget);
+    expect(find.text('同学最近实拍'), findsNothing);
+    expect(find.text('想吃稳一点？'), findsNothing);
+    expect(find.text('今天可以优先看看'), findsNothing);
   });
 
   testWidgets('无 FAB', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('暗色与大字号首页无溢出', (tester) async {
+    await tester.pumpWidget(
+      _buildApp(theme: ThemeData.dark(), textScale: 1.3),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final scrollableFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          widget.axisDirection == AxisDirection.down &&
+          widget.physics is AlwaysScrollableScrollPhysics,
+    );
+    await tester.scrollUntilVisible(
+      find.text('更多推荐'),
+      400,
+      scrollable: scrollableFinder,
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('更多推荐'), findsOneWidget);
   });
 
   testWidgets('搜索时懒加载全量收录店铺，即使未入选推荐流也能搜到', (tester) async {

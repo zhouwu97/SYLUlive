@@ -79,7 +79,7 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '信用加权 + 样本修正',
+                      '信用加权 · 样本修正',
                       style: TextStyle(
                         fontSize: 12,
                         color: CanteenTheme.textSecondaryColor(isDark),

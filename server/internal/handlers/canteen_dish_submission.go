@@ -65,9 +65,17 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		return
 	}
+	canteen.NormalizeOperatingStatus()
+	if canteen.IsOffline {
+		c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能新增菜品或实拍"})
+		return
+	}
 
 	var photo models.CanteenDishPhoto
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := lockActiveCanteen(tx, uint(canteenID)); err != nil {
+			return err
+		}
 		var dish models.CanteenDish
 		if input.DishID != nil {
 			if err := tx.Where("id = ? AND canteen_id = ?", *input.DishID, canteenID).First(&dish).Error; err != nil {
@@ -122,6 +130,8 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能为空"})
 		case errors.Is(err, errDishGalleryFull):
 			c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张公开实拍"})
+		case errors.Is(err, errCanteenOffline):
+			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能新增菜品或实拍"})
 		case errors.Is(err, services.ErrInvalidImageFileReference):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:

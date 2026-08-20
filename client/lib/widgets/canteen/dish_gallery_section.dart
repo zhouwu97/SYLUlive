@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../../config/api_constants.dart';
 import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/canteen_dish_detail_screen.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
 /// 食堂详情页「大家都在吃」菜品图鉴区。
 /// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供上传 CTA。
@@ -54,9 +53,8 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       _isLoading = true;
       _loadFailed = false;
     });
-    final dishes = await context
-        .read<CanteenProvider>()
-        .loadDishes(widget.canteenId);
+    final dishes =
+        await context.read<CanteenProvider>().loadDishes(widget.canteenId);
     if (!mounted) return;
     if (dishes == null) {
       // 请求失败：不刷新父级统计（保留入口快照），显示重试而非伪装空态
@@ -231,8 +229,9 @@ class _DishCard extends StatelessWidget {
                 width: 148,
                 height: 104,
                 child: dish.coverImage.isNotEmpty
-                    ? CachedNetworkImage(
+                    ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder(),
                         placeholder: (_, __) => _placeholder(),

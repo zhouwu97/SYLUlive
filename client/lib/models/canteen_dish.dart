@@ -2,6 +2,9 @@
 class CanteenDish {
   final int id;
   final String name;
+  final int canteenId;
+  final String canteenName;
+  final String canteenOperatingStatus;
   final String coverImage;
   final int photoCount;
   final String lastPhotoAt;
@@ -11,6 +14,9 @@ class CanteenDish {
   const CanteenDish({
     required this.id,
     required this.name,
+    this.canteenId = 0,
+    this.canteenName = '',
+    this.canteenOperatingStatus = 'active',
     required this.coverImage,
     required this.photoCount,
     required this.lastPhotoAt,
@@ -22,6 +28,10 @@ class CanteenDish {
     return CanteenDish(
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
+      canteenId: (json['canteen_id'] ?? 0).toInt(),
+      canteenName: json['canteen_name']?.toString() ?? '',
+      canteenOperatingStatus:
+          json['canteen_operating_status']?.toString() ?? 'active',
       coverImage: json['cover_image']?.toString() ?? '',
       photoCount: json['photo_count'] ?? 0,
       lastPhotoAt: json['last_photo_at']?.toString() ?? '',
@@ -29,6 +39,8 @@ class CanteenDish {
       reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
     );
   }
+
+  bool get isCanteenOffline => canteenOperatingStatus == 'offline';
 }
 
 /// 菜品实拍（公开接口仅含 approved）。

@@ -75,6 +75,7 @@ class CanteenReviewEvent {
   final int userId;
   final CanteenReviewDimensions dimensions;
   final double overallScore;
+  final int scoreVersion;
   final String comment;
   final String userName;
   final String userAvatar;
@@ -89,6 +90,7 @@ class CanteenReviewEvent {
     required this.userId,
     required this.dimensions,
     required this.overallScore,
+    this.scoreVersion = 2,
     required this.comment,
     required this.userName,
     required this.userAvatar,
@@ -111,6 +113,7 @@ class CanteenReviewEvent {
         service: _int(json['service_score']),
       ),
       overallScore: _double(json['overall_score']),
+      scoreVersion: _int(json['score_version']),
       comment: json['comment']?.toString() ?? '',
       userName: json['user_name']?.toString() ?? '匿名同学',
       userAvatar: json['user_avatar']?.toString() ?? '',

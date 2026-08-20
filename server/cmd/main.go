@@ -420,11 +420,11 @@ func main() {
 	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
 		log.Fatal("食堂名称唯一索引迁移失败:", err)
 	}
+	if err := models.EnsureCanteenOperatingStatusSchema(db); err != nil {
+		log.Fatal("食堂营业状态迁移失败:", err)
+	}
 	if err := models.EnsureCanteenDishSchema(db); err != nil {
 		log.Fatal("食堂菜品图库约束迁移失败:", err)
-	}
-	if err := models.MigratePendingCanteenDishPhotos(db); err != nil {
-		log.Fatal("待审核实拍数据迁移失败:", err)
 	}
 	if err := models.EnsureCanteenRatingRecommendationSchema(db); err != nil {
 		log.Fatal("食堂评价菜品推荐约束迁移失败:", err)
@@ -1924,6 +1924,9 @@ func main() {
 		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
 
 		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
+
+		canteenAdmin.POST("/:id/offline", canteenHandler.OfflineCanteen)
+		canteenAdmin.POST("/:id/online", canteenHandler.OnlineCanteen)
 
 		canteenAdmin.DELETE("/:id/pending", canteenHandler.RejectCanteen)
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -339,5 +341,96 @@ void main() {
     expect(replyRequestCount, 2);
     expect(find.text('这是统一后的评论'), findsOneWidget);
     expect(find.textContaining('刷新失败，仍显示上次评论'), findsOneWidget);
+  });
+
+  testWidgets('刷新抢占加载更多评论时清理旧的分页 loading 状态', (tester) async {
+    final dio = Dio();
+    final loadMoreStarted = Completer<void>();
+    final releaseLoadMore = Completer<void>();
+    var replyRequestCount = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/polls/1') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: _pollJson(),
+              ),
+            );
+            return;
+          }
+          if (options.path == '/posts/1/replies') {
+            replyRequestCount++;
+            final cursor = options.queryParameters['cursor']?.toString();
+            if (cursor == 'next') {
+              loadMoreStarted.complete();
+              releaseLoadMore.future.then((_) {
+                handler.resolve(
+                  Response(
+                    requestOptions: options,
+                    statusCode: 200,
+                    data: const {
+                      'replies': <dynamic>[],
+                      'total': 1,
+                      'next_cursor': '',
+                    },
+                  ),
+                );
+              });
+              return;
+            }
+            if (replyRequestCount == 1) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'replies': <dynamic>[_replyJson()],
+                    'total': 2,
+                    'next_cursor': 'next',
+                  },
+                ),
+              );
+            } else {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  response: Response(
+                    requestOptions: options,
+                    statusCode: 503,
+                    data: {'error': '评论服务暂时不可用'},
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+          handler.reject(DioException(requestOptions: options));
+        },
+      ),
+    );
+
+    await tester.pumpWidget(
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
+    );
+    await tester.pumpAndSettle();
+
+    expect(replyRequestCount, 1);
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+    expect(find.text('加载更多评论'), findsOneWidget);
+    await tester.tap(find.text('加载更多评论'));
+    await tester.pump();
+    await loadMoreStarted.future;
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, 560));
+    await tester.pumpAndSettle();
+
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    releaseLoadMore.complete();
+    await tester.pumpAndSettle();
   });
 }

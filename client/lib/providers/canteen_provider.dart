@@ -260,7 +260,7 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
-  /// V2 店铺评价入口。服务端返回不完整时回退旧 /rate，保证旧环境和旧测试可用。
+  /// V2 店铺评价入口。创建评价必须写入 ReviewEvent，不能回退到旧摘要 /rate。
   Future<CanteenRatingSubmitResult> submitReview(
     int id, {
     required CanteenReviewDimensions dimensions,
@@ -298,32 +298,7 @@ class CanteenProvider with ChangeNotifier {
           ),
         );
       }
-      // 兼容旧服务端：新路由存在但尚未部署时，继续使用旧摘要接口。
-      if (response.statusCode == 404 ||
-          response.statusCode == 405 ||
-          data is Map && data.isEmpty) {
-        return rateCanteen(
-          id,
-          star: dimensions.taste,
-          comment: comment,
-          images: images,
-          tags: tags,
-          recommendedDishes: dishNames,
-          baseUpdatedAt: baseUpdatedAt,
-        );
-      }
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404 || e.response?.statusCode == 405) {
-        return rateCanteen(
-          id,
-          star: dimensions.taste,
-          comment: comment,
-          images: images,
-          tags: tags,
-          recommendedDishes: dishNames,
-          baseUpdatedAt: baseUpdatedAt,
-        );
-      }
       _errorMessage = _parseError(e);
       final data = e.response?.data;
       if (data is Map) {

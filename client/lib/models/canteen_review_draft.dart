@@ -103,11 +103,17 @@ class CanteenReviewDraftDishReview {
 
 /// 食堂评价草稿
 class CanteenReviewDraft {
-  static const int currentSchemaVersion = 4;
+  static const int currentSchemaVersion = 5;
 
   final int schemaVersion;
   final int userId;
   final int canteenId;
+
+  /// 草稿所属业务流程：create 为新增评价，edit 为修改最近一条 V2 评价。
+  final String mode;
+
+  /// edit 草稿对应的 ReviewEvent ID；create 草稿固定为空。
+  final int? reviewEventId;
   final int star;
   final int tasteScore;
   final int valueScore;
@@ -128,6 +134,8 @@ class CanteenReviewDraft {
     this.schemaVersion = currentSchemaVersion,
     required this.userId,
     required this.canteenId,
+    this.mode = 'create',
+    this.reviewEventId,
     this.star = 0,
     this.tasteScore = 0,
     this.valueScore = 0,
@@ -161,6 +169,8 @@ class CanteenReviewDraft {
     int? schemaVersion,
     int? userId,
     int? canteenId,
+    String? mode,
+    int? reviewEventId,
     int? star,
     int? tasteScore,
     int? valueScore,
@@ -179,6 +189,8 @@ class CanteenReviewDraft {
       schemaVersion: schemaVersion ?? this.schemaVersion,
       userId: userId ?? this.userId,
       canteenId: canteenId ?? this.canteenId,
+      mode: mode ?? this.mode,
+      reviewEventId: reviewEventId ?? this.reviewEventId,
       star: star ?? this.star,
       tasteScore: tasteScore ?? this.tasteScore,
       valueScore: valueScore ?? this.valueScore,
@@ -199,6 +211,8 @@ class CanteenReviewDraft {
         'schema_version': schemaVersion,
         'user_id': userId,
         'canteen_id': canteenId,
+        'mode': mode,
+        'review_event_id': reviewEventId,
         'star': star,
         'taste_score': tasteScore,
         'value_score': valueScore,
@@ -221,6 +235,8 @@ class CanteenReviewDraft {
           (json['schema_version'] as num?)?.toInt() ?? currentSchemaVersion,
       userId: (json['user_id'] as num?)?.toInt() ?? 0,
       canteenId: (json['canteen_id'] as num?)?.toInt() ?? 0,
+      mode: json['mode']?.toString() == 'edit' ? 'edit' : 'create',
+      reviewEventId: (json['review_event_id'] as num?)?.toInt(),
       star: (json['star'] as num?)?.toInt() ?? 0,
       // 五维评分是独立字段。旧草稿没有这些字段时保持未填写，不能把旧版星级
       // 复制到每个维度，否则恢复草稿会伪造用户从未填写过的业务数据。

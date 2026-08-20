@@ -562,7 +562,7 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 		return nil, nil
 	}
 	var event models.CanteenReviewEvent
-	if err := h.db.Where("canteen_id = ? AND user_id = ? AND status = ? AND score_version >= ?", canteenID, userID, models.ReviewEventStatusActive, 2).
+	if err := h.db.Where("canteen_id = ? AND user_id = ? AND status = ? AND (score_version >= ? OR score_version = ?)", canteenID, userID, models.ReviewEventStatusActive, 2, 0).
 		Order("created_at DESC, id DESC").First(&event).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || isCanteenReviewSchemaMissing(err) {
 			return nil, nil
@@ -641,6 +641,44 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 		"recommended_dishes": recommendedDishes,
 		"dish_reviews":       dishReviews,
 	}, nil
+}
+
+// buildReviewAction 返回详情页创建/编辑入口的服务端权威状态。
+// Legacy 摘要只代表历史兼容数据，不会被标记为可编辑的 V2 事件。
+func (h *CanteenHandler) buildReviewAction(canteenID, userID uint) (map[string]interface{}, error) {
+	action := map[string]interface{}{
+		"can_create":          true,
+		"can_edit_latest":     false,
+		"latest_review_id":    nil,
+		"retry_after_seconds": 0,
+		"next_create_at":      nil,
+	}
+	if !h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) {
+		return action, nil
+	}
+
+	var latest models.CanteenReviewEvent
+	err := h.db.Where(
+		"canteen_id = ? AND user_id = ? AND status = ? AND (score_version >= ? OR score_version = ?)",
+		canteenID, userID, models.ReviewEventStatusActive, 2, 0,
+	).Order("created_at DESC, id DESC").First(&latest).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) || isCanteenReviewSchemaMissing(err) {
+		return action, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	action["can_edit_latest"] = true
+	action["latest_review_id"] = latest.ID
+	nextCreateAt := latest.CreatedAt.Add(reviewCreateCooldown)
+	remaining := time.Until(nextCreateAt)
+	if remaining > 0 {
+		action["can_create"] = false
+		action["retry_after_seconds"] = int(math.Ceil(remaining.Seconds()))
+		action["next_create_at"] = nextCreateAt
+	}
+	return action, nil
 }
 
 func populateReviewDishNames(db *gorm.DB, reviews []models.CanteenReviewEvent) {

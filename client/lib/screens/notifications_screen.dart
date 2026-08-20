@@ -13,6 +13,8 @@ import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../models/post.dart';
 import '../utils/post_route.dart';
+import '../services/reply_notification_service.dart';
+import '../services/reply_notification_state.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -151,13 +153,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   Future<void> _markAllRead() async {
     final auth = context.read<AuthProvider>();
     try {
-      await auth.dio.post('/notifications/read');
+      await ReplyNotificationService(auth.dio).markAllRead();
       if (mounted) {
         setState(() {
           for (var item in _notifications) {
             item['is_read'] = true;
           }
         });
+        ReplyNotificationState.instance.notifyAllRead();
         AppFeedback.showSnackBar(context, '已全部标记为已读');
       }
     } catch (e) {
@@ -253,15 +256,24 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return InkWell(
       onTap: () async {
         if (!isRead && id != null) {
-          setState(() {
-            notification['is_read'] = true;
-          });
           final auth = context.read<AuthProvider>();
           try {
-            await auth.dio.post('/notifications/read-selected', data: {
-              'ids': [id]
+            await ReplyNotificationService(auth.dio).markRead(id);
+            if (!mounted) return;
+            setState(() {
+              notification['is_read'] = true;
             });
-          } catch (_) {}
+            if (type == 'reply') {
+              ReplyNotificationState.instance.markRead(id);
+            }
+          } catch (error) {
+            if (!mounted) return;
+            AppFeedback.showSnackBar(
+              context,
+              '标记已读失败，请重试',
+              isError: true,
+            );
+          }
         }
 
         if (postId != null) {

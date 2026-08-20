@@ -53,11 +53,16 @@ class ReplyNotificationService {
   Future<UnreadReplyNotificationPage> _fetchLegacyUnread(int limit) async {
     final response = await _dio.get('/notifications');
     final data = response.data;
-    if (response.statusCode != 200 || data is! List) {
+    final rawItems = data is List
+        ? data
+        : data is Map
+            ? data['items']
+            : null;
+    if (response.statusCode != 200 || rawItems is! List) {
       throw StateError('旧版通知响应格式错误');
     }
 
-    final unreadReplies = data
+    final unreadReplies = rawItems
         .whereType<Map<String, dynamic>>()
         .where((item) => item['type'] == 'reply' && item['is_read'] == false)
         .toList(growable: false);

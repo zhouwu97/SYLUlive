@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -60,115 +59,112 @@ class BottomNavWrapper extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
               ),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: Container(
-                  padding: EdgeInsets.only(
-                    top: 2,
-                    bottom: bottomSafe > 0 ? bottomSafe : 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
-                            .withValues(alpha: 0.85),
-                    border: Border(
-                      top: BorderSide(
-                        color: isDark
-                            ? Colors.white10
-                            : Colors.black.withValues(alpha: 0.06),
-                        width: 0.5,
-                      ),
+              child: Container(
+                padding: EdgeInsets.only(
+                  top: 2,
+                  bottom: bottomSafe > 0 ? bottomSafe : 2,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
+                          .withValues(alpha: 0.85),
+                  border: Border(
+                    top: BorderSide(
+                      color: isDark
+                          ? Colors.white10
+                          : Colors.black.withValues(alpha: 0.06),
+                      width: 0.5,
                     ),
                   ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
-                      Positioned.fill(
-                        child: RepaintBoundary(
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: visualIndexListenable,
-                            builder: (context, visualIndex, child) {
-                              return Align(
-                                alignment: Alignment.centerLeft,
-                                child: Transform.translate(
-                                  offset: Offset(itemWidth * visualIndex, 0),
-                                  child: SizedBox(
-                                    width: itemWidth,
-                                    child: Center(
-                                      child: Container(
-                                        width: 48,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: [
-                                              primaryColor.withValues(
-                                                  alpha: 0.18),
-                                              primaryColor.withValues(
-                                                  alpha: 0.07),
-                                            ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(14),
-                                          border: Border.all(
-                                            color: primaryColor.withValues(
-                                              alpha: 0.1,
-                                            ),
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: primaryColor.withValues(
-                                                alpha: 0.12,
-                                              ),
-                                              blurRadius: 14,
-                                              offset: const Offset(0, 5),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      RepaintBoundary(
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
+                    Positioned.fill(
+                      child: RepaintBoundary(
                         child: ValueListenableBuilder<double>(
                           valueListenable: visualIndexListenable,
                           builder: (context, visualIndex, child) {
-                            const icons = [
-                              Icons.home_rounded,
-                              Icons.storefront_rounded,
-                              Icons.calendar_month_rounded,
-                              Icons.apartment_rounded,
-                              Icons.person_rounded,
-                            ];
-                            const labels = ['首页', '集市', '课表', '校园', '我'];
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: List.generate(
-                                icons.length,
-                                (index) => _labeledItem(
-                                  icons[index],
-                                  labels[index],
-                                  index,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                  visualIndex,
-                                  badges[index] == true,
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Transform.translate(
+                                offset: Offset(itemWidth * visualIndex, 0),
+                                child: SizedBox(
+                                  width: itemWidth,
+                                  child: Center(
+                                    child: Container(
+                                      width: 48,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            primaryColor.withValues(
+                                                alpha: 0.18),
+                                            primaryColor.withValues(
+                                                alpha: 0.07),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: primaryColor.withValues(
+                                            alpha: 0.1,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: primaryColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            blurRadius: 14,
+                                            offset: const Offset(0, 5),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
                           },
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    RepaintBoundary(
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: visualIndexListenable,
+                        builder: (context, visualIndex, child) {
+                          const icons = [
+                            Icons.home_rounded,
+                            Icons.storefront_rounded,
+                            Icons.calendar_month_rounded,
+                            Icons.apartment_rounded,
+                            Icons.person_rounded,
+                          ];
+                          const labels = ['首页', '集市', '课表', '校园', '我'];
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: List.generate(
+                              icons.length,
+                              (index) => _labeledItem(
+                                icons[index],
+                                labels[index],
+                                index,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                                visualIndex,
+                                badges[index] == true,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -188,126 +184,123 @@ class BottomNavWrapper extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Container(
-              height: 64,
-              decoration: BoxDecoration(
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF1E2226).withValues(alpha: 0.86)
+                  : Colors.white.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
                 color: isDark
-                    ? const Color(0xFF1E2226).withValues(alpha: 0.86)
-                    : Colors.white.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : AppColors.borderNormalLight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : AppColors.borderNormalLight,
               ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final itemWidth = constraints.maxWidth / 5;
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Positioned.fill(
-                        child: RepaintBoundary(
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: visualIndexListenable,
-                            builder: (context, visualIndex, child) {
-                              return Align(
-                                alignment: Alignment.centerLeft,
-                                child: Transform.translate(
-                                  offset: Offset(itemWidth * visualIndex, 0),
-                                  child: SizedBox(
-                                    width: itemWidth,
-                                    child: Center(
-                                      child: Container(
-                                        width: 56,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: isDark
-                                                ? [
-                                                    primaryColor.withValues(
-                                                      alpha: 0.24,
-                                                    ),
-                                                    primaryColor.withValues(
-                                                      alpha: 0.1,
-                                                    ),
-                                                  ]
-                                                : [
-                                                    const Color(0xFFF3FBF8),
-                                                    const Color(0xFFE5F5F0),
-                                                  ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(18),
-                                          border: Border.all(
-                                            color: primaryColor.withValues(
-                                              alpha: isDark ? 0.26 : 0.12,
-                                            ),
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: primaryColor.withValues(
-                                                alpha: isDark ? 0.18 : 0.1,
-                                              ),
-                                              blurRadius: 16,
-                                              offset: const Offset(0, 5),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      RepaintBoundary(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = constraints.maxWidth / 5;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned.fill(
+                      child: RepaintBoundary(
                         child: ValueListenableBuilder<double>(
                           valueListenable: visualIndexListenable,
                           builder: (context, visualIndex, child) {
-                            const icons = [
-                              Icons.home_rounded,
-                              Icons.storefront_rounded,
-                              Icons.calendar_month_rounded,
-                              Icons.apartment_rounded,
-                              Icons.person_rounded,
-                            ];
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: List.generate(
-                                icons.length,
-                                (index) => _iconOnly(
-                                  icons[index],
-                                  index,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                  visualIndex,
-                                  badges[index] == true,
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Transform.translate(
+                                offset: Offset(itemWidth * visualIndex, 0),
+                                child: SizedBox(
+                                  width: itemWidth,
+                                  child: Center(
+                                    child: Container(
+                                      width: 56,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: isDark
+                                              ? [
+                                                  primaryColor.withValues(
+                                                    alpha: 0.24,
+                                                  ),
+                                                  primaryColor.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                ]
+                                              : [
+                                                  const Color(0xFFF3FBF8),
+                                                  const Color(0xFFE5F5F0),
+                                                ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: primaryColor.withValues(
+                                            alpha: isDark ? 0.26 : 0.12,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: primaryColor.withValues(
+                                              alpha: isDark ? 0.18 : 0.1,
+                                            ),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 5),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
                           },
                         ),
                       ),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                    RepaintBoundary(
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: visualIndexListenable,
+                        builder: (context, visualIndex, child) {
+                          const icons = [
+                            Icons.home_rounded,
+                            Icons.storefront_rounded,
+                            Icons.calendar_month_rounded,
+                            Icons.apartment_rounded,
+                            Icons.person_rounded,
+                          ];
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: List.generate(
+                              icons.length,
+                              (index) => _iconOnly(
+                                icons[index],
+                                index,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                                visualIndex,
+                                badges[index] == true,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -435,7 +428,8 @@ class BottomNavWrapper extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
     final softenedT = Curves.easeOutCubic.transform(activeT);
-    final inactiveColor = isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
+    final inactiveColor =
+        isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
 
     return _NavItemVisualState(
       color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,

@@ -47,6 +47,11 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   bool _pollNotFound = false;
   bool _repliesLoading = false;
   String? _repliesError;
+  String? _repliesLoadMoreError;
+  String? _repliesNextCursor;
+  bool _repliesHasMore = false;
+  bool _loadingMoreReplies = false;
+  int _replyRequestVersion = 0;
   bool _sending = false;
   late final PollService _service;
   late final PostReplyService _replyService;
@@ -127,17 +132,32 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     }
   }
 
-  Future<void> _loadReplies(int postId) async {
+  Future<void> _loadReplies(int postId, {bool loadMore = false}) async {
+    if (loadMore && (_loadingMoreReplies || !_repliesHasMore)) return;
+    final requestVersion = ++_replyRequestVersion;
+    final cursor = _repliesNextCursor;
     if (mounted) {
       setState(() {
-        _repliesLoading = true;
-        _repliesError = null;
+        if (loadMore) {
+          _loadingMoreReplies = true;
+          _repliesLoadMoreError = null;
+        } else {
+          _repliesLoading = true;
+          _repliesError = null;
+          _repliesNextCursor = null;
+          _repliesHasMore = false;
+        }
       });
     }
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/posts/$postId/replies');
-      if (!mounted) return;
+      final response = await context.read<AuthProvider>().dio.get(
+        '/posts/$postId/replies',
+        queryParameters: {
+          'limit': 20,
+          if (loadMore && cursor != null) 'cursor': cursor,
+        },
+      );
+      if (!mounted || requestVersion != _replyRequestVersion) return;
       // 分页重构后响应为 {replies, total, next_cursor} 对象。
       final data = response.data;
       final raw = data is Map ? data['replies'] : data;
@@ -145,22 +165,46 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           .map((e) => Reply.fromJson(e as Map<String, dynamic>))
           .toList();
       setState(() {
-        _replies = replies;
+        if (loadMore) {
+          final knownIds = _replies.map((reply) => reply.id).toSet();
+          _replies = [
+            ..._replies,
+            ...replies.where((reply) => !knownIds.contains(reply.id)),
+          ];
+        } else {
+          _replies = replies;
+        }
+        final next = data is Map ? data['next_cursor']?.toString() : null;
+        _repliesNextCursor = next == null || next.isEmpty ? null : next;
+        _repliesHasMore = _repliesNextCursor != null;
         _repliesLoading = false;
+        _loadingMoreReplies = false;
+        _repliesLoadMoreError = null;
       });
     } on DioException catch (error) {
-      if (mounted) {
+      if (mounted && requestVersion == _replyRequestVersion) {
         setState(() {
-          _repliesLoading = false;
-          _repliesError =
+          final message =
               AppFeedback.dioErrorMessage(error, fallback: '加载评论失败');
+          if (loadMore) {
+            _loadingMoreReplies = false;
+            _repliesLoadMoreError = message;
+          } else {
+            _repliesLoading = false;
+            _repliesError = message;
+          }
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && requestVersion == _replyRequestVersion) {
         setState(() {
-          _repliesLoading = false;
-          _repliesError = '加载评论失败';
+          if (loadMore) {
+            _loadingMoreReplies = false;
+            _repliesLoadMoreError = '加载更多评论失败';
+          } else {
+            _repliesLoading = false;
+            _repliesError = '加载评论失败';
+          }
         });
       }
     }
@@ -179,6 +223,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       if (!mounted) return false;
       setState(() {
         _replies.insert(0, reply);
+        _repliesLoadMoreError = null;
         _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
       });
       context.read<PostProvider>().applyExternalPostUpdate(_post!);
@@ -511,14 +556,14 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (_repliesLoading)
+                  if (_repliesLoading && _replies.isEmpty)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: CircularProgressIndicator(),
                       ),
                     )
-                  else if (_repliesError != null)
+                  else if (_repliesError != null && _replies.isEmpty)
                     Row(
                       children: [
                         Expanded(
@@ -533,7 +578,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                         ),
                       ],
                     ),
-                  if (!_repliesLoading && _repliesError == null)
+                  if ((!_repliesLoading || _replies.isNotEmpty) &&
+                      _repliesError == null) ...[
                     PostReplyList(
                       replies: _replies,
                       onReply: _openReply,
@@ -555,6 +601,35 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                         targetType: 'reply',
                       ),
                     ),
+                    if (_repliesHasMore ||
+                        _loadingMoreReplies ||
+                        _repliesLoadMoreError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 12),
+                        child: Center(
+                          child: TextButton.icon(
+                            onPressed: _loadingMoreReplies
+                                ? null
+                                : () => _loadReplies(
+                                      post.id,
+                                      loadMore: true,
+                                    ),
+                            icon: _loadingMoreReplies
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.expand_more, size: 18),
+                            label: Text(
+                              _repliesLoadMoreError ?? '加载更多评论',
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),

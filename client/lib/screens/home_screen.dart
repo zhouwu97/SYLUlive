@@ -16,6 +16,7 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
+import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
@@ -144,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen>
   int _unreadBadgeCount = 0;
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
+  VoidCallback? _unregisterResumeRefresh;
 
   int get _currentIndex => _mainTabLedger.currentIndex;
   set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
@@ -157,42 +159,49 @@ class _HomeScreenState extends State<HomeScreen>
   set _mainVisualIndex(double value) => _mainTabLedger.visualIndex = value;
 
   Future<void> _checkAdminTasks(AuthProvider auth) async {
+    Future<Response<dynamic>?> safeGet(String path) async {
+      try {
+        return await auth.dio.get(path);
+      } catch (error) {
+        debugPrint('[Home] admin badge request failed ($path): $error');
+        return null;
+      }
+    }
+
+    final futures = await Future.wait<Response<dynamic>?>([
+      safeGet('/teachers/pending'),
+      safeGet('/majors/pending'),
+      safeGet('/admin/invitations/pending'),
+      safeGet('/admin/removals/pending'),
+    ]);
+    if (futures.any((response) => response == null)) return;
+
+    final lists = futures
+        .cast<Response<dynamic>>()
+        .map((response) => response.data)
+        .toList();
+    if (lists.any((data) => data is! List)) return;
+
     try {
-      final futures = await Future.wait([
-        auth.dio.get('/teachers/pending').catchError((_) =>
-            Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/majors/pending').catchError((_) =>
-            Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/invitations/pending').catchError((_) =>
-            Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/removals/pending').catchError((_) =>
-            Response(requestOptions: RequestOptions(path: ''), data: [])),
-      ]);
       int count = 0;
-      if (futures[0].data is List) count += (futures[0].data as List).length;
-      if (futures[1].data is List) count += (futures[1].data as List).length;
-      if (futures[2].data is List)
-        count +=
-            (futures[2].data as List).where((i) => i['my_vote'] != true).length;
-      if (futures[3].data is List)
-        count += (futures[3].data as List)
-            .where((r) => r['can_vote'] == true)
-            .length;
+      count += (lists[0] as List).length;
+      count += (lists[1] as List).length;
+      count += (lists[2] as List).where((i) => i['my_vote'] != true).length;
+      count += (lists[3] as List).where((r) => r['can_vote'] == true).length;
 
       if (auth.user?.isSuperAdmin == true) {
-        final superRes = await auth.dio
-            .get('/super/invitations/pending')
-            .catchError((_) =>
-                Response(requestOptions: RequestOptions(path: ''), data: []));
-        if (superRes.data is List)
-          count +=
-              (superRes.data as List).where((i) => i['my_vote'] != true).length;
+        final superRes = await safeGet('/super/invitations/pending');
+        if (superRes?.data is! List) return;
+        count +=
+            (superRes!.data as List).where((i) => i['my_vote'] != true).length;
       }
 
       if (mounted && _hasAdminTasks != (count > 0)) {
         setState(() => _hasAdminTasks = count > 0);
       }
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('[Home] admin badge response invalid: $error');
+    }
   }
 
   // Snooze: keyed by userId:announcementId in AppPreferencesStore
@@ -238,6 +247,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      () => _checkUnreadAnnouncements(),
+    );
     // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
     // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
     final deepPage = widget.initialDeepPage;
@@ -394,6 +407,7 @@ class _HomeScreenState extends State<HomeScreen>
     _announcementTimer?.cancel();
     _announcementRetryTimer?.cancel();
     _initialUpdateFallbackTimer?.cancel();
+    _unregisterResumeRefresh?.call();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

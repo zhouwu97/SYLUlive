@@ -38,6 +38,11 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   int? _eduUsers;
   int? _otherUsers;
   int? _eligibleUsers;
+  bool _statsLoading = false;
+  String? _statsError;
+  String? _loadMoreError;
+  int _candidateRequestGeneration = 0;
+  int _statsRequestGeneration = 0;
 
   @override
   void initState() {
@@ -50,19 +55,38 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   }
 
   Future<void> _fetchStats() async {
+    if (!mounted) return;
+    final requestGeneration = ++_statsRequestGeneration;
+    setState(() {
+      _statsLoading = true;
+      _statsError = null;
+    });
     try {
       final dio = context.read<AuthProvider>().dio;
       final res = await dio.get('/admin/candidates/stats');
-      if (mounted) {
-        setState(() {
-          _totalUsers = res.data['total'];
-          _eduUsers = res.data['edu'];
-          _otherUsers = res.data['other'];
-          _eligibleUsers = res.data['eligible'];
-        });
+      if (!mounted || requestGeneration != _statsRequestGeneration) return;
+      final data = res.data;
+      if (data is! Map) throw const FormatException('候选人统计响应格式错误');
+
+      int? readCount(Object? raw) {
+        if (raw is num) return raw.toInt();
+        return int.tryParse(raw?.toString() ?? '');
       }
+
+      setState(() {
+        _totalUsers = readCount(data['total']);
+        _eduUsers = readCount(data['edu']);
+        _otherUsers = readCount(data['other']);
+        _eligibleUsers = readCount(data['eligible']);
+        _statsLoading = false;
+      });
     } catch (e) {
-      // ignore
+      if (!mounted || requestGeneration != _statsRequestGeneration) return;
+      debugPrint('[AdminCandidates] stats request failed: $e');
+      setState(() {
+        _statsLoading = false;
+        _statsError = '统计暂不可用';
+      });
     }
   }
 
@@ -85,16 +109,20 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   }
 
   Future<void> _loadCandidates({String? keyword, bool append = false}) async {
+    if (!mounted) return;
     final q = keyword ?? _currentQuery;
     _currentQuery = q;
+    final requestGeneration = ++_candidateRequestGeneration;
 
     setState(() {
       if (append) {
         _loadingMore = true;
+        _loadMoreError = null;
       } else {
         _initialLoading = _candidates.isEmpty && !_refreshing;
         _hasSearched = q.isNotEmpty;
         _errorMessage = null;
+        _loadMoreError = null;
         _page = 1;
         _hasMore = true;
       }
@@ -111,13 +139,16 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         },
       );
 
-      if (!mounted) return;
+      if (!mounted ||
+          requestGeneration != _candidateRequestGeneration ||
+          _currentQuery != q) {
+        return;
+      }
 
       final data = res.data;
-      final items =
-          (data is Map ? data['items'] as List? : null) ?? const [];
-      final hasMore =
-          (data is Map ? data['has_more'] as bool? : null) ?? false;
+      final rawItems = data is Map ? data['items'] : null;
+      final items = rawItems is List ? rawItems : const <dynamic>[];
+      final hasMore = (data is Map ? data['has_more'] as bool? : null) ?? false;
 
       setState(() {
         if (append) {
@@ -130,15 +161,23 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         _initialLoading = false;
         _refreshing = false;
         _loadingMore = false;
+        _loadMoreError = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestGeneration != _candidateRequestGeneration ||
+          _currentQuery != q) {
+        return;
+      }
+      debugPrint('[AdminCandidates] candidate request failed: $e');
       setState(() {
         _initialLoading = false;
         _refreshing = false;
         _loadingMore = false;
-        if (!append && _candidates.isEmpty) {
-          _errorMessage = e.toString();
+        if (append) {
+          _loadMoreError = '加载更多失败';
+        } else if (_candidates.isEmpty) {
+          _errorMessage = '候选人加载失败，请稍后重试';
         }
       });
       if (append || _candidates.isNotEmpty) {
@@ -261,12 +300,12 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     );
   }
 
-  Widget _buildStatItem(String label, int value, bool isDark) {
+  Widget _buildStatItem(String label, int? value, bool isDark) {
     return Expanded(
       child: Column(
         children: [
           Text(
-            value.toString(),
+            value?.toString() ?? '--',
             style: AppTextStyles.titleMedium.copyWith(
               fontSize: 20,
               color: isDark ? Colors.white : AppColors.textPrimaryLight,
@@ -312,13 +351,46 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-          child: Row(
+          child: Column(
             children: [
-              _buildStatItem('总用户', _totalUsers ?? 0, isDark),
-              _buildStatDivider(isDark),
-              _buildStatItem('教务账号', _eduUsers ?? 0, isDark),
-              _buildStatDivider(isDark),
-              _buildStatItem('其他', _otherUsers ?? 0, isDark),
+              Row(
+                children: [
+                  _buildStatItem(
+                    '总用户',
+                    _statsError == null ? _totalUsers : null,
+                    isDark,
+                  ),
+                  _buildStatDivider(isDark),
+                  _buildStatItem(
+                    '教务账号',
+                    _statsError == null ? _eduUsers : null,
+                    isDark,
+                  ),
+                  _buildStatDivider(isDark),
+                  _buildStatItem(
+                    '其他',
+                    _statsError == null ? _otherUsers : null,
+                    isDark,
+                  ),
+                ],
+              ),
+              if (_statsLoading) ...[
+                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+              if (_statsError != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _statsError!,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: isDark ? Colors.orange[200] : Colors.orange[800],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -674,6 +746,18 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         ),
       );
     }
+    if (_loadMoreError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: _loadMore,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(_loadMoreError!),
+          ),
+        ),
+      );
+    }
     if (!_hasMore && _candidates.isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -693,7 +777,6 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   }
 
   Widget _buildEligibleHeader(bool isDark) {
-    if (_eligibleUsers == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -713,7 +796,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           ),
           const Spacer(),
           Text(
-            '$_eligibleUsers 人',
+            '${_statsError == null ? _eligibleUsers?.toString() ?? '--' : '--'} 人',
             style: AppTextStyles.titleMedium.copyWith(
               fontSize: 15,
               color: AppColors.brandPrimary,
@@ -756,7 +839,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         top: false,
         child: Column(
           children: [
-            if (_totalUsers != null) _buildStatsCard(isDark),
+            _buildStatsCard(isDark),
             _buildSearchField(isDark),
             _buildEligibleHeader(isDark),
             Expanded(child: _buildCandidatesBody(isDark)),

@@ -98,6 +98,21 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze --no-fatal-warnings --no-fatal-infos
+      # 关键可靠性路径使用默认 fatal 规则；保留全仓库历史样式告警的渐进式收口。
+      - name: Analyze reliability-critical surfaces
+        run: >-
+          flutter analyze
+          lib/screens/market_screen.dart
+          lib/screens/poll/poll_detail_screen.dart
+          lib/screens/notifications_screen.dart
+          lib/screens/admin_panel_screen.dart
+          lib/screens/admin_candidates_screen.dart
+          lib/services/app_resume_coordinator.dart
+          lib/services/retry_interceptor.dart
+          lib/services/root_page_state_service.dart
+          lib/services/keep_alive_service.dart
+          lib/widgets/bottom_nav.dart
+          lib/screens/image_viewer_screen.dart
       - run: flutter test --reporter compact
 
   pgvector-integration:

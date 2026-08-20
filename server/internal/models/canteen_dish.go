@@ -109,6 +109,18 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 		}
 
 		for _, dishID := range dishIDs {
+			var dish CanteenDish
+			if err := tx.First(&dish, dishID).Error; err != nil {
+				return err
+			}
+			if dish.Status == DishStatusHidden {
+				if err := tx.Model(&CanteenDishPhoto{}).
+					Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusPending).
+					Update("status", DishPhotoStatusArchived).Error; err != nil {
+					return err
+				}
+				continue
+			}
 			var approvedCount int64
 			if err := tx.Model(&CanteenDishPhoto{}).
 				Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusApproved).

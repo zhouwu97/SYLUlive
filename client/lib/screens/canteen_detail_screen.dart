@@ -241,7 +241,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         .toSet();
     final legacyOnly = (_canteenData!['ratings'] as List?)
             ?.whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
+            .map((item) => {
+                  ...Map<String, dynamic>.from(item),
+                  'review_source': 'legacy',
+                })
             .where((item) =>
                 !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
             .toList() ??
@@ -367,15 +370,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       'user_avatar': source['user_avatar'] ?? '',
       if (scoreVersion >= 2) 'dimension_scores': dimensionScores,
       'is_v2': scoreVersion >= 2,
+      'review_source': 'v2',
       'score_version': scoreVersion,
       'helpful_count': source['helpful_count'] ?? 0,
       'unhelpful_count': source['unhelpful_count'] ?? 0,
     };
   }
 
-  Future<void> _reportReview(int reviewId) async {
-    final targetType =
-        _isV2Review(reviewId) ? 'canteen_review' : 'canteen_rating';
+  Future<void> _reportReview(int reviewId, String source) async {
+    final targetType = source == 'v2' ? 'canteen_review' : 'canteen_rating';
     await showRatingReportSheet(
       context: context,
       targetType: targetType,
@@ -742,7 +745,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   // ── 投票（乐观更新，逻辑与重构前一致）───────────────────────────
 
-  Future<void> _voteRating(int ratingId, String vote) async {
+  Future<void> _voteRating(int ratingId, String source, String vote) async {
     if (_isVoting) return;
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -753,12 +756,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final oldData = _deepCopyCanteenData();
     setState(() {
       _isVoting = true;
-      _applyLocalVote(ratingId, vote);
+      _applyLocalVote(ratingId, source, vote);
     });
 
     try {
       final provider = context.read<CanteenProvider>();
-      final result = _isV2Review(ratingId)
+      final result = source == 'v2'
           ? await provider.voteReview(reviewId: ratingId, vote: vote)
           : await provider.voteRating(ratingId: ratingId, vote: vote);
       if (!mounted) return;
@@ -769,7 +772,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         );
         return;
       }
-      setState(() => _reconcileVoteResult(result));
+      setState(() => _reconcileVoteResult(result, source));
     } finally {
       if (mounted) {
         setState(() => _isVoting = false);
@@ -782,14 +785,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return jsonDecode(jsonEncode(_canteenData)) as Map<String, dynamic>;
   }
 
-  void _applyLocalVote(int ratingId, String newVote) {
-    for (final key in const ['ratings', 'reviews']) {
-      final items = (_canteenData?[key] as List?)?.cast<dynamic>();
-      if (items == null) continue;
-      for (final item in items) {
-        if (item is! Map) continue;
-        final rating = item.cast<String, dynamic>();
-        if ((rating['id'] as num?)?.toInt() != ratingId) continue;
+  void _applyLocalVote(int ratingId, String source, String newVote) {
+    final key = source == 'v2' ? 'reviews' : 'ratings';
+    final items = (_canteenData?[key] as List?)?.cast<dynamic>();
+    if (items == null) return;
+    for (final item in items) {
+      if (item is! Map) continue;
+      final rating = item.cast<String, dynamic>();
+      if ((rating['id'] as num?)?.toInt() != ratingId) continue;
         final oldVote = rating['my_vote']?.toString();
         var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
         var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
@@ -800,34 +803,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         rating['helpful_count'] = helpful < 0 ? 0 : helpful;
         rating['unhelpful_count'] = unhelpful < 0 ? 0 : unhelpful;
         rating['my_vote'] = newVote == 'none' ? null : newVote;
-      }
     }
   }
 
-  void _reconcileVoteResult(Map<String, dynamic> result) {
+  void _reconcileVoteResult(Map<String, dynamic> result, String source) {
     final ratingId =
         ((result['rating_id'] ?? result['review_id']) as num?)?.toInt();
     if (ratingId == null) return;
 
-    for (final key in const ['ratings', 'reviews']) {
-      final ratings = (_canteenData?[key] as List?)?.cast<dynamic>();
-      if (ratings == null) continue;
-      for (final item in ratings) {
-        if (item is! Map) continue;
-        final rating = item.cast<String, dynamic>();
-        if ((rating['id'] as num?)?.toInt() != ratingId) continue;
+    final key = source == 'v2' ? 'reviews' : 'ratings';
+    final ratings = (_canteenData?[key] as List?)?.cast<dynamic>();
+    if (ratings == null) return;
+    for (final item in ratings) {
+      if (item is! Map) continue;
+      final rating = item.cast<String, dynamic>();
+      if ((rating['id'] as num?)?.toInt() != ratingId) continue;
         rating['helpful_count'] = result['helpful_count'] ?? 0;
         rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
         rating['my_vote'] = result['my_vote'];
-      }
     }
-  }
-
-  bool _isV2Review(int reviewId) {
-    final reviews = (_canteenData?['reviews'] as List?)?.cast<dynamic>();
-    return reviews?.any((item) =>
-            item is Map && (item['id'] as num?)?.toInt() == reviewId) ==
-        true;
   }
 
   // ── 打开评价编辑器全屏页 ────────────────────────────────────────
@@ -863,7 +857,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
-          existingRating: _canteenData?['my_rating'],
+          existingRating: _canteenData?['my_latest_review'] ??
+              _canteenData?['my_rating'],
         ),
       ),
     );

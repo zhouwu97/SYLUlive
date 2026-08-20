@@ -213,22 +213,26 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 
 // canteenFeedItem 首页信息流条目（对应客户端 CanteenFeedItem）。
 type canteenFeedItem struct {
-	ID              string   `json:"id"`
-	Type            string   `json:"type"`
-	CanteenID       uint     `json:"canteen_id"`
-	CanteenName     string   `json:"canteen_name"`
-	OperatingStatus string   `json:"operating_status"`
-	Image           string   `json:"image,omitempty"`
-	DishID          uint     `json:"dish_id,omitempty"`
-	DishName        string   `json:"dish_name,omitempty"`
-	Title           string   `json:"title"`
-	Reason          string   `json:"reason,omitempty"`
-	RankingScore    float64  `json:"ranking_score,omitempty"`
-	AverageStar     float64  `json:"average_star,omitempty"`
-	RatingCount     int      `json:"rating_count,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
-	Images          []string `json:"images,omitempty"`
-	CreatedAt       string   `json:"created_at,omitempty"`
+	ID                string             `json:"id"`
+	Type              string             `json:"type"`
+	CanteenID         uint               `json:"canteen_id"`
+	CanteenName       string             `json:"canteen_name"`
+	OperatingStatus   string             `json:"operating_status"`
+	Image             string             `json:"image,omitempty"`
+	DishID            uint               `json:"dish_id,omitempty"`
+	DishName          string             `json:"dish_name,omitempty"`
+	Title             string             `json:"title"`
+	Reason            string             `json:"reason,omitempty"`
+	RankingScore      float64            `json:"ranking_score,omitempty"`
+	AverageStar       float64            `json:"average_star,omitempty"`
+	RatingCount       int                `json:"rating_count,omitempty"`
+	Tags              []string           `json:"tags,omitempty"`
+	Images            []string           `json:"images,omitempty"`
+	CreatedAt         string             `json:"created_at,omitempty"`
+	DimensionScores   map[string]float64 `json:"dimension_scores,omitempty"`
+	ReviewerCount     int                `json:"reviewer_count,omitempty"`
+	VisitReviewCount  int                `json:"visit_review_count,omitempty"`
+	RecentReviewCount int                `json:"recent_review_count,omitempty"`
 }
 
 // buildFeedReason 由近 30 天标签聚合生成一句稳定、可解释的推荐理由。
@@ -644,6 +648,18 @@ func itoa(v int) string {
 	return strconv.Itoa(v)
 }
 
+// sumRecentReviewCounts 汇总近 7 天有效评价事件，用于首页的可信度提示。
+// recentCounts 已经按“有效样本”口径生成，这里只负责展示层汇总，不参与评分。
+func sumRecentReviewCounts(counts map[uint]int64) int {
+	total := 0
+	for _, count := range counts {
+		if count > 0 {
+			total += int(count)
+		}
+	}
+	return total
+}
+
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
 	cacheKey := "home:v2"
@@ -684,18 +700,22 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			tagNames = append(tagNames, t.Name)
 		}
 		heroItem := &canteenFeedItem{
-			ID:              fmt.Sprintf("recommended_store:%d:v1", e.ID),
-			Type:            "recommended_store",
-			CanteenID:       e.ID,
-			CanteenName:     e.Name,
-			OperatingStatus: e.OperatingStatus,
-			Image:           e.Image,
-			Title:           "今日推荐",
-			Reason:          buildFeedReason(tags, e.AverageStar, e.RatingCount),
-			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:     e.AverageStar,
-			RatingCount:     e.RatingCount,
-			Tags:            tagNames,
+			ID:                fmt.Sprintf("recommended_store:%d:v1", e.ID),
+			Type:              "recommended_store",
+			CanteenID:         e.ID,
+			CanteenName:       e.Name,
+			OperatingStatus:   e.OperatingStatus,
+			Image:             e.Image,
+			Title:             "今日推荐",
+			Reason:            buildFeedReason(tags, e.AverageStar, e.RatingCount),
+			RankingScore:      services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:       e.AverageStar,
+			RatingCount:       e.RatingCount,
+			Tags:              tagNames,
+			DimensionScores:   e.DimensionScores,
+			ReviewerCount:     e.ReviewerCount,
+			VisitReviewCount:  e.VisitReviewCount,
+			RecentReviewCount: int(recentCounts[e.ID]),
 		}
 		hero = heroItem
 		break
@@ -726,11 +746,12 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	hotDishes := h.hotDishes(4)
 
 	resp := gin.H{
-		"generated_at":  time.Now(),
-		"hero":          hero,
-		"ranking_entry": rankingEntry,
-		"feed":          feed,
-		"hot_dishes":    hotDishes,
+		"generated_at":                  time.Now(),
+		"hero":                          hero,
+		"ranking_entry":                 rankingEntry,
+		"feed":                          feed,
+		"hot_dishes":                    hotDishes,
+		"recent_effective_review_count": sumRecentReviewCounts(recentCounts),
 	}
 	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)

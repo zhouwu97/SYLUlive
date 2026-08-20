@@ -4,8 +4,9 @@ import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 
-/// 首页「综合排行」入口卡：单张、紧凑（80~100px）。
-/// 只展示 Top1 与总数，把完整排行交给二级页，不抢推荐流位置。
+/// 首页“综合排行”快捷入口。
+///
+/// 这里解释排序依据，不把榜单数字塞进首页，避免用户误以为它是另一组评分。
 class CanteenRankingEntryCard extends StatefulWidget {
   final CanteenRankingEntry entry;
   final VoidCallback onTap;
@@ -27,8 +28,6 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final total = widget.entry.total;
-
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
@@ -53,12 +52,16 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
                 height: 40,
                 decoration: BoxDecoration(
                   color: CanteenTheme.accentSoftColor(isDark),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(
-                  Icons.emoji_events_rounded,
-                  size: 22,
-                  color: CanteenTheme.accentStrongColor(isDark),
+                alignment: Alignment.center,
+                child: Text(
+                  '#1',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: CanteenTheme.accentStrongColor(isDark),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -76,11 +79,7 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      widget.entry.topName.isEmpty
-                          ? (total > 0 ? '共 $total 家食堂' : '看看同学们都在吃什么')
-                          : 'Top1  ${widget.entry.topName}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      '信用加权 + 样本修正',
                       style: TextStyle(
                         fontSize: 12,
                         color: CanteenTheme.textSecondaryColor(isDark),

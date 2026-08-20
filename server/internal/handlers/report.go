@@ -239,6 +239,17 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status 仅支持 handled 或 ignored"})
 		return
 	}
+	input.DeleteReason = strings.TrimSpace(input.DeleteReason)
+	if input.Status == string(models.ReportStatusHandled) && input.DeleteReason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  "governance_reason_required",
+			"error": "确认违规并治理必须填写治理原因",
+		})
+		return
+	}
+	if input.Status == string(models.ReportStatusIgnored) {
+		input.DeleteReason = ""
+	}
 	var report models.Report
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&report, reportID).Error; err != nil {
@@ -256,7 +267,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			return err
 		}
 
-		if input.Status == string(models.ReportStatusHandled) && input.DeleteReason != "" {
+		if input.Status == string(models.ReportStatusHandled) {
 			var targetUserID uint
 			switch report.TargetType {
 			case "post":
@@ -359,6 +370,17 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				if err := tx.Model(&rating).Update("status", "hidden").Error; err != nil {
+					return err
+				}
+				// Legacy 摘要被治理时，之前为兼容 V2 创建的 score_version=1
+				// 历史副本也必须同步隐藏，避免下一次发 V2 时把违规内容复活。
+				if err := tx.Model(&models.CanteenReviewEvent{}).
+					Where("canteen_id = ? AND user_id = ? AND score_version = ? AND status = ?",
+						rating.CanteenID, rating.UserID, 1, models.ReviewEventStatusActive).
+					Update("status", models.ReviewEventStatusHidden).Error; err != nil {
+					return err
+				}
+				if err := recomputeCanteenUserSummary(tx, rating.CanteenID, rating.UserID); err != nil {
 					return err
 				}
 				if err := services.ReconcileFilePublicAccess(tx, oldImageFileIDs...); err != nil {

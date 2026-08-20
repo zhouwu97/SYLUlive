@@ -14,6 +14,13 @@ const _homeBody =
     '"image":"/uploads/a.jpg","ranking_score":86.0,"average_star":4.6,"rating_count":5,'
     '"title":"今日推荐","reason":"同学们常常提到\\u201c味道不错\\u201d","tags":["味道不错"]},'
     '"ranking_entry":{"top":{"id":1,"name":"一食堂二楼","ranking_score":86.0},"total":3},'
+    '"recent_effective_review_count":37,'
+    '"hot_dishes":['
+    '{"id":11,"name":"麻辣拌","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"average_score":4.8,"reviewer_count":21},'
+    '{"id":12,"name":"杂粮煎饼","canteen_id":2,"canteen_name":"二食堂",'
+    '"average_score":4.7,"reviewer_count":17}'
+    '],'
     '"feed":['
     '{"id":"recent_photo:5","type":"recent_photo","canteen_id":2,"canteen_name":"二食堂",'
     '"dish_id":5,"dish_name":"红烧牛肉面","title":"同学最近实拍","images":["/uploads/p.jpg"]},'
@@ -22,8 +29,7 @@ const _homeBody =
     '"reason":"评价样本相对更多，结果受单条评价影响更小","tags":["分量足","出餐快"]}'
     ']}';
 
-const _canteensListBody =
-    '['
+const _canteensListBody = '['
     '{"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","verified":true,"created_by":1,"rating_count":5,"average_star":4.6,"ranking_score":86.0},'
     '{"id":3,"name":"三食堂面馆","image":"","verified":true,"created_by":1,"rating_count":3,"average_star":4.3,"ranking_score":78.0},'
     '{"id":4,"name":"川渝小吃（未进推荐流）","image":"/uploads/c.jpg","verified":true,"created_by":1,"rating_count":2,"average_star":4.0,"ranking_score":70.0}'
@@ -47,7 +53,9 @@ Dio _buildDio() {
 ResponseBody _json(String body) => ResponseBody.fromString(
       body,
       200,
-      headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType]
+      },
     );
 
 class FakeAdapter implements HttpClientAdapter {
@@ -97,27 +105,32 @@ void main() {
     expect(find.text('校园食堂'), findsOneWidget);
   });
 
-  testWidgets('首页展示 Hero 今日推荐与综合排行入口', (tester) async {
+  testWidgets('首页按参考结构展示今天吃什么、快捷入口与热门菜品', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('今日推荐'), findsOneWidget);
-    expect(find.text('一食堂二楼'), findsWidgets); // Hero + 排行入口 Top1
+    expect(find.text('今天吃什么'), findsOneWidget);
+    expect(find.text('同学真实评价 · 菜品实拍'), findsOneWidget);
+    expect(find.text('热门菜品'), findsOneWidget);
+    expect(find.text('今日有效评价'), findsOneWidget);
+    expect(find.text('37'), findsOneWidget);
+    expect(find.text('一食堂二楼'), findsOneWidget);
     expect(find.text('综合排行'), findsOneWidget);
     // 首页不再以整榜数字排名渲染（不存在 01/02 榜单数字）。
     expect(find.text('01'), findsNothing);
   });
 
-  testWidgets('推荐信息流渲染多类型 Card（实拍 + 稳妥选择）', (tester) async {
+  testWidgets('最近在吃信息流渲染多类型 Card（实拍 + 稳妥选择）', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
+    // 热门菜品占据首屏下半段，信息流在折叠区外，向上滚动后断言。
+    final listFinder = find.byType(ListView);
+    expect(listFinder, findsOneWidget);
+    await tester.fling(listFinder, const Offset(0, -900), 1200);
+    await tester.pumpAndSettle();
     expect(find.text('同学最近实拍'), findsOneWidget);
     expect(find.textContaining('红烧牛肉面'), findsOneWidget);
-
-    // 第二张卡（稳妥选择）在折叠区外，向上滚动后断言。
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
     expect(find.text('想吃稳一点？'), findsOneWidget);
     expect(find.text('三食堂面馆'), findsOneWidget);
   });

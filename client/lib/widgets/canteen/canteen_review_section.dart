@@ -22,10 +22,10 @@ class CanteenReviewSection extends StatelessWidget {
   final int? currentUserId;
   final ValueChanged<String> onSortChanged;
   final ValueChanged<String> onFilterChanged;
-  final Future<void> Function(int ratingId, String vote) onVote;
+  final Future<void> Function(int ratingId, String source, String vote) onVote;
   final VoidCallback onWriteReview;
   final bool canWriteReview;
-  final Future<void> Function(int reviewId)? onReport;
+  final Future<void> Function(int reviewId, String source)? onReport;
 
   const CanteenReviewSection({
     super.key,
@@ -277,8 +277,8 @@ class _ReviewItem extends StatelessWidget {
   final bool isDark;
   final bool isVoting;
   final bool isOwn;
-  final Future<void> Function(int ratingId, String vote) onVote;
-  final Future<void> Function(int reviewId)? onReport;
+  final Future<void> Function(int ratingId, String source, String vote) onVote;
+  final Future<void> Function(int reviewId, String source)? onReport;
 
   const _ReviewItem({
     required this.review,
@@ -291,6 +291,8 @@ class _ReviewItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final source = review['review_source']?.toString() ??
+        (review['is_v2'] == true ? 'v2' : 'legacy');
     final id = (review['id'] as num?)?.toInt() ?? 0;
     final nickname = review['user_name']?.toString() ?? '匿名同学';
     final content = review['comment']?.toString() ?? '';
@@ -307,6 +309,7 @@ class _ReviewItem extends StatelessWidget {
         : const <String, dynamic>{};
 
     return Padding(
+      key: ValueKey('$source:$id'),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -492,7 +495,11 @@ class _ReviewItem extends StatelessWidget {
                   selected: myVote == 'up',
                   onTap: isVoting
                       ? null
-                      : () => onVote(id, myVote == 'up' ? 'none' : 'up'),
+                      : () => onVote(
+                            id,
+                            source,
+                            myVote == 'up' ? 'none' : 'up',
+                          ),
                 ),
                 const SizedBox(width: 12),
                 _buildVoteButton(
@@ -502,7 +509,11 @@ class _ReviewItem extends StatelessWidget {
                   selected: myVote == 'down',
                   onTap: isVoting
                       ? null
-                      : () => onVote(id, myVote == 'down' ? 'none' : 'down'),
+                      : () => onVote(
+                            id,
+                            source,
+                            myVote == 'down' ? 'none' : 'down',
+                          ),
                 ),
               ],
               if (!isOwn && onReport != null) ...[
@@ -511,7 +522,7 @@ class _ReviewItem extends StatelessWidget {
                   tooltip: '更多操作',
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
-                    if (value == 'report') onReport!(id);
+                    if (value == 'report') onReport!(id, source);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'report', child: Text('举报该评价')),

@@ -1677,18 +1677,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             Positioned.fill(
               child: IgnorePointer(
                 ignoring: !inputActive,
-                child: Semantics(
-                  button: true,
-                  enabled: inputActive,
-                  label: '收起评论输入',
-                  onTap: inputActive
-                      ? () => _replyComposerController.close()
-                      : null,
-                  child: GestureDetector(
-                    key: const ValueKey('post-detail-input-dismiss-layer'),
-                    behavior: HitTestBehavior.opaque,
-                    excludeFromSemantics: true,
-                    onTap: () => _replyComposerController.close(),
+                child: ExcludeSemantics(
+                  excluding: !inputActive,
+                  child: Semantics(
+                    button: true,
+                    enabled: inputActive,
+                    label: '收起评论输入',
+                    onTap: inputActive
+                        ? () => _replyComposerController.close()
+                        : null,
+                    child: GestureDetector(
+                      key: const ValueKey('post-detail-input-dismiss-layer'),
+                      behavior: HitTestBehavior.opaque,
+                      excludeFromSemantics: true,
+                      onTap: () => _replyComposerController.close(),
+                    ),
                   ),
                 ),
               ),

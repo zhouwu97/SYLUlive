@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../models/canteen.dart';
 import '../models/canteen_dish.dart';
+import '../models/canteen_review.dart';
 
 class CanteenRatingSubmitResult {
   final bool success;
@@ -194,6 +195,179 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  /// V2 店铺评价入口。服务端返回不完整时回退旧 /rate，保证旧环境和旧测试可用。
+  Future<CanteenRatingSubmitResult> submitReview(
+    int id, {
+    required CanteenReviewDimensions dimensions,
+    required String comment,
+    List<String> images = const [],
+    List<String> tags = const [],
+    List<CanteenDishReviewInput> dishReviews = const [],
+    DateTime? baseUpdatedAt,
+  }) async {
+    errorCode = null;
+    final payload = <String, dynamic>{
+      ...dimensions.toJson(),
+      'comment': comment,
+      'images': images,
+      'tags': tags,
+      if (dishReviews.isNotEmpty)
+        'dish_reviews': dishReviews.map((dish) => dish.toJson()).toList(),
+      if (baseUpdatedAt != null)
+        'base_updated_at': baseUpdatedAt.toUtc().toIso8601String(),
+    };
+    try {
+      final response = await _dio.post('/canteens/$id/reviews', data: payload);
+      final data = response.data;
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          data is Map &&
+          data['review'] != null) {
+        return CanteenRatingSubmitResult(
+          success: true,
+          remoteUpdatedAt: DateTime.tryParse(
+            (data['review'] as Map)['updated_at']?.toString() ?? '',
+          ),
+        );
+      }
+      // 兼容旧服务端：新路由存在但尚未部署时，继续使用旧摘要接口。
+      if (response.statusCode == 404 ||
+          response.statusCode == 405 ||
+          data is Map && data.isEmpty) {
+        return rateCanteen(
+          id,
+          star: dimensions.taste,
+          comment: comment,
+          images: images,
+          tags: tags,
+          baseUpdatedAt: baseUpdatedAt,
+        );
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 405) {
+        return rateCanteen(
+          id,
+          star: dimensions.taste,
+          comment: comment,
+          images: images,
+          tags: tags,
+          baseUpdatedAt: baseUpdatedAt,
+        );
+      }
+      _errorMessage = _parseError(e);
+      final data = e.response?.data;
+      if (data is Map) {
+        errorCode = data['code']?.toString();
+      }
+      return CanteenRatingSubmitResult(
+        success: false,
+        errorCode: errorCode,
+        errorMessage: _errorMessage,
+      );
+    }
+    return CanteenRatingSubmitResult(
+      success: false,
+      errorMessage: '评价服务返回异常',
+    );
+  }
+
+  Future<CanteenRatingSubmitResult> updateReview(
+    int reviewId, {
+    required CanteenReviewDimensions dimensions,
+    required String comment,
+    List<String> images = const [],
+    List<String> tags = const [],
+    DateTime? baseUpdatedAt,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/canteens/reviews/$reviewId',
+        data: {
+          ...dimensions.toJson(),
+          'comment': comment,
+          'images': images,
+          'tags': tags,
+          if (baseUpdatedAt != null)
+            'base_updated_at': baseUpdatedAt.toUtc().toIso8601String(),
+        },
+      );
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          response.data is Map &&
+          response.data['review'] != null) {
+        return const CanteenRatingSubmitResult(success: true);
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      return CanteenRatingSubmitResult(
+        success: false,
+        errorCode: errorCode,
+        errorMessage: _errorMessage,
+      );
+    }
+    return const CanteenRatingSubmitResult(
+      success: false,
+      errorMessage: '评价服务返回异常',
+    );
+  }
+
+  Future<List<CanteenReviewEvent>?> loadReviews(
+    int canteenId, {
+    bool history = false,
+    int? userId,
+  }) async {
+    try {
+      final path = userId == null
+          ? '/canteens/$canteenId/reviews'
+          : '/canteens/$canteenId/reviews/history/$userId';
+      final response = await _dio.get(
+        path,
+        queryParameters: history ? {'history': 1} : null,
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        final items = response.data['items'];
+        if (items is List) {
+          return items
+              .whereType<Map>()
+              .map((item) => CanteenReviewEvent.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList();
+        }
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  Future<List<CanteenDishSuggestion>?> suggestDishes(
+    int canteenId,
+    String query,
+  ) async {
+    try {
+      final response = await _dio.get(
+        '/canteens/$canteenId/dish-suggestions',
+        queryParameters: {'q': query},
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        final items = response.data['items'];
+        if (items is List) {
+          return items
+              .whereType<Map>()
+              .map((item) => CanteenDishSuggestion.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList();
+        }
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> adminGetDishPhotoDetail(int photoId) async {
     try {
       final response = await _dio.get('/canteens/dish-photos/$photoId');
@@ -273,6 +447,25 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>?> loadDishReviews(int dishId) async {
+    try {
+      final response = await _dio.get('/canteens/dishes/$dishId/reviews');
+      if (response.statusCode == 200 && response.data is Map) {
+        final items = response.data['items'];
+        if (items is List) {
+          return items
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+        }
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error loading dish reviews: $e');
+    }
+    return null;
+  }
+
   /// 投稿菜品实拍。返回 null 表示网络错误；成功返回 message。
   /// 通过 [errorCode] 暴露服务端 code（如 dish_gallery_full）。
   String? errorCode;
@@ -308,6 +501,56 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  /// V2 菜品投稿：进入审核队列，照片与新菜品均不会直接公开。
+  Future<String?> submitDishSubmission(
+    int canteenId, {
+    int? dishId,
+    String? dishName,
+    required int fileId,
+  }) async {
+    errorCode = null;
+    try {
+      final response = await _dio.post(
+        '/canteens/$canteenId/dish-submissions',
+        data: {
+          if (dishId != null) 'dish_id': dishId,
+          if (dishName != null && dishName.trim().isNotEmpty)
+            'dish_name': dishName.trim(),
+          'file_id': fileId,
+        },
+      );
+      if (response.statusCode == 201) {
+        return (response.data as Map<String, dynamic>)['message']?.toString() ??
+            '已提交审核';
+      }
+      // 旧服务端没有新路由时，保留旧提交路径作为兼容回退。
+      if (response.statusCode == 404 ||
+          response.statusCode == 405 ||
+          response.data is Map && (response.data as Map).isEmpty) {
+        return submitDishPhoto(
+          canteenId,
+          dishId: dishId,
+          dishName: dishName,
+          fileId: fileId,
+        );
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 405) {
+        return submitDishPhoto(
+          canteenId,
+          dishId: dishId,
+          dishName: dishName,
+          fileId: fileId,
+        );
+      }
+    }
+    return null;
+  }
+
   /// 管理员待审核实拍列表。返回 null 表示请求失败；
   /// 成功但无数据时返回空列表（区分"失败"与"暂无"，避免失败伪装成空态）。
   Future<List<Map<String, dynamic>>?> adminListPendingDishPhotos() async {
@@ -327,10 +570,26 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  /// 将管理端识别出的疑似重复菜品合并到指定实体。
+  Future<bool> adminMergeDish(int dishId, int targetDishId) async {
+    try {
+      final response = await _dio.post(
+        '/canteens/dishes/$dishId/merge',
+        data: {'target_dish_id': targetDishId},
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error merging canteen dish: $e');
+      return false;
+    }
+  }
+
   Future<String?> adminApproveDishPhoto(int photoId) async {
     errorCode = null;
     try {
-      final response = await _dio.post('/canteens/dish-photos/$photoId/approve');
+      final response =
+          await _dio.post('/canteens/dish-photos/$photoId/approve');
       if (response.statusCode == 200) {
         return '已通过';
       }

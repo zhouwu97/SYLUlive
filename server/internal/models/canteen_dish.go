@@ -12,8 +12,9 @@ import (
 
 // DishStatus 菜品状态
 const (
-	DishStatusActive = "active"
-	DishStatusHidden = "hidden"
+	DishStatusPending = "pending"
+	DishStatusActive  = "active"
+	DishStatusHidden  = "hidden"
 )
 
 // DishPhotoStatus 菜品实拍状态
@@ -89,10 +90,11 @@ func validatePhotoFileOnDisk(f File) bool {
 
 // MigratePendingCanteenDishPhotos 迁移现存 pending 实拍图片：
 // 对于每道菜：
-//   已有 approved 数 = N
-//   剩余容量 = 3 - N (若 N >= 3 则容量为 0)
-//   按 created_at ASC 取最多剩余容量个合法且文件存在 pending -> approved，并将其对应 File 设为 public
-//   超出容量或文件非法/缺失的 pending -> archived
+//
+//	已有 approved 数 = N
+//	剩余容量 = 3 - N (若 N >= 3 则容量为 0)
+//	按 created_at ASC 取最多剩余容量个合法且文件存在 pending -> approved，并将其对应 File 设为 public
+//	超出容量或文件非法/缺失的 pending -> archived
 func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		var dishIDs []uint
@@ -167,4 +169,3 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 		return nil
 	})
 }
-

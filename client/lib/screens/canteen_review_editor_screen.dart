@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
+import '../models/canteen_review.dart';
 import '../models/canteen_review_draft.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
@@ -71,15 +72,19 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   late final TextEditingController _dishInputController;
 
   int _star = 0;
+  CanteenReviewDimensions _dimensions = const CanteenReviewDimensions();
   List<String> _selectedTags = [];
   List<String> _recommendedDishes = [];
   List<CanteenReviewDraftImage> _draftImages = [];
   List<CanteenDish> _allDishes = [];
-  bool _isLoadingDishes = false;
+  List<CanteenDishSuggestion> _dishSuggestions = [];
+  final Map<int, CanteenDishReviewInput> _dishReviews = {};
+  bool _showDimensionDetails = false;
 
   bool _isSubmitting = false;
   _DraftSaveStatus _saveStatus = _DraftSaveStatus.idle;
   Timer? _debounceTimer;
+  Timer? _dishSuggestionTimer;
   Timer? _statusTimer;
 
   bool _isDirty = false;
@@ -96,8 +101,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _draftRepo = widget.draftRepositoryOverride ??
-        const CanteenReviewDraftRepository();
+    _draftRepo =
+        widget.draftRepositoryOverride ?? const CanteenReviewDraftRepository();
     _commentController = TextEditingController();
     _commentController.addListener(_onFormChanged);
     _dishInputController = TextEditingController();
@@ -110,6 +115,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _debounceTimer?.cancel();
+    _dishSuggestionTimer?.cancel();
     _statusTimer?.cancel();
     _commentController.dispose();
     _dishInputController.dispose();
@@ -174,8 +180,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   void _applyDraft(CanteenReviewDraft draft, {DateTime? rebaseTo}) {
+    final fallback = draft.star;
     setState(() {
       _star = draft.star;
+      _dimensions = CanteenReviewDimensions(
+        taste: draft.tasteScore == 0 ? fallback : draft.tasteScore,
+        value: draft.valueScore == 0 ? fallback : draft.valueScore,
+        queue: draft.queueScore == 0 ? fallback : draft.queueScore,
+        hygiene: draft.hygieneScore == 0 ? fallback : draft.hygieneScore,
+        service: draft.serviceScore == 0 ? fallback : draft.serviceScore,
+      );
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
       _recommendedDishes = List.from(draft.recommendedDishes);
@@ -187,6 +201,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
   void _applyExistingRating(Map<String, dynamic> existing) {
     final star = (existing['star'] as num?)?.toInt() ?? 0;
+    final dimensions = _dimensionsFromJson(existing, fallback: star);
     final comment = existing['comment']?.toString() ?? '';
     final imagesList = _parseImagesList(existing['images']);
     final tagsList = _parseTagsList(existing['tags']);
@@ -194,6 +209,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
     setState(() {
       _star = star;
+      _dimensions = dimensions;
       _commentController.text = comment;
       _selectedTags = tagsList;
       _recommendedDishes = dishNames;
@@ -207,12 +223,34 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     });
   }
 
+  CanteenReviewDimensions _dimensionsFromJson(
+    Map<String, dynamic> json, {
+    int fallback = 0,
+  }) {
+    int score(String key) {
+      final raw = json[key];
+      if (raw is num) return raw.toInt();
+      return int.tryParse('$raw') ?? fallback;
+    }
+
+    return CanteenReviewDimensions(
+      taste: score('taste_score'),
+      value: score('value_score'),
+      queue: score('queue_score'),
+      hygiene: score('hygiene_score'),
+      service: score('service_score'),
+    );
+  }
+
   List<String> _parseImagesList(dynamic raw) {
     if (raw == null || raw.toString().isEmpty) return [];
     try {
       final decoded = jsonDecode(raw.toString());
       if (decoded is List) {
-        return decoded.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+        return decoded
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
     return [];
@@ -221,12 +259,18 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   List<String> _parseTagsList(dynamic raw) {
     if (raw == null) return [];
     if (raw is List) {
-      return raw.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
     }
     try {
       final decoded = jsonDecode(raw.toString());
       if (decoded is List) {
-        return decoded.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+        return decoded
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
     return [];
@@ -304,13 +348,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Future<void> _loadDishesQuietly() async {
-    setState(() => _isLoadingDishes = true);
     final dishes =
         await context.read<CanteenProvider>().loadDishes(widget.canteenId);
     if (!mounted) return;
     setState(() {
       _allDishes = dishes ?? [];
-      _isLoadingDishes = false;
     });
   }
 
@@ -342,6 +384,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       userId: userId,
       canteenId: widget.canteenId,
       star: _star,
+      tasteScore: _dimensions.taste,
+      valueScore: _dimensions.value,
+      queueScore: _dimensions.queue,
+      hygieneScore: _dimensions.hygiene,
+      serviceScore: _dimensions.service,
       comment: _commentController.text,
       tags: _selectedTags,
       recommendedDishes: _recommendedDishes,
@@ -366,7 +413,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Future<void> _handleExit() async {
     if (_isSubmitting) return;
 
-    final isFormClean = _star == 0 &&
+    final isFormClean = !_dimensions.isComplete &&
+        _star == 0 &&
         _commentController.text.trim().isEmpty &&
         _selectedTags.isEmpty &&
         _recommendedDishes.isEmpty &&
@@ -433,7 +481,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(46),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
                     ),
                   ),
                   child: const Text('保存草稿并退出',
@@ -455,7 +504,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     minimumSize: const Size.fromHeight(46),
                     side: BorderSide(color: CanteenTheme.borderColor(isDark)),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
                     ),
                   ),
                   child: const Text('放弃本次修改'),
@@ -486,7 +536,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Future<void> _submitReview() async {
     if (_isSubmitting) return;
 
-    if (_star == 0) {
+    if (!_dimensions.isComplete) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先为食堂打个分吧')),
       );
@@ -531,8 +581,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           }
 
           final bytes = await file.readAsBytes();
-          final fileName =
-              img.localPath!.split(Platform.pathSeparator).last;
+          final fileName = img.localPath!.split(Platform.pathSeparator).last;
           final formData = FormData.fromMap({
             'file': MultipartFile.fromBytes(bytes, filename: fileName),
           });
@@ -567,6 +616,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 userId: _userId,
                 canteenId: widget.canteenId,
                 star: _star,
+                tasteScore: _dimensions.taste,
+                valueScore: _dimensions.value,
+                queueScore: _dimensions.queue,
+                hygieneScore: _dimensions.hygiene,
+                serviceScore: _dimensions.service,
                 comment: _commentController.text,
                 tags: _selectedTags,
                 recommendedDishes: _recommendedDishes,
@@ -604,16 +658,38 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       return;
     }
 
-    // 2. 调用 Rate 接口
-    final result = await canteenProvider.rateCanteen(
-      widget.canteenId,
-      star: _star,
-      comment: _commentController.text.trim(),
-      images: finalImages,
-      tags: _selectedTags,
-      recommendedDishes: _recommendedDishes,
-      baseUpdatedAt: _baseRatingUpdatedAt,
-    );
+    // 2. 提交五维评价；旧摘要评价仍由 Provider 在旧服务端上兼容回退。
+    final existingReviewId = (widget.existingRating?['review_event_id'] as num?)
+            ?.toInt() ??
+        (widget.existingRating?['latest_review_event_id'] as num?)?.toInt() ??
+        int.tryParse(
+          '${widget.existingRating?['review_event_id'] ?? widget.existingRating?['latest_review_event_id'] ?? ''}',
+        );
+    final existingScoreVersion =
+        (widget.existingRating?['score_version'] as num?)?.toInt() ?? 1;
+    final result = existingReviewId != null && existingScoreVersion >= 2
+        ? await canteenProvider.updateReview(
+            existingReviewId,
+            dimensions: _dimensions,
+            comment: _commentController.text.trim(),
+            images: finalImages,
+            tags: _selectedTags,
+            baseUpdatedAt: _baseRatingUpdatedAt,
+          )
+        : await canteenProvider.submitReview(
+            widget.canteenId,
+            dimensions: _dimensions,
+            comment: _commentController.text.trim(),
+            images: finalImages,
+            tags: _selectedTags,
+            dishReviews: _dishReviews.values
+                .where((review) =>
+                    review.taste >= 1 &&
+                    review.value >= 1 &&
+                    review.portion >= 1)
+                .toList(),
+            baseUpdatedAt: _baseRatingUpdatedAt,
+          );
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
@@ -683,7 +759,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         }
       }
 
-      final errMsg = result.errorMessage ?? canteenProvider.errorMessage ?? '提交失败，请稍后重试';
+      final errMsg =
+          result.errorMessage ?? canteenProvider.errorMessage ?? '提交失败，请稍后重试';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errMsg)),
       );
@@ -816,7 +893,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                   ? CachedNetworkImage(
                       imageUrl: ApiConstants.fullUrl(imageUrl),
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _canteenThumbPlaceholder(isDark),
+                      errorWidget: (_, __, ___) =>
+                          _canteenThumbPlaceholder(isDark),
                       placeholder: (_, __) => _canteenThumbPlaceholder(isDark),
                     )
                   : _canteenThumbPlaceholder(isDark),
@@ -913,7 +991,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '整体评分',
+                '味道评分（35%）',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -939,7 +1017,17 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 onPressed: _isSubmitting
                     ? null
                     : () {
-                        setState(() => _star = starValue);
+                        // 点击星星先给五个维度填入同一初始值，用户仍可在下方逐项微调。
+                        setState(() {
+                          _star = starValue;
+                          _dimensions = CanteenReviewDimensions(
+                            taste: starValue,
+                            value: starValue,
+                            queue: starValue,
+                            hygiene: starValue,
+                            service: starValue,
+                          );
+                        });
                         _onFormChanged();
                       },
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -972,6 +1060,157 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               _buildStarLevelText('很满意', 4, isDark),
               _buildStarLevelText('超赞', 5, isDark),
             ],
+          ),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: CanteenTheme.borderColor(isDark)),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '细分体验（可调整，自动计算综合分 ${_dimensions.overall > 0 ? _dimensions.overall.toStringAsFixed(2) : '--'}）',
+              style: TextStyle(
+                fontSize: 12,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _isSubmitting
+                  ? null
+                  : () => setState(
+                      () => _showDimensionDetails = !_showDimensionDetails),
+              icon: Icon(
+                _showDimensionDetails
+                    ? Icons.expand_less_rounded
+                    : Icons.tune_rounded,
+                size: 16,
+              ),
+              label: Text(_showDimensionDetails ? '收起细分评分' : '调整细分评分'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 30),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+          if (_showDimensionDetails) ...[
+            const SizedBox(height: 4),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = constraints.maxWidth >= 620
+                    ? (constraints.maxWidth - 8) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 2,
+                  children: [
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildDimensionRow(
+                          '性价比（20%）', _dimensions.value, isDark, (score) {
+                        _setDimension(_dimensions.copyWith(value: score));
+                      }),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildDimensionRow(
+                          '排队体验（15%）', _dimensions.queue, isDark, (score) {
+                        _setDimension(_dimensions.copyWith(queue: score));
+                      }),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildDimensionRow(
+                          '卫生（20%）', _dimensions.hygiene, isDark, (score) {
+                        _setDimension(_dimensions.copyWith(hygiene: score));
+                      }),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildDimensionRow(
+                          '服务（10%）', _dimensions.service, isDark, (score) {
+                        _setDimension(_dimensions.copyWith(service: score));
+                      }),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _setDimension(CanteenReviewDimensions next) {
+    setState(() {
+      _dimensions = next;
+      _star = next.taste;
+    });
+    _onFormChanged();
+  }
+
+  Widget _buildDimensionRow(
+    String label,
+    int selected,
+    bool isDark,
+    ValueChanged<int> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 4,
+              children: List.generate(5, (index) {
+                final score = index + 1;
+                final active = score == selected;
+                return InkWell(
+                  onTap: _isSubmitting ? null : () => onChanged(score),
+                  borderRadius: BorderRadius.circular(6),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 28,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? CanteenTheme.accentSoftColor(isDark)
+                          : CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: active
+                            ? CanteenTheme.accentColor(isDark)
+                            : CanteenTheme.borderColor(isDark),
+                      ),
+                    ),
+                    child: Text(
+                      '$score',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        color: active
+                            ? CanteenTheme.accentStrongColor(isDark)
+                            : CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
           ),
         ],
       ),
@@ -1070,7 +1309,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                         opt.label,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
                           color: isSelected
                               ? CanteenTheme.accentStrongColor(isDark)
                               : CanteenTheme.textPrimaryColor(isDark),
@@ -1273,6 +1513,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     setState(() {
       _recommendedDishes.add(trimmed);
       _dishInputController.clear();
+      _dishSuggestions = [];
     });
     _onFormChanged();
   }
@@ -1285,10 +1526,49 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     _onFormChanged();
   }
 
+  void _onDishInputChanged(String value) {
+    _dishSuggestionTimer?.cancel();
+    final query = value.trim();
+    if (query.isEmpty) {
+      if (mounted) setState(() => _dishSuggestions = []);
+      return;
+    }
+    _dishSuggestionTimer = Timer(const Duration(milliseconds: 280), () async {
+      final suggestions = await context
+          .read<CanteenProvider>()
+          .suggestDishes(widget.canteenId, query);
+      if (mounted && suggestions != null) {
+        setState(() => _dishSuggestions = suggestions);
+      }
+    });
+  }
+
+  void _updateDishReview(CanteenDish dish,
+      {int? taste, int? value, int? portion}) {
+    final current = _dishReviews[dish.id] ??
+        CanteenDishReviewInput(dishId: dish.id, taste: 0, value: 0, portion: 0);
+    setState(() {
+      _dishReviews[dish.id] = CanteenDishReviewInput(
+        dishId: dish.id,
+        taste: taste ?? current.taste,
+        value: value ?? current.value,
+        portion: portion ?? current.portion,
+      );
+    });
+    _onFormChanged();
+  }
+
+  CanteenDish? _findDish(String name) {
+    for (final dish in _allDishes) {
+      if (dish.name.toLowerCase() == name.toLowerCase()) return dish;
+    }
+    return null;
+  }
+
   Widget _buildDishRecommendationSection(bool isDark, Color accent) {
     final unselectedDishes = _allDishes
-        .where((d) => !_recommendedDishes.any(
-            (r) => r.toLowerCase() == d.name.toLowerCase()))
+        .where((d) => !_recommendedDishes
+            .any((r) => r.toLowerCase() == d.name.toLowerCase()))
         .take(6)
         .toList();
 
@@ -1314,6 +1594,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     key: const Key('canteen_dish_input'),
                     controller: _dishInputController,
                     textInputAction: TextInputAction.done,
+                    onChanged: _onDishInputChanged,
                     onSubmitted: _addRecommendedDish,
                     style: TextStyle(
                       fontSize: 14,
@@ -1338,7 +1619,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
                     ),
                     child: Icon(
                       Icons.add_rounded,
@@ -1352,6 +1634,51 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           ),
         ],
 
+        if (_dishSuggestions.isNotEmpty && _recommendedDishes.length < 3) ...[
+          const SizedBox(height: 10),
+          Text(
+            _dishSuggestions.any((item) => item.isExact)
+                ? '匹配到菜品（点击快速填入）'
+                : '可能是这些菜（仅作提示）',
+            style: TextStyle(
+              fontSize: 12,
+              color: CanteenTheme.textTertiaryColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _dishSuggestions.take(6).map((suggestion) {
+              return GestureDetector(
+                onTap: suggestion.isExact
+                    ? () => _addRecommendedDish(suggestion.name)
+                    : null,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: suggestion.isExact
+                        ? CanteenTheme.accentSoftColor(isDark)
+                        : CanteenTheme.surfaceMutedBg(isDark),
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                    border: Border.all(color: CanteenTheme.borderColor(isDark)),
+                  ),
+                  child: Text(
+                    suggestion.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: suggestion.isExact
+                          ? CanteenTheme.accentStrongColor(isDark)
+                          : CanteenTheme.textSecondaryColor(isDark),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+
         // 2. 已添加的推荐菜标签（支持点 ❌ 删除）
         if (_recommendedDishes.isNotEmpty) ...[
           if (_recommendedDishes.length < 3) const SizedBox(height: 10),
@@ -1361,7 +1688,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             children: [
               for (var i = 0; i < _recommendedDishes.length; i++)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     color: CanteenTheme.accentSoftColor(isDark),
                     borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
@@ -1395,6 +1723,15 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 ),
             ],
           ),
+          const SizedBox(height: 10),
+          ..._recommendedDishes.map((name) {
+            final dish = _findDish(name);
+            if (dish == null) return const SizedBox.shrink();
+            final current = _dishReviews[dish.id] ??
+                CanteenDishReviewInput(
+                    dishId: dish.id, taste: 0, value: 0, portion: 0);
+            return _buildDishReviewEditor(isDark, dish, current);
+          }),
         ],
 
         // 3. 快捷推荐：本食堂已有菜品（点击快速填入）
@@ -1416,10 +1753,12 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 GestureDetector(
                   onTap: () => _addRecommendedDish(dish.name),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: CanteenTheme.surfaceMutedBg(isDark),
-                      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
                       border: Border.all(
                         color: CanteenTheme.borderColor(isDark),
                         width: 1,
@@ -1449,6 +1788,101 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildDishReviewEditor(
+    bool isDark,
+    CanteenDish dish,
+    CanteenDishReviewInput current,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '给「${dish.name}」评分（选填）',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
+          ),
+          _buildDishScoreRow('味道', current.taste, isDark, (score) {
+            _updateDishReview(dish, taste: score);
+          }),
+          _buildDishScoreRow('性价比', current.value, isDark, (score) {
+            _updateDishReview(dish, value: score);
+          }),
+          _buildDishScoreRow('分量', current.portion, isDark, (score) {
+            _updateDishReview(dish, portion: score);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDishScoreRow(
+    String label,
+    int selected,
+    bool isDark,
+    ValueChanged<int> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 44,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: CanteenTheme.textTertiaryColor(isDark),
+              ),
+            ),
+          ),
+          Wrap(
+            spacing: 3,
+            children: List.generate(5, (index) {
+              final score = index + 1;
+              final active = selected == score;
+              return InkWell(
+                onTap: _isSubmitting ? null : () => onChanged(score),
+                borderRadius: BorderRadius.circular(5),
+                child: Container(
+                  width: 23,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? CanteenTheme.accentSoftColor(isDark)
+                        : CanteenTheme.surfaceBg(isDark),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: CanteenTheme.borderColor(isDark)),
+                  ),
+                  child: Text(
+                    '$score',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active
+                          ? CanteenTheme.accentStrongColor(isDark)
+                          : CanteenTheme.textTertiaryColor(isDark),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1498,7 +1932,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
   Widget _buildBottomBar(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final canSubmit = _star > 0 && !_isSubmitting;
+    final canSubmit = _dimensions.isComplete && !_isSubmitting;
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
@@ -1525,7 +1959,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
                 ),
               ),
-              child: const Text('取消', style: TextStyle(fontWeight: FontWeight.w600)),
+              child: const Text('取消',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ),
           const SizedBox(width: 12),

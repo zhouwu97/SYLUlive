@@ -144,23 +144,63 @@ class CanteenRankingEntry {
   }
 }
 
+/// 首页热菜卡：同时保留菜品归属食堂，方便点击后进入对应菜品详情。
+class CanteenHotDish {
+  final int id;
+  final String name;
+  final int canteenId;
+  final String canteenName;
+  final String coverImage;
+  final int photoCount;
+  final double averageScore;
+  final int reviewerCount;
+
+  const CanteenHotDish({
+    required this.id,
+    required this.name,
+    required this.canteenId,
+    required this.canteenName,
+    this.coverImage = '',
+    this.photoCount = 0,
+    this.averageScore = 0,
+    this.reviewerCount = 0,
+  });
+
+  factory CanteenHotDish.fromJson(Map<String, dynamic> json) {
+    return CanteenHotDish(
+      id: (json['id'] ?? 0).toInt(),
+      name: json['name']?.toString() ?? '',
+      canteenId: (json['canteen_id'] ?? 0).toInt(),
+      canteenName: json['canteen_name']?.toString() ?? '',
+      coverImage: json['cover_image']?.toString() ?? '',
+      photoCount: (json['photo_count'] ?? 0).toInt(),
+      averageScore: (json['average_score'] ?? 0).toDouble(),
+      reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
+    );
+  }
+}
+
 /// 食堂发现首页完整数据。
 class CanteenHomeData {
   final CanteenHero hero;
   final CanteenRankingEntry rankingEntry;
   final List<CanteenFeedItem> feed;
+  final List<CanteenHotDish> hotDishes;
 
   const CanteenHomeData({
     this.hero = const CanteenHero(),
     this.rankingEntry = const CanteenRankingEntry(),
     this.feed = const [],
+    this.hotDishes = const [],
   });
 
   factory CanteenHomeData.fromJson(Map<String, dynamic> json) {
     final rawFeed = json['feed'];
     return CanteenHomeData(
       hero: CanteenHero.fromJson(
-        json['hero'] is Map<String, dynamic> ? json['hero'] as Map<String, dynamic> : null,
+        json['hero'] is Map<String, dynamic>
+            ? json['hero'] as Map<String, dynamic>
+            : null,
       ),
       rankingEntry: CanteenRankingEntry.fromJson(
         json['ranking_entry'] is Map<String, dynamic>
@@ -171,6 +211,12 @@ class CanteenHomeData {
           ? rawFeed
               .whereType<Map<String, dynamic>>()
               .map(CanteenFeedItem.fromJson)
+              .toList()
+          : const [],
+      hotDishes: json['hot_dishes'] is List
+          ? (json['hot_dishes'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(CanteenHotDish.fromJson)
               .toList()
           : const [],
     );

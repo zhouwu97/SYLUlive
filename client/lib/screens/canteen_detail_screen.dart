@@ -15,6 +15,7 @@ import '../widgets/canteen/canteen_detail_skeleton.dart';
 import '../widgets/canteen/canteen_review_section.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_gallery_section.dart';
+import '../widgets/rating_detail/rating_report_sheet.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import 'canteen_dish_list_screen.dart';
 import 'canteen_review_editor_screen.dart';
@@ -223,10 +224,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       );
     }
 
-    final reviews = (_canteenData!['ratings'] as List?)
-            ?.cast<Map<String, dynamic>>() ??
-        [];
-    final ratingCount = (_canteenData!['rating_count'] as num?)?.toInt() ?? 0;
+    final rawV2Reviews = _canteenData!['reviews'];
+    final reviews = rawV2Reviews is List && rawV2Reviews.isNotEmpty
+        ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
+        : (_canteenData!['ratings'] as List?)
+                ?.whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList() ??
+            <Map<String, dynamic>>[];
+    final ratingCount = (_canteenData!['reviewer_count'] as num?)?.toInt() ??
+        (_canteenData!['rating_count'] as num?)?.toInt() ??
+        0;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -244,8 +252,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   CanteenDetailHeader(
-                    name:
-                        _canteenData?['canteen']?['name']?.toString() ?? '',
+                    name: _canteenData?['canteen']?['name']?.toString() ?? '',
                     rating:
                         (_canteenData?['average_star'] as num?)?.toDouble() ??
                             0,
@@ -253,6 +260,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     dishCount: _dishCount,
                     dishPhotoCount: _dishPhotoCount,
                   ),
+                  _buildDimensionSummary(isDark),
                   DishGallerySection(
                     canteenId: widget.canteenId,
                     canteenName: widget.canteenName,
@@ -260,8 +268,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     onUpload: _openDishPhotoUpload,
                     onStatsChanged: (count, photos) {
                       if (!mounted) return;
-                      if (count == _dishCount &&
-                          photos == _dishPhotoCount) {
+                      if (count == _dishCount && photos == _dishPhotoCount) {
                         return;
                       }
                       setState(() {
@@ -314,11 +321,178 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     },
                     onVote: _voteRating,
                     onWriteReview: _openReviewEditor,
+                    onReport: _reportReview,
                   ),
                 ],
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 104)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _normalizeV2Review(Map raw) {
+    final source = Map<String, dynamic>.from(raw);
+    final dimensionScores = <String, dynamic>{
+      'taste': source['taste_score'] ?? 0,
+      'value': source['value_score'] ?? 0,
+      'queue': source['queue_score'] ?? 0,
+      'hygiene': source['hygiene_score'] ?? 0,
+      'service': source['service_score'] ?? 0,
+    };
+    return {
+      ...source,
+      'star': source['overall_score'] ?? 0,
+      'user_name': source['user_name'] ?? '匿名同学',
+      'user_avatar': source['user_avatar'] ?? '',
+      'dimension_scores': dimensionScores,
+      'is_v2': true,
+      'helpful_count': 0,
+      'unhelpful_count': 0,
+    };
+  }
+
+  Future<void> _reportReview(int reviewId) async {
+    await showRatingReportSheet(
+      context: context,
+      targetType: 'canteen_review',
+      targetId: reviewId,
+      onSubmit: (reasonCode, description) async {
+        try {
+          final response = await context.read<AuthProvider>().dio.post(
+            '/reports',
+            data: {
+              'target_type': 'canteen_review',
+              'target_id': reviewId,
+              'reason_code': reasonCode,
+              'reason': description.trim().isEmpty
+                  ? '举报原因：$reasonCode'
+                  : description.trim(),
+            },
+          );
+          if (response.statusCode == 201 || response.statusCode == 200) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('举报已提交，感谢你的反馈')),
+              );
+            }
+            return true;
+          }
+        } on DioException catch (error) {
+          if (mounted) {
+            final message = error.response?.data is Map
+                ? error.response?.data['error']?.toString() ?? '举报提交失败'
+                : '举报提交失败';
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(message)));
+          }
+        }
+        return false;
+      },
+    );
+  }
+
+  Widget _buildDimensionSummary(bool isDark) {
+    final raw = _canteenData?['dimension_scores'];
+    if (raw is! Map) return const SizedBox.shrink();
+    final scores = Map<String, dynamic>.from(raw);
+    final values = <({String key, String label})>[
+      (key: 'taste', label: '味道'),
+      (key: 'value', label: '性价比'),
+      (key: 'queue', label: '排队'),
+      (key: 'hygiene', label: '卫生'),
+      (key: 'service', label: '服务'),
+    ];
+    final hasV2Score = values.any((item) {
+      final value = scores[item.key];
+      return value is num && value > 0;
+    });
+    if (!hasV2Score) return const SizedBox.shrink();
+    final visitCount =
+        (_canteenData?['visit_review_count'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark),
+          borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+          border: Border.all(color: CanteenTheme.borderColor(isDark)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '五维体验',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const Spacer(),
+                if (visitCount > 0)
+                  Text(
+                    '$visitCount 次到店评价 · 近一人一票',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: CanteenTheme.textTertiaryColor(isDark),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: values.map((item) {
+                final score = scores[item.key] is num
+                    ? (scores[item.key] as num).toDouble()
+                    : 0.0;
+                return SizedBox(
+                  width: 92,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: CanteenTheme.textSecondaryColor(isDark),
+                            ),
+                          ),
+                          Text(
+                            score.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: CanteenTheme.accentStrongColor(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          minHeight: 5,
+                          value: (score / 5).clamp(0.0, 1.0),
+                          backgroundColor: CanteenTheme.surfaceMutedBg(isDark),
+                          color: CanteenTheme.accentColor(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
           ],
         ),
       ),
@@ -650,8 +824,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           canteenImage: _canteenData?['canteen']?['image']?.toString(),
           averageStar:
               (_canteenData?['average_star'] as num?)?.toDouble() ?? 0.0,
-          ratingCount:
-              (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
+          ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
           existingRating: _canteenData?['my_rating'],
@@ -803,8 +976,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,
-                          side: BorderSide(
-                              color: accent.withValues(alpha: 0.4)),
+                          side:
+                              BorderSide(color: accent.withValues(alpha: 0.4)),
                           minimumSize: const Size.fromHeight(44),
                           shape: RoundedRectangleBorder(
                             borderRadius:
@@ -823,8 +996,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size.fromHeight(46),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(CanteenTheme.radiusMd),
+                                  borderRadius: BorderRadius.circular(
+                                      CanteenTheme.radiusMd),
                                 ),
                               ),
                               child: const Text('取消'),
@@ -839,8 +1012,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size.fromHeight(46),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(CanteenTheme.radiusMd),
+                                  borderRadius: BorderRadius.circular(
+                                      CanteenTheme.radiusMd),
                                 ),
                               ),
                               child: isUploadingCover

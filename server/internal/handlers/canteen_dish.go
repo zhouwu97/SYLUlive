@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -40,11 +41,13 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 	}
 
 	type dishRow struct {
-		ID          uint   `json:"id"`
-		Name        string `json:"name"`
-		CoverImage  string `json:"cover_image"`
-		PhotoCount  int    `json:"photo_count"`
-		LastPhotoAt string `json:"last_photo_at"`
+		ID            uint    `json:"id"`
+		Name          string  `json:"name"`
+		CoverImage    string  `json:"cover_image"`
+		PhotoCount    int     `json:"photo_count"`
+		LastPhotoAt   string  `json:"last_photo_at"`
+		AverageScore  float64 `json:"average_score"`
+		ReviewerCount int     `json:"reviewer_count"`
 	}
 	var dishes []dishRow
 	// 每个菜独立聚合 approved 统计，无跨表笛卡尔积。
@@ -70,6 +73,24 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 	}
 	if dishes == nil {
 		dishes = []dishRow{}
+	}
+	for i := range dishes {
+		var summaries []models.CanteenDishRatingSummary
+		if h.db.Preload("User").Where("dish_id = ?", dishes[i].ID).Find(&summaries).Error == nil {
+			samples := make([]services.DishRatingSample, 0, len(summaries))
+			for _, summary := range summaries {
+				weight := 1.0
+				if summary.User != nil {
+					weight = services.ComputeCreditWeight(summary.User.CreditScore)
+				}
+				samples = append(samples, services.DishRatingSample{
+					Overall: summary.EffectiveScore, Taste: summary.TasteScore,
+					Value: summary.ValueScore, Portion: summary.PortionScore, Weight: weight,
+				})
+			}
+			agg := services.ComputeDishAggregate(samples)
+			dishes[i].AverageScore, dishes[i].ReviewerCount = agg.AverageScore, agg.ReviewerCount
+		}
 	}
 	c.JSON(http.StatusOK, dishes)
 }
@@ -119,6 +140,20 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 	if photos == nil {
 		photos = []photoRow{}
 	}
+	var summaries []models.CanteenDishRatingSummary
+	_ = h.db.Preload("User").Where("dish_id = ?", dishID).Find(&summaries).Error
+	samples := make([]services.DishRatingSample, 0, len(summaries))
+	for _, summary := range summaries {
+		weight := 1.0
+		if summary.User != nil {
+			weight = services.ComputeCreditWeight(summary.User.CreditScore)
+		}
+		samples = append(samples, services.DishRatingSample{
+			Overall: summary.EffectiveScore, Taste: summary.TasteScore,
+			Value: summary.ValueScore, Portion: summary.PortionScore, Weight: weight,
+		})
+	}
+	agg := services.ComputeDishAggregate(samples)
 
 	c.JSON(http.StatusOK, gin.H{
 		"dish": gin.H{
@@ -126,7 +161,14 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 			"name":       dish.Name,
 			"canteen_id": dish.CanteenID,
 		},
-		"photo_count": len(photos),
-		"photos":      photos,
+		"photo_count":    len(photos),
+		"photos":         photos,
+		"average_score":  agg.AverageScore,
+		"reviewer_count": agg.ReviewerCount,
+		"dimension_scores": gin.H{
+			"taste":   agg.TasteScore,
+			"value":   agg.ValueScore,
+			"portion": agg.PortionScore,
+		},
 	})
 }

@@ -31,13 +31,27 @@ type CanteenRating struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 
+	// V2 摘要字段。旧客户端继续读取 Star；新版使用 EffectiveScore 与五维摘要。
+	EffectiveScore      float64 `gorm:"not null;default:0" json:"effective_score"`
+	TasteScore          float64 `gorm:"not null;default:0" json:"taste_score"`
+	ValueScore          float64 `gorm:"not null;default:0" json:"value_score"`
+	QueueScore          float64 `gorm:"not null;default:0" json:"queue_score"`
+	HygieneScore        float64 `gorm:"not null;default:0" json:"hygiene_score"`
+	ServiceScore        float64 `gorm:"not null;default:0" json:"service_score"`
+	ReviewEventCount    int     `gorm:"not null;default:0" json:"review_event_count"`
+	LatestReviewEventID *uint   `gorm:"index" json:"latest_review_event_id,omitempty"`
+	ScoreVersion        int     `gorm:"not null;default:1" json:"score_version"`
+
 	// 关联数据（非数据库字段）
-	User               *User         `gorm:"foreignKey:UserID" json:"-"`
-	UserName           string        `gorm:"-" json:"user_name"`
-	UserStudentID      string        `gorm:"-" json:"user_student_id"`
-	UserAvatar         string        `gorm:"-" json:"user_avatar"`
-	MyVote             *string       `gorm:"-" json:"my_vote"`
-	RecommendedDishNames []string       `gorm:"-" json:"recommended_dishes,omitempty"`
+	User                 *User    `gorm:"foreignKey:UserID" json:"-"`
+	UserName             string   `gorm:"-" json:"user_name"`
+	UserStudentID        string   `gorm:"-" json:"user_student_id"`
+	UserAvatar           string   `gorm:"-" json:"user_avatar"`
+	MyVote               *string  `gorm:"-" json:"my_vote"`
+	RecommendedDishNames []string `gorm:"-" json:"recommended_dishes,omitempty"`
+	CreditScore          int      `gorm:"-" json:"credit_score,omitempty"`
+	CreditWeight         float64  `gorm:"-" json:"credit_weight,omitempty"`
+	HistoryCount         int      `gorm:"-" json:"history_count,omitempty"`
 }
 
 // CanteenRatingVote 食堂评价有用/无用投票

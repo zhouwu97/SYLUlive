@@ -49,11 +49,14 @@ var validCanteenTags = map[string]string{
 // Go 层计算对 SQLite/PostgreSQL 行为一致、可单元测试、可解释。
 type canteenStatsRow struct {
 	models.Canteen
-	RatingCount    int     `json:"rating_count"`
-	AverageStar    float64 `json:"average_star"`
-	DishCount      int     `json:"dish_count"`
-	DishPhotoCount int     `json:"dish_photo_count"`
-	RankingScore   float64 `json:"ranking_score"`
+	RatingCount      int                `json:"rating_count"`
+	AverageStar      float64            `json:"average_star"`
+	ReviewerCount    int                `json:"reviewer_count"`
+	VisitReviewCount int                `json:"visit_review_count"`
+	DimensionScores  map[string]float64 `json:"dimension_scores,omitempty"`
+	DishCount        int                `json:"dish_count"`
+	DishPhotoCount   int                `json:"dish_photo_count"`
+	RankingScore     float64            `json:"ranking_score"`
 }
 
 // canteenRankingEntry 一条可排名的食堂项（含计算出的 Bayesian score 与 rank）。
@@ -92,7 +95,65 @@ func (h *CanteenHandler) queryCanteenStats() ([]canteenStatsRow, error) {
 		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_photo_count").
 		Order("canteens.created_at DESC, canteens.id DESC").
 		Scan(&rows).Error
-	return rows, err
+	if err != nil {
+		return rows, err
+	}
+	h.hydrateV2CanteenScores(rows)
+	return rows, nil
+}
+
+// hydrateV2CanteenScores 将每个用户的有效摘要在 Go 层按诚信度聚合。
+// 这样旧 summary 仍可作为 Legacy Star 使用，新事件不会因 SQL 方言差异丢失权重。
+func (h *CanteenHandler) hydrateV2CanteenScores(rows []canteenStatsRow) {
+	if len(rows) == 0 {
+		return
+	}
+	var ratings []models.CanteenRating
+	if err := h.db.Preload("User").Find(&ratings).Error; err != nil {
+		return
+	}
+	samplesByCanteen := make(map[uint][]services.UserRatingSample)
+	for _, rating := range ratings {
+		sample := services.UserRatingSample{Overall: float64(rating.Star), Weight: 1}
+		if rating.EffectiveScore > 0 && rating.ScoreVersion >= 2 {
+			sample.Overall = rating.EffectiveScore
+			sample.Taste = rating.TasteScore
+			sample.Value = rating.ValueScore
+			sample.Queue = rating.QueueScore
+			sample.Hygiene = rating.HygieneScore
+			sample.Service = rating.ServiceScore
+		}
+		if rating.User != nil {
+			sample.Weight = services.ComputeCreditWeight(rating.User.CreditScore)
+		}
+		samplesByCanteen[rating.CanteenID] = append(samplesByCanteen[rating.CanteenID], sample)
+	}
+	for i := range rows {
+		aggregate := services.ComputeCanteenAggregate(samplesByCanteen[rows[i].ID])
+		if aggregate.ReviewerCount == 0 {
+			continue
+		}
+		rows[i].RatingCount = aggregate.ReviewerCount
+		rows[i].ReviewerCount = aggregate.ReviewerCount
+		rows[i].AverageStar = aggregate.AverageScore
+		visitCount := 0
+		for _, rating := range ratings {
+			if rating.CanteenID != rows[i].ID {
+				continue
+			}
+			if rating.ReviewEventCount > 0 {
+				visitCount += rating.ReviewEventCount
+			} else {
+				visitCount++
+			}
+		}
+		rows[i].VisitReviewCount = visitCount
+		rows[i].DimensionScores = map[string]float64{
+			"taste": aggregate.TasteScore, "value": aggregate.ValueScore,
+			"queue": aggregate.QueueScore, "hygiene": aggregate.HygieneScore,
+			"service": aggregate.ServiceScore,
+		}
+	}
 }
 
 // globalMeanStars 计算全体「有评价」食堂的平均星级（Bayesian 公式里的 C）。
@@ -313,13 +374,56 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			myRating = &rating
 		}
 	}
+	// V2 评价流按用户去重，旧 ratings 字段保留给老客户端。
+	var reviews []models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ? AND status = ?", id, models.ReviewEventStatusActive).
+		Preload("User").Order("created_at DESC, id DESC").Find(&reviews).Error; err == nil {
+		seen := map[uint]bool{}
+		latest := reviews[:0]
+		for i := range reviews {
+			if seen[reviews[i].UserID] {
+				continue
+			}
+			seen[reviews[i].UserID] = true
+			populateReviewPublicFields(h.db, &reviews[i])
+			latest = append(latest, reviews[i])
+		}
+		reviews = latest
+	}
+	var v2Stats *canteenStatsRow
+	if stats, statsErr := h.queryCanteenStats(); statsErr == nil {
+		for i := range stats {
+			if stats[i].ID == uint(id) {
+				v2Stats = &stats[i]
+				break
+			}
+		}
+	}
+	if v2Stats != nil {
+		count = int64(v2Stats.RatingCount)
+		avg = v2Stats.AverageStar
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"canteen":      canteen,
-		"ratings":      ratings,
-		"rating_count": count,
-		"average_star": avg,
-		"my_rating":    myRating,
+		"canteen":        canteen,
+		"ratings":        ratings,
+		"rating_count":   count,
+		"average_star":   avg,
+		"my_rating":      myRating,
+		"reviews":        reviews,
+		"reviewer_count": count,
+		"visit_review_count": func() int {
+			if v2Stats == nil {
+				return int(count)
+			}
+			return v2Stats.VisitReviewCount
+		}(),
+		"dimension_scores": func() map[string]float64 {
+			if v2Stats == nil {
+				return map[string]float64{}
+			}
+			return v2Stats.DimensionScores
+		}(),
 	})
 }
 

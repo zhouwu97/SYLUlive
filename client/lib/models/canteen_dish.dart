@@ -5,6 +5,8 @@ class CanteenDish {
   final String coverImage;
   final int photoCount;
   final String lastPhotoAt;
+  final double averageScore;
+  final int reviewerCount;
 
   const CanteenDish({
     required this.id,
@@ -12,6 +14,8 @@ class CanteenDish {
     required this.coverImage,
     required this.photoCount,
     required this.lastPhotoAt,
+    this.averageScore = 0,
+    this.reviewerCount = 0,
   });
 
   factory CanteenDish.fromJson(Map<String, dynamic> json) {
@@ -21,6 +25,8 @@ class CanteenDish {
       coverImage: json['cover_image']?.toString() ?? '',
       photoCount: json['photo_count'] ?? 0,
       lastPhotoAt: json['last_photo_at']?.toString() ?? '',
+      averageScore: (json['average_score'] ?? 0).toDouble(),
+      reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
     );
   }
 }

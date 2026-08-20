@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// 草稿图片状态类型
 enum ReviewDraftImageType {
   /// 已发布的远端图片（编辑已有评价时的历史图片）
@@ -64,12 +62,17 @@ class CanteenReviewDraftImage {
 
 /// 食堂评价草稿
 class CanteenReviewDraft {
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   final int schemaVersion;
   final int userId;
   final int canteenId;
   final int star;
+  final int tasteScore;
+  final int valueScore;
+  final int queueScore;
+  final int hygieneScore;
+  final int serviceScore;
   final String comment;
   final List<String> tags;
   final List<String> recommendedDishes;
@@ -84,6 +87,11 @@ class CanteenReviewDraft {
     required this.userId,
     required this.canteenId,
     this.star = 0,
+    this.tasteScore = 0,
+    this.valueScore = 0,
+    this.queueScore = 0,
+    this.hygieneScore = 0,
+    this.serviceScore = 0,
     this.comment = '',
     this.tags = const [],
     this.recommendedDishes = const [],
@@ -95,6 +103,11 @@ class CanteenReviewDraft {
   /// 是否为没有任何有效内容的空草稿
   bool get isEmpty =>
       star == 0 &&
+      tasteScore == 0 &&
+      valueScore == 0 &&
+      queueScore == 0 &&
+      hygieneScore == 0 &&
+      serviceScore == 0 &&
       comment.trim().isEmpty &&
       tags.isEmpty &&
       recommendedDishes.isEmpty &&
@@ -105,6 +118,11 @@ class CanteenReviewDraft {
     int? userId,
     int? canteenId,
     int? star,
+    int? tasteScore,
+    int? valueScore,
+    int? queueScore,
+    int? hygieneScore,
+    int? serviceScore,
     String? comment,
     List<String>? tags,
     List<String>? recommendedDishes,
@@ -117,6 +135,11 @@ class CanteenReviewDraft {
       userId: userId ?? this.userId,
       canteenId: canteenId ?? this.canteenId,
       star: star ?? this.star,
+      tasteScore: tasteScore ?? this.tasteScore,
+      valueScore: valueScore ?? this.valueScore,
+      queueScore: queueScore ?? this.queueScore,
+      hygieneScore: hygieneScore ?? this.hygieneScore,
+      serviceScore: serviceScore ?? this.serviceScore,
       comment: comment ?? this.comment,
       tags: tags ?? this.tags,
       recommendedDishes: recommendedDishes ?? this.recommendedDishes,
@@ -131,6 +154,11 @@ class CanteenReviewDraft {
         'user_id': userId,
         'canteen_id': canteenId,
         'star': star,
+        'taste_score': tasteScore,
+        'value_score': valueScore,
+        'queue_score': queueScore,
+        'hygiene_score': hygieneScore,
+        'service_score': serviceScore,
         'comment': comment,
         'tags': tags,
         'recommended_dishes': recommendedDishes,
@@ -147,6 +175,21 @@ class CanteenReviewDraft {
       userId: (json['user_id'] as num?)?.toInt() ?? 0,
       canteenId: (json['canteen_id'] as num?)?.toInt() ?? 0,
       star: (json['star'] as num?)?.toInt() ?? 0,
+      tasteScore: (json['taste_score'] as num?)?.toInt() ??
+          (json['star'] as num?)?.toInt() ??
+          0,
+      valueScore: (json['value_score'] as num?)?.toInt() ??
+          (json['star'] as num?)?.toInt() ??
+          0,
+      queueScore: (json['queue_score'] as num?)?.toInt() ??
+          (json['star'] as num?)?.toInt() ??
+          0,
+      hygieneScore: (json['hygiene_score'] as num?)?.toInt() ??
+          (json['star'] as num?)?.toInt() ??
+          0,
+      serviceScore: (json['service_score'] as num?)?.toInt() ??
+          (json['star'] as num?)?.toInt() ??
+          0,
       comment: json['comment']?.toString() ?? '',
       tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
@@ -156,14 +199,14 @@ class CanteenReviewDraft {
               .toList() ??
           const [],
       images: (json['images'] as List?)
-              ?.filterMapJson(
-                  (m) => CanteenReviewDraftImage.fromJson(Map<String, dynamic>.from(m as Map)))
+              ?.filterMapJson((m) => CanteenReviewDraftImage.fromJson(
+                  Map<String, dynamic>.from(m as Map)))
               .toList() ??
           const [],
       updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
           DateTime.now(),
-      baseRatingUpdatedAt: DateTime.tryParse(
-          json['base_rating_updated_at']?.toString() ?? ''),
+      baseRatingUpdatedAt:
+          DateTime.tryParse(json['base_rating_updated_at']?.toString() ?? ''),
     );
   }
 }

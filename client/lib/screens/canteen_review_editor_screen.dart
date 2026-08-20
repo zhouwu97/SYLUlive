@@ -1564,7 +1564,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 ),
               ),
               Text(
-                '${_draftImages.length} / 3',
+                '最多 3 张',
                 style: TextStyle(
                   fontSize: 12,
                   color: CanteenTheme.textSecondaryColor(isDark),

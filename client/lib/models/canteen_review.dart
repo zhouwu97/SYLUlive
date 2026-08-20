@@ -82,6 +82,8 @@ class CanteenReviewEvent {
   final int creditScore;
   final double creditWeight;
   final int historyCount;
+  final int helpfulCount;
+  final int unhelpfulCount;
   final DateTime? createdAt;
 
   const CanteenReviewEvent({
@@ -97,6 +99,8 @@ class CanteenReviewEvent {
     required this.creditScore,
     required this.creditWeight,
     required this.historyCount,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
     required this.createdAt,
   });
 
@@ -120,6 +124,8 @@ class CanteenReviewEvent {
       creditScore: _int(json['credit_score']),
       creditWeight: _double(json['credit_weight']),
       historyCount: _int(json['history_count']),
+      helpfulCount: _int(json['helpful_count']),
+      unhelpfulCount: _int(json['unhelpful_count']),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
     );
   }

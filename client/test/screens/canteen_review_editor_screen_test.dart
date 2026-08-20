@@ -95,6 +95,36 @@ Widget _buildEditorTestApp({
   );
 }
 
+Future<void> _completeDimensions(WidgetTester tester) async {
+  const labels = [
+    '味道（35%）',
+    '性价比（20%）',
+    '排队体验（15%）',
+    '卫生（20%）',
+    '服务（10%）',
+  ];
+  for (final label in labels) {
+    final row =
+        find.ancestor(of: find.text(label), matching: find.byType(Row)).first;
+    final score = find.descendant(of: row, matching: find.text('5'));
+    await tester.ensureVisible(score);
+    await tester.tap(score);
+  }
+  await tester.pumpAndSettle();
+}
+
+Future<void> _setTasteDimension(WidgetTester tester, int score) async {
+  final row =
+      find.ancestor(of: find.text('味道（35%）'), matching: find.byType(Row)).first;
+  final scoreButton = find.descendant(
+    of: row,
+    matching: find.text('$score'),
+  );
+  await tester.ensureVisible(scoreButton);
+  await tester.tap(scoreButton);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -117,7 +147,7 @@ void main() {
     }
   });
 
-  testWidgets('初始状态与评分打分联动：0星禁用发布，打分后启用并显示评语', (tester) async {
+  testWidgets('五维评分均为必填，完成后才允许发布', (tester) async {
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
       if (options.path == '/canteens/1/dishes') {
@@ -144,19 +174,25 @@ void main() {
     expect(find.text('菜品 12 · 实拍 18'), findsOneWidget);
     expect(find.text('评价将公开展示给其他同学'), findsOneWidget);
 
-    // 0 星打分时，发布按钮不可点击
+    for (final label in [
+      '味道（35%）',
+      '性价比（20%）',
+      '排队体验（15%）',
+      '卫生（20%）',
+      '服务（10%）',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
+
+    // 五个维度未完成时，发布按钮不可点击
     final publishButtonFinder = find.widgetWithText(FilledButton, '发布评价');
     expect(publishButtonFinder, findsOneWidget);
     final filledBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(filledBtn.onPressed, isNull);
 
-    // 点击第 5 颗星打分
-    final starIcons = find.byIcon(Icons.star_border_rounded);
-    expect(starIcons, findsNWidgets(5));
-    await tester.tap(starIcons.last);
-    await tester.pumpAndSettle();
+    await _completeDimensions(tester);
 
-    expect(find.text('超赞'), findsWidgets);
+    expect(find.text('当前综合分 5.00'), findsOneWidget);
     final activeBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(activeBtn.onPressed, isNotNull);
   });
@@ -179,16 +215,21 @@ void main() {
     expect(find.text('出餐快'), findsOneWidget);
 
     // 选中“味道不错”与“分量足”
-    await tester.tap(find.text('味道不错'));
+    final tasteTag = find.text('味道不错');
+    await tester.ensureVisible(tasteTag);
+    await tester.tap(tasteTag);
     await tester.pumpAndSettle();
     expect(find.text('1/6'), findsOneWidget);
 
-    await tester.tap(find.text('分量足'));
+    final portionTag = find.text('分量足');
+    await tester.ensureVisible(portionTag);
+    await tester.tap(portionTag);
     await tester.pumpAndSettle();
     expect(find.text('2/6'), findsOneWidget);
 
     // 再次点击取消选中
-    await tester.tap(find.text('味道不错'));
+    await tester.ensureVisible(tasteTag);
+    await tester.tap(tasteTag);
     await tester.pumpAndSettle();
     expect(find.text('1/6'), findsOneWidget);
   });
@@ -244,9 +285,10 @@ void main() {
     await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
     await tester.pumpAndSettle();
 
-    // 验证添加成功：1 / 3，标签显示“自创麻辣烫”
-    expect(find.text('1 / 3'), findsOneWidget);
-    expect(find.text('自创麻辣烫'), findsOneWidget);
+    // 未收录的自由输入不会被静默写入评价，而是引导先提交菜品实拍审核。
+    expect(find.text('上传菜品实拍'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
 
     // 3. 点击快捷推荐中的“牛肉面”
     final beefNoodleFinder = find.text('牛肉面').first;
@@ -255,20 +297,19 @@ void main() {
     await tester.tap(beefNoodleFinder);
     await tester.pumpAndSettle();
 
-    // 验证添加成功：2 / 3
-    expect(find.text('2 / 3'), findsOneWidget);
+    // 验证已收录菜品可以建立推荐关系
+    expect(find.text('1 / 3'), findsOneWidget);
 
-    // 4. 点击“自创麻辣烫”标签的 ❌ 按钮删除
+    // 4. 删除已选择的推荐菜品
     final closeIcons = find.byIcon(Icons.close_rounded);
-    expect(closeIcons, findsNWidgets(2));
+    expect(closeIcons, findsOneWidget);
     await tester.ensureVisible(closeIcons.first);
     await tester.pumpAndSettle();
     await tester.tap(closeIcons.first);
     await tester.pumpAndSettle();
 
-    // 验证删除后变为 1 / 3
-    expect(find.text('1 / 3'), findsOneWidget);
-    expect(find.text('自创麻辣烫'), findsNothing);
+    // 验证删除后恢复为空
+    expect(find.text('0 / 3'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
   });
 
@@ -297,7 +338,7 @@ void main() {
 
     expect(find.text('修改评价'), findsOneWidget);
     expect(find.text('老评价内容'), findsOneWidget);
-    expect(find.text('很满意'), findsWidgets);
+    expect(find.text('当前综合分 4.00'), findsOneWidget);
     expect(find.text('2/6'), findsOneWidget);
     expect(find.text('老字号牛肉面'), findsOneWidget);
     expect(find.text('1 / 3'), findsOneWidget);
@@ -316,9 +357,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 打 4 星，形成 dirty 状态
-    await tester.tap(find.byIcon(Icons.star_border_rounded).at(3));
-    await tester.pumpAndSettle();
+    // 修改味道维度，形成 dirty 状态
+    await _setTasteDimension(tester, 4);
 
     // 点击返回按钮
     await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
@@ -362,8 +402,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 打 5 星并填写评语
-    await tester.tap(find.byIcon(Icons.star_border_rounded).last);
+    // 完成五维评分并填写评语
+    await _completeDimensions(tester);
     await tester.enterText(find.byType(TextField).first, '非常好吃，强烈推荐！');
     await tester.pumpAndSettle();
 
@@ -373,7 +413,8 @@ void main() {
 
     expect(rateCalled, isTrue);
     // 验证发布后草稿被删除
-    final draftAfter = await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    final draftAfter =
+        await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(draftAfter, isNull);
   });
 
@@ -399,7 +440,7 @@ void main() {
         star: 4,
         comment: '草稿带图测试',
         tags: const ['味道不错'],
-        recommendedDishes: const ['牛肉面'],
+        recommendedDishes: const [],
         images: const [
           CanteenReviewDraftImage(
             type: ReviewDraftImageType.localPending,
@@ -429,7 +470,8 @@ void main() {
     // 验证：弹出丢失提示
     expect(find.text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布'), findsOneWidget);
     // 验证：草稿仍然保留，未被误删
-    final draftAfter = await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    final draftAfter =
+        await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(draftAfter, isNotNull);
     expect(draftAfter!.comment, '草稿带图测试');
   });
@@ -438,7 +480,9 @@ void main() {
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
       if (options.path == '/canteens/1/rate' && options.method == 'POST') {
-        return _json('{"code":"rating_conflict","error":"评价已在其他设备更新，请刷新后重试","remote_updated_at":"2026-08-19T20:00:00Z"}', 409);
+        return _json(
+            '{"code":"rating_conflict","error":"评价已在其他设备更新，请刷新后重试","remote_updated_at":"2026-08-19T20:00:00Z"}',
+            409);
       }
       if (options.path == '/canteens/1/dishes') {
         return _json('[]', 200);
@@ -455,7 +499,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 填写评价内容
-    await tester.tap(find.byIcon(Icons.star_border_rounded).at(3));
+    await _completeDimensions(tester);
+    await _setTasteDimension(tester, 4);
     await tester.enterText(find.byType(TextField).first, '冲突测试中的独家评价');
     await tester.pumpAndSettle();
 
@@ -473,7 +518,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 验证草稿已被立即落盘
-    final savedDraft = await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    final savedDraft =
+        await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(savedDraft, isNotNull);
     expect(savedDraft!.comment, '冲突测试中的独家评价');
     expect(savedDraft.star, 4);
@@ -493,4 +539,3 @@ void main() {
     expect(find.text('冲突测试中的独家评价'), findsOneWidget);
   });
 }
-

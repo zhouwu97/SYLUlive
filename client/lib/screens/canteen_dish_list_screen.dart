@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
 
 /// 食堂全部菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
   final int canteenId;
   final String canteenName;
+  final bool offline;
 
   const CanteenDishListScreen({
     super.key,
     required this.canteenId,
     required this.canteenName,
+    this.offline = false,
   });
 
   @override
@@ -104,40 +105,43 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                   ? CanteenEmptyState(
                       icon: Icons.photo_camera_outlined,
                       title: '还没有实拍菜品',
-                      subtitle: '上传第一道菜的第一张实拍吧',
-                      actionLabel: '上传第一道菜实拍',
-                      onAction: _openUploadSheet,
+                      subtitle: widget.offline
+                          ? '所属食堂已下架，历史菜品暂不支持新增'
+                          : '上传第一道菜的第一张实拍吧',
+                      actionLabel: widget.offline ? null : '上传第一道菜实拍',
+                      onAction: widget.offline ? null : _openUploadSheet,
                     )
                   : GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 0.82,
-                  ),
-                  itemCount: _dishes.length,
-                  itemBuilder: (context, index) {
-                    final dish = _dishes[index];
-                    return _GridDishCard(
-                      dish: dish,
-                      isDark: isDark,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CanteenDishDetailScreen(
-                              canteenId: widget.canteenId,
-                              dishId: dish.id,
-                              dishName: dish.name,
-                              canteenName: widget.canteenName,
-                            ),
-                          ),
-                        ).then((_) => _load());
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 16,
+                        childAspectRatio: 0.82,
+                      ),
+                      itemCount: _dishes.length,
+                      itemBuilder: (context, index) {
+                        final dish = _dishes[index];
+                        return _GridDishCard(
+                          dish: dish,
+                          isDark: isDark,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CanteenDishDetailScreen(
+                                  canteenId: widget.canteenId,
+                                  dishId: dish.id,
+                                  dishName: dish.name,
+                                  canteenName: widget.canteenName,
+                                ),
+                              ),
+                            ).then((_) => _load());
+                          },
+                        );
                       },
-                    );
-                  },
-                ),
+                    ),
     );
   }
 }
@@ -168,8 +172,9 @@ class _GridDishCard extends StatelessWidget {
               child: SizedBox(
                 width: double.infinity,
                 child: dish.coverImage.isNotEmpty
-                    ? CachedNetworkImage(
+                    ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder(),
                         placeholder: (_, __) => _placeholder(),

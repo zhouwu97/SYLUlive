@@ -115,7 +115,7 @@ func performDishPhotoRequest(
 	return recorder
 }
 
-func TestDishPhotoSubmissionDirectApprovalAndGalleryLimit(t *testing.T) {
+func TestDishPhotoSubmissionUsesPendingReviewAndGalleryLimit(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	createVerifiedUser(t, db, 1, "管理员")
 	createVerifiedUser(t, db, 2, "学生")
@@ -126,7 +126,7 @@ func TestDishPhotoSubmissionDirectApprovalAndGalleryLimit(t *testing.T) {
 	file := createTestFile(t, db, 10, 2, models.FileAccessPrivate)
 	submit := NewCanteenDishPhotoHandler(db)
 
-	// 1. 学生投稿第一张 → 直接 approved + File public
+	// 1. 学生投稿第一张 → pending，不能绕过管理员审核公开
 	resp := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
 		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
 		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
@@ -139,17 +139,17 @@ func TestDishPhotoSubmissionDirectApprovalAndGalleryLimit(t *testing.T) {
 	if err := db.First(&photo).Error; err != nil {
 		t.Fatalf("get photo: %v", err)
 	}
-	if photo.Status != models.DishPhotoStatusApproved {
-		t.Fatalf("photo status=%s want approved", photo.Status)
+	if photo.Status != models.DishPhotoStatusPending {
+		t.Fatalf("photo status=%s want pending", photo.Status)
 	}
-	// 文件应直接转为 public
+	// pending 文件保持 private
 	var storedFile models.File
 	db.First(&storedFile, file.ID)
-	if storedFile.AccessScope != models.FileAccessPublic {
-		t.Fatalf("file scope=%s want public after submission", storedFile.AccessScope)
+	if storedFile.AccessScope != models.FileAccessPrivate {
+		t.Fatalf("file scope=%s want private after submission", storedFile.AccessScope)
 	}
 
-	// 2. 公开列表立即直接可见
+	// 2. 审核前公开列表不可见
 	dishHandler := NewCanteenDishHandler(db)
 	listResp := performDishPhotoRequest(t, dishHandler.ListDishes, http.MethodGet,
 		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
@@ -158,11 +158,11 @@ func TestDishPhotoSubmissionDirectApprovalAndGalleryLimit(t *testing.T) {
 	if listResp.Code != http.StatusOK {
 		t.Fatalf("list status=%d", listResp.Code)
 	}
-	if !strings.Contains(listResp.Body.String(), "锅包肉") {
-		t.Fatalf("approved dish should be visible: %s", listResp.Body.String())
+	if strings.Contains(listResp.Body.String(), "锅包肉") {
+		t.Fatalf("pending dish must not be visible: %s", listResp.Body.String())
 	}
 
-	// 3. 继续上传第 2、3 张实拍 → 均直接 approved (总共 3 张)
+	// 3. 继续上传第 2、3 张实拍 → 均 pending (待审核总数 3 张)
 	for i := 0; i < 2; i++ {
 		f := createTestFile(t, db, uint(20+i), 2, models.FileAccessPrivate)
 		r := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
@@ -175,10 +175,10 @@ func TestDishPhotoSubmissionDirectApprovalAndGalleryLimit(t *testing.T) {
 		}
 	}
 
-	var totalApproved int64
-	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status = ?", photo.DishID, models.DishPhotoStatusApproved).Count(&totalApproved)
-	if totalApproved != 3 {
-		t.Fatalf("approved count=%d want 3", totalApproved)
+	var totalPending int64
+	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status = ?", photo.DishID, models.DishPhotoStatusPending).Count(&totalPending)
+	if totalPending != 3 {
+		t.Fatalf("pending count=%d want 3", totalPending)
 	}
 
 	// 4. 3/3 后再投稿第 4 张 → 409 dish_gallery_full 拦截
@@ -247,6 +247,12 @@ func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	}
 	var pA models.CanteenDishPhoto
 	db.Where("file_id = ?", fileA.ID).First(&pA)
+	approve := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", pA.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(pA.ID)}}, 1, "")
+	if approve.Code != http.StatusOK {
+		t.Fatalf("approve archive case status=%d body=%s", approve.Code, approve.Body.String())
+	}
 	arch := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
 		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", pA.ID),
 		gin.Params{{Key: "photoId", Value: fmt.Sprint(pA.ID)}}, 1, "")
@@ -399,10 +405,10 @@ func TestDishPhotoNormalizedNameReuse(t *testing.T) {
 		t.Fatalf("normalized dish count=%d want 1 (reuse)", dishCount)
 	}
 
-	var approvedCount int64
-	db.Model(&models.CanteenDishPhoto{}).Where("status = ?", models.DishPhotoStatusApproved).Count(&approvedCount)
-	if approvedCount != 2 {
-		t.Fatalf("approved count=%d want 2", approvedCount)
+	var pendingCount int64
+	db.Model(&models.CanteenDishPhoto{}).Where("status = ?", models.DishPhotoStatusPending).Count(&pendingCount)
+	if pendingCount != 2 {
+		t.Fatalf("pending count=%d want 2", pendingCount)
 	}
 }
 
@@ -698,6 +704,12 @@ func TestDishGalleryCapacityReopensAfterArchive(t *testing.T) {
 	db.Where("dish_id = ? AND file_id = ?", dish.ID, f1.ID).First(&photo1)
 
 	admin := NewCanteenDishPhotoAdminHandler(db)
+	approve1 := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", photo1.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo1.ID)}}, 1, "")
+	if approve1.Code != http.StatusOK {
+		t.Fatalf("approve photo1 status=%d body=%s", approve1.Code, approve1.Body.String())
+	}
 	archResp := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
 		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", photo1.ID),
 		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo1.ID)}}, 1, "")
@@ -714,4 +726,3 @@ func TestDishGalleryCapacityReopensAfterArchive(t *testing.T) {
 		t.Fatalf("retry 4th photo want 201 got %d body=%s", r4Retry.Code, r4Retry.Body.String())
 	}
 }
-

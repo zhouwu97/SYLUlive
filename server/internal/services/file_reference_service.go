@@ -150,6 +150,24 @@ func ClaimPublicImagePathsForUser(tx *gorm.DB, userID uint, publicPaths ...strin
 	return claimPublicFiles(tx, ids)
 }
 
+// FileIDsByPublicPaths 返回上传文件路径对应的 file_id，供编辑/审核删除旧引用时
+// 做精确的权限回收。外部图片和无法解析的路径会被忽略。
+func FileIDsByPublicPaths(tx *gorm.DB, publicPaths ...string) ([]uint, error) {
+	paths := uploadReferenceCandidates(publicPaths...)
+	if len(paths) == 0 {
+		return []uint{}, nil
+	}
+	var files []models.File
+	if err := tx.Select("id").Where("path IN ?", paths).Find(&files).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]uint, 0, len(files))
+	for _, file := range files {
+		ids = append(ids, file.ID)
+	}
+	return ids, nil
+}
+
 func claimPublicImagePathCandidates(tx *gorm.DB, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -349,10 +367,22 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 		}
 		if tx.Migrator().HasTable("canteen_ratings") {
 			var ratingCount int64
-			if err := tx.Table("canteen_ratings").Where("images LIKE ? OR images LIKE ?", "%"+filePath+"%", "%"+cleanPath+"%").Count(&ratingCount).Error; err != nil {
+			if err := tx.Table("canteen_ratings").Where("(status = ? OR status IS NULL OR status = '') AND (images LIKE ? OR images LIKE ?)", models.ReviewEventStatusActive, "%"+filePath+"%", "%"+cleanPath+"%").Count(&ratingCount).Error; err != nil {
 				return false, err
 			}
 			if ratingCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("canteen_review_events") {
+			var reviewCount int64
+			if err := tx.Table("canteen_review_events").Where(
+				"status = ? AND (images LIKE ? OR images LIKE ?)",
+				models.ReviewEventStatusActive, "%"+filePath+"%", "%"+cleanPath+"%",
+			).Count(&reviewCount).Error; err != nil {
+				return false, err
+			}
+			if reviewCount > 0 {
 				return true, nil
 			}
 		}

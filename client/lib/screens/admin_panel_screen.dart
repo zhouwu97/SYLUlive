@@ -13,8 +13,10 @@ import 'admin_logs_screen.dart';
 import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
 import 'admin_water_icon_review_screen.dart';
+import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
+
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -120,6 +122,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '社区治理',
                       isDark: isDark,
                       children: [
+                        _AdminActionPill(
+                          icon: Icons.restaurant_outlined,
+                          iconColor: Colors.green,
+                          title: '食堂运营',
+                          subtitle: '下架、恢复营业与历史状态管理',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const AdminCanteenOperationsScreen()),
+                          ).then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.gavel,
                           iconColor: Colors.orange,
@@ -292,8 +307,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               context: context,
                               barrierDismissible: false,
                               barrierLabel: '签到成功',
-                              barrierColor: Colors.black.withValues(alpha: 0.42),
-                              transitionDuration: const Duration(milliseconds: 220),
+                              barrierColor:
+                                  Colors.black.withValues(alpha: 0.42),
+                              transitionDuration:
+                                  const Duration(milliseconds: 220),
                               pageBuilder: (_, __, ___) {
                                 return const CheckInSuccessDialog(
                                   streakDays: 49,

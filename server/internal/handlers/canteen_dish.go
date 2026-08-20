@@ -39,21 +39,26 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		return
 	}
+	canteen.NormalizeOperatingStatus()
 
 	type dishRow struct {
-		ID            uint    `json:"id"`
-		Name          string  `json:"name"`
-		CoverImage    string  `json:"cover_image"`
-		PhotoCount    int     `json:"photo_count"`
-		LastPhotoAt   string  `json:"last_photo_at"`
-		AverageScore  float64 `json:"average_score"`
-		ReviewerCount int     `json:"reviewer_count"`
+		ID                     uint    `json:"id"`
+		Name                   string  `json:"name"`
+		CanteenID              uint    `json:"canteen_id"`
+		CanteenName            string  `json:"canteen_name"`
+		CanteenOperatingStatus string  `json:"canteen_operating_status"`
+		CoverImage             string  `json:"cover_image"`
+		PhotoCount             int     `json:"photo_count"`
+		LastPhotoAt            string  `json:"last_photo_at"`
+		AverageScore           float64 `json:"average_score"`
+		ReviewerCount          int     `json:"reviewer_count"`
 	}
 	var dishes []dishRow
 	// 每个菜独立聚合 approved 统计，无跨表笛卡尔积。
 	// EXISTS 过滤无 approved 实拍的菜，photo_count 仅作为选择列。
 	err = h.db.Table("canteen_dishes AS d").
-		Select(`d.id, d.name,
+		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ?", true).
+		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name, c.operating_status AS canteen_operating_status,
 			(SELECT f.path FROM canteen_dish_photos p
 			 JOIN files f ON f.id = p.file_id
 			 WHERE p.dish_id = d.id AND p.status = ?
@@ -73,6 +78,11 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 	}
 	if dishes == nil {
 		dishes = []dishRow{}
+	}
+	for i := range dishes {
+		if dishes[i].CanteenOperatingStatus == "" {
+			dishes[i].CanteenOperatingStatus = models.CanteenOperatingActive
+		}
 	}
 	for i := range dishes {
 		var summaries []models.CanteenDishRatingSummary
@@ -112,6 +122,12 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
 		return
 	}
+	var canteen models.Canteen
+	if err := h.db.Where("id = ? AND verified = ?", canteenID, true).First(&canteen).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return
+	}
+	canteen.NormalizeOperatingStatus()
 
 	var dish models.CanteenDish
 	if err := h.db.Where("id = ? AND canteen_id = ? AND status = ?",
@@ -157,9 +173,11 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"dish": gin.H{
-			"id":         dish.ID,
-			"name":       dish.Name,
-			"canteen_id": dish.CanteenID,
+			"id":                       dish.ID,
+			"name":                     dish.Name,
+			"canteen_id":               dish.CanteenID,
+			"canteen_name":             canteen.Name,
+			"canteen_operating_status": canteen.OperatingStatus,
 		},
 		"photo_count":    len(photos),
 		"photos":         photos,

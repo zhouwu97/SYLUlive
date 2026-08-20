@@ -18,29 +18,43 @@ const DishReviewRelationAte = "ate"
 
 // CanteenReviewEvent 保存每一次真实到店评价，不受用户-食堂摘要唯一约束影响。
 type CanteenReviewEvent struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	CanteenID    uint      `gorm:"not null;index:idx_canteen_review_event_canteen_created" json:"canteen_id"`
-	UserID       uint      `gorm:"not null;index:idx_canteen_review_event_user_created" json:"user_id"`
-	TasteScore   int       `gorm:"not null" json:"taste_score"`
-	ValueScore   int       `gorm:"not null" json:"value_score"`
-	QueueScore   int       `gorm:"not null" json:"queue_score"`
-	HygieneScore int       `gorm:"not null" json:"hygiene_score"`
-	ServiceScore int       `gorm:"not null" json:"service_score"`
-	OverallScore float64   `gorm:"not null" json:"overall_score"`
-	Comment      string    `gorm:"size:500" json:"comment"`
-	Images       string    `gorm:"type:text" json:"images"`
-	Tags         string    `gorm:"type:text" json:"tags"`
-	Status       string    `gorm:"size:20;not null;default:'active';index" json:"status"`
-	ScoreVersion int       `gorm:"not null;default:2" json:"score_version"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	CanteenID      uint      `gorm:"not null;index:idx_canteen_review_event_canteen_created" json:"canteen_id"`
+	UserID         uint      `gorm:"not null;index:idx_canteen_review_event_user_created" json:"user_id"`
+	TasteScore     int       `gorm:"not null" json:"taste_score"`
+	ValueScore     int       `gorm:"not null" json:"value_score"`
+	QueueScore     int       `gorm:"not null" json:"queue_score"`
+	HygieneScore   int       `gorm:"not null" json:"hygiene_score"`
+	ServiceScore   int       `gorm:"not null" json:"service_score"`
+	OverallScore   float64   `gorm:"not null" json:"overall_score"`
+	Comment        string    `gorm:"size:500" json:"comment"`
+	Images         string    `gorm:"type:text" json:"images"`
+	Tags           string    `gorm:"type:text" json:"tags"`
+	Status         string    `gorm:"size:20;not null;default:'active';index" json:"status"`
+	ScoreVersion   int       `gorm:"not null;default:2" json:"score_version"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	HelpfulCount   int       `gorm:"not null;default:0" json:"helpful_count"`
+	UnhelpfulCount int       `gorm:"not null;default:0" json:"unhelpful_count"`
 
-	User         *User   `gorm:"foreignKey:UserID" json:"-"`
-	UserName     string  `gorm:"-" json:"user_name,omitempty"`
-	UserAvatar   string  `gorm:"-" json:"user_avatar,omitempty"`
-	CreditScore  int     `gorm:"-" json:"credit_score,omitempty"`
-	CreditWeight float64 `gorm:"-" json:"credit_weight,omitempty"`
-	HistoryCount int     `gorm:"-" json:"history_count,omitempty"`
+	User                 *User    `gorm:"foreignKey:UserID" json:"-"`
+	UserName             string   `gorm:"-" json:"user_name,omitempty"`
+	UserAvatar           string   `gorm:"-" json:"user_avatar,omitempty"`
+	CreditScore          int      `gorm:"-" json:"credit_score,omitempty"`
+	CreditWeight         float64  `gorm:"-" json:"credit_weight,omitempty"`
+	HistoryCount         int      `gorm:"-" json:"history_count,omitempty"`
+	RecommendedDishNames []string `gorm:"-" json:"recommended_dishes,omitempty"`
+	MyVote               *string  `gorm:"-" json:"my_vote,omitempty"`
+}
+
+// CanteenReviewEventVote 保留 V2 评价的有用/无用投票，并用数据库唯一约束保证一人一票。
+type CanteenReviewEventVote struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	ReviewEventID uint      `gorm:"not null;uniqueIndex:uq_review_event_vote_user" json:"review_event_id"`
+	UserID        uint      `gorm:"not null;uniqueIndex:uq_review_event_vote_user" json:"user_id"`
+	VoteType      string    `gorm:"size:10;not null" json:"vote_type"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // CanteenReviewEventDish 关联一次到店评价中实际吃到的菜品。
@@ -121,6 +135,7 @@ func EnsureCanteenReviewSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&CanteenReviewEvent{},
 		&CanteenReviewEventDish{},
+		&CanteenReviewEventVote{},
 		&CanteenDishReviewEvent{},
 		&CanteenDishRatingSummary{},
 		&CanteenDishAlias{},

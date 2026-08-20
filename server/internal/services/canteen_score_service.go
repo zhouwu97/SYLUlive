@@ -72,12 +72,17 @@ func ComputeDishOverall(s DishScores) float64 {
 
 // EffectiveUserRating 是最近三次到店事件按 60/30/10 归一后的用户有效摘要。
 type EffectiveUserRating struct {
-	Overall         float64
-	Taste           float64
-	Value           float64
-	Queue           float64
-	Hygiene         float64
-	Service         float64
+	Overall float64
+	Taste   float64
+	Value   float64
+	Queue   float64
+	Hygiene float64
+	Service float64
+	// TotalEventCount 是该用户的全部 active 到店事件数，包含历史 Legacy 事件。
+	TotalEventCount int
+	// UsedEventCount 是实际进入最近 3 条 60/30/10 评分的 V2 事件数。
+	UsedEventCount int
+	// EventCount 保留给旧的内部调用方，语义等同 UsedEventCount；新代码必须使用上面两个字段。
 	EventCount      int
 	LatestEventID   uint
 	LatestCreatedAt time.Time
@@ -91,6 +96,16 @@ func ComputeEffectiveUserRating(events []models.CanteenReviewEvent) EffectiveUse
 			active = append(active, event)
 		}
 	}
+	totalEventCount := len(active)
+	// ScoreVersion=1 是从旧 /rate 摘要迁移出的历史事件，不含真实五维评分，
+	// 不能进入 V2 有效评分；0 兼容早期 V2 数据/单测中未显式填写的默认值。
+	effectiveEvents := make([]models.CanteenReviewEvent, 0, len(active))
+	for _, event := range active {
+		if event.ScoreVersion == 0 || event.ScoreVersion >= 2 {
+			effectiveEvents = append(effectiveEvents, event)
+		}
+	}
+	active = effectiveEvents
 	sort.SliceStable(active, func(i, j int) bool {
 		if active[i].CreatedAt.Equal(active[j].CreatedAt) {
 			return active[i].ID > active[j].ID
@@ -102,6 +117,7 @@ func ComputeEffectiveUserRating(events []models.CanteenReviewEvent) EffectiveUse
 	}
 
 	var result EffectiveUserRating
+	result.TotalEventCount = totalEventCount
 	if len(active) == 0 {
 		return result
 	}
@@ -133,7 +149,8 @@ func ComputeEffectiveUserRating(events []models.CanteenReviewEvent) EffectiveUse
 	result.Queue /= weightSum
 	result.Hygiene /= weightSum
 	result.Service /= weightSum
-	result.EventCount = len(active)
+	result.UsedEventCount = len(active)
+	result.EventCount = result.UsedEventCount
 	return result
 }
 
@@ -157,17 +174,20 @@ type UserRatingSample struct {
 	Hygiene float64
 	Service float64
 	Weight  float64
+	// HasDimensions=false 的 Legacy 样本只参与综合分，不参与五维分母。
+	HasDimensions bool
 }
 
 type CanteenAggregate struct {
-	AverageScore    float64
-	TasteScore      float64
-	ValueScore      float64
-	QueueScore      float64
-	HygieneScore    float64
-	ServiceScore    float64
-	ReviewerCount   int
-	EffectiveSample float64
+	AverageScore             float64
+	TasteScore               float64
+	ValueScore               float64
+	QueueScore               float64
+	HygieneScore             float64
+	ServiceScore             float64
+	ReviewerCount            int
+	EffectiveSample          float64
+	DimensionEffectiveSample float64
 }
 
 // ComputeCanteenAggregate 每个用户最多贡献一个样本，并按诚信权重聚合。
@@ -178,23 +198,28 @@ func ComputeCanteenAggregate(samples []UserRatingSample) CanteenAggregate {
 			sample.Weight = 1
 		}
 		result.AverageScore += sample.Overall * sample.Weight
-		result.TasteScore += sample.Taste * sample.Weight
-		result.ValueScore += sample.Value * sample.Weight
-		result.QueueScore += sample.Queue * sample.Weight
-		result.HygieneScore += sample.Hygiene * sample.Weight
-		result.ServiceScore += sample.Service * sample.Weight
 		result.EffectiveSample += sample.Weight
 		result.ReviewerCount++
+		if sample.HasDimensions {
+			result.TasteScore += sample.Taste * sample.Weight
+			result.ValueScore += sample.Value * sample.Weight
+			result.QueueScore += sample.Queue * sample.Weight
+			result.HygieneScore += sample.Hygiene * sample.Weight
+			result.ServiceScore += sample.Service * sample.Weight
+			result.DimensionEffectiveSample += sample.Weight
+		}
 	}
 	if result.EffectiveSample == 0 {
 		return result
 	}
 	result.AverageScore /= result.EffectiveSample
-	result.TasteScore /= result.EffectiveSample
-	result.ValueScore /= result.EffectiveSample
-	result.QueueScore /= result.EffectiveSample
-	result.HygieneScore /= result.EffectiveSample
-	result.ServiceScore /= result.EffectiveSample
+	if result.DimensionEffectiveSample > 0 {
+		result.TasteScore /= result.DimensionEffectiveSample
+		result.ValueScore /= result.DimensionEffectiveSample
+		result.QueueScore /= result.DimensionEffectiveSample
+		result.HygieneScore /= result.DimensionEffectiveSample
+		result.ServiceScore /= result.DimensionEffectiveSample
+	}
 	return result
 }
 

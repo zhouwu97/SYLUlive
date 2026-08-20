@@ -80,7 +80,7 @@ func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int
 	return services.AggregateSummaryTagsInMemory(raws, topK)
 }
 
-// batchRecentReviewCounts 批量统计所有食堂近 days 天内的评价数（消除按店 N+1）。
+// batchRecentReviewCounts 批量统计所有食堂近 days 天内的评价事件数（消除按店 N+1）。
 func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 	type countRow struct {
 		CanteenID uint  `gorm:"column:canteen_id"`
@@ -518,7 +518,7 @@ type canteenPhotoItem struct {
 	CreatedAt   time.Time
 }
 
-// canteenHotDishItem 首页“同学最近在吃”的菜品卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
+// canteenHotDishItem 首页“热门菜品”卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
 type canteenHotDishItem struct {
 	ID                     uint    `json:"id"`
 	Name                   string  `json:"name"`
@@ -650,8 +650,8 @@ func itoa(v int) string {
 	return strconv.Itoa(v)
 }
 
-// sumRecentReviewCounts 汇总近 7 天有效评价事件，用于首页的可信度提示。
-// recentCounts 已经按“有效样本”口径生成，这里只负责展示层汇总，不参与评分。
+// sumRecentReviewCounts 汇总近 7 天到店评价事件，用于兼容旧首页字段。
+// 该字段不是今日按用户-食堂去重后的有效评价人数，不参与评分。
 func sumRecentReviewCounts(counts map[uint]int64) int {
 	total := 0
 	for _, count := range counts {
@@ -664,7 +664,8 @@ func sumRecentReviewCounts(counts map[uint]int64) int {
 
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
-	cacheKey := "home:v2"
+	// 首页响应新增 recent_reviews 与今日去重样本计数，单独升级缓存键避免命中旧结构。
+	cacheKey := "home:v3"
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
@@ -746,14 +747,17 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	}
 	feed := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
 	hotDishes := h.hotDishes(4)
+	recentReviews := h.loadRecentHomeReviews(5)
 
 	resp := gin.H{
-		"generated_at":                  time.Now(),
-		"hero":                          hero,
-		"ranking_entry":                 rankingEntry,
-		"feed":                          feed,
-		"hot_dishes":                    hotDishes,
-		"recent_effective_review_count": sumRecentReviewCounts(recentCounts),
+		"generated_at":                   time.Now(),
+		"hero":                           hero,
+		"ranking_entry":                  rankingEntry,
+		"feed":                           feed,
+		"hot_dishes":                     hotDishes,
+		"recent_reviews":                 recentReviews,
+		"today_effective_reviewer_count": h.todayEffectiveReviewerCount(),
+		"recent_effective_review_count":  sumRecentReviewCounts(recentCounts),
 	}
 	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)

@@ -19,6 +19,46 @@ import (
 
 var errReportAlreadyHandled = errors.New("report already handled")
 
+type reportGovernanceReasonError struct {
+	code    string
+	message string
+}
+
+func (e *reportGovernanceReasonError) Error() string { return e.message }
+
+var canteenGovernanceReasonCodes = map[string]map[string]struct{}{
+	"canteen_review": {
+		"fabricated": {}, "false": {}, "unrelated": {}, "unrelated_content": {},
+		"spam": {}, "abuse": {}, "harassment": {}, "malicious": {}, "malicious_repeat": {},
+	},
+	"canteen_rating": {
+		"fabricated": {}, "false": {}, "unrelated": {}, "unrelated_content": {},
+		"spam": {}, "abuse": {}, "harassment": {}, "malicious": {}, "malicious_repeat": {},
+	},
+	"canteen_dish_review": {
+		"fabricated": {}, "false": {}, "unrelated": {}, "unrelated_content": {}, "fake_dish": {},
+		"spam": {}, "abuse": {}, "harassment": {}, "malicious": {}, "malicious_repeat": {},
+	},
+	"canteen_dish_photo": {
+		"unrelated_photo": {}, "stolen_photo": {}, "spam": {}, "abuse": {},
+		"harassment": {}, "malicious": {}, "malicious_repeat": {},
+	},
+}
+
+func isCanteenGovernanceTarget(targetType string) bool {
+	_, ok := canteenGovernanceReasonCodes[targetType]
+	return ok
+}
+
+func isValidCanteenGovernanceReason(targetType, reasonCode string) bool {
+	allowed, ok := canteenGovernanceReasonCodes[targetType]
+	if !ok {
+		return true
+	}
+	_, ok = allowed[strings.ToLower(strings.TrimSpace(reasonCode))]
+	return ok
+}
+
 // ReportHandler 举报处理器
 type ReportHandler struct {
 	db *gorm.DB
@@ -214,9 +254,10 @@ func (h *ReportHandler) GetList(c *gin.Context) {
 
 // HandleReportInput 处理举报输入
 type HandleReportInput struct {
-	Status       string `json:"status" binding:"required"` // handled/ignored
-	Result       string `json:"result"`
-	DeleteReason string `json:"delete_reason"`
+	Status              string `json:"status" binding:"required"` // handled/ignored
+	Result              string `json:"result"`
+	DeleteReason        string `json:"delete_reason"`
+	ConfirmedReasonCode string `json:"confirmed_reason_code"`
 }
 
 // Handle 处理举报
@@ -240,6 +281,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		return
 	}
 	input.DeleteReason = strings.TrimSpace(input.DeleteReason)
+	input.ConfirmedReasonCode = strings.ToLower(strings.TrimSpace(input.ConfirmedReasonCode))
 	if input.Status == string(models.ReportStatusHandled) && input.DeleteReason == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":  "governance_reason_required",
@@ -249,6 +291,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	}
 	if input.Status == string(models.ReportStatusIgnored) {
 		input.DeleteReason = ""
+		input.ConfirmedReasonCode = ""
 	}
 	var report models.Report
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -257,6 +300,11 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		}
 		if report.Status != models.ReportStatusPending {
 			return errReportAlreadyHandled
+		}
+		if input.Status == string(models.ReportStatusHandled) &&
+			isCanteenGovernanceTarget(report.TargetType) &&
+			!isValidCanteenGovernanceReason(report.TargetType, input.ConfirmedReasonCode) {
+			return &reportGovernanceReasonError{code: "confirmed_reason_code_required", message: "食堂内容确认治理必须选择有效的确认原因"}
 		}
 		now := time.Now()
 		report.Status = models.ReportStatus(input.Status)
@@ -424,8 +472,8 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
 				return err
 			}
-			if report.TargetType == "canteen_review" || report.TargetType == "canteen_rating" || report.TargetType == "canteen_dish_review" || report.TargetType == "canteen_dish_photo" {
-				_, err := services.ApplyCanteenSanction(tx, report.ID, report.TargetType, report.TargetID, targetUserID, userID.(uint), report.ReasonCode)
+			if isCanteenGovernanceTarget(report.TargetType) {
+				_, err := services.ApplyCanteenSanction(tx, report.ID, report.TargetType, report.TargetID, targetUserID, userID.(uint), input.ConfirmedReasonCode)
 				if err != nil {
 					return err
 				}
@@ -433,7 +481,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					AdminID: userID.(uint),
 					Action:  "食堂内容举报确认",
 					Target:  fmt.Sprintf("%s#%d", report.TargetType, report.TargetID),
-					Detail:  fmt.Sprintf("确认举报并治理，原因 %s，扣诚信 %d", report.ReasonCode, services.CanteenPenaltyForReason(report.ReasonCode)),
+					Detail:  fmt.Sprintf("确认举报并治理，原因 %s，扣诚信 %d", input.ConfirmedReasonCode, services.CanteenPenaltyForReason(input.ConfirmedReasonCode)),
 				}).Error; err != nil {
 					return err
 				}
@@ -462,6 +510,11 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		case errors.Is(err, errReportAlreadyHandled):
 			c.JSON(http.StatusConflict, gin.H{"error": "举报已处理，请勿重复提交"})
 		default:
+			var governanceErr *reportGovernanceReasonError
+			if errors.As(err, &governanceErr) {
+				c.JSON(http.StatusBadRequest, gin.H{"code": governanceErr.code, "error": governanceErr.message})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理举报失败"})
 		}
 		return

@@ -92,6 +92,54 @@ func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
 	}
 }
 
+func TestCreateReviewRejectsMergedDishSelectionOverThree(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	for i := 1; i <= 4; i++ {
+		dish := models.CanteenDish{
+			CanteenID: canteen.ID, Name: "菜品" + itoaForTest(uint(i)), NormalizedName: "菜品" + itoaForTest(uint(i)),
+			Status: models.DishStatusActive, CreatedBy: user.ID,
+		}
+		if err := h.db.Create(&dish).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"dish_ids":[1,2,3],"dish_reviews":[{"dish_id":4,"taste_score":4,"value_score":4,"portion_score":4}]}`)
+	if response.Code != http.StatusBadRequest || !containsReviewJSONCode(response.Body.Bytes(), "invalid_review_dish") {
+		t.Fatalf("merged dish selection status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestUpdateReviewRejectsMergedDishSelectionOverThree(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	var dishes []models.CanteenDish
+	for i := 1; i <= 4; i++ {
+		dish := models.CanteenDish{
+			CanteenID: canteen.ID, Name: "菜品" + itoaForTest(uint(i)), NormalizedName: "菜品" + itoaForTest(uint(i)),
+			Status: models.DishStatusActive, CreatedBy: user.ID,
+		}
+		if err := h.db.Create(&dish).Error; err != nil {
+			t.Fatal(err)
+		}
+		dishes = append(dishes, dish)
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4.2,
+		Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"dish_ids":[1,2,3],"dish_reviews":[{"dish_id":4,"taste_score":4,"value_score":4,"portion_score":4}]}`)
+	if response.Code != http.StatusBadRequest || !containsReviewJSONCode(response.Body.Bytes(), "invalid_review_dish") {
+		t.Fatalf("merged dish update status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestCreateReviewPreservesLegacyHistoryAndBlocksLegacyRate(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	legacy := models.CanteenRating{CanteenID: canteen.ID, UserID: user.ID, Star: 4, Comment: "旧版"}

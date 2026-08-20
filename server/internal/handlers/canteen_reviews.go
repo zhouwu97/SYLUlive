@@ -509,7 +509,7 @@ func (h *CanteenHandler) loadCanteenReviews(canteenID uint, sortBy, filter strin
 	if !h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) {
 		return []models.CanteenReviewEvent{}, nil
 	}
-	if err := h.db.Where("canteen_id = ? AND status = ?", canteenID, models.ReviewEventStatusActive).
+	if err := h.db.Where("canteen_id = ? AND status = ? AND (score_version >= ? OR score_version = ?)", canteenID, models.ReviewEventStatusActive, 2, 0).
 		Preload("User").Order("created_at DESC, id DESC").Find(&all).Error; err != nil {
 		// 旧测试库/旧部署可能尚未创建 V2 表；此时继续由 ratings 字段提供兼容数据。
 		if isCanteenReviewSchemaMissing(err) {
@@ -1219,7 +1219,7 @@ func (h *CanteenHandler) resolveReviewDishIDs(tx *gorm.DB, canteenID uint, ids [
 		result = uniqueReviewDishIDs(result, []uint{dish.ID})
 	}
 	if len(result) > 3 {
-		return nil, errors.New("最多选择3道菜品")
+		return nil, fmt.Errorf("%w: 最多选择3道菜品", errReviewDishInvalid)
 	}
 	return result, nil
 }

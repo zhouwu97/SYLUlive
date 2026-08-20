@@ -1,7 +1,8 @@
 /// 食堂发现首页数据模型。
 ///
-/// 对应服务端 GET /canteens/home：hero 推荐 + 排行入口 + 推荐信息流。
-/// 每个 feed 条目带稳定 ID（服务端生成），前端用它做 ValueKey，避免刷新跳位。
+/// 对应服务端 GET /canteens/home：首页模块数据。
+///
+/// `feed` 仍保留用于兼容旧客户端，但首页本身不再把它当成主内容区渲染。
 class CanteenFeedType {
   static const recommendedStore = 'recommended_store';
   static const trendingStore = 'trending';
@@ -205,12 +206,79 @@ class CanteenHotDish {
   bool get isCanteenOffline => canteenOperatingStatus == 'offline';
 }
 
+/// 首页“同学最近在吃”评价卡。
+///
+/// `source` 用于区分 V2 到店评价和旧版评价。旧版评价没有五维数据时，
+/// 客户端必须保持缺省状态，不能把综合分复制成每个维度。
+class CanteenHomeReview {
+  final String source;
+  final int reviewId;
+  final int canteenId;
+  final String canteenName;
+  final int userId;
+  final String userName;
+  final String userAvatar;
+  final int creditScore;
+  final double overallScore;
+  final Map<String, double> dimensionScores;
+  final String comment;
+  final List<String> recommendedDishes;
+  final int historyCount;
+  final DateTime? createdAt;
+
+  const CanteenHomeReview({
+    this.source = 'legacy',
+    this.reviewId = 0,
+    this.canteenId = 0,
+    this.canteenName = '',
+    this.userId = 0,
+    this.userName = '',
+    this.userAvatar = '',
+    this.creditScore = 0,
+    this.overallScore = 0,
+    this.dimensionScores = const {},
+    this.comment = '',
+    this.recommendedDishes = const [],
+    this.historyCount = 0,
+    this.createdAt,
+  });
+
+  factory CanteenHomeReview.fromJson(Map<String, dynamic> json) {
+    return CanteenHomeReview(
+      source: json['source']?.toString() ?? 'legacy',
+      reviewId: _toInt(json['review_id'] ?? json['id']),
+      canteenId: _toInt(json['canteen_id']),
+      canteenName: json['canteen_name']?.toString() ?? '',
+      userId: _toInt(json['user_id']),
+      userName: json['user_name']?.toString() ?? '',
+      userAvatar: json['user_avatar']?.toString() ?? '',
+      creditScore: _toInt(json['credit_score']),
+      overallScore: _toDouble(json['overall_score']),
+      dimensionScores: _toDoubleMap(json['dimension_scores']),
+      comment: json['comment']?.toString() ?? '',
+      recommendedDishes: _toStrList(json['recommended_dishes']),
+      historyCount: _toInt(json['history_count']),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
+    );
+  }
+
+  bool get hasDimensionScores =>
+      dimensionScores.values.any((value) => value > 0);
+  bool get isLegacy => source == 'legacy';
+}
+
 /// 食堂发现首页完整数据。
 class CanteenHomeData {
   final CanteenHero hero;
   final CanteenRankingEntry rankingEntry;
+
+  /// 旧首页推荐流契约，供旧客户端和非首页调用方继续读取。
   final List<CanteenFeedItem> feed;
   final List<CanteenHotDish> hotDishes;
+  final List<CanteenHomeReview> recentReviews;
+  final int todayEffectiveReviewCount;
+
+  /// 旧字段实际是近 7 天评价事件数，不是今日去重后的有效评价人数。
   final int recentEffectiveReviewCount;
 
   const CanteenHomeData({
@@ -218,6 +286,8 @@ class CanteenHomeData {
     this.rankingEntry = const CanteenRankingEntry(),
     this.feed = const [],
     this.hotDishes = const [],
+    this.recentReviews = const [],
+    this.todayEffectiveReviewCount = 0,
     this.recentEffectiveReviewCount = 0,
   });
 
@@ -246,10 +316,26 @@ class CanteenHomeData {
               .map(CanteenHotDish.fromJson)
               .toList()
           : const [],
-      recentEffectiveReviewCount:
-          (json['recent_effective_review_count'] ?? 0).toInt(),
+      recentReviews: json['recent_reviews'] is List
+          ? (json['recent_reviews'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(CanteenHomeReview.fromJson)
+              .toList()
+          : const [],
+      todayEffectiveReviewCount: _toInt(json['today_effective_reviewer_count']),
+      recentEffectiveReviewCount: _toInt(json['recent_effective_review_count']),
     );
   }
+}
+
+int _toInt(dynamic value) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _toDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 Map<String, double> _toDoubleMap(dynamic value) {

@@ -14,14 +14,15 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_hero_recommendation.dart';
 import '../widgets/canteen/canteen_ranking_entry.dart';
-import '../widgets/canteen/canteen_feed_item.dart';
+import '../widgets/canteen/canteen_recent_review_card.dart';
 import '../widgets/image_upload_widget.dart';
 import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
+import 'canteen_dish_list_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
 
-/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 更多推荐。
+/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近在吃。
 /// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
 class CanteenScreen extends StatefulWidget {
   const CanteenScreen({super.key});
@@ -232,6 +233,26 @@ class _CanteenScreenState extends State<CanteenScreen> {
           dishId: dish.id,
           dishName: dish.name,
           canteenName: dish.canteenName,
+        ),
+      ),
+    );
+  }
+
+  void _openDishDirectory() {
+    final hero = context.read<CanteenDiscoveryProvider>().home.hero;
+    if (hero.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂时没有可浏览的菜品')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishListScreen(
+          canteenId: hero.canteenId,
+          canteenName: hero.canteenName,
+          offline: hero.operatingStatus == 'offline',
         ),
       ),
     );
@@ -595,8 +616,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
         }
 
         final showHero = !provider.home.hero.isEmpty;
-        final feed = provider.home.feed;
         final hotDishes = provider.home.hotDishes;
+        final recentReviews = provider.home.recentReviews;
 
         final content = RefreshIndicator(
           onRefresh: () => provider.loadHome(),
@@ -625,44 +646,50 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   provider.home,
                 ),
               ),
-              if (hotDishes.isNotEmpty) ...[
-                _sectionHeader(
-                  isDark,
-                  '热门菜品',
-                  meta: '菜品分不混入服务评分',
-                ),
-                _buildHotDishes(isDark, hotDishes),
-                const SizedBox(height: 18),
-              ],
               _sectionHeader(
                 isDark,
-                '更多推荐',
-                meta: '按可信度与新鲜度排序',
+                '热门菜品',
+                meta: '菜品分不混入服务评分',
               ),
-              if (feed.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: CanteenEmptyState(
-                    title: '暂无推荐',
-                    subtitle: '成为第一个收录食堂的同学吧',
-                    actionLabel: '提交食堂',
-                    onAction: () => _showAddCanteenSheet(isDark),
-                  ),
+              if (hotDishes.isEmpty)
+                CanteenEmptyState(
+                  icon: Icons.photo_camera_outlined,
+                  title: '还没有同学上传菜品实拍',
+                  actionLabel: '去看看菜品',
+                  onAction: _openDishDirectory,
+                  minHeight: 150,
                 )
               else
-                for (var i = 0; i < feed.length; i++)
-                  Padding(
-                    padding:
-                        EdgeInsets.only(bottom: i == feed.length - 1 ? 0 : 12),
-                    child: CanteenFeedItemCard(
-                      key: ValueKey(feed[i].id),
-                      item: feed[i],
-                      onTap: () => _openDetail(
-                        feed[i].canteenId,
-                        feed[i].canteenName,
-                      ),
+                _buildHotDishes(isDark, hotDishes),
+              const SizedBox(height: 18),
+              _sectionHeader(
+                isDark,
+                '同学最近在吃',
+                meta: '按可信度与新鲜度排序',
+              ),
+              if (recentReviews.isEmpty)
+                CanteenEmptyState(
+                  title: '最近还没有新的评价',
+                  subtitle: '欢迎成为第一个分享用餐体验的同学',
+                  actionLabel: '去评价一家店',
+                  onAction: _openReviewComposer,
+                  minHeight: 150,
+                )
+              else
+                for (var i = 0; i < recentReviews.length; i++) ...[
+                  CanteenRecentReviewCard(
+                    key: ValueKey(
+                      '${recentReviews[i].source}:${recentReviews[i].reviewId}',
+                    ),
+                    review: recentReviews[i],
+                    onTap: () => _openDetail(
+                      recentReviews[i].canteenId,
+                      recentReviews[i].canteenName,
                     ),
                   ),
+                  if (i != recentReviews.length - 1) const SizedBox(height: 10),
+                ],
+              const SizedBox(height: 14),
               _buildListEndEntry(isDark),
             ],
           ),
@@ -688,7 +715,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   Widget _buildQuickRow(bool isDark, CanteenHomeData home) {
-    final count = home.recentEffectiveReviewCount;
+    final count = home.todayEffectiveReviewCount;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -730,7 +757,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  count > 0 ? '$count' : '—',
+                  '$count',
                   style: TextStyle(
                     fontSize: 26,
                     height: 1,
@@ -740,7 +767,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '同一用户多次评价不会重复刷权重',
+                  '按用户与食堂去重后的今日样本',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

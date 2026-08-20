@@ -218,6 +218,74 @@ func TestGetDetailReturnsEventLevelPayloadForEditing(t *testing.T) {
 	if !ok || len(dishReviews) != 1 {
 		t.Fatalf("dish reviews=%v", body.Latest["dish_reviews"])
 	}
+	var action map[string]interface{}
+	if err := json.Unmarshal(response.Body.Bytes(), &struct {
+		ReviewAction *map[string]interface{} `json:"review_action"`
+	}{ReviewAction: &action}); err != nil {
+		t.Fatal(err)
+	}
+	if action["can_edit_latest"] != true || action["latest_review_id"].(float64) != float64(event.ID) {
+		t.Fatalf("review action=%v", action)
+	}
+	if action["can_create"] != false || action["retry_after_seconds"].(float64) <= 0 {
+		t.Fatalf("expected cooldown action=%v", action)
+	}
+}
+
+func TestGetDetailReviewActionAllowsCreateAfterCooldown(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID,
+		TasteScore: 4, ValueScore: 4, QueueScore: 4, HygieneScore: 4, ServiceScore: 4,
+		OverallScore: 4, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+		CreatedAt: time.Now().Add(-7 * time.Hour), UpdatedAt: time.Now().Add(-7 * time.Hour),
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := performCanteenRequest(t, h.GetDetail, http.MethodGet,
+		"/api/canteens/88", mapParams("id", "88"), user.ID, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		ReviewAction map[string]interface{} `json:"review_action"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ReviewAction["can_create"] != true ||
+		body.ReviewAction["can_edit_latest"] != true ||
+		body.ReviewAction["latest_review_id"].(float64) != float64(event.ID) ||
+		body.ReviewAction["retry_after_seconds"].(float64) != 0 {
+		t.Fatalf("unexpected post-cooldown action=%v", body.ReviewAction)
+	}
+}
+
+func TestGetDetailReviewActionDoesNotEditLegacyOnlyHistory(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	legacy := models.CanteenRating{
+		CanteenID: canteen.ID, UserID: user.ID, Star: 4, Comment: "旧版评价",
+		Status: models.ReviewEventStatusActive,
+	}
+	if err := h.db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := performCanteenRequest(t, h.GetDetail, http.MethodGet,
+		"/api/canteens/88", mapParams("id", "88"), user.ID, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		ReviewAction map[string]interface{} `json:"review_action"`
+		Latest       interface{}            `json:"my_latest_review"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ReviewAction["can_create"] != true || body.ReviewAction["can_edit_latest"] != false || body.Latest != nil {
+		t.Fatalf("legacy history must remain create-only: action=%v latest=%v", body.ReviewAction, body.Latest)
+	}
 }
 
 func TestEnsureLegacyReviewEventDoesNotResurrectHiddenRating(t *testing.T) {

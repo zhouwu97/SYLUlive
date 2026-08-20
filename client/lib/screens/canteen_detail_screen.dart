@@ -75,6 +75,34 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return raw['is_offline'] == true || raw['operating_status'] == 'offline';
   }
 
+  Map<String, dynamic> get _reviewAction {
+    final raw = _canteenData?['review_action'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  // 兼容旧服务端：缺少 review_action 时按原有“可以新增”处理，避免旧详情页被误锁死。
+  bool get _canCreateReview => _reviewAction['can_create'] != false;
+
+  bool get _canEditLatest =>
+      _reviewAction['can_edit_latest'] == true &&
+      _canteenData?['my_latest_review'] is Map;
+
+  int? get _latestReviewId {
+    final raw = _reviewAction['latest_review_id'] ??
+        (_canteenData?['my_latest_review'] as Map?)?['review_event_id'];
+    return raw is num ? raw.toInt() : int.tryParse('$raw');
+  }
+
+  String _reviewCooldownText() {
+    final seconds =
+        (_reviewAction['retry_after_seconds'] as num?)?.toInt() ?? 0;
+    if (seconds <= 0) return '暂时不能新增评价';
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600 + 59) ~/ 60;
+    if (hours > 0) return '距下次评价还有 ${hours}小时${minutes}分钟';
+    return '距下次评价还有 $minutes 分钟';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -329,8 +357,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       }
                     },
                     onVote: _voteRating,
-                    onWriteReview: _openReviewEditor,
-                    canWriteReview: !_isOffline,
+                    onWriteReview: _openPrimaryReviewEditor,
+                    canWriteReview:
+                        !_isOffline && (_canCreateReview || _canEditLatest),
+                    latestReviewId: _latestReviewId,
+                    onEditLatestReview: _openEditLatestReviewEditor,
                     onReport: _reportReview,
                   ),
                 ],
@@ -652,7 +683,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Widget _buildFloatingRatingComposer(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final hasRating = _canteenData?['my_rating'] != null;
     final auth = context.watch<AuthProvider>();
     final ratingHint = _isOffline
         ? '该店已下架，历史评价仅供参考'
@@ -660,9 +690,13 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             ? '登录后可评价'
             : auth.user?.studentVerified != true
                 ? '绑定教务后可评价'
-                : hasRating
-                    ? '修改我的评价...'
-                    : '写下你的真实体验...';
+                : _canCreateReview
+                    ? '添加一条新的到店评价...'
+                    : _canEditLatest
+                        ? _reviewCooldownText()
+                        : '暂时不能添加评价';
+
+    final canOpenPrimary = !_isOffline && (_canCreateReview || _canEditLatest);
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
@@ -679,7 +713,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                onTap: _isOffline ? null : _openReviewEditor,
+                onTap: canOpenPrimary ? _openPrimaryReviewEditor : null,
                 child: Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -701,7 +735,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ),
           const SizedBox(width: 10),
           FilledButton(
-            onPressed: _isOffline ? null : _openReviewEditor,
+            onPressed: canOpenPrimary ? _openPrimaryReviewEditor : null,
             style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
@@ -713,7 +747,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               ),
             ),
             child: Text(
-              hasRating ? '修改' : '写评价',
+              _canCreateReview ? '添加' : '修改最近一次',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
@@ -860,22 +894,67 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   // ── 打开评价编辑器全屏页 ────────────────────────────────────────
 
-  Future<void> _openReviewEditor() async {
+  Future<bool> _ensureCanReview() async {
     if (_isOffline) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('该店当前已下架，暂不能发布新的评价')),
       );
-      return;
+      return false;
     }
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
-      return;
+      return false;
     }
     if (auth.user?.studentVerified != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先绑定教务账号后再评价')),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _openPrimaryReviewEditor() async {
+    if (_canCreateReview) {
+      await _openCreateReviewEditor();
+    } else {
+      await _openEditLatestReviewEditor();
+    }
+  }
+
+  Future<void> _openCreateReviewEditor() async {
+    if (!await _ensureCanReview()) return;
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewEditorScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+          canteenImage: _canteenData?['canteen']?['image']?.toString(),
+          averageStar:
+              (_canteenData?['average_star'] as num?)?.toDouble() ?? 0.0,
+          ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
+          dishCount: _dishCount,
+          dishPhotoCount: _dishPhotoCount,
+          mode: CanteenReviewEditorMode.create,
+          existingReview: null,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _reloadSilently();
+    }
+  }
+
+  Future<void> _openEditLatestReviewEditor() async {
+    if (!await _ensureCanReview()) return;
+    final latest = _canteenData?['my_latest_review'];
+    if (!_canEditLatest || latest is! Map || _latestReviewId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('最近一条评价暂时不可修改，请刷新后重试')),
       );
       return;
     }
@@ -891,8 +970,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
-          existingRating:
-              _canteenData?['my_latest_review'] ?? _canteenData?['my_rating'],
+          mode: CanteenReviewEditorMode.edit,
+          existingReview: Map<String, dynamic>.from(latest),
         ),
       ),
     );

@@ -52,4 +52,63 @@ void main() {
     expect(find.byKey(const ValueKey('legacy:17')), findsOneWidget);
     expect(find.byKey(const ValueKey('v2:17')), findsOneWidget);
   });
+
+  testWidgets('只有自己的最新 V2 评价显示修改菜单', (tester) async {
+    var editCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CanteenReviewSection(
+            reviews: const [
+              {
+                'id': 18,
+                'user_id': 7,
+                'user_name': '我',
+                'star': 4,
+                'review_source': 'v2',
+                'comment': '最新体验',
+              },
+              {
+                'id': 17,
+                'user_id': 7,
+                'user_name': '我',
+                'star': 3,
+                'review_source': 'v2',
+                'comment': '旧体验',
+              },
+              {
+                'id': 16,
+                'user_id': 7,
+                'user_name': '我',
+                'star': 5,
+                'review_source': 'legacy',
+                'comment': '旧版摘要',
+              },
+            ],
+            reviewCount: 3,
+            sort: 'latest',
+            filter: 'all',
+            dataVersion: 1,
+            isRefreshing: false,
+            isVoting: false,
+            currentUserId: 7,
+            latestReviewId: 18,
+            onEditLatestReview: () => editCalls++,
+            onSortChanged: (_) {},
+            onFilterChanged: (_) {},
+            onVote: (_, __, ___) async {},
+            onWriteReview: () {},
+          ),
+        ),
+      ),
+    );
+
+    final menus = find.byType(PopupMenuButton<String>);
+    expect(menus, findsOneWidget);
+    await tester.tap(menus);
+    await tester.pumpAndSettle();
+    expect(find.text('修改这条评价'), findsOneWidget);
+    await tester.tap(find.text('修改这条评价'));
+    expect(editCalls, 1);
+  });
 }

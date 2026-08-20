@@ -104,6 +104,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
           canteenImage: hero.image,
           averageStar: hero.averageStar,
           ratingCount: hero.ratingCount,
+          mode: CanteenReviewEditorMode.create,
+          existingReview: null,
         ),
       ),
     ).then((_) {

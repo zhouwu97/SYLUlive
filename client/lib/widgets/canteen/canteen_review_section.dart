@@ -25,6 +25,8 @@ class CanteenReviewSection extends StatelessWidget {
   final Future<void> Function(int ratingId, String source, String vote) onVote;
   final VoidCallback onWriteReview;
   final bool canWriteReview;
+  final int? latestReviewId;
+  final VoidCallback? onEditLatestReview;
   final Future<void> Function(int reviewId, String source)? onReport;
 
   const CanteenReviewSection({
@@ -42,6 +44,8 @@ class CanteenReviewSection extends StatelessWidget {
     required this.onVote,
     required this.onWriteReview,
     this.canWriteReview = true,
+    this.latestReviewId,
+    this.onEditLatestReview,
     this.onReport,
   });
 
@@ -166,6 +170,15 @@ class CanteenReviewSection extends StatelessWidget {
                                   (reviews[i]['user_id'] as num?)?.toInt(),
                           onVote: onVote,
                           onReport: onReport,
+                          isLatestV2: latestReviewId != null &&
+                              (reviews[i]['review_source']?.toString() ??
+                                      (reviews[i]['is_v2'] == true
+                                          ? 'v2'
+                                          : 'legacy')) ==
+                                  'v2' &&
+                              (reviews[i]['id'] as num?)?.toInt() ==
+                                  latestReviewId,
+                          onEditLatestReview: onEditLatestReview,
                         ),
                       ],
                     ],
@@ -277,7 +290,9 @@ class _ReviewItem extends StatelessWidget {
   final bool isDark;
   final bool isVoting;
   final bool isOwn;
+  final bool isLatestV2;
   final Future<void> Function(int ratingId, String source, String vote) onVote;
+  final VoidCallback? onEditLatestReview;
   final Future<void> Function(int reviewId, String source)? onReport;
 
   const _ReviewItem({
@@ -285,7 +300,9 @@ class _ReviewItem extends StatelessWidget {
     required this.isDark,
     required this.isVoting,
     required this.isOwn,
+    this.isLatestV2 = false,
     required this.onVote,
+    this.onEditLatestReview,
     this.onReport,
   });
 
@@ -529,6 +546,20 @@ class _ReviewItem extends StatelessWidget {
                   ],
                 ),
               ],
+              if (isOwn && isLatestV2 && onEditLatestReview != null)
+                PopupMenuButton<String>(
+                  tooltip: '评价操作',
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) {
+                    if (value == 'edit') onEditLatestReview!();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Text('修改这条评价'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ],

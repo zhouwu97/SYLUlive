@@ -129,6 +129,51 @@ void main() {
     expect(loaded2!.comment, '二食堂草稿');
   });
 
+  test('创建与编辑草稿命名空间隔离', () async {
+    final createDraft = CanteenReviewDraft(
+      userId: 101,
+      canteenId: 1,
+      mode: 'create',
+      comment: '新增一条到店体验',
+      updatedAt: DateTime.now(),
+    );
+    final editDraft = CanteenReviewDraft(
+      userId: 101,
+      canteenId: 1,
+      mode: 'edit',
+      reviewEventId: 42,
+      comment: '修改最近一条体验',
+      updatedAt: DateTime.now(),
+    );
+
+    await repository.saveDraft(createDraft);
+    await repository.saveDraft(editDraft);
+
+    expect(
+      (await repository.loadDraft(userId: 101, canteenId: 1))!.comment,
+      '新增一条到店体验',
+    );
+    expect(
+      (await repository.loadDraft(
+        userId: 101,
+        canteenId: 1,
+        mode: 'edit',
+        reviewEventId: 42,
+      ))!
+          .comment,
+      '修改最近一条体验',
+    );
+    expect(
+      CanteenReviewDraftRepository.buildKey(101, 1),
+      isNot(CanteenReviewDraftRepository.buildKey(
+        101,
+        1,
+        mode: 'edit',
+        reviewEventId: 42,
+      )),
+    );
+  });
+
   test('保存空草稿自动触发删除', () async {
     final draft = CanteenReviewDraft(
       userId: 101,
@@ -167,8 +212,7 @@ void main() {
         updatedAt: DateTime.now(),
       ),
     );
-    final draft =
-        await repository.loadDraft(userId: 101, canteenId: 1);
+    final draft = await repository.loadDraft(userId: 101, canteenId: 1);
 
     expect(draft, isNotNull);
     final restored = draft!;

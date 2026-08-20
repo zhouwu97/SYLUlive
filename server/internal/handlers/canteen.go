@@ -467,9 +467,23 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 
 	var myRating *models.CanteenRating
 	var myLatestReview map[string]interface{}
+	reviewAction := map[string]interface{}{
+		// 未登录时仍展示“添加评价”入口，客户端点击后负责引导登录；
+		// 登录用户的冷却/编辑状态再由下方按账号覆盖。
+		"can_create":          true,
+		"can_edit_latest":     false,
+		"latest_review_id":    nil,
+		"retry_after_seconds": 0,
+		"next_create_at":      nil,
+	}
 	if userID, exists := c.Get("user_id"); exists {
+		uid, ok := userID.(uint)
+		if !ok || uid == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
+			return
+		}
 		var rating models.CanteenRating
-		if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", id, userID, models.ReviewEventStatusActive).First(&rating).Error; err == nil {
+		if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", id, uid, models.ReviewEventStatusActive).First(&rating).Error; err == nil {
 			var user models.User
 			if err := h.db.Select("nickname, student_id, avatar").First(&user, rating.UserID).Error; err == nil {
 				rating.UserName = user.Nickname
@@ -487,11 +501,17 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			}
 			myRating = &rating
 		}
-		if latest, latestErr := h.loadMyLatestReviewPayload(uint(id), userID.(uint)); latestErr != nil {
+		if latest, latestErr := h.loadMyLatestReviewPayload(uint(id), uid); latestErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取我的新版评价失败"})
 			return
 		} else {
 			myLatestReview = latest
+		}
+		if action, actionErr := h.buildReviewAction(uint(id), uid); actionErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价操作状态失败"})
+			return
+		} else {
+			reviewAction = action
 		}
 	}
 	// V2 评价流与 /reviews 共用同一套“先按用户取最新、再筛选、再排序”的语义，
@@ -541,6 +561,7 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		"average_star":     avg,
 		"my_rating":        myRating,
 		"my_latest_review": myLatestReview,
+		"review_action":    reviewAction,
 		"reviews":          reviews,
 		"display_reviews":  displayReviews,
 		"reviewer_count":   count,

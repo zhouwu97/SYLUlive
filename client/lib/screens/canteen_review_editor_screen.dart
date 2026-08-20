@@ -73,6 +73,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   late final TextEditingController _dishInputController;
 
   int _star = 0;
+  // 仅用于旧版星级草稿/历史评价的展示，不参与 V2 请求的五维评分。
+  double _legacyOverallScore = 0;
   CanteenReviewDimensions _dimensions = const CanteenReviewDimensions();
   List<String> _selectedTags = [];
   List<String> _recommendedDishes = [];
@@ -152,7 +154,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     // Case A: 新建评价 + 发现草稿
     if (existing == null && draft != null) {
       _applyDraft(draft);
-      _showDraftRestoredToast(draft.updatedAt);
+      _showDraftRestoredToast(
+        draft.updatedAt,
+        requiresDimensionCompletion: !draftDimensionsAreComplete(draft),
+      );
       return;
     }
 
@@ -175,22 +180,26 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       } else {
         // Case C: 草稿基于当前版本，恢复草稿
         _applyDraft(draft);
-        _showDraftRestoredToast(draft.updatedAt);
+        _showDraftRestoredToast(
+          draft.updatedAt,
+          requiresDimensionCompletion: !draftDimensionsAreComplete(draft),
+        );
       }
       return;
     }
   }
 
   void _applyDraft(CanteenReviewDraft draft, {DateTime? rebaseTo}) {
-    final fallback = draft.star;
     setState(() {
+      // star 只为旧草稿/旧客户端保留，V2 编辑状态不再把它当作五维评分来源。
       _star = draft.star;
+      _legacyOverallScore = draft.star.toDouble();
       _dimensions = CanteenReviewDimensions(
-        taste: draft.tasteScore == 0 ? fallback : draft.tasteScore,
-        value: draft.valueScore == 0 ? fallback : draft.valueScore,
-        queue: draft.queueScore == 0 ? fallback : draft.queueScore,
-        hygiene: draft.hygieneScore == 0 ? fallback : draft.hygieneScore,
-        service: draft.serviceScore == 0 ? fallback : draft.serviceScore,
+        taste: draft.tasteScore,
+        value: draft.valueScore,
+        queue: draft.queueScore,
+        hygiene: draft.hygieneScore,
+        service: draft.serviceScore,
       );
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
@@ -230,7 +239,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
   void _applyExistingRating(Map<String, dynamic> existing) {
     final star = (existing['star'] as num?)?.toInt() ?? 0;
-    final dimensions = _dimensionsFromJson(existing, fallback: star);
+    final dimensions = _dimensionsFromJson(existing);
     final comment = existing['comment']?.toString() ?? '';
     final imagesList = _parseImagesList(existing['images']);
     final tagsList = _parseTagsList(existing['tags']);
@@ -239,6 +248,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
     setState(() {
       _star = star;
+      _legacyOverallScore = star.toDouble();
       _dimensions = dimensions;
       _commentController.text = comment;
       _selectedTags = tagsList;
@@ -310,14 +320,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         );
       }).toList();
 
-  CanteenReviewDimensions _dimensionsFromJson(
-    Map<String, dynamic> json, {
-    int fallback = 0,
-  }) {
+  CanteenReviewDimensions _dimensionsFromJson(Map<String, dynamic> json) {
     int score(String key) {
       final raw = json[key];
       if (raw is num) return raw.toInt();
-      return int.tryParse('$raw') ?? fallback;
+      return int.tryParse('$raw') ?? 0;
     }
 
     return CanteenReviewDimensions(
@@ -327,6 +334,14 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       hygiene: score('hygiene_score'),
       service: score('service_score'),
     );
+  }
+
+  bool draftDimensionsAreComplete(CanteenReviewDraft draft) {
+    return draft.tasteScore > 0 &&
+        draft.valueScore > 0 &&
+        draft.queueScore > 0 &&
+        draft.hygieneScore > 0 &&
+        draft.serviceScore > 0;
   }
 
   List<String> _parseImagesList(dynamic raw) {
@@ -403,12 +418,17 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
   }
 
-  void _showDraftRestoredToast(DateTime updatedAt) {
+  void _showDraftRestoredToast(
+    DateTime updatedAt, {
+    bool requiresDimensionCompletion = false,
+  }) {
     final timeStr =
         '${updatedAt.hour.toString().padLeft(2, '0')}:${updatedAt.minute.toString().padLeft(2, '0')}';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已恢复 $timeStr 保存的草稿'),
+        content: Text(requiresDimensionCompletion
+            ? '已恢复 $timeStr 保存的草稿，请补全五项评分'
+            : '已恢复 $timeStr 保存的草稿'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -496,6 +516,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final draft = CanteenReviewDraft(
       userId: userId,
       canteenId: widget.canteenId,
+      // star 只为旧草稿读取兼容保留；V2 提交使用下方五个显式维度。
       star: _star,
       tasteScore: _dimensions.taste,
       valueScore: _dimensions.value,
@@ -528,8 +549,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Future<void> _handleExit() async {
     if (_isSubmitting) return;
 
-    final isFormClean = !_dimensions.isComplete &&
-        _star == 0 &&
+    final isFormClean = _dimensions.taste == 0 &&
+        _dimensions.value == 0 &&
+        _dimensions.queue == 0 &&
+        _dimensions.hygiene == 0 &&
+        _dimensions.service == 0 &&
         _commentController.text.trim().isEmpty &&
         _selectedTags.isEmpty &&
         _recommendedDishes.isEmpty &&
@@ -655,7 +679,22 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     _debounceTimer?.cancel();
     _statusTimer?.cancel();
 
+    final missingLocalImage = _draftImages.any(
+      (image) =>
+          image.type == ReviewDraftImageType.localPending &&
+          image.localPath != null &&
+          !File(image.localPath!).existsSync(),
+    );
+    if (missingLocalImage) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布')),
+      );
+      return;
+    }
+
     if (!_dimensions.isComplete) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先为食堂打个分吧')),
       );
@@ -1172,7 +1211,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '当前综合分 ${_dimensions.isComplete ? _dimensions.overall.toStringAsFixed(2) : '--'}',
+              '当前综合分 ${_dimensions.isComplete ? _dimensions.overall.toStringAsFixed(2) : (_legacyOverallScore > 0 ? _legacyOverallScore.toStringAsFixed(2) : '--')}',
               style: TextStyle(
                 fontSize: 12,
                 color: CanteenTheme.textSecondaryColor(isDark),
@@ -1187,6 +1226,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void _setDimension(CanteenReviewDimensions next) {
     setState(() {
       _dimensions = next;
+      // 只保留旧草稿的兼容快照，不能再把它作为 V2 评分提交。
       _star = next.taste;
     });
     _onFormChanged();
@@ -2028,7 +2068,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
   Widget _buildBottomBar(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final canSubmit = _dimensions.isComplete && !_isSubmitting;
+    // 旧版星级草稿仍允许进入提交校验流程（例如先提示丢失图片），但真正的
+    // V2 请求仍会在 _submitReview 中要求五个显式维度完整。
+    final canSubmit =
+        (_dimensions.isComplete || _draftImages.isNotEmpty) && !_isSubmitting;
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),

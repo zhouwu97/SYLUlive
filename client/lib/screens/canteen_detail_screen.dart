@@ -231,25 +231,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       );
     }
 
-    final rawV2Reviews = _canteenData!['reviews'];
-    final normalizedV2 = rawV2Reviews is List
-        ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
-        : <Map<String, dynamic>>[];
-    final v2UserIds = normalizedV2
-        .map((item) => (item['user_id'] as num?)?.toInt())
-        .whereType<int>()
-        .toSet();
-    final legacyOnly = (_canteenData!['ratings'] as List?)
-            ?.whereType<Map>()
-            .map((item) => {
-                  ...Map<String, dynamic>.from(item),
-                  'review_source': 'legacy',
-                })
-            .where((item) =>
-                !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
-            .toList() ??
-        <Map<String, dynamic>>[];
-    final reviews = [...normalizedV2, ...legacyOnly];
+    final rawDisplayReviews = _canteenData!['display_reviews'];
+    final reviews = rawDisplayReviews is List
+        ? rawDisplayReviews.whereType<Map>().map((raw) {
+            final item = Map<String, dynamic>.from(raw);
+            return item['review_source'] == 'v2'
+                ? _normalizeV2Review(item)
+                : {...item, 'review_source': 'legacy'};
+          }).toList()
+        : _buildLegacyReviewFallback();
     final ratingCount = (_canteenData!['reviewer_count'] as num?)?.toInt() ??
         (_canteenData!['rating_count'] as num?)?.toInt() ??
         0;
@@ -375,6 +365,28 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       'helpful_count': source['helpful_count'] ?? 0,
       'unhelpful_count': source['unhelpful_count'] ?? 0,
     };
+  }
+
+  List<Map<String, dynamic>> _buildLegacyReviewFallback() {
+    final rawV2Reviews = _canteenData!['reviews'];
+    final normalizedV2 = rawV2Reviews is List
+        ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
+        : <Map<String, dynamic>>[];
+    final v2UserIds = normalizedV2
+        .map((item) => (item['user_id'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet();
+    final legacyOnly = (_canteenData!['ratings'] as List?)
+            ?.whereType<Map>()
+            .map((item) => {
+                  ...Map<String, dynamic>.from(item),
+                  'review_source': 'legacy',
+                })
+            .where((item) =>
+                !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    return [...normalizedV2, ...legacyOnly];
   }
 
   Future<void> _reportReview(int reviewId, String source) async {
@@ -786,23 +798,34 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   void _applyLocalVote(int ratingId, String source, String newVote) {
-    final key = source == 'v2' ? 'reviews' : 'ratings';
-    final items = (_canteenData?[key] as List?)?.cast<dynamic>();
-    if (items == null) return;
-    for (final item in items) {
-      if (item is! Map) continue;
-      final rating = item.cast<String, dynamic>();
-      if ((rating['id'] as num?)?.toInt() != ratingId) continue;
-      final oldVote = rating['my_vote']?.toString();
-      var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
-      var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
-      if (oldVote == 'up') helpful--;
-      if (oldVote == 'down') unhelpful--;
-      if (newVote == 'up') helpful++;
-      if (newVote == 'down') unhelpful++;
-      rating['helpful_count'] = helpful < 0 ? 0 : helpful;
-      rating['unhelpful_count'] = unhelpful < 0 ? 0 : unhelpful;
-      rating['my_vote'] = newVote == 'none' ? null : newVote;
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews'
+    ];
+    for (final key in keys.toSet()) {
+      final items = (_canteenData?[key] as List?)?.cast<dynamic>();
+      if (items == null) continue;
+      for (final item in items) {
+        if (item is! Map) continue;
+        final rating = item.cast<String, dynamic>();
+        final itemSource = rating['review_source']?.toString() ??
+            (rating['source']?.toString() ??
+                (key == 'reviews' ? 'v2' : 'legacy'));
+        if ((rating['id'] as num?)?.toInt() != ratingId ||
+            itemSource != source) {
+          continue;
+        }
+        final oldVote = rating['my_vote']?.toString();
+        var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
+        var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
+        if (oldVote == 'up') helpful--;
+        if (oldVote == 'down') unhelpful--;
+        if (newVote == 'up') helpful++;
+        if (newVote == 'down') unhelpful++;
+        rating['helpful_count'] = helpful < 0 ? 0 : helpful;
+        rating['unhelpful_count'] = unhelpful < 0 ? 0 : unhelpful;
+        rating['my_vote'] = newVote == 'none' ? null : newVote;
+      }
     }
   }
 
@@ -811,16 +834,27 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         ((result['rating_id'] ?? result['review_id']) as num?)?.toInt();
     if (ratingId == null) return;
 
-    final key = source == 'v2' ? 'reviews' : 'ratings';
-    final ratings = (_canteenData?[key] as List?)?.cast<dynamic>();
-    if (ratings == null) return;
-    for (final item in ratings) {
-      if (item is! Map) continue;
-      final rating = item.cast<String, dynamic>();
-      if ((rating['id'] as num?)?.toInt() != ratingId) continue;
-      rating['helpful_count'] = result['helpful_count'] ?? 0;
-      rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
-      rating['my_vote'] = result['my_vote'];
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews'
+    ];
+    for (final key in keys.toSet()) {
+      final ratings = (_canteenData?[key] as List?)?.cast<dynamic>();
+      if (ratings == null) continue;
+      for (final item in ratings) {
+        if (item is! Map) continue;
+        final rating = item.cast<String, dynamic>();
+        final itemSource = rating['review_source']?.toString() ??
+            (rating['source']?.toString() ??
+                (key == 'reviews' ? 'v2' : 'legacy'));
+        if ((rating['id'] as num?)?.toInt() != ratingId ||
+            itemSource != source) {
+          continue;
+        }
+        rating['helpful_count'] = result['helpful_count'] ?? 0;
+        rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
+        rating['my_vote'] = result['my_vote'];
+      }
     }
   }
 

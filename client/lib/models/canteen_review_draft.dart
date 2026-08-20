@@ -222,21 +222,13 @@ class CanteenReviewDraft {
       userId: (json['user_id'] as num?)?.toInt() ?? 0,
       canteenId: (json['canteen_id'] as num?)?.toInt() ?? 0,
       star: (json['star'] as num?)?.toInt() ?? 0,
-      tasteScore: (json['taste_score'] as num?)?.toInt() ??
-          (json['star'] as num?)?.toInt() ??
-          0,
-      valueScore: (json['value_score'] as num?)?.toInt() ??
-          (json['star'] as num?)?.toInt() ??
-          0,
-      queueScore: (json['queue_score'] as num?)?.toInt() ??
-          (json['star'] as num?)?.toInt() ??
-          0,
-      hygieneScore: (json['hygiene_score'] as num?)?.toInt() ??
-          (json['star'] as num?)?.toInt() ??
-          0,
-      serviceScore: (json['service_score'] as num?)?.toInt() ??
-          (json['star'] as num?)?.toInt() ??
-          0,
+      // 五维评分是独立字段。旧草稿没有这些字段时保持未填写，不能把旧版星级
+      // 复制到每个维度，否则恢复草稿会伪造用户从未填写过的业务数据。
+      tasteScore: (json['taste_score'] as num?)?.toInt() ?? 0,
+      valueScore: (json['value_score'] as num?)?.toInt() ?? 0,
+      queueScore: (json['queue_score'] as num?)?.toInt() ?? 0,
+      hygieneScore: (json['hygiene_score'] as num?)?.toInt() ?? 0,
+      serviceScore: (json['service_score'] as num?)?.toInt() ?? 0,
       comment: json['comment']?.toString() ?? '',
       tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ??
           const [],

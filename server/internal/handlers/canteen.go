@@ -506,6 +506,19 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			populateReviewVotes(h.db, reviews, userID)
 		}
 	}
+	// 详情页同时展示两套历史数据时，不能让客户端把两个自增 ID 空间拼接后再猜
+	// 类型。display_reviews 明确携带 source，并在服务端完成按用户去重、筛选和全局排序。
+	allV2Reviews, allV2Err := h.loadCanteenReviews(uint(id), "latest", "all", false)
+	if allV2Err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
+		return
+	}
+	if uid, exists := c.Get("user_id"); exists {
+		if userID, ok := uid.(uint); ok {
+			populateReviewVotes(h.db, allV2Reviews, userID)
+		}
+	}
+	displayReviews := buildCanteenDisplayReviews(canteen.Name, allV2Reviews, ratings, reviewSort, reviewFilter)
 	canteen.NormalizeOperatingStatus()
 	var v2Stats *canteenStatsRow
 	if stats, statsErr := h.queryCanteenStats(true); statsErr == nil {
@@ -529,6 +542,7 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		"my_rating":        myRating,
 		"my_latest_review": myLatestReview,
 		"reviews":          reviews,
+		"display_reviews":  displayReviews,
 		"reviewer_count":   count,
 		"visit_review_count": func() int {
 			if v2Stats == nil {
@@ -543,6 +557,133 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			return v2Stats.DimensionScores
 		}(),
 	})
+}
+
+// buildCanteenDisplayReviews 生成详情页唯一使用的混合评价流。
+// V2 优先于同一用户的 legacy 摘要；source 与 id 一起返回，避免两张表的自增 ID
+// 碰撞导致投票或举报落到另一个用户的内容上。
+func buildCanteenDisplayReviews(canteenName string, v2Reviews []models.CanteenReviewEvent, ratings []models.CanteenRating, sortBy, filter string) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(v2Reviews)+len(ratings))
+	v2Users := make(map[uint]struct{}, len(v2Reviews))
+	for _, review := range v2Reviews {
+		v2Users[review.UserID] = struct{}{}
+		item := map[string]interface{}{
+			"id": review.ID, "review_id": review.ID, "source": "v2", "review_source": "v2", "is_v2": true,
+			"canteen_name": canteenName, "canteen_id": review.CanteenID, "user_id": review.UserID,
+			"user_name": review.UserName, "user_avatar": review.UserAvatar, "credit_score": review.CreditScore,
+			"credit_weight": review.CreditWeight, "history_count": review.HistoryCount,
+			"star": review.OverallScore, "overall_score": review.OverallScore,
+			"taste_score": review.TasteScore, "value_score": review.ValueScore, "queue_score": review.QueueScore,
+			"hygiene_score": review.HygieneScore, "service_score": review.ServiceScore,
+			"dimension_scores": map[string]int{"taste": review.TasteScore, "value": review.ValueScore, "queue": review.QueueScore, "hygiene": review.HygieneScore, "service": review.ServiceScore},
+			"comment":          review.Comment, "images": review.Images, "tags": review.Tags,
+			"recommended_dishes": review.RecommendedDishNames, "helpful_count": review.HelpfulCount,
+			"unhelpful_count": review.UnhelpfulCount, "my_vote": review.MyVote, "score_version": review.ScoreVersion,
+			"created_at": review.CreatedAt, "updated_at": review.UpdatedAt,
+		}
+		if displayReviewMatchesFilter(item, filter) {
+			items = append(items, item)
+		}
+	}
+	for _, rating := range ratings {
+		if _, ok := v2Users[rating.UserID]; ok {
+			continue
+		}
+		item := map[string]interface{}{
+			"id": rating.ID, "review_id": rating.ID, "source": "legacy", "review_source": "legacy", "is_v2": false,
+			"canteen_name": canteenName, "canteen_id": rating.CanteenID, "user_id": rating.UserID,
+			"user_name": rating.UserName, "user_avatar": rating.UserAvatar, "credit_score": rating.CreditScore,
+			"credit_weight": rating.CreditWeight, "history_count": rating.HistoryCount,
+			"star": rating.Star, "overall_score": rating.Star, "comment": rating.Comment,
+			"images": rating.Images, "tags": rating.Tags, "recommended_dishes": rating.RecommendedDishNames,
+			"helpful_count": rating.HelpfulCount, "unhelpful_count": rating.UnhelpfulCount,
+			"my_vote": rating.MyVote, "score_version": 1, "created_at": rating.CreatedAt, "updated_at": rating.UpdatedAt,
+		}
+		if displayReviewMatchesFilter(item, filter) {
+			items = append(items, item)
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if sortBy == "latest" {
+			return displayReviewTime(items[i]).After(displayReviewTime(items[j]))
+		}
+		wi := displayReviewHelpfulScore(items[i])
+		wj := displayReviewHelpfulScore(items[j])
+		if wi != wj {
+			return wi > wj
+		}
+		ci := strings.TrimSpace(fmt.Sprint(items[i]["comment"])) != ""
+		cj := strings.TrimSpace(fmt.Sprint(items[j]["comment"])) != ""
+		if ci != cj {
+			return ci
+		}
+		hi := intFromDisplay(items[i]["helpful_count"])
+		hj := intFromDisplay(items[j]["helpful_count"])
+		if hi != hj {
+			return hi > hj
+		}
+		si := floatFromDisplay(items[i]["star"])
+		sj := floatFromDisplay(items[j]["star"])
+		if si != sj {
+			return si > sj
+		}
+		return displayReviewTime(items[i]).After(displayReviewTime(items[j]))
+	})
+	return items
+}
+
+func displayReviewMatchesFilter(item map[string]interface{}, filter string) bool {
+	switch filter {
+	case "with_image":
+		return hasReviewImages(fmt.Sprint(item["images"]))
+	case "high":
+		return floatFromDisplay(item["star"]) >= 4
+	case "low":
+		return floatFromDisplay(item["star"]) <= 2
+	default:
+		return true
+	}
+}
+
+func displayReviewTime(item map[string]interface{}) time.Time {
+	if value, ok := item["created_at"].(time.Time); ok {
+		return value
+	}
+	return time.Time{}
+}
+
+func displayReviewHelpfulScore(item map[string]interface{}) int {
+	return intFromDisplay(item["helpful_count"]) - 2*intFromDisplay(item["unhelpful_count"])
+}
+
+func intFromDisplay(value interface{}) int {
+	switch number := value.(type) {
+	case int:
+		return number
+	case int64:
+		return int(number)
+	case uint:
+		return int(number)
+	case float64:
+		return int(number)
+	default:
+		return 0
+	}
+}
+
+func floatFromDisplay(value interface{}) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	case int:
+		return float64(number)
+	case uint:
+		return float64(number)
+	default:
+		return 0
+	}
 }
 
 // VoteRating 给食堂评价点赞/点踩/取消投票

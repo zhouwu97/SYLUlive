@@ -61,96 +61,127 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Future<void> _handleReport(dynamic report) async {
     final deleteReasonController = TextEditingController();
     final resultController = TextEditingController();
+    final targetType = report['target_type']?.toString() ?? '';
+    final isCanteenTarget = _isCanteenGovernanceTarget(targetType);
+    String? confirmedReasonCode;
 
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              const Icon(Icons.gavel, color: Colors.orange, size: 24),
-              const SizedBox(width: 8),
-              const Text('处理举报'),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
               children: [
-                GlassContainer(
-                  padding: const EdgeInsets.all(12),
-                  borderRadius: 12,
-                  blur: 0,
-                  opacity: isDark ? 0.1 : 0.05,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '目标: ${_targetLabel(report['target_type']?.toString() ?? '')} #${report['target_id']}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark ? Colors.white60 : Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '原因: ${_reasonLabel(report)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: resultController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: '处理备注（可选）',
-                    hintText: '例如：举报不成立；已警告发布者；内容无需处理',
-                    helperText: '用于记录本次审核结论。',
-                    helperMaxLines: 2,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: deleteReasonController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: '治理原因（确认违规时必填）',
-                    hintText: '例如：包含辱骂、人身攻击或违规联系方式',
-                    helperText: '确认违规后会下架内容，并按原因执行诚信治理。',
-                    helperMaxLines: 3,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                const Icon(Icons.gavel, color: Colors.orange, size: 24),
+                const SizedBox(width: 8),
+                const Text('处理举报'),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'ignored'),
-              child: const Text('忽略', style: TextStyle(color: Colors.grey)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GlassContainer(
+                    padding: const EdgeInsets.all(12),
+                    borderRadius: 12,
+                    blur: 0,
+                    opacity: isDark ? 0.1 : 0.05,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '目标: ${_targetLabel(report['target_type']?.toString() ?? '')} #${report['target_id']}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? Colors.white60 : Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '原因: ${_reasonLabel(report)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: resultController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: '处理备注（可选）',
+                      hintText: '例如：举报不成立；已警告发布者；内容无需处理',
+                      helperText: '用于记录本次审核结论。',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: deleteReasonController,
+                    maxLines: 2,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: '治理原因（确认违规时必填）',
+                      hintText: '例如：包含辱骂、人身攻击或违规联系方式',
+                      helperText: '确认违规后会下架内容，并按原因执行诚信治理。',
+                      helperMaxLines: 3,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  if (isCanteenTarget) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: confirmedReasonCode,
+                      decoration: InputDecoration(
+                        labelText: '确认治理原因（必选）',
+                        helperText: '处罚依据以管理员确认原因为准，不直接沿用举报人选择。',
+                        helperMaxLines: 2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      items: _canteenGovernanceReasonLabels.entries
+                          .where((entry) => _canteenReasonCodesForTarget(
+                                targetType,
+                              ).contains(entry.key))
+                          .map(
+                            (entry) => DropdownMenuItem<String>(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setDialogState(() => confirmedReasonCode = value),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: deleteReasonController,
-              builder: (context, value, child) => ElevatedButton(
-                onPressed: value.text.trim().isEmpty
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'ignored'),
+                child: const Text('忽略', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                onPressed: deleteReasonController.text.trim().isEmpty ||
+                        (isCanteenTarget && confirmedReasonCode == null)
                     ? null
-                    : () => Navigator.pop(ctx, 'handled'),
+                    : () => Navigator.pop(dialogContext, 'handled'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
@@ -161,8 +192,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 child: const Text('违规成立并治理'),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -177,6 +208,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           'status': action,
           'result': resultController.text,
           'delete_reason': deleteReasonController.text,
+          if (isCanteenTarget) 'confirmed_reason_code': confirmedReasonCode,
         },
       );
       if (mounted) {
@@ -444,6 +476,71 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     };
     return labels[type] ?? '内容';
   }
+
+  bool _isCanteenGovernanceTarget(String type) => const {
+        'canteen_review',
+        'canteen_rating',
+        'canteen_dish_review',
+        'canteen_dish_photo',
+      }.contains(type);
+
+  Set<String> _canteenReasonCodesForTarget(String type) {
+    switch (type) {
+      case 'canteen_dish_photo':
+        return const {
+          'unrelated_photo',
+          'stolen_photo',
+          'spam',
+          'abuse',
+          'harassment',
+          'malicious',
+          'malicious_repeat',
+        };
+      case 'canteen_dish_review':
+        return const {
+          'fabricated',
+          'false',
+          'unrelated',
+          'unrelated_content',
+          'fake_dish',
+          'spam',
+          'abuse',
+          'harassment',
+          'malicious',
+          'malicious_repeat',
+        };
+      case 'canteen_review':
+      case 'canteen_rating':
+        return const {
+          'fabricated',
+          'false',
+          'unrelated',
+          'unrelated_content',
+          'spam',
+          'abuse',
+          'harassment',
+          'malicious',
+          'malicious_repeat',
+        };
+      default:
+        return const {};
+    }
+  }
+
+  static const _canteenGovernanceReasonLabels = <String, String>{
+    'fabricated': '捏造或失实',
+    'false': '虚假信息',
+    'unrelated': '与菜品无关',
+    'unrelated_content': '内容与目标无关',
+    'unrelated_photo': '图片与菜品无关',
+    'fake_dish': '虚假菜品',
+    'stolen_photo': '盗用图片',
+    'spam': '垃圾广告',
+    'abuse': '辱骂或恶意内容',
+    'harassment': '人身攻击',
+    'malicious': '恶意内容',
+    'malicious_repeat': '重复恶意内容',
+  };
 
   String _reasonLabel(dynamic report) {
     const reasonMap = {

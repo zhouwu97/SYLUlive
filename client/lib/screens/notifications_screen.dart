@@ -27,6 +27,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     with RouteAware {
   PageRoute<dynamic>? _subscribedRoute;
   List<Map<String, dynamic>> _notifications = [];
+  final Set<int> _openingNotificationIds = <int>{};
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -46,6 +47,18 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void didPush() {
     _saveCurrentPageAsLastPage();
+  }
+
+  @override
+  void didPop() {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (auth.isLoggedIn && accountId != null) {
+      ReplyNotificationState.instance.requestRefresh(
+        accountId: accountId,
+        sessionGeneration: auth.sessionGeneration,
+      );
+    }
   }
 
   @override
@@ -152,17 +165,24 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Future<void> _markAllRead() async {
     final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
+    if (accountId == null) return;
     try {
       await ReplyNotificationService(auth.dio).markAllRead();
-      if (mounted) {
-        setState(() {
-          for (var item in _notifications) {
-            item['is_read'] = true;
-          }
-        });
-        ReplyNotificationState.instance.notifyAllRead();
-        AppFeedback.showSnackBar(context, '已全部标记为已读');
+      if (!mounted || !_isCurrentSession(auth, accountId, sessionGeneration)) {
+        return;
       }
+      setState(() {
+        for (var item in _notifications) {
+          item['is_read'] = true;
+        }
+      });
+      ReplyNotificationState.instance.notifyAllRead(
+        accountId: accountId,
+        sessionGeneration: sessionGeneration,
+      );
+      AppFeedback.showSnackBar(context, '已全部标记为已读');
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '操作失败', isError: true);
@@ -255,37 +275,51 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
     return InkWell(
       onTap: () async {
-        if (!isRead && id != null) {
-          final auth = context.read<AuthProvider>();
-          try {
-            await ReplyNotificationService(auth.dio).markRead(id);
-            if (!mounted) return;
-            setState(() {
-              notification['is_read'] = true;
-            });
-            if (type == 'reply') {
-              ReplyNotificationState.instance.markRead(id);
+        final auth = context.read<AuthProvider>();
+        if (id != null && !_openingNotificationIds.add(id)) return;
+        try {
+          if (!isRead && id != null) {
+            final accountId = auth.user?.id;
+            final sessionGeneration = auth.sessionGeneration;
+            if (accountId == null) return;
+            try {
+              await ReplyNotificationService(auth.dio).markRead(id);
+              if (!_isCurrentSession(auth, accountId, sessionGeneration)) {
+                return;
+              }
+              setState(() {
+                notification['is_read'] = true;
+              });
+              if (type == 'reply') {
+                ReplyNotificationState.instance.markRead(
+                  accountId: accountId,
+                  sessionGeneration: sessionGeneration,
+                  notificationId: id,
+                );
+              }
+            } catch (error) {
+              if (!mounted) return;
+              AppFeedback.showSnackBar(
+                context,
+                '标记已读失败，请重试',
+                isError: true,
+              );
             }
-          } catch (error) {
-            if (!mounted) return;
-            AppFeedback.showSnackBar(
-              context,
-              '标记已读失败，请重试',
-              isError: true,
-            );
           }
-        }
 
-        if (postId != null) {
-          try {
-            final response = await context.read<AuthProvider>().dio.get('/posts/$postId');
-            if (!mounted) return;
-            final post = Post.fromJson(Map<String, dynamic>.from(response.data as Map));
-            await Navigator.push(context, buildPostDetailRoute(post, targetReplyId: type == 'reply' ? relatedId : null));
-          } on DioException catch (error) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+          if (postId != null) {
+            try {
+              final response = await auth.dio.get('/posts/$postId');
+              if (!mounted) return;
+              final post = Post.fromJson(Map<String, dynamic>.from(response.data as Map));
+              await Navigator.push(context, buildPostDetailRoute(post, targetReplyId: type == 'reply' ? relatedId : null));
+            } on DioException catch (error) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+            }
           }
+        } finally {
+          if (id != null) _openingNotificationIds.remove(id);
         }
       },
       borderRadius: BorderRadius.circular(12),
@@ -385,6 +419,17 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ),
       ),
     );
+  }
+
+  bool _isCurrentSession(
+    AuthProvider auth,
+    int accountId,
+    int sessionGeneration,
+  ) {
+    return mounted &&
+        auth.isLoggedIn &&
+        auth.user?.id == accountId &&
+        auth.sessionGeneration == sessionGeneration;
   }
 
   Widget _buildEmptyView(bool isDark) {

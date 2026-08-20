@@ -17,7 +17,6 @@ import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
 import '../services/root_page_state_service.dart';
-import '../services/reply_notification_state.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
@@ -424,7 +423,6 @@ class _HomeScreenState extends State<HomeScreen>
     // 从深层页面（私信/帖子/通知）返回：底层 root tab 重新可见，
     // 由它自己保存「上次退出页面」，替代私信里硬编码的课表 index。
     _saveCurrentTabAsLastPage();
-    ReplyNotificationState.instance.requestRefresh();
   }
 
   /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。

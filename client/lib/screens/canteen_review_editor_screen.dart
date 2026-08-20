@@ -12,6 +12,7 @@ import '../models/canteen_review_draft.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../services/canteen_review_draft_repository.dart';
+import '../theme/app_colors.dart';
 import '../widgets/canteen/canteen_review_image_picker.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
@@ -1096,7 +1097,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     return _buildNoticeSurface(
       isDark,
       icon: Icons.verified_user_outlined,
-      color: CanteenTheme.accentColor(isDark),
+      color: AppColors.success,
       title: '可以再次评价',
       message: '历史评价会保留，但店铺总分中每位同学最多贡献一个有效样本，避免重复刷分。',
     );
@@ -1214,6 +1215,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   _dimensions.isComplete
@@ -1234,12 +1236,18 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     color: CanteenTheme.textSecondaryColor(isDark),
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '味道35% · 性价比20% · 排队15% · 卫生20% · 服务10%',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: CanteenTheme.textTertiaryColor(isDark),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '味道35% · 性价比20%\n排队15% · 卫生20% · 服务10%',
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.35,
+                      color: CanteenTheme.textTertiaryColor(isDark),
+                    ),
                   ),
                 ),
               ],
@@ -1267,66 +1275,88 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 88,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: CanteenTheme.textSecondaryColor(isDark),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 评分按钮保留 44dp 触控热区；窄屏时允许按钮自然换行，避免挤压出屏。
+          final labelWidth = constraints.maxWidth < 360 ? 64.0 : 88.0;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: labelWidth,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Wrap(
-              spacing: 4,
-              children: List.generate(5, (index) {
-                final score = index + 1;
-                final active = score == selected;
-                return SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: InkWell(
-                    onTap: _isSubmitting ? null : () => onChanged(score),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        width: 28,
-                        height: 26,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: active
-                              ? CanteenTheme.accentSoftColor(isDark)
-                              : CanteenTheme.surfaceMutedBg(isDark),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: active
-                                ? CanteenTheme.accentColor(isDark)
-                                : CanteenTheme.borderColor(isDark),
-                          ),
-                        ),
-                        child: Text(
-                          '$score',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight:
-                                active ? FontWeight.w700 : FontWeight.w500,
-                            color: active
-                                ? CanteenTheme.accentStrongColor(isDark)
-                                : CanteenTheme.textSecondaryColor(isDark),
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  children: List.generate(5, (index) {
+                    final score = index + 1;
+                    final active = score == selected;
+                    return SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: InkWell(
+                        onTap: _isSubmitting ? null : () => onChanged(score),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 120),
+                            width: 28,
+                            height: 26,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? CanteenTheme.accentSoftColor(isDark)
+                                  : CanteenTheme.surfaceMutedBg(isDark),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: active
+                                    ? CanteenTheme.accentColor(isDark)
+                                    : CanteenTheme.borderColor(isDark),
+                              ),
+                            ),
+                            child: Text(
+                              '$score',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight:
+                                    active ? FontWeight.w700 : FontWeight.w500,
+                                color: active
+                                    ? CanteenTheme.accentStrongColor(isDark)
+                                    : CanteenTheme.textSecondaryColor(isDark),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    );
+                  }),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 30,
+                child: Text(
+                  selected > 0 ? '$selected.0' : '--',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: selected > 0
+                        ? CanteenTheme.textSecondaryColor(isDark)
+                        : CanteenTheme.textTertiaryColor(isDark),
                   ),
-                );
-              }),
-            ),
-          ),
-        ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

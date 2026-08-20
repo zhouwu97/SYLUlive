@@ -103,11 +103,24 @@ class ReplyNotificationService {
   }
 
   Future<void> markRead(int notificationId) async {
-    await _dio.post(
+    final response = await _dio.post(
       '/notifications/read-selected',
       data: {
         'ids': [notificationId]
       },
     );
+    _ensureSuccessful(response, '标记通知已读失败');
+  }
+
+  Future<void> markAllRead() async {
+    final response = await _dio.post('/notifications/read');
+    _ensureSuccessful(response, '全部标记已读失败');
+  }
+
+  void _ensureSuccessful(Response<dynamic> response, String message) {
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300) {
+      throw StateError('$message（HTTP $statusCode）');
+    }
   }
 }

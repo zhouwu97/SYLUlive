@@ -88,7 +88,10 @@ Widget _buildEditorTestApp({
         ratingCount: ratingCount,
         dishCount: dishCount,
         dishPhotoCount: dishPhotoCount,
-        existingRating: existingRating,
+        mode: existingRating == null
+            ? CanteenReviewEditorMode.create
+            : CanteenReviewEditorMode.edit,
+        existingReview: existingRating,
         draftRepositoryOverride: draftRepository,
       ),
     ),
@@ -97,11 +100,11 @@ Widget _buildEditorTestApp({
 
 Future<void> _completeDimensions(WidgetTester tester) async {
   const labels = [
-    '味道（35%）',
-    '性价比（20%）',
-    '排队体验（15%）',
-    '卫生（20%）',
-    '服务（10%）',
+    '味道',
+    '性价比',
+    '排队效率',
+    '卫生环境',
+    '服务态度',
   ];
   for (final label in labels) {
     final row =
@@ -115,7 +118,7 @@ Future<void> _completeDimensions(WidgetTester tester) async {
 
 Future<void> _setTasteDimension(WidgetTester tester, int score) async {
   final row =
-      find.ancestor(of: find.text('味道（35%）'), matching: find.byType(Row)).first;
+      find.ancestor(of: find.text('味道'), matching: find.byType(Row)).first;
   final scoreButton = find.descendant(
     of: row,
     matching: find.text('$score'),
@@ -167,19 +170,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 验证头卡数据与公开提示
-    expect(find.text('我家有面(一楼)'), findsOneWidget);
-    expect(find.text('5.0'), findsOneWidget);
-    expect(find.text('2人评价'), findsOneWidget);
-    expect(find.text('菜品 12 · 实拍 18'), findsOneWidget);
-    expect(find.text('评价将公开展示给其他同学'), findsOneWidget);
+    // 顶部不再重复展示食堂摘要卡，创建态展示数据规则提示。
+    expect(find.text('可以再次评价'), findsOneWidget);
 
     for (final label in [
-      '味道（35%）',
-      '性价比（20%）',
-      '排队体验（15%）',
-      '卫生（20%）',
-      '服务（10%）',
+      '味道',
+      '性价比',
+      '排队效率',
+      '卫生环境',
+      '服务态度',
     ]) {
       expect(find.text(label), findsOneWidget);
     }
@@ -192,7 +191,7 @@ void main() {
 
     await _completeDimensions(tester);
 
-    expect(find.text('当前综合分 5.00'), findsOneWidget);
+    expect(find.text('5.00'), findsOneWidget);
     final activeBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(activeBtn.onPressed, isNotNull);
   });
@@ -246,7 +245,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, '牛肉面面条筋道，汤底浓郁！');
+    await tester.enterText(find.byType(TextField).last, '牛肉面面条筋道，汤底浓郁！');
     await tester.pumpAndSettle();
 
     expect(find.text('13 / 200'), findsOneWidget);
@@ -273,8 +272,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. 验证初始状态：0 / 3，展示快捷推荐
-    expect(find.text('0 / 3'), findsOneWidget);
-    expect(find.text('大家常推荐（点击快速填入）：'), findsOneWidget);
+    expect(find.text('0 / 3'), findsNWidgets(2));
+    expect(find.text('已有菜品（点击快速填入）：'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
 
     // 2. 自由文本输入“自创麻辣烫”并点击添加
@@ -309,7 +308,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 验证删除后恢复为空
-    expect(find.text('0 / 3'), findsOneWidget);
+    expect(find.text('0 / 3'), findsNWidgets(2));
     expect(find.text('牛肉面'), findsWidgets);
   });
 
@@ -321,6 +320,11 @@ void main() {
       'id': 99,
       'star': 4,
       'comment': '老评价内容',
+      'taste_score': 5,
+      'value_score': 4,
+      'queue_score': 3,
+      'hygiene_score': 4,
+      'service_score': 5,
       'images': '["/uploads/old_photo.jpg"]',
       'tags': '["taste_good","price_fair"]',
       'recommended_dishes': ['老字号牛肉面'],
@@ -338,10 +342,9 @@ void main() {
 
     expect(find.text('修改评价'), findsOneWidget);
     expect(find.text('老评价内容'), findsOneWidget);
-    expect(find.text('当前综合分 4.00'), findsOneWidget);
+    expect(find.text('4.30'), findsOneWidget);
     expect(find.text('2/6'), findsOneWidget);
     expect(find.text('老字号牛肉面'), findsOneWidget);
-    expect(find.text('1 / 3'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '保存修改'), findsOneWidget);
   });
 
@@ -381,12 +384,12 @@ void main() {
   });
 
   testWidgets('成功发布评价后清除草稿并返回 true', (tester) async {
-    var rateCalled = false;
+    var reviewCalled = false;
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
-      if (options.path == '/canteens/1/rate' && options.method == 'POST') {
-        rateCalled = true;
-        return _json('{"message":"评价已保存"}', 200);
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        reviewCalled = true;
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
       }
       if (options.path == '/canteens/1/dishes') {
         return _json('[]', 200);
@@ -404,14 +407,14 @@ void main() {
 
     // 完成五维评分并填写评语
     await _completeDimensions(tester);
-    await tester.enterText(find.byType(TextField).first, '非常好吃，强烈推荐！');
+    await tester.enterText(find.byType(TextField).last, '非常好吃，强烈推荐！');
     await tester.pumpAndSettle();
 
     // 点击发布
     await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
     await tester.pumpAndSettle();
 
-    expect(rateCalled, isTrue);
+    expect(reviewCalled, isTrue);
     // 验证发布后草稿被删除
     final draftAfter =
         await draftRepository.loadDraft(userId: 101, canteenId: 1);
@@ -419,12 +422,12 @@ void main() {
   });
 
   testWidgets('草稿中的本地图片丢失时阻止发布并保留草稿', (tester) async {
-    var rateCalled = false;
+    var reviewCalled = false;
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
-      if (options.path == '/canteens/1/rate' && options.method == 'POST') {
-        rateCalled = true;
-        return _json('{"message":"评价已保存"}', 200);
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        reviewCalled = true;
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
       }
       if (options.path == '/canteens/1/dishes') {
         return _json('[]', 200);
@@ -466,7 +469,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     // 验证：阻止调用发布接口
-    expect(rateCalled, isFalse);
+    expect(reviewCalled, isFalse);
     // 验证：弹出丢失提示
     expect(find.text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布'), findsOneWidget);
     // 验证：草稿仍然保留，未被误删
@@ -479,7 +482,7 @@ void main() {
   testWidgets('409 冲突：选择保留草稿并退出，草稿立即落盘且重新进入时完整保留', (tester) async {
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
-      if (options.path == '/canteens/1/rate' && options.method == 'POST') {
+      if (options.path == '/canteens/reviews/55' && options.method == 'PATCH') {
         return _json(
             '{"code":"rating_conflict","error":"评价已在其他设备更新，请刷新后重试","remote_updated_at":"2026-08-19T20:00:00Z"}',
             409);
@@ -494,6 +497,16 @@ void main() {
       _buildEditorTestApp(
         dio: dio,
         draftRepository: draftRepository,
+        existingRating: {
+          'review_event_id': 55,
+          'score_version': 2,
+          'taste_score': 5,
+          'value_score': 4,
+          'queue_score': 3,
+          'hygiene_score': 4,
+          'service_score': 4,
+          'updated_at': '2026-08-19T12:00:00Z',
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -501,11 +514,11 @@ void main() {
     // 填写评价内容
     await _completeDimensions(tester);
     await _setTasteDimension(tester, 4);
-    await tester.enterText(find.byType(TextField).first, '冲突测试中的独家评价');
+    await tester.enterText(find.byType(TextField).last, '冲突测试中的独家评价');
     await tester.pumpAndSettle();
 
-    // 点击发布，触发 409 冲突
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    // 点击保存，触发 409 冲突
+    await tester.tap(find.widgetWithText(FilledButton, '保存修改'));
     await tester.pumpAndSettle();
 
     // 弹出 409 冲突对话框
@@ -518,8 +531,12 @@ void main() {
     await tester.pumpAndSettle();
 
     // 验证草稿已被立即落盘
-    final savedDraft =
-        await draftRepository.loadDraft(userId: 101, canteenId: 1);
+    final savedDraft = await draftRepository.loadDraft(
+      userId: 101,
+      canteenId: 1,
+      mode: 'edit',
+      reviewEventId: 55,
+    );
     expect(savedDraft, isNotNull);
     expect(savedDraft!.comment, '冲突测试中的独家评价');
     expect(savedDraft.star, 4);
@@ -532,6 +549,16 @@ void main() {
       _buildEditorTestApp(
         dio: dio,
         draftRepository: draftRepository,
+        existingRating: {
+          'review_event_id': 55,
+          'score_version': 2,
+          'taste_score': 5,
+          'value_score': 4,
+          'queue_score': 3,
+          'hygiene_score': 4,
+          'service_score': 4,
+          'updated_at': '2026-08-19T12:00:00Z',
+        },
       ),
     );
     await tester.pumpAndSettle();

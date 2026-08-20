@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -22,8 +23,40 @@ type CanteenHandler struct {
 	db *gorm.DB
 }
 
+var errCanteenOffline = errors.New("canteen_offline")
+
+// lockActiveCanteen 在写入事务内锁定并校验营业状态。
+// 事务外的预检查只能改善错误提示，不能防止“下架”和“提交”并发穿透。
+func lockActiveCanteen(tx *gorm.DB, canteenID uint) (models.Canteen, error) {
+	var canteen models.Canteen
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND verified = ?", canteenID, true).
+		First(&canteen).Error; err != nil {
+		return canteen, err
+	}
+	canteen.NormalizeOperatingStatus()
+	if canteen.IsOffline {
+		return canteen, errCanteenOffline
+	}
+	return canteen, nil
+}
+
 func NewCanteenHandler(db *gorm.DB) *CanteenHandler {
 	return &CanteenHandler{db: db}
+}
+
+func (h *CanteenHandler) ensureCanteenOperatingActive(c *gin.Context, canteenID uint) bool {
+	var canteen models.Canteen
+	if err := h.db.Select("id", "verified", "operating_status").First(&canteen, canteenID).Error; err != nil || !canteen.Verified {
+		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return false
+	}
+	canteen.NormalizeOperatingStatus()
+	if canteen.IsOffline {
+		c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能发布新的评价"})
+		return false
+	}
+	return true
 }
 
 // validCanteenTags 食堂评价体验标签白名单
@@ -53,7 +86,8 @@ type canteenStatsRow struct {
 	AverageStar      float64            `json:"average_star"`
 	ReviewerCount    int                `json:"reviewer_count"`
 	VisitReviewCount int                `json:"visit_review_count"`
-	DimensionScores  map[string]float64 `json:"dimension_scores,omitempty"`
+	EffectiveSample  float64            `json:"-"`
+	DimensionScores  map[string]float64 `gorm:"-" json:"dimension_scores,omitempty"`
 	DishCount        int                `json:"dish_count"`
 	DishPhotoCount   int                `json:"dish_photo_count"`
 	RankingScore     float64            `json:"ranking_score"`
@@ -68,11 +102,11 @@ type canteenRankingEntry struct {
 
 // queryCanteenStats 拉取全部 verified 食堂的聚合统计。
 // 终端尾部保留一个稳定次序（created_at DESC, id DESC），供排序同分时作最后 tie-break。
-func (h *CanteenHandler) queryCanteenStats() ([]canteenStatsRow, error) {
+func (h *CanteenHandler) queryCanteenStats(includeOffline ...bool) ([]canteenStatsRow, error) {
 	var rows []canteenStatsRow
 	// 独立聚合子查询（rating_stats / dish_stats），避免 JOIN 膨胀污染 COUNT。
 	// 不再内嵌 globalMean 子查询（SQLite 算术语境陷阱，见 canteenStatsRow 注释）。
-	err := h.db.Table("canteens").
+	query := h.db.Table("canteens").
 		Select(`canteens.*,
 			COALESCE(rs.rating_count, 0) as rating_count,
 			COALESCE(rs.average_star, 0) as average_star,
@@ -91,12 +125,19 @@ func (h *CanteenHandler) queryCanteenStats() ([]canteenStatsRow, error) {
 			WHERE d.status = 'active'
 			GROUP BY d.canteen_id
 		) ds ON ds.canteen_id = canteens.id`).
-		Where("canteens.verified = ?", true).
 		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_photo_count").
-		Order("canteens.created_at DESC, canteens.id DESC").
-		Scan(&rows).Error
+		Order("canteens.created_at DESC, canteens.id DESC")
+	if len(includeOffline) > 0 && includeOffline[0] {
+		query = query.Where("canteens.verified = ?", true)
+	} else {
+		query = query.Where("canteens.verified = ? AND (canteens.operating_status = ? OR canteens.operating_status IS NULL OR canteens.operating_status = '')", true, models.CanteenOperatingActive)
+	}
+	err := query.Scan(&rows).Error
 	if err != nil {
 		return rows, err
+	}
+	for i := range rows {
+		rows[i].NormalizeOperatingStatus()
 	}
 	h.hydrateV2CanteenScores(rows)
 	return rows, nil
@@ -122,6 +163,7 @@ func (h *CanteenHandler) hydrateV2CanteenScores(rows []canteenStatsRow) {
 			sample.Queue = rating.QueueScore
 			sample.Hygiene = rating.HygieneScore
 			sample.Service = rating.ServiceScore
+			sample.HasDimensions = true
 		}
 		if rating.User != nil {
 			sample.Weight = services.ComputeCreditWeight(rating.User.CreditScore)
@@ -135,6 +177,7 @@ func (h *CanteenHandler) hydrateV2CanteenScores(rows []canteenStatsRow) {
 		}
 		rows[i].RatingCount = aggregate.ReviewerCount
 		rows[i].ReviewerCount = aggregate.ReviewerCount
+		rows[i].EffectiveSample = aggregate.EffectiveSample
 		rows[i].AverageStar = aggregate.AverageScore
 		visitCount := 0
 		for _, rating := range ratings {
@@ -160,22 +203,42 @@ func (h *CanteenHandler) hydrateV2CanteenScores(rows []canteenStatsRow) {
 // 与原始 SQL 语义一致：从按食堂分组的平均分再取一次均值；无评价食堂不参与。
 func globalMeanStars(rows []canteenStatsRow) float64 {
 	var sum float64
-	var n int
+	var effectiveSample float64
 	for _, r := range rows {
-		if r.RatingCount > 0 {
-			sum += r.AverageStar
-			n++
+		if r.RatingCount > 0 && isCanteenOperatingActive(r.OperatingStatus) {
+			weight := r.EffectiveSample
+			if weight <= 0 {
+				weight = float64(r.RatingCount)
+			}
+			sum += r.AverageStar * weight
+			effectiveSample += weight
 		}
 	}
-	if n == 0 {
+	if effectiveSample == 0 {
 		return 0
 	}
-	return sum / float64(n)
+	return sum / effectiveSample
+}
+
+func isCanteenOperatingActive(status string) bool {
+	return status == "" || status == models.CanteenOperatingActive
+}
+
+func isCanteenReviewSchemaMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "no such table") || strings.Contains(lower, "does not exist")
 }
 
 // sortRanking 按 mode 策略排序并赋 rank，tie-break 稳定（都退到 rating_count → average → created_at → id）。
 func sortRanking(entries []canteenRankingEntry, mode string) {
 	less := func(a, b canteenRankingEntry) bool {
+		aActive, bActive := isCanteenOperatingActive(a.OperatingStatus), isCanteenOperatingActive(b.OperatingStatus)
+		if aActive != bActive {
+			return aActive
+		}
 		var ka, kb float64
 		var na, nb int
 		switch mode {
@@ -218,7 +281,7 @@ func sortRanking(entries []canteenRankingEntry, mode string) {
 
 // GetList 获取食堂列表（Bayesian 综合排序，无评价食堂置后）。兼容旧客户端字段。
 func (h *CanteenHandler) GetList(c *gin.Context) {
-	rows, err := h.queryCanteenStats()
+	rows, err := h.queryCanteenStats(true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂列表失败"})
 		return
@@ -226,7 +289,10 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 	mean := globalMeanStars(rows)
 	entries := make([]canteenRankingEntry, 0, len(rows))
 	for _, r := range rows {
-		score := services.BayesianRatingScore(r.AverageStar, float64(r.RatingCount), mean, services.BayesianPriorWeight)
+		score := float64(0)
+		if isCanteenOperatingActive(r.OperatingStatus) {
+			score = services.BayesianRatingScore(r.AverageStar, r.EffectiveSample, mean, services.BayesianPriorWeight)
+		}
 		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
 	}
 	sortRanking(entries, "composite")
@@ -235,7 +301,11 @@ func (h *CanteenHandler) GetList(c *gin.Context) {
 	out := make([]canteenStatsRow, 0, len(entries))
 	for _, e := range entries {
 		row := e.canteenStatsRow
-		row.RankingScore = services.BayesianScoreTo100(e.RankingScore)
+		if isCanteenOperatingActive(row.OperatingStatus) {
+			row.RankingScore = services.BayesianScoreTo100(e.RankingScore)
+		} else {
+			row.RankingScore = 0
+		}
 		out = append(out, row)
 	}
 	c.JSON(http.StatusOK, out)
@@ -374,24 +444,16 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			myRating = &rating
 		}
 	}
-	// V2 评价流按用户去重，旧 ratings 字段保留给老客户端。
-	var reviews []models.CanteenReviewEvent
-	if err := h.db.Where("canteen_id = ? AND status = ?", id, models.ReviewEventStatusActive).
-		Preload("User").Order("created_at DESC, id DESC").Find(&reviews).Error; err == nil {
-		seen := map[uint]bool{}
-		latest := reviews[:0]
-		for i := range reviews {
-			if seen[reviews[i].UserID] {
-				continue
-			}
-			seen[reviews[i].UserID] = true
-			populateReviewPublicFields(h.db, &reviews[i])
-			latest = append(latest, reviews[i])
-		}
-		reviews = latest
+	// V2 评价流与 /reviews 共用同一套“先按用户取最新、再筛选、再排序”的语义，
+	// 旧 ratings 字段继续保留给旧客户端。
+	reviews, reviewsErr := h.loadCanteenReviews(uint(id), reviewSort, reviewFilter, false)
+	if reviewsErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
+		return
 	}
+	canteen.NormalizeOperatingStatus()
 	var v2Stats *canteenStatsRow
-	if stats, statsErr := h.queryCanteenStats(); statsErr == nil {
+	if stats, statsErr := h.queryCanteenStats(true); statsErr == nil {
 		for i := range stats {
 			if stats[i].ID == uint(id) {
 				v2Stats = &stats[i]
@@ -588,11 +650,12 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		return
 	}
 	canteen := models.Canteen{
-		Name:           name,
-		NormalizedName: normalizeCanteenName(name),
-		Image:          input.Image,
-		Verified:       false,
-		CreatedBy:      userID.(uint),
+		Name:            name,
+		NormalizedName:  normalizeCanteenName(name),
+		Image:           input.Image,
+		Verified:        false,
+		OperatingStatus: models.CanteenOperatingActive,
+		CreatedBy:       userID.(uint),
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -652,6 +715,11 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	}
 	if !canteen.Verified {
 		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return
+	}
+	canteen.NormalizeOperatingStatus()
+	if canteen.IsOffline {
+		c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能发布新的评价"})
 		return
 	}
 
@@ -792,6 +860,28 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	var savedRating models.CanteenRating
 	var conflictErr *time.Time
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 与 V2 创建共用食堂行锁，避免 /rate 和 V2 并发写入产生混合摘要。
+		var lockedCanteen models.Canteen
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCanteen, cid).Error; err != nil {
+			return err
+		}
+		lockedCanteen.NormalizeOperatingStatus()
+		if lockedCanteen.IsOffline {
+			return errCanteenOffline
+		}
+		if tx.Migrator().HasTable(&models.CanteenReviewEvent{}) {
+			var activeV2Count int64
+			if err := tx.Model(&models.CanteenReviewEvent{}).
+				Where("canteen_id = ? AND user_id = ? AND status = ? AND (score_version >= ? OR score_version = ?)", cid, userID, models.ReviewEventStatusActive, 2, 0).
+				Count(&activeV2Count).Error; err != nil {
+				if !isCanteenReviewSchemaMissing(err) {
+					return err
+				}
+			}
+			if activeV2Count > 0 {
+				return errLegacyRatingSuperseded
+			}
+		}
 		var existing models.CanteenRating
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("canteen_id = ? AND user_id = ?", cid, userID).
@@ -845,6 +935,16 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		if errors.Is(err, errCanteenOffline) {
+			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能发布新的评价"})
+			return
+		}
+		if errors.Is(err, errLegacyRatingSuperseded) {
+			c.JSON(http.StatusConflict, gin.H{
+				"code": "legacy_rating_superseded", "error": "该用户已使用新版评价，请通过新版评价修改",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
 		return
 	}
@@ -854,7 +954,104 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "评价已保存", "rating": savedRating})
 }
 
-// DeleteCanteen 管理员删除食堂（驳回并扣除10经验）
+// deleteCanteenDependencies 只供永久删除使用。下架接口绝不调用它。
+// 删除顺序遵循“关系 → 内容 → 实体”，并在删除图库行后通过文件引用服务回收权限。
+func deleteCanteenDependencies(tx *gorm.DB, canteenID uint) error {
+	var ratingIDs, eventIDs, dishIDs, photoIDs, photoFileIDs []uint
+	if err := tx.Model(&models.CanteenRating{}).Where("canteen_id = ?", canteenID).Pluck("id", &ratingIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.CanteenReviewEvent{}).Where("canteen_id = ?", canteenID).Pluck("id", &eventIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.CanteenDish{}).Where("canteen_id = ?", canteenID).Pluck("id", &dishIDs).Error; err != nil {
+		return err
+	}
+	if len(dishIDs) > 0 {
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id IN ?", dishIDs).Pluck("id", &photoIDs).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id IN ?", dishIDs).Pluck("file_id", &photoFileIDs).Error; err != nil {
+			return err
+		}
+	}
+	if len(ratingIDs) > 0 {
+		if err := tx.Where("rating_id IN ?", ratingIDs).Delete(&models.CanteenRatingVote{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("rating_id IN ?", ratingIDs).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(eventIDs) > 0 {
+		if err := tx.Where("review_event_id IN ?", eventIDs).Delete(&models.CanteenReviewEventDish{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(dishIDs) > 0 {
+		if err := tx.Where("dish_id IN ?", dishIDs).Delete(&models.CanteenDishRatingSummary{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("dish_id IN ?", dishIDs).Delete(&models.CanteenDishAlias{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("dish_id IN ?", dishIDs).Delete(&models.CanteenDishPhoto{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(eventIDs) > 0 || len(dishIDs) > 0 {
+		query := tx.Where("1 = 0")
+		if len(dishIDs) > 0 {
+			query = query.Or("dish_id IN ?", dishIDs)
+		}
+		if len(eventIDs) > 0 {
+			query = query.Or("canteen_review_event_id IN ?", eventIDs)
+		}
+		if err := query.Delete(&models.CanteenDishReviewEvent{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(dishIDs) > 0 {
+		if err := tx.Where("id IN ?", dishIDs).Delete(&models.CanteenDish{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(eventIDs) > 0 {
+		if err := tx.Where("id IN ?", eventIDs).Delete(&models.CanteenReviewEvent{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(ratingIDs) > 0 {
+		if err := tx.Where("id IN ?", ratingIDs).Delete(&models.CanteenRating{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(photoIDs) > 0 && tx.Migrator().HasTable(&models.Report{}) {
+		if err := tx.Where("target_type = ? AND target_id IN ?", "canteen_dish_photo", photoIDs).Delete(&models.Report{}).Error; err != nil {
+			return err
+		}
+	}
+	if len(eventIDs) > 0 && tx.Migrator().HasTable(&models.Report{}) {
+		if err := tx.Where("target_type = ? AND target_id IN ?", "canteen_review", eventIDs).Delete(&models.Report{}).Error; err != nil {
+			return err
+		}
+	}
+	if (len(photoIDs) > 0 || len(eventIDs) > 0) && tx.Migrator().HasTable(&models.CanteenSanction{}) {
+		if len(photoIDs) > 0 {
+			if err := tx.Where("target_type = ? AND target_id IN ?", "canteen_dish_photo", photoIDs).Delete(&models.CanteenSanction{}).Error; err != nil {
+				return err
+			}
+		}
+		if len(eventIDs) > 0 {
+			if err := tx.Where("target_type = ? AND target_id IN ?", "canteen_review", eventIDs).Delete(&models.CanteenSanction{}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return services.ReconcileFilePublicAccess(tx, photoFileIDs...)
+}
+
+// DeleteCanteen 管理员永久删除食堂及其全部关联数据。下架请使用 OfflineCanteen。
 func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -874,16 +1071,7 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
-		var ratingIDs []uint
-		if err := tx.Model(&models.CanteenRating{}).Where("canteen_id = ?", id).Pluck("id", &ratingIDs).Error; err != nil {
-			return err
-		}
-		if len(ratingIDs) > 0 {
-			if err := tx.Where("rating_id IN ?", ratingIDs).Delete(&models.CanteenRatingDishRecommendation{}).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("canteen_id = ?", id).Delete(&models.CanteenRating{}).Error; err != nil {
+		if err := deleteCanteenDependencies(tx, uint(id)); err != nil {
 			return err
 		}
 		if err := tx.Delete(&canteen).Error; err != nil {
@@ -957,6 +1145,7 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		return
 	}
 	canteen.Verified = true
+	canteen.NormalizeOperatingStatus()
 	canteenDiscoveryCache.Invalidate() // 新食堂公开影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "审核已通过", "canteen": canteen})
 }
@@ -1004,6 +1193,140 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 	}
 	canteenDiscoveryCache.Invalidate() // 驳回食堂影响排行/首页
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回"})
+}
+
+// OfflineCanteen 下架已公开食堂：只改变营业状态，不删除任何业务数据。
+// POST /api/canteens/:id/offline
+func (h *CanteenHandler) OfflineCanteen(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var canteen models.Canteen
+	alreadyOffline := false
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
+			return err
+		}
+		canteen.NormalizeOperatingStatus()
+		if !canteen.Verified {
+			return errors.New("canteen_not_verified")
+		}
+		if canteen.OperatingStatus == models.CanteenOperatingOffline {
+			alreadyOffline = true
+			return nil
+		}
+		now := time.Now()
+		updates := map[string]interface{}{
+			"operating_status": models.CanteenOperatingOffline,
+			"offlined_at":      now, "offlined_by": adminID, "offline_reason": strings.TrimSpace(input.Reason),
+		}
+		if err := tx.Model(&canteen).Updates(updates).Error; err != nil {
+			return err
+		}
+		canteen.OperatingStatus = models.CanteenOperatingOffline
+		canteen.OfflinedAt, canteen.OfflinedBy = &now, &adminID
+		canteen.OfflineReason = strings.TrimSpace(input.Reason)
+		var admin models.User
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{AdminID: adminID, AdminName: admin.Nickname, Action: "下架食堂", Target: canteen.Name,
+			Detail: fmt.Sprintf("食堂 %d 下架", canteen.ID)}).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		case err.Error() == "canteen_not_verified":
+			c.JSON(http.StatusConflict, gin.H{"error": "未审核食堂不能下架"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "下架食堂失败"})
+		}
+		return
+	}
+	canteen.NormalizeOperatingStatus()
+	canteenDiscoveryCache.Invalidate()
+	message := "食堂已下架"
+	if alreadyOffline {
+		message = "食堂已经处于下架状态"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":        message,
+		"canteen":        canteen,
+		"offline_reason": canteen.OfflineReason,
+	})
+}
+
+// OnlineCanteen 恢复已下架食堂：只恢复状态，不重置或重算历史评价。
+// POST /api/canteens/:id/online
+func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var canteen models.Canteen
+	alreadyOnline := false
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
+			return err
+		}
+		canteen.NormalizeOperatingStatus()
+		if !canteen.Verified {
+			return errors.New("canteen_not_verified")
+		}
+		if canteen.OperatingStatus == models.CanteenOperatingActive {
+			alreadyOnline = true
+			return nil
+		}
+		if err := tx.Model(&canteen).Updates(map[string]interface{}{
+			"operating_status": models.CanteenOperatingActive,
+			"offlined_at":      nil, "offlined_by": nil, "offline_reason": "",
+		}).Error; err != nil {
+			return err
+		}
+		canteen.OperatingStatus = models.CanteenOperatingActive
+		canteen.OfflinedAt, canteen.OfflinedBy, canteen.OfflineReason = nil, nil, ""
+		var admin models.User
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{AdminID: adminID, AdminName: admin.Nickname, Action: "重新上架食堂", Target: canteen.Name,
+			Detail: fmt.Sprintf("食堂 %d 重新上架", canteen.ID)}).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		case err.Error() == "canteen_not_verified":
+			c.JSON(http.StatusConflict, gin.H{"error": "未审核食堂不能上架"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "重新上架食堂失败"})
+		}
+		return
+	}
+	canteen.NormalizeOperatingStatus()
+	canteenDiscoveryCache.Invalidate()
+	message := "食堂已重新上架"
+	if alreadyOnline {
+		message = "食堂已经处于营业状态"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":        message,
+		"canteen":        canteen,
+		"offline_reason": canteen.OfflineReason,
+	})
 }
 
 // UpdateImage 管理员修改食堂图片

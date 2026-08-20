@@ -67,6 +67,12 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   int get _photoCount => _data?['photo_count'] ?? _photoImages.length;
 
+  bool get _isOffline {
+    final dish = _data?['dish'];
+    if (dish is! Map) return false;
+    return dish['canteen_operating_status']?.toString() == 'offline';
+  }
+
   Future<void> _handleAdminManagePhoto(int index) async {
     final photos = _photos;
     if (index < 0 || index >= photos.length) return;
@@ -124,8 +130,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '上传者：$uploaderName' +
-                        (createdAt.isNotEmpty ? ' · $createdAt' : ''),
+                    '上传者：$uploaderName${createdAt.isNotEmpty ? ' · $createdAt' : ''}',
                     style: TextStyle(
                       fontSize: 13,
                       color: CanteenTheme.textSecondaryColor(isDark),
@@ -215,6 +220,17 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                         color: CanteenTheme.textSecondaryColor(isDark),
                       ),
                     ),
+                    if (_isOffline)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '所属食堂已下架，历史菜品与实拍仅供参考',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: CanteenTheme.textSecondaryColor(isDark),
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 4),
                     Text(
                       '$_photoCount 张同学真实实拍',
@@ -241,11 +257,14 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                     const SizedBox(height: 12),
                     DishPhotoMosaic(
                       imageUrls: _photoImages,
+                      offline: _isOffline,
                       onLongPress: isAdmin ? _handleAdminManagePhoto : null,
                     ),
                     const SizedBox(height: 16),
                     if (_photoCount >= 3)
                       _buildGalleryFull(isDark, accent)
+                    else if (_isOffline)
+                      _buildOfflineUploadNotice(isDark)
                     else
                       _buildUploadEntry(isDark, accent),
                   ],
@@ -435,6 +454,16 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           label: const Text('上传菜品实拍'),
         ),
       ],
+    );
+  }
+
+  Widget _buildOfflineUploadNotice(bool isDark) {
+    return Text(
+      '所属食堂已下架，暂不能新增菜品实拍或评价',
+      style: TextStyle(
+        fontSize: 12,
+        color: CanteenTheme.textSecondaryColor(isDark),
+      ),
     );
   }
 }

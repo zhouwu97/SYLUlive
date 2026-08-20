@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../../config/api_constants.dart';
 import '../../screens/image_viewer_screen.dart';
+import 'canteen_status_image.dart';
 
 /// 菜品实拍三图布局：
 /// - 1 张：全宽大图（4:3）
@@ -10,11 +9,13 @@ import '../../screens/image_viewer_screen.dart';
 /// - 3 张：1 大 + 2 小
 class DishPhotoMosaic extends StatelessWidget {
   final List<String> imageUrls;
+  final bool offline;
   final void Function(int index)? onLongPress;
 
   const DishPhotoMosaic({
     super.key,
     required this.imageUrls,
+    this.offline = false,
     this.onLongPress,
   });
 
@@ -56,7 +57,8 @@ class DishPhotoMosaic extends StatelessWidget {
     return _buildTile(url, context, 240, index);
   }
 
-  Widget _buildTile(String url, BuildContext context, double height, int index) {
+  Widget _buildTile(
+      String url, BuildContext context, double height, int index) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -73,8 +75,9 @@ class DishPhotoMosaic extends StatelessWidget {
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: CachedNetworkImage(
+        child: CanteenStatusImage(
           imageUrl: url,
+          offline: offline,
           fit: BoxFit.cover,
           errorWidget: (_, __, ___) => _buildPlaceholder(),
           placeholder: (_, __) => _buildPlaceholder(),

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../config/api_constants.dart';
 import '../models/canteen.dart';
 import '../models/canteen_home.dart';
@@ -10,6 +8,7 @@ import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_hero_recommendation.dart';
 import '../widgets/canteen/canteen_ranking_entry.dart';
 import '../widgets/canteen/canteen_feed_item.dart';
@@ -255,8 +254,9 @@ class _CanteenScreenState extends State<CanteenScreen> {
                               size: 26,
                               color: CanteenTheme.textTertiaryColor(isDark)),
                         )
-                      : CachedNetworkImage(
+                      : CanteenStatusImage(
                           imageUrl: ApiConstants.fullUrl(canteen.image),
+                          offline: canteen.isOffline,
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => Container(
                             color: CanteenTheme.surfaceMutedBg(isDark),
@@ -277,15 +277,32 @@ class _CanteenScreenState extends State<CanteenScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    canteen.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: CanteenTheme.textPrimaryColor(isDark),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          canteen.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: CanteenTheme.textPrimaryColor(isDark),
+                          ),
+                        ),
+                      ),
+                      if (canteen.isOffline)
+                        Text(
+                          '已下架',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF777777),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 5),
                   Row(
@@ -315,7 +332,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                       ),
                     ],
                   ),
-                  if (canteen.ratingCount > 0) ...[
+                  if (canteen.ratingCount > 0 && !canteen.isOffline) ...[
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -486,8 +503,9 @@ class _CanteenScreenState extends State<CanteenScreen> {
                             color: CanteenTheme.textTertiaryColor(isDark),
                           ),
                         )
-                      : CachedNetworkImage(
+                      : CanteenStatusImage(
                           imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                          offline: dish.isCanteenOffline,
                           width: double.infinity,
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => Container(

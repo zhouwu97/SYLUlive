@@ -255,16 +255,36 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final edu = context.read<EduProvider>();
     final schedule = context.read<CourseScheduleProvider>();
     final user = auth.user;
-    if (!auth.isLoggedIn || user == null || !edu.isBound) return;
+    if (!auth.isLoggedIn ||
+        user == null ||
+        !edu.isBound ||
+        _isFetchingCourses ||
+        _isImportingCourses) {
+      return;
+    }
+
+    // 恢复前台只做本地状态同步，不自动访问教务系统。教务课表是低频数据，
+    // 用户需要新数据时仍通过“从教务刷新”主动拉取，避免短暂切后台造成重复请求。
     schedule.setUserId(user.id.toString());
-    await schedule.loadCourses(forceRefresh: true);
+
     if (mounted) {
-      await _syncCourseReminders(schedule);
-      if (mounted) {
-        setState(() => _hasCache = schedule.courses.isNotEmpty);
+      final anchor = _pageAnchorDate(schedule);
+      if (!_weekStart.isAtSameMomentAs(anchor)) {
+        setState(() => _resetWeekPager(schedule, anchor));
       }
     }
+
+    await _syncCourseReminders(schedule);
+    if (mounted) {
+      setState(() {
+        _hasCache = _hasCache || schedule.courses.isNotEmpty;
+      });
+    }
   }
+
+  /// 供恢复策略回归测试触发与 AppResumeCoordinator 相同的本地同步路径。
+  @visibleForTesting
+  Future<void> refreshAfterResumeForTesting() => _refreshAfterResume();
 
   Future<void> _syncCourseReminders(CourseScheduleProvider sc) async {
     final requestId = ++_backgroundStatusRequestId;

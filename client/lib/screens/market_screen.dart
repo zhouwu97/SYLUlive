@@ -187,6 +187,9 @@ class _MarketScreenState extends State<MarketScreen> {
           _isSearching = false;
         });
       }
+      // 清除搜索后回到当前类型的普通 feed；尤其要覆盖“搜索中切类型”
+      // 这条此前未预加载类型专属 board 的路径。
+      unawaited(_refreshCurrent());
       return;
     }
 
@@ -276,11 +279,9 @@ class _MarketScreenState extends State<MarketScreen> {
     setState(() {
       _typeFilter = value;
     });
-    if (_searchQuery.isNotEmpty) {
-      _runSearch(_searchQuery);
-    } else {
-      unawaited(_refreshCurrent());
-    }
+    // 先准备当前类型的普通 feed；若仍在搜索，refreshCurrent 会在其后
+    // 重新提交同一关键词，保证清除搜索后不会落入未加载的空 board。
+    unawaited(_refreshCurrent());
   }
 
   List<Post> _applyLocalTypeFilter(List<Post> posts) {

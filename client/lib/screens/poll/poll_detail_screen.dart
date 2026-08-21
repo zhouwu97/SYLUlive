@@ -76,6 +76,10 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     super.dispose();
   }
 
+  /// 供回归测试触发与 RefreshIndicator 相同的完整刷新路径。
+  @visibleForTesting
+  Future<void> reloadForTesting() => _reload();
+
   Future<void> _reload() async {
     final existingPost = _post;
     if (existingPost != null) {
@@ -146,6 +150,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           _repliesLoading = true;
           _repliesError = null;
           _repliesRefreshError = null;
+          _loadingMoreReplies = false;
+          _repliesLoadMoreError = null;
           _repliesNextCursor = null;
           _repliesHasMore = false;
         }

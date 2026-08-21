@@ -419,13 +419,16 @@ void main() {
 
     expect(replyRequestCount, 1);
     expect(find.text('这是统一后的评论'), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('加载更多评论'), findsOneWidget);
     await tester.tap(find.text('加载更多评论'));
-    await tester.pump();
-    await loadMoreStarted.future;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(loadMoreStarted.isCompleted, isTrue);
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, 560));
-    await tester.pumpAndSettle();
+    final state = tester.state(find.byType(PollDetailScreen)) as dynamic;
+    unawaited(state.reloadForTesting());
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('这是统一后的评论'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);

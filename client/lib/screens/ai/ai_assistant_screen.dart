@@ -924,10 +924,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final updated =
           await DioCalendarActionSource(widget.dio).confirm(draft.id);
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
-      await _scheduleConfirmedCalendarReminder(updated);
+      final localReminderScheduled =
+          await _scheduleConfirmedCalendarReminder(updated);
       _replaceCalendarDraft(updated);
       await _persistPersonalHistory();
-      if (mounted) AppFeedback.success('日历操作已执行', context: context);
+      if (mounted) {
+        AppFeedback.info(
+          localReminderScheduled ? '日历操作已执行' : '提醒已保存，但当前设备未启用本地系统提醒',
+          context: context,
+        );
+      }
     } on CalendarActionException catch (error) {
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
       if (error.draft != null) _replaceCalendarDraft(error.draft!);
@@ -956,7 +962,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     }
   }
 
-  Future<void> _scheduleConfirmedCalendarReminder(
+  Future<bool> _scheduleConfirmedCalendarReminder(
     UserCalendarActionDraft draft,
   ) async {
     final event = draft.event;
@@ -964,12 +970,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     if (draft.actionType != 'calendar_reminder_create' ||
         event == null ||
         minutes == null) {
-      return;
+      return true;
     }
     final scheduledTime = event.startAt.subtract(Duration(minutes: minutes));
-    if (!scheduledTime.isAfter(DateTime.now())) return;
+    if (!scheduledTime.isAfter(DateTime.now())) return true;
     try {
-      await ReminderNotificationClient.instance.scheduleCalendarReminder(
+      return await ReminderNotificationClient.instance.scheduleCalendarReminder(
         id: calendarReminderNotificationId(event.id, minutes),
         title: event.title,
         body: event.location.isEmpty ? '日历事件即将开始' : event.location,
@@ -977,11 +983,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         payload: 'calendar_event:${event.id}:reminder:$minutes',
       );
     } catch (_) {
-      // 服务端日历操作已经成功；平台通知失败只保留在设备侧的可见降级。
+      // 服务端日历操作已经成功；平台通知失败通过明确的降级反馈告知用户。
+      return false;
     }
   }
 
   void _replaceCalendarDraft(UserCalendarActionDraft updated) {
+    _provider.replaceCalendarActionDraft(updated);
     setState(() {
       for (var index = 0; index < _personalMessages.length; index++) {
         final message = _personalMessages[index];

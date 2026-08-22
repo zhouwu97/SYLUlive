@@ -1339,8 +1339,10 @@ class MyApp extends StatelessWidget {
           create: (_) =>
               CampusCalendarProvider(CampusCalendarService(dio))..load(),
         ),
-        ChangeNotifierProvider(
+        ChangeNotifierProxyProvider<AuthProvider, UserCalendarProvider>(
           create: (_) => UserCalendarProvider(UserCalendarService(dio)),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id, auth.sessionGeneration),
         ),
         ChangeNotifierProxyProvider<AuthProvider, WaterModeratorProvider>(
           create: (_) => WaterModeratorProvider(dio),

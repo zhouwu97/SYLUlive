@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -58,6 +59,21 @@ type calendarActionDraftInput struct {
 	ReminderMinutesBefore *int    `json:"reminder_minutes_before"`
 }
 
+// CalendarActionDraftRequest 是校园 Agent 只提案、不执行写操作的最小输入。
+// 真正执行仍然只能通过用户确认接口完成。
+type CalendarActionDraftRequest struct {
+	ActionType            string  `json:"action_type"`
+	EventID               uint    `json:"event_id"`
+	Title                 *string `json:"title"`
+	Description           *string `json:"description"`
+	StartAt               *string `json:"start_at"`
+	EndAt                 *string `json:"end_at"`
+	AllDay                *bool   `json:"all_day"`
+	Location              *string `json:"location"`
+	Timezone              *string `json:"timezone"`
+	ReminderMinutesBefore *int    `json:"reminder_minutes_before"`
+}
+
 type calendarActionResponse struct {
 	ID              uint                      `json:"id"`
 	ActionType      string                    `json:"action_type"`
@@ -82,13 +98,15 @@ func (h *UserCalendarHandler) ListEvents(c *gin.Context) {
 		return
 	}
 	query := h.db.WithContext(c.Request.Context()).Where("user_id = ?", userID)
+	var fromTime *time.Time
+	var toTime *time.Time
 	if value := strings.TrimSpace(c.Query("from")); value != "" {
 		from, err := parseCalendarTime(value)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_calendar_range"})
 			return
 		}
-		query = query.Where("start_at >= ?", from)
+		fromTime = &from
 	}
 	if value := strings.TrimSpace(c.Query("to")); value != "" {
 		to, err := parseCalendarTime(value)
@@ -96,7 +114,18 @@ func (h *UserCalendarHandler) ListEvents(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_calendar_range"})
 			return
 		}
-		query = query.Where("start_at < ?", to)
+		toTime = &to
+	}
+	if fromTime != nil && toTime != nil {
+		if !toTime.After(*fromTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_calendar_range"})
+			return
+		}
+		query = query.Where("start_at < ? AND end_at > ?", *toTime, *fromTime)
+	} else if fromTime != nil {
+		query = query.Where("end_at > ?", *fromTime)
+	} else if toTime != nil {
+		query = query.Where("start_at < ?", *toTime)
 	}
 	var events []models.UserCalendarEvent
 	if err := query.Order("start_at ASC").Order("id ASC").Find(&events).Error; err != nil {
@@ -195,8 +224,16 @@ func (h *UserCalendarHandler) UpdateEvent(c *gin.Context) {
 		return
 	}
 	event.Version++
-	if err := h.db.Model(&event).Select("title", "description", "start_at", "end_at", "all_day", "location", "timezone", "version").Updates(&event).Error; err != nil {
+	result := h.db.Model(&models.UserCalendarEvent{}).
+		Where("id = ? AND user_id = ? AND version = ?", event.ID, userID, event.Version-1).
+		Select("title", "description", "start_at", "end_at", "all_day", "location", "timezone", "version").
+		Updates(&event)
+	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "calendar_write_failed"})
+		return
+	}
+	if result.RowsAffected != 1 {
+		c.JSON(http.StatusConflict, gin.H{"code": "calendar_event_version_conflict"})
 		return
 	}
 	c.JSON(http.StatusOK, event)
@@ -373,6 +410,45 @@ func (h *UserCalendarHandler) createCalendarActionDraft(
 	input calendarActionDraftInput,
 	forcedAction string,
 ) (models.UserCalendarActionDraft, bool, error) {
+	return h.createCalendarActionDraftWithMeta(
+		c.Request.Context(), userID, input, forcedAction,
+		strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+		strings.TrimSpace(c.GetHeader("X-Client-Request-ID")),
+	)
+}
+
+// CreateCalendarActionDraftForAgent 只创建待确认草稿，不执行任何日历写入。
+// 它供服务器校园 Agent 的 calendar.propose_action 使用，和 HTTP Action Draft
+// 共用同一套所有权、幂等、过期和审计逻辑。
+func (h *UserCalendarHandler) CreateCalendarActionDraftForAgent(
+	ctx context.Context,
+	userID uint,
+	input CalendarActionDraftRequest,
+	idempotencyKey string,
+) (models.UserCalendarActionDraft, bool, error) {
+	return h.createCalendarActionDraftWithMeta(
+		ctx,
+		userID,
+		calendarActionDraftInput{
+			ActionType: input.ActionType, EventID: input.EventID, Title: input.Title,
+			Description: input.Description, StartAt: input.StartAt, EndAt: input.EndAt,
+			AllDay: input.AllDay, Location: input.Location, Timezone: input.Timezone,
+			ReminderMinutesBefore: input.ReminderMinutesBefore,
+		},
+		"",
+		strings.TrimSpace(idempotencyKey),
+		"campus-agent",
+	)
+}
+
+func (h *UserCalendarHandler) createCalendarActionDraftWithMeta(
+	ctx context.Context,
+	userID uint,
+	input calendarActionDraftInput,
+	forcedAction string,
+	idempotencyKey string,
+	clientRequestID string,
+) (models.UserCalendarActionDraft, bool, error) {
 	actionType := strings.TrimSpace(input.ActionType)
 	if actionType == "" {
 		actionType = forcedAction
@@ -396,7 +472,7 @@ func (h *UserCalendarHandler) createCalendarActionDraft(
 			return models.UserCalendarActionDraft{}, false, errors.New("calendar_event_not_found")
 		}
 		var event models.UserCalendarEvent
-		if err := h.db.Where("id = ? AND user_id = ?", input.EventID, userID).First(&event).Error; err != nil {
+		if err := h.db.WithContext(ctx).Where("id = ? AND user_id = ?", input.EventID, userID).First(&event).Error; err != nil {
 			return models.UserCalendarActionDraft{}, false, errors.New("calendar_event_not_found")
 		}
 		target = &event
@@ -409,7 +485,6 @@ func (h *UserCalendarHandler) createCalendarActionDraft(
 		(input.ReminderMinutesBefore == nil || *input.ReminderMinutesBefore < 0 || *input.ReminderMinutesBefore > 7*24*60) {
 		return models.UserCalendarActionDraft{}, false, errors.New("invalid_calendar_reminder")
 	}
-	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if idempotencyKey == "" {
 		idempotencyKey = uuid.NewString()
 	}
@@ -420,7 +495,7 @@ func (h *UserCalendarHandler) createCalendarActionDraft(
 	now := time.Now().UTC()
 	var draft models.UserCalendarActionDraft
 	created := false
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ? AND idempotency_key = ?", userID, idempotencyKey).First(&draft).Error; err == nil {
 			if draft.PayloadHash != payloadHash {
 				return errors.New("calendar_action_idempotency_conflict")
@@ -442,7 +517,7 @@ func (h *UserCalendarHandler) createCalendarActionDraft(
 		}
 		return tx.Create(&models.UserCalendarActionAudit{
 			DraftID: draft.ID, UserID: userID, Action: "draft_created",
-			ClientRequestID: strings.TrimSpace(c.GetHeader("X-Client-Request-ID")), Result: draft.Status, CreatedAt: now,
+			ClientRequestID: clientRequestID, Result: draft.Status, CreatedAt: now,
 		}).Error
 	})
 	return draft, created, err

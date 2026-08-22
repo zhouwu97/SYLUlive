@@ -87,15 +87,13 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 		{
 			ID: "calendar.event_manage", Version: "1", Lane: "personal", Kind: "action",
 			Description: "创建、修改或删除个人日历事件", Available: true,
-			ToolNames:            []string{"draft_calendar_action"},
-			PermissionScopes:     []string{"calendar_write"},
+			ToolNames:            []string{"calendar.propose_action", "draft_calendar_action"},
 			RequiresConfirmation: true,
 		},
 		{
 			ID: "calendar.reminder_manage", Version: "1", Lane: "personal", Kind: "action",
 			Description: "为个人日历事件设置提醒", Available: true,
-			ToolNames:            []string{"draft_calendar_action"},
-			PermissionScopes:     []string{"calendar_write"},
+			ToolNames:            []string{"calendar.propose_action", "draft_calendar_action"},
 			RequiresConfirmation: true,
 		},
 		{

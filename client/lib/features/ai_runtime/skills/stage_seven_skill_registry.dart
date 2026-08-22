@@ -9,6 +9,7 @@ import 'physical_overview_skill.dart';
 import 'today_schedule_skill.dart';
 import 'week_schedule_skill.dart';
 import 'competition_plan_action_skill.dart';
+import 'calendar_action_skill.dart';
 
 PersonalSkillRegistry buildStageSevenSkillRegistry({
   required CompetitionSearchSource competitionSearchSource,
@@ -17,8 +18,9 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
       competitionCapabilityProfileSource,
   required CompetitionMatchExplanationSource competitionMatchExplanationSource,
   required CompetitionPlanActionSource competitionPlanActionSource,
+  CalendarActionSource? calendarActionSource,
 }) {
-  return PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+  final skills = <PersonalSkill<dynamic, dynamic>>[
     TodayScheduleSkill(),
     WeekScheduleSkill(),
     AcademicOverviewSkill(),
@@ -33,5 +35,7 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
     AcademicFailureRiskSkill(),
     GraduationReadinessSkill(ruleProvider: graduationRuleProvider),
     FitnessWeeklyPlanSkill(),
-  ]);
+    if (calendarActionSource != null) CalendarActionSkill(calendarActionSource),
+  ];
+  return PersonalSkillRegistry(skills);
 }

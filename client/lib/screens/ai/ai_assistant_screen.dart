@@ -19,6 +19,7 @@ import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
 import '../../features/ai_runtime/skills/competition_advisor_skills.dart';
 import '../../features/ai_runtime/skills/competition_plan_action_skill.dart';
+import '../../features/ai_runtime/skills/calendar_action_skill.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
 import '../../features/ai_runtime/skills/personal_skill.dart';
 import '../../features/ai_runtime/skills/skill_execution_context.dart';
@@ -33,6 +34,8 @@ import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../models/ai_capabilities.dart';
 import '../../models/ai_chat_message.dart';
 import '../../models/competition_action_draft.dart';
+import '../../models/user_calendar.dart';
+import '../../platform/contracts/reminder_notification_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
@@ -593,6 +596,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           widget.dio,
         ),
         competitionPlanActionSource: DioCompetitionPlanActionSource(widget.dio),
+        calendarActionSource: DioCalendarActionSource(widget.dio),
         graduationRuleProvider: const _NoVerifiedRuleProvider(),
       );
       final loop = LocalToolLoop(
@@ -655,6 +659,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           createdAt: DateTime.now(),
           actionDrafts: outcome.actionArtifacts
               .whereType<CompetitionPlanActionDraft>()
+              .toList(growable: false),
+          calendarActionDrafts: outcome.actionArtifacts
+              .whereType<UserCalendarActionDraft>()
               .toList(growable: false),
         );
         setState(() {
@@ -882,6 +889,132 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     }
   }
 
+  Future<void> _confirmCalendarDraft(UserCalendarActionDraft draft) async {
+    if (!draft.isPending || draft.isExpired) return;
+    final actionLabel = switch (draft.actionType) {
+      'calendar_event_update' => '更新日历事件',
+      'calendar_event_delete' => '删除日历事件',
+      'calendar_reminder_create' => '添加日历提醒',
+      _ => '创建日历事件',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('确认$actionLabel？'),
+        content: Text(
+          draft.actionType == 'calendar_event_delete'
+              ? '确认后将删除“${draft.title}”，此操作不会自动恢复。'
+              : '确认后才会把“${draft.title}”写入你的个人日历。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('确认$actionLabel'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final requestEpoch = _personalSessionEpoch.capture();
+    try {
+      final updated =
+          await DioCalendarActionSource(widget.dio).confirm(draft.id);
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      await _scheduleConfirmedCalendarReminder(updated);
+      _replaceCalendarDraft(updated);
+      await _persistPersonalHistory();
+      if (mounted) AppFeedback.success('日历操作已执行', context: context);
+    } on CalendarActionException catch (error) {
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (error.draft != null) _replaceCalendarDraft(error.draft!);
+      if (mounted) AppFeedback.error(error.message, context: context);
+    } catch (_) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
+        AppFeedback.error('日历操作失败，请稍后重试', context: context);
+      }
+    }
+  }
+
+  Future<void> _cancelCalendarDraft(UserCalendarActionDraft draft) async {
+    if (!draft.isPending || draft.isExpired) return;
+    final requestEpoch = _personalSessionEpoch.capture();
+    try {
+      final updated =
+          await DioCalendarActionSource(widget.dio).cancel(draft.id);
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      _replaceCalendarDraft(updated);
+      await _persistPersonalHistory();
+      if (mounted) AppFeedback.success('日历草稿已取消', context: context);
+    } on CalendarActionException catch (error) {
+      if (mounted) AppFeedback.error(error.message, context: context);
+    } catch (_) {
+      if (mounted) AppFeedback.error('取消日历草稿失败，请稍后重试', context: context);
+    }
+  }
+
+  Future<void> _scheduleConfirmedCalendarReminder(
+    UserCalendarActionDraft draft,
+  ) async {
+    final event = draft.event;
+    final minutes = draft.reminderMinutesBefore;
+    if (draft.actionType != 'calendar_reminder_create' ||
+        event == null ||
+        minutes == null) {
+      return;
+    }
+    final scheduledTime = event.startAt.subtract(Duration(minutes: minutes));
+    if (!scheduledTime.isAfter(DateTime.now())) return;
+    try {
+      await ReminderNotificationClient.instance.scheduleCalendarReminder(
+        id: calendarReminderNotificationId(event.id, minutes),
+        title: event.title,
+        body: event.location.isEmpty ? '日历事件即将开始' : event.location,
+        scheduledTime: scheduledTime,
+        payload: 'calendar_event:${event.id}:reminder:$minutes',
+      );
+    } catch (_) {
+      // 服务端日历操作已经成功；平台通知失败只保留在设备侧的可见降级。
+    }
+  }
+
+  void _replaceCalendarDraft(UserCalendarActionDraft updated) {
+    setState(() {
+      for (var index = 0; index < _personalMessages.length; index++) {
+        final message = _personalMessages[index];
+        if (!message.calendarActionDrafts
+            .any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalMessages[index] = message.copyWith(
+          calendarActionDrafts: message.calendarActionDrafts
+              .map((item) => item.id == updated.id ? updated : item)
+              .toList(growable: false),
+        );
+      }
+      for (var index = 0;
+          index < _personalConversationEntries.length;
+          index++) {
+        final entry = _personalConversationEntries[index];
+        if (!entry.message.calendarActionDrafts
+            .any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalConversationEntries[index] = PersonalConversationEntry(
+          message: entry.message.copyWith(
+            calendarActionDrafts: entry.message.calendarActionDrafts
+                .map((item) => item.id == updated.id ? updated : item)
+                .toList(growable: false),
+          ),
+          evidence: entry.evidence,
+        );
+      }
+    });
+  }
+
   void _replaceCompetitionDraft(CompetitionPlanActionDraft updated) {
     setState(() {
       for (var index = 0; index < _personalMessages.length; index++) {
@@ -1048,6 +1181,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       onPressed: () => _openAiSetting('data'),
                       icon: const Icon(Icons.refresh_rounded),
                     ),
+                  if (capabilities.capabilities.isNotEmpty)
+                    IconButton(
+                      tooltip: '能力范围',
+                      onPressed: () => _showCapabilitySheet(capabilities),
+                      icon: const Icon(Icons.hub_outlined),
+                    ),
                   AppActionPopupMenu(
                     icon: const Icon(Icons.settings_outlined),
                     entries: const <Object>[
@@ -1176,6 +1315,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                   for (final message in provider.messages) ...[
                                     AiMessageCard(
                                       message: message,
+                                      onConfirmCalendarDraft:
+                                          _confirmCalendarDraft,
+                                      onCancelCalendarDraft:
+                                          _cancelCalendarDraft,
                                       loadSourceContent:
                                           widget.service.getSourceContent,
                                       onRetrySources: () => unawaited(
@@ -1251,6 +1394,57 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           },
         ),
       ),
+    );
+  }
+
+  Future<void> _showCapabilitySheet(AiCapabilities capabilities) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          minChildSize: 0.42,
+          maxChildSize: 0.92,
+          builder: (_, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              Text('校园 Agent 能力范围',
+                  style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text(
+                '只读能力可读取公开或已授权数据；日历写入始终先生成草稿并等待确认。',
+                style: TextStyle(color: colors.onSurfaceVariant, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              for (final capability in capabilities.capabilities)
+                Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      capability.requiresConfirmation
+                          ? Icons.fact_check_outlined
+                          : Icons.visibility_outlined,
+                      color: capability.available
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                    ),
+                    title: Text(capability.description),
+                    subtitle: Text(
+                      '${capability.id} · ${capability.available ? '可用' : '暂不可用'}'
+                      '${capability.requiresConfirmation ? ' · 需要确认' : ''}',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -10,8 +10,9 @@ import '../contracts/reminder_notification_client.dart';
 class AndroidReminderNotificationClient implements ReminderNotificationClient {
   static const String _courseChannelId = 'course_reminders_silent';
   static const String _courseChannelName = '课程提醒';
-  
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
 
   @override
   Future<void> initializeCourseReminders() async {
@@ -31,7 +32,8 @@ class AndroidReminderNotificationClient implements ReminderNotificationClient {
 
     await _plugin.initialize(settings);
     await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
             _courseChannelId,
@@ -52,8 +54,10 @@ class AndroidReminderNotificationClient implements ReminderNotificationClient {
 
       if (androidPlugin == null) return false;
 
-      final bool? notiGranted = await androidPlugin.requestNotificationsPermission();
-      final bool? alarmGranted = await androidPlugin.requestExactAlarmsPermission();
+      final bool? notiGranted =
+          await androidPlugin.requestNotificationsPermission();
+      final bool? alarmGranted =
+          await androidPlugin.requestExactAlarmsPermission();
 
       debugPrint('通知权限: $notiGranted, 精确闹钟权限: $alarmGranted');
       return (notiGranted ?? false) && (alarmGranted ?? false);
@@ -84,10 +88,10 @@ class AndroidReminderNotificationClient implements ReminderNotificationClient {
     required bool exactAllowWhileIdle,
   }) async {
     try {
-      final mode = exactAllowWhileIdle 
-          ? AndroidScheduleMode.exactAllowWhileIdle 
+      final mode = exactAllowWhileIdle
+          ? AndroidScheduleMode.exactAllowWhileIdle
           : AndroidScheduleMode.inexactAllowWhileIdle;
-          
+
       await _plugin.zonedSchedule(
         id,
         title,
@@ -108,6 +112,39 @@ class AndroidReminderNotificationClient implements ReminderNotificationClient {
 
   @override
   Future<void> cancelCourseReminder(int id) async {
+    await _plugin.cancel(id);
+  }
+
+  @override
+  Future<bool> scheduleCalendarReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String payload,
+  }) async {
+    try {
+      await initializeCourseReminders();
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        _calendarNotificationDetails(),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('日历提醒排程失败: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<void> cancelCalendarReminder(int id) async {
     await _plugin.cancel(id);
   }
 
@@ -158,13 +195,40 @@ class AndroidReminderNotificationClient implements ReminderNotificationClient {
         usesChronometer: true,
         chronometerCountDown: true,
       ),
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBanner: true,
         presentList: true,
         presentSound: false,
         interruptionLevel: InterruptionLevel.active,
         threadIdentifier: 'course_reminders',
+      ),
+    );
+  }
+
+  NotificationDetails _calendarNotificationDetails() {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        _courseChannelId,
+        _courseChannelName,
+        channelDescription: '个人日历提醒',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        playSound: false,
+        enableVibration: false,
+        silent: true,
+        autoCancel: true,
+        onlyAlertOnce: true,
+        category: AndroidNotificationCategory.reminder,
+        visibility: NotificationVisibility.public,
+        subText: '日历提醒',
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBanner: true,
+        presentList: true,
+        presentSound: false,
+        threadIdentifier: 'calendar_reminders',
       ),
     );
   }

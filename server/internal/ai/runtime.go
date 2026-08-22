@@ -917,7 +917,7 @@ func (r *Runtime) settleBudget(runID string, usage ProviderEvent, latency time.D
 			return err
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.AIUsageRecord{
-			RunID: runID, UserHash: r.hashUserID(run.UserID), Provider: run.Provider, Model: run.Model,
+			RunID: runID, UserHash: r.hashUserID(run.UserID), Provider: run.Provider, Model: run.Model, Purpose: "campus_agent",
 			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheHitTokens: usage.CacheHitTokens,
 			CostMicroYuan: actual, LatencyMilliseconds: latency.Milliseconds(), ErrorClass: errorClass,
 		}).Error

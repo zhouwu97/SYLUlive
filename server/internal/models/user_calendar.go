@@ -74,27 +74,30 @@ func (UserCalendarReminder) TableName() string { return "user_calendar_reminders
 
 // UserCalendarActionDraft 将“模型提出”和“用户确认”分离，避免模型直接写入日历。
 type UserCalendarActionDraft struct {
-	ID              uint       `gorm:"primaryKey" json:"id"`
-	UserID          uint       `gorm:"not null;index;uniqueIndex:idx_user_calendar_action_drafts_user_key,priority:1" json:"-"`
-	ActionType      string     `gorm:"size:64;not null;index" json:"action_type"`
-	Status          string     `gorm:"size:24;not null;index" json:"status"`
-	Title           string     `gorm:"size:160;not null" json:"title"`
-	Description     string     `gorm:"type:text" json:"description"`
-	StartAt         time.Time  `gorm:"not null" json:"start_at"`
-	EndAt           time.Time  `gorm:"not null" json:"end_at"`
-	AllDay          bool       `gorm:"not null;default:false" json:"all_day"`
-	Location        string     `gorm:"size:200" json:"location"`
-	Timezone        string     `gorm:"size:64;not null;default:'Asia/Shanghai'" json:"timezone"`
-	PayloadHash     string     `gorm:"size:64;not null" json:"-"`
-	IdempotencyKey  string     `gorm:"size:100;not null;uniqueIndex:idx_user_calendar_action_drafts_user_key,priority:2" json:"-"`
-	CalendarEventID *uint      `gorm:"index" json:"calendar_event_id,omitempty"`
-	ExpiresAt       time.Time  `gorm:"not null;index" json:"expires_at"`
-	ConfirmedAt     *time.Time `json:"confirmed_at,omitempty"`
-	ExecutedAt      *time.Time `json:"executed_at,omitempty"`
-	CancelledAt     *time.Time `json:"cancelled_at,omitempty"`
-	FailureReason   string     `gorm:"size:200" json:"failure_reason,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID                 uint       `gorm:"primaryKey" json:"id"`
+	UserID             uint       `gorm:"not null;index;uniqueIndex:idx_user_calendar_action_drafts_user_key,priority:1" json:"-"`
+	ActionType         string     `gorm:"size:64;not null;index" json:"action_type"`
+	Status             string     `gorm:"size:24;not null;index" json:"status"`
+	Title              string     `gorm:"size:160;not null" json:"title"`
+	Description        string     `gorm:"type:text" json:"description"`
+	StartAt            time.Time  `gorm:"not null" json:"start_at"`
+	EndAt              time.Time  `gorm:"not null" json:"end_at"`
+	AllDay             bool       `gorm:"not null;default:false" json:"all_day"`
+	Location           string     `gorm:"size:200" json:"location"`
+	Timezone           string     `gorm:"size:64;not null;default:'Asia/Shanghai'" json:"timezone"`
+	PayloadHash        string     `gorm:"size:64;not null" json:"-"`
+	IdempotencyKey     string     `gorm:"size:100;not null;uniqueIndex:idx_user_calendar_action_drafts_user_key,priority:2" json:"-"`
+	TargetEventID      *uint      `gorm:"index" json:"target_event_id,omitempty"`
+	TargetEventVersion int64      `gorm:"not null;default:0" json:"-"`
+	ReminderMinutes    *int       `json:"reminder_minutes_before,omitempty"`
+	CalendarEventID    *uint      `gorm:"index" json:"calendar_event_id,omitempty"`
+	ExpiresAt          time.Time  `gorm:"not null;index" json:"expires_at"`
+	ConfirmedAt        *time.Time `json:"confirmed_at,omitempty"`
+	ExecutedAt         *time.Time `json:"executed_at,omitempty"`
+	CancelledAt        *time.Time `json:"cancelled_at,omitempty"`
+	FailureReason      string     `gorm:"size:200" json:"failure_reason,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 func (UserCalendarActionDraft) TableName() string { return "user_calendar_action_drafts" }

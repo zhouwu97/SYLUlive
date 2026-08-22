@@ -283,10 +283,14 @@ class DeviceToolRegistry {
       PersonalDataType.erke => 30 * 60,
     };
     final seconds = requested.toInt().clamp(ceiling, 24 * 60 * 60);
-    return automationGateway.ensureFresh(
+    final ensured = await automationGateway.ensureFresh(
       type,
       maxAge: Duration(seconds: seconds),
     );
+    if (!ensured.after.isFreshAt(DateTime.now(), Duration(seconds: seconds))) {
+      throw const DeviceToolExecutionException('device_refresh_not_fresh');
+    }
+    return ensured;
   }
 
   static bool _isEnsureFresh(DeviceToolJob job) =>

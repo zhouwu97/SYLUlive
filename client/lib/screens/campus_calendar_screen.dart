@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../models/campus_calendar.dart';
 import '../models/exam_schedule.dart';
+import '../models/user_calendar.dart';
 import '../providers/campus_calendar_provider.dart';
+import '../providers/user_calendar_provider.dart';
 import '../services/exam_schedule_repository.dart';
+import '../services/app_resume_coordinator.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class CampusCalendarScreen extends StatefulWidget {
@@ -29,6 +32,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   bool _isMonthPagerScrolling = false;
   bool? _pendingMonthPagerScrolling;
   bool _monthPagerScrollUpdateScheduled = false;
+  VoidCallback? _unregisterCalendarRefresh;
 
   @override
   void initState() {
@@ -36,10 +40,23 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     _monthBase = _displayMonth;
     _monthPageController = PageController(initialPage: _monthCenterPage);
     _loadImportedExams();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = _optionalUserCalendar(context, listen: false);
+      provider?.load();
+      if (provider != null) {
+        _unregisterCalendarRefresh =
+            AppResumeCoordinator.instance.registerVisibleRefresh(
+          provider.load,
+          isVisible: () => mounted,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _unregisterCalendarRefresh?.call();
     _monthPageController.dispose();
     super.dispose();
   }
@@ -153,6 +170,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   }
 
   Widget _buildCalendar(CampusCalendar calendar, bool isDark) {
+    final userCalendar = _optionalUserCalendar(context, listen: true);
     final selectedInfo = calendar.dayInfo(_selectedDate);
     final selectedExams = _examsOn(_selectedDate, _importedExams);
 
@@ -177,12 +195,30 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
               key: ValueKey(formatCalendarDate(selectedInfo.date)),
               info: selectedInfo,
               exams: selectedExams,
+              personalEvents:
+                  (userCalendar?.events ?? const <UserCalendarEvent>[])
+                      .where((event) =>
+                          sameDay(event.startAt.toLocal(), selectedInfo.date))
+                      .toList(growable: false),
               isDark: isDark,
             ),
           ),
         ],
       ),
     );
+  }
+
+  UserCalendarProvider? _optionalUserCalendar(
+    BuildContext context, {
+    required bool listen,
+  }) {
+    try {
+      return Provider.of<UserCalendarProvider>(context, listen: listen);
+    } on ProviderNotFoundException {
+      // 保留校历页在独立测试/嵌入场景下的原有可用性；正式 App 启动时由
+      // app_bootstrap 注入个人日历 Provider。
+      return null;
+    }
   }
 
   Widget _buildMonthPager(CampusCalendar calendar, bool isDark) =>
@@ -1184,11 +1220,13 @@ class _DayDetailCard extends StatelessWidget {
     super.key,
     required this.info,
     required this.exams,
+    required this.personalEvents,
     required this.isDark,
   });
 
   final CampusDayInfo info;
   final List<ExamModel> exams;
+  final List<UserCalendarEvent> personalEvents;
   final bool isDark;
 
   @override
@@ -1196,7 +1234,17 @@ class _DayDetailCard extends StatelessWidget {
     final muted = isDark ? Colors.white60 : _CalendarPalette.muted;
     final titleColor = isDark ? Colors.white : _CalendarPalette.ink;
     final status = _dayStatus(info, exams);
-    final eventLines = _eventLines(info, exams);
+    final eventLines = <_DayDetailLine>[
+      ..._eventLines(info, exams),
+      ...personalEvents.map(
+        (event) => _DayDetailLine(
+          title: event.title,
+          description: event.location.isEmpty ? '我的日历' : event.location,
+          icon: Icons.event_note_rounded,
+          color: _CalendarPalette.primary,
+        ),
+      ),
+    ];
 
     return Container(
       padding: const EdgeInsets.all(16),

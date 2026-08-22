@@ -38,11 +38,11 @@ void main() {
     expect(find.textContaining('chunk:18'), findsNothing);
     expect(find.textContaining('[1]'), findsAtLeastNWidgets(1));
     expect(find.textContaining('[1][2]'), findsOneWidget);
-    expect(tester.widget<Text>(find.text(title)).maxLines, 2);
+    expect(tester.widget<Text>(find.text(title).first).maxLines, 1);
 
     await tester.tap(find.text(title));
     await tester.pumpAndSettle();
-    expect(tester.widget<Text>(find.text(title)).maxLines, isNull);
+    expect(tester.widget<Text>(find.text(title).last).maxLines, isNull);
     expect(find.text('发布部门'), findsOneWidget);
     expect(find.text('学生处'), findsOneWidget);
     expect(find.text('文档状态'), findsOneWidget);

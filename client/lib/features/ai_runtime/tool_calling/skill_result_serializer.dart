@@ -11,6 +11,7 @@ import '../skills/deterministic_skills.dart';
 import '../skills/personal_skill.dart';
 import '../skills/physical_overview_skill.dart';
 import '../skills/schedule_skill_models.dart';
+import '../../../models/user_calendar.dart';
 
 class SkillResultSerializer {
   const SkillResultSerializer();
@@ -220,6 +221,28 @@ class SkillResultSerializer {
             'warnings': const <String>[
               '这是待确认草稿，确认时服务端会重新校验',
               '不会自动报名，也不代表学校确认参赛资格或政策收益',
+            ],
+          },
+        UserCalendarActionDraft output => <String, dynamic>{
+            'draft_id': output.id,
+            'action_type': output.actionType,
+            'status': output.status,
+            'title': output.title,
+            'description': output.description,
+            'start_at': output.startAt.toUtc().toIso8601String(),
+            'end_at': output.endAt.toUtc().toIso8601String(),
+            'all_day': output.allDay,
+            'location': output.location,
+            'timezone': output.timezone,
+            if (output.targetEventId != null)
+              'target_event_id': output.targetEventId,
+            if (output.reminderMinutesBefore != null)
+              'reminder_minutes_before': output.reminderMinutesBefore,
+            'expires_at': output.expiresAt.toUtc().toIso8601String(),
+            'confirmation_required': true,
+            'warnings': const <String>[
+              '这是待确认草稿，确认后服务端才会执行日历操作',
+              '删除和加提醒同样需要用户确认',
             ],
           },
         AcademicGpaOutput output => <String, dynamic>{

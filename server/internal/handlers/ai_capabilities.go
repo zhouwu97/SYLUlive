@@ -32,6 +32,7 @@ type AICapabilitiesHandler struct {
 	externalMCPConfigured bool
 	externalMCPHealth     externalMCPHealthReader
 	toolRegistry          *ai.ToolRegistry
+	capabilityRegistry    *ai.AgentCapabilityRegistry
 }
 
 type externalMCPHealthReader interface {
@@ -47,6 +48,7 @@ type AICapabilitiesOptions struct {
 	ExternalMCPConfigured bool
 	ExternalMCPHealth     externalMCPHealthReader
 	ToolRegistry          *ai.ToolRegistry
+	CapabilityRegistry    *ai.AgentCapabilityRegistry
 }
 
 func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
@@ -73,6 +75,7 @@ func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *A
 		handler.externalMCPConfigured = options[0].ExternalMCPConfigured
 		handler.externalMCPHealth = options[0].ExternalMCPHealth
 		handler.toolRegistry = options[0].ToolRegistry
+		handler.capabilityRegistry = options[0].CapabilityRegistry
 	}
 	return handler
 }
@@ -107,6 +110,15 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	}
 	academicAnalysisAvailable := accessAllowed && h.toolRegistry != nil && h.toolRegistry.HasTool("academic.get_risk_analysis")
 
+	capabilities := []ai.AgentCapability{}
+	if h.capabilityRegistry != nil {
+		capabilities = h.capabilityRegistry.Public()
+		if !accessAllowed {
+			for index := range capabilities {
+				capabilities[index].Available = false
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":            h.enabled,
 		"access_allowed":     accessAllowed,
@@ -131,5 +143,6 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 			"unlimited":      unlimited,
 		},
 		"max_message_chars": h.maxMessageChars,
+		"capabilities":      capabilities,
 	})
 }

@@ -64,6 +64,16 @@ func currentToolCallContext(ctx context.Context) (toolCallContext, bool) {
 	return value, ok && value.RunID != "" && value.CallID != "" && value.UserID != 0
 }
 
+// ToolCallRunID 返回当前受控 Tool 执行上下文的 Run ID。
+// 只有 ToolRegistry 注入的上下文才会返回非空值，普通调用不会伪造作用域。
+func ToolCallRunID(ctx context.Context) string {
+	call, ok := currentToolCallContext(ctx)
+	if !ok {
+		return ""
+	}
+	return call.RunID
+}
+
 type ToolRegistry struct {
 	db               *gorm.DB
 	tools            map[string]PureReadTool

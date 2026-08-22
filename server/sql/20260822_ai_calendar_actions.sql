@@ -47,9 +47,12 @@ CREATE TABLE IF NOT EXISTS user_calendar_reminders (
     created_by VARCHAR(24) NOT NULL DEFAULT 'user',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT uq_user_calendar_reminders_event_offset UNIQUE (event_id, minutes_before)
+    deleted_at TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_reminders_event_offset_live
+    ON user_calendar_reminders (event_id, minutes_before)
+    WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS user_calendar_action_drafts (
     id BIGSERIAL PRIMARY KEY,

@@ -30,6 +30,7 @@ import 'providers/water_section_provider.dart';
 import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
+import 'providers/user_calendar_provider.dart';
 import 'models/user.dart';
 import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
@@ -57,6 +58,7 @@ import 'services/retry_interceptor.dart';
 import 'services/app_resume_coordinator.dart';
 import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
+import 'services/user_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
@@ -1336,6 +1338,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) =>
               CampusCalendarProvider(CampusCalendarService(dio))..load(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => UserCalendarProvider(UserCalendarService(dio)),
         ),
         ChangeNotifierProxyProvider<AuthProvider, WaterModeratorProvider>(
           create: (_) => WaterModeratorProvider(dio),

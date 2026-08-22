@@ -61,8 +61,8 @@ func (UserCalendarEvent) TableName() string { return "user_calendar_events" }
 type UserCalendarReminder struct {
 	ID            uint           `gorm:"primaryKey" json:"id"`
 	UserID        uint           `gorm:"not null;index" json:"user_id"`
-	EventID       uint           `gorm:"not null;uniqueIndex:idx_user_calendar_reminders_event_offset" json:"event_id"`
-	MinutesBefore int            `gorm:"not null;uniqueIndex:idx_user_calendar_reminders_event_offset" json:"minutes_before"`
+	EventID       uint           `gorm:"not null;index:idx_user_calendar_reminders_event_offset,priority:1" json:"event_id"`
+	MinutesBefore int            `gorm:"not null;index:idx_user_calendar_reminders_event_offset,priority:2" json:"minutes_before"`
 	Version       int64          `gorm:"not null;default:1" json:"version"`
 	CreatedBy     string         `gorm:"size:24;not null;default:'user'" json:"created_by"`
 	CreatedAt     time.Time      `json:"created_at"`

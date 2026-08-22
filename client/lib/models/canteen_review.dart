@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// 店铺五维评价的客户端模型与评分常量。
 class CanteenReviewDimensions {
   final int taste;
@@ -85,6 +87,15 @@ class CanteenReviewEvent {
   final int helpfulCount;
   final int unhelpfulCount;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final List<String> images;
+  final List<String> tags;
+  final List<String> recommendedDishes;
+  final String source;
+  final CanteenReviewCanteen? canteen;
+  final bool canEdit;
+  final bool canDelete;
+  final int? legacyRatingId;
 
   const CanteenReviewEvent({
     required this.id,
@@ -102,6 +113,15 @@ class CanteenReviewEvent {
     this.helpfulCount = 0,
     this.unhelpfulCount = 0,
     required this.createdAt,
+    this.updatedAt,
+    this.images = const [],
+    this.tags = const [],
+    this.recommendedDishes = const [],
+    this.source = 'v2',
+    this.canteen,
+    this.canEdit = false,
+    this.canDelete = false,
+    this.legacyRatingId,
   });
 
   factory CanteenReviewEvent.fromJson(Map<String, dynamic> json) {
@@ -127,8 +147,64 @@ class CanteenReviewEvent {
       helpfulCount: _int(json['helpful_count']),
       unhelpfulCount: _int(json['unhelpful_count']),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
+      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? ''),
+      images: _stringList(json['images']),
+      tags: _stringList(json['tags']),
+      recommendedDishes: _recommendedDishNames(json['recommended_dishes']),
+      source: json['source']?.toString() ??
+          json['review_source']?.toString() ??
+          'v2',
+      canteen: json['canteen'] is Map
+          ? CanteenReviewCanteen.fromJson(
+              Map<String, dynamic>.from(json['canteen'] as Map),
+            )
+          : null,
+      canEdit: json['can_edit'] == true,
+      canDelete: json['can_delete'] == true,
+      legacyRatingId: json['legacy_rating_id'] == null
+          ? null
+          : _int(json['legacy_rating_id']),
     );
   }
+}
+
+class CanteenReviewCanteen {
+  final int id;
+  final String name;
+  final String image;
+  final String operatingStatus;
+  final bool isOffline;
+
+  const CanteenReviewCanteen({
+    required this.id,
+    required this.name,
+    required this.image,
+    required this.operatingStatus,
+    required this.isOffline,
+  });
+
+  factory CanteenReviewCanteen.fromJson(Map<String, dynamic> json) {
+    return CanteenReviewCanteen(
+      id: _int(json['id']),
+      name: json['name']?.toString() ?? '',
+      image: json['image']?.toString() ?? '',
+      operatingStatus: json['operating_status']?.toString() ?? 'active',
+      isOffline: json['is_offline'] == true ||
+          json['operating_status']?.toString() == 'offline',
+    );
+  }
+}
+
+class CanteenReviewPage {
+  final List<CanteenReviewEvent> items;
+  final String? nextCursor;
+  final bool hasMore;
+
+  const CanteenReviewPage({
+    required this.items,
+    this.nextCursor,
+    this.hasMore = false,
+  });
 }
 
 class CanteenDishSuggestion {
@@ -160,3 +236,35 @@ int _int(dynamic value) =>
     value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 double _double(dynamic value) =>
     value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+List<String> _stringList(dynamic value) {
+  if (value is List) {
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+  final raw = value?.toString().trim() ?? '';
+  if (raw.isEmpty) return const [];
+  try {
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false)
+        : const [];
+  } catch (_) {
+    return const [];
+  }
+}
+
+List<String> _recommendedDishNames(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) =>
+          item is Map ? item['name']?.toString() ?? '' : item.toString())
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}

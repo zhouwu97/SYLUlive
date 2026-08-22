@@ -20,6 +20,8 @@ import '../widgets/rating_detail/rating_report_sheet.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import 'canteen_dish_list_screen.dart';
 import 'canteen_review_editor_screen.dart';
+import 'canteen_review_history_screen.dart';
+import '../utils/app_feedback.dart';
 
 /// 食堂详情页：Hero + 信息区 + 大家都在吃 + 评价区 + 底部写评价。
 ///
@@ -363,6 +365,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     latestReviewId: _latestReviewId,
                     onEditLatestReview: _openEditLatestReviewEditor,
                     onReport: _reportReview,
+                    onDelete: _deleteReview,
+                    onOpenHistory: _openOwnReviewHistory,
                   ),
                 ],
               ),
@@ -459,6 +463,72 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         return false;
       },
     );
+  }
+
+  Future<bool> _deleteReview(int reviewId, String source) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      AppFeedback.info('请先登录后操作', context: context);
+      return false;
+    }
+    final result = await context.read<CanteenProvider>().deleteReview(
+          id: reviewId,
+          source: source,
+        );
+    if (!mounted) return result.success;
+    if (!result.success) {
+      AppFeedback.error(
+        result.errorMessage ?? '删除失败，请稍后重试',
+        context: context,
+      );
+      return false;
+    }
+
+    _removeReviewLocally(reviewId, source);
+    AppFeedback.success('评价已删除', context: context);
+    // 本地先收起当前条目，后台静默刷新摘要、排行和历史数量。
+    await _reloadSilently();
+    return true;
+  }
+
+  void _removeReviewLocally(int reviewId, String source) {
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews',
+    ];
+    for (final key in keys.toSet()) {
+      final rawItems = _canteenData?[key];
+      if (rawItems is! List) continue;
+      rawItems.removeWhere((raw) {
+        if (raw is! Map) return false;
+        final item = Map<String, dynamic>.from(raw);
+        final itemSource = item['review_source']?.toString() ??
+            item['source']?.toString() ??
+            (key == 'reviews' ? 'v2' : 'legacy');
+        return itemSource == source &&
+            (item['id'] as num?)?.toInt() == reviewId;
+      });
+    }
+    if (mounted) setState(() => _reviewDataVersion++);
+  }
+
+  Future<void> _openOwnReviewHistory() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId <= 0) {
+      AppFeedback.info('请先登录后查看历史评价', context: context);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewHistoryScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+          userId: userId,
+          isOwn: true,
+        ),
+      ),
+    );
+    if (mounted) await _reloadSilently();
   }
 
   Widget _buildDimensionSummary(bool isDark) {

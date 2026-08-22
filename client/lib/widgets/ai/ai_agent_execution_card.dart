@@ -34,13 +34,18 @@ class AiAgentExecutionCard extends StatefulWidget {
 }
 
 class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
-  bool _expanded = false;
+  // Agent 开始工作时先把过程讲清楚；只有正常完成才自动收起。
+  bool _expanded = true;
 
   @override
   void didUpdateWidget(covariant AiAgentExecutionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.event?.type == AiRunEventType.consentRequired &&
-        oldWidget.event?.type != AiRunEventType.consentRequired) {
+    final startedNewRun = widget.running &&
+        (!oldWidget.running || widget.event?.runId != oldWidget.event?.runId);
+    if (startedNewRun ||
+        widget.event?.type == AiRunEventType.consentRequired ||
+        widget.event?.type == AiRunEventType.failed ||
+        widget.event?.type == AiRunEventType.cancelled) {
       _expanded = true;
     } else if (widget.completed && !oldWidget.completed) {
       _expanded = false;
@@ -142,7 +147,9 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         AiRunEventType.deviceClaimed ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
-        AiRunEventType.toolCompleted =>
+        AiRunEventType.toolCompleted ||
+        AiRunEventType.failed ||
+        AiRunEventType.cancelled =>
           true,
         _ => false,
       };
@@ -157,6 +164,8 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
       AiRunEventType.deviceClaimed => '正在读取个人数据',
       AiRunEventType.eduFetching => '正在更新成绩数据',
       AiRunEventType.toolCompleted => '数据已准备，正在继续回答',
+      AiRunEventType.failed => 'Agent 处理未完成',
+      AiRunEventType.cancelled => '本次处理已取消',
       _ => '正在检查需要的数据',
     };
   }
@@ -173,6 +182,8 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
       AiRunEventType.deviceClaimed => '只处理当前问题需要字段',
       AiRunEventType.eduFetching => '使用现有教务授权会话',
       AiRunEventType.toolCompleted => 'Agent 已恢复原来的任务',
+      AiRunEventType.failed => '已保留执行过程，下面会显示失败原因',
+      AiRunEventType.cancelled => '执行过程已停止',
       _ => _datasetLabel(event?.datasets ?? const []),
     };
   }

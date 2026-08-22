@@ -4,7 +4,7 @@ import 'package:shenliyuan/models/ai_quick_prompt.dart';
 import 'package:shenliyuan/widgets/ai/ai_empty_state.dart';
 
 void main() {
-  testWidgets('AI 业务入口与猜你想问分区展示且保持紧凑布局', (tester) async {
+  testWidgets('校园 Agent 空态展示 HTML 四项常用能力', (tester) async {
     String? selectedPrompt;
     await tester.pumpWidget(
       MaterialApp(
@@ -46,15 +46,15 @@ void main() {
       ),
     );
 
-    expect(find.text('快捷能力'), findsOneWidget);
-    expect(find.text('猜你想问'), findsOneWidget);
-    expect(find.text('学业分析'), findsOneWidget);
-    expect(find.text('本周计划'), findsOneWidget);
-    expect(find.text('学业考试'), findsOneWidget);
-    expect(find.text('教学管理'), findsOneWidget);
-    expect(find.text('奖助评优'), findsOneWidget);
+    expect(find.text('今天想让 Agent 帮你做什么？'), findsOneWidget);
+    expect(find.text('常用能力'), findsOneWidget);
+    expect(find.text('本周空闲'), findsOneWidget);
+    expect(find.text('学业风险'), findsOneWidget);
+    expect(find.text('近期竞赛'), findsOneWidget);
+    expect(find.text('学校政策'), findsOneWidget);
+    expect(find.text('猜你想问'), findsNothing);
 
-    await tester.tap(find.text('学业分析'));
+    await tester.tap(find.text('学业风险'));
     expect(selectedPrompt, '分析我的学业情况，找出主要风险并给出改进建议');
     expect(tester.takeException(), isNull);
   });

@@ -33,6 +33,7 @@ import '../../features/ai_runtime/tool_calling/tool_permission_dialog.dart';
 import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../models/ai_capabilities.dart';
 import '../../models/ai_chat_message.dart';
+import '../../models/ai_run_event.dart';
 import '../../models/competition_action_draft.dart';
 import '../../models/user_calendar.dart';
 import '../../platform/contracts/reminder_notification_client.dart';
@@ -60,7 +61,9 @@ import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
 import '../../widgets/ai/ai_agent_execution_card.dart';
+import '../../widgets/ai/ai_agent_permission_card.dart';
 import '../../widgets/ai/ai_agent_permission_sheet.dart';
+import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
 
@@ -1082,6 +1085,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         for (final message in _personalMessages)
           AiMessageCard(
             message: message,
+            assistantLabel: '个人助手',
             onConfirmDraft: _confirmCompetitionDraft,
             onViewCompetition: _openCompetitionDetail,
             loadSourceContent: widget.service.getSourceContent,
@@ -1195,6 +1199,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       onPressed: () => _showCapabilitySheet(capabilities),
                       icon: const Icon(Icons.hub_outlined),
                     ),
+                  if (context.read<AuthProvider>().user?.isAdmin == true)
+                    IconButton(
+                      tooltip: 'AI 调用管理',
+                      onPressed: () =>
+                          AdminAiControlSheet.show(context, widget.dio),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
                   AppActionPopupMenu(
                     icon: const Icon(Icons.settings_outlined),
                     entries: const <Object>[
@@ -1258,63 +1269,38 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     child: _personalMode
                         ? _buildPersonalBody()
                         : provider.messages.isEmpty
-                            ? ListView(
-                                children: [
-                                  AiPublicEmptyState(
-                                    chatEnabled: capabilities.chatEnabled,
-                                    quickPrompts: provider.quickPrompts,
-                                    suggestedPrompts: [
-                                      if (capabilities
-                                          .features.supportsAcademicAnalysis)
-                                        const AiSuggestedPrompt(
-                                          title: '学业分析',
-                                          subtitle: '分析我的学业情况',
-                                          prompt: '分析我的学业情况，找出主要风险并给出改进建议',
+                            ? AiPublicEmptyState(
+                                chatEnabled: capabilities.chatEnabled,
+                                quickPrompts: provider.quickPrompts,
+                                suggestedPrompts: const [],
+                                onRefreshPrompts: provider.refreshQuickPrompts,
+                                onPromptSelected: (prompt) {
+                                  _inputController.text = prompt;
+                                  _inputController.selection =
+                                      TextSelection.collapsed(
+                                    offset: prompt.length,
+                                  );
+                                },
+                                footer: provider.error == null
+                                    ? null
+                                    : Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 12,
                                         ),
-                                      if (capabilities
-                                          .features.hy3CompetitionCompare)
-                                        const AiSuggestedPrompt(
-                                          title: '竞赛对比',
-                                          subtitle: '对比适合我的竞赛',
-                                          prompt: '对比适合我的竞赛',
+                                        child: AiErrorCard(
+                                          message: provider.error!,
+                                          actionLabel: provider.canRetry
+                                              ? '重试'
+                                              : provider.canReconnectRun
+                                                  ? '重新连接'
+                                                  : '重试加载',
+                                          onAction: provider.canRetry
+                                              ? provider.retryLast
+                                              : provider.canReconnectRun
+                                                  ? provider.reconnect
+                                                  : provider.retryBootstrap,
                                         ),
-                                      if (capabilities.features.hy3WeekPlan)
-                                        const AiSuggestedPrompt(
-                                          title: '本周计划',
-                                          subtitle: '制定本周学习计划',
-                                          prompt: '结合我的课表和目标，帮我制定本周学习计划',
-                                        ),
-                                    ],
-                                    onRefreshPrompts:
-                                        provider.refreshQuickPrompts,
-                                    onPromptSelected: (prompt) {
-                                      _inputController.text = prompt;
-                                      _inputController.selection =
-                                          TextSelection.collapsed(
-                                        offset: prompt.length,
-                                      );
-                                    },
-                                  ),
-                                  if (provider.error != null)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
                                       ),
-                                      child: AiErrorCard(
-                                        message: provider.error!,
-                                        actionLabel: provider.canRetry
-                                            ? '重试'
-                                            : provider.canReconnectRun
-                                                ? '重新连接'
-                                                : '重试加载',
-                                        onAction: provider.canRetry
-                                            ? provider.retryLast
-                                            : provider.canReconnectRun
-                                                ? provider.reconnect
-                                                : provider.retryBootstrap,
-                                      ),
-                                    ),
-                                ],
                               )
                             : ListView(
                                 padding:
@@ -1338,6 +1324,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                             provider.activeSubmissionRequestId)
                                       AiAgentExecutionCard(
                                         event: provider.agentEvent,
+                                        running: provider.isRunning,
                                         completed: provider.agentFlowCompleted,
                                         onOpenPermissions:
                                             _showAgentPermissions,
@@ -1357,11 +1344,29 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                           ),
                                         ),
                                       ),
+                                    if (message.role == AiMessageRole.user &&
+                                        message.requestId ==
+                                            provider
+                                                .activeSubmissionRequestId &&
+                                        (provider.agentEvent?.type ==
+                                                AiRunEventType
+                                                    .consentRequired ||
+                                            provider.pendingConsent != null))
+                                      AiAgentPermissionCard(
+                                        event: provider.agentEvent ??
+                                            provider.pendingConsent!,
+                                        onDeny: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.denied,
+                                          ),
+                                        ),
+                                        onAllowOnce: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.once,
+                                          ),
+                                        ),
+                                      ),
                                   ],
-                                  if (provider.isRunning)
-                                    AiTypingStatus(
-                                      status: provider.friendlyRunStatus,
-                                    ),
                                   if (provider.error != null)
                                     AiErrorCard(
                                       message: provider.error!,

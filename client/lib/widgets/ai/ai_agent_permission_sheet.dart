@@ -2,8 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/ai_personal_data_permission_service.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
 
 const aiAgentPermissionManagedScopes = <AiPersonalDataPermissionScope>[
   AiPersonalDataPermissionScope.deviceCacheAccess,
@@ -146,8 +148,9 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
     return Container(
       constraints: const BoxConstraints(maxHeight: 760),
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkCard : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
       ),
       child: FutureBuilder<
           Map<AiPersonalDataPermissionScope, AiPersonalDataPermissionPolicy>>(
@@ -194,8 +197,8 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
                 decoration: BoxDecoration(
                   color: isDark
                       ? colors.primaryContainer
-                      : CampusTheme.primaryLight,
-                  borderRadius: BorderRadius.circular(12),
+                      : AppColors.brandSurfaceLight,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Icon(Icons.shield_outlined, color: colors.primary),
               ),
@@ -208,7 +211,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
                         style: TextStyle(
                             fontSize: 17, fontWeight: FontWeight.w700)),
                     SizedBox(height: 3),
-                    Text('完全信任只作用于已开启的安全能力范围',
+                    Text('控制服务端 Agent 如何使用已授权校园数据',
                         style: TextStyle(fontSize: 12, height: 1.4)),
                   ],
                 ),
@@ -223,7 +226,8 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
         ),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xxl, 0, AppSpacing.xxl, 28),
             children: [
               _ModeSegment(
                 trusted: trusted,
@@ -245,12 +249,12 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: isDark
-                      ? colors.surfaceContainerHighest
-                      : const Color(0xFFFFF5EE),
-                  borderRadius: BorderRadius.circular(12),
+                      ? AppColors.warningSurfaceDark
+                      : AppColors.warningSurfaceLight,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Text(
-                  '“完全信任”不是整台手机的完全访问。发帖、发私信、修改资料、删除内容、改密码和付款等高风险写操作，即使未来加入，也必须单独确认。',
+                  '“完全信任”只自动执行上述白名单能力。未来即使加入发帖、私信、修改资料、删除内容或账号操作，也不会继承这项授权。',
                   style: TextStyle(
                     color: isDark ? colors.onSurface : const Color(0xFF8C5638),
                     fontSize: 12,
@@ -321,7 +325,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
 
   static String _title(AiPersonalDataPermissionScope scope) => switch (scope) {
         AiPersonalDataPermissionScope.deviceCacheAccess => '读取本地加密缓存',
-        AiPersonalDataPermissionScope.remoteEduRefresh => 'AI 主动刷新教务',
+        AiPersonalDataPermissionScope.remoteEduRefresh => '必要时更新教务数据',
         AiPersonalDataPermissionScope.erkeSnapshotUpload => '上传二课结构化摘要',
         AiPersonalDataPermissionScope.academicCloudStorage => '使用服务端学业快照',
         AiPersonalDataPermissionScope.externalModelAnalysis => '外部模型辅助分析',

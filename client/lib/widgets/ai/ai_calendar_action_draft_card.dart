@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/user_calendar.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiCalendarActionDraftCard extends StatefulWidget {
   const AiCalendarActionDraftCard({
@@ -38,20 +39,29 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
     final draft = widget.draft;
     final colors = Theme.of(context).colorScheme;
     final pending = draft.isPending && !draft.isExpired;
+    final danger = draft.actionType == 'calendar_event_delete';
     return Container(
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.outlineVariant),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: danger
+              ? AppColors.danger.withValues(alpha: 0.28)
+              : AppColors.borderNormalLight,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(_iconFor(draft.actionType), size: 20, color: colors.primary),
+              Icon(_iconFor(draft.actionType),
+                  size: 20,
+                  color: danger ? AppColors.danger : AppColors.brandPrimary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -59,10 +69,9 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              Text(
-                _statusFor(draft.status),
-                style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-              ),
+              Text(_statusFor(draft.status),
+                  style:
+                      TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
             ],
           ),
           const SizedBox(height: 10),
@@ -81,10 +90,10 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
                 style: TextStyle(color: colors.onSurfaceVariant)),
           ],
           const SizedBox(height: 8),
-          const Text(
-            'AI 只生成操作草稿；确认后服务端才会修改日历，草稿 10 分钟后失效。',
+          Text(
+            'Agent 只生成操作草稿；确认后才会修改日历。',
             style: TextStyle(
-                fontSize: 12, color: CampusTheme.subText, height: 1.4),
+                fontSize: 12, color: colors.onSurfaceVariant, height: 1.4),
           ),
           if (pending) ...[
             const SizedBox(height: 10),
@@ -94,7 +103,7 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
               children: [
                 OutlinedButton(
                   onPressed: _busy ? null : () => _run(widget.onCancel),
-                  child: const Text('取消草稿'),
+                  child: const Text('取消'),
                 ),
                 FilledButton.icon(
                   onPressed: _busy ? null : () => _run(widget.onConfirm),
@@ -132,7 +141,7 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
         'calendar_event_update' => '确认更新',
         'calendar_event_delete' => '确认删除',
         'calendar_reminder_create' => '确认添加提醒',
-        _ => '确认创建',
+        _ => '确认添加',
       };
 
   String _statusFor(String status) => switch (status) {

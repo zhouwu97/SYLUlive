@@ -32,6 +32,47 @@ class AiFeatures {
   }
 }
 
+class AiCapability {
+  final String id;
+  final String version;
+  final String lane;
+  final String kind;
+  final String description;
+  final bool available;
+  final List<String> toolNames;
+  final List<String> permissionScopes;
+  final bool requiresConfirmation;
+
+  const AiCapability({
+    required this.id,
+    required this.version,
+    required this.lane,
+    required this.kind,
+    required this.description,
+    required this.available,
+    this.toolNames = const <String>[],
+    this.permissionScopes = const <String>[],
+    this.requiresConfirmation = false,
+  });
+
+  factory AiCapability.fromJson(Map<String, dynamic> json) {
+    List<String> strings(dynamic value) => value is List
+        ? value.map((item) => item.toString()).toList(growable: false)
+        : const <String>[];
+    return AiCapability(
+      id: json['id']?.toString() ?? '',
+      version: json['version']?.toString() ?? '1',
+      lane: json['lane']?.toString() ?? 'public',
+      kind: json['kind']?.toString() ?? 'read',
+      description: json['description']?.toString() ?? '',
+      available: json['available'] == true,
+      toolNames: strings(json['tool_names']),
+      permissionScopes: strings(json['permission_scopes']),
+      requiresConfirmation: json['requires_confirmation'] == true,
+    );
+  }
+}
+
 class AiCapabilities {
   static const int defaultMessageChars = 500;
   static const int maximumMessageChars = 500;
@@ -44,6 +85,7 @@ class AiCapabilities {
   final AiFeatures features;
   final AiQuota quota;
   final int maxMessageChars;
+  final List<AiCapability> capabilities;
 
   const AiCapabilities({
     required this.enabled,
@@ -54,6 +96,7 @@ class AiCapabilities {
     required this.features,
     required this.quota,
     required this.maxMessageChars,
+    this.capabilities = const <AiCapability>[],
   });
 
   bool get isVisible => enabled && accessAllowed;
@@ -65,6 +108,7 @@ class AiCapabilities {
       json['max_message_chars'],
       fallback: defaultMessageChars,
     );
+    final capabilityJson = json['capabilities'];
     return AiCapabilities(
       enabled: json['enabled'] == true,
       accessAllowed: json['access_allowed'] == true,
@@ -80,8 +124,20 @@ class AiCapabilities {
       maxMessageChars: reportedMaxMessageChars > maximumMessageChars
           ? maximumMessageChars
           : reportedMaxMessageChars,
+      capabilities: capabilityJson is List
+          ? capabilityJson
+              .whereType<Map>()
+              .map((item) => AiCapability.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <AiCapability>[],
     );
   }
+
+  bool hasCapability(String id) => capabilities.any(
+        (capability) => capability.id == id && capability.available,
+      );
 }
 
 int _positiveInt(dynamic value, {required int fallback}) {

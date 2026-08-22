@@ -1,6 +1,7 @@
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
 import 'device_job_client.dart';
+import 'device_automation_gateway.dart';
 import 'device_job_models.dart';
 import 'device_tool_registry.dart';
 
@@ -10,12 +11,14 @@ class DeviceToolWorkerContext {
     required this.sourceAccountId,
     required this.createGateway,
     required this.isCurrent,
+    this.createAutomationGateway,
   });
 
   final String appUserId;
   final String sourceAccountId;
   final PersonalDataGateway Function() createGateway;
   final Future<bool> Function() isCurrent;
+  final DeviceAutomationGateway Function()? createAutomationGateway;
 }
 
 typedef DeviceToolContextResolver = Future<DeviceToolWorkerContext?> Function();
@@ -106,17 +109,24 @@ class DeviceToolWorker {
     String installationId,
     DeviceToolWorkerContext context,
   ) async {
-    if ((job.status != 'pending' && job.status != 'pushed') ||
+    if ((job.status != 'pending' &&
+            job.status != 'pushed' &&
+            job.status != 'waiting_user') ||
         job.expiresAt.isBefore(DateTime.now().toUtc()) ||
         !DeviceToolRegistry.supportedToolNames.contains(job.toolName) ||
         !await context.isCurrent()) {
       return;
     }
+    // 服务端在创建任务前已经合并 ask / always / never。只有显式进入
+    // waiting_user 的任务才需要设备侧展示一次确认，避免“服务端问一次、手机再问一次”。
     final resolver = _permissionResolver;
-    if (resolver == null) return;
-    final decision = await resolver(job);
-    if (!await context.isCurrent()) return;
-    if (decision == DeviceToolPermissionDecision.defer) return;
+    var decision = DeviceToolPermissionDecision.allow;
+    if (job.status == 'waiting_user') {
+      if (resolver == null) return;
+      decision = await resolver(job);
+      if (!await context.isCurrent()) return;
+      if (decision == DeviceToolPermissionDecision.defer) return;
+    }
     final claimed =
         await _client.claim(installationId, job.id, job.stateVersion);
     if (decision == DeviceToolPermissionDecision.deny) {
@@ -129,9 +139,14 @@ class DeviceToolWorker {
       return;
     }
 
-    final gateway = context.createGateway();
+    final automation = context.createAutomationGateway?.call();
+    final gateway = automation == null ? context.createGateway() : null;
     try {
-      final result = await _registry.execute(claimed, gateway);
+      final result = await _registry.execute(
+        claimed,
+        gateway,
+        automationGateway: automation,
+      );
       if (!await context.isCurrent()) return;
       await _client.complete(
         installationId,
@@ -158,7 +173,11 @@ class DeviceToolWorker {
         );
       }
     } finally {
-      await gateway.close();
+      if (automation != null) {
+        await automation.close();
+      } else {
+        await gateway?.close();
+      }
     }
   }
 

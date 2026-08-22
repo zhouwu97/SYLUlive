@@ -1281,9 +1281,11 @@ class MyApp extends StatelessWidget {
           );
           return postProvider;
         }),
-        ChangeNotifierProxyProvider<PostProvider, PollProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, PostProvider, PollProvider>(
           create: (_) => PollProvider(PollService(dio)),
-          update: (_, posts, polls) => polls!..bindPostProvider(posts),
+          update: (_, auth, posts, polls) => polls!
+            ..syncSessionUser(auth.user?.id)
+            ..bindPostProvider(posts),
         ),
         ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
           create: (_) => TeamRecruitmentProvider(dio),
@@ -1313,11 +1315,23 @@ class MyApp extends StatelessWidget {
               edu.studentId,
             ),
         ),
-        ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
-        ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, TeacherProvider>(
+          create: (_) => TeacherProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, MajorProvider>(
+          create: (_) => MajorProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(dio)),
-        ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, SocialProvider>(
+          create: (_) => SocialProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
         ChangeNotifierProvider(
           create: (_) =>

@@ -118,22 +118,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || auth.user == null) return;
 
-    // 如果有缓存，直接使用缓存秒开
-    if (MyContentScreen.globalPostCount != null) {
-      if (mounted) {
-        setState(() {
-          _postCount = MyContentScreen.globalPostCount;
-        });
-      }
-      // 不直接 return，在后台静默刷新以保证数据一致性
-    }
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestUserId = auth.user!.id;
 
     try {
-      final res = await auth.dio.get('/user/${auth.user!.id}/posts/count');
-      if (res.statusCode == 200 && mounted) {
+      final res = await auth.dio.get('/user/$requestUserId/posts/count');
+      if (res.statusCode == 200 &&
+          mounted &&
+          auth.accountSessionEpoch == requestEpoch &&
+          auth.user?.id == requestUserId) {
         setState(() {
           _postCount = res.data['count'] ?? 0;
-          MyContentScreen.globalPostCount = _postCount; // 同步更新缓存
         });
       }
     } catch (e) {
@@ -190,12 +185,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (_loadedAccountSessionEpoch != authProvider.accountSessionEpoch) {
       _loadedAccountSessionEpoch = authProvider.accountSessionEpoch;
-      _adminOverviewFuture = user?.isAdmin == true
-          ? _loadAdminOverview(authProvider, user)
-          : null;
+      _postCount = null;
+      _unreadReplyCount = 0;
+      _unreadMessageCount = 0;
+      _adminOverviewFuture =
+          user?.isAdmin == true ? _loadAdminOverview(authProvider, user) : null;
       _invitationsFuture = authProvider.isLoggedIn
           ? authProvider.dio.get('/user/invitations')
           : null;
+      if (authProvider.isLoggedIn) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted ||
+              context.read<AuthProvider>().accountSessionEpoch !=
+                  _loadedAccountSessionEpoch) {
+            return;
+          }
+          _fetchPostCount();
+          _loadUnreadCount();
+        });
+      }
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -652,9 +660,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.admin_panel_settings,
             iconColor: Colors.red,
             title: '管理处',
-            subtitle: adminTodo > 0
-                ? '处理举报、审核教师和专业 · $adminTodo 条待办'
-                : '处理举报与社区治理',
+            subtitle:
+                adminTodo > 0 ? '处理举报、审核教师和专业 · $adminTodo 条待办' : '处理举报与社区治理',
             badgeText: adminTodo > 0 ? '$adminTodo' : null,
             onTap: () {
               Navigator.push(
@@ -1013,11 +1020,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ) {
               final selected = _startupDestination == mode;
               return ListTile(
-                leading: Icon(icon, color: selected ? AppColors.brandPrimary : colors.onSurfaceVariant),
-                title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w600 : FontWeight.normal)),
-                subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+                leading: Icon(icon,
+                    color: selected
+                        ? AppColors.brandPrimary
+                        : colors.onSurfaceVariant),
+                title: Text(title,
+                    style: TextStyle(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.normal)),
+                subtitle: Text(subtitle,
+                    style: TextStyle(
+                        fontSize: 12, color: colors.onSurfaceVariant)),
                 trailing: selected
-                    ? Icon(Icons.check_rounded, color: AppColors.brandPrimary, size: 20)
+                    ? Icon(Icons.check_rounded,
+                        color: AppColors.brandPrimary, size: 20)
                     : null,
                 onTap: () async {
                   final provider = context.read<ThemeProvider>();
@@ -1028,7 +1044,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       await RootPageStateStore.instance.saveLastPage(
                         RestorablePageState(
                           type: RestorablePageType.rootTab,
-                          arguments: <String, dynamic>{'index': currentHomeTabIndex.value},
+                          arguments: <String, dynamic>{
+                            'index': currentHomeTabIndex.value
+                          },
                           accountId: userId,
                         ),
                       );

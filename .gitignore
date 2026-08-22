@@ -31,6 +31,7 @@ server/*.exe~
 .sisyphus/plans/*.png
 backups.tar/
 *.aab
+*.jks
 *.exe
 __pycache__/
 .idea/
@@ -74,6 +75,7 @@ android/.kotlin/
 hs_err_pid*.log
 replay_pid*.log
 flutter_*.log
+client/analyze_output.txt
 
 # Python 测试与探测输出
 .pytest_cache/

@@ -692,6 +692,7 @@ func main() {
 	)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
+	adminAIHandler := handlers.NewAdminAIHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
 	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
@@ -2108,6 +2109,9 @@ func main() {
 		knowledgeAdmin.POST("/:id/revoke", knowledgeHandler.Revoke)
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
+	adminAI := r.Group("/api/admin/ai")
+	adminAI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	adminAI.GET("/metrics", adminAIHandler.GetMetrics)
 
 	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
@@ -2117,6 +2121,7 @@ func main() {
 		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
 		aiCapabilities.POST("/action-drafts/competition-plan", competitionHandler.CreateCompetitionPlanActionDraft)
 		aiCapabilities.POST("/action-drafts/calendar-event", userCalendarHandler.CreateCalendarEventDraft)
+		aiCapabilities.POST("/action-drafts/calendar-reminder", userCalendarHandler.CreateCalendarReminderDraft)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")

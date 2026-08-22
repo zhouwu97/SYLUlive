@@ -17,6 +17,7 @@ import 'admin_water_icon_review_screen.dart';
 import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
+import 'admin_ai_metrics_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -120,6 +121,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             title: const Text('管理员面板'),
             backgroundColor: Colors.transparent,
             elevation: 0,
+            actions: [
+              IconButton(
+                tooltip: 'AI 运营指标',
+                icon: const Icon(Icons.insights_outlined),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AdminAIMetricsScreen(),
+                  ),
+                ),
+              ),
+            ],
             systemOverlayStyle: (isDark
                     ? SystemUiOverlayStyle.light
                     : SystemUiOverlayStyle.dark)

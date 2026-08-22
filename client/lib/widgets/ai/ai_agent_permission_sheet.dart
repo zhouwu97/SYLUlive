@@ -5,6 +5,32 @@ import '../../services/ai_personal_data_permission_service.dart';
 import '../../theme/app_motion.dart';
 import '../campus/campus_theme.dart';
 
+const aiAgentPermissionManagedScopes = <AiPersonalDataPermissionScope>[
+  AiPersonalDataPermissionScope.deviceCacheAccess,
+  AiPersonalDataPermissionScope.remoteEduRefresh,
+  AiPersonalDataPermissionScope.erkeSnapshotUpload,
+  AiPersonalDataPermissionScope.academicCloudStorage,
+  AiPersonalDataPermissionScope.externalModelAnalysis,
+];
+
+bool aiAgentPermissionIsTrusted(
+  Iterable<AiPersonalDataPermission> permissions,
+) {
+  final values =
+      <AiPersonalDataPermissionScope, AiPersonalDataPermissionPolicy>{
+    for (final permission in permissions) permission.scope: permission.policy,
+  };
+  final enabledScopes = aiAgentPermissionManagedScopes.where(
+    (scope) => values[scope] != AiPersonalDataPermissionPolicy.never,
+  );
+  return values[AiPersonalDataPermissionScope.personalDataAccess] ==
+          AiPersonalDataPermissionPolicy.always &&
+      enabledScopes.isNotEmpty &&
+      enabledScopes.every(
+        (scope) => values[scope] == AiPersonalDataPermissionPolicy.always,
+      );
+}
+
 /// 校园 Agent 的用户-facing 权限设置。
 ///
 /// 普通用户只看到“每次询问 / 完全信任”两种执行方式；服务端仍保留
@@ -37,13 +63,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
   Map<AiPersonalDataPermissionScope, AiPersonalDataPermissionPolicy>? _values;
   AiPersonalDataPermissionScope? _saving;
 
-  static const _scopes = <AiPersonalDataPermissionScope>[
-    AiPersonalDataPermissionScope.deviceCacheAccess,
-    AiPersonalDataPermissionScope.remoteEduRefresh,
-    AiPersonalDataPermissionScope.erkeSnapshotUpload,
-    AiPersonalDataPermissionScope.academicCloudStorage,
-    AiPersonalDataPermissionScope.externalModelAnalysis,
-  ];
+  static const _scopes = aiAgentPermissionManagedScopes;
 
   @override
   void initState() {
@@ -70,11 +90,14 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
   bool get _trusted {
     final values = _values;
     if (values == null) return false;
-    return values[AiPersonalDataPermissionScope.personalDataAccess] ==
-            AiPersonalDataPermissionPolicy.always &&
-        _scopes.any(
-          (scope) => values[scope] == AiPersonalDataPermissionPolicy.always,
-        );
+    return aiAgentPermissionIsTrusted(
+      values.entries.map(
+        (entry) => AiPersonalDataPermission(
+          scope: entry.key,
+          policy: entry.value,
+        ),
+      ),
+    );
   }
 
   Future<void> _setScope(
@@ -110,6 +133,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
     ];
     for (final scope in scopes) {
       if (!mounted) return;
+      if (values[scope] == AiPersonalDataPermissionPolicy.never) continue;
       await _setScope(scope, policy);
     }
   }

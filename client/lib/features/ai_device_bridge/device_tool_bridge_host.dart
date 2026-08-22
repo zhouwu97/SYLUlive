@@ -137,6 +137,11 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
       return DeviceToolPermissionDecision.defer;
     }
+    if (job.status != 'waiting_user') {
+      // 这类 Job 已经通过服务端的 ask / always / never 决策；再次弹窗会
+      // 造成双重授权。只有显式 waiting_user 才由设备侧完成一次确认。
+      return DeviceToolPermissionDecision.allow;
+    }
     // 任务状态为 waiting_user 时才会走到这里；pending / pushed 已经在
     // 服务端完成 ask / always / never 合并，避免再次弹出同一授权。
     final allowed = await DeviceJobPermissionSheet.request(context, job);

@@ -5,7 +5,13 @@ import '../../models/ai_source.dart';
 class AiSourceCard extends StatelessWidget {
   final AiSource source;
   final Future<AiSourceContent> Function(int chunkId)? loadContent;
-  const AiSourceCard({super.key, required this.source, this.loadContent});
+  final bool initiallyExpanded;
+  const AiSourceCard({
+    super.key,
+    required this.source,
+    this.loadContent,
+    this.initiallyExpanded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +23,11 @@ class AiSourceCard extends StatelessWidget {
         border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: _SourceExpansionTile(source: source, loadContent: loadContent),
+      child: _SourceExpansionTile(
+        source: source,
+        loadContent: loadContent,
+        initiallyExpanded: initiallyExpanded,
+      ),
     );
   }
 }
@@ -25,7 +35,12 @@ class AiSourceCard extends StatelessWidget {
 class _SourceExpansionTile extends StatefulWidget {
   final AiSource source;
   final Future<AiSourceContent> Function(int chunkId)? loadContent;
-  const _SourceExpansionTile({required this.source, this.loadContent});
+  final bool initiallyExpanded;
+  const _SourceExpansionTile({
+    required this.source,
+    this.loadContent,
+    this.initiallyExpanded = false,
+  });
 
   @override
   State<_SourceExpansionTile> createState() => _SourceExpansionTileState();
@@ -33,7 +48,7 @@ class _SourceExpansionTile extends StatefulWidget {
 
 class _SourceExpansionTileState extends State<_SourceExpansionTile> {
   Future<AiSourceContent>? _contentRequest;
-  bool _expanded = false;
+  late bool _expanded = widget.initiallyExpanded;
 
   void _handleExpansionChanged(bool expanded) {
     setState(() => _expanded = expanded);
@@ -60,6 +75,7 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
     final source = widget.source;
     final colors = Theme.of(context).colorScheme;
     return ExpansionTile(
+      initiallyExpanded: widget.initiallyExpanded,
       onExpansionChanged: _handleExpansionChanged,
       tilePadding: const EdgeInsets.symmetric(horizontal: 12),
       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),

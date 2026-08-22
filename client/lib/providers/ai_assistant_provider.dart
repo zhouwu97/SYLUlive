@@ -78,6 +78,9 @@ class AiAssistantProvider extends ChangeNotifier {
   final List<AiChatMessage> _messages = [];
   final List<AiConversation> _conversations = [];
   AiRunEvent? _currentRun;
+  AiRunEvent? _agentEvent;
+  String? _activeSubmissionRequestId;
+  bool _agentFlowCompleted = false;
   AiRun? _run;
   AiRunEvent? _pendingConsent;
   bool _submittingConsent = false;
@@ -101,6 +104,9 @@ class AiAssistantProvider extends ChangeNotifier {
   List<AiChatMessage> get messages => List.unmodifiable(_messages);
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   AiRunEvent? get currentRun => _currentRun;
+  AiRunEvent? get agentEvent => _agentEvent;
+  String? get activeSubmissionRequestId => _activeSubmissionRequestId;
+  bool get agentFlowCompleted => _agentFlowCompleted;
   AiRunEvent? get pendingConsent => _pendingConsent;
   bool get submittingConsent => _submittingConsent;
   AiConnectionState get connectionState => _connectionState;
@@ -335,6 +341,9 @@ class AiAssistantProvider extends ChangeNotifier {
     _sources = [];
     _personalDataEvidence.clear();
     _lastEventSeq = 0;
+    _activeSubmissionRequestId = submission.requestId;
+    _agentEvent = null;
+    _agentFlowCompleted = false;
     _connectionState = AiConnectionState.connecting;
     _messages.add(AiChatMessage(
       id: submission.requestId,
@@ -538,6 +547,10 @@ class AiAssistantProvider extends ChangeNotifier {
       _lastEventSeq = event.seq;
     }
     _currentRun = event;
+    if (_isAgentEvent(event.type)) {
+      _agentEvent = event;
+      _agentFlowCompleted = false;
+    }
     switch (event.type) {
       case AiRunEventType.started:
         _connectionState = AiConnectionState.connecting;
@@ -600,6 +613,7 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
+        _agentFlowCompleted = _agentEvent?.runId == event.runId;
         if (event.quota != null) _quota = event.quota;
         final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
         _upsertAssistant(_streamedText, AiMessageStatus.completed,
@@ -869,6 +883,9 @@ class AiAssistantProvider extends ChangeNotifier {
   void _resetRunState() {
     _run = null;
     _currentRun = null;
+    _agentEvent = null;
+    _activeSubmissionRequestId = null;
+    _agentFlowCompleted = false;
     _pendingConsent = null;
     _submittingConsent = false;
     _connectionState = AiConnectionState.idle;
@@ -937,6 +954,18 @@ class AiAssistantProvider extends ChangeNotifier {
       type == AiRunEventType.completed ||
       type == AiRunEventType.failed ||
       type == AiRunEventType.cancelled;
+
+  bool _isAgentEvent(AiRunEventType type) => switch (type) {
+        AiRunEventType.toolRequested ||
+        AiRunEventType.toolExecuting ||
+        AiRunEventType.deviceWaiting ||
+        AiRunEventType.deviceClaimed ||
+        AiRunEventType.consentRequired ||
+        AiRunEventType.eduFetching ||
+        AiRunEventType.toolCompleted =>
+          true,
+        _ => false,
+      };
 
   bool _isWaitingState(String state) =>
       state == 'waiting_device' ||

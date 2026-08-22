@@ -117,16 +117,13 @@ class DeviceToolWorker {
         !await context.isCurrent()) {
       return;
     }
-    // 服务端在创建任务前已经合并 ask / always / never。只有显式进入
-    // waiting_user 的任务才需要设备侧展示一次确认，避免“服务端问一次、手机再问一次”。
     final resolver = _permissionResolver;
-    var decision = DeviceToolPermissionDecision.allow;
-    if (job.status == 'waiting_user') {
-      if (resolver == null) return;
-      decision = await resolver(job);
-      if (!await context.isCurrent()) return;
-      if (decision == DeviceToolPermissionDecision.defer) return;
-    }
+    if (resolver == null) return;
+    // resolver 可根据状态决定是否展示 UI。这样保留 Worker 的 fail-closed
+    // 默认行为，同时允许现有服务端 pending 任务跳过重复确认。
+    final decision = await resolver(job);
+    if (!await context.isCurrent()) return;
+    if (decision == DeviceToolPermissionDecision.defer) return;
     final claimed =
         await _client.claim(installationId, job.id, job.stateVersion);
     if (decision == DeviceToolPermissionDecision.deny) {

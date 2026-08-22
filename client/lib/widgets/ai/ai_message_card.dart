@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../models/ai_chat_message.dart';
+import '../../models/ai_personal_data_evidence.dart';
 import '../../models/ai_source.dart';
 import '../../models/competition_action_draft.dart';
 import '../../utils/ai_citation_mapper.dart';
@@ -83,14 +84,158 @@ class AiMessageCard extends StatelessWidget {
                       : () => onViewCompetition!(draft.event.id),
                 ),
               if (!isUser && message.personalDataEvidence.isNotEmpty)
-                AiCampusEvidenceCard(evidence: message.personalDataEvidence),
+                _CompactEvidenceTag(
+                  evidence: message.personalDataEvidence,
+                ),
               if (!isUser &&
                   message.sourceRecoveryState == AiSourceRecoveryState.failed &&
                   citation.hasUnresolvedChunks)
                 _SourceRecoveryNotice(onRetry: onRetrySources),
-              for (final source in citation.sources)
-                AiSourceCard(source: source, loadContent: loadSourceContent),
+              if (!isUser && citation.sources.isNotEmpty)
+                _CompactSourceTags(
+                  sources: citation.sources,
+                  loadSourceContent: loadSourceContent,
+                ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactEvidenceTag extends StatelessWidget {
+  const _CompactEvidenceTag({required this.evidence});
+
+  final List<AiPersonalDataEvidence> evidence;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CompactSourceTag(
+      icon: Icons.verified_user_outlined,
+      label: '个人数据来源',
+      onTap: () => showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        builder: (_) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: SingleChildScrollView(
+            child: AiCampusEvidenceCard(
+              evidence: evidence,
+              initiallyExpanded: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactSourceTags extends StatelessWidget {
+  const _CompactSourceTags({
+    required this.sources,
+    this.loadSourceContent,
+  });
+
+  final List<AiSource> sources;
+  final Future<AiSourceContent> Function(int chunkId)? loadSourceContent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final source in sources)
+          _CompactSourceTag(
+            icon: switch (source.type) {
+              AiSourceType.schedule => Icons.calendar_month_rounded,
+              AiSourceType.competitionCatalog => Icons.emoji_events_outlined,
+              AiSourceType.competitionEvidence => Icons.fact_check_outlined,
+              AiSourceType.policy => Icons.description_outlined,
+            },
+            label: source.title,
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              useSafeArea: true,
+              isScrollControlled: true,
+              builder: (_) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                child: SingleChildScrollView(
+                  child: AiSourceCard(
+                    source: source,
+                    loadContent: loadSourceContent,
+                    initiallyExpanded: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CompactSourceTag extends StatelessWidget {
+  const _CompactSourceTag({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Semantics(
+        button: true,
+        label: '查看来源：$label',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 36, maxWidth: 220),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: colors.surface,
+                border: Border.all(color: colors.outlineVariant),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 15, color: colors.primary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: null,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 15,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -95,6 +95,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   String? _lastBootstrapAuthKey;
   bool _consentDialogVisible = false;
   String _lastConsentDialogKey = '';
+  bool _agentTrusted = false;
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -135,6 +136,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       );
     }
     unawaited(_provider.initialize());
+    unawaited(_loadAgentPermissionMode());
   }
 
   @override
@@ -172,6 +174,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         _personalMode ||
         consent == null ||
         consent.consentScope.isEmpty ||
+        consent.consentScope ==
+            AiPersonalDataPermissionScope.deviceCacheAccess.wireValue ||
         _consentDialogVisible) {
       return;
     }
@@ -185,6 +189,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         return;
       }
       final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
+      final isDeviceConsent = consent.consentScope == 'ai_device_cache_access';
+      final requestedData = consent.datasets
+          .map(
+            (dataset) => switch (dataset) {
+              'grades' || 'academic' => '成绩摘要',
+              'schedule' => '课表摘要',
+              'erke' => '二课摘要',
+              _ => '相关校园数据',
+            },
+          )
+          .toSet()
+          .join('、');
       final choice = await showDialog<_ConsentChoice>(
         context: context,
         barrierDismissible: false,
@@ -192,14 +208,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           data: dialogTheme,
           child: AlertDialog(
             title: Text(
-              consent.consentScope == 'ai_external_model_analysis'
-                  ? '允许外部模型辅助分析？'
-                  : '允许本次读取个人数据？',
+              isDeviceConsent
+                  ? '校园 Agent 想在你的设备上执行一次操作'
+                  : consent.consentScope == 'ai_external_model_analysis'
+                      ? '允许外部模型辅助分析？'
+                      : '允许本次读取个人数据？',
             ),
             content: Text(
-              consent.consentScope == 'ai_external_model_analysis'
-                  ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
-                  : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
+              isDeviceConsent
+                  ? '为了回答当前问题，Agent 会检查数据新鲜度，必要时刷新并读取${requestedData.isEmpty ? '相关校园数据' : requestedData}，然后只回传本次问题所需的最小化摘要。\n\n不会读取密码、Cookie、Token 或设备标识。此选择只对当前请求生效，不会修改长期设置。'
+                  : consent.consentScope == 'ai_external_model_analysis'
+                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                      : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
             ),
             actions: [
               TextButton(
@@ -210,7 +230,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               TextButton(
                 onPressed: () =>
                     Navigator.of(dialogContext).pop(_ConsentChoice.always),
-                child: const Text('以后允许'),
+                child: Text(isDeviceConsent ? '今后自动执行' : '以后允许'),
               ),
               FilledButton(
                 onPressed: () =>
@@ -754,8 +774,57 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
-  Future<void> _showAgentPermissions() =>
-      AiAgentPermissionSheet.show(context, widget.dio);
+  Future<void> _loadAgentPermissionMode() async {
+    try {
+      final permissions = await _permissionService.list();
+      if (mounted) {
+        setState(() => _agentTrusted = aiAgentPermissionIsTrusted(permissions));
+      }
+    } on AiPersonalDataPermissionException {
+      if (mounted) setState(() => _agentTrusted = false);
+    }
+  }
+
+  Future<void> _showAgentPermissions() async {
+    await AiAgentPermissionSheet.show(context, widget.dio);
+    if (mounted) unawaited(_loadAgentPermissionMode());
+  }
+
+  Future<void> _submitInlineAgentConsent(_ConsentChoice choice) async {
+    final consent = _provider.pendingConsent;
+    if (consent == null || consent.consentScope.isEmpty) return;
+    var shouldSubmit = true;
+    if (choice == _ConsentChoice.always) {
+      final scope = AiPersonalDataPermissionScope.fromWireValue(
+        consent.consentScope,
+      );
+      if (scope == null) {
+        shouldSubmit = false;
+        if (mounted) AppFeedback.error('授权范围无效，请稍后重试', context: context);
+      } else {
+        try {
+          await _permissionService.update(
+            scope: scope,
+            policy: AiPersonalDataPermissionPolicy.always,
+          );
+          unawaited(_loadAgentPermissionMode());
+        } on AiPersonalDataPermissionException catch (error) {
+          shouldSubmit = false;
+          if (mounted) AppFeedback.error(error.message, context: context);
+        }
+      }
+    }
+    if (!shouldSubmit) return;
+    final submitted = await _provider.submitConsent(
+      choice != _ConsentChoice.denied,
+    );
+    if (!submitted && mounted) {
+      AppFeedback.error(
+        _provider.error ?? '提交本次授权失败，请稍后重试',
+        context: context,
+      );
+    }
+  }
 
   Future<void> _confirmCompetitionDraft(
     CompetitionPlanActionDraft draft,
@@ -1104,12 +1173,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                 padding:
                                     const EdgeInsets.fromLTRB(16, 10, 16, 18),
                                 children: [
-                                  if (provider.currentRun != null)
-                                    AiAgentExecutionCard(
-                                      event: provider.currentRun,
-                                      onOpenPermissions: _showAgentPermissions,
-                                    ),
-                                  for (final message in provider.messages)
+                                  for (final message in provider.messages) ...[
                                     AiMessageCard(
                                       message: message,
                                       loadSourceContent:
@@ -1118,6 +1182,31 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         _provider.retryMessageSources(message),
                                       ),
                                     ),
+                                    if (message.role == AiMessageRole.user &&
+                                        message.requestId ==
+                                            provider.activeSubmissionRequestId)
+                                      AiAgentExecutionCard(
+                                        event: provider.agentEvent,
+                                        completed: provider.agentFlowCompleted,
+                                        onOpenPermissions:
+                                            _showAgentPermissions,
+                                        onAllowOnce: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.once,
+                                          ),
+                                        ),
+                                        onAllowAlways: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.always,
+                                          ),
+                                        ),
+                                        onDeny: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.denied,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                   if (provider.isRunning)
                                     AiTypingStatus(
                                       status: provider.friendlyRunStatus,
@@ -1152,6 +1241,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     onSend: _submit,
                     onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                     hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',
+                    showAgentPermissionMode: !_personalMode,
+                    agentTrusted: _agentTrusted,
+                    onAgentPermissionTap: _showAgentPermissions,
                   ),
                 ],
               ),

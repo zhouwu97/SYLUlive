@@ -689,18 +689,38 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
+	ensureFresh := request.Freshness == academic.FreshnessRequireFresh
 	switch dataset {
 	case academic.DatasetGrades:
+		if ensureFresh {
+			return "device.academic.ensure_fresh_overview", []string{"academic"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
 		return "device.academic.get_cached_overview", []string{"academic"}, json.RawMessage(`{}`), true
 	case academic.DatasetSchedule:
+		if ensureFresh {
+			arguments, err := json.Marshal(map[string]interface{}{
+				"week_containing": request.ScheduleWeekContaining,
+				"max_age_seconds": 600,
+			})
+			if err != nil {
+				return "", nil, nil, false
+			}
+			return "device.schedule.ensure_fresh_week", []string{"schedule"}, arguments, true
+		}
 		arguments, err := json.Marshal(map[string]string{"week_containing": request.ScheduleWeekContaining})
 		if err != nil {
 			return "", nil, nil, false
 		}
 		return "device.schedule.get_cached_week", []string{"schedule"}, arguments, true
 	case academic.DatasetAcademicSituation, academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
+		if ensureFresh {
+			return "device.academic.ensure_fresh_credit_summary", []string{"academic"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
 		return "device.academic.get_credit_summary", []string{"academic"}, json.RawMessage(`{}`), true
 	case academic.DatasetErke:
+		if ensureFresh {
+			return "device.erke.ensure_fresh_overview", []string{"erke"}, json.RawMessage(`{"max_age_seconds":1800}`), true
+		}
 		return "device.erke.get_cached_overview", []string{"erke"}, json.RawMessage(`{}`), true
 	default:
 		return "", nil, nil, false

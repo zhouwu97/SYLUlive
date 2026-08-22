@@ -43,7 +43,7 @@ client/integration_test/local_*.dart
 
 client/test_credentials.*
 
-client/test/goldens/failures/
+/test/goldens/failures/
 
 .env
 

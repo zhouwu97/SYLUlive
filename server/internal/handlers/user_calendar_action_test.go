@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/ai"
 	"shenliyuan/internal/models"
 )
 
@@ -25,7 +26,16 @@ func newUserCalendarActionTestDB(t *testing.T) *gorm.DB {
 		&models.UserCalendarReminder{},
 		&models.UserCalendarActionDraft{},
 		&models.UserCalendarActionAudit{},
+		&models.AIToolCall{},
 	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DROP INDEX IF EXISTS idx_user_calendar_reminders_event_offset").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_reminders_event_offset_live
+ ON user_calendar_reminders (event_id, minutes_before)
+ WHERE deleted_at IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -220,6 +230,55 @@ func TestCalendarUpdateRejectsStaleVersion(t *testing.T) {
 	}
 }
 
+func TestCalendarReminderCanBeRecreatedAfterSoftDelete(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "reminder-recreate")
+	event := createCalendarActionTestEvent(t, db, user.ID, "reminder-recreate")
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(event.ID)}}
+
+	first := performAIActionRequest(
+		t, http.MethodPost,
+		fmt.Sprintf("/user/calendar/events/%d/reminders", event.ID),
+		`{"minutes_before":30}`, user.ID, params, nil, handler.CreateReminder,
+	)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first reminder status=%d body=%s", first.Code, first.Body.String())
+	}
+	var reminder models.UserCalendarReminder
+	if err := json.Unmarshal(first.Body.Bytes(), &reminder); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteResponse := performAIActionRequest(
+		t, http.MethodDelete,
+		fmt.Sprintf("/user/calendar/events/%d/reminders/%d", event.ID, reminder.ID),
+		"", user.ID,
+		gin.Params{{Key: "id", Value: fmt.Sprint(event.ID)}, {Key: "reminder_id", Value: fmt.Sprint(reminder.ID)}},
+		nil, handler.DeleteReminder,
+	)
+	// 直接调用 handler 时 Gin 的测试 Writer 尚未写入空响应头，实际路由仍返回 204。
+	if deleteResponse.Code != http.StatusOK {
+		t.Fatalf("delete reminder status=%d body=%s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+
+	recreated := performAIActionRequest(
+		t, http.MethodPost,
+		fmt.Sprintf("/user/calendar/events/%d/reminders", event.ID),
+		`{"minutes_before":30}`, user.ID, params, nil, handler.CreateReminder,
+	)
+	if recreated.Code != http.StatusCreated {
+		t.Fatalf("recreate reminder status=%d body=%s", recreated.Code, recreated.Body.String())
+	}
+	var active []models.UserCalendarReminder
+	if err := db.Where("event_id = ?", event.ID).Find(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].MinutesBefore != 30 || active[0].DeletedAt.Valid {
+		t.Fatalf("active reminders=%+v", active)
+	}
+}
+
 func TestCampusCalendarActionProposalOnlyCreatesDraft(t *testing.T) {
 	db := newUserCalendarActionTestDB(t)
 	handler := NewUserCalendarHandler(db)
@@ -253,6 +312,46 @@ func TestCampusCalendarActionProposalOnlyCreatesDraft(t *testing.T) {
 	retryDraft := retry.(models.UserCalendarActionDraft)
 	if retryDraft.ID != draft.ID {
 		t.Fatalf("proposal idempotency IDs differ: %d vs %d", draft.ID, retryDraft.ID)
+	}
+}
+
+func TestCampusCalendarActionProposalScopesIdempotencyToRun(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "campus-agent-run-scope")
+	registry, err := ai.NewToolRegistry(db, NewCampusCalendarActionProposalTool(handler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := json.RawMessage(`{"action_type":"calendar_event_create","title":"同一操作","start_at":"2026-08-24T09:00:00Z","end_at":"2026-08-24T10:00:00Z"}`)
+
+	first, _, err := registry.Execute(context.Background(), "call-run-1-a", "run-1", user.ID, "calendar_propose_action", arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := registry.Execute(context.Background(), "call-run-1-b", "run-1", user.ID, "calendar_propose_action", arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, _, err := registry.Execute(context.Background(), "call-run-2-a", "run-2", user.ID, "calendar_propose_action", arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstDraft, secondDraft, thirdDraft models.UserCalendarActionDraft
+	if err := json.Unmarshal(first.Result, &firstDraft); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(second.Result, &secondDraft); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(third.Result, &thirdDraft); err != nil {
+		t.Fatal(err)
+	}
+	if firstDraft.ID != secondDraft.ID {
+		t.Fatalf("same Run should reuse draft: %d vs %d", firstDraft.ID, secondDraft.ID)
+	}
+	if firstDraft.ID == thirdDraft.ID {
+		t.Fatalf("different Run should create a new draft: %d vs %d", firstDraft.ID, thirdDraft.ID)
 	}
 }
 

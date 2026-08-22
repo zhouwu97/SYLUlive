@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"shenliyuan/internal/ai"
 	"shenliyuan/internal/models"
@@ -76,14 +77,24 @@ func (t *campusCalendarActionProposalTool) Execute(
 		return nil, errors.New("invalid_calendar_action")
 	}
 
-	// ToolRegistry 已按 call_id 做一次幂等；这里再用规范化参数生成稳定键，
-	// 处理模型重连后重新生成 call_id 的情况。
+	// ToolRegistry 已按 call_id 做一次幂等；Draft 还需要按 Run 隔离，
+	// 避免用户在新 Run 中重新提出相同操作时复用旧的 cancelled/expired Draft。
 	canonical, err := json.Marshal(input)
 	if err != nil {
 		return nil, errors.New("invalid_calendar_action")
 	}
 	digest := sha256.Sum256(canonical)
-	idempotencyKey := "campus-agent-" + hex.EncodeToString(digest[:])
+	runID := strings.TrimSpace(ai.ToolCallRunID(ctx))
+	if runID == "" {
+		// 直接调用（例如单元测试）没有 ToolRegistry 上下文，保留稳定的本地作用域。
+		runID = "direct"
+	}
+	if len(runID) > 36 {
+		runDigest := sha256.Sum256([]byte(runID))
+		runID = hex.EncodeToString(runDigest[:])[:24]
+	}
+	payloadHash := hex.EncodeToString(digest[:])[:48]
+	idempotencyKey := "campus-agent-" + runID + "-" + payloadHash
 	draft, _, err := t.handler.CreateCalendarActionDraftForAgent(ctx, userID, input, idempotencyKey)
 	if err != nil {
 		return nil, err

@@ -370,6 +370,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
+		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
+	}
 	if err := ensureSecurityHardeningSchema(db); err != nil {
 		log.Fatal("安全加固数据库迁移失败:", err)
 	}
@@ -2305,6 +2308,29 @@ WHERE EXISTS (SELECT 1 FROM canteens
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
  ON reports (reporter_id, target_type, target_id)
  WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureUserCalendarReminderLiveUniqueIndex 将提醒唯一性限定在未软删除记录。
+// 旧版本既有表可能同时存在 SQL constraint 和 GORM index，必须先清理两者，
+// 否则删除后重新添加同一提前量仍会被历史软删除行挡住。
+func ensureUserCalendarReminderLiveUniqueIndex(db *gorm.DB) error {
+	statements := []string{
+		`DROP INDEX IF EXISTS idx_user_calendar_reminders_event_offset`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_reminders_event_offset_live
+ ON user_calendar_reminders (event_id, minutes_before)
+ WHERE deleted_at IS NULL`,
+	}
+	if db.Dialector.Name() == "postgres" {
+		statements = append([]string{
+			`ALTER TABLE user_calendar_reminders DROP CONSTRAINT IF EXISTS uq_user_calendar_reminders_event_offset`,
+		}, statements...)
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

@@ -738,7 +738,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(999),
@@ -872,25 +873,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       _buildSettingsRow(
         child: _buildSettingsTile(
-          icon: Icons.restaurant_outlined,
-          iconColor: const Color(0xFFD97706),
-          title: '食堂评价',
-          subtitle: '查看与管理我的历史评价',
-          isDark: isDark,
-          onTap: () {
-            if (!context.read<AuthProvider>().isLoggedIn) {
-              Navigator.pushNamed(context, '/login');
-              return;
-            }
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MyCanteenReviewsScreen()),
-            );
-          },
-        ),
-      ),
-      _buildSettingsRow(
-        child: _buildSettingsTile(
           icon: Icons.notifications_active_outlined,
           iconColor: Colors.orange,
           title: '通知',
@@ -914,6 +896,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ).then((_) {
               _loadUnreadCount();
             });
+          },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.restaurant_outlined,
+          iconColor: const Color(0xFFD97706),
+          title: '食堂评价',
+          subtitle: '查看与管理我的历史评价',
+          isDark: isDark,
+          onTap: () {
+            if (!context.read<AuthProvider>().isLoggedIn) {
+              Navigator.pushNamed(context, '/login');
+              return;
+            }
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyCanteenReviewsScreen()),
+            );
           },
         ),
       ),
@@ -1114,7 +1115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
     return GlassContainer(
       padding: EdgeInsets.zero,
-      borderRadius: 12,
+      borderRadius: 18,
       blur: 12,
       opacity: 0.15,
       child: Column(children: children),

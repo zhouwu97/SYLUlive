@@ -57,17 +57,15 @@ class _CanteenReviewHistoryScreenState
   }
 
   String _keyFor(CanteenReviewEvent item) {
-    final source = item.source == 'legacy' || item.scoreVersion < 2
-        ? 'legacy'
-        : 'v2';
+    final source =
+        item.source == 'legacy' || item.scoreVersion < 2 ? 'legacy' : 'v2';
     final id = source == 'legacy' ? item.legacyRatingId ?? item.id : item.id;
     return '$source:$id';
   }
 
   Future<void> _delete(CanteenReviewEvent item) async {
-    final source = item.source == 'legacy' || item.scoreVersion < 2
-        ? 'legacy'
-        : 'v2';
+    final source =
+        item.source == 'legacy' || item.scoreVersion < 2 ? 'legacy' : 'v2';
     final id = source == 'legacy' ? item.legacyRatingId : item.id;
     if (id == null || id <= 0) {
       AppFeedback.error('这条旧评价暂时无法定位，请刷新后重试', context: context);
@@ -228,7 +226,8 @@ class _CanteenReviewHistoryScreenState
     final deleting = _deleting.contains(key);
     final edited = item.updatedAt != null &&
         item.createdAt != null &&
-        item.updatedAt!.difference(item.createdAt!).abs() > const Duration(seconds: 1);
+        item.updatedAt!.difference(item.createdAt!).abs() >
+            const Duration(seconds: 1);
     return AnimatedSize(
       duration: AppMotion.fast,
       curve: AppMotion.outgoing,

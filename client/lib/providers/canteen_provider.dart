@@ -324,7 +324,7 @@ class CanteenProvider with ChangeNotifier {
         errorMessage: _errorMessage,
       );
     }
-    return CanteenRatingSubmitResult(
+    return const CanteenRatingSubmitResult(
       success: false,
       errorMessage: '评价服务返回异常',
     );
@@ -371,7 +371,17 @@ class CanteenProvider with ChangeNotifier {
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
       if (e.response?.data is Map) {
-        errorCode = e.response!.data['code']?.toString();
+        final data = e.response!.data as Map;
+        errorCode = data['code']?.toString();
+        final rawRemote = data['remote_updated_at']?.toString();
+        final remoteUpdatedAt =
+            rawRemote == null ? null : DateTime.tryParse(rawRemote);
+        return CanteenRatingSubmitResult(
+          success: false,
+          errorCode: errorCode,
+          errorMessage: _errorMessage,
+          remoteUpdatedAt: remoteUpdatedAt,
+        );
       }
       return CanteenRatingSubmitResult(
         success: false,
@@ -391,9 +401,8 @@ class CanteenProvider with ChangeNotifier {
     required String source,
   }) async {
     errorCode = null;
-    final path = source == 'legacy'
-        ? '/canteens/ratings/$id'
-        : '/canteens/reviews/$id';
+    final path =
+        source == 'legacy' ? '/canteens/ratings/$id' : '/canteens/reviews/$id';
     try {
       final response = await _dio.delete(path);
       final data = response.data;

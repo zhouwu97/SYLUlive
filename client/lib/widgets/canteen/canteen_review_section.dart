@@ -351,7 +351,7 @@ class _ReviewItemState extends State<_ReviewItem> {
           onVote: widget.onVote,
           onEditLatestReview: widget.onEditLatestReview,
           onReport: widget.onReport,
-          onDelete: _delete,
+          onDelete: widget.onDelete == null ? null : _delete,
           onOpenHistory: widget.onOpenHistory,
         ),
       ),
@@ -590,7 +590,8 @@ class _ReviewItemContent extends StatelessWidget {
                   onTap: onOpenHistory,
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                     child: Text(
                       '我的历史评价 ${(review['history_count'] as num).toInt()} ›',
                       style: TextStyle(
@@ -643,7 +644,9 @@ class _ReviewItemContent extends StatelessWidget {
                   ],
                 ),
               ],
-              if (isOwn && onDelete != null)
+              if (isOwn &&
+                  ((isLatestV2 && onEditLatestReview != null) ||
+                      onDelete != null))
                 PopupMenuButton<String>(
                   tooltip: '评价操作',
                   padding: EdgeInsets.zero,

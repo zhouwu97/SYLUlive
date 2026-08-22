@@ -6,7 +6,6 @@ import '../config/api_constants.dart';
 import '../models/canteen_review.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
-import '../theme/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_status_image.dart';
@@ -20,8 +19,7 @@ class MyCanteenReviewsScreen extends StatefulWidget {
   const MyCanteenReviewsScreen({super.key});
 
   @override
-  State<MyCanteenReviewsScreen> createState() =>
-      _MyCanteenReviewsScreenState();
+  State<MyCanteenReviewsScreen> createState() => _MyCanteenReviewsScreenState();
 }
 
 class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
@@ -83,14 +81,16 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     }
     final epoch = auth.accountSessionEpoch;
     final page = await context.read<CanteenProvider>().loadMyCanteenReviews();
-    if (!mounted || auth.accountSessionEpoch != epoch) return;
+    if (!mounted || auth.accountSessionEpoch != epoch) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() {
       _items = page?.items ?? const [];
       _cursor = page?.nextCursor;
       _loading = false;
-      _error = page == null
-          ? context.read<CanteenProvider>().errorMessage
-          : null;
+      _error =
+          page == null ? context.read<CanteenProvider>().errorMessage : null;
     });
   }
 
@@ -103,7 +103,10 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final page = await context.read<CanteenProvider>().loadMyCanteenReviews(
           cursor: _cursor,
         );
-    if (!mounted || auth.accountSessionEpoch != epoch) return;
+    if (!mounted || auth.accountSessionEpoch != epoch) {
+      if (mounted) setState(() => _loadingMore = false);
+      return;
+    }
     setState(() {
       if (page != null) {
         _items = [..._items, ...page.items];
@@ -235,7 +238,8 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
           SizedBox(
             height: 360,
             child: Center(
-              child: FilledButton(onPressed: _reload, child: const Text('重新加载')),
+              child:
+                  FilledButton(onPressed: _reload, child: const Text('重新加载')),
             ),
           ),
         ],
@@ -275,7 +279,8 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                     const SizedBox(height: 20),
                     FilledButton(
                       onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const CanteenScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const CanteenScreen()),
                       ),
                       child: const Text('去看看食堂'),
                     ),
@@ -291,17 +296,33 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      itemCount: _items.length + (_loadingMore ? 1 : 0),
+      itemCount: _items.length + 1 + (_loadingMore ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index >= _items.length) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              '按评价时间倒序',
+              style: TextStyle(
+                fontSize: 13,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          );
+        }
+        final itemIndex = index - 1;
+        if (itemIndex >= _items.length) {
           return const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+            child: Center(
+                child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))),
           );
         }
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: _buildReviewCard(_items[index], isDark),
+          child: _buildReviewCard(_items[itemIndex], isDark),
         );
       },
     );
@@ -320,7 +341,11 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Container(width: 52, height: 52, color: color), const SizedBox(width: 12), Expanded(child: Container(height: 16, color: color))]),
+          Row(children: [
+            Container(width: 52, height: 52, color: color),
+            const SizedBox(width: 12),
+            Expanded(child: Container(height: 16, color: color))
+          ]),
           const SizedBox(height: 20),
           Container(width: 120, height: 16, color: color),
           const SizedBox(height: 14),
@@ -338,7 +363,8 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final canteen = item.canteen;
     final edited = item.updatedAt != null &&
         item.createdAt != null &&
-        item.updatedAt!.difference(item.createdAt!).abs() > const Duration(seconds: 1);
+        item.updatedAt!.difference(item.createdAt!).abs() >
+            const Duration(seconds: 1);
     final date = item.createdAt == null ? '' : _date(item.createdAt!);
     return Container(
       padding: const EdgeInsets.all(16),
@@ -400,8 +426,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                 ),
                 if (canteen != null)
                   Icon(Icons.chevron_right,
-                      size: 20,
-                      color: CanteenTheme.textTertiaryColor(isDark)),
+                      size: 20, color: CanteenTheme.textTertiaryColor(isDark)),
               ],
             ),
           ),
@@ -492,13 +517,12 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                 },
                 itemBuilder: (_) => [
                   if (item.canEdit)
-                    const PopupMenuItem(
-                        value: 'edit', child: Text('修改这条评价')),
+                    const PopupMenuItem(value: 'edit', child: Text('修改这条评价')),
                   if (item.canDelete)
                     const PopupMenuItem(
                       value: 'delete',
-                      child: Text('删除这条评价',
-                          style: TextStyle(color: Colors.red)),
+                      child:
+                          Text('删除这条评价', style: TextStyle(color: Colors.red)),
                     ),
                 ],
               ),

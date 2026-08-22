@@ -221,6 +221,7 @@ type AIUsageRecord struct {
 	CostMicroYuan       int64     `gorm:"not null;default:0" json:"cost_micro_yuan"`
 	LatencyMilliseconds int64     `gorm:"not null;default:0" json:"latency_ms"`
 	ErrorClass          string    `gorm:"size:64;not null;default:''" json:"error_class,omitempty"`
+	Purpose             string    `gorm:"size:32;not null;default:'campus_agent';index" json:"purpose"`
 	CreatedAt           time.Time `gorm:"index" json:"created_at"`
 }
 

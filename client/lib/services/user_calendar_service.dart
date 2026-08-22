@@ -51,6 +51,37 @@ class UserCalendarService {
     return UserCalendarEvent.fromJson(_map(response.data));
   }
 
+  Future<UserCalendarEvent> updateEvent(
+    int eventId, {
+    String? title,
+    String? description,
+    DateTime? startAt,
+    DateTime? endAt,
+    bool? allDay,
+    String? location,
+    String? timezone,
+  }) async {
+    final response = await _dio.patch(
+      '/user/calendar/events/$eventId',
+      data: <String, dynamic>{
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (startAt != null) 'start_at': startAt.toUtc().toIso8601String(),
+        if (endAt != null) 'end_at': endAt.toUtc().toIso8601String(),
+        if (allDay != null) 'all_day': allDay,
+        if (location != null) 'location': location,
+        if (timezone != null) 'timezone': timezone,
+      },
+    );
+    _expect(response, 200);
+    return UserCalendarEvent.fromJson(_map(response.data));
+  }
+
+  Future<void> deleteEvent(int eventId) async {
+    final response = await _dio.delete('/user/calendar/events/$eventId');
+    _expect(response, 204);
+  }
+
   Future<UserCalendarReminder> createReminder(
       int eventId, int minutesBefore) async {
     final response = await _dio.post(
@@ -67,12 +98,40 @@ class UserCalendarService {
     return UserCalendarReminder.fromJson(_map(response.data));
   }
 
+  Future<void> deleteReminder(int eventId, int reminderId) async {
+    final response = await _dio.delete(
+      '/user/calendar/events/$eventId/reminders/$reminderId',
+    );
+    _expect(response, 204);
+  }
+
   Future<UserCalendarActionDraft> createEventDraft(
     Map<String, dynamic> payload, {
     String? idempotencyKey,
   }) async {
     final response = await _dio.post(
       '/ai/action-drafts/calendar-event',
+      data: payload,
+      options: Options(headers: <String, dynamic>{
+        if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw DioException.badResponse(
+        statusCode: response.statusCode ?? 0,
+        requestOptions: response.requestOptions,
+        response: response,
+      );
+    }
+    return UserCalendarActionDraft.fromJson(_map(response.data));
+  }
+
+  Future<UserCalendarActionDraft> createReminderDraft(
+    Map<String, dynamic> payload, {
+    String? idempotencyKey,
+  }) async {
+    final response = await _dio.post(
+      '/ai/action-drafts/calendar-reminder',
       data: payload,
       options: Options(headers: <String, dynamic>{
         if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,

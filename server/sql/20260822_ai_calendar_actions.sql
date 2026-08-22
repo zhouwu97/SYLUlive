@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS user_calendar_action_drafts (
     timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai',
     payload_hash VARCHAR(64) NOT NULL,
     idempotency_key VARCHAR(100) NOT NULL,
+    target_event_id BIGINT REFERENCES user_calendar_events(id) ON DELETE SET NULL,
+    target_event_version BIGINT NOT NULL DEFAULT 0,
+    reminder_minutes_before INTEGER CHECK (reminder_minutes_before IS NULL OR (reminder_minutes_before >= 0 AND reminder_minutes_before <= 10080)),
     calendar_event_id BIGINT REFERENCES user_calendar_events(id) ON DELETE SET NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     confirmed_at TIMESTAMPTZ,
@@ -85,3 +88,11 @@ CREATE TABLE IF NOT EXISTS user_calendar_action_audits (
     result VARCHAR(100) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 兼容早期已创建过行动草稿表的环境；CREATE TABLE IF NOT EXISTS 不会补齐新字段。
+ALTER TABLE user_calendar_action_drafts
+    ADD COLUMN IF NOT EXISTS target_event_id BIGINT REFERENCES user_calendar_events(id) ON DELETE SET NULL;
+ALTER TABLE user_calendar_action_drafts
+    ADD COLUMN IF NOT EXISTS target_event_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE user_calendar_action_drafts
+    ADD COLUMN IF NOT EXISTS reminder_minutes_before INTEGER CHECK (reminder_minutes_before IS NULL OR (reminder_minutes_before >= 0 AND reminder_minutes_before <= 10080));

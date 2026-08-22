@@ -5,8 +5,10 @@ import '../../models/ai_chat_message.dart';
 import '../../models/ai_personal_data_evidence.dart';
 import '../../models/ai_source.dart';
 import '../../models/competition_action_draft.dart';
+import '../../models/user_calendar.dart';
 import '../../utils/ai_citation_mapper.dart';
 import 'ai_competition_plan_draft_card.dart';
+import 'ai_calendar_action_draft_card.dart';
 import 'ai_evidence_card.dart';
 import 'ai_source_card.dart';
 import '../campus/campus_theme.dart';
@@ -14,6 +16,10 @@ import '../campus/campus_theme.dart';
 class AiMessageCard extends StatelessWidget {
   final AiChatMessage message;
   final Future<void> Function(CompetitionPlanActionDraft draft)? onConfirmDraft;
+  final Future<void> Function(UserCalendarActionDraft draft)?
+      onConfirmCalendarDraft;
+  final Future<void> Function(UserCalendarActionDraft draft)?
+      onCancelCalendarDraft;
   final void Function(int eventId)? onViewCompetition;
   final Future<AiSourceContent> Function(int chunkId)? loadSourceContent;
   final VoidCallback? onRetrySources;
@@ -21,6 +27,8 @@ class AiMessageCard extends StatelessWidget {
     super.key,
     required this.message,
     this.onConfirmDraft,
+    this.onConfirmCalendarDraft,
+    this.onCancelCalendarDraft,
     this.onViewCompetition,
     this.loadSourceContent,
     this.onRetrySources,
@@ -82,6 +90,16 @@ class AiMessageCard extends StatelessWidget {
                   onViewCompetition: onViewCompetition == null
                       ? null
                       : () => onViewCompetition!(draft.event.id),
+                ),
+              for (final draft in message.calendarActionDrafts)
+                AiCalendarActionDraftCard(
+                  draft: draft,
+                  onConfirm: onConfirmCalendarDraft == null
+                      ? null
+                      : () => onConfirmCalendarDraft!(draft),
+                  onCancel: onCancelCalendarDraft == null
+                      ? null
+                      : () => onCancelCalendarDraft!(draft),
                 ),
               if (!isUser && message.personalDataEvidence.isNotEmpty)
                 _CompactEvidenceTag(

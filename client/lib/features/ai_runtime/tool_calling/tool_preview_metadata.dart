@@ -9,6 +9,7 @@ import '../skills/schedule_skill_models.dart';
 import '../skills/today_schedule_skill.dart';
 import '../skills/week_schedule_skill.dart';
 import '../skills/competition_plan_action_skill.dart';
+import '../skills/calendar_action_skill.dart';
 import 'tool_call_models.dart';
 
 class ToolPreviewRequest {
@@ -60,6 +61,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
       CompetitionCapabilityProfileSkill.skillId => _competitionCapability(),
       ExplainCompetitionMatchesSkill.skillId => _competitionMatches(),
       DraftAddCompetitionToPlanSkill.skillId => _competitionPlanDraft(),
+      CalendarActionSkill.skillId => _calendarAction(),
       AcademicGpaSkill.skillId => _gpa(),
       AcademicCreditSummarySkill.skillId => _creditSummary(),
       AcademicFailureRiskSkill.skillId => _failureRisk(),
@@ -207,6 +209,16 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
           ..._credentials,
         ],
         output: const <String>['赛事预览', '现有匹配分数、档位和理由', '待确认草稿状态'],
+      );
+
+  ToolPermissionPreviewMetadata _calendarAction() => _metadata(
+        inputItems: const <ToolDataPreviewItem>[],
+        excluded: const <String>[
+          '教务密码、Cookie 和 API Key',
+          '未请求的成绩、课表、体测和二课数据',
+          '模型直接写入日历（必须经过用户确认）',
+        ],
+        output: const <String>['日历操作内容', '待确认草稿状态', '过期时间'],
       );
 
   ToolPermissionPreviewMetadata _gpa() => _metadata(

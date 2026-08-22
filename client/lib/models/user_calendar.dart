@@ -1,3 +1,5 @@
+import '../features/ai_runtime/skills/personal_skill.dart';
+
 class UserCalendarEvent {
   const UserCalendarEvent({
     required this.id,
@@ -26,6 +28,21 @@ class UserCalendarEvent {
   final String sourceType;
   final String createdBy;
   final int version;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'calendar_id': calendarId,
+        'title': title,
+        'description': description,
+        'start_at': startAt.toUtc().toIso8601String(),
+        'end_at': endAt.toUtc().toIso8601String(),
+        'all_day': allDay,
+        'location': location,
+        'timezone': timezone,
+        'source_type': sourceType,
+        'created_by': createdBy,
+        'version': version,
+      };
 
   factory UserCalendarEvent.fromJson(Map<String, dynamic> json) {
     return UserCalendarEvent(
@@ -70,7 +87,7 @@ class UserCalendarReminder {
   }
 }
 
-class UserCalendarActionDraft {
+class UserCalendarActionDraft implements SkillActionArtifact {
   const UserCalendarActionDraft({
     required this.id,
     required this.actionType,
@@ -83,6 +100,8 @@ class UserCalendarActionDraft {
     required this.location,
     required this.timezone,
     required this.expiresAt,
+    this.targetEventId,
+    this.reminderMinutesBefore,
     this.calendarEventId,
     this.event,
   });
@@ -98,8 +117,58 @@ class UserCalendarActionDraft {
   final String location;
   final String timezone;
   final DateTime expiresAt;
+  final int? targetEventId;
+  final int? reminderMinutesBefore;
   final int? calendarEventId;
   final UserCalendarEvent? event;
+
+  bool get isPending => status == 'waiting_confirmation';
+  bool get isExpired =>
+      status == 'expired' || !expiresAt.isAfter(DateTime.now());
+
+  UserCalendarActionDraft copyWith({
+    String? status,
+    DateTime? expiresAt,
+    int? calendarEventId,
+    UserCalendarEvent? event,
+  }) {
+    return UserCalendarActionDraft(
+      id: id,
+      actionType: actionType,
+      status: status ?? this.status,
+      title: title,
+      description: description,
+      startAt: startAt,
+      endAt: endAt,
+      allDay: allDay,
+      location: location,
+      timezone: timezone,
+      expiresAt: expiresAt ?? this.expiresAt,
+      targetEventId: targetEventId,
+      reminderMinutesBefore: reminderMinutesBefore,
+      calendarEventId: calendarEventId ?? this.calendarEventId,
+      event: event ?? this.event,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'action_type': actionType,
+        'status': status,
+        'title': title,
+        'description': description,
+        'start_at': startAt.toUtc().toIso8601String(),
+        'end_at': endAt.toUtc().toIso8601String(),
+        'all_day': allDay,
+        'location': location,
+        'timezone': timezone,
+        'expires_at': expiresAt.toUtc().toIso8601String(),
+        if (targetEventId != null) 'target_event_id': targetEventId,
+        if (reminderMinutesBefore != null)
+          'reminder_minutes_before': reminderMinutesBefore,
+        if (calendarEventId != null) 'calendar_event_id': calendarEventId,
+        if (event != null) 'event': event!.toJson(),
+      };
 
   factory UserCalendarActionDraft.fromJson(Map<String, dynamic> json) {
     return UserCalendarActionDraft(
@@ -117,6 +186,12 @@ class UserCalendarActionDraft {
       timezone: json['timezone']?.toString() ?? 'Asia/Shanghai',
       expiresAt: DateTime.tryParse(json['expires_at']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      targetEventId: json['target_event_id'] == null
+          ? null
+          : _int(json['target_event_id']),
+      reminderMinutesBefore: json['reminder_minutes_before'] == null
+          ? null
+          : _int(json['reminder_minutes_before']),
       calendarEventId: json['calendar_event_id'] == null
           ? null
           : _int(json['calendar_event_id']),
@@ -131,3 +206,6 @@ class UserCalendarActionDraft {
 
 int _int(dynamic value, {int fallback = 0}) =>
     value is int ? value : int.tryParse(value?.toString() ?? '') ?? fallback;
+
+int calendarReminderNotificationId(int eventId, int minutesBefore) =>
+    1000000000 + ((eventId * 131 + minutesBefore) % 500000000);

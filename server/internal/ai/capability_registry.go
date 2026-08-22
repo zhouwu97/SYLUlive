@@ -54,12 +54,12 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 		{
 			ID: "calendar.official_read", Version: "1", Lane: "public", Kind: "read",
 			Description: "查询指定日期的官方校历、教学周和调休信息", Available: toolAvailable("calendar.get_day"),
-			ToolNames: []string{"calendar.get_day"},
+			ToolNames: []string{"calendar.get_day", "calendar.get_range", "calendar.get_current_term", "calendar.get_teaching_week"},
 		},
 		{
 			ID: "canteen.discovery", Version: "1", Lane: "public", Kind: "read",
 			Description: "查询当前可用食堂和公开菜品", Available: toolAvailable("canteen.search", "canteen.get_details"),
-			ToolNames: []string{"canteen.search", "canteen.get_details"},
+			ToolNames: []string{"canteen.search", "canteen.get_details", "canteen.search_dishes", "canteen.get_dish_details", "canteen.get_rankings", "canteen.get_recent_reviews"},
 		},
 		{
 			ID: "academic.personal_read", Version: "1", Lane: "personal", Kind: "read",
@@ -79,14 +79,30 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 			RequiresConfirmation: true,
 		},
 		{
+			ID: "competition.personal_read", Version: "1", Lane: "personal", Kind: "read",
+			Description: "读取当前用户自己的竞赛计划、报名截止时间和计划日历", Available: toolAvailable("competition.get_my_plan", "competition.get_deadlines", "competition.get_calendar"),
+			ToolNames:        []string{"competition.get_my_plan", "competition.get_deadlines", "competition.get_calendar"},
+			PermissionScopes: []string{"ai_personal_data_access"},
+		},
+		{
 			ID: "calendar.event_manage", Version: "1", Lane: "personal", Kind: "action",
 			Description: "创建、修改或删除个人日历事件", Available: true,
+			ToolNames:            []string{"draft_calendar_action"},
+			PermissionScopes:     []string{"calendar_write"},
 			RequiresConfirmation: true,
 		},
 		{
 			ID: "calendar.reminder_manage", Version: "1", Lane: "personal", Kind: "action",
 			Description: "为个人日历事件设置提醒", Available: true,
+			ToolNames:            []string{"draft_calendar_action"},
+			PermissionScopes:     []string{"calendar_write"},
 			RequiresConfirmation: true,
+		},
+		{
+			ID: "personal_calendar.read", Version: "1", Lane: "personal", Kind: "read",
+			Description: "读取当前用户自己的个人日历并计算可用时间窗口", Available: toolAvailable("personal_calendar.get_events", "personal_calendar.get_range", "personal_calendar.get_day", "personal_calendar.find_free_time"),
+			ToolNames:        []string{"personal_calendar.get_events", "personal_calendar.get_range", "personal_calendar.get_day", "personal_calendar.find_free_time"},
+			PermissionScopes: []string{"ai_personal_data_access"},
 		},
 	}
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })

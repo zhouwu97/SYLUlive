@@ -32,8 +32,8 @@ void main() {
 
     expect(
         find.byKey(const ValueKey('ai-agent-execution-card')), findsOneWidget);
-    expect(find.text('检查数据新鲜度'), findsOneWidget);
-    expect(find.text('正在通过已有教务会话刷新'), findsOneWidget);
+    expect(find.text('正在检查需要的数据'), findsOneWidget);
+    expect(find.textContaining('只在需要时唤醒设备'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

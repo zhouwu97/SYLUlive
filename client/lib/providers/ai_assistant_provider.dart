@@ -520,6 +520,17 @@ class AiAssistantProvider extends ChangeNotifier {
           type: AiRunEventType.status,
           status: run.state,
         );
+        if (run.state == 'waiting_device' || run.state == 'waiting_edu') {
+          _agentEvent = AiRunEvent(
+            runId: run.id,
+            type: run.state == 'waiting_device'
+                ? AiRunEventType.deviceWaiting
+                : AiRunEventType.eduFetching,
+            status: run.state,
+            datasets: _agentEvent?.datasets ?? const [],
+          );
+          _agentFlowCompleted = false;
+        }
         if (run.state == 'waiting_device') _syncDeviceTools();
         _notify();
       } else if (allowReconnect) {

@@ -13,6 +13,7 @@ import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
+import '../models/user_calendar.dart';
 import '../services/ai_assistant_service.dart';
 import '../utils/ai_citation_mapper.dart';
 
@@ -177,6 +178,25 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   List<AiQuickPrompt> get quickPrompts => List.unmodifiable(_quickPrompts);
+
+  /// 更新服务器校园 Agent 推送到消息中的日历草稿状态。
+  /// 执行仍由 Action Draft API 完成，这里只同步当前消息卡片。
+  void replaceCalendarActionDraft(UserCalendarActionDraft updated) {
+    var changed = false;
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      if (!message.calendarActionDrafts.any((item) => item.id == updated.id)) {
+        continue;
+      }
+      _messages[index] = message.copyWith(
+        calendarActionDrafts: message.calendarActionDrafts
+            .map((item) => item.id == updated.id ? updated : item)
+            .toList(growable: false),
+      );
+      changed = true;
+    }
+    if (changed) _notify();
+  }
 
   void refreshQuickPrompts() {
     _selectQuickPrompts(avoidCurrent: true);
@@ -520,6 +540,17 @@ class AiAssistantProvider extends ChangeNotifier {
           type: AiRunEventType.status,
           status: run.state,
         );
+        if (run.state == 'waiting_device' || run.state == 'waiting_edu') {
+          _agentEvent = AiRunEvent(
+            runId: run.id,
+            type: run.state == 'waiting_device'
+                ? AiRunEventType.deviceWaiting
+                : AiRunEventType.eduFetching,
+            status: run.state,
+            datasets: _agentEvent?.datasets ?? const [],
+          );
+          _agentFlowCompleted = false;
+        }
         if (run.state == 'waiting_device') _syncDeviceTools();
         _notify();
       } else if (allowReconnect) {
@@ -598,18 +629,37 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.toolRequested:
       case AiRunEventType.toolExecuting:
       case AiRunEventType.deviceClaimed:
+        // 工具开始/执行本身不是授权请求。只有带 scope 的 consent.required
+        // 才能进入授权 UI，否则“允许本次”没有可提交的授权范围。
+        _pendingConsent = null;
+        _connectionState = AiConnectionState.streaming;
+        break;
       case AiRunEventType.consentRequired:
-        _pendingConsent = event;
+        _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
         _connectionState = AiConnectionState.streaming;
         break;
       case AiRunEventType.deviceWaiting:
-        _pendingConsent = event;
+        _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
         _connectionState = AiConnectionState.streaming;
         _syncDeviceTools();
         break;
       case AiRunEventType.eduFetching:
       case AiRunEventType.toolCompleted:
         _connectionState = AiConnectionState.streaming;
+        final actionDraft = event.calendarActionDraft;
+        if (actionDraft != null) {
+          final existing = _calendarActionDraftsForRun(event.runId);
+          if (!existing.any((item) => item.id == actionDraft.id)) {
+            _upsertAssistant(
+              _streamedText,
+              AiMessageStatus.streaming,
+              calendarActionDrafts: <UserCalendarActionDraft>[
+                ...existing,
+                actionDraft
+              ],
+            );
+          }
+        }
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
@@ -822,10 +872,12 @@ class AiAssistantProvider extends ChangeNotifier {
     List<AiSource>? sources,
     AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
+    List<UserCalendarActionDraft>? calendarActionDrafts,
   }) {
     if (text.isEmpty &&
         (sources == null || sources.isEmpty) &&
-        (personalDataEvidence == null || personalDataEvidence.isEmpty)) {
+        (personalDataEvidence == null || personalDataEvidence.isEmpty) &&
+        (calendarActionDrafts == null || calendarActionDrafts.isEmpty)) {
       return;
     }
     final runId = _run?.id ?? _currentRun?.runId ?? '';
@@ -839,6 +891,7 @@ class AiAssistantProvider extends ChangeNotifier {
         sources: sources,
         sourceRecoveryState: sourceRecoveryState,
         personalDataEvidence: personalDataEvidence,
+        calendarActionDrafts: calendarActionDrafts,
       );
       return;
     }
@@ -853,7 +906,18 @@ class AiAssistantProvider extends ChangeNotifier {
       sourceRecoveryState:
           sourceRecoveryState ?? AiSourceRecoveryState.notNeeded,
       personalDataEvidence: personalDataEvidence ?? const [],
+      calendarActionDrafts: calendarActionDrafts ?? const [],
     ));
+  }
+
+  List<UserCalendarActionDraft> _calendarActionDraftsForRun(String runId) {
+    for (final message in _messages.reversed) {
+      if (message.role == AiMessageRole.assistant &&
+          message.requestId == runId) {
+        return message.calendarActionDrafts;
+      }
+    }
+    return const <UserCalendarActionDraft>[];
   }
 
   void _replaceUserStatus(String requestId, AiMessageStatus status) {
@@ -962,7 +1026,9 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.deviceClaimed ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
-        AiRunEventType.toolCompleted =>
+        AiRunEventType.toolCompleted ||
+        AiRunEventType.failed ||
+        AiRunEventType.cancelled =>
           true,
         _ => false,
       };

@@ -46,6 +46,7 @@ replace.py
 /client/test/e2e_test.dart
 /client/integration_test/local_*.dart
 /client/test_credentials.*
+/client/test/goldens/failures/
 /client/.env
 /client/.env.*
 # 鸿蒙签名材料由 DevEco 在本机维护，严禁提交路径、证书或口令。

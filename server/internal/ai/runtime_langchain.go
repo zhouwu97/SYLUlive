@@ -332,7 +332,7 @@ func (r *Runtime) settleReservedBudget(runID string, latency time.Duration, erro
 			return err
 		}
 		return tx.Create(&models.AIUsageRecord{
-			RunID: runID, UserHash: r.hashUserID(run.UserID), Provider: run.Provider, Model: run.Model,
+			RunID: runID, UserHash: r.hashUserID(run.UserID), Provider: run.Provider, Model: run.Model, Purpose: "campus_agent",
 			CostMicroYuan: actual, LatencyMilliseconds: latency.Milliseconds(), ErrorClass: errorClass,
 		}).Error
 	})

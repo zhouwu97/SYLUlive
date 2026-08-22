@@ -57,8 +57,7 @@ class _PermissionAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     await requestStream?.drain<void>();
-    if (options.method != 'GET' ||
-        options.path != '/api/ai/personal-data-access') {
+    if (options.method != 'GET' || options.path != '/ai/personal-data-access') {
       throw StateError('未预期的请求: ${options.method} ${options.path}');
     }
     final requestIndex = getRequests++;

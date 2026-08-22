@@ -15,6 +15,7 @@ func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t 
 		{Name: "hy3_decision_analyze_academic"},
 		{Name: "hy3_decision_compare_competitions"},
 		{Name: "hy3_decision_plan_student_week"},
+		{Name: "schedule_get_availability"},
 	}
 	tests := []struct {
 		name     string
@@ -42,6 +43,11 @@ func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t 
 			expected: []string{"hy3_decision_plan_student_week"},
 		},
 		{
+			name:     "本周空闲时间必须走课表工具",
+			message:  "这周哪几天下午比较空？",
+			expected: []string{"schedule_get_availability"},
+		},
+		{
 			name:    "个性化竞赛比较",
 			message: "数学建模和创新方法竞赛哪个更适合我",
 			expected: []string{
@@ -60,6 +66,18 @@ func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t 
 			require.Equal(t, test.expected, names)
 		})
 	}
+}
+
+func TestRequiredDecisionToolForScheduleAvailability(t *testing.T) {
+	definitions := []ToolDefinition{
+		{Name: "campus_search_policy"},
+		{Name: "schedule_get_availability"},
+		{Name: "personal_calendar.find_free_time"},
+	}
+
+	required, ok := requiredDecisionTool("这周哪几天下午比较空？", definitions)
+	require.True(t, ok)
+	require.Equal(t, "schedule_get_availability", required)
 }
 
 func TestRouteModelToolsKeepsPublicQuestionsAwayFromPersonalDataTools(t *testing.T) {

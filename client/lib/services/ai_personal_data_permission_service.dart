@@ -79,7 +79,7 @@ class AiPersonalDataPermissionService {
 
   Future<List<AiPersonalDataPermission>> list() async {
     try {
-      final response = await _dio.get('/api/ai/personal-data-access');
+      final response = await _dio.get('/ai/personal-data-access');
       if (response.statusCode != 200 || response.data is! Map) {
         throw const AiPersonalDataPermissionException('读取个人数据权限失败');
       }
@@ -106,7 +106,7 @@ class AiPersonalDataPermissionService {
   }) async {
     try {
       final response = await _dio.put(
-        '/api/ai/personal-data-access',
+        '/ai/personal-data-access',
         data: <String, String>{
           'scope': scope.wireValue,
           'policy': policy.wireValue,

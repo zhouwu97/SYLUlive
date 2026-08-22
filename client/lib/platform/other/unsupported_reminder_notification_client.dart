@@ -1,6 +1,7 @@
 import '../contracts/reminder_notification_client.dart';
 
-class UnsupportedReminderNotificationClient implements ReminderNotificationClient {
+class UnsupportedReminderNotificationClient
+    implements ReminderNotificationClient {
   @override
   Future<void> initializeCourseReminders() async {}
 
@@ -18,10 +19,24 @@ class UnsupportedReminderNotificationClient implements ReminderNotificationClien
     required String payload,
     required String ticker,
     required bool exactAllowWhileIdle,
-  }) async => false;
+  }) async =>
+      false;
 
   @override
   Future<void> cancelCourseReminder(int id) async {}
+
+  @override
+  Future<bool> scheduleCalendarReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String payload,
+  }) async =>
+      false;
+
+  @override
+  Future<void> cancelCalendarReminder(int id) async {}
 
   @override
   Future<void> initializeGradeReminders() async {}

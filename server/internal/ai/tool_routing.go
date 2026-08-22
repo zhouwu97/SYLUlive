@@ -7,6 +7,7 @@ const (
 	modelToolHy3WeekPlan    = "hy3_decision_plan_student_week"
 	modelToolCompetition    = "competition_search_catalog"
 	modelToolAcademicRisk   = "academic_get_risk_analysis"
+	modelToolSchedule       = "schedule_get_availability"
 )
 
 // routeModelTools 根据用户意图缩小模型可见工具集合。
@@ -19,6 +20,12 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 			return selected
 		}
 		return academicToolDefinitions(definitions)
+	}
+	if isScheduleAvailabilityIntent(message) {
+		if selected := scheduleAvailabilityToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
+		return definitions
 	}
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
@@ -62,6 +69,14 @@ func requiredDecisionTool(message string, definitions []ToolDefinition) (string,
 		for _, definition := range definitions {
 			if definition.Name == "hy3_decision_analyze_academic" {
 				return definition.Name, true
+			}
+		}
+		return "", false
+	}
+	if isScheduleAvailabilityIntent(message) {
+		for _, definition := range definitions {
+			if definition.Name == modelToolSchedule {
+				return modelToolSchedule, true
 			}
 		}
 		return "", false
@@ -142,6 +157,16 @@ func academicAnalysisToolDefinitions(definitions []ToolDefinition) []ToolDefinit
 	return selected
 }
 
+func scheduleAvailabilityToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, 1)
+	for _, definition := range definitions {
+		if definition.Name == modelToolSchedule {
+			selected = append(selected, definition)
+		}
+	}
+	return selected
+}
+
 // publicToolDefinitions 禁止普通校园问答误读个人成绩、课表或画像。
 // 个人数据工具只有在问题明确指向当前用户或要求执行个人查询时才对模型可见。
 func publicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
@@ -178,6 +203,18 @@ func isPersonalToolIntent(message string) bool {
 	}
 	// 课表和空闲时间天然依赖当前用户，即使省略“我的”也属于个人查询。
 	return containsAny(normalized, "有课吗", "空闲", "课表", "课程安排")
+}
+
+// isScheduleAvailabilityIntent 识别必须依赖当前用户课表才能回答的空闲时间问题。
+// 这类问题不能只把 schedule 工具“展示”给模型，否则模型可能直接用政策检索结果作答。
+func isScheduleAvailabilityIntent(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" || !containsAny(normalized, "空闲", "有空", "比较空", "空余", "空档", "没课", "无课") {
+		return false
+	}
+	return containsAny(normalized,
+		"本周", "这周", "下周", "今天", "明天", "上午", "下午", "晚上", "时间", "哪天", "星期",
+		"周一", "周二", "周三", "周四", "周五", "周六", "周日")
 }
 
 func routeModelToolsForMessages(messages []Message, definitions []ToolDefinition) []ToolDefinition {

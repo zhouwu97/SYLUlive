@@ -1,5 +1,6 @@
 import 'tool_call_models.dart';
 import '../skills/competition_plan_action_skill.dart';
+import '../skills/calendar_action_skill.dart';
 
 /// 与本地 Validator 同源维护的固定 Tool Schema，模型不能动态新增能力。
 List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
@@ -72,6 +73,46 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
             },
           },
           required: const <String>['event_id'],
+        ),
+      ),
+      ToolDefinition(
+        id: CalendarActionSkill.skillId,
+        description: '创建日历操作待确认草稿；确认后才会创建、更新、删除事件或添加提醒',
+        parameters: _object(
+          <String, dynamic>{
+            'action_type': <String, dynamic>{
+              'type': 'string',
+              'enum': <String>[
+                'calendar_event_create',
+                'calendar_event_update',
+                'calendar_event_delete',
+                'calendar_reminder_create',
+              ],
+            },
+            'event_id': const <String, dynamic>{
+              'type': 'integer',
+              'minimum': 1,
+            },
+            'title': const <String, dynamic>{'type': 'string'},
+            'description': const <String, dynamic>{'type': 'string'},
+            'start_at': const <String, dynamic>{
+              'type': 'string',
+              'format': 'date-time'
+            },
+            'end_at': const <String, dynamic>{
+              'type': 'string',
+              'format': 'date-time'
+            },
+            'all_day': const <String, dynamic>{'type': 'boolean'},
+            'location': const <String, dynamic>{'type': 'string'},
+            'timezone': const <String, dynamic>{'type': 'string'},
+            'reminder_minutes_before': const <String, dynamic>{
+              'type': 'integer',
+              'minimum': 0,
+              'maximum': 10080,
+            },
+          },
+          required: const <String>['action_type'],
         ),
       ),
       ...<String, String>{

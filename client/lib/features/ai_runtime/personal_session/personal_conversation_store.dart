@@ -6,6 +6,7 @@ import '../../campus_data/storage/account_cache_namespace.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../../../models/ai_chat_message.dart';
 import '../../../models/competition_action_draft.dart';
+import '../../../models/user_calendar.dart';
 import '../skills/personal_skill.dart';
 
 class PersonalConversationEntry {
@@ -18,30 +19,34 @@ class PersonalConversationEntry {
   final List<SkillEvidence> evidence;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-    'id': message.id,
-    'request_id': message.requestId,
-    'role': message.role.name,
-    'content': message.content,
-    'status': message.status.name,
-    'created_at': message.createdAt.toUtc().toIso8601String(),
-    'evidence': evidence
-        .map(
-          (item) => <String, dynamic>{
-            'source': item.source,
-            'scope': item.scope,
-            if (item.dataType != null) 'data_type': item.dataType!.storageValue,
-            if (item.fetchedAt != null)
-              'fetched_at': item.fetchedAt!.toUtc().toIso8601String(),
-            if (item.expiresAt != null)
-              'expires_at': item.expiresAt!.toUtc().toIso8601String(),
-            'is_stale': item.isStale,
-          },
-        )
-        .toList(growable: false),
-    'action_drafts': message.actionDrafts
-        .map((item) => item.toJson())
-        .toList(growable: false),
-  };
+        'id': message.id,
+        'request_id': message.requestId,
+        'role': message.role.name,
+        'content': message.content,
+        'status': message.status.name,
+        'created_at': message.createdAt.toUtc().toIso8601String(),
+        'evidence': evidence
+            .map(
+              (item) => <String, dynamic>{
+                'source': item.source,
+                'scope': item.scope,
+                if (item.dataType != null)
+                  'data_type': item.dataType!.storageValue,
+                if (item.fetchedAt != null)
+                  'fetched_at': item.fetchedAt!.toUtc().toIso8601String(),
+                if (item.expiresAt != null)
+                  'expires_at': item.expiresAt!.toUtc().toIso8601String(),
+                'is_stale': item.isStale,
+              },
+            )
+            .toList(growable: false),
+        'action_drafts': message.actionDrafts
+            .map((item) => item.toJson())
+            .toList(growable: false),
+        'calendar_action_drafts': message.calendarActionDrafts
+            .map((item) => item.toJson())
+            .toList(growable: false),
+      };
 
   static PersonalConversationEntry fromJson(Map<String, dynamic> json) {
     final role = AiMessageRole.values.firstWhere(
@@ -68,6 +73,19 @@ class PersonalConversationEntry {
         // 单个旧草稿损坏时保留其余会话内容，避免整段历史无法恢复。
       }
     }
+    final calendarActionDrafts = <UserCalendarActionDraft>[];
+    for (final item
+        in json['calendar_action_drafts'] as List? ?? const <Object>[]) {
+      try {
+        calendarActionDrafts.add(
+          UserCalendarActionDraft.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        );
+      } catch (_) {
+        // 单个旧日历草稿损坏时继续恢复其他会话内容。
+      }
+    }
     return PersonalConversationEntry(
       message: AiChatMessage(
         id: json['id'] as String,
@@ -77,6 +95,7 @@ class PersonalConversationEntry {
         status: status,
         createdAt: createdAt,
         actionDrafts: actionDrafts,
+        calendarActionDrafts: calendarActionDrafts,
       ),
       evidence: evidence,
     );
@@ -104,10 +123,9 @@ class PersonalConversationStore {
   PersonalConversationStore({
     required String accountKey,
     AppBlobStore? blobStore,
-  }) : _accountFingerprint = AccountCacheNamespace.fingerprint(accountKey),
-       _blobStore =
-           blobStore ??
-           EncryptedBlobStore(namespace: 'ai_history_$accountKey') {
+  })  : _accountFingerprint = AccountCacheNamespace.fingerprint(accountKey),
+        _blobStore = blobStore ??
+            EncryptedBlobStore(namespace: 'ai_history_$accountKey') {
     if (_accountFingerprint.isEmpty) {
       throw ArgumentError.value(accountKey, 'accountKey');
     }

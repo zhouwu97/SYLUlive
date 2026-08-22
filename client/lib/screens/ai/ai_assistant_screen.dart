@@ -56,6 +56,8 @@ import 'personal_data_center_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
+import '../../widgets/ai/ai_agent_execution_card.dart';
+import '../../widgets/ai/ai_agent_permission_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
 
@@ -752,6 +754,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
+  Future<void> _showAgentPermissions() =>
+      AiAgentPermissionSheet.show(context, widget.dio);
+
   Future<void> _confirmCompetitionDraft(
     CompetitionPlanActionDraft draft,
   ) async {
@@ -887,6 +892,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   Future<void> _openAiSetting(String value) async {
+    if (value == 'permissions') {
+      await _showAgentPermissions();
+      return;
+    }
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
       AppFeedback.info('毕业助手在当前内测版本中暂未开放', context: context);
       return;
@@ -982,6 +991,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         value: 'data',
                         label: '个人数据保险箱',
                         icon: Icons.shield_outlined,
+                      ),
+                      AppPopupAction(
+                        value: 'permissions',
+                        label: 'Agent 权限',
+                        icon: Icons.admin_panel_settings_outlined,
                       ),
                       if (BetaReleasePolicy.aiGraduationAssistant)
                         AppPopupAction(
@@ -1090,6 +1104,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                 padding:
                                     const EdgeInsets.fromLTRB(16, 10, 16, 18),
                                 children: [
+                                  if (provider.currentRun != null)
+                                    AiAgentExecutionCard(
+                                      event: provider.currentRun,
+                                      onOpenPermissions: _showAgentPermissions,
+                                    ),
                                   for (final message in provider.messages)
                                     AiMessageCard(
                                       message: message,

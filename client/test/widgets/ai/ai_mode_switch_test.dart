@@ -5,7 +5,7 @@ import 'package:shenliyuan/widgets/ai/ai_mode_switch.dart';
 void main() {
   testWidgets('AiModeSwitch toggles modes correctly', (tester) async {
     bool isPersonalMode = false;
-    
+
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -25,7 +25,7 @@ void main() {
       ),
     );
 
-    expect(find.text('校园问答'), findsOneWidget);
+    expect(find.text('校园 Agent'), findsOneWidget);
     expect(find.text('个人助手'), findsOneWidget);
 
     await tester.tap(find.text('个人助手'));
@@ -33,7 +33,7 @@ void main() {
 
     expect(isPersonalMode, isTrue);
 
-    await tester.tap(find.text('校园问答'));
+    await tester.tap(find.text('校园 Agent'));
     await tester.pumpAndSettle();
 
     expect(isPersonalMode, isFalse);

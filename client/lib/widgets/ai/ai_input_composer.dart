@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
 import '../../providers/ai_assistant_provider.dart';
-import '../campus/campus_theme.dart';
 
 class AiInputComposer extends StatefulWidget {
   final TextEditingController controller;
@@ -89,24 +91,23 @@ class _AiInputComposerState extends State<AiInputComposer> {
     final showCounter = _count > 0 || overLimit;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final composerSurface = isDark
-        ? colors.primaryContainer.withValues(alpha: 0.72)
-        : CampusTheme.primaryLight;
+    final composerSurface =
+        isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
     final composerBorder =
-        isDark ? Colors.white.withValues(alpha: 0.10) : CampusTheme.border;
+        isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
 
     return SafeArea(
       top: false,
       child: Container(
         color: Theme.of(context).scaffoldBackgroundColor,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 4, AppSpacing.lg, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (widget.showAgentPermissionMode)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(bottom: 2),
                 child: AiAgentPermissionModeBar(
                   trusted: widget.agentTrusted,
                   onTap: widget.onAgentPermissionTap,
@@ -117,7 +118,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
                 color: composerSurface,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
                 border: Border.all(color: composerBorder),
               ),
               key: const ValueKey('ai-input-composer'),
@@ -135,7 +136,8 @@ class _AiInputComposerState extends State<AiInputComposer> {
                         if (_inlineError != null) _inlineError = null;
                       },
                       decoration: InputDecoration(
-                        hintText: widget.enabled ? widget.hintText : '基础设施测试中',
+                        hintText:
+                            widget.enabled ? widget.hintText : '校园 Agent 暂不可用',
                         border: InputBorder.none,
                         isDense: true,
                         hintStyle: TextStyle(
@@ -215,8 +217,8 @@ class AiAgentPermissionModeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = Theme.of(context).colorScheme;
-    final surface = colors.surfaceContainerHighest.withValues(alpha: 0.7);
     return Semantics(
       button: true,
       label: trusted ? '校园 Agent 权限：完全信任' : '校园 Agent 权限：每次询问',
@@ -225,69 +227,54 @@ class AiAgentPermissionModeBar extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: surface,
-              border: Border.all(color: colors.outlineVariant),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _ModeLabel(
-                    label: '每次询问',
-                    selected: !trusted,
-                    colors: colors,
-                  ),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: SizedBox(
+            height: 44,
+            child: Center(
+              child: SizedBox(
+                height: 25,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      size: 14,
+                      color: isDark ? colors.primary : AppColors.brandPrimary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      trusted ? '完全信任' : '每次询问',
+                      style: TextStyle(
+                        color: isDark
+                            ? colors.onSurfaceVariant
+                            : AppColors.textSecondaryLight,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: AppColors.success,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '设备桥接在线',
+                      style: TextStyle(
+                        color: isDark
+                            ? colors.onSurfaceVariant
+                            : AppColors.textSecondaryLight,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: _ModeLabel(
-                    label: '完全信任',
-                    selected: trusted,
-                    colors: colors,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.tune_rounded, size: 18, color: colors.primary),
-                const SizedBox(width: 6),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModeLabel extends StatelessWidget {
-  const _ModeLabel({
-    required this.label,
-    required this.selected,
-    required this.colors,
-  });
-
-  final String label;
-  final bool selected;
-  final ColorScheme colors;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      alignment: Alignment.center,
-      constraints: const BoxConstraints(minHeight: 32),
-      decoration: BoxDecoration(
-        color: selected ? colors.primary : Colors.transparent,
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? colors.onPrimary : colors.onSurfaceVariant,
-          fontSize: 12,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         ),
       ),
     );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/widgets/ai/ai_input_composer.dart';
-import 'package:shenliyuan/widgets/campus/campus_theme.dart';
+import 'package:shenliyuan/theme/app_colors.dart';
 
 void main() {
   testWidgets('500 个可见字符允许发送，501 个时就地提示并禁用', (tester) async {
@@ -30,7 +30,7 @@ void main() {
     );
     expect(
       (composer.decoration! as BoxDecoration).color,
-      CampusTheme.primaryLight,
+      AppColors.composerSurfaceLight,
     );
     expect(find.text('500/500'), findsOneWidget);
     expect(find.text('最多输入 500 个可见字符'), findsNothing);

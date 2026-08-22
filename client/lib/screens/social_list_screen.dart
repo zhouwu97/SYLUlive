@@ -75,7 +75,11 @@ class _UserListState extends State<_UserList> {
   static final Map<String, int> _pageCache = {};
   static final Map<String, bool> _hasMoreCache = {};
 
-  String get _cacheKey => '${widget.userId}_${widget.type}';
+  int? _viewerId;
+  int _sessionEpoch = -1;
+  String? _errorMessage;
+
+  String get _cacheKey => '${_viewerId ?? 0}_${widget.userId}_${widget.type}';
 
   List<User> _users = [];
   bool _isLoading = true;
@@ -86,18 +90,24 @@ class _UserListState extends State<_UserList> {
   @override
   void initState() {
     super.initState();
-    if (_usersCache.containsKey(_cacheKey)) {
-      _users = List.from(_usersCache[_cacheKey]!);
-      _page = _pageCache[_cacheKey] ?? 1;
-      _hasMore = _hasMoreCache[_cacheKey] ?? true;
-      _isLoading = false;
-      // 静默刷新
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadData(refresh: true, silent: true);
-      });
-    } else {
-      _loadData();
-    }
+  }
+
+  void _syncSessionScope(AuthProvider auth) {
+    if (_sessionEpoch == auth.accountSessionEpoch) return;
+
+    _sessionEpoch = auth.accountSessionEpoch;
+    _viewerId = auth.user?.id;
+    _users = List.from(_usersCache[_cacheKey] ?? const <User>[]);
+    _page = _pageCache[_cacheKey] ?? 1;
+    _hasMore = _hasMoreCache[_cacheKey] ?? true;
+    _errorMessage = null;
+    _isLoading = _users.isEmpty;
+    _isFetching = false;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadData(refresh: _users.isNotEmpty, silent: _users.isNotEmpty);
+    });
   }
 
   Future<void> _loadData({bool refresh = false, bool silent = false}) async {
@@ -119,20 +129,32 @@ class _UserListState extends State<_UserList> {
     _isFetching = true;
 
     final provider = context.read<SocialProvider>();
-    Map<String, dynamic> result;
-    if (widget.type == 'following') {
-      result = await provider.getFollowing(widget.userId, page: _page);
-    } else {
-      result = await provider.getFollowers(widget.userId, page: _page);
-    }
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+    try {
+      Map<String, dynamic> result;
+      if (widget.type == 'following') {
+        result = await provider.getFollowing(widget.userId, page: _page);
+      } else {
+        result = await provider.getFollowers(widget.userId, page: _page);
+      }
 
-    final items = result['items'] as List<dynamic>? ?? [];
-    final total = result['total'] as int? ?? 0;
+      if (!mounted ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
 
-    final List<User> loadedUsers = items.map((e) => User.fromJson(e)).toList();
+      final items = result['items'] as List<dynamic>? ?? [];
+      final total = (result['total'] as num?)?.toInt() ?? 0;
+      final loadedUsers = items
+          .whereType<Map>()
+          .map((e) => User.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
 
-    if (mounted) {
       setState(() {
+        _errorMessage = null;
         if (refresh) {
           _users = loadedUsers;
         } else {
@@ -155,15 +177,40 @@ class _UserListState extends State<_UserList> {
         _pageCache[_cacheKey] = _page;
         _hasMoreCache[_cacheKey] = _hasMore;
       });
-    } else {
-      _isFetching = false;
+    } on SocialRequestException catch (error) {
+      if (!mounted || error.sessionChanged) return;
+      setState(() {
+        _errorMessage = error.message;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '加载列表失败，请稍后重试';
+        _isLoading = false;
+      });
+    } finally {
+      if (mounted) {
+        final currentAuth = context.read<AuthProvider>();
+        if (currentAuth.accountSessionEpoch == requestEpoch &&
+            currentAuth.user?.id == requestViewerId) {
+          _isFetching = false;
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    _syncSessionScope(auth);
+
     if (_isLoading && _users.isEmpty) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null && _users.isEmpty) {
+      return _buildErrorState();
     }
 
     if (_users.isEmpty) {
@@ -185,7 +232,7 @@ class _UserListState extends State<_UserList> {
       );
     }
 
-    final currentUserId = context.read<AuthProvider>().user?.id;
+    final currentUserId = auth.user?.id;
 
     return RefreshIndicator(
       onRefresh: () => _loadData(refresh: true),
@@ -229,6 +276,36 @@ class _UserListState extends State<_UserList> {
             },
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return RefreshIndicator(
+      onRefresh: () => _loadData(refresh: true),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(
+            height: 260,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off, color: Colors.grey, size: 42),
+                  const SizedBox(height: 12),
+                  Text(_errorMessage!,
+                      style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: _loadData,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

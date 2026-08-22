@@ -21,11 +21,28 @@ class PollProvider extends ChangeNotifier {
   final Map<String, PollListState> _states = {};
   final Set<int> _mutatingPollIds = {};
   final Map<int, String> _mutationErrors = {};
+  int? _sessionUserId;
+  int _sessionGeneration = 0;
   String? lastActionError;
 
   PollProvider(this.service, [this._postProvider]);
 
   void bindPostProvider(PostProvider provider) => _postProvider = provider;
+
+  /// 切换账号时清除所有带有个性化字段的投票状态。
+  ///
+  /// 投票列表中的 hasVoted/isOwner/canChange 等字段都依赖当前查看者，
+  /// 因此不能只清理“我的投票”两个列表。
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    _sessionGeneration++;
+    _states.clear();
+    _mutatingPollIds.clear();
+    _mutationErrors.clear();
+    lastActionError = null;
+    notifyListeners();
+  }
 
   PollListState stateFor(
           {String sort = 'recommend', String category = 'all'}) =>
@@ -71,6 +88,8 @@ class PollProvider extends ChangeNotifier {
   }) async {
     if (state.isLoading || state.isLoadingMore) return;
     if (!refresh && state.hasLoaded && !state.hasMore) return;
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     final nextPage = refresh || !state.hasLoaded ? 1 : state.page + 1;
     if (nextPage == 1) {
       state.isLoading = true;
@@ -81,6 +100,7 @@ class PollProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final response = await request(nextPage);
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return;
       if (nextPage == 1) {
         state.items = response.items;
       } else {
@@ -93,13 +113,17 @@ class PollProvider extends ChangeNotifier {
       state.hasLoaded = true;
       state.lastRefreshAt = DateTime.now();
     } on PollApiException catch (error) {
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return;
       state.error = error.message;
     } catch (_) {
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return;
       state.error = '加载投票失败，请稍后重试';
     } finally {
-      state.isLoading = false;
-      state.isLoadingMore = false;
-      notifyListeners();
+      if (_isCurrentSession(requestGeneration, requestUserId)) {
+        state.isLoading = false;
+        state.isLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -119,9 +143,12 @@ class PollProvider extends ChangeNotifier {
   }
 
   Future<Post?> createPoll(PollDraft draft) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     lastActionError = null;
     try {
       final post = await service.createPoll(draft);
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
       _upsertIntoLoadedState('latest|all', post, insert: true);
       _postProvider?.applyExternalPostUpdate(post);
       notifyListeners();
@@ -134,11 +161,14 @@ class PollProvider extends ChangeNotifier {
 
   Future<bool> deletePoll(int pollId) async {
     if (_mutatingPollIds.contains(pollId)) return false;
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     _mutatingPollIds.add(pollId);
     _mutationErrors.remove(pollId);
     notifyListeners();
     try {
       await service.deletePoll(pollId);
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return false;
       int? postId;
       for (final state in _states.values) {
         for (final post in state.items) {
@@ -149,30 +179,43 @@ class PollProvider extends ChangeNotifier {
       if (postId != null) _postProvider?.removeExternalPost(postId);
       return true;
     } on PollApiException catch (error) {
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return false;
       _mutationErrors[pollId] = error.message;
       return false;
     } finally {
-      _mutatingPollIds.remove(pollId);
-      notifyListeners();
+      if (_isCurrentSession(requestGeneration, requestUserId)) {
+        _mutatingPollIds.remove(pollId);
+        notifyListeners();
+      }
     }
   }
 
   Future<Post?> _mutate(int pollId, Future<Post> Function() request) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     _mutatingPollIds.add(pollId);
     _mutationErrors.remove(pollId);
     notifyListeners();
     try {
       final post = await request();
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
       _replaceEverywhere(post);
       _postProvider?.applyExternalPostUpdate(post);
       return post;
     } on PollApiException catch (error) {
+      if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
       _mutationErrors[pollId] = error.message;
       return null;
     } finally {
-      _mutatingPollIds.remove(pollId);
-      notifyListeners();
+      if (_isCurrentSession(requestGeneration, requestUserId)) {
+        _mutatingPollIds.remove(pollId);
+        notifyListeners();
+      }
     }
+  }
+
+  bool _isCurrentSession(int generation, int? userId) {
+    return generation == _sessionGeneration && userId == _sessionUserId;
   }
 
   void applyExternalPostUpdate(Post post) {

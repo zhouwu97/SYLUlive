@@ -80,6 +80,11 @@ class MajorProvider extends ChangeNotifier {
   int _ratingCount = 0;
   double _averageStar = 0;
   bool _isLoading = false;
+  String? _errorMessage;
+  int? _selectedMajorId;
+  int? _sessionUserId;
+  int _sessionGeneration = 0;
+  int _detailGeneration = 0;
 
   List<MajorItem> get majors => _majors;
   MajorItem? get selected => _selected;
@@ -88,6 +93,8 @@ class MajorProvider extends ChangeNotifier {
   int get ratingCount => _ratingCount;
   double get averageStar => _averageStar;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  int? get selectedMajorId => _selectedMajorId;
 
   List<int> get starCounts {
     final counts = [0, 0, 0, 0, 0];
@@ -102,22 +109,60 @@ class MajorProvider extends ChangeNotifier {
   MajorProvider(this._dio)
       : _interactionService = RatingInteractionService(_dio);
 
-  Future<void> loadMajors() async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final r = await _dio.get('/majors');
-      _majors = (r.data as List).map((j) => MajorItem.fromJson(j)).toList();
-    } catch (_) {}
+  /// 专业详情响应包含 my_rating、my_vote、is_own 等当前账号字段。
+  /// 账号切换时必须丢弃整份详情，并让旧请求失效。
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) {
+      return;
+    }
+    _sessionUserId = userId;
+    _sessionGeneration++;
+    _detailGeneration++;
+    _majors = [];
     _isLoading = false;
+    _clearDetailState();
     notifyListeners();
   }
 
-  Future<void> loadDetail(int id) async {
+  Future<void> loadMajors() async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final r = await _dio.get('/majors');
+      if (!_isCurrentSession(requestGeneration, requestUserId)) {
+        return;
+      }
+      _majors = (r.data as List).map((j) => MajorItem.fromJson(j)).toList();
+    } catch (_) {
+      if (_isCurrentSession(requestGeneration, requestUserId)) {
+        _errorMessage = '加载专业列表失败，请稍后重试';
+      }
+    } finally {
+      if (_isCurrentSession(requestGeneration, requestUserId)) {
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadDetail(int id) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
+    final detailGeneration = ++_detailGeneration;
+    _isLoading = true;
+    _errorMessage = null;
+    _selectedMajorId = id;
+    _clearDetailState(keepSelectedId: true);
     notifyListeners();
     try {
       final r = await _dio.get('/majors/$id');
+      if (!_ownsDetailRequest(
+          id, detailGeneration, requestGeneration, requestUserId)) {
+        return;
+      }
       _selected = MajorItem.fromJson(r.data['major']);
       _ratings = (r.data['ratings'] as List)
           .map((j) => MajorRating.fromJson(j))
@@ -127,9 +172,19 @@ class MajorProvider extends ChangeNotifier {
           : MajorRating.fromJson(r.data['my_rating']);
       _ratingCount = r.data['rating_count'] ?? 0;
       _averageStar = (r.data['average_star'] ?? 0).toDouble();
-    } catch (_) {}
-    _isLoading = false;
-    notifyListeners();
+    } catch (_) {
+      if (_ownsDetailRequest(
+          id, detailGeneration, requestGeneration, requestUserId)) {
+        _clearDetailState(keepSelectedId: true);
+        _errorMessage = '加载专业详情失败，请稍后重试';
+      }
+    } finally {
+      if (_ownsDetailRequest(
+          id, detailGeneration, requestGeneration, requestUserId)) {
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<bool> addMajor(String name, String level) async {
@@ -153,11 +208,16 @@ class MajorProvider extends ChangeNotifier {
   }
 
   Future<bool> rate(int id, int star, String comment) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     try {
       await _dio.post(
         '/majors/$id/rate',
         data: {'star': star, 'comment': comment},
       );
+      if (!_isCurrentSession(requestGeneration, requestUserId)) {
+        return false;
+      }
       await loadDetail(id);
       return true;
     } catch (_) {
@@ -166,8 +226,13 @@ class MajorProvider extends ChangeNotifier {
   }
 
   Future<bool> deleteRating(int ratingId, int majorId) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     try {
       await _dio.delete('/majors/rating/$ratingId');
+      if (!_isCurrentSession(requestGeneration, requestUserId)) {
+        return false;
+      }
       await loadDetail(majorId);
       return true;
     } catch (_) {
@@ -176,9 +241,11 @@ class MajorProvider extends ChangeNotifier {
   }
 
   Future<void> voteRating(int ratingId, String voteType) async {
+    final requestGeneration = _sessionGeneration;
+    final requestUserId = _sessionUserId;
     final result =
         await _interactionService.voteMajorRating(ratingId, voteType);
-    if (result != null) {
+    if (result != null && _isCurrentSession(requestGeneration, requestUserId)) {
       final idx = _ratings.indexWhere((r) => r.id == ratingId);
       if (idx != -1) {
         final r = _ratings[idx];
@@ -214,5 +281,31 @@ class MajorProvider extends ChangeNotifier {
     } catch (_) {
       return false;
     }
+  }
+
+  void _clearDetailState({bool keepSelectedId = false}) {
+    _selected = null;
+    _ratings = [];
+    _myRating = null;
+    _ratingCount = 0;
+    _averageStar = 0;
+    if (!keepSelectedId) {
+      _selectedMajorId = null;
+    }
+  }
+
+  bool _isCurrentSession(int generation, int? userId) {
+    return generation == _sessionGeneration && userId == _sessionUserId;
+  }
+
+  bool _ownsDetailRequest(
+    int majorId,
+    int detailGeneration,
+    int sessionGeneration,
+    int? userId,
+  ) {
+    return _selectedMajorId == majorId &&
+        _detailGeneration == detailGeneration &&
+        _isCurrentSession(sessionGeneration, userId);
   }
 }

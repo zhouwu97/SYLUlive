@@ -602,15 +602,6 @@ func (h *CanteenHandler) GetReviews(c *gin.Context) {
 	}
 	for i := range events {
 		populateReviewPublicFields(h.db, &events[i])
-		if events[i].ScoreVersion >= 2 {
-			events[i].Source = "v2"
-		} else {
-			events[i].Source = "legacy"
-			var legacy models.CanteenRating
-			if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", cid, userID, models.ReviewEventStatusActive).First(&legacy).Error; err == nil {
-				events[i].LegacyRatingID = &legacy.ID
-			}
-		}
 	}
 	populateReviewDishNames(h.db, events)
 	if uid, exists := c.Get("user_id"); exists {
@@ -961,8 +952,26 @@ func (h *CanteenHandler) GetReviewHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价历史失败"})
 		return
 	}
+	var latestEvent models.CanteenReviewEvent
+	_ = h.db.Where("canteen_id = ? AND user_id = ? AND (score_version >= ? OR score_version = ?)", cid, userID, 2, 0).
+		Order("created_at DESC, id DESC").First(&latestEvent).Error
+	var canteen models.Canteen
+	_ = h.db.Select("id", "operating_status").First(&canteen, cid).Error
+	canteen.NormalizeOperatingStatus()
 	for i := range events {
 		populateReviewPublicFields(h.db, &events[i])
+		events[i].CanDelete = true
+		events[i].CanEdit = events[i].ScoreVersion >= 2 &&
+			events[i].ID == latestEvent.ID && !canteen.IsOffline
+		if events[i].ScoreVersion >= 2 {
+			events[i].Source = "v2"
+		} else {
+			events[i].Source = "legacy"
+			var legacy models.CanteenRating
+			if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", cid, userID, models.ReviewEventStatusActive).First(&legacy).Error; err == nil {
+				events[i].LegacyRatingID = &legacy.ID
+			}
+		}
 	}
 	populateReviewDishNames(h.db, events)
 	c.JSON(http.StatusOK, gin.H{"items": events, "count": len(events)})
@@ -1175,8 +1184,8 @@ func (h *CanteenHandler) myV2ReviewPayload(event, latest models.CanteenReviewEve
 		"hygiene_score": event.HygieneScore, "service_score": event.ServiceScore,
 		"comment": event.Comment, "images": decodeStringList(event.Images), "tags": decodeStringList(event.Tags),
 		"recommended_dishes": event.RecommendedDishNames, "created_at": event.CreatedAt, "updated_at": event.UpdatedAt,
-		"is_edited": event.UpdatedAt.Sub(event.CreatedAt).Abs() > time.Second,
-		"can_edit": latest.ID == event.ID && event.Status == models.ReviewEventStatusActive,
+		"is_edited":  event.UpdatedAt.Sub(event.CreatedAt).Abs() > time.Second,
+		"can_edit":   latest.ID == event.ID && event.Status == models.ReviewEventStatusActive,
 		"can_delete": event.Status == models.ReviewEventStatusActive,
 	}
 }
@@ -1190,7 +1199,7 @@ func (h *CanteenHandler) myLegacyReviewPayload(rating models.CanteenRating) map[
 		"comment": rating.Comment, "images": decodeStringList(rating.Images), "tags": decodeStringList(rating.Tags),
 		"recommended_dishes": rating.RecommendedDishNames, "created_at": rating.CreatedAt, "updated_at": rating.UpdatedAt,
 		"is_edited": rating.UpdatedAt.Sub(rating.CreatedAt).Abs() > time.Second,
-		"can_edit": false, "can_delete": true,
+		"can_edit":  false, "can_delete": true,
 	}
 }
 
@@ -1578,6 +1587,7 @@ func recomputeCanteenUserSummary(tx *gorm.DB, canteenID, userID uint) error {
 				return err
 			}
 			summary.Star = int(math.Round(legacy.OverallScore))
+			summary.Status = models.ReviewEventStatusActive
 			summary.EffectiveScore = 0
 			summary.TasteScore, summary.ValueScore, summary.QueueScore = 0, 0, 0
 			summary.HygieneScore, summary.ServiceScore = 0, 0
@@ -1607,6 +1617,7 @@ func recomputeCanteenUserSummary(tx *gorm.DB, canteenID, userID uint) error {
 	}
 	var latest models.CanteenReviewEvent
 	_ = tx.First(&latest, effective.LatestEventID).Error
+	summary.Status = models.ReviewEventStatusActive
 	summary.Star = int(math.Round(effective.Overall))
 	summary.EffectiveScore = effective.Overall
 	summary.TasteScore, summary.ValueScore, summary.QueueScore = effective.Taste, effective.Value, effective.Queue

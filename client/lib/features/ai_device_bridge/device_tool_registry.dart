@@ -2,6 +2,7 @@ import '../ai_runtime/deterministic/academic_calculation_engine.dart';
 import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
+import 'device_automation_gateway.dart';
 import 'device_job_models.dart';
 
 class DeviceToolExecutionException implements Exception {
@@ -13,7 +14,7 @@ class DeviceToolExecutionException implements Exception {
   String toString() => 'DeviceToolExecutionException($code)';
 }
 
-/// 设备侧唯一的 Tool 白名单。这里只读既有 PersonalDataGateway，绝不触发刷新或登录。
+/// 设备侧唯一的 Tool 白名单。刷新只能通过 DeviceAutomationGateway 的受控闭包执行。
 class DeviceToolRegistry {
   DeviceToolRegistry({AcademicCalculationEngine? academicEngine})
       : _academicEngine = academicEngine ?? AcademicCalculationEngine();
@@ -23,29 +24,68 @@ class DeviceToolRegistry {
     'device.schedule.get_cached_week',
     'device.academic.get_credit_summary',
     'device.erke.get_cached_overview',
+    'device.academic.ensure_fresh_overview',
+    'device.schedule.ensure_fresh_week',
+    'device.academic.ensure_fresh_credit_summary',
+    'device.erke.ensure_fresh_overview',
   };
 
   final AcademicCalculationEngine _academicEngine;
 
   Future<DeviceToolExecutionResult> execute(
     DeviceToolJob job,
-    PersonalDataGateway gateway,
-  ) async {
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
     return switch (job.toolName) {
       'device.academic.get_cached_overview' => _academicOverview(job, gateway),
       'device.schedule.get_cached_week' => _scheduleWeek(job, gateway),
       'device.academic.get_credit_summary' => _creditSummary(job, gateway),
       'device.erke.get_cached_overview' => _erkeOverview(job, gateway),
+      'device.academic.ensure_fresh_overview' => _academicOverview(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.schedule.ensure_fresh_week' => _scheduleWeek(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.academic.ensure_fresh_credit_summary' => _creditSummary(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.erke.ensure_fresh_overview' => _erkeOverview(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
       _ => throw const DeviceToolExecutionException('tool_not_allowed'),
     };
   }
 
   Future<DeviceToolExecutionResult> _academicOverview(
     DeviceToolJob job,
-    PersonalDataGateway gateway,
-  ) async {
-    _requireExactRequest(job, const <String>['academic'], const <String>{});
-    final result = await gateway.getAcademicOverview();
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.academic,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['academic'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getAcademicOverview(),
+    );
     final data = _requiredData(result);
     return DeviceToolExecutionResult(
       _envelope(
@@ -64,24 +104,37 @@ class DeviceToolRegistry {
               .toList(growable: false),
           'academic_situation_available': data.hasAcademicSituation,
         },
+        freshness: freshness,
       ),
     );
   }
 
   Future<DeviceToolExecutionResult> _scheduleWeek(
     DeviceToolJob job,
-    PersonalDataGateway gateway,
-  ) async {
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.schedule,
+      automationGateway,
+    );
     _requireExactRequest(
       job,
       const <String>['schedule'],
-      const <String>{'week_containing'},
+      freshness == null
+          ? const <String>{'week_containing'}
+          : const <String>{'week_containing', 'max_age_seconds'},
     );
     final anchor = _requiredDate(job.arguments['week_containing']);
     final start = DateTime.utc(anchor.year, anchor.month, anchor.day)
         .subtract(Duration(days: anchor.weekday - 1));
     final end = start.add(const Duration(days: 6));
-    final result = await gateway.getScheduleOverview(start: start, end: end);
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getScheduleOverview(start: start, end: end),
+    );
     final data = _requiredData(result);
     const maxCourses = 32;
     final courses = data.occurrences
@@ -110,16 +163,31 @@ class DeviceToolRegistry {
           'week_end': _date(end),
           'courses': courses,
         },
+        freshness: freshness,
       ),
     );
   }
 
   Future<DeviceToolExecutionResult> _creditSummary(
     DeviceToolJob job,
-    PersonalDataGateway gateway,
-  ) async {
-    _requireExactRequest(job, const <String>['academic'], const <String>{});
-    final result = await gateway.getAcademicRecords();
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.academic,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['academic'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getAcademicRecords(),
+    );
     final data = _requiredData(result);
     final summary = _academicEngine.calculateCredits(data.courses);
     return DeviceToolExecutionResult(
@@ -132,16 +200,31 @@ class DeviceToolRegistry {
           'required_failed_credits': summary.requiredFailedCredits,
           'unknown_credits': summary.unknownCredits,
         },
+        freshness: freshness,
       ),
     );
   }
 
   Future<DeviceToolExecutionResult> _erkeOverview(
     DeviceToolJob job,
-    PersonalDataGateway gateway,
-  ) async {
-    _requireExactRequest(job, const <String>['erke'], const <String>{});
-    final result = await gateway.getErkeOverview();
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.erke,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['erke'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getErkeOverview(),
+    );
     final data = _requiredData(result);
     return DeviceToolExecutionResult(
       _envelope(
@@ -162,9 +245,52 @@ class DeviceToolRegistry {
           'activity_count': data.activityCount,
           'latest_activity_date': data.latestActivityDate,
         },
+        freshness: freshness,
       ),
     );
   }
+
+  Future<GatewayResult<T>> _read<T>(
+    PersonalDataGateway? gateway,
+    DeviceAutomationGateway? automationGateway,
+    DeviceDataQuery<T> query,
+  ) {
+    if (automationGateway != null) return automationGateway.read(query);
+    final reader = gateway;
+    if (reader == null) {
+      throw const DeviceToolExecutionException('device_context_unavailable');
+    }
+    return query(reader);
+  }
+
+  Future<EnsureFreshResult?> _prepareFreshness(
+    DeviceToolJob job,
+    PersonalDataType type,
+    DeviceAutomationGateway? automationGateway,
+  ) async {
+    if (!_isEnsureFresh(job)) return null;
+    if (automationGateway == null) {
+      throw const DeviceToolExecutionException('device_automation_unavailable');
+    }
+    final requested = job.arguments['max_age_seconds'];
+    if (requested is! num || requested % 1 != 0 || requested <= 0) {
+      throw const DeviceToolExecutionException('invalid_tool_arguments');
+    }
+    // 设备最终限制不能被模型传入的 max_age_seconds 绕过。
+    final ceiling = switch (type) {
+      PersonalDataType.academic => 5 * 60,
+      PersonalDataType.schedule => 10 * 60,
+      PersonalDataType.erke => 30 * 60,
+    };
+    final seconds = requested.toInt().clamp(ceiling, 24 * 60 * 60);
+    return automationGateway.ensureFresh(
+      type,
+      maxAge: Duration(seconds: seconds),
+    );
+  }
+
+  static bool _isEnsureFresh(DeviceToolJob job) =>
+      job.toolName.contains('.ensure_fresh_');
 
   T _requiredData<T>(GatewayResult<T> result) {
     if (result.data != null &&
@@ -180,26 +306,48 @@ class DeviceToolRegistry {
     required Map<String, dynamic> data,
     bool isPartial = false,
     List<String> extraWarnings = const <String>[],
+    EnsureFreshResult? freshness,
   }) {
     final partial = isPartial || result.status == GatewayStatus.stale;
-    return <String, dynamic>{
+    final source = freshness?.refreshPerformed == true
+        ? PersonalDataSource.remoteEduFetch.wireValue
+        : result.source.wireValue;
+    final envelope = <String, dynamic>{
       'data': data,
-      'source': result.source.wireValue,
+      'source': source,
       'fetched_at': _time(result.fetchedAt),
       'expires_at': _time(result.expiresAt),
       'is_stale': result.isStale || result.status == GatewayStatus.stale,
       'is_partial': partial,
-      'warnings': <String>{...result.warnings, ...extraWarnings}
-          .toList(growable: false),
+      'warnings': <String>{
+        ...result.warnings,
+        ...extraWarnings,
+        if (freshness?.warning case final warning?) warning,
+      }.toList(growable: false),
       'evidence': <Map<String, dynamic>>[
         <String, dynamic>{
-          'source': result.source.wireValue,
+          'source': source,
           'fetched_at': _time(result.fetchedAt),
           'expires_at': _time(result.expiresAt),
           'is_stale': result.isStale || result.status == GatewayStatus.stale,
         },
       ],
     };
+    if (freshness != null) {
+      envelope['freshness'] = <String, dynamic>{
+        'before': _freshnessLabel(freshness.before),
+        'after': _freshnessLabel(freshness.after),
+      };
+      envelope['refresh_performed'] = freshness.refreshPerformed;
+    }
+    return envelope;
+  }
+
+  static String _freshnessLabel(FreshnessState value) {
+    if (value.isStale || value.fetchedAt == null) return 'stale';
+    final expires = value.expiresAt;
+    if (expires != null && !expires.isAfter(DateTime.now())) return 'stale';
+    return 'fresh';
   }
 
   void _requireExactRequest(

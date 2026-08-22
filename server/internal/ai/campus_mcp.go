@@ -147,6 +147,9 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"campus.search_service", "检索校园服务办理信息与服务说明。", searchSchema(), mcp.searchService},
 		campusMCPTool{"campus.search_notifications", "检索已发布的教务、创新创业和站内公告。", searchSchema(), mcp.searchNotifications},
 		campusMCPTool{"campus.get_term_info", "读取当前或指定学年的已发布校历与教学周信息。", termSchema(), mcp.getTermInfo},
+		campusMCPTool{"calendar.get_day", "读取指定日期的校历语义：学期、教学周、调休和校历事件。", calendarDaySchema(), mcp.getCalendarDay},
+		campusMCPTool{"canteen.search", "检索已审核且当前营业的食堂与菜品。", canteenSearchSchema(), mcp.searchCanteens},
+		campusMCPTool{"canteen.get_details", "读取一个已审核食堂的公开信息和在售菜品。", canteenIDSchema(), mcp.getCanteenDetails},
 		campusMCPTool{"competition.search_catalog", "按关键词检索当前公开赛事目录。", competitionSearchSchema(), mcp.searchCompetitionCatalog},
 		campusMCPTool{"competition.get_details", "读取一项公开赛事的报名、认定和限制条件。", eventIDSchema(), mcp.getCompetitionDetails},
 		campusMCPTool{"competition.compare", "比较两到四项公开赛事的报名期限、认定和参与条件。", compareSchema(), mcp.compareCompetitions},
@@ -181,6 +184,31 @@ func termSchema() map[string]interface{} {
 		"type": "object", "properties": map[string]interface{}{
 			"academic_year": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{4}$"},
 		}, "additionalProperties": false,
+	}
+}
+
+func calendarDaySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"date": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		}, "required": []string{"date"}, "additionalProperties": false,
+	}
+}
+
+func canteenSearchSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"query": map[string]interface{}{"type": "string", "minLength": 1, "maxLength": 80},
+			"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 10},
+		}, "required": []string{"query"}, "additionalProperties": false,
+	}
+}
+
+func canteenIDSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"canteen_id": map[string]interface{}{"type": "integer", "minimum": 1},
+		}, "required": []string{"canteen_id"}, "additionalProperties": false,
 	}
 }
 
@@ -437,6 +465,155 @@ func (mcp *campusMCP) getTermInfo(ctx context.Context, _ uint, arguments json.Ra
 	return publicResult(data, academic.DataSourcePublicDatabase, []CampusToolEvidence{{Source: academic.DataSourcePublicDatabase, Title: calendar.SourceName, FetchedAt: &publishedAt}}, publishedAt), nil
 }
 
+func (mcp *campusMCP) getCalendarDay(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Date string `json:"date"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || !calendarDateInputValid(input.Date) {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var calendar models.CampusCalendar
+	if err := mcp.db.WithContext(ctx).Where("status = ?", "published").Order("academic_year DESC, version DESC").First(&calendar).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("暂未发布可用校历"), nil
+		}
+		return nil, err
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(calendar.Data, &root); err != nil {
+		return nil, errors.New("campus_calendar_corrupted")
+	}
+	date, _ := time.Parse("2006-01-02", input.Date)
+	var semester map[string]interface{}
+	var teachingWeek map[string]interface{}
+	for _, raw := range calendarObjectList(root["semesters"]) {
+		start, startOK := calendarDateValue(raw["start_date"])
+		end, endOK := calendarDateValue(raw["end_date"])
+		if !startOK || !endOK || date.Before(start) || date.After(end) {
+			continue
+		}
+		semester = raw
+		for _, week := range calendarObjectList(raw["teaching_weeks"]) {
+			weekStart, weekStartOK := calendarDateValue(week["start_date"])
+			weekEnd, weekEndOK := calendarDateValue(week["end_date"])
+			if weekStartOK && weekEndOK && !date.Before(weekStart) && !date.After(weekEnd) {
+				teachingWeek = week
+				break
+			}
+		}
+		break
+	}
+	var override map[string]interface{}
+	for _, raw := range calendarObjectList(root["day_overrides"]) {
+		if value, ok := raw["date"].(string); ok && value == input.Date {
+			override = raw
+			break
+		}
+	}
+	events := make([]map[string]interface{}, 0)
+	for _, raw := range calendarObjectList(root["events"]) {
+		start, startOK := calendarDateValue(raw["start_date"])
+		end, endOK := calendarDateValue(raw["end_date"])
+		if startOK && endOK && !date.Before(start) && !date.After(end) {
+			events = append(events, raw)
+		}
+	}
+	publishedAt := calendar.UpdatedAt
+	return publicResult(map[string]interface{}{
+		"date": input.Date, "academic_year": calendar.AcademicYear,
+		"semester": semester, "teaching_week": teachingWeek, "override": override, "events": events,
+	}, academic.DataSourcePublicDatabase, []CampusToolEvidence{{Source: academic.DataSourcePublicDatabase, Title: calendar.SourceName, FetchedAt: &publishedAt}}, publishedAt), nil
+}
+
+func calendarDateInputValid(value string) bool {
+	if len(value) != len("2006-01-02") {
+		return false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
+}
+
+func calendarDateValue(value interface{}) (time.Time, bool) {
+	text, ok := value.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", text)
+	return parsed, err == nil
+}
+
+func calendarObjectList(value interface{}) []map[string]interface{} {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if object, ok := item.(map[string]interface{}); ok {
+			result = append(result, object)
+		}
+	}
+	return result
+}
+
+func (mcp *campusMCP) searchCanteens(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || strings.TrimSpace(input.Query) == "" || len([]rune(input.Query)) > 80 || input.Limit < 0 || input.Limit > 10 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if input.Limit == 0 {
+		input.Limit = 5
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	pattern := "%" + strings.ToLower(strings.TrimSpace(input.Query)) + "%"
+	var canteens []models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '') AND (LOWER(name) LIKE ? OR LOWER(normalized_name) LIKE ?)", true, models.CanteenOperatingActive, pattern, pattern).Order("name ASC, id ASC").Limit(input.Limit).Find(&canteens).Error; err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(canteens))
+	for _, canteen := range canteens {
+		items = append(items, map[string]interface{}{"id": canteen.ID, "name": canteen.Name, "image": canteen.Image, "verified": canteen.Verified, "operating_status": canteen.OperatingStatus})
+	}
+	return publicResult(items, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getCanteenDetails(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		CanteenID uint `json:"canteen_id"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.CanteenID == 0 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var canteen models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("id = ? AND verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '')", input.CanteenID, true, models.CanteenOperatingActive).First(&canteen).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("食堂不存在或当前不可用"), nil
+		}
+		return nil, err
+	}
+	var dishes []models.CanteenDish
+	if err := mcp.db.WithContext(ctx).Where("canteen_id = ? AND status = ?", canteen.ID, models.DishStatusActive).Order("name ASC, id ASC").Limit(100).Find(&dishes).Error; err != nil {
+		return nil, err
+	}
+	publicDishes := make([]map[string]interface{}, 0, len(dishes))
+	for _, dish := range dishes {
+		publicDishes = append(publicDishes, map[string]interface{}{"id": dish.ID, "name": dish.Name, "status": dish.Status})
+	}
+	data := map[string]interface{}{"id": canteen.ID, "name": canteen.Name, "image": canteen.Image, "operating_status": canteen.OperatingStatus, "dishes": publicDishes}
+	return publicResult(data, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
 type competitionSearchArguments struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
@@ -662,6 +839,38 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	}
 	if wait != nil {
 		return wait
+	}
+	// 强制新鲜度不仅需要读取设备缓存，还可能触发教务刷新。
+	// 两个权限必须在创建设备任务前分别通过，避免把“读取缓存”权限
+	// 意外扩大成“联网刷新教务”权限。
+	if request.Freshness == academic.FreshnessRequireFresh {
+		refreshWait, refreshDenied, refreshErr := mcp.requirePermission(
+			ctx,
+			userID,
+			models.AIUserPermissionRemoteEduRefresh,
+			request.Reason,
+		)
+		if refreshErr != nil {
+			for _, dataset := range request.Datasets {
+				result := results[dataset]
+				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+					results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
+				}
+			}
+			return nil
+		}
+		if refreshDenied {
+			for _, dataset := range request.Datasets {
+				result := results[dataset]
+				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
+				}
+			}
+			return nil
+		}
+		if refreshWait != nil {
+			return refreshWait
+		}
 	}
 	for _, dataset := range request.Datasets {
 		result := results[dataset]

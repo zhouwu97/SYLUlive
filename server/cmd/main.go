@@ -349,6 +349,11 @@ func main() {
 		&models.CompetitionRecommendationSnapshot{},
 		&models.AIActionDraft{},
 		&models.AIActionAuditLog{},
+		&models.UserCalendar{},
+		&models.UserCalendarEvent{},
+		&models.UserCalendarReminder{},
+		&models.UserCalendarActionDraft{},
+		&models.UserCalendarActionAudit{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},
@@ -613,6 +618,7 @@ func main() {
 	if competitionHandlerErr != nil {
 		log.Fatal("初始化竞赛证明材料私有存储失败:", competitionHandlerErr)
 	}
+	userCalendarHandler := handlers.NewUserCalendarHandler(db)
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
@@ -778,6 +784,7 @@ func main() {
 	var aiRuntime *ai.Runtime
 	var externalMCPClient *mcpclient.Client
 	var toolRegistry *ai.ToolRegistry
+	var capabilityRegistry *ai.AgentCapabilityRegistry
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -907,6 +914,7 @@ func main() {
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
+		capabilityRegistry = ai.NewAgentCapabilityRegistry(toolRegistry)
 		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
 			db, provider, retriever, ai.NewEventBroker(),
@@ -965,6 +973,7 @@ func main() {
 			ExternalMCPConfigured: cfg.AIExternalMCPEnabled,
 			ExternalMCPHealth:     externalMCPClient,
 			ToolRegistry:          toolRegistry,
+			CapabilityRegistry:    capabilityRegistry,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -1183,6 +1192,17 @@ func main() {
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
+		user.GET("/calendar/events", userCalendarHandler.ListEvents)
+		user.POST("/calendar/events", userCalendarHandler.CreateEvent)
+		user.PATCH("/calendar/events/:id", userCalendarHandler.UpdateEvent)
+		user.DELETE("/calendar/events/:id", userCalendarHandler.DeleteEvent)
+		user.GET("/calendar/events/:id/reminders", userCalendarHandler.ListReminders)
+		user.POST("/calendar/events/:id/reminders", userCalendarHandler.CreateReminder)
+		user.DELETE("/calendar/events/:id/reminders/:reminder_id", userCalendarHandler.DeleteReminder)
+		user.GET("/calendar/unified", userCalendarHandler.Unified)
+		user.GET("/calendar-action-drafts/:id", userCalendarHandler.GetCalendarEventDraft)
+		user.POST("/calendar-action-drafts/:id/confirm", userCalendarHandler.ConfirmCalendarEventDraft)
+		user.POST("/calendar-action-drafts/:id/cancel", userCalendarHandler.CancelCalendarEventDraft)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
 		user.GET("/competitions/dashboard", competitionHandler.GetCompetitionDashboard)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
@@ -2096,6 +2116,7 @@ func main() {
 		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
 		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
 		aiCapabilities.POST("/action-drafts/competition-plan", competitionHandler.CreateCompetitionPlanActionDraft)
+		aiCapabilities.POST("/action-drafts/calendar-event", userCalendarHandler.CreateCalendarEventDraft)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")

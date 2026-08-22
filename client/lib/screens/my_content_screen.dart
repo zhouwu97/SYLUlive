@@ -20,9 +20,6 @@ import 'dart:io' show File;
 class MyContentScreen extends StatefulWidget {
   const MyContentScreen({super.key});
 
-  // 全局共享的帖子数量缓存，用于个人主页秒开显示
-  static int? globalPostCount;
-
   @override
   State<MyContentScreen> createState() => _MyContentScreenState();
 }
@@ -33,29 +30,40 @@ class _MyContentScreenState extends State<MyContentScreen>
   bool _isSelectionMode = false;
   final Set<int> _selectedIds = {};
 
-  // 数据缓存
-  static List<Post>? _cachedMyPosts;
-  static List<Post>? _cachedMyMarketPosts;
-
   List<Post> _myPosts = [];
   List<Post> _myMarketPosts = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int _accountSessionEpoch = -1;
+  int? _sessionUserId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+  }
 
-    if (_cachedMyPosts != null) {
-      _myPosts = _cachedMyPosts!;
-      _myMarketPosts = _cachedMyMarketPosts!;
-      _isLoading = false;
+  void _syncSessionScope(AuthProvider auth) {
+    if (_accountSessionEpoch == auth.accountSessionEpoch) {
+      return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData(silent: _cachedMyPosts != null);
-    });
+    _accountSessionEpoch = auth.accountSessionEpoch;
+    _sessionUserId = auth.user?.id;
+    _myPosts = [];
+    _myMarketPosts = [];
+    _selectedIds.clear();
+    _isSelectionMode = false;
+    _errorMessage = null;
+    _isLoading = auth.user != null;
+
+    if (auth.user != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadData();
+        }
+      });
+    }
   }
 
   @override
@@ -65,20 +73,23 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Future<void> _loadData({bool silent = false}) async {
-    if (!silent && mounted)
+    if (!silent && mounted) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
+    }
 
     try {
       final authProvider = context.read<AuthProvider>();
       final currentUserId = authProvider.user?.id;
+      final requestEpoch = authProvider.accountSessionEpoch;
       if (currentUserId == null) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isLoading = false;
           });
+        }
         return;
       }
 
@@ -92,38 +103,45 @@ class _MyContentScreenState extends State<MyContentScreen>
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
           .toList();
 
+      if (!mounted ||
+          authProvider.accountSessionEpoch != requestEpoch ||
+          authProvider.user?.id != currentUserId ||
+          _sessionUserId != currentUserId) {
+        return;
+      }
+
       // 按 board 拆分
-      if (mounted)
+      if (mounted) {
         setState(() {
           _myPosts = allPosts.where((p) => p.boardId != 2).toList();
           _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
-          _cachedMyPosts = _myPosts;
-          _cachedMyMarketPosts = _myMarketPosts;
-          MyContentScreen.globalPostCount =
-              _myPosts.length + _myMarketPosts.length;
           _isLoading = false;
+          _errorMessage = null;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage = '加载失败: $e';
         });
+      }
     }
   }
 
   void _toggleSelectionMode() {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isSelectionMode = !_isSelectionMode;
         if (!_isSelectionMode) {
           _selectedIds.clear();
         }
       });
+    }
   }
 
   void _toggleSelect(int id) {
-    if (mounted)
+    if (mounted) {
       setState(() {
         if (_selectedIds.contains(id)) {
           _selectedIds.remove(id);
@@ -131,40 +149,49 @@ class _MyContentScreenState extends State<MyContentScreen>
           _selectedIds.add(id);
         }
       });
+    }
   }
 
   void _onLongPressItem(int id) {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isSelectionMode = true;
         _selectedIds.add(id);
       });
+    }
   }
 
   Future<void> _deleteSelected() async {
-    if (_selectedIds.isEmpty) return;
+    if (_selectedIds.isEmpty) {
+      return;
+    }
 
+    final postProvider = context.read<PostProvider>();
+    final pollProvider = context.read<PollProvider>();
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '确认删除',
       message: '确定要删除选中的 ${_selectedIds.length} 项内容吗？删除后普通用户不可见，此操作不可撤销。',
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
-    final postProvider = context.read<PostProvider>();
     int deletedCount = 0;
     final errors = <String>[];
 
     for (final id in _selectedIds.toList()) {
-      final post = [..._myPosts, ..._myMarketPosts].where((item) => item.id == id).firstOrNull;
+      final post = [..._myPosts, ..._myMarketPosts]
+          .where((item) => item.id == id)
+          .firstOrNull;
       if (post?.isPoll == true) {
-        final deleted = await context.read<PollProvider>().deletePoll(post!.pollMeta!.id);
+        final deleted = await pollProvider.deletePoll(post!.pollMeta!.id);
         if (deleted) {
           deletedCount++;
           _myPosts.removeWhere((p) => p.id == id);
         } else {
-          errors.add(context.read<PollProvider>().mutationError(post.pollMeta!.id) ?? '删除投票失败');
+          errors.add(pollProvider.mutationError(post.pollMeta!.id) ?? '删除投票失败');
         }
         continue;
       }
@@ -179,9 +206,6 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
 
     if (mounted) {
-      _cachedMyPosts = List<Post>.from(_myPosts);
-      _cachedMyMarketPosts = List<Post>.from(_myMarketPosts);
-      MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -193,16 +217,18 @@ class _MyContentScreenState extends State<MyContentScreen>
               errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
-      if (mounted)
+      if (mounted) {
         setState(() {
           _selectedIds.clear();
           _isSelectionMode = false;
         });
+      }
     }
   }
 
   Future<void> _openPostDetail(Post post, {bool isMarket = false}) async {
-    await Navigator.push(context, buildPostDetailRoute(post, isMarket: isMarket));
+    await Navigator.push(
+        context, buildPostDetailRoute(post, isMarket: isMarket));
     if (mounted) {
       await _loadData(silent: true);
     }
@@ -210,8 +236,13 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Future<void> _editPost(Post post) async {
     if (post.isPoll) {
-      final updated = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => PollComposerScreen(editingPost: post)));
-      if (updated == true && mounted) await _loadData(silent: true);
+      final updated = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+              builder: (_) => PollComposerScreen(editingPost: post)));
+      if (updated == true && mounted) {
+        await _loadData(silent: true);
+      }
       return;
     }
     final updated = await Navigator.push<bool>(
@@ -231,6 +262,8 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    _syncSessionScope(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
@@ -437,8 +470,16 @@ class _MyContentScreenState extends State<MyContentScreen>
     if (post.isPoll && !_isSelectionMode) {
       return Column(
         children: [
-          CommunityPostCard(post: post, pollVariant: PollCardVariant.profileCompact, onTap: () => _openPostDetail(post)),
-          Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _editPost(post), icon: const Icon(Icons.edit_outlined), label: const Text('编辑'))),
+          CommunityPostCard(
+              post: post,
+              pollVariant: PollCardVariant.profileCompact,
+              onTap: () => _openPostDetail(post)),
+          Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                  onPressed: () => _editPost(post),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('编辑'))),
         ],
       );
     }
@@ -628,10 +669,10 @@ class _MyContentScreenState extends State<MyContentScreen>
                     if (post.price > 0) ...[
                       Text(
                         '¥${post.price.toStringAsFixed(post.price.truncateToDouble() == post.price ? 0 : 2)}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFFFF6B6B),
+                          color: Color(0xFFFF6B6B),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -711,7 +752,7 @@ class _MyContentScreenState extends State<MyContentScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Text(
@@ -758,8 +799,9 @@ class _MyContentScreenState extends State<MyContentScreen>
               subtitle,
               style: TextStyle(
                 fontSize: 14,
-                color:
-                    isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400],
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.4)
+                    : Colors.grey[400],
               ),
             ),
           ],

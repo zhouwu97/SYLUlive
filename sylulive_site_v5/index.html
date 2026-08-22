@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f7fbff">
+<link rel="icon" type="image/png" href="assets/sylulive-app-icon.png">
+<link rel="apple-touch-icon" href="assets/sylulive-app-icon.png">
 <title>沈理校园 · SYLUlive</title>
 <meta name="description" content="沈理校园 SYLUlive：面向沈阳理工大学学生的一站式校园应用。">
 <style>
@@ -50,24 +52,10 @@ button{font:inherit;color:inherit}
 .nav-links a:hover:after{left:0;right:0}
 .nav-cta{height:40px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:#1f2a44;color:white;font-size:12px;font-weight:800;box-shadow:0 8px 22px rgba(31,42,68,.16);transition:.25s var(--ease)}
 .nav-cta:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(31,42,68,.2)}
-.download-menu{position:relative}
-.download-trigger{height:40px;padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:12px;background:linear-gradient(135deg,#13b2cf,#3c91f2);color:white;font-size:12px;font-weight:850;cursor:pointer;box-shadow:0 9px 24px rgba(49,145,226,.2);transition:transform .25s var(--ease),box-shadow .25s var(--ease),filter .25s var(--ease)}
-.download-trigger:hover,.download-menu.open .download-trigger{transform:translateY(-2px);box-shadow:0 13px 28px rgba(49,145,226,.28);filter:saturate(1.08)}
-.download-trigger:focus-visible,.download-option:focus-visible{outline:3px solid rgba(31,164,224,.28);outline-offset:3px}
-.download-trigger svg{width:15px;height:15px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.download-panel{position:absolute;right:0;top:calc(100% + 14px);z-index:120;width:232px;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-8px) scale(.97);transform-origin:top right;transition:opacity .25s var(--ease),transform .25s var(--ease),visibility .25s}
-.download-menu.open .download-panel{opacity:1;visibility:visible;pointer-events:auto;transform:none}
-.download-panel-title{height:54px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:linear-gradient(135deg,#18b5d5,#36a5f4);color:white;font-size:20px;font-weight:900;letter-spacing:.03em;box-shadow:0 13px 28px rgba(30,166,226,.22)}
-.download-options{margin-top:9px;padding:8px;border-radius:18px;background:rgba(255,255,255,.98);border:1px solid rgba(111,139,177,.13);box-shadow:0 20px 45px rgba(47,73,112,.17);backdrop-filter:blur(16px)}
-.download-option{min-height:45px;padding:0 10px;display:flex;align-items:center;gap:10px;border-radius:11px;color:#263149;font-size:14px;font-weight:760;transition:background .2s var(--ease),color .2s var(--ease),transform .2s var(--ease)}
-.download-option:hover{background:#f0f8ff;color:#129fc5;transform:translateX(2px)}
-.download-option svg{width:17px;height:17px;flex:0 0 auto;stroke:#344052;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;transition:stroke .2s var(--ease)}
-.download-option:hover svg{stroke:currentColor}
-.download-option span{min-width:0;flex:1}
-.download-option small{margin-left:auto;color:#9aa6b8;font-size:9px;font-weight:750;white-space:nowrap}
-.download-option.is-disabled{color:#8c97a8;cursor:not-allowed}
-.download-option.is-disabled:hover{background:transparent;color:#8c97a8;transform:none}
-.download-option.is-disabled svg{stroke:#9ba6b5}
+.nav-links .nav-download-link{height:34px;padding:0 12px 0 11px;border:1px solid rgba(18,177,199,.18);border-radius:11px;background:linear-gradient(135deg,rgba(18,177,199,.10),rgba(77,111,247,.08));display:inline-flex;align-items:center;gap:7px;color:#168fa8}
+.nav-links .nav-download-link:before{content:"";width:6px;height:6px;border-radius:50%;background:#16b2c8;box-shadow:0 0 0 5px rgba(22,178,200,.09)}
+.nav-links .nav-download-link:after{display:none}
+.nav-links .nav-download-link:hover{color:#3165de;background:linear-gradient(135deg,rgba(18,177,199,.15),rgba(77,111,247,.12));transform:translateY(-1px)}
 .menu{display:none;width:40px;height:40px;border:0;border-radius:12px;background:white;box-shadow:0 8px 22px rgba(55,76,108,.09)}
 .menu span,.menu:before,.menu:after{content:"";display:block;width:18px;height:2px;border-radius:2px;background:#263248;margin:4px auto;transition:.2s}
 
@@ -85,7 +73,7 @@ linear-gradient(180deg,#f4faff 0%,#fbfdff 60%,#fff 100%)}
 .orbit:before{left:8%;top:46%;background:var(--cyan)}
 .orbit:after{right:7%;top:52%;background:var(--violet)}
 @keyframes orbit{to{transform:translate(-50%,-50%) rotate(353deg)}}
-.hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:32px;--hero-lift:0px;--hero-fade:1;transform:translate3d(0,var(--hero-lift),0);opacity:var(--hero-fade);will-change:transform,opacity}
+.hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:32px;--hero-lift:0px;--hero-fade:1;transform:translate3d(0,var(--hero-lift),0);opacity:var(--hero-fade)}
 .hero:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:150px;background:linear-gradient(180deg,transparent,#fff);pointer-events:none;opacity:var(--hero-curtain,.1)}
 .hero-icon-wrap{position:relative;width:252px;height:214px;display:grid;place-items:center;margin-bottom:18px;filter:drop-shadow(0 24px 28px rgba(81,98,142,.13));animation:floatIcon 5.4s ease-in-out infinite}
 .hero-icon-wrap:after{content:"";position:absolute;left:25%;right:18%;bottom:5px;height:24px;background:rgba(78,104,150,.14);filter:blur(16px);border-radius:50%;z-index:-1}
@@ -98,6 +86,8 @@ linear-gradient(180deg,#f4faff 0%,#fbfdff 60%,#fff 100%)}
 .btn{height:50px;padding:0 23px;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-size:13px;font-weight:820;border:1px solid transparent;transition:.25s var(--ease)}
 .btn-primary{color:white;background:linear-gradient(135deg,#159cbb,#496cf4);box-shadow:0 14px 34px rgba(65,111,221,.23)}
 .btn-primary:hover{transform:translateY(-3px);box-shadow:0 18px 40px rgba(65,111,221,.29)}
+.btn-download{color:#168fa8;background:linear-gradient(135deg,rgba(22,179,211,.14),rgba(83,113,244,.13));border-color:rgba(22,179,211,.25);box-shadow:0 10px 28px rgba(50,117,190,.10)}
+.btn-download:hover{transform:translateY(-3px);color:#3165de;background:linear-gradient(135deg,rgba(22,179,211,.21),rgba(83,113,244,.19));box-shadow:0 15px 34px rgba(50,117,190,.16)}
 .btn-secondary{background:rgba(255,255,255,.72);border-color:rgba(109,132,168,.19);box-shadow:0 10px 28px rgba(70,90,124,.08)}
 .btn-secondary:hover{transform:translateY(-3px);background:#fff}
 .hero-meta{margin-top:42px;display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;color:#7d879c;font-size:11px;font-weight:750;letter-spacing:.02em}
@@ -150,7 +140,7 @@ linear-gradient(180deg,#f4faff 0%,#fbfdff 60%,#fff 100%)}
 @keyframes captionUp{0%{opacity:.15;transform:translateY(13px)}100%{opacity:1;transform:none}}
 @keyframes captionDown{0%{opacity:.15;transform:translateY(-13px)}100%{opacity:1;transform:none}}
 .device-wrap{position:relative;width:min(380px,58%);height:88%;display:grid;place-items:center;z-index:3;perspective:1200px;overflow:visible}
-.device-shot{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transform:translate3d(0,46px,0) scale(.975);pointer-events:none;will-change:transform,opacity}
+.device-shot{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transform:translate3d(0,46px,0) scale(.975);pointer-events:none}.device-shot.animating{will-change:transform,opacity}
 .device-shot.active{opacity:1;transform:translate3d(0,0,0) scale(1)}
 .device-shot.enter-bottom{animation:shotEnterBottom .68s var(--ease) both}.device-shot.exit-top{animation:shotExitTop .52s var(--ease) both}
 .device-shot.enter-top{animation:shotEnterTop .68s var(--ease) both}.device-shot.exit-bottom{animation:shotExitBottom .52s var(--ease) both}
@@ -172,7 +162,7 @@ linear-gradient(180deg,#f4faff 0%,#fbfdff 60%,#fff 100%)}
 .life-tabs{position:absolute;left:34px;top:32px;display:flex;gap:7px;padding:5px;border-radius:14px;background:rgba(255,255,255,.7);border:1px solid rgba(114,136,168,.13);backdrop-filter:blur(12px);z-index:8}
 .life-tab{height:37px;padding:0 15px;border:0;border-radius:10px;background:transparent;font-size:11px;font-weight:820;cursor:pointer;transition:.25s}
 .life-tab.active{background:#1e2943;color:white;box-shadow:0 7px 18px rgba(31,42,68,.16)}
-.life-content{position:absolute;inset:0;opacity:0;pointer-events:none;transform:translate3d(0,38px,0);will-change:transform,opacity}
+.life-content{position:absolute;inset:0;opacity:0;pointer-events:none;transform:translate3d(0,38px,0)}.life-content.animating{will-change:transform,opacity}
 .life-content.active{opacity:1;pointer-events:auto;transform:none}
 .life-content.life-enter-bottom{animation:lifeEnterBottom .62s var(--ease) both;z-index:4}.life-content.life-exit-top{animation:lifeExitTop .48s var(--ease) both;z-index:3}
 .life-content.life-enter-top{animation:lifeEnterTop .62s var(--ease) both;z-index:4}.life-content.life-exit-bottom{animation:lifeExitBottom .48s var(--ease) both;z-index:3}
@@ -226,7 +216,7 @@ footer{padding:32px 0 0;display:flex;justify-content:space-between;align-items:c
 
 @media (max-width:980px){
   .shell{width:min(var(--max),calc(100% - 34px))}
-  .nav-links{display:none}.nav-cta{display:none}.download-menu{width:100%}.download-trigger{width:100%;justify-content:space-between}.download-panel{position:static;width:100%;padding-top:9px;transform:none;transform-origin:initial}.download-menu.open .download-panel{transform:none}.download-panel-title{height:46px;font-size:16px}.download-options{margin-top:8px}
+  .nav-links{display:none}.nav-cta{display:none}.nav.open .nav-links .nav-download-link{width:100%;justify-content:center;height:42px}
   .menu{display:block}
   .nav.open .nav-links{display:flex;position:absolute;left:18px;right:18px;top:74px;padding:18px;border-radius:16px;background:rgba(255,255,255,.96);box-shadow:0 18px 45px rgba(60,80,112,.12);flex-direction:column;align-items:flex-start;gap:20px}
   .hero{padding-top:102px}.hero-inner{padding-top:20px}.hero-icon-wrap{width:220px;height:188px}.hero-icon{width:208px}.orbit{width:420px;height:190px}.hero-meta{max-width:600px;row-gap:12px}.hero-meta span{padding:0 12px}
@@ -259,28 +249,7 @@ footer{padding:32px 0 0;display:flex;justify-content:space-between;align-items:c
       <span class="brand-name">沈理校园<small>SYLULIVE</small></span>
     </a>
     <div class="nav-links">
-      <a href="#product">产品体验</a><a href="#life">校园生活</a><a href="#ai">沈理 AI</a><a href="#open">开源</a>
-      <div class="download-menu" id="downloadMenu">
-        <button class="download-trigger" id="downloadTrigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="downloadPanel">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg><span>下载</span>
-        </button>
-        <div class="download-panel" id="downloadPanel" role="menu" aria-label="下载选项">
-          <div class="download-panel-title">ARM 版下载</div>
-          <div class="download-options">
-            <!-- 服务器下载目录后续可直接替换为实际安装包地址。 -->
-            <a class="download-option" href="https://sylulive.online/downloads/" target="_blank" rel="noreferrer" role="menuitem">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg><span>服务器下载</span>
-            </a>
-            <a class="download-option" href="https://github.com/zhouwu97/SYLUlive/releases" target="_blank" rel="noreferrer" role="menuitem">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg><span>GitHub Release</span>
-            </a>
-            <!-- 网盘地址待补充，先保留入口位置。 -->
-            <a class="download-option is-disabled" href="#" role="menuitem" aria-disabled="true" data-download-placeholder="drive">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg><span>网盘下载</span><small>待添加</small>
-            </a>
-          </div>
-        </div>
-      </div>
+      <a href="#product">产品体验</a><a href="#life">校园生活</a><a href="#ai">沈理 AI</a><a class="nav-download-link" href="download.html">下载 App</a><a href="#open">开源</a>
     </div>
     <a class="nav-cta" href="https://github.com/zhouwu97/SYLUlive/tree/MCP" target="_blank" rel="noreferrer">GitHub</a>
     <button class="menu" id="menu" aria-label="打开导航"><span></span></button>
@@ -296,6 +265,7 @@ footer{padding:32px 0 0;display:flex;justify-content:space-between;align-items:c
     <p class="hero-sub reveal delay">把课表、成绩、学业、校园社区、食堂与 AI 助手放进一个更顺手的校园入口。<br>少一点来回寻找，多一点真正属于沈理学生的日常。</p>
     <div class="hero-actions reveal delay">
       <a class="btn btn-primary" href="#product">开始探索 <span aria-hidden="true">→</span></a>
+      <a class="btn btn-download" href="download.html">下载 App</a>
       <a class="btn btn-secondary" href="https://github.com/zhouwu97/SYLUlive/tree/MCP" target="_blank" rel="noreferrer">查看 GitHub</a>
     </div>
     <div class="hero-meta reveal delay"><span>课表与教务</span><span>校园社区</span><span>校园生活</span><span>沈理 AI</span></div>
@@ -424,10 +394,12 @@ function activateStory(i,forceDirection){
   steps.forEach((x,n)=>x.classList.toggle('active',n===i));
   if(!reduceMotion&&oldShot&&nextShot&&oldShot!==nextShot){
     shots.forEach(x=>x.classList.remove('enter-bottom','enter-top','exit-top','exit-bottom'));
+    oldShot.classList.add('animating');
+    nextShot.classList.add('animating');
     oldShot.classList.add(down?'exit-top':'exit-bottom');
     nextShot.classList.add('active',down?'enter-bottom':'enter-top');
     oldShot.classList.remove('active');
-    storyTimer=setTimeout(()=>{shots.forEach((x,n)=>{x.classList.remove('enter-bottom','enter-top','exit-top','exit-bottom');x.classList.toggle('active',n===i)})},700);
+    storyTimer=setTimeout(()=>{shots.forEach((x,n)=>{x.classList.remove('animating','enter-bottom','enter-top','exit-top','exit-bottom');x.classList.toggle('active',n===i)})},700);
   }else{shots.forEach((x,n)=>x.classList.toggle('active',n===i))}
   if(stage){
     stage.style.setProperty('--soft',steps[i].dataset.soft);
@@ -450,20 +422,16 @@ function switchLife(next){
   lifeViews.forEach(x=>x.classList.remove('life-enter-bottom','life-enter-top','life-exit-top','life-exit-bottom'));
   if(reduceMotion){lifeViews.forEach((x,n)=>x.classList.toggle('active',n===next));activeLife=next;return}
   current.classList.add(down?'life-exit-top':'life-exit-bottom');
+  current.classList.add('animating');
+  incoming.classList.add('animating');
   current.style.pointerEvents='none';
   incoming.classList.add('active',down?'life-enter-bottom':'life-enter-top');
-  lifeTimer=setTimeout(()=>{lifeViews.forEach((x,n)=>{x.classList.remove('life-enter-bottom','life-enter-top','life-exit-top','life-exit-bottom');x.classList.toggle('active',n===next);x.style.pointerEvents=''})},650);
+  lifeTimer=setTimeout(()=>{lifeViews.forEach((x,n)=>{x.classList.remove('animating','life-enter-bottom','life-enter-top','life-exit-top','life-exit-bottom');x.classList.toggle('active',n===next);x.style.pointerEvents=''})},650);
   activeLife=next;
 }
 lifeTabs.forEach((btn,i)=>btn.addEventListener('click',()=>switchLife(i)));
-const downloadMenu=document.getElementById('downloadMenu'),downloadTrigger=document.getElementById('downloadTrigger');
-function setDownloadMenu(open){if(!downloadMenu||!downloadTrigger)return;downloadMenu.classList.toggle('open',open);downloadTrigger.setAttribute('aria-expanded',String(open))}
-downloadTrigger?.addEventListener('click',()=>setDownloadMenu(!downloadMenu.classList.contains('open')));
-document.addEventListener('click',e=>{if(downloadMenu&&!downloadMenu.contains(e.target))setDownloadMenu(false)});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')setDownloadMenu(false)});
-downloadMenu?.querySelector('[data-download-placeholder]')?.addEventListener('click',e=>e.preventDefault());
-document.getElementById('menu').addEventListener('click',()=>{nav.classList.toggle('open');setDownloadMenu(false)});
-document.querySelectorAll('.nav-links a').forEach(a=>a.addEventListener('click',()=>{nav.classList.remove('open');setDownloadMenu(false)}));
+document.getElementById('menu').addEventListener('click',()=>nav.classList.toggle('open'));
+document.querySelectorAll('.nav-links a').forEach(a=>a.addEventListener('click',()=>nav.classList.remove('open')));
 </script>
 </body>
 </html>

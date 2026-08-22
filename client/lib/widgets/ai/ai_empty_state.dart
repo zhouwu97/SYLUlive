@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_quick_prompt.dart';
-import 'ai_quick_action_card.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiSuggestedPrompt {
   const AiSuggestedPrompt({
@@ -21,6 +22,7 @@ class AiPublicEmptyState extends StatelessWidget {
   final List<AiSuggestedPrompt> suggestedPrompts;
   final ValueChanged<String>? onPromptSelected;
   final VoidCallback? onRefreshPrompts;
+  final Widget? footer;
 
   const AiPublicEmptyState({
     super.key,
@@ -29,157 +31,128 @@ class AiPublicEmptyState extends StatelessWidget {
     this.suggestedPrompts = const <AiSuggestedPrompt>[],
     this.onPromptSelected,
     this.onRefreshPrompts,
+    this.footer,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final visibleQuickPrompts = quickPrompts.take(4).toList(growable: false);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 16),
-          Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 28, 16, 24),
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              chatEnabled ? '今天想让 Agent 帮你做什么？' : '基础设施测试中',
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 22,
+                height: 1.25,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '它会先查学校资料和已授权快照；\n只有数据确实缺失或过期时，才会请求你的手机继续完成。',
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
+                fontSize: 13,
+                height: 1.55,
+              ),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              '常用能力',
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.62,
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: colors.primaryContainer,
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Icon(
-                    Icons.auto_awesome_rounded,
-                    color: colors.primary,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  chatEnabled ? '有什么校园问题想问？' : '基础设施测试中',
-                  style: TextStyle(
-                    color: colors.onSurface,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  chatEnabled
-                      ? '可查询已开放的校园政策\n与本机课表缓存'
-                      : '当前仅验证入口、权限与配额展示，\n暂不发送真实问题。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 13,
-                    height: 1.45,
-                  ),
-                ),
+                _promptCard('本周空闲', '结合课表找可安排时间', '这周哪几天下午比较空？',
+                    Icons.event_available_outlined),
+                _promptCard('学业风险', '成绩学分综合分析', '分析我的学业情况，找出主要风险并给出改进建议',
+                    Icons.insights_outlined),
+                _promptCard('近期竞赛', '公开赛事和截止时间', '近期有哪些适合我的竞赛？',
+                    Icons.emoji_events_outlined),
+                _promptCard('学校政策', '办事规则与官方资料', '学校关于补考和重修的规定是什么？',
+                    Icons.menu_book_outlined),
               ],
             ),
-          ),
-          if (suggestedPrompts.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _AiEmptySectionTitle(title: '快捷能力', colors: colors),
-            const SizedBox(height: 12),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                mainAxisExtent: 72,
-              ),
-              itemCount: suggestedPrompts.length,
-              itemBuilder: (context, index) {
-                final card = suggestedPrompts[index];
-                return AiPromptCard(
-                  category: card.title,
-                  prompt: card.subtitle,
-                  onTap: () => onPromptSelected?.call(card.prompt),
-                );
-              },
-            ),
           ],
-          if (visibleQuickPrompts.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _AiEmptySectionTitle(
-              title: '猜你想问',
-              colors: colors,
-              trailing: onRefreshPrompts == null
-                  ? null
-                  : TextButton(
-                      onPressed: onRefreshPrompts,
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.onSurfaceVariant,
-                        textStyle: const TextStyle(fontSize: 13),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(0, 32),
-                      ),
-                      child: const Text('换一批'),
-                    ),
-            ),
-            const SizedBox(height: 12),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                mainAxisExtent: 72,
-              ),
-              itemCount: visibleQuickPrompts.length,
-              itemBuilder: (context, index) {
-                final prompt = visibleQuickPrompts[index];
-                return AiPromptCard(
-                  category: prompt.category,
-                  prompt: prompt.question,
-                  onTap: () => onPromptSelected?.call(prompt.question),
-                );
-              },
-            ),
-          ],
-        ],
-      ),
+        ),
+        if (footer != null) footer!,
+      ],
     );
   }
-}
 
-class _AiEmptySectionTitle extends StatelessWidget {
-  const _AiEmptySectionTitle({
-    required this.title,
-    required this.colors,
-    this.trailing,
-  });
-
-  final String title;
-  final ColorScheme colors;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: colors.onSurface,
+  Widget _promptCard(
+      String title, String subtitle, String prompt, IconData icon) {
+    return Builder(
+      builder: (context) => Semantics(
+        button: true,
+        label: '$title：$subtitle',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: chatEnabled ? () => onPromptSelected?.call(prompt) : null,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            child: Ink(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.surfaceSecondaryDark
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.borderNormalDark
+                      : AppColors.borderNormalLight,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 19, color: AppColors.brandPrimary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Text(subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                                height: 1.35)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-        if (trailing != null) trailing!,
-      ],
+      ),
     );
   }
 }

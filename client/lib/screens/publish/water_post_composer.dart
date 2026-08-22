@@ -70,6 +70,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   Timer? _draftDebounce;
   static const Duration _draftDebounceDuration = Duration(milliseconds: 800);
 
+  // 发布成功后禁止 dispose/定时器再次把已发布内容写回草稿。
+  bool _draftPersistenceDisabled = false;
+  Future<void>? _draftWriteInFlight;
+
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin 抽象成员实现
   // ---------------------------------------------------------------------------
@@ -228,7 +232,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void dispose() {
     _draftDebounce?.cancel();
-    unawaited(_persistDraft()); // 退出前落盘当前草稿（编辑态不保存）
+    if (!_draftPersistenceDisabled) {
+      unawaited(_persistDraft()); // 普通退出仍保留当前草稿
+    }
     _titleController.removeListener(_onTitleChanged);
     _contentController.removeListener(_onContentChanged);
     _titleWarningController.dispose();
@@ -285,7 +291,19 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   Future<void> _persistDraft() async {
-    if (_isEditing) return;
+    if (_isEditing || _draftPersistenceDisabled) return;
+    final write = _writeDraft();
+    _draftWriteInFlight = write;
+    try {
+      await write;
+    } finally {
+      if (identical(_draftWriteInFlight, write)) {
+        _draftWriteInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _writeDraft() async {
     final draft = PostDraft(
       title: _titleController.text.trim(),
       content: _contentController.text.trim(),
@@ -389,7 +407,18 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       if (!mounted) return;
       if (result.success) {
         _draftDebounce?.cancel();
-        unawaited(_draftService.clear()); // 发布成功清理草稿
+        _draftPersistenceDisabled = true;
+
+        final pendingWrite = _draftWriteInFlight;
+        if (pendingWrite != null) {
+          try {
+            await pendingWrite;
+          } catch (_) {
+            // 草稿写入失败不应阻断已成功的帖子发布；下面仍执行清理。
+          }
+        }
+        await _draftService.clear();
+
         _showSubmitSuccessFeedback(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);

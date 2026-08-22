@@ -156,6 +156,7 @@ class _CompactSourceTags extends StatelessWidget {
               AiSourceType.policy => Icons.description_outlined,
             },
             label: source.title,
+            trailingLabel: source.citationLabel,
             onTap: () => showModalBottomSheet<void>(
               context: context,
               useSafeArea: true,
@@ -177,16 +178,25 @@ class _CompactSourceTags extends StatelessWidget {
   }
 }
 
-class _CompactSourceTag extends StatelessWidget {
+class _CompactSourceTag extends StatefulWidget {
   const _CompactSourceTag({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.trailingLabel = '',
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final String trailingLabel;
+
+  @override
+  State<_CompactSourceTag> createState() => _CompactSourceTagState();
+}
+
+class _CompactSourceTagState extends State<_CompactSourceTag> {
+  bool _opened = false;
 
   @override
   Widget build(BuildContext context) {
@@ -195,11 +205,14 @@ class _CompactSourceTag extends StatelessWidget {
       padding: const EdgeInsets.only(top: 8),
       child: Semantics(
         button: true,
-        label: '查看来源：$label',
+        label: '查看来源：${widget.label}',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: onTap,
+            onTap: () {
+              setState(() => _opened = true);
+              widget.onTap();
+            },
             borderRadius: BorderRadius.circular(10),
             child: Container(
               constraints: const BoxConstraints(minHeight: 36, maxWidth: 220),
@@ -212,21 +225,34 @@ class _CompactSourceTag extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 15, color: colors.primary),
+                  Icon(widget.icon, size: 15, color: colors.primary),
                   const SizedBox(width: 6),
                   Flexible(
-                    child: Text(
-                      label,
-                      maxLines: null,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
+                    child: _opened
+                        ? const SizedBox.shrink()
+                        : Text(
+                            widget.label,
+                            maxLines: 2,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                  if (widget.trailingLabel.isNotEmpty) ...[
+                    const SizedBox(width: 5),
+                    Text(
+                      widget.trailingLabel,
                       style: TextStyle(
-                        color: colors.onSurfaceVariant,
+                        color: colors.primary,
                         fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
+                  ],
                   const SizedBox(width: 3),
                   Icon(
                     Icons.chevron_right_rounded,

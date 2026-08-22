@@ -11,11 +11,13 @@ class AiAgentPermissionCard extends StatelessWidget {
     required this.event,
     this.onDeny,
     this.onAllowOnce,
+    this.submitting = false,
   });
 
   final AiRunEvent event;
   final VoidCallback? onDeny;
   final VoidCallback? onAllowOnce;
+  final bool submitting;
 
   @override
   Widget build(BuildContext context) {
@@ -74,9 +76,22 @@ class AiAgentPermissionCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(onPressed: onDeny, child: const Text('暂不允许')),
+              TextButton(
+                onPressed: submitting ? null : onDeny,
+                child: const Text('暂不允许'),
+              ),
               const SizedBox(width: 4),
-              FilledButton(onPressed: onAllowOnce, child: const Text('允许本次')),
+              FilledButton.icon(
+                onPressed: submitting ? null : onAllowOnce,
+                icon: submitting
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_rounded, size: 16),
+                label: Text(submitting ? '正在继续' : '允许本次'),
+              ),
             ],
           ),
         ],

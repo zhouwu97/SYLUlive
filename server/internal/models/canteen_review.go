@@ -45,6 +45,10 @@ type CanteenReviewEvent struct {
 	HistoryCount         int      `gorm:"-" json:"history_count,omitempty"`
 	RecommendedDishNames []string `gorm:"-" json:"recommended_dishes,omitempty"`
 	MyVote               *string  `gorm:"-" json:"my_vote,omitempty"`
+	Source               string   `gorm:"-" json:"source,omitempty"`
+	LegacyRatingID       *uint    `gorm:"-" json:"legacy_rating_id,omitempty"`
+	CanEdit              bool     `gorm:"-" json:"can_edit,omitempty"`
+	CanDelete            bool     `gorm:"-" json:"can_delete,omitempty"`
 }
 
 // CanteenReviewEventVote 保留 V2 评价的有用/无用投票，并用数据库唯一约束保证一人一票。

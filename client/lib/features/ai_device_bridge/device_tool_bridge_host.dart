@@ -126,8 +126,14 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
 
   static RefreshResult _toRefreshResult(PersonalSyncItemResult result) {
     return RefreshResult(
-      performed: result.isSuccessful,
-      message: result.isSuccessful ? null : result.message ?? '设备刷新失败',
+      // usingOldCache / partial success 只能说明同步流程保留了旧数据，
+      // 不能作为 ensure_fresh 的远端刷新证据。
+      performed:
+          result.status == PersonalSyncItemStatus.success && !result.isPartial,
+      message:
+          result.status == PersonalSyncItemStatus.success && !result.isPartial
+              ? null
+              : result.message ?? '设备刷新未完成，仍使用旧缓存',
     );
   }
 

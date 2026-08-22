@@ -917,7 +917,9 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         Navigator.of(context).pop(true);
       }
     } else {
-      if (result.errorCode == 'rating_conflict' && mounted) {
+      if ((result.errorCode == 'review_conflict' ||
+              result.errorCode == 'rating_conflict') &&
+          mounted) {
         if (result.remoteUpdatedAt != null) {
           _baseRatingUpdatedAt = result.remoteUpdatedAt;
         }

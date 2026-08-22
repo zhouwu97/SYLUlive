@@ -17,6 +17,7 @@ import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.da
 import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_advisor_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_plan_action_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/calendar_action_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/erke_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
@@ -1227,6 +1228,7 @@ void main() {
         DraftAddCompetitionToPlanSkill.skillId: <PersonalDataType>{
           PersonalDataType.studentProfile,
         },
+        CalendarActionSkill.skillId: <PersonalDataType>{},
         FitnessWeeklyPlanSkill.skillId: <PersonalDataType>{
           PersonalDataType.schedule,
           PersonalDataType.physical,
@@ -1245,6 +1247,12 @@ void main() {
             },
           DraftAddCompetitionToPlanSkill.skillId => <String, dynamic>{
               'event_id': 1
+            },
+          CalendarActionSkill.skillId => <String, dynamic>{
+              'action_type': 'calendar_event_create',
+              'title': '复习',
+              'start_at': '2026-08-22T10:00:00Z',
+              'end_at': '2026-08-22T11:00:00Z',
             },
           _ => <String, dynamic>{},
         };

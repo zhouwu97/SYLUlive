@@ -336,6 +336,23 @@ func validDeviceToolResult(job models.DeviceToolJob, value json.RawMessage) bool
 			return false
 		}
 	}
+	if ensureFresh {
+		// ensure_fresh 的语义是“返回时已满足新鲜度”，而不是“尝试过刷新”。
+		// 客户端即使刷新失败，也不能把旧缓存伪装成远端新数据回传。
+		var freshness map[string]json.RawMessage
+		if json.Unmarshal(envelope["freshness"], &freshness) != nil ||
+			!jsonStringEquals(freshness["after"], "fresh") ||
+			!jsonBoolEquals(envelope["is_stale"], false) {
+			return false
+		}
+		var refreshPerformed bool
+		if json.Unmarshal(envelope["refresh_performed"], &refreshPerformed) != nil {
+			return false
+		}
+		if refreshPerformed && !jsonStringEquals(envelope["source"], "remote_edu_fetch") {
+			return false
+		}
+	}
 	var data map[string]json.RawMessage
 	if json.Unmarshal(envelope["data"], &data) != nil {
 		return false
@@ -493,6 +510,11 @@ func hasExactJSONKeys(value map[string]json.RawMessage, expected []string) bool 
 func validJSONBool(value json.RawMessage) bool {
 	var decoded bool
 	return string(value) != "null" && json.Unmarshal(value, &decoded) == nil
+}
+
+func jsonBoolEquals(value json.RawMessage, expected bool) bool {
+	var decoded bool
+	return json.Unmarshal(value, &decoded) == nil && decoded == expected
 }
 
 func validJSONNumber(value json.RawMessage) bool {

@@ -197,9 +197,16 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 				outcome.citationFallback = fallback
 			}
 			toolResultMessages = append(toolResultMessages, Message{Role: "tool", ToolCallID: call.id, Content: string(modelResult)})
-			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", map[string]interface{}{
+			eventPayload := map[string]interface{}{
 				"call_id": call.id, "tool_name": call.name, "success": success, "cached": cached,
-			}, true)
+			}
+			if call.name == "calendar.propose_action" && success {
+				var actionDraft map[string]interface{}
+				if json.Unmarshal(execution.Result, &actionDraft) == nil && actionDraft["id"] != nil {
+					eventPayload["action_draft"] = actionDraft
+				}
+			}
+			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", eventPayload, true)
 			r.appendPersonalDataEvidence(ctx, run.ID, call.id, execution.Result)
 		}
 		messages = append(messages, Message{Role: "assistant", Content: answer, ToolCalls: assistantCallMessages})

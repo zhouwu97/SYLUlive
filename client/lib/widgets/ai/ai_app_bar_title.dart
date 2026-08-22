@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
+
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiAppBarTitle extends StatelessWidget {
   const AiAppBarTitle({super.key});
@@ -11,19 +13,19 @@ class AiAppBarTitle extends StatelessWidget {
       children: [
         const Text(
           '沈理AI',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
         const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: CampusTheme.primaryLight,
-            borderRadius: BorderRadius.circular(99),
+            color: AppColors.brandSurfaceLight,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: const Text(
             '内测',
             style: TextStyle(
-              color: CampusTheme.primary,
+              color: AppColors.brandPrimary,
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),

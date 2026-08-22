@@ -92,6 +92,168 @@ func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
 	}
 }
 
+func TestDeleteReviewOwnActiveIsIdempotent(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ?", canteen.ID).First(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK || strings.Contains(deleted.Body.String(), `"already_deleted":true`) {
+		t.Fatalf("first delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if err := h.db.First(&event, event.ID).Error; err != nil || event.Status != models.ReviewEventStatusDeleted {
+		t.Fatalf("event after delete=%+v err=%v", event, err)
+	}
+
+	repeated := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if repeated.Code != http.StatusOK || !strings.Contains(repeated.Body.String(), `"already_deleted":true`) {
+		t.Fatalf("second delete status=%d body=%s", repeated.Code, repeated.Body.String())
+	}
+}
+
+func TestDeleteReviewRejectsOtherUserAndHidden(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	other := models.User{ID: 89, StudentID: "student-89", PasswordHash: "test", Nickname: "另一位同学"}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, OverallScore: 4,
+		Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	forbidden := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), other.ID, "")
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("other user status=%d body=%s", forbidden.Code, forbidden.Body.String())
+	}
+	if err := h.db.Model(&event).Update("status", models.ReviewEventStatusHidden).Error; err != nil {
+		t.Fatal(err)
+	}
+	hidden := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if hidden.Code != http.StatusConflict || !containsReviewJSONCode(hidden.Body.Bytes(), "review_not_active") {
+		t.Fatalf("hidden status=%d body=%s", hidden.Code, hidden.Body.String())
+	}
+}
+
+func TestDeletedLatestStillCountsForCreateCooldown(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ?", canteen.ID).First(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Model(&event).Update("created_at", time.Now().Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	createdAgain := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
+	if createdAgain.Code != http.StatusTooManyRequests || !containsReviewJSONCode(createdAgain.Body.Bytes(), "review_too_frequent") {
+		t.Fatalf("create after delete status=%d body=%s", createdAgain.Code, createdAgain.Body.String())
+	}
+}
+
+func TestDeletingLatestDoesNotMakeOlderReviewEditable(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	older := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 4, ValueScore: 4, QueueScore: 4, HygieneScore: 4, ServiceScore: 4,
+		OverallScore: 4, Comment: "旧评价", Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+		CreatedAt: time.Now().Add(-8 * time.Hour), UpdatedAt: time.Now().Add(-8 * time.Hour),
+	}
+	latest := older
+	latest.ID = 0
+	latest.Comment = "新评价"
+	latest.CreatedAt = time.Now().Add(-time.Hour)
+	latest.UpdatedAt = latest.CreatedAt
+	if err := h.db.Create(&older).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&latest).Error; err != nil {
+		t.Fatal(err)
+	}
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(latest.ID), mapParams("reviewId", itoaForTest(latest.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	update := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+itoaForTest(older.ID), mapParams("reviewId", itoaForTest(older.ID)), user.ID, reviewBody())
+	if update.Code != http.StatusConflict || !containsReviewJSONCode(update.Body.Bytes(), "review_not_latest") {
+		t.Fatalf("update old status=%d body=%s", update.Code, update.Body.String())
+	}
+}
+
+func TestGetMyCanteenReviewsNewestFirstAndCursorIncludesLegacyAndOffline(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	now := time.Now()
+	v2 := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4, QueueScore: 4, HygieneScore: 5, ServiceScore: 4,
+		OverallScore: 4.4, Comment: "新版评价", Images: `[]`, Tags: `[]`, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := h.db.Create(&v2).Error; err != nil {
+		t.Fatal(err)
+	}
+	offline := models.Canteen{ID: 89, Name: "二食堂", Image: "/uploads/offline.png", Verified: true, OperatingStatus: models.CanteenOperatingOffline, CreatedBy: user.ID}
+	if err := h.db.Create(&offline).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := models.CanteenRating{
+		CanteenID: offline.ID, UserID: user.ID, Star: 3, Comment: "旧版评价", Images: `[]`, Status: models.ReviewEventStatusActive,
+		CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour),
+	}
+	if err := h.db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	first := performCanteenRequest(t, h.GetMyCanteenReviews, http.MethodGet,
+		"/api/user/canteen-reviews?limit=1", nil, user.ID, "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor string                   `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(firstBody.Items) != 1 || firstBody.Items[0]["source"] != "v2" || firstBody.NextCursor == "" {
+		t.Fatalf("first page=%+v", firstBody)
+	}
+	if firstBody.Items[0]["canteen"].(map[string]interface{})["name"] != canteen.Name {
+		t.Fatalf("v2 canteen payload=%v", firstBody.Items[0]["canteen"])
+	}
+	second := performCanteenRequest(t, h.GetMyCanteenReviews, http.MethodGet,
+		"/api/user/canteen-reviews?limit=20&cursor="+firstBody.NextCursor, nil, user.ID, "")
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"source":"legacy"`) ||
+		!strings.Contains(second.Body.String(), `"is_offline":true`) {
+		t.Fatalf("second page status=%d body=%s", second.Code, second.Body.String())
+	}
+}
+
 func TestCreateReviewRejectsMergedDishSelectionOverThree(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	for i := 1; i <= 4; i++ {

@@ -1135,6 +1135,7 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
+		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -1994,6 +1995,8 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 		canteenAuth.POST("/:id/reviews", canteenHandler.CreateReview)
 		canteenAuth.PATCH("/reviews/:reviewId", canteenHandler.UpdateReview)
+		canteenAuth.DELETE("/reviews/:reviewId", canteenHandler.DeleteReview)
+		canteenAuth.DELETE("/ratings/:ratingId", canteenHandler.DeleteLegacyRating)
 		canteenAuth.PUT("/reviews/:reviewId/vote", canteenHandler.VoteReview)
 		canteenAuth.POST("/dishes/:dishId/reviews", canteenHandler.CreateDishReview)
 
@@ -2009,6 +2012,7 @@ func main() {
 	canteenReviewAuth := r.Group("/api/canteen-reviews")
 	canteenReviewAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	canteenReviewAuth.PATCH("/:reviewId", canteenHandler.UpdateReview)
+	canteenReviewAuth.DELETE("/:reviewId", canteenHandler.DeleteReview)
 
 	// 违规管理
 

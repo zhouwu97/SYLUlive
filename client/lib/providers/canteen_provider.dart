@@ -19,6 +19,20 @@ class CanteenRatingSubmitResult {
   });
 }
 
+class CanteenMutationResult {
+  final bool success;
+  final String? errorCode;
+  final String? errorMessage;
+  final bool alreadyDeleted;
+
+  const CanteenMutationResult({
+    required this.success,
+    this.errorCode,
+    this.errorMessage,
+    this.alreadyDeleted = false,
+  });
+}
+
 class CanteenProvider with ChangeNotifier {
   final Dio _dio;
 
@@ -327,6 +341,7 @@ class CanteenProvider with ChangeNotifier {
     List<CanteenDishReviewInput> dishReviews = const [],
     DateTime? baseUpdatedAt,
   }) async {
+    errorCode = null;
     try {
       final response = await _dio.patch(
         '/canteens/reviews/$reviewId',
@@ -346,7 +361,12 @@ class CanteenProvider with ChangeNotifier {
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           response.data is Map &&
           response.data['review'] != null) {
-        return const CanteenRatingSubmitResult(success: true);
+        return CanteenRatingSubmitResult(
+          success: true,
+          remoteUpdatedAt: DateTime.tryParse(
+            (response.data['review'] as Map)['updated_at']?.toString() ?? '',
+          ),
+        );
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
@@ -362,6 +382,41 @@ class CanteenProvider with ChangeNotifier {
     return const CanteenRatingSubmitResult(
       success: false,
       errorMessage: '评价服务返回异常',
+    );
+  }
+
+  /// 删除自己的 V2 或 Legacy 评价；source 用于区分两个自增 ID 空间。
+  Future<CanteenMutationResult> deleteReview({
+    required int id,
+    required String source,
+  }) async {
+    errorCode = null;
+    final path = source == 'legacy'
+        ? '/canteens/ratings/$id'
+        : '/canteens/reviews/$id';
+    try {
+      final response = await _dio.delete(path);
+      final data = response.data;
+      if (response.statusCode == 200) {
+        return CanteenMutationResult(
+          success: true,
+          alreadyDeleted: data is Map && data['already_deleted'] == true,
+        );
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      return CanteenMutationResult(
+        success: false,
+        errorCode: errorCode,
+        errorMessage: _errorMessage,
+      );
+    }
+    return const CanteenMutationResult(
+      success: false,
+      errorMessage: '删除评价服务返回异常',
     );
   }
 
@@ -391,6 +446,44 @@ class CanteenProvider with ChangeNotifier {
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  Future<CanteenReviewPage?> loadMyCanteenReviews({
+    int limit = 20,
+    String? cursor,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/user/canteen-reviews',
+        queryParameters: {
+          'limit': limit,
+          if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+        },
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = Map<String, dynamic>.from(response.data as Map);
+        final rawItems = data['items'];
+        final items = rawItems is List
+            ? rawItems
+                .whereType<Map>()
+                .map((item) => CanteenReviewEvent.fromJson(
+                      Map<String, dynamic>.from(item),
+                    ))
+                .toList(growable: false)
+            : const <CanteenReviewEvent>[];
+        return CanteenReviewPage(
+          items: items,
+          nextCursor: data['next_cursor']?.toString(),
+          hasMore: data['has_more'] == true || data['next_cursor'] != null,
+        );
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
     }
     return null;
   }

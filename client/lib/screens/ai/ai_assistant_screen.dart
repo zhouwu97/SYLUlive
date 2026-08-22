@@ -102,6 +102,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   bool _consentDialogVisible = false;
   String _lastConsentDialogKey = '';
   bool _agentTrusted = false;
+  bool _agentPermissionLoaded = false;
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -178,11 +179,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final consent = _provider.pendingConsent;
     if (!mounted ||
         _personalMode ||
+        !_agentPermissionLoaded ||
         consent == null ||
         consent.consentScope.isEmpty ||
-        consent.consentScope !=
-            AiPersonalDataPermissionScope.externalModelAnalysis.wireValue ||
         _consentDialogVisible) {
+      return;
+    }
+    if (_agentTrusted) {
+      unawaited(_autoApproveTrustedConsent(consent));
+      return;
+    }
+    if (consent.consentScope !=
+        AiPersonalDataPermissionScope.externalModelAnalysis.wireValue) {
       return;
     }
     final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
@@ -287,6 +295,23 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _consentDialogVisible = false;
       if (mounted) _handleRunConsentRequired();
     });
+  }
+
+  /// 完全信任模式下，当前 Run 的安全范围已经由长期策略覆盖，
+  /// 不再把同一件事重复展示成一次性申请；仍通过服务端 Run consent
+  /// 接口确认本轮授权，避免绕过后端的范围校验。
+  Future<void> _autoApproveTrustedConsent(AiRunEvent consent) async {
+    final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
+    if (key == _lastConsentDialogKey || _provider.submittingConsent) return;
+    _lastConsentDialogKey = key;
+    final submitted = await _provider.submitConsent(true);
+    if (!submitted && mounted) {
+      _lastConsentDialogKey = '';
+      AppFeedback.error(
+        _provider.error ?? '自动继续失败，请重试',
+        context: context,
+      );
+    }
   }
 
   String _currentPersonalAccountKey() {
@@ -788,10 +813,20 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     try {
       final permissions = await _permissionService.list();
       if (mounted) {
-        setState(() => _agentTrusted = aiAgentPermissionIsTrusted(permissions));
+        setState(() {
+          _agentTrusted = aiAgentPermissionIsTrusted(permissions);
+          _agentPermissionLoaded = true;
+        });
+        _handleRunConsentRequired();
       }
     } on AiPersonalDataPermissionException {
-      if (mounted) setState(() => _agentTrusted = false);
+      if (mounted) {
+        setState(() {
+          _agentTrusted = false;
+          _agentPermissionLoaded = true;
+        });
+        _handleRunConsentRequired();
+      }
     }
   }
 
@@ -802,7 +837,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _submitInlineAgentConsent(_ConsentChoice choice) async {
     final consent = _provider.pendingConsent;
-    if (consent == null || consent.consentScope.isEmpty) return;
+    if (consent == null ||
+        consent.consentScope.isEmpty ||
+        _provider.submittingConsent) {
+      return;
+    }
     var shouldSubmit = true;
     if (choice == _ConsentChoice.always) {
       final scope = AiPersonalDataPermissionScope.fromWireValue(
@@ -1348,10 +1387,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         message.requestId ==
                                             provider
                                                 .activeSubmissionRequestId &&
-                                        (provider.agentEvent?.type ==
-                                                AiRunEventType
-                                                    .consentRequired ||
-                                            provider.pendingConsent != null))
+                                        _agentPermissionLoaded &&
+                                        !_agentTrusted &&
+                                        provider.pendingConsent?.consentScope
+                                                .trim()
+                                                .isNotEmpty ==
+                                            true)
                                       AiAgentPermissionCard(
                                         event: provider.agentEvent ??
                                             provider.pendingConsent!,
@@ -1365,6 +1406,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                             _ConsentChoice.once,
                                           ),
                                         ),
+                                        submitting: provider.submittingConsent,
                                       ),
                                   ],
                                   if (provider.error != null)

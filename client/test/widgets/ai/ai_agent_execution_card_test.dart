@@ -49,6 +49,55 @@ void main() {
 
     expect(find.text('正在连接校园 Agent'), findsOneWidget);
     expect(find.text('正在建立安全会话'), findsOneWidget);
+    expect(find.text('检查服务端快照'), findsOneWidget);
+  });
+
+  testWidgets('正常完成后自动收起，失败时保留展开', (tester) async {
+    const event = AiRunEvent(
+      runId: 'run-1',
+      type: AiRunEventType.toolExecuting,
+      datasets: ['schedule'],
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(event: event, running: true),
+        ),
+      ),
+    );
+    expect(find.text('检查服务端快照'), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            event: AiRunEvent(
+              runId: 'run-1',
+              type: AiRunEventType.completed,
+              datasets: ['schedule'],
+            ),
+            completed: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('检查服务端快照'), findsNothing);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            event: AiRunEvent(
+              runId: 'run-1',
+              type: AiRunEventType.failed,
+              datasets: ['schedule'],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('检查服务端快照'), findsOneWidget);
   });
 
   testWidgets('单次授权独立于 Process Card 且不出现长期授权文案', (tester) async {

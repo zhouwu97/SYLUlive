@@ -629,12 +629,17 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.toolRequested:
       case AiRunEventType.toolExecuting:
       case AiRunEventType.deviceClaimed:
+        // 工具开始/执行本身不是授权请求。只有带 scope 的 consent.required
+        // 才能进入授权 UI，否则“允许本次”没有可提交的授权范围。
+        _pendingConsent = null;
+        _connectionState = AiConnectionState.streaming;
+        break;
       case AiRunEventType.consentRequired:
-        _pendingConsent = event;
+        _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
         _connectionState = AiConnectionState.streaming;
         break;
       case AiRunEventType.deviceWaiting:
-        _pendingConsent = event;
+        _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
         _connectionState = AiConnectionState.streaming;
         _syncDeviceTools();
         break;
@@ -1021,7 +1026,9 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.deviceClaimed ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
-        AiRunEventType.toolCompleted =>
+        AiRunEventType.toolCompleted ||
+        AiRunEventType.failed ||
+        AiRunEventType.cancelled =>
           true,
         _ => false,
       };

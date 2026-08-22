@@ -205,6 +205,55 @@ func TestDeletingLatestDoesNotMakeOlderReviewEditable(t *testing.T) {
 	}
 }
 
+func TestGetMyCanteenReviewsNewestFirstAndCursorIncludesLegacyAndOffline(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	now := time.Now()
+	v2 := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4, QueueScore: 4, HygieneScore: 5, ServiceScore: 4,
+		OverallScore: 4.4, Comment: "新版评价", Images: `[]`, Tags: `[]`, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := h.db.Create(&v2).Error; err != nil {
+		t.Fatal(err)
+	}
+	offline := models.Canteen{ID: 89, Name: "二食堂", Image: "/uploads/offline.png", Verified: true, OperatingStatus: models.CanteenOperatingOffline, CreatedBy: user.ID}
+	if err := h.db.Create(&offline).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := models.CanteenRating{
+		CanteenID: offline.ID, UserID: user.ID, Star: 3, Comment: "旧版评价", Images: `[]`, Status: models.ReviewEventStatusActive,
+		CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour),
+	}
+	if err := h.db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	first := performCanteenRequest(t, h.GetMyCanteenReviews, http.MethodGet,
+		"/api/user/canteen-reviews?limit=1", nil, user.ID, "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor string                   `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(firstBody.Items) != 1 || firstBody.Items[0]["source"] != "v2" || firstBody.NextCursor == "" {
+		t.Fatalf("first page=%+v", firstBody)
+	}
+	if firstBody.Items[0]["canteen"].(map[string]interface{})["name"] != canteen.Name {
+		t.Fatalf("v2 canteen payload=%v", firstBody.Items[0]["canteen"])
+	}
+	second := performCanteenRequest(t, h.GetMyCanteenReviews, http.MethodGet,
+		"/api/user/canteen-reviews?limit=20&cursor="+firstBody.NextCursor, nil, user.ID, "")
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"source":"legacy"`) ||
+		!strings.Contains(second.Body.String(), `"is_offline":true`) {
+		t.Fatalf("second page status=%d body=%s", second.Code, second.Body.String())
+	}
+}
+
 func TestCreateReviewRejectsMergedDishSelectionOverThree(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	for i := 1; i <= 4; i++ {

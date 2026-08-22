@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/features/ai_device_bridge/device_automation_gateway.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_job_client.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_job_models.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_tool_registry.dart';
@@ -96,6 +97,48 @@ void main() {
     expect(api.completedJobIDs, isEmpty);
     expect(api.failed, isEmpty);
     expect(gateway.closed, isTrue);
+  });
+
+  test('ensure_fresh 工具返回刷新证据并使用服务端结果来源', () async {
+    final now = DateTime.now().toUtc();
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(now),
+    );
+    final automation = _FakeAutomationGateway(
+      gateway,
+      ensured: EnsureFreshResult(
+        before: FreshnessState(
+          fetchedAt: now.subtract(const Duration(hours: 2)),
+          expiresAt: now.subtract(const Duration(hours: 1)),
+          isStale: true,
+        ),
+        after: FreshnessState(
+          fetchedAt: now,
+          expiresAt: now.add(const Duration(minutes: 5)),
+          isStale: false,
+        ),
+        refreshPerformed: true,
+      ),
+    );
+
+    final result = await DeviceToolRegistry().execute(
+      DeviceToolJob(
+        id: 'job-fresh',
+        toolName: 'device.academic.ensure_fresh_overview',
+        arguments: const {'max_age_seconds': 1},
+        requiredDataTypes: const ['academic'],
+        status: 'pending',
+        stateVersion: 0,
+        expiresAt: now.add(const Duration(minutes: 1)),
+      ),
+      null,
+      automationGateway: automation,
+    );
+
+    expect(result.value['source'], 'remote_edu_fetch');
+    expect(result.value['refresh_performed'], isTrue);
+    expect(result.value['freshness'], {'before': 'stale', 'after': 'fresh'});
+    expect(result.value['data'], isA<Map<String, dynamic>>());
   });
 }
 
@@ -254,4 +297,39 @@ class _FakeGateway implements PersonalDataGateway {
     required DateTime end,
   }) =>
       throw UnimplementedError();
+}
+
+class _FakeAutomationGateway implements DeviceAutomationGateway {
+  _FakeAutomationGateway(this.gateway, {required this.ensured});
+
+  final PersonalDataGateway gateway;
+  final EnsureFreshResult ensured;
+
+  @override
+  Future<FreshnessState> inspect(PersonalDataType type) async => ensured.after;
+
+  @override
+  Future<RefreshResult> refreshAcademic() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<RefreshResult> refreshSchedule() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<RefreshResult> refreshErke() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<EnsureFreshResult> ensureFresh(
+    PersonalDataType type, {
+    required Duration maxAge,
+  }) async =>
+      ensured;
+
+  @override
+  Future<GatewayResult<T>> read<T>(DeviceDataQuery<T> query) => query(gateway);
+
+  @override
+  Future<void> close() async {}
 }

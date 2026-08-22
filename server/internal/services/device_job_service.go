@@ -27,10 +27,10 @@ const (
 )
 
 var deviceToolRequirements = map[string][]string{
-	"device.academic.get_cached_overview": {"academic"},
-	"device.schedule.get_cached_week":     {"schedule"},
-	"device.academic.get_credit_summary":  {"academic"},
-	"device.erke.get_cached_overview":     {"erke"},
+	"device.academic.get_cached_overview":         {"academic"},
+	"device.schedule.get_cached_week":             {"schedule"},
+	"device.academic.get_credit_summary":          {"academic"},
+	"device.erke.get_cached_overview":             {"erke"},
 	"device.academic.ensure_fresh_overview":       {"academic"},
 	"device.schedule.ensure_fresh_week":           {"schedule"},
 	"device.academic.ensure_fresh_credit_summary": {"academic"},
@@ -574,14 +574,57 @@ func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
 		return hasExactJSONKeys(arguments, []string{"week_containing"}) && validDateString(arguments["week_containing"])
 	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview":
 		return len(arguments) == 0
+	case "device.schedule.ensure_fresh_week":
+		return hasExactJSONKeys(arguments, []string{"week_containing", "max_age_seconds"}) &&
+			validDateString(arguments["week_containing"]) && validMaxAgeSeconds(arguments["max_age_seconds"])
+	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview":
+		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validMaxAgeSeconds(arguments["max_age_seconds"])
 	default:
 		return false
 	}
 }
 
+func validMaxAgeSeconds(value json.RawMessage) bool {
+	var seconds float64
+	if json.Unmarshal(value, &seconds) != nil || seconds != math.Trunc(seconds) {
+		return false
+	}
+	return seconds > 0 && seconds <= 24*60*60
+}
+
+// clampDeviceFreshnessArguments 把模型的意图收窄到服务端策略边界；设备仍会在
+// 最终执行前依据本地 fetched_at / expires_at 再判断一次。
+func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.RawMessage {
+	if !strings.Contains(toolName, ".ensure_fresh_") {
+		return value
+	}
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(value, &arguments) != nil {
+		return value
+	}
+	var requested float64
+	if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {
+		return value
+	}
+	minimum := 300.0
+	if strings.Contains(toolName, "schedule") {
+		minimum = 600
+	} else if strings.Contains(toolName, "erke") {
+		minimum = 1800
+	}
+	if requested < minimum {
+		arguments["max_age_seconds"], _ = json.Marshal(minimum)
+	}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return value
+	}
+	return encoded
+}
+
 func parseWeekContaining(value json.RawMessage) (time.Time, bool) {
 	var arguments map[string]json.RawMessage
-	if json.Unmarshal(value, &arguments) != nil || !hasExactJSONKeys(arguments, []string{"week_containing"}) {
+	if json.Unmarshal(value, &arguments) != nil {
 		return time.Time{}, false
 	}
 	return decodeDate(arguments["week_containing"])

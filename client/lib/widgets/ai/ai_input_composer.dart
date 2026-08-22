@@ -12,6 +12,9 @@ class AiInputComposer extends StatefulWidget {
   final ValueChanged<String> onSend;
   final VoidCallback? onCancel;
   final String hintText;
+  final bool showAgentPermissionMode;
+  final bool agentTrusted;
+  final VoidCallback? onAgentPermissionTap;
 
   const AiInputComposer({
     super.key,
@@ -23,6 +26,9 @@ class AiInputComposer extends StatefulWidget {
     required this.onSend,
     this.onCancel,
     required this.hintText,
+    this.showAgentPermissionMode = false,
+    this.agentTrusted = false,
+    this.onAgentPermissionTap,
   });
 
   @override
@@ -98,6 +104,14 @@ class _AiInputComposerState extends State<AiInputComposer> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.showAgentPermissionMode)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AiAgentPermissionModeBar(
+                  trusted: widget.agentTrusted,
+                  onTap: widget.onAgentPermissionTap,
+                ),
+              ),
             Container(
               height: 48,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
@@ -182,6 +196,98 @@ class _AiInputComposerState extends State<AiInputComposer> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 输入框上方的轻量权限状态入口；实际策略仍由权限 Bottom Sheet 管理。
+class AiAgentPermissionModeBar extends StatelessWidget {
+  const AiAgentPermissionModeBar({
+    super.key,
+    required this.trusted,
+    this.onTap,
+  });
+
+  final bool trusted;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final surface = colors.surfaceContainerHighest.withValues(alpha: 0.7);
+    return Semantics(
+      button: true,
+      label: trusted ? '校园 Agent 权限：完全信任' : '校园 Agent 权限：每次询问',
+      hint: '点击打开 Agent 权限设置',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: surface,
+              border: Border.all(color: colors.outlineVariant),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _ModeLabel(
+                    label: '每次询问',
+                    selected: !trusted,
+                    colors: colors,
+                  ),
+                ),
+                Expanded(
+                  child: _ModeLabel(
+                    label: '完全信任',
+                    selected: trusted,
+                    colors: colors,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.tune_rounded, size: 18, color: colors.primary),
+                const SizedBox(width: 6),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeLabel extends StatelessWidget {
+  const _ModeLabel({
+    required this.label,
+    required this.selected,
+    required this.colors,
+  });
+
+  final String label;
+  final bool selected;
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(minHeight: 32),
+      decoration: BoxDecoration(
+        color: selected ? colors.primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: selected ? colors.onPrimary : colors.onSurfaceVariant,
+          fontSize: 12,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         ),
       ),
     );

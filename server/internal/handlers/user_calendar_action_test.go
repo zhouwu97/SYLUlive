@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -160,6 +161,98 @@ func TestCalendarActionDraftIsIdempotentAndOwned(t *testing.T) {
 	otherConfirm := calendarActionRequest(t, handler.ConfirmCalendarEventDraft, http.MethodPost, "/confirm", `{}`, other.ID, firstResponse.ID)
 	if otherConfirm.Code != http.StatusNotFound {
 		t.Fatalf("ownership status=%d body=%s", otherConfirm.Code, otherConfirm.Body.String())
+	}
+}
+
+func TestCalendarListEventsReturnsOverlappingRange(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "range")
+	createCalendarActionTestEvent(t, db, user.ID, "range")
+
+	response := performAIActionRequest(
+		t, http.MethodGet,
+		"/user/calendar/events?from=2026-08-23T09:30:00Z&to=2026-08-23T09:45:00Z",
+		"", user.ID, nil, nil, handler.ListEvents,
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Events []models.UserCalendarEvent `json:"events"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Events) != 1 || payload.Events[0].Title != "原始事件" {
+		t.Fatalf("overlapping events=%+v", payload.Events)
+	}
+}
+
+func TestCalendarUpdateRejectsStaleVersion(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "version")
+	event := createCalendarActionTestEvent(t, db, user.ID, "version")
+
+	first := performAIActionRequest(
+		t, http.MethodPatch, fmt.Sprintf("/user/calendar/events/%d", event.ID),
+		`{"version":1,"title":"第一次更新"}`, user.ID,
+		gin.Params{{Key: "id", Value: fmt.Sprint(event.ID)}}, nil, handler.UpdateEvent,
+	)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first update status=%d body=%s", first.Code, first.Body.String())
+	}
+	stale := performAIActionRequest(
+		t, http.MethodPatch, fmt.Sprintf("/user/calendar/events/%d", event.ID),
+		`{"version":1,"title":"过期更新"}`, user.ID,
+		gin.Params{{Key: "id", Value: fmt.Sprint(event.ID)}}, nil, handler.UpdateEvent,
+	)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale update status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	var stored models.UserCalendarEvent
+	if err := db.First(&stored, event.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Title != "第一次更新" || stored.Version != 2 {
+		t.Fatalf("stored event=%+v", stored)
+	}
+}
+
+func TestCampusCalendarActionProposalOnlyCreatesDraft(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "campus-agent")
+	tool := NewCampusCalendarActionProposalTool(handler)
+	arguments := json.RawMessage(`{"action_type":"calendar_event_create","title":"Agent 草稿","start_at":"2026-08-24T09:00:00Z","end_at":"2026-08-24T10:00:00Z"}`)
+
+	result, err := tool.Execute(context.Background(), user.ID, arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, ok := result.(models.UserCalendarActionDraft)
+	if !ok {
+		t.Fatalf("unexpected draft type %T", result)
+	}
+	if draft.Status != "waiting_confirmation" {
+		t.Fatalf("draft status=%s", draft.Status)
+	}
+	var eventCount int64
+	if err := db.Model(&models.UserCalendarEvent{}).Where("user_id = ?", user.ID).Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("proposal unexpectedly wrote %d events", eventCount)
+	}
+
+	retry, err := tool.Execute(context.Background(), user.ID, arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryDraft := retry.(models.UserCalendarActionDraft)
+	if retryDraft.ID != draft.ID {
+		t.Fatalf("proposal idempotency IDs differ: %d vs %d", draft.ID, retryDraft.ID)
 	}
 }
 

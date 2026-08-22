@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
 import '../../../models/user_calendar.dart';
@@ -8,6 +11,7 @@ import 'skill_execution_context.dart';
 class CalendarActionInput {
   const CalendarActionInput({
     required this.actionType,
+    this.requestId,
     this.eventId,
     this.title,
     this.description,
@@ -20,6 +24,7 @@ class CalendarActionInput {
   });
 
   final String actionType;
+  final String? requestId;
   final int? eventId;
   final String? title;
   final String? description;
@@ -148,12 +153,16 @@ class DioCalendarActionSource implements CalendarActionSource {
   }
 
   String _idempotencyKey(CalendarActionInput input) {
-    final value = input
-        .toJson()
-        .entries
-        .map((entry) => '${entry.key}=${entry.value}')
-        .join('&');
-    return 'calendar-${value.hashCode.abs()}';
+    final fields = input.toJson();
+    final canonical = fields.keys.toList()..sort();
+    final payload = jsonEncode(<String, dynamic>{
+      for (final key in canonical) key: fields[key],
+    });
+    final digest = sha256.convert(utf8.encode(payload)).toString();
+    final requestId = input.requestId?.trim();
+    return requestId == null || requestId.isEmpty
+        ? 'calendar-$digest'
+        : 'calendar-${requestId.substring(0, requestId.length.clamp(0, 64))}-$digest';
   }
 }
 

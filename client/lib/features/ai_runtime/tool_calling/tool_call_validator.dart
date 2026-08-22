@@ -69,7 +69,7 @@ class LocalToolCallValidator {
         ),
       DraftAddCompetitionToPlanSkill.skillId =>
         _draftAddCompetition(call.arguments),
-      CalendarActionSkill.skillId => _calendarAction(call.arguments),
+      CalendarActionSkill.skillId => _calendarAction(call.arguments, call.id),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
       AcademicFailureRiskSkill.skillId ||
@@ -153,7 +153,7 @@ class LocalToolCallValidator {
     return DraftAddCompetitionToPlanInput(eventID.toInt());
   }
 
-  Object _calendarAction(Map<String, dynamic> arguments) {
+  Object _calendarAction(Map<String, dynamic> arguments, String requestId) {
     const allowed = <String>{
       'action_type',
       'event_id',
@@ -227,6 +227,7 @@ class LocalToolCallValidator {
     }
     return CalendarActionInput(
       actionType: actionType,
+      requestId: requestId,
       eventId: eventId,
       title: title,
       description: description,

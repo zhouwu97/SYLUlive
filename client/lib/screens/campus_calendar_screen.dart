@@ -8,6 +8,7 @@ import '../models/user_calendar.dart';
 import '../providers/campus_calendar_provider.dart';
 import '../providers/user_calendar_provider.dart';
 import '../services/exam_schedule_repository.dart';
+import '../services/app_resume_coordinator.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class CampusCalendarScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   bool _isMonthPagerScrolling = false;
   bool? _pendingMonthPagerScrolling;
   bool _monthPagerScrollUpdateScheduled = false;
+  VoidCallback? _unregisterCalendarRefresh;
 
   @override
   void initState() {
@@ -39,12 +41,22 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     _monthPageController = PageController(initialPage: _monthCenterPage);
     _loadImportedExams();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _optionalUserCalendar(context, listen: false)?.load();
+      if (!mounted) return;
+      final provider = _optionalUserCalendar(context, listen: false);
+      provider?.load();
+      if (provider != null) {
+        _unregisterCalendarRefresh =
+            AppResumeCoordinator.instance.registerVisibleRefresh(
+          provider.load,
+          isVisible: () => mounted,
+        );
+      }
     });
   }
 
   @override
   void dispose() {
+    _unregisterCalendarRefresh?.call();
     _monthPageController.dispose();
     super.dispose();
   }

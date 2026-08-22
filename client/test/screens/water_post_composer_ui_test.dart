@@ -3,10 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
+import 'package:shenliyuan/services/post_draft_service.dart';
 import 'package:image_picker/image_picker.dart';
 
 class FakeAuthProvider extends Fake
@@ -83,7 +85,77 @@ Widget buildComposerTestApp(FakePostProvider postProvider) {
   );
 }
 
+Widget buildComposerNavigationTestApp(FakePostProvider postProvider) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
+      ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+      ChangeNotifierProvider<WaterSectionProvider>(
+        create: (_) => WaterSectionProvider(null),
+      ),
+    ],
+    child: MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const WaterPostComposer(),
+                ),
+              ),
+              child: const Text('打开发布页'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
+  setUp(() {
+    AppPreferencesStore.setMockInitialValues({});
+  });
+
+  testWidgets('成功发布后下一次打开发布页不恢复已发布草稿',
+      (WidgetTester tester) async {
+    final postProvider = FakePostProvider();
+
+    await tester.pumpWidget(buildComposerNavigationTestApp(postProvider));
+    await tester.tap(find.text('打开发布页'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).last, '这条内容已经发布');
+    await tester.tap(find.text('发布'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    expect(find.byType(WaterPostComposer), findsNothing);
+    expect(await PostDraftService().load(), isNull);
+  });
+
+  testWidgets('未发布返回后仍恢复草稿', (WidgetTester tester) async {
+    final postProvider = FakePostProvider();
+
+    await tester.pumpWidget(buildComposerNavigationTestApp(postProvider));
+    await tester.tap(find.text('打开发布页'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).last, '暂未发布的草稿');
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+
+    await tester.tap(find.text('打开发布页'));
+    await tester.pumpAndSettle();
+    final contentEditable =
+        tester.widget<EditableText>(find.byType(EditableText).last);
+    expect(contentEditable.controller.text, '暂未发布的草稿');
+  });
+
   testWidgets('WaterPostComposer renders compact publishing layout',
       (WidgetTester tester) async {
     final postProvider = FakePostProvider();

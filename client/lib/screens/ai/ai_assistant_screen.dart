@@ -174,8 +174,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         _personalMode ||
         consent == null ||
         consent.consentScope.isEmpty ||
-        consent.consentScope ==
-            AiPersonalDataPermissionScope.deviceCacheAccess.wireValue ||
+        consent.consentScope !=
+            AiPersonalDataPermissionScope.externalModelAnalysis.wireValue ||
         _consentDialogVisible) {
       return;
     }

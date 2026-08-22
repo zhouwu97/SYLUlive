@@ -53,6 +53,7 @@ class UserCalendarService {
 
   Future<UserCalendarEvent> updateEvent(
     int eventId, {
+    required int version,
     String? title,
     String? description,
     DateTime? startAt,
@@ -64,6 +65,7 @@ class UserCalendarService {
     final response = await _dio.patch(
       '/user/calendar/events/$eventId',
       data: <String, dynamic>{
+        'version': version,
         if (title != null) 'title': title,
         if (description != null) 'description': description,
         if (startAt != null) 'start_at': startAt.toUtc().toIso8601String(),

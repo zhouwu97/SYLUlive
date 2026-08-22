@@ -835,6 +835,8 @@ func main() {
 			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
+		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
+		tools = append(tools, handlers.NewCampusCalendarActionProposalTool(userCalendarHandler))
 		if cfg.AIExternalMCPEnabled {
 			var externalMCPErr error
 			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{

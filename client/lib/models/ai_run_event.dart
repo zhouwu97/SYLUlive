@@ -2,6 +2,7 @@ import 'ai_quota.dart';
 import 'ai_source.dart';
 import 'ai_personal_data_evidence.dart';
 import 'dart:convert';
+import 'user_calendar.dart';
 
 enum AiRunEventType {
   started,
@@ -38,6 +39,7 @@ class AiRunEvent {
   final AiQuota? quota;
   final String errorCode;
   final bool retryable;
+  final UserCalendarActionDraft? calendarActionDraft;
 
   const AiRunEvent({
     this.runId = '',
@@ -53,6 +55,7 @@ class AiRunEvent {
     this.quota,
     this.errorCode = '',
     this.retryable = false,
+    this.calendarActionDraft,
   });
 
   factory AiRunEvent.fromJson(Map<String, dynamic> json, {String? eventName}) {
@@ -81,6 +84,11 @@ class AiRunEvent {
       consentReason: payload['reason']?.toString() ?? '',
       errorCode: payload['code']?.toString() ?? '',
       retryable: payload['retryable'] == true,
+      calendarActionDraft: payload['action_draft'] is Map
+          ? UserCalendarActionDraft.fromJson(
+              Map<String, dynamic>.from(payload['action_draft'] as Map),
+            )
+          : null,
       quota: payload['quota'] is Map
           ? AiQuota.fromJson(Map<String, dynamic>.from(payload['quota'] as Map))
           : null,

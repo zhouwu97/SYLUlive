@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -7,7 +6,6 @@ import 'package:flutter/services.dart';
 import '../providers/course_schedule_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/contracts/reminder_notification_client.dart';
-
 
 class CourseReminderResult {
   final bool enabled;
@@ -238,7 +236,8 @@ class CourseReminderService {
   }
 
   Future<bool> requestPermissions() async {
-    return await ReminderNotificationClient.instance.requestCourseReminderPermissions();
+    return await ReminderNotificationClient.instance
+        .requestCourseReminderPermissions();
   }
 
   Future<CourseBackgroundKeepAliveStatus> backgroundKeepAliveStatus() async {
@@ -310,7 +309,8 @@ class CourseReminderService {
       final notificationId = int.tryParse(id);
       if (notificationId != null) {
         notificationIds.add(notificationId);
-        await ReminderNotificationClient.instance.cancelCourseReminder(notificationId);
+        await ReminderNotificationClient.instance
+            .cancelCourseReminder(notificationId);
       }
     }
     await _cancelAndroidLiveReminders(notificationIds);
@@ -330,8 +330,6 @@ class CourseReminderService {
       debugPrint('Android Live Updates 课程提醒取消失败: $e');
     }
   }
-
-
 
   List<_CourseReminderEntry> _buildReminderEntries(
     List<CourseBlock> courses,

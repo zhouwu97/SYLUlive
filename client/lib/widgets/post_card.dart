@@ -10,6 +10,7 @@ import '../screens/post_detail_screen.dart';
 import '../screens/user_home_screen.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
+import '../utils/post_clipboard.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_media/post_media_view.dart';
@@ -106,6 +107,12 @@ class _PostCardState extends State<PostCard>
         ),
       ),
     );
+  }
+
+  Future<void> _copyPostContent() async {
+    final copied = await PostClipboard.copy(_readDisplayPost(context));
+    if (!mounted || !copied) return;
+    AppFeedback.success('帖子正文已复制', context: context);
   }
 
   @override
@@ -273,16 +280,20 @@ class _PostCardState extends State<PostCard>
               ),
             ],
             if (post.title.isNotEmpty) SizedBox(height: isDesktop ? 8 : 4),
-            Text(
-              post.content,
-              maxLines: contentMaxLines,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isDark
-                    ? AppColors.textPrimaryDark
-                    : AppColors.textPrimaryLight,
-                height: isDesktop ? 1.4 : 1.3,
-                fontSize: isDesktop ? 15 : 13,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: _copyPostContent,
+              child: Text(
+                post.content,
+                maxLines: contentMaxLines,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
+                  height: isDesktop ? 1.4 : 1.3,
+                  fontSize: isDesktop ? 15 : 13,
+                ),
               ),
             ),
             if (validImageCount > 0) ...[

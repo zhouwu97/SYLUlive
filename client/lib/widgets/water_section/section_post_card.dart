@@ -8,6 +8,8 @@ import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/user_home_screen.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/app_feedback.dart';
+import '../../utils/post_clipboard.dart';
 import '../cached_avatar.dart';
 import '../post_media/post_media_view.dart';
 
@@ -94,14 +96,20 @@ class SectionPostCard extends StatelessWidget {
               ],
               // 正文摘要
               if (post.content.isNotEmpty)
-                Text(
-                  post.content,
-                  maxLines: contentMaxLines,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onLongPress: () => _copyPostContent(context),
+                  child: Text(
+                    post.content,
+                    maxLines: contentMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      height: 1.45,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
                   ),
                 ),
               if (post.teamRecruitment != null) ...[
@@ -162,6 +170,12 @@ class SectionPostCard extends StatelessWidget {
                     color: isDark ? Colors.white70 : const Color(0xFF596273)))),
       ]),
     );
+  }
+
+  Future<void> _copyPostContent(BuildContext context) async {
+    final copied = await PostClipboard.copy(post);
+    if (!context.mounted || !copied) return;
+    AppFeedback.success('帖子正文已复制', context: context);
   }
 
   String _findTagName(int? tagId) {

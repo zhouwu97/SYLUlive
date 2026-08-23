@@ -2723,7 +2723,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final provider = context.watch<WaterSectionProvider>();
     final section = provider.getBySlug(p.postType);
     final sectionLabel = section?.title ?? waterCategoryLabelOf(p.postType);
-    final tag = _findWaterTag(section, p.waterTagId);
+    final tag = p.topics.isEmpty ? _findWaterTag(section, p.waterTagId) : null;
     if (sectionLabel.isEmpty && tag == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

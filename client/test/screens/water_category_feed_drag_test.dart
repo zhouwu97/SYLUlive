@@ -12,7 +12,7 @@ import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/water_category_feed_screen.dart';
 
 void main() {
-  testWidgets('小白条拖动测试：列表已滚动时拖动小白条向下可将抽屉拉下', (tester) async {
+  testWidgets('版块页使用连续 Feed，不再渲染可拖拽抽屉', (tester) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = const Size(1179, 2556);
     addTearDown(tester.view.reset);
@@ -70,18 +70,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 找到 DraggableScrollableSheet
-    final sheetFinder = find.byType(DraggableScrollableSheet);
-    expect(sheetFinder, findsOneWidget);
-
-    // 找到小白条 Handle 区域 (Top center handle container)
-    final handleFinder = find.byType(GestureDetector).first;
-    expect(handleFinder, findsWidgets);
-
-    // 拖动小白条向下
-    await tester.drag(handleFinder, const Offset(0, 300));
-    await tester.pumpAndSettle();
-
-    expect(sheetFinder, findsOneWidget);
+    expect(find.byType(DraggableScrollableSheet), findsNothing);
+    expect(find.byKey(const ValueKey('water-section-feed-scroll')),
+        findsOneWidget);
   });
 }

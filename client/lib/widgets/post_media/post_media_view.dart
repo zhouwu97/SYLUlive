@@ -10,7 +10,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/post_image_cache.dart';
 
-enum PostMediaVariant { feed, homeFeed, detail }
+enum PostMediaVariant { feed, homeFeed, sectionFeed, detail }
 
 /// 所有帖子类型共用的图片布局与预览入口。
 class PostMediaView extends StatelessWidget {
@@ -256,8 +256,9 @@ Size calculateSinglePostImageSize({
 }) {
   final safeAspectRatio = aspectRatio > 0 ? aspectRatio : 4 / 3;
 
-  if (variant == PostMediaVariant.homeFeed) {
-    // 首页单图始终铺满内容列，避免窄竖图把卡片撑成“左图右空白”。
+  if (variant == PostMediaVariant.homeFeed ||
+      variant == PostMediaVariant.sectionFeed) {
+    // 首页与版块 Feed 单图始终铺满内容列，避免窄竖图把卡片撑成“左图右空白”。
     // 超长图固定预览高度，点击后仍打开原图查看器。
     final clampedRatio = safeAspectRatio.clamp(0.55, 1.8).toDouble();
     final maxHeight =
@@ -404,7 +405,8 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                             ? Alignment.topCenter
                             : Alignment.center,
                       ),
-                      if (widget.variant == PostMediaVariant.homeFeed &&
+                      if ((widget.variant == PostMediaVariant.homeFeed ||
+                              widget.variant == PostMediaVariant.sectionFeed) &&
                           _aspectRatio < 0.7)
                         Positioned(
                           right: AppSpacing.sm,

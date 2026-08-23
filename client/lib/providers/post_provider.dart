@@ -96,6 +96,7 @@ Map<String, dynamic> buildPostListParams({
   required int boardId,
   String? type,
   int? tagId,
+  int? topicId,
   required String sort,
   required int page,
   required int loadedCount,
@@ -114,6 +115,9 @@ Map<String, dynamic> buildPostListParams({
   params['capabilities'] = 'poll_v1';
   if (tagId != null) {
     params['tag_id'] = tagId;
+  }
+  if (topicId != null) {
+    params['topic_id'] = topicId;
   }
   final usesSnapshot = sessionId != null && (sort == 'all' || sort == 'hot');
   if (usesSnapshot) {
@@ -134,11 +138,13 @@ bool usesHomeFeedV2({
   required String sort,
   String? type,
   int? tagId,
+  int? topicId,
 }) {
   final normalizedType = type?.trim() ?? '';
   return boardId == 1 &&
       normalizedType.isEmpty &&
       tagId == null &&
+      topicId == null &&
       (sort == 'all' || sort == 'time');
 }
 
@@ -242,8 +248,14 @@ class PostProvider extends ChangeNotifier {
   PostProvider(this._dio, {bool enableCache = true})
       : _enableCache = enableCache;
 
-  String _stateKey(int boardId, String sort, String? type, {int? tagId}) {
-    return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}';
+  String _stateKey(
+    int boardId,
+    String sort,
+    String? type, {
+    int? tagId,
+    int? topicId,
+  }) {
+    return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}|${topicId ?? ''}';
   }
 
   String _postsEndpoint(String sort, {String? type}) {
@@ -252,8 +264,8 @@ class PostProvider extends ChangeNotifier {
   }
 
   _BoardState _ensureBoard(int boardId,
-      {String sort = 'time', String? type, int? tagId}) {
-    final key = _stateKey(boardId, sort, type, tagId: tagId);
+      {String sort = 'time', String? type, int? tagId, int? topicId}) {
+    final key = _stateKey(boardId, sort, type, tagId: tagId, topicId: topicId);
     return _boards.putIfAbsent(key, () {
       final state = _BoardState();
       state.currentSort = sort;
@@ -271,9 +283,14 @@ class PostProvider extends ChangeNotifier {
   _BoardState get _board => _ensureBoard(_activeBoardId);
 
   List<Post> postsFor(int boardId,
-      {String sort = 'time', String? type, int? tagId}) {
-    final posts =
-        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+      {String sort = 'time', String? type, int? tagId, int? topicId}) {
+    final posts = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    ).posts;
     for (final post in posts) {
       _canonicalPosts[post.id] = post;
     }
@@ -281,9 +298,14 @@ class PostProvider extends ChangeNotifier {
   }
 
   List<Post> pinnedPostsFor(int boardId,
-      {String sort = 'time', String? type, int? tagId}) {
-    final posts =
-        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
+      {String sort = 'time', String? type, int? tagId, int? topicId}) {
+    final posts = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    ).pinnedPosts;
     for (final post in posts) {
       _canonicalPosts[post.id] = post;
     }
@@ -293,36 +315,49 @@ class PostProvider extends ChangeNotifier {
   /// 返回当前已加载帖子状态，供卡片避免维护第二份点赞快照。
   Post? postFor(int postId) => _canonicalPosts[postId];
   bool isLoadingFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).isLoading;
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
+          .isLoading;
   bool hasLoadedFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasLoaded;
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
+          .hasLoaded;
   bool hasMoreFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasMore;
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
+          .hasMore;
 
   /// 读取指定信息流的错误，不与当前活跃 sort 混用。
   String? errorFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).error;
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
+          .error;
 
   int requestVersionFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId)
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
           .requestVersion;
 
   int revisionFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).revision;
+          {String sort = 'time', String? type, int? tagId, int? topicId}) =>
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
+          .revision;
 
   DateTime? lastSuccessfulRefreshAtFor(
     int boardId, {
     String sort = 'time',
     String? type,
     int? tagId,
+    int? topicId,
   }) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId)
+      _ensureBoard(boardId,
+              sort: sort, type: type, tagId: tagId, topicId: topicId)
           .lastSuccessfulRefreshAt;
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
@@ -367,10 +402,12 @@ class PostProvider extends ChangeNotifier {
     List<Post> posts, {
     String? type,
     int? tagId,
+    int? topicId,
   }) async {
-    if (!_enableCache || sort == 'following') return;
+    if (!_enableCache || sort == 'following' || topicId != null) return;
     try {
-      final board = _boards[_stateKey(boardId, sort, type, tagId: tagId)];
+      final board = _boards[
+          _stateKey(boardId, sort, type, tagId: tagId, topicId: topicId)];
       final algorithmVersion =
           board != null && board.algorithmVersion.isNotEmpty
               ? board.algorithmVersion
@@ -406,8 +443,14 @@ class PostProvider extends ChangeNotifier {
       final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
           ? int.tryParse(keyParts[3])
           : null;
+      final topicId = keyParts.length > 4 && keyParts[4].isNotEmpty
+          ? int.tryParse(keyParts[4])
+          : null;
       if (type != null && type != post.postType) continue;
       if (tagId != null && tagId != post.waterTagId) continue;
+      if (topicId != null && !post.topics.any((topic) => topic.id == topicId)) {
+        continue;
+      }
 
       final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == post.id);
@@ -419,7 +462,14 @@ class PostProvider extends ChangeNotifier {
         continue;
       }
       board.revision++;
-      _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+      _savePostsToCache(
+        boardId,
+        sort,
+        board.posts,
+        type: type,
+        tagId: tagId,
+        topicId: topicId,
+      );
       touched = true;
     }
     if (touched) {
@@ -432,9 +482,16 @@ class PostProvider extends ChangeNotifier {
     int boardId, {
     String? type,
     int? tagId,
+    int? topicId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
     if (board.hasCacheLoaded) return;
     board.hasCacheLoaded = true;
     board.currentSort = sort;
@@ -449,7 +506,7 @@ class PostProvider extends ChangeNotifier {
 
     CachedPostFeed? cachedFeed;
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
-    if (_enableCache && sort != 'following') {
+    if (_enableCache && sort != 'following' && topicId == null) {
       try {
         cachedFeed = await PostCacheService.loadPosts(
           boardId,
@@ -463,7 +520,11 @@ class PostProvider extends ChangeNotifier {
             cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
           board.posts = cachedFeed.posts;
           if (usesHomeFeedV2(
-              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+              boardId: boardId,
+              sort: sort,
+              type: type,
+              tagId: tagId,
+              topicId: topicId)) {
             board.pinnedPosts = cachedFeed.pinnedPosts;
             board.algorithmVersion = cachedFeed.algorithmVersion;
           }
@@ -489,12 +550,19 @@ class PostProvider extends ChangeNotifier {
         'scene': 'refresh',
       };
       if (usesHomeFeedV2(
-          boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+          boardId: boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+          topicId: topicId)) {
         params['feed_version'] = 3;
       }
       params['capabilities'] = 'poll_v1';
       if (tagId != null) {
         params['tag_id'] = tagId;
+      }
+      if (topicId != null) {
+        params['topic_id'] = topicId;
       }
 
       final response = await _dio.get(
@@ -515,7 +583,12 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
         final isHomeV2 = usesHomeFeedV2(
-            boardId: boardId, sort: sort, type: type, tagId: tagId);
+          boardId: boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+          topicId: topicId,
+        );
         if (isHomeV2) {
           board.pinnedPosts = pinned;
           board.algorithmVersion = data['algorithm_version']?.toString() ?? '';
@@ -530,6 +603,7 @@ class PostProvider extends ChangeNotifier {
             board.posts,
             type: type,
             tagId: tagId,
+            topicId: topicId,
           );
         } else {
           // 非 HomeV2：服务器第一页是权威快照，直接替换。
@@ -542,6 +616,7 @@ class PostProvider extends ChangeNotifier {
             board.posts,
             type: type,
             tagId: tagId,
+            topicId: topicId,
           );
         }
 
@@ -592,16 +667,27 @@ class PostProvider extends ChangeNotifier {
     int boardId = 1,
     String? type,
     int? tagId,
+    int? topicId,
     String sort = 'time',
   }) {
-    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
     final page = board.currentPage;
-    final key = 'load_${boardId}_${sort}_${type}_${tagId}_$page';
+    final key = 'load_${boardId}_${sort}_${type}_${tagId}_${topicId}_$page';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
     final future = _loadPostsInternal(
-            boardId: boardId, type: type, tagId: tagId, sort: sort)
+            boardId: boardId,
+            type: type,
+            tagId: tagId,
+            topicId: topicId,
+            sort: sort)
         .whenComplete(() {
       _inflightRequests.remove(key);
     });
@@ -613,19 +699,32 @@ class PostProvider extends ChangeNotifier {
     int boardId = 1,
     String? type,
     int? tagId,
+    int? topicId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
 
     // 首次加载走 SWR
     if (!board.hasCacheLoaded) {
       await _loadCachedThenRefresh(boardId,
-          type: type, tagId: tagId, sort: sort);
+          type: type, tagId: tagId, topicId: topicId, sort: sort);
       return;
     }
 
     if (board.hasLoaded && board.currentSort != sort) {
-      await refresh(boardId: boardId, type: type, tagId: tagId, sort: sort);
+      await refresh(
+        boardId: boardId,
+        type: type,
+        tagId: tagId,
+        topicId: topicId,
+        sort: sort,
+      );
       return;
     }
 
@@ -643,6 +742,7 @@ class PostProvider extends ChangeNotifier {
         boardId: boardId,
         type: type,
         tagId: tagId,
+        topicId: topicId,
         sort: sort,
         page: board.currentPage,
         loadedCount: board.posts.length,
@@ -694,7 +794,11 @@ class PostProvider extends ChangeNotifier {
 
       if (isFeedSessionExpired &&
           usesHomeFeedV2(
-              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+              boardId: boardId,
+              sort: sort,
+              type: type,
+              tagId: tagId,
+              topicId: topicId)) {
         if (!board.isRecoveringExpiredSession) {
           board.isRecoveringExpiredSession = true;
           board.sessionId = null;
@@ -705,6 +809,7 @@ class PostProvider extends ChangeNotifier {
               boardId: boardId,
               type: type,
               tagId: tagId,
+              topicId: topicId,
               sort: sort,
             );
           } finally {
@@ -730,15 +835,20 @@ class PostProvider extends ChangeNotifier {
     int boardId = 1,
     String? type,
     int? tagId,
+    int? topicId,
     String sort = 'time',
   }) {
-    final key = 'refresh_${boardId}_${sort}_${type}_$tagId';
+    final key = 'refresh_${boardId}_${sort}_${type}_${tagId}_$topicId';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future =
-        _refreshInternal(boardId: boardId, type: type, tagId: tagId, sort: sort)
-            .whenComplete(() {
+    final future = _refreshInternal(
+      boardId: boardId,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+      sort: sort,
+    ).whenComplete(() {
       _inflightRequests.remove(key);
     });
     _inflightRequests[key] = future;
@@ -749,9 +859,16 @@ class PostProvider extends ChangeNotifier {
     int boardId = 1,
     String? type,
     int? tagId,
+    int? topicId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
     final requestVersion = ++board.requestVersion;
     board.currentSort = sort;
     board.currentPage = 1;
@@ -770,7 +887,12 @@ class PostProvider extends ChangeNotifier {
     try {
       board.sessionId = null; // 清除老的会话快照
       final useHomeFeedV2 = usesHomeFeedV2(
-          boardId: boardId, sort: sort, type: type, tagId: tagId);
+        boardId: boardId,
+        sort: sort,
+        type: type,
+        tagId: tagId,
+        topicId: topicId,
+      );
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
@@ -785,6 +907,9 @@ class PostProvider extends ChangeNotifier {
       params['capabilities'] = 'poll_v1';
       if (tagId != null) {
         params['tag_id'] = tagId;
+      }
+      if (topicId != null) {
+        params['topic_id'] = topicId;
       }
 
       final response = await _dio.get(
@@ -817,6 +942,7 @@ class PostProvider extends ChangeNotifier {
           board.posts,
           type: type,
           tagId: tagId,
+          topicId: topicId,
         );
 
         final total = (response.data['total'] as num?)?.toInt();

@@ -10,7 +10,7 @@ import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_detail_screen.dart';
 
 /// 覆盖「第一张菜品实拍」完整闭环（P0）：
-/// 空图鉴 → 点击上传 CTA → 直接打开上传 Sheet（dish_name 模式）
+/// 空图鉴 → 通过贡献入口打开上传 Sheet（dish_name 模式）
 /// → 输入菜名 → 选图上传 → 提交请求 body 必须包含 dish_name。
 ///
 /// 通过替换 ImagePickerPlatform 实例驱动真实 ImageUploadWidget 流程，
@@ -65,7 +65,7 @@ void main() {
     ImagePickerPlatform.instance = _FakeImagePickerPlatform();
   });
 
-  testWidgets('空图鉴上传 CTA 直接打开 dish_name 上传 Sheet', (tester) async {
+  testWidgets('空图鉴通过贡献入口打开 dish_name 上传 Sheet', (tester) async {
     final requests = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));
     dio.httpClientAdapter = FakeAdapter((options) async {
@@ -98,10 +98,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 空图鉴：CTA 可见
-    expect(find.text('上传菜品实拍'), findsOneWidget);
-    await tester.ensureVisible(find.text('上传菜品实拍'));
+    // 空图鉴：通过统一贡献入口打开菜品上传动作。
+    expect(find.text('贡献内容'), findsOneWidget);
+    await tester.ensureVisible(find.text('贡献内容'));
     await tester.pump();
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('上传菜品实拍'));
     await tester.pumpAndSettle();
 
@@ -147,9 +149,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 打开上传 Sheet
-    await tester.ensureVisible(find.text('上传菜品实拍'));
+    // 通过统一贡献入口打开上传 Sheet。
+    await tester.ensureVisible(find.text('贡献内容'));
     await tester.pump();
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('上传菜品实拍'));
     await tester.pumpAndSettle();
 

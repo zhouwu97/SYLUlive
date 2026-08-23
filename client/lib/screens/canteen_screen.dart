@@ -22,7 +22,7 @@ import 'canteen_dish_list_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
 
-/// 校园食堂发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近在吃。
+/// 校园餐饮发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近评价。
 /// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
 class CanteenScreen extends StatefulWidget {
   const CanteenScreen({super.key});
@@ -91,7 +91,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
     final hero = context.read<CanteenDiscoveryProvider>().home.hero;
     if (hero.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('先加载一个食堂，再发布评价')),
+        const SnackBar(content: Text('先加载一个商家，再发布评价')),
       );
       return;
     }
@@ -125,12 +125,12 @@ class _CanteenScreenState extends State<CanteenScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '校园食堂',
+              '校园餐饮',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             SizedBox(height: 2),
             Text(
-              '同学真实评价 · 菜品实拍',
+              '同学真实评价 · 商家菜品实拍',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
             ),
           ],
@@ -143,8 +143,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
         actions: [
           IconButton(
-            onPressed: _openReviewComposer,
-            tooltip: '发布评价',
+            onPressed: () => _showAddCanteenSheet(isDark),
+            tooltip: '添加商家',
             icon: const Icon(Icons.add_rounded),
           ),
         ],
@@ -154,88 +154,6 @@ class _CanteenScreenState extends State<CanteenScreen> {
           _buildSearchBar(isDark),
           Expanded(child: _buildBody(isDark)),
         ],
-      ),
-      bottomNavigationBar: _buildBottomNavigationBar(isDark),
-    );
-  }
-
-  Widget _buildBottomNavigationBar(bool isDark) {
-    final inactive = CanteenTheme.textTertiaryColor(isDark);
-    final active = CanteenTheme.accentStrongColor(isDark);
-    final items = [
-      (Icons.restaurant_rounded, '食堂', null),
-      (Icons.storefront_rounded, '店铺', _openRanking),
-      (Icons.ramen_dining_rounded, '菜品', _openFirstDish),
-      (Icons.rate_review_rounded, '评价', _openReviewComposer),
-    ];
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 66,
-        decoration: BoxDecoration(
-          color: CanteenTheme.surfaceBg(isDark).withValues(alpha: 0.97),
-          border:
-              Border(top: BorderSide(color: CanteenTheme.borderColor(isDark))),
-        ),
-        child: Row(
-          children: [
-            for (final item in items)
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: item.$3 == null,
-                  label: item.$2,
-                  child: InkWell(
-                    onTap: item.$3,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          item.$1,
-                          size: 21,
-                          color: item.$3 == null ? active : inactive,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          item.$2,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: item.$3 == null
-                                ? FontWeight.w800
-                                : FontWeight.w500,
-                            color: item.$3 == null ? active : inactive,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openFirstDish() {
-    final dishes = context.read<CanteenDiscoveryProvider>().home.hotDishes;
-    if (dishes.isEmpty) {
-      FocusScope.of(context).unfocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂时没有可展示的菜品')),
-      );
-      return;
-    }
-    final dish = dishes.first;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CanteenDishDetailScreen(
-          canteenId: dish.canteenId,
-          dishId: dish.id,
-          dishName: dish.name,
-          canteenName: dish.canteenName,
-        ),
       ),
     );
   }
@@ -278,7 +196,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
               color: CanteenTheme.textPrimaryColor(isDark),
             ),
             decoration: InputDecoration(
-              hintText: '搜索食堂、店铺、菜品',
+              hintText: '搜索商家或菜品',
               hintStyle: TextStyle(
                 fontSize: 14,
                 color: CanteenTheme.textTertiaryColor(isDark),
@@ -363,8 +281,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
           return CanteenEmptyState(
             icon: Icons.search_off_rounded,
             title: '没有找到「$query」',
-            subtitle: '这家店还没有被收录',
-            actionLabel: '提交这家店',
+            subtitle: '这家商家还没有被收录',
+            actionLabel: '提交商家',
             onAction: () => _showAddCanteenSheet(isDark, query),
           );
         }
@@ -408,8 +326,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
       return CanteenEmptyState(
         icon: Icons.search_off_rounded,
         title: '没有找到「$query」',
-        subtitle: '可以提交新的食堂，或等待菜品审核通过后再搜索',
-        actionLabel: '提交这家店',
+        subtitle: '可以提交新的商家，或等待菜品审核通过后再搜索',
+        actionLabel: '提交商家',
         onAction: () => _showAddCanteenSheet(isDark, query),
       );
     }
@@ -418,7 +336,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         if (canteens.isNotEmpty) ...[
-          _sectionHeader(isDark, '食堂 (${canteens.length})'),
+          _sectionHeader(isDark, '商家 (${canteens.length})'),
           for (var i = 0; i < canteens.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -582,7 +500,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        '综合排行 #$rank',
+                        '商家排行 #$rank',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -656,9 +574,12 @@ class _CanteenScreenState extends State<CanteenScreen> {
               if (hotDishes.isEmpty)
                 CanteenEmptyState(
                   icon: Icons.photo_camera_outlined,
-                  title: '还没有同学上传菜品实拍',
-                  actionLabel: '去看看菜品',
-                  onAction: _openDishDirectory,
+                  title: '还没有菜品实拍',
+                  subtitle: showHero ? null : '先添加商家，再上传菜品实拍',
+                  actionLabel: showHero ? '去上传第一道菜' : '添加商家',
+                  onAction: showHero
+                      ? _openDishDirectory
+                      : () => _showAddCanteenSheet(isDark),
                   minHeight: 150,
                 )
               else
@@ -666,14 +587,14 @@ class _CanteenScreenState extends State<CanteenScreen> {
               const SizedBox(height: 18),
               _sectionHeader(
                 isDark,
-                '同学最近在吃',
+                '同学最近评价',
                 meta: '按可信度与新鲜度排序',
               ),
               if (recentReviews.isEmpty)
                 CanteenEmptyState(
                   title: '最近还没有新的评价',
                   subtitle: '欢迎成为第一个分享用餐体验的同学',
-                  actionLabel: '去评价一家店',
+                  actionLabel: '去评价一家商家',
                   onAction: _openReviewComposer,
                   minHeight: 150,
                 )
@@ -718,71 +639,74 @@ class _CanteenScreenState extends State<CanteenScreen> {
 
   Widget _buildQuickRow(bool isDark, CanteenHomeData home) {
     final count = home.todayEffectiveReviewCount;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 13,
-          child: CanteenRankingEntryCard(
-            entry: home.rankingEntry,
-            onTap: _openRanking,
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 13,
+            child: CanteenRankingEntryCard(
+              entry: home.rankingEntry,
+              onTap: _openRanking,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          flex: 9,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 108),
-            padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
-            decoration: BoxDecoration(
-              color: CanteenTheme.surfaceBg(isDark),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: CanteenTheme.borderColor(isDark)),
-              gradient: isDark
-                  ? null
-                  : const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFFFFFFF), Color(0xFFFFF9EF)],
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 9,
+            child: Container(
+              key: const Key('canteen_today_review_card'),
+              constraints: const BoxConstraints(minHeight: 108),
+              padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
+              decoration: BoxDecoration(
+                color: CanteenTheme.surfaceBg(isDark),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: CanteenTheme.borderColor(isDark)),
+                gradient: isDark
+                    ? null
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFFFFFFF), Color(0xFFFFF9EF)],
+                      ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '今日新增评价',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: CanteenTheme.textPrimaryColor(isDark),
                     ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '今日有效评价',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: CanteenTheme.textPrimaryColor(isDark),
                   ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 26,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                    color: CanteenTheme.accentStrongColor(isDark),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 26,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                      color: CanteenTheme.accentStrongColor(isDark),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '按用户与食堂去重后的今日样本',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10,
-                    height: 1.35,
-                    color: CanteenTheme.textSecondaryColor(isDark),
+                  const SizedBox(height: 4),
+                  Text(
+                    '按用户与商家去重后的今日样本',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.35,
+                      color: CanteenTheme.textSecondaryColor(isDark),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -966,7 +890,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
-  // 列表末尾的“提交新食堂”入口
+  // 列表末尾的“提交新商家”入口
   Widget _buildListEndEntry(bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
@@ -979,7 +903,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
             color: CanteenTheme.accentStrongColor(isDark),
           ),
           label: Text(
-            '没找到想吃的店？提交新的食堂 / 店铺',
+            '没找到想吃的商家？提交商家',
             style: TextStyle(
               fontSize: 13,
               color: CanteenTheme.accentStrongColor(isDark),
@@ -1051,7 +975,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先登录后提交食堂')));
+          .showSnackBar(const SnackBar(content: Text('请先登录后提交商家')));
       return;
     }
 
@@ -1113,7 +1037,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '提交食堂',
+                                  '提交商家',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
@@ -1123,7 +1047,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '填写名称并上传一张店铺图片',
+                                  '填写名称并上传一张商家图片',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color:
@@ -1140,7 +1064,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                         controller: nameCtrl,
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
-                          hintText: '请输入食堂 / 店铺名',
+                          hintText: '请输入商家名称',
                           hintStyle: TextStyle(
                             color: CanteenTheme.textSecondaryColor(isDark),
                           ),
@@ -1175,7 +1099,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                         maxImages: 1,
                         largeCard: true,
                         emptyTitle: '添加图片',
-                        emptySubtitle: '建议上传店铺门面或招牌图',
+                        emptySubtitle: '建议上传商家门面或招牌图',
                         onImagesUploaded: (images) {
                           uploadedImageUrls = images.map((e) => e.url).toList();
                           setModalState(() {});
@@ -1213,7 +1137,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('请输入食堂 / 店铺名'),
+                                            content: Text('请输入商家名称'),
                                           ),
                                         );
                                         return;
@@ -1222,7 +1146,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('请上传一张食堂封面图片'),
+                                            content: Text('请上传一张商家门面图片'),
                                           ),
                                         );
                                         return;
@@ -1244,7 +1168,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('已提交审核，审核通过后会显示在食堂页'),
+                                            content:
+                                                Text('已提交审核，审核通过后会显示在商家列表'),
                                           ),
                                         );
                                         await context

@@ -30,7 +30,7 @@ const List<({String key, String label})> kCanteenTagOptions = [
   (key: 'good_value', label: '性价比高'),
 ];
 
-/// 食堂评价编辑器全屏页面。
+/// 商家评价编辑器全屏页面。
 ///
 /// 具备星级打分、体验标签、200字输入、3张图片上传状态机、推荐菜品选择、
 /// 跨账号隔离草稿存储、防抖与生命周期自动保存、多端冲突检测与退出保护。
@@ -97,6 +97,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Timer? _debounceTimer;
   Timer? _dishSuggestionTimer;
   Timer? _statusTimer;
+  final Set<Future<void>> _draftSavesInFlight = {};
+  bool _draftWritesBlocked = false;
 
   bool _isDirty = false;
   DateTime? _baseRatingUpdatedAt;
@@ -521,10 +523,30 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     });
   }
 
-  Future<void> _saveDraftNow() async {
+  Future<void> _saveDraftNow() {
+    final save = _saveDraftInternal();
+    _draftSavesInFlight.add(save);
+    save.then<void>(
+      (_) {
+        _draftSavesInFlight.remove(save);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        _draftSavesInFlight.remove(save);
+      },
+    );
+    return save;
+  }
+
+  Future<void> _waitForDraftSaves() async {
+    while (_draftSavesInFlight.isNotEmpty) {
+      await Future.wait(List<Future<void>>.of(_draftSavesInFlight));
+    }
+  }
+
+  Future<void> _saveDraftInternal() async {
     _debounceTimer?.cancel();
     final userId = _userId;
-    if (userId <= 0 || _isSubmitting) return;
+    if (userId <= 0 || _isSubmitting || _draftWritesBlocked) return;
 
     final draft = CanteenReviewDraft(
       userId: userId,
@@ -547,7 +569,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       baseRatingUpdatedAt: _baseRatingUpdatedAt,
     );
 
-    if (_isSubmitting) return;
+    if (_isSubmitting || _draftWritesBlocked) return;
     await _draftRepo.saveDraft(draft);
     if (!mounted) return;
     setState(() => _saveStatus = _DraftSaveStatus.saved);
@@ -713,7 +735,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     if (!_dimensions.isComplete) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先为食堂打个分吧')),
+        const SnackBar(content: Text('请先为商家打个分吧')),
       );
       return;
     }
@@ -754,6 +776,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       return;
     }
 
+    _draftWritesBlocked = true;
     setState(() => _isSubmitting = true);
 
     final authProvider = context.read<AuthProvider>();
@@ -898,10 +921,9 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           );
 
     if (!mounted) return;
-    setState(() => _isSubmitting = false);
-
     if (result.success) {
       // 3. 发布成功：清除草稿与本地草稿图片目录
+      await _waitForDraftSaves();
       await _draftRepo.deleteDraft(
         userId: _userId,
         canteenId: widget.canteenId,
@@ -917,6 +939,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         Navigator.of(context).pop(true);
       }
     } else {
+      setState(() => _isSubmitting = false);
+      _draftWritesBlocked = false;
       if ((result.errorCode == 'review_conflict' ||
               result.errorCode == 'rating_conflict') &&
           mounted) {
@@ -1101,7 +1125,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       icon: Icons.verified_user_outlined,
       color: AppColors.success,
       title: '可以再次评价',
-      message: '历史评价会保留，但店铺总分中每位同学最多贡献一个有效样本，避免重复刷分。',
+      message: '历史评价会保留，但商家总分中每位同学最多贡献一个有效样本，避免重复刷分。',
     );
   }
 
@@ -1166,7 +1190,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '这次店铺体验',
+                '这次商家体验',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1976,7 +2000,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           }),
         ],
 
-        // 3. 快捷推荐：本食堂已有菜品（点击快速填入）
+        // 3. 快捷推荐：本商家已有菜品（点击快速填入）
         if (_recommendedDishes.length < 3 && unselectedDishes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(

@@ -43,4 +43,27 @@ void main() {
     expect(params['type'], 'buy');
     expect(usesHomeFeedV2(boardId: 2, type: 'buy', sort: 'time'), isFalse);
   });
+
+  test('版块 Topic 筛选透传 topic_id 并关闭首页 feed session', () {
+    final params = buildPostListParams(
+      boardId: 1,
+      type: 'freshman_help',
+      topicId: 42,
+      sort: 'all',
+      page: 1,
+      loadedCount: 0,
+    );
+
+    expect(params['topic_id'], 42);
+    expect(params['type'], 'freshman_help');
+    expect(
+      usesHomeFeedV2(
+        boardId: 1,
+        type: 'freshman_help',
+        topicId: 42,
+        sort: 'all',
+      ),
+      isFalse,
+    );
+  });
 }

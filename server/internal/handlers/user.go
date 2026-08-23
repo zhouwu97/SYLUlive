@@ -773,6 +773,21 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 			}).Error; err != nil {
 				return err
 			}
+			if device.UserID != userID {
+				// 同一安装切换账号时，除了转移 PushDevice，还要清理旧版
+				// User 聚合字段，避免通知查询 fallback 到旧账号 RID。
+				if err := tx.Model(&models.User{}).
+					Where("id = ? AND push_installation_id = ?", device.UserID, input.InstallationID).
+					Updates(map[string]interface{}{
+						"push_data_processing_enabled": false,
+						"push_installation_id":         "",
+						"push_notice_version":          "",
+						"push_enabled_at":              nil,
+						"device_token":                 "",
+					}).Error; err != nil {
+					return err
+				}
+			}
 			return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 				"push_data_processing_enabled": true,
 				"push_installation_id":         input.InstallationID,

@@ -345,7 +345,20 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 					Result: json.RawMessage(deviceJob.ResultJSON),
 				})
 			}
-			execution, err := r.tools.RetryWaitingCall(retryContext, item.CallID, resume.RunID, resume.UserID, item.ToolName)
+			cachedResult, alreadyCommitted, readBackErr := r.readCommittedToolResult(ctx, item.CallID, resume.RunID, resume.UserID, item.ToolName)
+			if readBackErr != nil {
+				r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
+				return
+			}
+			var execution ToolExecutionResult
+			var err error
+			if alreadyCommitted {
+				// 进程可能在工具事务提交后、Run 快照落盘前退出；优先使用真实
+				// Tool Call 结果，不能把已提交的副作用/刷新再次执行。
+				execution = ToolExecutionResult{Result: cachedResult}
+			} else {
+				execution, err = r.tools.RetryWaitingCall(retryContext, item.CallID, resume.RunID, resume.UserID, item.ToolName)
+			}
 			if err != nil {
 				r.failAfterProvider(resume.RunID, true, "resume_tool_execution_failed", usage, 0)
 				return
@@ -392,14 +405,21 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		}
 	} else {
 		for _, item := range pending {
-			result, err := r.resumeToolResult(ctx, resume, item)
+			result, alreadyCommitted, err := r.readCommittedToolResult(ctx, item.CallID, resume.RunID, resume.UserID, item.ToolName)
 			if err != nil {
 				r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
 				return
 			}
-			if err := r.tools.CompleteWaitingCall(ctx, item.CallID, result); err != nil {
-				r.failAfterProvider(resume.RunID, true, "resume_tool_state_conflict", usage, 0)
-				return
+			if !alreadyCommitted {
+				result, err = r.resumeToolResult(ctx, resume, item)
+				if err != nil {
+					r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
+					return
+				}
+				if err := r.tools.CompleteWaitingCall(ctx, item.CallID, result); err != nil {
+					r.failAfterProvider(resume.RunID, true, "resume_tool_state_conflict", usage, 0)
+					return
+				}
 			}
 			if failureCode := fatalToolResultCode(item.ToolName, result); failureCode != "" {
 				r.failAfterProvider(resume.RunID, true, failureCode, usage, 0)
@@ -454,6 +474,31 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	r.markQuotaConsumed(run.ID)
 	_, _ = r.appendEvent(ctx, run.ID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
 	r.completeRun(run.ID, outcome.answer, nil, usage, time.Since(startedAt), false)
+}
+
+// readCommittedToolResult 是恢复路径的副作用 read-back。Tool Call 已完成时，
+// 即使 Run 的 AgentStateJSON 尚未成功写入，也只能消费数据库中的已提交结果。
+func (r *Runtime) readCommittedToolResult(ctx context.Context, callID, runID string, userID uint, toolName string) (json.RawMessage, bool, error) {
+	var call models.AIToolCall
+	if err := r.db.WithContext(ctx).Where("call_id = ?", callID).First(&call).Error; err != nil {
+		return nil, false, err
+	}
+	canonicalToolName := toolName
+	if r.tools != nil {
+		if mapped, ok := r.tools.modelToolNames[toolName]; ok {
+			canonicalToolName = mapped
+		}
+	}
+	if call.RunID != runID || call.UserID != userID || call.ToolName != canonicalToolName {
+		return nil, false, errors.New("resume_tool_identity_conflict")
+	}
+	if call.Status != "completed" {
+		return nil, false, nil
+	}
+	if len(call.ResultJSON) == 0 || !json.Valid(call.ResultJSON) {
+		return nil, false, errors.New("resume_committed_result_invalid")
+	}
+	return append(json.RawMessage(nil), call.ResultJSON...), true, nil
 }
 
 func (r *Runtime) resumeToolResult(ctx context.Context, resume models.AIRunResumeJob, pending persistedPendingToolCall) (json.RawMessage, error) {

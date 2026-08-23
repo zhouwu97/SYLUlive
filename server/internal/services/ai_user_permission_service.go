@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -70,15 +71,54 @@ func (service *AIUserPermissionService) Policy(ctx context.Context, userID uint,
 	return row.Policy, nil
 }
 
+// PermissionVersion 返回当前权限版本。缺少记录时返回 0，表示默认 ask。
+// Scoped Grant 会在 MCP 入口重新比对该版本，确保撤权不会等到 token 自然过期。
+func (service *AIUserPermissionService) PermissionVersion(ctx context.Context, userID uint, scope models.AIUserPermissionScope) (int64, error) {
+	if service == nil || service.db == nil || userID == 0 || !isAIUserPermissionScope(scope) {
+		return 0, ErrInvalidAIUserPermission
+	}
+	var row models.AIUserPermission
+	err := service.db.WithContext(ctx).Select("version").Where("user_id = ? AND scope = ?", userID, scope).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return row.Version, nil
+}
+
 func (service *AIUserPermissionService) Set(ctx context.Context, userID uint, scope models.AIUserPermissionScope, policy models.AIUserPermissionPolicy) (models.AIUserPermission, error) {
 	if service == nil || service.db == nil || userID == 0 || !isAIUserPermissionScope(scope) || !isAIUserPermissionPolicy(policy) {
 		return models.AIUserPermission{}, ErrInvalidAIUserPermission
 	}
-	row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: policy}
-	if err := service.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "scope"}},
-		DoUpdates: clause.AssignmentColumns([]string{"policy", "updated_at"}),
-	}).Create(&row).Error; err != nil {
+	var row models.AIUserPermission
+	err := service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("user_id = ? AND scope = ?", userID, scope).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			row = models.AIUserPermission{UserID: userID, Scope: scope, Policy: policy, Version: 1}
+			return tx.Create(&row).Error
+		}
+		if err != nil {
+			return err
+		}
+		if row.Version <= 0 {
+			row.Version = 1
+		}
+		result := tx.Model(&models.AIUserPermission{}).
+			Where("id = ? AND version = ?", row.ID, row.Version).
+			Updates(map[string]interface{}{"policy": policy, "version": gorm.Expr("version + 1"), "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("ai_user_permission_version_conflict")
+		}
+		row.Policy = policy
+		row.Version++
+		return nil
+	})
+	if err != nil {
 		return models.AIUserPermission{}, err
 	}
 	return row, nil
@@ -123,7 +163,9 @@ func (service *AIUserPermissionService) SetMode(ctx context.Context, userID uint
 			row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: scopePolicy}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "user_id"}, {Name: "scope"}},
-				DoUpdates: clause.AssignmentColumns([]string{"policy", "updated_at"}),
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"policy": scopePolicy, "version": gorm.Expr("version + 1"), "updated_at": time.Now(),
+				}),
 			}).Create(&row).Error; err != nil {
 				return err
 			}

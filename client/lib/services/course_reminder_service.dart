@@ -331,8 +331,6 @@ class CourseReminderService {
     }
   }
 
-
-
   List<_CourseReminderEntry> _buildReminderEntries(
     List<CourseBlock> courses,
     DateTime semesterStart,

@@ -21,4 +21,15 @@ void main() {
     expect(capabilities.supportsBackgroundReminder, isTrue);
     expect(capabilities.supportsInAppPackageInstall, isTrue);
   });
+
+  test('macOS 暴露课程提醒能力但不启用 Android 专属能力', () {
+    final capabilities = PlatformCapabilities.forPlatform(AppPlatform.macos);
+
+    expect(AppPlatform.macos.wireName, 'macos');
+    expect(AppPlatform.macos.isMacOS, isTrue);
+    expect(capabilities.supportsBackgroundReminder, isTrue);
+    expect(capabilities.supportsSystemNotification, isFalse);
+    expect(capabilities.supportsJPush, isFalse);
+    expect(capabilities.supportsInAppPackageInstall, isFalse);
+  });
 }

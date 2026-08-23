@@ -18,10 +18,14 @@ class PostMediaView extends StatelessWidget {
     super.key,
     required this.images,
     this.variant = PostMediaVariant.feed,
+    this.onTap,
   });
 
   final List<PostImage> images;
   final PostMediaVariant variant;
+
+  /// 外层帖子卡片的主点击回调。为空时保留媒体自身的原图预览行为。
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -47,19 +51,19 @@ class PostMediaView extends StatelessWidget {
       return _SinglePostImage(
         url: displayUrls.first,
         variant: variant,
-        onTap: () => _openPreview(context, previewUrls, 0),
+        onTap: onTap ?? () => _openPreview(context, previewUrls, 0),
       );
     }
 
     final Widget multiChild;
     if (displayUrls.length == 2) {
-      multiChild = _twoImages(context, displayUrls, previewUrls);
+      multiChild = _twoImages(context, displayUrls, previewUrls, onTap);
     } else if (displayUrls.length == 3) {
-      multiChild = _threeImages(context, displayUrls, previewUrls);
+      multiChild = _threeImages(context, displayUrls, previewUrls, onTap);
     } else if (displayUrls.length == 4) {
-      multiChild = _fourImages(context, displayUrls, previewUrls);
+      multiChild = _fourImages(context, displayUrls, previewUrls, onTap);
     } else {
-      multiChild = _imageGrid(context, displayUrls, previewUrls);
+      multiChild = _imageGrid(context, displayUrls, previewUrls, onTap);
     }
 
     if (variant == PostMediaVariant.feed) {
@@ -82,14 +86,15 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<String> urls,
     List<String> previewUrls,
+    VoidCallback? onTap,
   ) {
     return AspectRatio(
       aspectRatio: 2,
       child: Row(
         children: [
-          Expanded(child: _tile(context, urls, previewUrls, 0)),
+          Expanded(child: _tile(context, urls, previewUrls, 0, onTap)),
           const SizedBox(width: 4),
-          Expanded(child: _tile(context, urls, previewUrls, 1)),
+          Expanded(child: _tile(context, urls, previewUrls, 1, onTap)),
         ],
       ),
     );
@@ -99,16 +104,17 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<String> urls,
     List<String> previewUrls,
+    VoidCallback? onTap,
   ) {
     return AspectRatio(
       aspectRatio: 3,
       child: Row(
         children: [
-          Expanded(child: _tile(context, urls, previewUrls, 0)),
+          Expanded(child: _tile(context, urls, previewUrls, 0, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, urls, previewUrls, 1)),
+          Expanded(child: _tile(context, urls, previewUrls, 1, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, urls, previewUrls, 2)),
+          Expanded(child: _tile(context, urls, previewUrls, 2, onTap)),
         ],
       ),
     );
@@ -118,6 +124,7 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<String> urls,
     List<String> previewUrls,
+    VoidCallback? onTap,
   ) {
     return AspectRatio(
       aspectRatio: 1,
@@ -131,7 +138,7 @@ class PostMediaView extends StatelessWidget {
         ),
         itemCount: 4,
         itemBuilder: (context, index) =>
-            _tile(context, urls, previewUrls, index),
+            _tile(context, urls, previewUrls, index, onTap),
       ),
     );
   }
@@ -140,6 +147,7 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<String> urls,
     List<String> previewUrls,
+    VoidCallback? onTap,
   ) {
     final visibleCount = urls.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
@@ -159,7 +167,7 @@ class PostMediaView extends StatelessWidget {
           return Stack(
             fit: StackFit.expand,
             children: [
-              _tile(context, urls, previewUrls, index),
+              _tile(context, urls, previewUrls, index, onTap),
               if (index == visibleCount - 1 && hiddenCount > 0)
                 IgnorePointer(
                   child: ColoredBox(
@@ -188,12 +196,13 @@ class PostMediaView extends StatelessWidget {
     List<String> urls,
     List<String> previewUrls,
     int index,
+    VoidCallback? onTap,
   ) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _openPreview(context, previewUrls, index),
+        onTap: onTap ?? () => _openPreview(context, previewUrls, index),
         child: _networkImage(urls[index], fit: BoxFit.cover),
       ),
     );

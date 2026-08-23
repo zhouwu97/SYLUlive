@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
 
 void main() {
@@ -156,5 +158,38 @@ void main() {
       expect(size.width, closeTo(390.0, 0.01));
       expect(size.height, closeTo(280.0, 0.01));
     });
+  });
+
+  testWidgets('外层帖子点击回调优先于图片查看器', (tester) async {
+    var tapped = false;
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      originUrl: '/uploads/test.png',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.homeFeed,
+              onTap: () => tapped = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('single-post-image-tap-target')),
+    );
+
+    expect(tapped, isTrue);
+    expect(find.byType(PostMediaView), findsOneWidget);
   });
 }

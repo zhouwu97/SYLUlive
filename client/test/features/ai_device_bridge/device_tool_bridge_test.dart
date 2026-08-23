@@ -199,6 +199,25 @@ class _FakeDeviceJobApi implements DeviceJobApi {
   final List<(String, String)> failed = [];
 
   @override
+  Future<DeviceToolJob> progress(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    String stage,
+  ) async {
+    final pending = pendingJobs.singleWhere((job) => job.id == jobId);
+    return DeviceToolJob(
+      id: pending.id,
+      toolName: pending.toolName,
+      arguments: pending.arguments,
+      requiredDataTypes: pending.requiredDataTypes,
+      status: stage == 'refresh_started' ? 'running' : 'claimed',
+      stateVersion: stateVersion + 1,
+      expiresAt: pending.expiresAt,
+    );
+  }
+
+  @override
   Future<DeviceToolJob> claim(
     String installationId,
     String jobId,

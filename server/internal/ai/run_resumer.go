@@ -317,7 +317,8 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		}
 	}
 
-	if retryConsentTools {
+	retryDeviceTools := resume.WaitingState == models.AIRunStateWaitingDevice
+	if retryConsentTools || retryDeviceTools {
 		if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolExecuting); err != nil {
 			return
 		}
@@ -326,7 +327,20 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 			_, _ = r.appendEvent(ctx, resume.RunID, "tool.executing", map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "resumed": true,
 			}, true)
-			execution, err := r.tools.RetryWaitingCall(ctx, item.CallID, resume.RunID, resume.UserID, item.ToolName)
+			retryContext := ctx
+			if retryDeviceTools {
+				var deviceJob models.DeviceToolJob
+				if err := r.db.WithContext(ctx).First(&deviceJob, "id = ? AND run_id = ? AND tool_call_id = ?", item.ResumeKey, resume.RunID, item.CallID).Error; err != nil {
+					r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
+					return
+				}
+				retryContext = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
+					JobID: deviceJob.ID, ToolName: deviceJob.ToolName,
+					Dataset: deviceDatasetForTool(deviceJob.ToolName), Status: deviceJob.Status,
+					Result: json.RawMessage(deviceJob.ResultJSON),
+				})
+			}
+			execution, err := r.tools.RetryWaitingCall(retryContext, item.CallID, resume.RunID, resume.UserID, item.ToolName)
 			if err != nil {
 				r.failAfterProvider(resume.RunID, true, "resume_tool_execution_failed", usage, 0)
 				return

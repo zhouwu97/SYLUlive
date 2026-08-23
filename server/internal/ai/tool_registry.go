@@ -55,8 +55,29 @@ type toolCallContext struct {
 	ToolName string
 }
 
+// deviceJobResumeContext 只在服务端重试原始外层工具的调用栈中存在。
+// 它不会写入 Run 消息或 Tool Call Result，设备结果因此只是外层工具的依赖。
+type deviceJobResumeContext struct {
+	JobID    string
+	ToolName string
+	Dataset  string
+	Status   string
+	Result   json.RawMessage
+}
+
+type deviceJobResumeContextKey struct{}
+
 func withToolCallContext(ctx context.Context, runID, callID string, userID uint, toolName string) context.Context {
 	return context.WithValue(ctx, toolCallContextKey{}, toolCallContext{RunID: runID, CallID: callID, UserID: userID, ToolName: toolName})
+}
+
+func withDeviceJobResumeContext(ctx context.Context, value deviceJobResumeContext) context.Context {
+	return context.WithValue(ctx, deviceJobResumeContextKey{}, value)
+}
+
+func currentDeviceJobResumeContext(ctx context.Context) (deviceJobResumeContext, bool) {
+	value, ok := ctx.Value(deviceJobResumeContextKey{}).(deviceJobResumeContext)
+	return value, ok && value.JobID != "" && value.Dataset != ""
 }
 
 func currentToolCallContext(ctx context.Context) (toolCallContext, bool) {

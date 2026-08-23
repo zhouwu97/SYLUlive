@@ -669,12 +669,18 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 	if strings.TrimSpace(input.Question) != "" && len([]rune(input.Question)) > 500 {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	if input.Freshness == "" {
-		input.Freshness = academic.FreshnessPreferRecent
+	requestedFreshness := input.Freshness
+	if requestedFreshness == "" {
+		requestedFreshness = academic.FreshnessAllowStale
 	}
 	if input.Freshness != academic.FreshnessPreferRecent && input.Freshness != academic.FreshnessRequireFresh && input.Freshness != academic.FreshnessAllowStale {
-		return nil, errors.New("invalid_tool_arguments")
+		if requestedFreshness != academic.FreshnessAllowStale {
+			return nil, errors.New("invalid_tool_arguments")
+		}
 	}
+	datasets := []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke}
+	serverPolicy := ResolveFreshnessPolicy("hy3_academic_analysis", datasets, input.Question)
+	input.Freshness = EffectiveFreshness(serverPolicy.Preference, requestedFreshness)
 	if decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
@@ -689,7 +695,7 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 		return hy3PermissionUnavailable(deniedScope), nil
 	}
 	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
-		Datasets:  []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke},
+		Datasets:  datasets,
 		Freshness: input.Freshness,
 		Reason:    "hy3_academic_analysis",
 	})
@@ -740,8 +746,14 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 func buildHy3AcademicSnapshot(gradesRaw json.RawMessage, credits academic.ContextResult, erke academic.ContextResult) (map[string]interface{}, []string, error) {
 	grades := decodeJSONObject(gradesRaw)
 	coursesRaw, coursesOK := grades["grades"].([]interface{})
+	projectionOnly := false
 	if !coursesOK {
-		return nil, nil, errors.New("grades_missing")
+		var err error
+		coursesRaw, err = deviceGradeProjectionCourses(grades)
+		if err != nil {
+			return nil, nil, errors.New("grades_missing")
+		}
+		projectionOnly = true
 	}
 	if len(coursesRaw) > 500 {
 		return nil, nil, errors.New("too_many_courses")
@@ -779,9 +791,32 @@ func buildHy3AcademicSnapshot(gradesRaw json.RawMessage, credits academic.Contex
 		courses = append(courses, item)
 	}
 	summary := summarizeGrades(gradesRaw)
+	if projectionOnly {
+		if courseCount, ok := firstHy3Number(grades, "course_count"); ok {
+			summary.CourseCount = int(courseCount)
+		}
+		if earned, ok := firstHy3Number(grades, "earned_credits"); ok {
+			summary.TotalCredits = earned
+		}
+		if weightedGPA, ok := firstHy3Number(grades, "weighted_gpa"); ok {
+			summary.WeightedGPA = weightedGPA
+		}
+		summary.FailedCourses = make([]string, 0, len(coursesRaw))
+		for _, rawCourse := range coursesRaw {
+			if course, ok := rawCourse.(map[string]interface{}); ok {
+				if name := firstHy3String(course, "course_name"); name != "" {
+					summary.FailedCourses = append(summary.FailedCourses, name)
+				}
+			}
+		}
+		summary.FailedCourseCount = len(summary.FailedCourses)
+	}
 	earnedCredits := summary.TotalCredits
 	requiredCredits := earnedCredits
 	warnings := make([]string, 0, 2)
+	if projectionOnly {
+		warnings = append(warnings, "本次使用了手机返回的成绩风险摘要，未上传完整成绩明细。")
+	}
 	if usablePersonalResult(credits) {
 		creditFields := extractCreditFields(credits.Data)
 		if value, ok := firstHy3Number(creditFields, "earned_credits", "completed_credits", "total_credits"); ok {
@@ -812,11 +847,46 @@ func buildHy3AcademicSnapshot(gradesRaw json.RawMessage, credits academic.Contex
 	}
 	return map[string]interface{}{
 		"courses":          courses,
+		"course_count":     summary.CourseCount,
+		"weighted_gpa":     summary.WeightedGPA,
 		"earned_credits":   earnedCredits,
 		"required_credits": requiredCredits,
 		"erke_earned":      erkeEarned,
 		"erke_required":    erkeRequired,
 	}, warnings, nil
+}
+
+// deviceGradeProjectionCourses 将设备侧最小风险投影转换成 Hy3 可接受的受限课程列表。
+// 这里只保留未通过课程；完整成绩明细仍不会离开设备。
+func deviceGradeProjectionCourses(data map[string]interface{}) ([]interface{}, error) {
+	courseCount, ok := firstHy3Number(data, "course_count")
+	if !ok || courseCount < 0 || courseCount > 500 {
+		return nil, errors.New("projection_course_count_invalid")
+	}
+	rawFailed, ok := data["failed_courses"].([]interface{})
+	if !ok || len(rawFailed) > 500 {
+		return nil, errors.New("projection_failed_courses_invalid")
+	}
+	courses := make([]interface{}, 0, len(rawFailed))
+	for _, raw := range rawFailed {
+		course, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, errors.New("projection_course_invalid")
+		}
+		name := firstHy3String(course, "course_name")
+		if name == "" || len([]rune(name)) > 200 {
+			return nil, errors.New("projection_course_name_invalid")
+		}
+		item := map[string]interface{}{"course_name": name, "passed": false}
+		if grade, ok := firstHy3Number(course, "grade"); ok && grade >= 0 && grade <= 100 {
+			item["grade"] = grade
+		}
+		if credits, ok := firstHy3Number(course, "credits"); ok && credits >= 0 && credits <= 100 {
+			item["credits"] = credits
+		}
+		courses = append(courses, item)
+	}
+	return courses, nil
 }
 
 func courseIsRequired(course map[string]interface{}) bool {

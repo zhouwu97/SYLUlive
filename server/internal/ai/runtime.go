@@ -1111,6 +1111,9 @@ func (r *Runtime) failAfterProvider(runID string, generated bool, code string, u
 }
 
 func (r *Runtime) failRun(runID, code string, retryable bool) {
+	if r.scopedGrants != nil {
+		r.scopedGrants.RevokeRun(runID)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	now := time.Now()
@@ -1144,6 +1147,9 @@ func (r *Runtime) Cancel(ctx context.Context, userID uint, runID string) (models
 		return models.AIRun{}, &RuntimeError{Code: "ai_run_not_found", Message: "Run 不存在"}
 	}
 	if result.RowsAffected == 1 {
+		if r.scopedGrants != nil {
+			r.scopedGrants.RevokeRun(runID)
+		}
 		_, _ = r.appendEvent(ctx, runID, "run.cancelled", map[string]interface{}{"state": models.AIRunStateCancelled}, true)
 		r.mu.Lock()
 		cancel := r.cancels[runID]

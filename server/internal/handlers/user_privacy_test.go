@@ -115,6 +115,13 @@ func TestUpdatePushSettingsStoresMultiplePlatformsPerUser(t *testing.T) {
 	if !android.Enabled {
 		t.Fatal("disabling iOS device unexpectedly disabled Android device")
 	}
+	var iphone models.PushDevice
+	if err := db.Where("device_id = ?", "iphone").First(&iphone).Error; err != nil {
+		t.Fatalf("reload iOS device: %v", err)
+	}
+	if iphone.Enabled {
+		t.Fatal("disabling iOS device did not disable its PushDevice record")
+	}
 }
 
 func TestUserProfileResponsesEnforcePrivacyBoundary(t *testing.T) {

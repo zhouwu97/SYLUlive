@@ -782,13 +782,15 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 			}).Error
 		}
 
-		if user.PushInstallationID != "" && user.PushInstallationID != input.InstallationID {
-			ignored = true
-			return nil
-		}
+		// 新模型按 installation_id 独立关闭，不能因为旧版 User 聚合字段
+		// 当前指向另一台设备，就跳过这条 PushDevice 记录。
 		if err := tx.Model(&models.PushDevice{}).Where("user_id = ? AND device_id = ?", userID, input.InstallationID).
 			Updates(map[string]interface{}{"enabled": false, "last_seen_at": time.Now()}).Error; err != nil {
 			return err
+		}
+		if user.PushInstallationID != "" && user.PushInstallationID != input.InstallationID {
+			ignored = true
+			return nil
 		}
 		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 			"push_data_processing_enabled": false,

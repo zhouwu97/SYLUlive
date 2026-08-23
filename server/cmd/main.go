@@ -374,6 +374,9 @@ func main() {
 	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
 		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
 	}
+	if err := ensureUserCalendarAgentActionUniqueIndex(db); err != nil {
+		log.Fatal("个人日历 Agent 动作幂等索引迁移失败:", err)
+	}
 	if err := ensureSecurityHardeningSchema(db); err != nil {
 		log.Fatal("安全加固数据库迁移失败:", err)
 	}
@@ -2377,6 +2380,14 @@ func ensureUserCalendarReminderLiveUniqueIndex(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// ensureUserCalendarAgentActionUniqueIndex 以草稿 ID 作为 Agent 写入的幂等键，
+// 即使确认请求并发到达，也不允许同一草稿落出两条创建事件。
+func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
+	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_events_agent_action
+ ON user_calendar_events (user_id, source_type, source_id)
+ WHERE source_type = 'agent_action' AND source_id <> ''`).Error
 }
 
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。

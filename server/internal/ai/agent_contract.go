@@ -393,9 +393,11 @@ const (
 )
 
 type AgentToolCall struct {
-	ID         string          `json:"id"`
-	Capability string          `json:"capability"`
-	Arguments  json.RawMessage `json:"arguments"`
+	ID                string          `json:"id"`
+	Capability        string          `json:"capability"`
+	Arguments         json.RawMessage `json:"arguments"`
+	PlanningRound     int             `json:"planning_round,omitempty"`
+	ConstraintVersion int             `json:"constraint_version,omitempty"`
 }
 
 type AgentActionProposal struct {
@@ -434,9 +436,12 @@ type AgentRunState struct {
 }
 
 type AgentObservation struct {
-	Capability string             `json:"capability"`
-	Result     ToolResultEnvelope `json:"result"`
-	CreatedAt  time.Time          `json:"created_at"`
+	Capability        string             `json:"capability"`
+	Result            ToolResultEnvelope `json:"result"`
+	PlanningRound     int                `json:"planning_round,omitempty"`
+	ConstraintVersion int                `json:"constraint_version,omitempty"`
+	PlanVersion       int                `json:"plan_version,omitempty"`
+	CreatedAt         time.Time          `json:"created_at"`
 }
 
 // AgentTraceFields 是审计事件中的运行元数据，不包含 CoT、提示词或工具原始结果。
@@ -450,11 +455,17 @@ type AgentTraceFields struct {
 }
 
 type AgentActivityEvent struct {
-	Type         string    `json:"type"`
-	ActivityCode string    `json:"activity_code,omitempty"`
-	Text         string    `json:"text,omitempty"`
-	ToolName     string    `json:"tool_name,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	Type              string    `json:"type"`
+	ActivityCode      string    `json:"activity_code,omitempty"`
+	Text              string    `json:"text,omitempty"`
+	ToolName          string    `json:"tool_name,omitempty"`
+	RunID             string    `json:"run_id,omitempty"`
+	PlanningRound     int       `json:"planning_round,omitempty"`
+	ConstraintVersion int       `json:"constraint_version,omitempty"`
+	PlanVersion       int       `json:"plan_version,omitempty"`
+	DurationMs        int64     `json:"duration_ms,omitempty"`
+	NewFactCount      int       `json:"new_fact_count,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 func ValidateAgentDecision(decision AgentDecision, allowed map[string]AgentCapability) error {

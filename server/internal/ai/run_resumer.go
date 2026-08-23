@@ -329,9 +329,9 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		}
 		waiting := make([]pendingToolWait, 0, len(pending))
 		for _, item := range pending {
-			_, _ = r.appendEvent(ctx, resume.RunID, "tool.executing", map[string]interface{}{
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.executing", r.agentTracePayload(&run, map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "resumed": true,
-			}, true)
+			}, 0, 0), true)
 			retryContext := ctx
 			if retryDeviceTools {
 				var deviceJob models.DeviceToolJob
@@ -361,10 +361,16 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 			if item.ToolName == requiredTool {
 				requiredToolCompleted = true
 			}
-			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(execution.Result)})
-			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
+			addRuntimeObservation(&agentState, item.ToolName, execution.Result, time.Now())
+			agentState.PlanVersion++
+			if err := r.persistRuntimeAgentState(ctx, &run, agentState); err != nil {
+				r.failAfterProvider(resume.RunID, true, "agent_state_persist_failed", usage, 0)
+				return
+			}
+			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(toolResultForModel(item.ToolName, execution.Result))})
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false, "resumed": true,
-			}, true)
+			}, 0, 0), true)
 			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, execution.Result)
 		}
 		if len(waiting) > 0 {
@@ -402,10 +408,16 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 			if resume.WaitingState != models.AIRunStateWaitingUserConsent && item.ToolName == requiredTool {
 				requiredToolCompleted = true
 			}
-			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(result)})
-			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
+			addRuntimeObservation(&agentState, item.ToolName, result, time.Now())
+			agentState.PlanVersion++
+			if err := r.persistRuntimeAgentState(ctx, &run, agentState); err != nil {
+				r.failAfterProvider(resume.RunID, true, "agent_state_persist_failed", usage, 0)
+				return
+			}
+			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(toolResultForModel(item.ToolName, result))})
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
-			}, true)
+			}, 0, 0), true)
 			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, result)
 		}
 		if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolCompleted); err != nil {

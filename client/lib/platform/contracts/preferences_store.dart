@@ -47,6 +47,8 @@ abstract interface class AppPreferencesStore {
 
   /// 供测试使用：设置模拟的初始值
   static void setMockInitialValues(Map<String, Object> values) {
+    // 该入口只服务于测试基线；SharedPreferences 将其标记为测试可见 API。
+    // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(values);
     _instance = null;
     _loading = null;

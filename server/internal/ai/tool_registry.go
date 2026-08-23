@@ -280,12 +280,15 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 	}
 	resultHash := sha256.Sum256(encoded)
 	now := time.Now()
-	result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
-		Where("call_id = ? AND status = ? AND state_version = ? AND (planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))", callID, "running", 1).
-		Updates(map[string]interface{}{
-			"status": "completed", "state_version": 2, "result_json": datatypes.JSON(encoded),
-			"result_hash": hex.EncodeToString(resultHash[:]), "completed_at": now,
-		})
+	completionQuery := r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+		Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", 1)
+	if call.PlanningRound != 0 || call.ConstraintVersion != 0 {
+		completionQuery = completionQuery.Where("(planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))")
+	}
+	result = completionQuery.Updates(map[string]interface{}{
+		"status": "completed", "state_version": 2, "result_json": datatypes.JSON(encoded),
+		"result_hash": hex.EncodeToString(resultHash[:]), "completed_at": now,
+	})
 	if result.Error != nil || result.RowsAffected != 1 {
 		if r.isToolCallStale(ctx, callID, runID) {
 			return ToolExecutionResult{}, false, ErrStaleToolResult
@@ -430,12 +433,15 @@ func (r *ToolRegistry) RetryWaitingCall(ctx context.Context, callID, runID strin
 		return ToolExecutionResult{}, ErrStaleToolResult
 	}
 	resultHash := sha256.Sum256(encoded)
-	result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
-		Where("call_id = ? AND status = ? AND state_version = ? AND (planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))", callID, "running", runningVersion).
-		Updates(map[string]interface{}{
-			"status": "completed", "state_version": runningVersion + 1,
-			"result_json": datatypes.JSON(encoded), "result_hash": hex.EncodeToString(resultHash[:]), "completed_at": time.Now(),
-		})
+	completionQuery := r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+		Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion)
+	if call.PlanningRound != 0 || call.ConstraintVersion != 0 {
+		completionQuery = completionQuery.Where("(planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))")
+	}
+	result = completionQuery.Updates(map[string]interface{}{
+		"status": "completed", "state_version": runningVersion + 1,
+		"result_json": datatypes.JSON(encoded), "result_hash": hex.EncodeToString(resultHash[:]), "completed_at": time.Now(),
+	})
 	if result.Error != nil || result.RowsAffected != 1 {
 		if r.isToolCallStale(ctx, callID, runID) {
 			return ToolExecutionResult{}, ErrStaleToolResult

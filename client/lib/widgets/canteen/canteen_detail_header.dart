@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'canteen_theme.dart';
 
-/// 食堂详情头部信息区：图片下方直接铺在页面上，不套外层白色 InfoCard。
+/// 商家详情头部信息区：图片下方直接铺在页面上，不套外层白色 InfoCard。
 /// 店名 → ★评分 · 人数 → 菜品/实拍统计。
 class CanteenDetailHeader extends StatelessWidget {
   final String name;

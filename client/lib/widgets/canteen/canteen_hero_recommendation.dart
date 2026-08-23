@@ -174,7 +174,7 @@ class _CanteenHeroRecommendationCardState
     final count = h.recentReviewCount > 0
         ? h.recentReviewCount
         : (h.visitReviewCount > 0 ? h.visitReviewCount : h.ratingCount);
-    return count > 0 ? '近 7 天 $count 条到店评价' : '近 7 天暂无到店评价';
+    return count > 0 ? '近 7 天 $count 条商家评价' : '近 7 天暂无商家评价';
   }
 
   Widget _buildDimensionRow(bool isDark) {

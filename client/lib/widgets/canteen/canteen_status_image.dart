@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-/// 食堂状态图片：下架只改变客户端渲染，不修改服务端原图或文件记录。
+/// 商家状态图片：下架只改变客户端渲染，不修改服务端原图或文件记录。
 class CanteenStatusImage extends StatelessWidget {
   final String imageUrl;
   final bool offline;

@@ -9,7 +9,7 @@ import '../../utils/app_feedback.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 
-/// 食堂评价区（presentational）。
+/// 商家评价区（presentational）。
 /// 所有评价状态（sort/filter/data/loading）由父级持有，本组件只渲染并回调。
 /// 评价项之间用 divider，不套独立卡片。
 class CanteenReviewSection extends StatelessWidget {
@@ -24,7 +24,6 @@ class CanteenReviewSection extends StatelessWidget {
   final ValueChanged<String> onSortChanged;
   final ValueChanged<String> onFilterChanged;
   final Future<void> Function(int ratingId, String source, String vote) onVote;
-  final VoidCallback onWriteReview;
   final bool canWriteReview;
   final int? latestReviewId;
   final VoidCallback? onEditLatestReview;
@@ -45,7 +44,6 @@ class CanteenReviewSection extends StatelessWidget {
     required this.onSortChanged,
     required this.onFilterChanged,
     required this.onVote,
-    required this.onWriteReview,
     this.canWriteReview = true,
     this.latestReviewId,
     this.onEditLatestReview,
@@ -283,9 +281,9 @@ class CanteenReviewSection extends StatelessWidget {
     return CanteenEmptyState(
       minHeight: 140,
       title: '还没有同学评价',
-      subtitle: canWriteReview ? '吃过这家？说两句真实体验，给其他同学参考。' : '该店当前已下架，历史评价仅供参考。',
-      actionLabel: canWriteReview ? '写第一条评价' : null,
-      onAction: canWriteReview ? onWriteReview : null,
+      subtitle: canWriteReview
+          ? '吃过这家？说两句真实体验，给其他同学参考。\n可从底部「贡献内容」入口写评价。'
+          : '该店当前已下架，历史评价仅供参考。',
     );
   }
 }
@@ -688,7 +686,7 @@ class _ReviewItemContent extends StatelessWidget {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除这条评价？',
-      message: '删除后将从食堂评价中移除，历史记录不会再参与评分统计。',
+      message: '删除后将从商家评价中移除，历史记录不会再参与评分统计。',
       confirmText: '删除',
     );
     if (!confirmed || onDelete == null) return;

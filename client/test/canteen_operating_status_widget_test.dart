@@ -44,7 +44,6 @@ void main() {
               onSortChanged: (_) {},
               onFilterChanged: (_) {},
               onVote: (_, __, ___) async {},
-              onWriteReview: () {},
               canWriteReview: false,
             ),
           ],

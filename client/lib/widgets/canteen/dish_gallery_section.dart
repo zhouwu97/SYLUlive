@@ -8,18 +8,16 @@ import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
 
-/// 食堂详情页「大家都在吃」菜品图鉴区。
-/// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供上传 CTA。
+/// 商家详情页菜品图鉴区。
+/// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供补充说明。
 ///
 /// 职责分离：
 /// - [onViewAll]：「查看全部」→ 菜品列表页
-/// - [onUpload]：空态「上传菜品实拍」→ 直接打开上传 Sheet（dish_name 模式）
 /// - [onStatsChanged]：图鉴加载后回传真实菜品/实拍统计，供详情头刷新
 class DishGallerySection extends StatefulWidget {
   final int canteenId;
   final String canteenName;
   final VoidCallback? onViewAll;
-  final VoidCallback? onUpload;
   final void Function(int dishCount, int dishPhotoCount)? onStatsChanged;
 
   const DishGallerySection({
@@ -27,7 +25,6 @@ class DishGallerySection extends StatefulWidget {
     required this.canteenId,
     required this.canteenName,
     this.onViewAll,
-    this.onUpload,
     this.onStatsChanged,
   });
 
@@ -94,7 +91,7 @@ class _DishGallerySectionState extends State<DishGallerySection> {
           Row(
             children: [
               Text(
-                '大家都在吃',
+                '商家菜品',
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -191,13 +188,11 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   }
 
   Widget _buildEmpty(bool isDark) {
-    return CanteenEmptyState(
+    return const CanteenEmptyState(
       minHeight: 96,
       icon: Icons.photo_camera_outlined,
-      title: '还没有同学上传菜品实拍',
-      subtitle: '来补充第一张真实照片吧',
-      actionLabel: '上传菜品实拍',
-      onAction: widget.onUpload,
+      title: '还没有菜品实拍',
+      subtitle: '来补充第一张真实照片吧\n可从底部「贡献内容」入口上传',
     );
   }
 }

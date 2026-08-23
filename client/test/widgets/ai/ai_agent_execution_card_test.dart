@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/models/ai_agent_activity.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
 import 'package:shenliyuan/widgets/ai/ai_agent_execution_card.dart';
 import 'package:shenliyuan/widgets/ai/ai_agent_permission_card.dart';
@@ -33,8 +34,8 @@ void main() {
 
     expect(
         find.byKey(const ValueKey('ai-agent-execution-card')), findsOneWidget);
-    expect(find.text('正在更新成绩数据'), findsOneWidget);
-    expect(find.textContaining('使用现有教务授权会话'), findsOneWidget);
+    expect(find.text('正在获取最新成绩…'), findsNWidgets(2));
+    expect(find.text('检查成绩更新时间'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -47,9 +48,8 @@ void main() {
       ),
     );
 
-    expect(find.text('正在连接校园 Agent'), findsOneWidget);
-    expect(find.text('正在建立安全会话'), findsOneWidget);
-    expect(find.text('检查服务端快照'), findsOneWidget);
+    expect(find.text('正在处理当前问题…'), findsOneWidget);
+    expect(find.text('检查服务端快照'), findsNothing);
   });
 
   testWidgets('正常完成后自动收起，失败时保留展开', (tester) async {
@@ -65,7 +65,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('检查服务端快照'), findsOneWidget);
+    expect(find.text('正在读取课表数据…'), findsNWidgets(2));
 
     await tester.pumpWidget(
       const MaterialApp(
@@ -82,7 +82,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('检查服务端快照'), findsNothing);
+    expect(find.text('正在读取课表数据…'), findsNothing);
 
     await tester.pumpWidget(
       const MaterialApp(
@@ -97,7 +97,41 @@ void main() {
         ),
       ),
     );
-    expect(find.text('检查服务端快照'), findsOneWidget);
+    expect(find.text('Agent 处理未完成'), findsNWidgets(2));
+  });
+
+  testWidgets('刷新失败时提供重新获取和使用已有数据', (tester) async {
+    var retryCount = 0;
+    var staleCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            activities: <AiAgentActivity>[
+              AiAgentActivity(
+                id: 'failed-refresh',
+                runId: 'run-1',
+                code: 'refresh_failed',
+                dataset: 'grades',
+                status: AiAgentActivityStatus.failed,
+                title: '没能获取最新成绩',
+                detail: '手机没有返回已验证的新数据',
+                timestamp: DateTime(2026, 8, 23),
+              ),
+            ],
+            onRetryRefresh: () => retryCount++,
+            onUseExistingData: () => staleCount++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('重新获取'), findsOneWidget);
+    expect(find.text('使用已有数据'), findsOneWidget);
+    await tester.tap(find.text('重新获取'));
+    await tester.tap(find.text('使用已有数据'));
+    expect(retryCount, 1);
+    expect(staleCount, 1);
   });
 
   testWidgets('单次授权独立于 Process Card 且不出现长期授权文案', (tester) async {

@@ -99,6 +99,13 @@ class CampusPublicProvider implements AIModelProvider {
           case AiRunEventType.eduFetching:
           case AiRunEventType.toolCompleted:
           case AiRunEventType.personalDataEvidence:
+          case AiRunEventType.agentActivity:
+          case AiRunEventType.goalUpdated:
+          case AiRunEventType.contextResolved:
+          case AiRunEventType.planRevised:
+          case AiRunEventType.approvalRequired:
+          case AiRunEventType.actionCommitted:
+          case AiRunEventType.actionFailed:
           case AiRunEventType.unknown:
             break;
         }

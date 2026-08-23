@@ -136,36 +136,82 @@ class DeviceToolWorker {
       return;
     }
 
+    var current = claimed;
+    current = await _reportProgress(
+      installationId,
+      current,
+      'checking_freshness',
+    );
+    current = await _reportProgress(
+      installationId,
+      current,
+      'request_received',
+    );
+    final refreshing = current.toolName.contains('.ensure_fresh_');
+    if (refreshing) {
+      current = await _reportProgress(
+        installationId,
+        current,
+        'refresh_started',
+      );
+    }
+
     final automation = context.createAutomationGateway?.call();
     final gateway = automation == null ? context.createGateway() : null;
     try {
       final result = await _registry.execute(
-        claimed,
+        current,
         gateway,
         automationGateway: automation,
       );
       if (!await context.isCurrent()) return;
+      if (refreshing) {
+        current = await _reportProgress(
+          installationId,
+          current,
+          'refresh_completed',
+        );
+      }
+      current = await _reportProgress(
+        installationId,
+        current,
+        'reading_result',
+      );
       await _client.complete(
         installationId,
-        claimed.id,
-        claimed.stateVersion,
+        current.id,
+        current.stateVersion,
         result.value,
       );
     } on DeviceToolExecutionException catch (error) {
       if (await context.isCurrent()) {
+        if (refreshing) {
+          current = await _reportProgress(
+            installationId,
+            current,
+            'refresh_failed',
+          );
+        }
         await _client.fail(
           installationId,
-          claimed.id,
-          claimed.stateVersion,
+          current.id,
+          current.stateVersion,
           error.code,
         );
       }
     } catch (_) {
       if (await context.isCurrent()) {
+        if (refreshing) {
+          current = await _reportProgress(
+            installationId,
+            current,
+            'refresh_failed',
+          );
+        }
         await _client.fail(
           installationId,
-          claimed.id,
-          claimed.stateVersion,
+          current.id,
+          current.stateVersion,
           'device_tool_failed',
         );
       }
@@ -175,6 +221,24 @@ class DeviceToolWorker {
       } else {
         await gateway?.close();
       }
+    }
+  }
+
+  Future<DeviceToolJob> _reportProgress(
+    String installationId,
+    DeviceToolJob job,
+    String stage,
+  ) async {
+    try {
+      return await _client.progress(
+        installationId,
+        job.id,
+        job.stateVersion,
+        stage,
+      );
+    } on DeviceJobApiException {
+      // 进度是可恢复的增量，不能因为旧客户端/网络抖动阻断真实工具执行。
+      return job;
     }
   }
 

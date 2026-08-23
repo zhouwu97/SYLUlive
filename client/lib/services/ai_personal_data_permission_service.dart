@@ -48,6 +48,19 @@ enum AiPersonalDataPermissionPolicy {
   }
 }
 
+enum AiAgentPermissionMode {
+  ask,
+  trusted;
+
+  String get wireValue => name;
+
+  static AiAgentPermissionMode fromWireValue(String value) {
+    return value == 'trusted'
+        ? AiAgentPermissionMode.trusted
+        : AiAgentPermissionMode.ask;
+  }
+}
+
 class AiPersonalDataPermission {
   const AiPersonalDataPermission({
     required this.scope,
@@ -76,6 +89,44 @@ class AiPersonalDataPermissionService {
   AiPersonalDataPermissionService(this._dio);
 
   final Dio _dio;
+
+  Future<AiAgentPermissionMode> getMode() async {
+    try {
+      final response = await _dio.get('/ai/permissions/mode');
+      if (response.statusCode != 200 || response.data is! Map) {
+        throw const AiPersonalDataPermissionException('读取 Agent 权限模式失败');
+      }
+      return AiAgentPermissionMode.fromWireValue(
+        (response.data as Map)['mode']?.toString() ?? 'ask',
+      );
+    } on AiPersonalDataPermissionException {
+      rethrow;
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 401) {
+        throw const AiPersonalDataPermissionException('请先登录后再设置 Agent 权限');
+      }
+      throw const AiPersonalDataPermissionException('读取 Agent 权限模式失败，请稍后重试');
+    }
+  }
+
+  Future<AiAgentPermissionMode> setMode(AiAgentPermissionMode mode) async {
+    try {
+      final response = await _dio.put(
+        '/ai/permissions/mode',
+        data: <String, String>{'mode': mode.wireValue},
+      );
+      if (response.statusCode != 200 || response.data is! Map) {
+        throw const AiPersonalDataPermissionException('更新 Agent 权限模式失败');
+      }
+      return AiAgentPermissionMode.fromWireValue(
+        (response.data as Map)['mode']?.toString() ?? mode.wireValue,
+      );
+    } on AiPersonalDataPermissionException {
+      rethrow;
+    } on DioException {
+      throw const AiPersonalDataPermissionException('更新 Agent 权限模式失败，请稍后重试');
+    }
+  }
 
   Future<List<AiPersonalDataPermission>> list() async {
     try {

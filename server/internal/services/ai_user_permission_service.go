@@ -12,6 +12,11 @@ import (
 
 var ErrInvalidAIUserPermission = errors.New("AI 个人数据权限无效")
 
+const (
+	AIUserPermissionModeAsk     = "ask"
+	AIUserPermissionModeTrusted = "trusted"
+)
+
 // AIUserPermissionService 管理校园 Agent 的长期个人数据授权偏好。
 // 默认 ask 保持逐次确认，不会因未创建记录而扩大数据访问范围。
 type AIUserPermissionService struct {
@@ -77,6 +82,54 @@ func (service *AIUserPermissionService) Set(ctx context.Context, userID uint, sc
 		return models.AIUserPermission{}, err
 	}
 	return row, nil
+}
+
+// Mode 将内部 scope 聚合为普通用户可理解的两种 Agent 工作方式。
+func (service *AIUserPermissionService) Mode(ctx context.Context, userID uint) (string, error) {
+	permissions, err := service.List(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	trusted := true
+	for _, permission := range permissions {
+		if permission.Scope != models.AIUserPermissionExternalModelAnalysis && permission.Policy != models.AIUserPermissionAlways {
+			trusted = false
+			break
+		}
+	}
+	if trusted {
+		return AIUserPermissionModeTrusted, nil
+	}
+	return AIUserPermissionModeAsk, nil
+}
+
+// SetMode 在一个事务内写入所有 Agent 只读/刷新 scope，避免逐 scope PUT 的半成功状态。
+func (service *AIUserPermissionService) SetMode(ctx context.Context, userID uint, mode string) error {
+	if service == nil || service.db == nil || userID == 0 ||
+		(mode != AIUserPermissionModeAsk && mode != AIUserPermissionModeTrusted) {
+		return ErrInvalidAIUserPermission
+	}
+	policy := models.AIUserPermissionAsk
+	if mode == AIUserPermissionModeTrusted {
+		policy = models.AIUserPermissionAlways
+	}
+	return service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, scope := range allAIUserPermissionScopes {
+			scopePolicy := policy
+			if scope == models.AIUserPermissionExternalModelAnalysis {
+				// 完全信任只覆盖个人数据读取和必要刷新；外部模型分析仍按独立 scope 控制。
+				scopePolicy = models.AIUserPermissionAsk
+			}
+			row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: scopePolicy}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "user_id"}, {Name: "scope"}},
+				DoUpdates: clause.AssignmentColumns([]string{"policy", "updated_at"}),
+			}).Create(&row).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 var allAIUserPermissionScopes = []models.AIUserPermissionScope{

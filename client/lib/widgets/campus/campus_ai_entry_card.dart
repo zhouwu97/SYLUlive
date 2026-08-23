@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/ai_capabilities.dart';
 import 'campus_theme.dart';
 
-/// 校园页的沈理 AI 主入口，业务快捷问题统一放在 AI 页内维护。
+/// 校园页的校园 Agent 主入口，业务快捷问题统一放在 AI 页内维护。
 class CampusAiEntryCard extends StatelessWidget {
   final AiCapabilities capabilities;
   final bool isDark;
@@ -29,7 +29,7 @@ class CampusAiEntryCard extends StatelessWidget {
     return Semantics(
       container: true,
       button: true,
-      label: '沈理 AI，$quotaDescription',
+      label: '校园 Agent，$quotaDescription',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -71,7 +71,7 @@ class CampusAiEntryCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '沈理 AI',
+                        '校园 Agent',
                         style: TextStyle(
                           color: foreground,
                           fontSize: 16,
@@ -80,7 +80,7 @@ class CampusAiEntryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '校园政策与课表助手',
+                        '帮你查信息、看安排、做计划',
                         style: TextStyle(
                           color: isDark ? Colors.white60 : CampusTheme.subText,
                           fontSize: 12,

@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"testing"
+	"time"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -139,9 +140,9 @@ func TestCanteenAPIContractJSON(t *testing.T) {
 			}
 		}
 		if f.Type == "recommended_store" {
-			// 确保推荐标题中性，不编造下饭等未判断属性
-			if f.Title != "今天可以优先看看" {
-				t.Fatalf("recommended_store title=%q want '今天可以优先看看'", f.Title)
+			// Title 仅为兼容字段，客户端不会把它当作店铺卡主标题。
+			if f.Title != "综合推荐" {
+				t.Fatalf("recommended_store title=%q want '综合推荐'", f.Title)
 			}
 		}
 	}
@@ -192,6 +193,106 @@ func TestCanteenAPIContractJSON(t *testing.T) {
 	}
 	if math.Abs(listItems[0].RankingScore-expectedScoreA) > 1e-6 {
 		t.Fatalf("list[0] ranking_score=%f want exact %f", listItems[0].RankingScore, expectedScoreA)
+	}
+}
+
+// TestCanteenHomeRecentReviewsAndTodayCount 验证首页评价卡和今日去重样本的独立契约。
+func TestCanteenHomeRecentReviewsAndTodayCount(t *testing.T) {
+	db := newCanteenTestDB(t)
+	if err := models.EnsureCanteenReviewSchema(db); err != nil {
+		t.Fatalf("migrate review event schema: %v", err)
+	}
+	createCanteenTestUser(t, db, 1, "一号同学")
+	createCanteenTestUser(t, db, 2, "二号同学")
+	createCanteenTestUser(t, db, 3, "三号同学")
+
+	canteenA := models.Canteen{Name: "川渝椒香（二楼）", Image: "/uploads/a.png", Verified: true}
+	canteenB := models.Canteen{Name: "二食堂", Image: "/uploads/b.png", Verified: true}
+	if err := db.Create(&canteenA).Error; err != nil {
+		t.Fatalf("create canteen A: %v", err)
+	}
+	if err := db.Create(&canteenB).Error; err != nil {
+		t.Fatalf("create canteen B: %v", err)
+	}
+
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load Shanghai timezone: %v", err)
+	}
+	now := time.Now().In(location)
+	createEvent := func(event models.CanteenReviewEvent) {
+		t.Helper()
+		if err := db.Create(&event).Error; err != nil {
+			t.Fatalf("create review event: %v", err)
+		}
+	}
+	createEvent(models.CanteenReviewEvent{
+		CanteenID: canteenA.ID, UserID: 1,
+		TasteScore: 5, ValueScore: 4, QueueScore: 4, HygieneScore: 4, ServiceScore: 5,
+		OverallScore: 4.5, Comment: "味道稳定，出餐也快。", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute),
+	})
+	// 同一用户-食堂的第二条事件不能把今日人数放大。
+	createEvent(models.CanteenReviewEvent{
+		CanteenID: canteenA.ID, UserID: 1,
+		TasteScore: 4, ValueScore: 4, QueueScore: 3, HygieneScore: 4, ServiceScore: 4,
+		OverallScore: 3.8, Comment: "晚餐时段排队较久。", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-2 * time.Minute),
+	})
+	createEvent(models.CanteenReviewEvent{
+		CanteenID: canteenB.ID, UserID: 2,
+		TasteScore: 4, ValueScore: 5, QueueScore: 4, HygieneScore: 4, ServiceScore: 4,
+		OverallScore: 4.2, Comment: "分量足。", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: now.Add(-3 * time.Minute), UpdatedAt: now.Add(-3 * time.Minute),
+	})
+	// 该旧评价与 V2 样本不同用户-食堂对，应该作为 legacy 候选和今日样本保留。
+	if err := db.Create(&models.CanteenRating{
+		CanteenID: canteenA.ID, UserID: 3, Star: 4, Comment: "价格合适。", ScoreVersion: 1,
+		Status: models.ReviewEventStatusActive, CreatedAt: now.Add(-4 * time.Minute), UpdatedAt: now.Add(-4 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("create legacy rating: %v", err)
+	}
+
+	canteenDiscoveryCache.Invalidate()
+	handler := NewCanteenHandler(db)
+	resp := performCanteenRequest(t, handler.GetHome, http.MethodGet, "/api/canteens/home", nil, 0, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("home status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var home struct {
+		TodayCount int `json:"today_effective_reviewer_count"`
+		Reviews    []struct {
+			Source          string             `json:"source"`
+			CanteenName     string             `json:"canteen_name"`
+			DimensionScores map[string]float64 `json:"dimension_scores"`
+		} `json:"recent_reviews"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &home); err != nil {
+		t.Fatalf("decode home JSON: %v", err)
+	}
+	if home.TodayCount != 3 {
+		t.Fatalf("today effective reviewer count=%d want 3 distinct user-canteen pairs", home.TodayCount)
+	}
+	if len(home.Reviews) < 3 {
+		t.Fatalf("recent reviews len=%d want at least 3", len(home.Reviews))
+	}
+	if home.Reviews[0].Source != "v2" || home.Reviews[0].CanteenName != canteenA.Name {
+		t.Fatalf("first recent review=%+v want newest V2 review from canteen A", home.Reviews[0])
+	}
+	if len(home.Reviews[0].DimensionScores) != 5 {
+		t.Fatalf("V2 dimension scores=%v want five real dimensions", home.Reviews[0].DimensionScores)
+	}
+	var foundLegacy bool
+	for _, review := range home.Reviews {
+		if review.Source == "legacy" {
+			foundLegacy = true
+			if len(review.DimensionScores) != 0 {
+				t.Fatalf("legacy review must not contain fabricated dimensions: %v", review.DimensionScores)
+			}
+		}
+	}
+	if !foundLegacy {
+		t.Fatalf("recent_reviews must include the legacy fallback review")
 	}
 }
 

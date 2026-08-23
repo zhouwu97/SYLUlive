@@ -1,5 +1,6 @@
 import 'ai_source.dart';
 import 'competition_action_draft.dart';
+import 'user_calendar.dart';
 import 'ai_personal_data_evidence.dart';
 
 enum AiMessageRole { user, assistant }
@@ -18,6 +19,7 @@ class AiChatMessage {
   final AiSourceRecoveryState sourceRecoveryState;
   final List<AiPersonalDataEvidence> personalDataEvidence;
   final List<CompetitionPlanActionDraft> actionDrafts;
+  final List<UserCalendarActionDraft> calendarActionDrafts;
   final DateTime createdAt;
 
   const AiChatMessage({
@@ -31,6 +33,7 @@ class AiChatMessage {
     this.sourceRecoveryState = AiSourceRecoveryState.notNeeded,
     this.personalDataEvidence = const [],
     this.actionDrafts = const [],
+    this.calendarActionDrafts = const [],
   });
 
   AiChatMessage copyWith({
@@ -40,6 +43,7 @@ class AiChatMessage {
     AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
     List<CompetitionPlanActionDraft>? actionDrafts,
+    List<UserCalendarActionDraft>? calendarActionDrafts,
   }) {
     return AiChatMessage(
       id: id,
@@ -52,6 +56,7 @@ class AiChatMessage {
       sourceRecoveryState: sourceRecoveryState ?? this.sourceRecoveryState,
       personalDataEvidence: personalDataEvidence ?? this.personalDataEvidence,
       actionDrafts: actionDrafts ?? this.actionDrafts,
+      calendarActionDrafts: calendarActionDrafts ?? this.calendarActionDrafts,
     );
   }
 }

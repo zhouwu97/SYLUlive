@@ -15,13 +15,36 @@ class UserMarketPostsResult {
   });
 }
 
+class SocialRequestException implements Exception {
+  final String message;
+  final bool sessionChanged;
+
+  const SocialRequestException(
+    this.message, {
+    this.sessionChanged = false,
+  });
+
+  @override
+  String toString() => message;
+}
+
 class SocialProvider extends ChangeNotifier {
   final Dio _dio;
   bool _isLoading = false;
+  int? _sessionUserId;
+  int _sessionGeneration = 0;
 
   SocialProvider(this._dio);
 
   bool get isLoading => _isLoading;
+
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    _sessionGeneration++;
+    _isLoading = false;
+    notifyListeners();
+  }
 
   Future<bool> follow(int userId) async {
     try {
@@ -48,15 +71,24 @@ class SocialProvider extends ChangeNotifier {
     int page = 1,
     int limit = 20,
   }) async {
+    final sessionGeneration = _sessionGeneration;
+    final sessionUserId = _sessionUserId;
     try {
       final response = await _dio.get(
         '/user/$userId/followers',
         queryParameters: {'page': page, 'limit': limit},
       );
-      return response.data;
+      if (!_ownsSession(sessionGeneration, sessionUserId)) {
+        throw const SocialRequestException(
+          '账号已切换，请重新加载',
+          sessionChanged: true,
+        );
+      }
+      return Map<String, dynamic>.from(response.data as Map);
     } catch (e) {
       debugPrint('获取粉丝失败: $e');
-      return {'items': [], 'total': 0, 'page': page, 'limit': limit};
+      if (e is SocialRequestException) rethrow;
+      throw const SocialRequestException('获取粉丝失败，请稍后重试');
     }
   }
 
@@ -65,23 +97,35 @@ class SocialProvider extends ChangeNotifier {
     int page = 1,
     int limit = 20,
   }) async {
+    final sessionGeneration = _sessionGeneration;
+    final sessionUserId = _sessionUserId;
     try {
       final response = await _dio.get(
         '/user/$userId/following',
         queryParameters: {'page': page, 'limit': limit},
       );
-      return response.data;
+      if (!_ownsSession(sessionGeneration, sessionUserId)) {
+        throw const SocialRequestException(
+          '账号已切换，请重新加载',
+          sessionChanged: true,
+        );
+      }
+      return Map<String, dynamic>.from(response.data as Map);
     } catch (e) {
       debugPrint('获取关注列表失败: $e');
-      return {'items': [], 'total': 0, 'page': page, 'limit': limit};
+      if (e is SocialRequestException) rethrow;
+      throw const SocialRequestException('获取关注列表失败，请稍后重试');
     }
   }
 
   Future<User?> getUserProfile(int userId) async {
+    final sessionGeneration = _sessionGeneration;
+    final sessionUserId = _sessionUserId;
     try {
       _isLoading = true;
       notifyListeners();
       final response = await _dio.get('/user/$userId');
+      if (!_ownsSession(sessionGeneration, sessionUserId)) return null;
       _isLoading = false;
       notifyListeners();
       return User.fromJson(response.data);
@@ -98,16 +142,25 @@ class SocialProvider extends ChangeNotifier {
     int page = 1,
     int limit = 20,
   }) async {
+    final sessionGeneration = _sessionGeneration;
+    final sessionUserId = _sessionUserId;
     try {
       final response = await _dio.get(
         '/user/$userId/posts',
         queryParameters: {'page': page, 'limit': limit},
       );
       final List<dynamic> data = response.data;
+      if (!_ownsSession(sessionGeneration, sessionUserId)) {
+        throw const SocialRequestException(
+          '账号已切换，请重新加载',
+          sessionChanged: true,
+        );
+      }
       return data.map((json) => Post.fromJson(json)).toList();
     } catch (e) {
       debugPrint('获取用户帖子失败: $e');
-      return [];
+      if (e is SocialRequestException) rethrow;
+      throw const SocialRequestException('获取用户帖子失败，请稍后重试');
     }
   }
 
@@ -116,6 +169,8 @@ class SocialProvider extends ChangeNotifier {
     int page = 1,
     int limit = 20,
   }) async {
+    final sessionGeneration = _sessionGeneration;
+    final sessionUserId = _sessionUserId;
     try {
       final response = await _dio.get(
         '/user/$userId/market-posts',
@@ -126,6 +181,12 @@ class SocialProvider extends ChangeNotifier {
         },
       );
       final data = response.data as Map<String, dynamic>;
+      if (!_ownsSession(sessionGeneration, sessionUserId)) {
+        throw const SocialRequestException(
+          '账号已切换，请重新加载',
+          sessionChanged: true,
+        );
+      }
       final items = ((data['items'] as List?) ?? [])
           .map((json) => Post.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -138,7 +199,12 @@ class SocialProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('获取用户商品失败: $e');
-      return const UserMarketPostsResult(items: [], total: 0, sold: 0);
+      if (e is SocialRequestException) rethrow;
+      throw const SocialRequestException('获取用户商品失败，请稍后重试');
     }
+  }
+
+  bool _ownsSession(int generation, int? userId) {
+    return generation == _sessionGeneration && userId == _sessionUserId;
   }
 }

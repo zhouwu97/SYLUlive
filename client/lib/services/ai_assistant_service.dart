@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../models/ai_capabilities.dart';
 import '../models/ai_conversation.dart';
+import '../models/agent_context.dart';
 import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
@@ -123,6 +124,7 @@ class AiAssistantService {
     required String conversationId,
     required String clientRequestId,
     required String message,
+    AgentLaunchContext? launchContext,
   }) async {
     for (var attempt = 0; attempt < _maxCreateRunAttempts; attempt++) {
       try {
@@ -130,6 +132,7 @@ class AiAssistantService {
           conversationId: conversationId,
           clientRequestId: clientRequestId,
           message: message,
+          launchContext: launchContext,
         );
       } on DioException catch (error) {
         final lastAttempt = attempt == _maxCreateRunAttempts - 1;
@@ -147,6 +150,7 @@ class AiAssistantService {
     required String conversationId,
     required String clientRequestId,
     required String message,
+    AgentLaunchContext? launchContext,
   }) async {
     final response = await _dio.post(
       '/ai/runs',
@@ -154,6 +158,7 @@ class AiAssistantService {
         if (conversationId.isNotEmpty) 'conversation_id': conversationId,
         'client_request_id': clientRequestId,
         'message': message,
+        if (launchContext != null) 'context': launchContext.toJson(),
       },
       // 服务端访问日志记录同一个 ID，便于区分“请求未到达”与“响应丢失”。
       options: Options(headers: {'X-Client-Request-ID': clientRequestId}),

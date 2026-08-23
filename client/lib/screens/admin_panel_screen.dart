@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -16,6 +17,7 @@ import 'admin_water_icon_review_screen.dart';
 import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
+import 'admin_ai_metrics_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -33,6 +35,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _reviewTasksCount; // Teachers + Majors
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
+  bool _hasLoadError = false;
 
   @override
   void initState() {
@@ -44,40 +47,59 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    try {
-      final dio = context.read<AuthProvider>().dio;
-      final futures = await Future.wait([
-        dio.get('/reports', queryParameters: {'status': 'pending'}),
-        dio.get('/admin/featured-applications'),
-        dio.get('/teachers/pending'),
-        dio.get('/majors/pending'),
-        dio.get('/admin/invitations/pending'),
-        dio.get('/admin/removals/pending'),
-        dio.get('/admin/exam-papers/pending-count'),
-      ].map((f) => f.catchError((_) =>
-          Response(requestOptions: RequestOptions(path: ''), data: []))));
+    final dio = context.read<AuthProvider>().dio;
 
-      if (!mounted) return;
-
-      int getCount(Response res) {
-        if (res.data is List) return (res.data as List).length;
-        return 0;
+    Future<Response<dynamic>?> safeGet(
+        Future<Response<dynamic>> request) async {
+      try {
+        return await request;
+      } catch (error) {
+        debugPrint('[AdminPanel] pending count request failed: $error');
+        return null;
       }
-
-      setState(() {
-        _reportsCount = getCount(futures[0]);
-        _featuredCount = getCount(futures[1]);
-        _reviewTasksCount = getCount(futures[2]) + getCount(futures[3]);
-        _adminTasksCount = getCount(futures[4]) + getCount(futures[5]);
-        _examPapersCount = futures[6].data is Map
-            ? ((futures[6].data as Map)['count'] as num?)?.toInt() ?? 0
-            : 0;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
     }
+
+    final responses = await Future.wait<Response<dynamic>?>([
+      safeGet(dio.get('/reports', queryParameters: {'status': 'pending'})),
+      safeGet(dio.get('/admin/featured-applications')),
+      safeGet(dio.get('/teachers/pending')),
+      safeGet(dio.get('/majors/pending')),
+      safeGet(dio.get('/admin/invitations/pending')),
+      safeGet(dio.get('/admin/removals/pending')),
+      safeGet(dio.get('/admin/exam-papers/pending-count')),
+    ]);
+
+    if (!mounted) return;
+
+    int? getCount(Response<dynamic>? response) {
+      if (response == null) return null;
+      final data = response.data;
+      if (data is List) return data.length;
+      if (data is Map) {
+        final count = data['count'];
+        if (count is num) return count.toInt();
+        final items = data['items'];
+        if (items is List) return items.length;
+      }
+      return null;
+    }
+
+    int? sumCounts(Response<dynamic>? first, Response<dynamic>? second) {
+      final firstCount = getCount(first);
+      final secondCount = getCount(second);
+      if (firstCount == null || secondCount == null) return null;
+      return firstCount + secondCount;
+    }
+
+    setState(() {
+      _reportsCount = getCount(responses[0]);
+      _featuredCount = getCount(responses[1]);
+      _reviewTasksCount = sumCounts(responses[2], responses[3]);
+      _adminTasksCount = sumCounts(responses[4], responses[5]);
+      _examPapersCount = getCount(responses[6]);
+      _hasLoadError = responses.any((response) => response == null);
+      _isLoading = false;
+    });
   }
 
   @override
@@ -99,6 +121,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             title: const Text('管理员面板'),
             backgroundColor: Colors.transparent,
             elevation: 0,
+            actions: [
+              IconButton(
+                tooltip: 'AI 运营指标',
+                icon: const Icon(Icons.insights_outlined),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AdminAIMetricsScreen(),
+                  ),
+                ),
+              ),
+            ],
             systemOverlayStyle: (isDark
                     ? SystemUiOverlayStyle.light
                     : SystemUiOverlayStyle.dark)
@@ -425,6 +459,27 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ),
           ],
         ),
+        if (_hasLoadError)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '部分待处理数据暂不可用，数字不会以 0 代替。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.orange[200] : Colors.orange[800],
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _loadCounts,
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -445,8 +500,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   : Image.network(bgPath, fit: BoxFit.cover),
           Container(
               color: isDark
-                  ? Colors.black.withOpacity(0.4)
-                  : Colors.white.withOpacity(0.3)),
+                  ? Colors.black.withValues(alpha: 0.4)
+                  : Colors.white.withValues(alpha: 0.3)),
         ],
       );
     }
@@ -495,7 +550,7 @@ class _AdminSectionGroup extends StatelessWidget {
   }
 }
 
-class _AdminActionPill extends StatelessWidget {
+class _AdminActionPill extends StatefulWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
@@ -513,20 +568,36 @@ class _AdminActionPill extends StatelessWidget {
   });
 
   @override
+  State<_AdminActionPill> createState() => _AdminActionPillState();
+}
+
+class _AdminActionPillState extends State<_AdminActionPill> {
+  bool _navigationPending = false;
+
+  void _handleTap() {
+    if (_navigationPending) return;
+    setState(() => _navigationPending = true);
+    widget.onTap();
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 450), () {
+      if (mounted) setState(() => _navigationPending = false);
+    }));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: _navigationPending ? null : _handleTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         height: 60,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withOpacity(0.06)
-              : Colors.white.withOpacity(0.55),
+          color: widget.isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isDark ? Colors.white10 : Colors.white,
+            color: widget.isDark ? Colors.white10 : Colors.white,
             width: 1.5,
           ),
         ),
@@ -536,10 +607,10 @@ class _AdminActionPill extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.12),
+                color: widget.iconColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor, size: 20),
+              child: Icon(widget.icon, color: widget.iconColor, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -548,20 +619,20 @@ class _AdminActionPill extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    title,
+                    widget.title,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: widget.isDark ? Colors.white : Colors.black87,
                       height: 1.1,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    subtitle,
+                    widget.subtitle,
                     style: TextStyle(
                       fontSize: 11,
-                      color: isDark ? Colors.white54 : Colors.grey[600],
+                      color: widget.isDark ? Colors.white54 : Colors.grey[600],
                       height: 1.1,
                     ),
                   ),
@@ -571,7 +642,7 @@ class _AdminActionPill extends StatelessWidget {
             Icon(
               Icons.chevron_right,
               size: 20,
-              color: isDark ? Colors.white30 : Colors.grey[400],
+              color: widget.isDark ? Colors.white30 : Colors.grey[400],
             ),
           ],
         ),
@@ -610,8 +681,8 @@ class _AdminMetricPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: isDark
-              ? Colors.white.withOpacity(0.08)
-              : Colors.white.withOpacity(0.6),
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(

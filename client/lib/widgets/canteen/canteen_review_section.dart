@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
 import '../../theme/app_motion.dart';
+import '../../utils/app_feedback.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 
@@ -22,10 +23,14 @@ class CanteenReviewSection extends StatelessWidget {
   final int? currentUserId;
   final ValueChanged<String> onSortChanged;
   final ValueChanged<String> onFilterChanged;
-  final Future<void> Function(int ratingId, String vote) onVote;
+  final Future<void> Function(int ratingId, String source, String vote) onVote;
   final VoidCallback onWriteReview;
   final bool canWriteReview;
-  final Future<void> Function(int reviewId)? onReport;
+  final int? latestReviewId;
+  final VoidCallback? onEditLatestReview;
+  final Future<void> Function(int reviewId, String source)? onReport;
+  final Future<bool> Function(int reviewId, String source)? onDelete;
+  final VoidCallback? onOpenHistory;
 
   const CanteenReviewSection({
     super.key,
@@ -42,7 +47,11 @@ class CanteenReviewSection extends StatelessWidget {
     required this.onVote,
     required this.onWriteReview,
     this.canWriteReview = true,
+    this.latestReviewId,
+    this.onEditLatestReview,
     this.onReport,
+    this.onDelete,
+    this.onOpenHistory,
   });
 
   @override
@@ -166,6 +175,17 @@ class CanteenReviewSection extends StatelessWidget {
                                   (reviews[i]['user_id'] as num?)?.toInt(),
                           onVote: onVote,
                           onReport: onReport,
+                          onDelete: onDelete,
+                          onOpenHistory: onOpenHistory,
+                          isLatestV2: latestReviewId != null &&
+                              (reviews[i]['review_source']?.toString() ??
+                                      (reviews[i]['is_v2'] == true
+                                          ? 'v2'
+                                          : 'legacy')) ==
+                                  'v2' &&
+                              (reviews[i]['id'] as num?)?.toInt() ==
+                                  latestReviewId,
+                          onEditLatestReview: onEditLatestReview,
                         ),
                       ],
                     ],
@@ -272,25 +292,102 @@ class CanteenReviewSection extends StatelessWidget {
 
 // ── 单条评价（无卡片，内容 + divider）─────────────────────────────
 
-class _ReviewItem extends StatelessWidget {
+class _ReviewItem extends StatefulWidget {
   final Map<String, dynamic> review;
   final bool isDark;
   final bool isVoting;
   final bool isOwn;
-  final Future<void> Function(int ratingId, String vote) onVote;
-  final Future<void> Function(int reviewId)? onReport;
+  final bool isLatestV2;
+  final Future<void> Function(int ratingId, String source, String vote) onVote;
+  final VoidCallback? onEditLatestReview;
+  final Future<void> Function(int reviewId, String source)? onReport;
+  final Future<bool> Function(int reviewId, String source)? onDelete;
+  final VoidCallback? onOpenHistory;
 
   const _ReviewItem({
     required this.review,
     required this.isDark,
     required this.isVoting,
     required this.isOwn,
+    this.isLatestV2 = false,
     required this.onVote,
+    this.onEditLatestReview,
     this.onReport,
+    this.onDelete,
+    this.onOpenHistory,
+  });
+
+  @override
+  State<_ReviewItem> createState() => _ReviewItemState();
+}
+
+class _ReviewItemState extends State<_ReviewItem> {
+  bool _deleting = false;
+
+  Future<bool> _delete(int id, String source) async {
+    if (_deleting || widget.onDelete == null) return false;
+    setState(() => _deleting = true);
+    final success = await widget.onDelete!(id, source);
+    if (!success && mounted) setState(() => _deleting = false);
+    return success;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: AppMotion.fast,
+      curve: AppMotion.outgoing,
+      opacity: _deleting ? 0 : 1,
+      child: AnimatedSlide(
+        duration: AppMotion.fast,
+        curve: AppMotion.outgoing,
+        offset: _deleting ? const Offset(0, -0.02) : Offset.zero,
+        child: _ReviewItemContent(
+          review: widget.review,
+          isDark: widget.isDark,
+          isVoting: widget.isVoting,
+          isOwn: widget.isOwn,
+          isLatestV2: widget.isLatestV2,
+          onVote: widget.onVote,
+          onEditLatestReview: widget.onEditLatestReview,
+          onReport: widget.onReport,
+          onDelete: widget.onDelete == null ? null : _delete,
+          onOpenHistory: widget.onOpenHistory,
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewItemContent extends StatelessWidget {
+  final Map<String, dynamic> review;
+  final bool isDark;
+  final bool isVoting;
+  final bool isOwn;
+  final bool isLatestV2;
+  final Future<void> Function(int ratingId, String source, String vote) onVote;
+  final VoidCallback? onEditLatestReview;
+  final Future<void> Function(int reviewId, String source)? onReport;
+  final Future<bool> Function(int reviewId, String source)? onDelete;
+  final VoidCallback? onOpenHistory;
+
+  const _ReviewItemContent({
+    required this.review,
+    required this.isDark,
+    required this.isVoting,
+    required this.isOwn,
+    this.isLatestV2 = false,
+    required this.onVote,
+    this.onEditLatestReview,
+    this.onReport,
+    this.onDelete,
+    this.onOpenHistory,
   });
 
   @override
   Widget build(BuildContext context) {
+    final source = review['review_source']?.toString() ??
+        (review['is_v2'] == true ? 'v2' : 'legacy');
     final id = (review['id'] as num?)?.toInt() ?? 0;
     final nickname = review['user_name']?.toString() ?? '匿名同学';
     final content = review['comment']?.toString() ?? '';
@@ -307,6 +404,7 @@ class _ReviewItem extends StatelessWidget {
         : const <String, dynamic>{};
 
     return Padding(
+      key: ValueKey('$source:$id'),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +572,7 @@ class _ReviewItem extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${_reviewAuthorText(nickname, review['created_at'])}${review['history_count'] is num && (review['history_count'] as num).toInt() > 1 ? ' · ${review['history_count']} 次到访' : ''}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
+                  '${_reviewAuthorText(nickname, review['created_at'])}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -484,6 +582,26 @@ class _ReviewItem extends StatelessWidget {
                   ),
                 ),
               ),
+              if (isOwn &&
+                  review['history_count'] is num &&
+                  (review['history_count'] as num).toInt() > 1 &&
+                  onOpenHistory != null)
+                InkWell(
+                  onTap: onOpenHistory,
+                  borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    child: Text(
+                      '我的历史评价 ${(review['history_count'] as num).toInt()} ›',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: CanteenTheme.accentStrongColor(isDark),
+                      ),
+                    ),
+                  ),
+                ),
               if (!isOwn) ...[
                 _buildVoteButton(
                   icon: Icons.thumb_up_alt_outlined,
@@ -492,7 +610,11 @@ class _ReviewItem extends StatelessWidget {
                   selected: myVote == 'up',
                   onTap: isVoting
                       ? null
-                      : () => onVote(id, myVote == 'up' ? 'none' : 'up'),
+                      : () => onVote(
+                            id,
+                            source,
+                            myVote == 'up' ? 'none' : 'up',
+                          ),
                 ),
                 const SizedBox(width: 12),
                 _buildVoteButton(
@@ -502,7 +624,11 @@ class _ReviewItem extends StatelessWidget {
                   selected: myVote == 'down',
                   onTap: isVoting
                       ? null
-                      : () => onVote(id, myVote == 'down' ? 'none' : 'down'),
+                      : () => onVote(
+                            id,
+                            source,
+                            myVote == 'down' ? 'none' : 'down',
+                          ),
                 ),
               ],
               if (!isOwn && onReport != null) ...[
@@ -511,18 +637,62 @@ class _ReviewItem extends StatelessWidget {
                   tooltip: '更多操作',
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
-                    if (value == 'report') onReport!(id);
+                    if (value == 'report') onReport!(id, source);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'report', child: Text('举报该评价')),
                   ],
                 ),
               ],
+              if (isOwn &&
+                  ((isLatestV2 && onEditLatestReview != null) ||
+                      onDelete != null))
+                PopupMenuButton<String>(
+                  tooltip: '评价操作',
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) async {
+                    if (value == 'edit' && onEditLatestReview != null) {
+                      onEditLatestReview!();
+                    }
+                    if (value == 'delete') {
+                      await _confirmDelete(context, id, source);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (isLatestV2 && onEditLatestReview != null)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('修改这条评价'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text(
+                        '删除这条评价',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    int id,
+    String source,
+  ) async {
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '删除这条评价？',
+      message: '删除后将从食堂评价中移除，历史记录不会再参与评分统计。',
+      confirmText: '删除',
+    );
+    if (!confirmed || onDelete == null) return;
+    await onDelete!(id, source);
   }
 
   Widget _buildDimensionBadge(String label, dynamic rawScore) {

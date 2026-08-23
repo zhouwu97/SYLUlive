@@ -20,6 +20,8 @@ import '../widgets/rating_detail/rating_report_sheet.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import 'canteen_dish_list_screen.dart';
 import 'canteen_review_editor_screen.dart';
+import 'canteen_review_history_screen.dart';
+import '../utils/app_feedback.dart';
 
 /// 食堂详情页：Hero + 信息区 + 大家都在吃 + 评价区 + 底部写评价。
 ///
@@ -73,6 +75,34 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final raw = _canteenData?['canteen'];
     if (raw is! Map) return false;
     return raw['is_offline'] == true || raw['operating_status'] == 'offline';
+  }
+
+  Map<String, dynamic> get _reviewAction {
+    final raw = _canteenData?['review_action'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  // 兼容旧服务端：缺少 review_action 时按原有“可以新增”处理，避免旧详情页被误锁死。
+  bool get _canCreateReview => _reviewAction['can_create'] != false;
+
+  bool get _canEditLatest =>
+      _reviewAction['can_edit_latest'] == true &&
+      _canteenData?['my_latest_review'] is Map;
+
+  int? get _latestReviewId {
+    final raw = _reviewAction['latest_review_id'] ??
+        (_canteenData?['my_latest_review'] as Map?)?['review_event_id'];
+    return raw is num ? raw.toInt() : int.tryParse('$raw');
+  }
+
+  String _reviewCooldownText() {
+    final seconds =
+        (_reviewAction['retry_after_seconds'] as num?)?.toInt() ?? 0;
+    if (seconds <= 0) return '暂时不能新增评价';
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600 + 59) ~/ 60;
+    if (hours > 0) return '距下次评价还有 ${hours}小时${minutes}分钟';
+    return '距下次评价还有 $minutes 分钟';
   }
 
   @override
@@ -231,22 +261,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       );
     }
 
-    final rawV2Reviews = _canteenData!['reviews'];
-    final normalizedV2 = rawV2Reviews is List
-        ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
-        : <Map<String, dynamic>>[];
-    final v2UserIds = normalizedV2
-        .map((item) => (item['user_id'] as num?)?.toInt())
-        .whereType<int>()
-        .toSet();
-    final legacyOnly = (_canteenData!['ratings'] as List?)
-            ?.whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .where((item) =>
-                !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
-            .toList() ??
-        <Map<String, dynamic>>[];
-    final reviews = [...normalizedV2, ...legacyOnly];
+    final rawDisplayReviews = _canteenData!['display_reviews'];
+    final reviews = rawDisplayReviews is List
+        ? rawDisplayReviews.whereType<Map>().map((raw) {
+            final item = Map<String, dynamic>.from(raw);
+            return item['review_source'] == 'v2'
+                ? _normalizeV2Review(item)
+                : {...item, 'review_source': 'legacy'};
+          }).toList()
+        : _buildLegacyReviewFallback();
     final ratingCount = (_canteenData!['reviewer_count'] as num?)?.toInt() ??
         (_canteenData!['rating_count'] as num?)?.toInt() ??
         0;
@@ -336,9 +359,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       }
                     },
                     onVote: _voteRating,
-                    onWriteReview: _openReviewEditor,
-                    canWriteReview: !_isOffline,
+                    onWriteReview: _openPrimaryReviewEditor,
+                    canWriteReview:
+                        !_isOffline && (_canCreateReview || _canEditLatest),
+                    latestReviewId: _latestReviewId,
+                    onEditLatestReview: _openEditLatestReviewEditor,
                     onReport: _reportReview,
+                    onDelete: _deleteReview,
+                    onOpenHistory: _openOwnReviewHistory,
                   ),
                 ],
               ),
@@ -367,15 +395,37 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       'user_avatar': source['user_avatar'] ?? '',
       if (scoreVersion >= 2) 'dimension_scores': dimensionScores,
       'is_v2': scoreVersion >= 2,
+      'review_source': 'v2',
       'score_version': scoreVersion,
       'helpful_count': source['helpful_count'] ?? 0,
       'unhelpful_count': source['unhelpful_count'] ?? 0,
     };
   }
 
-  Future<void> _reportReview(int reviewId) async {
-    final targetType =
-        _isV2Review(reviewId) ? 'canteen_review' : 'canteen_rating';
+  List<Map<String, dynamic>> _buildLegacyReviewFallback() {
+    final rawV2Reviews = _canteenData!['reviews'];
+    final normalizedV2 = rawV2Reviews is List
+        ? rawV2Reviews.whereType<Map>().map(_normalizeV2Review).toList()
+        : <Map<String, dynamic>>[];
+    final v2UserIds = normalizedV2
+        .map((item) => (item['user_id'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet();
+    final legacyOnly = (_canteenData!['ratings'] as List?)
+            ?.whereType<Map>()
+            .map((item) => {
+                  ...Map<String, dynamic>.from(item),
+                  'review_source': 'legacy',
+                })
+            .where((item) =>
+                !v2UserIds.contains((item['user_id'] as num?)?.toInt()))
+            .toList() ??
+        <Map<String, dynamic>>[];
+    return [...normalizedV2, ...legacyOnly];
+  }
+
+  Future<void> _reportReview(int reviewId, String source) async {
+    final targetType = source == 'v2' ? 'canteen_review' : 'canteen_rating';
     await showRatingReportSheet(
       context: context,
       targetType: targetType,
@@ -413,6 +463,72 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         return false;
       },
     );
+  }
+
+  Future<bool> _deleteReview(int reviewId, String source) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      AppFeedback.info('请先登录后操作', context: context);
+      return false;
+    }
+    final result = await context.read<CanteenProvider>().deleteReview(
+          id: reviewId,
+          source: source,
+        );
+    if (!mounted) return result.success;
+    if (!result.success) {
+      AppFeedback.error(
+        result.errorMessage ?? '删除失败，请稍后重试',
+        context: context,
+      );
+      return false;
+    }
+
+    _removeReviewLocally(reviewId, source);
+    AppFeedback.success('评价已删除', context: context);
+    // 本地先收起当前条目，后台静默刷新摘要、排行和历史数量。
+    await _reloadSilently();
+    return true;
+  }
+
+  void _removeReviewLocally(int reviewId, String source) {
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews',
+    ];
+    for (final key in keys.toSet()) {
+      final rawItems = _canteenData?[key];
+      if (rawItems is! List) continue;
+      rawItems.removeWhere((raw) {
+        if (raw is! Map) return false;
+        final item = Map<String, dynamic>.from(raw);
+        final itemSource = item['review_source']?.toString() ??
+            item['source']?.toString() ??
+            (key == 'reviews' ? 'v2' : 'legacy');
+        return itemSource == source &&
+            (item['id'] as num?)?.toInt() == reviewId;
+      });
+    }
+    if (mounted) setState(() => _reviewDataVersion++);
+  }
+
+  Future<void> _openOwnReviewHistory() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId <= 0) {
+      AppFeedback.info('请先登录后查看历史评价', context: context);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewHistoryScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+          userId: userId,
+          isOwn: true,
+        ),
+      ),
+    );
+    if (mounted) await _reloadSilently();
   }
 
   Widget _buildDimensionSummary(bool isDark) {
@@ -637,7 +753,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Widget _buildFloatingRatingComposer(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final hasRating = _canteenData?['my_rating'] != null;
     final auth = context.watch<AuthProvider>();
     final ratingHint = _isOffline
         ? '该店已下架，历史评价仅供参考'
@@ -645,9 +760,13 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             ? '登录后可评价'
             : auth.user?.studentVerified != true
                 ? '绑定教务后可评价'
-                : hasRating
-                    ? '修改我的评价...'
-                    : '写下你的真实体验...';
+                : _canCreateReview
+                    ? '添加一条新的到店评价...'
+                    : _canEditLatest
+                        ? _reviewCooldownText()
+                        : '暂时不能添加评价';
+
+    final canOpenPrimary = !_isOffline && (_canCreateReview || _canEditLatest);
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
@@ -664,7 +783,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                onTap: _isOffline ? null : _openReviewEditor,
+                onTap: canOpenPrimary ? _openPrimaryReviewEditor : null,
                 child: Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -686,7 +805,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ),
           const SizedBox(width: 10),
           FilledButton(
-            onPressed: _isOffline ? null : _openReviewEditor,
+            onPressed: canOpenPrimary ? _openPrimaryReviewEditor : null,
             style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: Colors.white,
@@ -698,7 +817,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               ),
             ),
             child: Text(
-              hasRating ? '修改' : '写评价',
+              _canCreateReview ? '添加' : '修改最近一次',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
@@ -742,7 +861,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   // ── 投票（乐观更新，逻辑与重构前一致）───────────────────────────
 
-  Future<void> _voteRating(int ratingId, String vote) async {
+  Future<void> _voteRating(int ratingId, String source, String vote) async {
     if (_isVoting) return;
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -753,12 +872,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final oldData = _deepCopyCanteenData();
     setState(() {
       _isVoting = true;
-      _applyLocalVote(ratingId, vote);
+      _applyLocalVote(ratingId, source, vote);
     });
 
     try {
       final provider = context.read<CanteenProvider>();
-      final result = _isV2Review(ratingId)
+      final result = source == 'v2'
           ? await provider.voteReview(reviewId: ratingId, vote: vote)
           : await provider.voteRating(ratingId: ratingId, vote: vote);
       if (!mounted) return;
@@ -769,7 +888,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         );
         return;
       }
-      setState(() => _reconcileVoteResult(result));
+      setState(() => _reconcileVoteResult(result, source));
     } finally {
       if (mounted) {
         setState(() => _isVoting = false);
@@ -782,14 +901,24 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return jsonDecode(jsonEncode(_canteenData)) as Map<String, dynamic>;
   }
 
-  void _applyLocalVote(int ratingId, String newVote) {
-    for (final key in const ['ratings', 'reviews']) {
+  void _applyLocalVote(int ratingId, String source, String newVote) {
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews'
+    ];
+    for (final key in keys.toSet()) {
       final items = (_canteenData?[key] as List?)?.cast<dynamic>();
       if (items == null) continue;
       for (final item in items) {
         if (item is! Map) continue;
         final rating = item.cast<String, dynamic>();
-        if ((rating['id'] as num?)?.toInt() != ratingId) continue;
+        final itemSource = rating['review_source']?.toString() ??
+            (rating['source']?.toString() ??
+                (key == 'reviews' ? 'v2' : 'legacy'));
+        if ((rating['id'] as num?)?.toInt() != ratingId ||
+            itemSource != source) {
+          continue;
+        }
         final oldVote = rating['my_vote']?.toString();
         var helpful = (rating['helpful_count'] as num?)?.toInt() ?? 0;
         var unhelpful = (rating['unhelpful_count'] as num?)?.toInt() ?? 0;
@@ -804,18 +933,28 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
-  void _reconcileVoteResult(Map<String, dynamic> result) {
+  void _reconcileVoteResult(Map<String, dynamic> result, String source) {
     final ratingId =
         ((result['rating_id'] ?? result['review_id']) as num?)?.toInt();
     if (ratingId == null) return;
 
-    for (final key in const ['ratings', 'reviews']) {
+    final keys = <String>[
+      source == 'v2' ? 'reviews' : 'ratings',
+      'display_reviews'
+    ];
+    for (final key in keys.toSet()) {
       final ratings = (_canteenData?[key] as List?)?.cast<dynamic>();
       if (ratings == null) continue;
       for (final item in ratings) {
         if (item is! Map) continue;
         final rating = item.cast<String, dynamic>();
-        if ((rating['id'] as num?)?.toInt() != ratingId) continue;
+        final itemSource = rating['review_source']?.toString() ??
+            (rating['source']?.toString() ??
+                (key == 'reviews' ? 'v2' : 'legacy'));
+        if ((rating['id'] as num?)?.toInt() != ratingId ||
+            itemSource != source) {
+          continue;
+        }
         rating['helpful_count'] = result['helpful_count'] ?? 0;
         rating['unhelpful_count'] = result['unhelpful_count'] ?? 0;
         rating['my_vote'] = result['my_vote'];
@@ -823,31 +962,69 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
-  bool _isV2Review(int reviewId) {
-    final reviews = (_canteenData?['reviews'] as List?)?.cast<dynamic>();
-    return reviews?.any((item) =>
-            item is Map && (item['id'] as num?)?.toInt() == reviewId) ==
-        true;
-  }
-
   // ── 打开评价编辑器全屏页 ────────────────────────────────────────
 
-  Future<void> _openReviewEditor() async {
+  Future<bool> _ensureCanReview() async {
     if (_isOffline) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('该店当前已下架，暂不能发布新的评价')),
       );
-      return;
+      return false;
     }
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
-      return;
+      return false;
     }
     if (auth.user?.studentVerified != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先绑定教务账号后再评价')),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _openPrimaryReviewEditor() async {
+    if (_canCreateReview) {
+      await _openCreateReviewEditor();
+    } else {
+      await _openEditLatestReviewEditor();
+    }
+  }
+
+  Future<void> _openCreateReviewEditor() async {
+    if (!await _ensureCanReview()) return;
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CanteenReviewEditorScreen(
+          canteenId: widget.canteenId,
+          canteenName: widget.canteenName,
+          canteenImage: _canteenData?['canteen']?['image']?.toString(),
+          averageStar:
+              (_canteenData?['average_star'] as num?)?.toDouble() ?? 0.0,
+          ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
+          dishCount: _dishCount,
+          dishPhotoCount: _dishPhotoCount,
+          mode: CanteenReviewEditorMode.create,
+          existingReview: null,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _reloadSilently();
+    }
+  }
+
+  Future<void> _openEditLatestReviewEditor() async {
+    if (!await _ensureCanReview()) return;
+    final latest = _canteenData?['my_latest_review'];
+    if (!_canEditLatest || latest is! Map || _latestReviewId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('最近一条评价暂时不可修改，请刷新后重试')),
       );
       return;
     }
@@ -863,7 +1040,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           ratingCount: (_canteenData?['rating_count'] as num?)?.toInt() ?? 0,
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
-          existingRating: _canteenData?['my_rating'],
+          mode: CanteenReviewEditorMode.edit,
+          existingReview: Map<String, dynamic>.from(latest),
         ),
       ),
     );

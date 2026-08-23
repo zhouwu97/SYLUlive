@@ -53,27 +53,28 @@ func (AIConversationMessage) TableName() string { return "ai_conversation_messag
 
 // AIRun 是一次正式请求的唯一状态载体。ClientRequestID 与用户联合唯一，保证幂等。
 type AIRun struct {
-	ID                  string     `gorm:"type:varchar(36);primaryKey" json:"id"`
-	UserID              uint       `gorm:"not null;uniqueIndex:idx_ai_runs_user_request,priority:1;index" json:"user_id"`
-	ConversationID      string     `gorm:"type:varchar(36);not null;index" json:"conversation_id"`
-	ClientRequestID     string     `gorm:"type:varchar(36);not null;uniqueIndex:idx_ai_runs_user_request,priority:2" json:"client_request_id"`
-	State               string     `gorm:"size:32;not null;index" json:"state"`
-	StateVersion        int64      `gorm:"not null;default:0" json:"state_version"`
-	Provider            string     `gorm:"size:32;not null" json:"provider"`
-	Model               string     `gorm:"size:100;not null" json:"model"`
-	Attempt             int        `gorm:"not null;default:1" json:"attempt"`
-	MessageHash         string     `gorm:"size:64;not null" json:"-"`
-	MessageLength       int        `gorm:"not null" json:"message_length"`
-	BudgetReservationID *string    `gorm:"type:varchar(36);index" json:"-"`
-	LastEventSeq        int64      `gorm:"not null;default:0" json:"last_event_seq"`
-	AnswerCheckpoint    string     `gorm:"type:text;not null;default:''" json:"answer_checkpoint,omitempty"`
-	ErrorCode           string     `gorm:"size:64;not null;default:''" json:"error_code,omitempty"`
-	CancelledAt         *time.Time `json:"cancelled_at,omitempty"`
-	ExpiresAt           time.Time  `gorm:"not null;index" json:"expires_at"`
-	StartedAt           *time.Time `json:"started_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	CreatedAt           time.Time  `gorm:"index" json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                  string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	UserID              uint           `gorm:"not null;uniqueIndex:idx_ai_runs_user_request,priority:1;index" json:"user_id"`
+	ConversationID      string         `gorm:"type:varchar(36);not null;index" json:"conversation_id"`
+	ClientRequestID     string         `gorm:"type:varchar(36);not null;uniqueIndex:idx_ai_runs_user_request,priority:2" json:"client_request_id"`
+	State               string         `gorm:"size:32;not null;index" json:"state"`
+	StateVersion        int64          `gorm:"not null;default:0" json:"state_version"`
+	Provider            string         `gorm:"size:32;not null" json:"provider"`
+	Model               string         `gorm:"size:100;not null" json:"model"`
+	Attempt             int            `gorm:"not null;default:1" json:"attempt"`
+	MessageHash         string         `gorm:"size:64;not null" json:"-"`
+	MessageLength       int            `gorm:"not null" json:"message_length"`
+	AgentContext        datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	BudgetReservationID *string        `gorm:"type:varchar(36);index" json:"-"`
+	LastEventSeq        int64          `gorm:"not null;default:0" json:"last_event_seq"`
+	AnswerCheckpoint    string         `gorm:"type:text;not null;default:''" json:"answer_checkpoint,omitempty"`
+	ErrorCode           string         `gorm:"size:64;not null;default:''" json:"error_code,omitempty"`
+	CancelledAt         *time.Time     `json:"cancelled_at,omitempty"`
+	ExpiresAt           time.Time      `gorm:"not null;index" json:"expires_at"`
+	StartedAt           *time.Time     `json:"started_at,omitempty"`
+	CompletedAt         *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt           time.Time      `gorm:"index" json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
 }
 
 func (AIRun) TableName() string { return "ai_runs" }
@@ -221,6 +222,7 @@ type AIUsageRecord struct {
 	CostMicroYuan       int64     `gorm:"not null;default:0" json:"cost_micro_yuan"`
 	LatencyMilliseconds int64     `gorm:"not null;default:0" json:"latency_ms"`
 	ErrorClass          string    `gorm:"size:64;not null;default:''" json:"error_class,omitempty"`
+	Purpose             string    `gorm:"size:32;not null;default:'campus_agent';index" json:"purpose"`
 	CreatedAt           time.Time `gorm:"index" json:"created_at"`
 }
 

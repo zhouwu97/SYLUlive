@@ -14,6 +14,7 @@ import 'package:shenliyuan/models/ai_conversation.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/models/ai_run.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
+import 'package:shenliyuan/models/agent_context.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -70,6 +71,7 @@ class _CampusServiceStub extends AiAssistantService {
     required String conversationId,
     required String clientRequestId,
     required String message,
+    AgentLaunchContext? launchContext,
   }) async =>
       const AiRunCreation(
         run: AiRun(

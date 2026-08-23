@@ -50,11 +50,6 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
 
   Widget _buildStoreCard(bool isDark) {
     final item = widget.item;
-    final icon = switch (item.type) {
-      CanteenFeedType.trendingStore => Icons.local_fire_department_rounded,
-      CanteenFeedType.stableChoice => Icons.verified_rounded,
-      _ => Icons.auto_awesome_rounded,
-    };
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -68,25 +63,15 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
         children: [
           Row(
             children: [
-              Icon(icon, size: 15, color: CanteenTheme.accentColor(isDark)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  item.title.isEmpty ? item.typeLabel : item.title,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: CanteenTheme.textPrimaryColor(isDark),
-                  ),
-                ),
-              ),
+              _typeTag(isDark, item.typeLabel),
+              const Spacer(),
               if (item.rankingScore > 0)
                 Text(
-                  '${item.rankingScore.round()}分',
+                  '综合 ${item.rankingScore.round()}',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: CanteenTheme.accentStrongColor(isDark),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: CanteenTheme.textTertiaryColor(isDark),
                   ),
                 ),
             ],
@@ -198,34 +183,47 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
         children: [
           Row(
             children: [
-              Icon(Icons.camera_alt_rounded,
-                  size: 15, color: CanteenTheme.accentColor(isDark)),
-              const SizedBox(width: 6),
-              Text(
-                item.title.isEmpty ? '同学最近实拍' : item.title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: CanteenTheme.textPrimaryColor(isDark),
-                ),
-              ),
+              _typeTag(isDark, item.typeLabel),
             ],
           ),
           const SizedBox(height: 10),
           _photoGrid(isDark),
           const SizedBox(height: 10),
           Text(
-            item.dishName.isNotEmpty
-                ? '${item.dishName} · ${item.canteenName}'
-                : item.canteenName,
+            item.canteenName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
               color: CanteenTheme.textPrimaryColor(isDark),
             ),
           ),
+          if (item.dishName.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '最近实拍 · ${item.dishName}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ],
+          if (item.reason.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              item.reason,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -330,14 +328,34 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
       ),
     );
   }
+
+  Widget _typeTag(bool isDark, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: CanteenTheme.accentSoftColor(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: CanteenTheme.accentStrongColor(isDark),
+        ),
+      ),
+    );
+  }
 }
 
 extension on CanteenFeedItem {
   String get typeLabel => switch (type) {
-        CanteenFeedType.recommendedStore => '为你推荐',
-        CanteenFeedType.trendingStore => '最近热度上升',
-        CanteenFeedType.stableChoice => '稳妥选择',
-        CanteenFeedType.recentPhoto => '同学最近实拍',
+        CanteenFeedType.recommendedStore => '综合推荐',
+        CanteenFeedType.trendingStore => '近期热门',
+        CanteenFeedType.stableChoice => '评价稳定',
+        CanteenFeedType.recentPhoto => '最近实拍',
+        CanteenFeedType.newStore => '新收录',
+        CanteenFeedType.caution => '注意',
         _ => '',
       };
 }

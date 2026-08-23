@@ -10,8 +10,8 @@ import '../platform/contracts/preferences_store.dart';
 ///
 /// 遵循规则：
 /// 1. 使用 AppPreferencesStore 进行跨平台存储抽象，禁止直接硬编码 SharedPreferences。
-/// 2. Key 规则：canteen_review_draft:v1:{userId}:{canteenId}，严格账号隔离。
-/// 3. 本地图片保存在 ApplicationSupportDirectory/canteen_review_drafts/{userId}/{canteenId}/。
+/// 2. Key 规则包含账号、食堂、创建/编辑模式和评价事件，严格隔离两种流程。
+/// 3. 本地图片目录与 JSON 使用同一命名空间，避免创建草稿覆盖编辑草稿。
 class CanteenReviewDraftRepository {
   final AppPreferencesStore? _storeOverride;
   final Directory? _baseDirOverride;
@@ -22,8 +22,20 @@ class CanteenReviewDraftRepository {
   })  : _storeOverride = storeOverride,
         _baseDirOverride = baseDirOverride;
 
-  static String buildKey(int userId, int canteenId) =>
-      'canteen_review_draft:v1:$userId:$canteenId';
+  static String buildKey(
+    int userId,
+    int canteenId, {
+    String mode = 'create',
+    int? reviewEventId,
+  }) {
+    final normalizedMode = mode == 'edit' ? 'edit' : 'create';
+    final eventSuffix =
+        normalizedMode == 'edit' ? ':${reviewEventId ?? 0}' : '';
+    return 'canteen_review_draft:v2:$normalizedMode:$userId:$canteenId$eventSuffix';
+  }
+
+  static String _normalizedMode(String mode) =>
+      mode == 'edit' ? 'edit' : 'create';
 
   Future<AppPreferencesStore> _getStore() async {
     if (_storeOverride != null) return _storeOverride!;
@@ -33,10 +45,12 @@ class CanteenReviewDraftRepository {
   Future<Directory> getDraftDirectory({
     required int userId,
     required int canteenId,
+    String mode = 'create',
+    int? reviewEventId,
   }) async {
     final baseDir = _baseDirOverride ?? await getApplicationSupportDirectory();
     final dir = Directory(
-      '${baseDir.path}/canteen_review_drafts/$userId/$canteenId',
+      '${baseDir.path}/canteen_review_drafts/$userId/$canteenId/${_normalizedMode(mode)}/${reviewEventId ?? 0}',
     );
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -49,12 +63,22 @@ class CanteenReviewDraftRepository {
     if (draft.userId <= 0 || draft.canteenId <= 0) return;
 
     if (draft.isEmpty) {
-      await deleteDraft(userId: draft.userId, canteenId: draft.canteenId);
+      await deleteDraft(
+        userId: draft.userId,
+        canteenId: draft.canteenId,
+        mode: draft.mode,
+        reviewEventId: draft.reviewEventId,
+      );
       return;
     }
 
     final store = await _getStore();
-    final key = buildKey(draft.userId, draft.canteenId);
+    final key = buildKey(
+      draft.userId,
+      draft.canteenId,
+      mode: draft.mode,
+      reviewEventId: draft.reviewEventId,
+    );
     final jsonStr = jsonEncode(draft.toJson());
     await store.setString(key, jsonStr);
   }
@@ -63,18 +87,26 @@ class CanteenReviewDraftRepository {
   Future<CanteenReviewDraft?> loadDraft({
     required int userId,
     required int canteenId,
+    String mode = 'create',
+    int? reviewEventId,
   }) async {
     if (userId <= 0 || canteenId <= 0) return null;
 
     final store = await _getStore();
-    final key = buildKey(userId, canteenId);
+    final key = buildKey(
+      userId,
+      canteenId,
+      mode: mode,
+      reviewEventId: reviewEventId,
+    );
     final raw = store.getString(key);
     if (raw == null || raw.trim().isEmpty) return null;
 
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return null;
-      final draft = CanteenReviewDraft.fromJson(Map<String, dynamic>.from(decoded));
+      final draft =
+          CanteenReviewDraft.fromJson(Map<String, dynamic>.from(decoded));
       if (draft.isEmpty) {
         await store.remove(key);
         return null;
@@ -90,16 +122,28 @@ class CanteenReviewDraftRepository {
   Future<void> deleteDraft({
     required int userId,
     required int canteenId,
+    String mode = 'create',
+    int? reviewEventId,
     bool cleanupImages = true,
   }) async {
     if (userId <= 0 || canteenId <= 0) return;
 
     final store = await _getStore();
-    final key = buildKey(userId, canteenId);
+    final key = buildKey(
+      userId,
+      canteenId,
+      mode: mode,
+      reviewEventId: reviewEventId,
+    );
     await store.remove(key);
 
     if (cleanupImages) {
-      await cleanupDraftImageFiles(userId: userId, canteenId: canteenId);
+      await cleanupDraftImageFiles(
+        userId: userId,
+        canteenId: canteenId,
+        mode: mode,
+        reviewEventId: reviewEventId,
+      );
     }
   }
 
@@ -108,6 +152,8 @@ class CanteenReviewDraftRepository {
     required int userId,
     required int canteenId,
     required String sourcePath,
+    String mode = 'create',
+    int? reviewEventId,
   }) async {
     final sourceFile = File(sourcePath);
     if (!await sourceFile.exists()) {
@@ -117,6 +163,8 @@ class CanteenReviewDraftRepository {
     final targetDir = await getDraftDirectory(
       userId: userId,
       canteenId: canteenId,
+      mode: mode,
+      reviewEventId: reviewEventId,
     );
     final ext = sourcePath.contains('.')
         ? sourcePath.substring(sourcePath.lastIndexOf('.'))
@@ -133,11 +181,15 @@ class CanteenReviewDraftRepository {
   Future<void> cleanupDraftImageFiles({
     required int userId,
     required int canteenId,
+    String mode = 'create',
+    int? reviewEventId,
   }) async {
     try {
       final dir = await getDraftDirectory(
         userId: userId,
         canteenId: canteenId,
+        mode: mode,
+        reviewEventId: reviewEventId,
       );
       if (await dir.exists()) {
         await dir.delete(recursive: true);

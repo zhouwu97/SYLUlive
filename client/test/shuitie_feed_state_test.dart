@@ -10,27 +10,43 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
+import 'package:shenliyuan/screens/notifications_screen.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
+import 'package:shenliyuan/services/reply_notification_state.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
-  _FeedAuthProvider({required this.client, required this.loggedIn});
+  _FeedAuthProvider({required this.client, required this.loggedIn}) {
+    _currentUser = User(
+      id: 1,
+      studentId: 'test-student',
+      nickname: '测试账号',
+      createdAt: DateTime(2026, 1, 1),
+    );
+  }
 
   final Dio client;
   final bool loggedIn;
+  late User _currentUser;
+  int _sessionGeneration = 0;
 
   @override
-  User? get user => null;
+  User? get user => loggedIn ? _currentUser : null;
 
   @override
   bool get isLoggedIn => loggedIn;
 
   @override
-  int get sessionGeneration => 0;
+  int get sessionGeneration => _sessionGeneration;
 
   @override
   Dio get dio => client;
+
+  void advanceSession() {
+    _sessionGeneration++;
+    notifyListeners();
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -246,7 +262,287 @@ void main() {
     );
     await _disposeFeed(tester, page);
   });
+
+  testWidgets('通知中心成功读取单条回复后首页提醒立即消失', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11)],
+      notificationItems: [_notification(11)],
+    );
+    await _pumpFrames(tester);
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsNothing,
+    );
+    expect(find.text('1 条新回复'), findsNothing);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('读取两条回复中的一条：首页只减少一条提醒', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11), _unreadReply(12)],
+    );
+    await _pumpFrames(tester);
+
+    ReplyNotificationState.instance.markRead(
+      accountId: 1,
+      sessionGeneration: 0,
+      notificationId: 11,
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    expect(find.text('1 条新回复'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('不同账号或旧会话的回复事件不会清空当前首页提醒', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11)],
+    );
+    await _pumpFrames(tester);
+
+    ReplyNotificationState.instance.markRead(
+      accountId: 2,
+      sessionGeneration: 0,
+      notificationId: 11,
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+
+    page.auth.advanceSession();
+    ReplyNotificationState.instance.markRead(
+      accountId: 1,
+      sessionGeneration: 0,
+      notificationId: 11,
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+
+    ReplyNotificationState.instance.markRead(
+      accountId: 1,
+      sessionGeneration: 1,
+      notificationId: 11,
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsNothing,
+    );
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('未读回复并发请求只接受最后一次响应', (tester) async {
+    final firstRequest = Completer<void>();
+    final secondRequest = Completer<void>();
+    final unreadRequestIndices = <int>[];
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItemsByRequest: [
+        [_unreadReply(11)],
+        [_unreadReply(11)],
+        [_unreadReply(11)],
+        [_unreadReply(11)],
+        [_unreadReply(11), _unreadReply(12)],
+      ],
+      unreadRequestGatesByIndex: {
+        3: firstRequest,
+        4: secondRequest,
+      },
+      onUnreadRequest: unreadRequestIndices.add,
+    );
+    await _pumpFrames(tester, count: 2);
+
+    ReplyNotificationState.instance.requestRefresh(
+      accountId: 1,
+      sessionGeneration: 0,
+    );
+    ReplyNotificationState.instance.requestRefresh(
+      accountId: 1,
+      sessionGeneration: 0,
+    );
+    await _pumpFrames(tester, count: 2);
+    expect(unreadRequestIndices, containsAll([3, 4]));
+    secondRequest.complete();
+    await _pumpFrames(tester);
+    expect(find.text('2 条新回复'), findsOneWidget);
+
+    firstRequest.complete();
+    await _pumpFrames(tester);
+    expect(find.text('2 条新回复'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('全部已读成功后首页提醒立即消失', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11), _unreadReply(12)],
+      notificationItems: [_notification(11), _notification(12)],
+    );
+    await _pumpFrames(tester);
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+    await tester.tap(find.text('全部已读'));
+    await tester.pump();
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await _pumpFrames(tester);
+
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsNothing,
+    );
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('通知中心标记已读失败时不伪装已读，首页仍保留提醒', (tester) async {
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11)],
+      notificationItems: [_notification(11)],
+      readSelectedRequestFail: true,
+    );
+    await _pumpFrames(tester);
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+
+    expect(find.text('标记已读失败，请重试'), findsOneWidget);
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await _pumpFrames(tester);
+    expect(find.byKey(const ValueKey('home-reply-notification-reminder')),
+        findsOneWidget);
+    expect(find.text('1 条新回复'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('切换会话后旧的已读请求成功也不会广播到新会话', (tester) async {
+    final readSelectedGate = Completer<void>();
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11)],
+      notificationItems: [_notification(11)],
+      readSelectedGate: readSelectedGate,
+    );
+    await _pumpFrames(tester);
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await tester.pump();
+    final versionBeforeCompletion = ReplyNotificationState.instance.version;
+
+    page.auth.advanceSession();
+    readSelectedGate.complete();
+    await _pumpFrames(tester);
+
+    expect(
+      ReplyNotificationState.instance.version,
+      versionBeforeCompletion,
+    );
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await _pumpFrames(tester);
+    expect(
+      find.byKey(const ValueKey('home-reply-notification-reminder')),
+      findsOneWidget,
+    );
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('通知点击进行中再次点击不会重复提交已读请求', (tester) async {
+    final readSelectedGate = Completer<void>();
+    final markedReadIds = <int>[];
+    final page = await _pumpFeed(
+      tester,
+      loggedIn: true,
+      unreadItems: [_unreadReply(11)],
+      notificationItems: [_notification(11)],
+      readSelectedGate: readSelectedGate,
+      onMarkRead: markedReadIds.addAll,
+    );
+    await _pumpFrames(tester);
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+    final notification = find.text('通知中心测试回复');
+    await tester.tap(notification);
+    await tester.pump();
+    await tester.tap(notification);
+    await tester.pump();
+
+    readSelectedGate.complete();
+    await _pumpFrames(tester);
+    expect(markedReadIds, [11]);
+    await _disposeFeed(tester, page);
+  });
 }
+
+Map<String, dynamic> _unreadReply(int id) => {
+      'id': id,
+      'post_id': 100 + id,
+      'related_id': 500 + id,
+      'content': '首页测试回复$id',
+      'post_title': '首页测试帖子$id',
+      'created_at': '2026-08-18T10:00:00Z',
+      'from_user': {'id': 2, 'nickname': '回复者$id', 'avatar': ''},
+    };
+
+Map<String, dynamic> _notification(int id) => {
+      'id': id,
+      'type': 'reply',
+      'is_read': false,
+      'post_id': null,
+      'related_id': null,
+      'content': '通知中心测试回复',
+      'created_at': '2026-08-18T10:00:00Z',
+      'from_user': {'id': 2, 'nickname': '通知回复者', 'avatar': ''},
+    };
 
 Future<_FeedTestPage> _pumpFeed(
   WidgetTester tester, {
@@ -257,7 +553,13 @@ Future<_FeedTestPage> _pumpFeed(
   bool Function()? unreadFailCondition,
   int? post404Id,
   void Function(List<int> ids)? onMarkRead,
+  bool readSelectedRequestFail = false,
+  Completer<void>? readSelectedGate,
+  List<Map<String, dynamic>> notificationItems = const [],
   List<Map<String, dynamic>> unreadItems = const [],
+  List<List<Map<String, dynamic>>>? unreadItemsByRequest,
+  Map<int, Completer<void>>? unreadRequestGatesByIndex,
+  void Function(int requestIndex)? onUnreadRequest,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -265,6 +567,7 @@ Future<_FeedTestPage> _pumpFeed(
   addTearDown(tester.view.reset);
 
   final dio = Dio();
+  var unreadRequestIndex = 0;
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -294,6 +597,8 @@ Future<_FeedTestPage> _pumpFeed(
           return;
         }
         if (options.path == '/notifications/replies/unread') {
+          final requestIndex = unreadRequestIndex++;
+          onUnreadRequest?.call(requestIndex);
           final shouldFail =
               unreadRequestFail || (unreadFailCondition?.call() ?? false);
           if (shouldFail) {
@@ -306,14 +611,30 @@ Future<_FeedTestPage> _pumpFeed(
             );
             return;
           }
+          final requestGate = unreadRequestGatesByIndex?[requestIndex];
+          if (requestGate != null) await requestGate.future;
+          final responseItems = unreadItemsByRequest != null &&
+                  requestIndex < unreadItemsByRequest.length
+              ? unreadItemsByRequest[requestIndex]
+              : unreadItems;
           handler.resolve(
             Response(
               requestOptions: options,
               statusCode: 200,
               data: {
-                'count': unreadItems.length,
-                'items': unreadItems,
+                'count': responseItems.length,
+                'items': responseItems,
               },
+            ),
+          );
+          return;
+        }
+        if (options.path == '/notifications') {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: notificationItems,
             ),
           );
           return;
@@ -333,6 +654,21 @@ Future<_FeedTestPage> _pumpFeed(
           return;
         }
         if (options.path == '/notifications/read-selected') {
+          if (readSelectedGate != null) await readSelectedGate.future;
+          if (readSelectedRequestFail) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                response: Response(
+                  requestOptions: options,
+                  statusCode: 500,
+                  data: {'error': 'failed'},
+                ),
+                type: DioExceptionType.badResponse,
+              ),
+            );
+            return;
+          }
           final body = options.data as Map<String, dynamic>?;
           final ids = (body?['ids'] as List<dynamic>?)?.cast<int>() ?? [];
           onMarkRead?.call(ids);

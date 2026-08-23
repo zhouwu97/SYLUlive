@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -34,7 +35,7 @@ func registerTestDevice(t *testing.T, service *DeviceJobService, userID uint, in
 	t.Helper()
 	device, err := service.RegisterDevice(context.Background(), userID, DeviceRegistration{
 		InstallationID:        installationID,
-		ToolNames:             []string{"device.academic.get_cached_overview", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
+		ToolNames:             []string{"device.academic.get_cached_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
 		BridgeProtocolVersion: 2,
 	})
 	if err != nil {
@@ -66,6 +67,29 @@ func TestDeviceJobRejectsCrossUserDeviceAccess(t *testing.T) {
 	registerTestDevice(t, service, 2, "installation-user-2")
 	_, err := service.GetJob(context.Background(), 2, "installation-user-2", job.ID)
 	assertDeviceJobCode(t, err, "device_job_not_found")
+}
+
+func TestDeviceJobProgressAcceptsOnlyOrderedStages(t *testing.T) {
+	_, service := newDeviceJobFixture(t, time.Now().UTC().Add(time.Minute))
+	registerTestDevice(t, service, 1, "progress-installation")
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-progress", ToolCallID: "call-progress",
+		ToolName:  "device.academic.ensure_fresh_grade_summary",
+		Arguments: json.RawMessage(`{"max_age_seconds":300}`), RequiredDataTypes: []string{"grades"},
+	})
+	require.NoError(t, err)
+	claimed, err := service.ClaimJob(context.Background(), 1, "progress-installation", job.ID, job.StateVersion)
+	require.NoError(t, err)
+	progress, err := service.ProgressJob(context.Background(), 1, "progress-installation", job.ID, claimed.StateVersion, models.DeviceJobStageCheckingFreshness)
+	require.NoError(t, err)
+	progress, err = service.ProgressJob(context.Background(), 1, "progress-installation", job.ID, progress.StateVersion, models.DeviceJobStageRequestReceived)
+	require.NoError(t, err)
+	progress, err = service.ProgressJob(context.Background(), 1, "progress-installation", job.ID, progress.StateVersion, models.DeviceJobStageRefreshStarted)
+	require.NoError(t, err)
+	_, err = service.ProgressJob(context.Background(), 1, "progress-installation", job.ID, progress.StateVersion, "made_up_stage")
+	var deviceErr *DeviceJobError
+	require.ErrorAs(t, err, &deviceErr)
+	require.Equal(t, "invalid_progress_stage", deviceErr.Code)
 }
 
 func TestDeviceJobClaimAndCompleteRequireFreshStateVersion(t *testing.T) {

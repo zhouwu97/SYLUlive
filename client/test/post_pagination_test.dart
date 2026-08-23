@@ -28,4 +28,19 @@ void main() {
     expect(params['page'], 3);
     expect(params.containsKey('session_id'), isFalse);
   });
+
+  test('market type is included in the independent board state key and request',
+      () {
+    final params = buildPostListParams(
+      boardId: 2,
+      type: 'buy',
+      sort: 'time',
+      page: 1,
+      loadedCount: 0,
+    );
+
+    expect(params['board'], 2);
+    expect(params['type'], 'buy');
+    expect(usesHomeFeedV2(boardId: 2, type: 'buy', sort: 'time'), isFalse);
+  });
 }

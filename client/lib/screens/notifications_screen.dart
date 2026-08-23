@@ -13,6 +13,23 @@ import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../models/post.dart';
 import '../utils/post_route.dart';
+import '../services/reply_notification_service.dart';
+import '../services/reply_notification_state.dart';
+
+@visibleForTesting
+bool canLoadMoreNotifications({
+  required bool hasMore,
+  required bool isLoading,
+  required bool isRefreshing,
+  required bool isLoadingMore,
+  required String? nextCursor,
+}) {
+  return hasMore &&
+      !isLoading &&
+      !isRefreshing &&
+      !isLoadingMore &&
+      nextCursor != null;
+}
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -25,8 +42,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     with RouteAware {
   PageRoute<dynamic>? _subscribedRoute;
   List<Map<String, dynamic>> _notifications = [];
+  final Set<int> _openingNotificationIds = <int>{};
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = true;
+  bool _isRefreshing = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = false;
+  String? _nextCursor;
   String? _errorMessage;
+  String? _loadMoreError;
+  int _requestGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -47,7 +72,20 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   }
 
   @override
+  void didPop() {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (auth.isLoggedIn && accountId != null) {
+      ReplyNotificationState.instance.requestRefresh(
+        accountId: accountId,
+        sessionGeneration: auth.sessionGeneration,
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    _scrollController.dispose();
     if (_subscribedRoute != null) {
       appRouteObserver.unsubscribe(this);
     }
@@ -79,62 +117,182 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadReplies();
   }
 
-  Future<void> _loadReplies() async {
+  void _onScroll() {
+    if (!_scrollController.hasClients ||
+        !canLoadMoreNotifications(
+          hasMore: _hasMore,
+          isLoading: _isLoading,
+          isRefreshing: _isRefreshing,
+          isLoadingMore: _isLoadingMore,
+          nextCursor: _nextCursor,
+        )) {
+      return;
+    }
+    if (_scrollController.position.extentAfter < 480) {
+      unawaited(_loadReplies(loadMore: true));
+    }
+  }
+
+  int? _notificationId(Map<String, dynamic> notification) {
+    final raw = notification['id'];
+    if (raw is int) return raw;
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  Future<void> _loadReplies({bool loadMore = false}) async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isRefreshing = false;
+          _isLoadingMore = false;
           _notifications = [];
+          _nextCursor = null;
+          _hasMore = false;
           _errorMessage = null;
         });
       }
       return;
     }
 
+    if (loadMore &&
+        !canLoadMoreNotifications(
+          hasMore: _hasMore,
+          isLoading: _isLoading,
+          isRefreshing: _isRefreshing,
+          isLoadingMore: _isLoadingMore,
+          nextCursor: _nextCursor,
+        )) {
+      return;
+    }
+
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
+    if (accountId == null) return;
+    final requestGeneration = ++_requestGeneration;
+
     if (mounted) {
       setState(() {
-        _isLoading = true;
-        _errorMessage = null;
+        if (loadMore) {
+          _isLoadingMore = true;
+          _loadMoreError = null;
+        } else {
+          _isLoading = true;
+          _isRefreshing = _notifications.isNotEmpty;
+          _isLoadingMore = false;
+          _errorMessage = null;
+          _loadMoreError = null;
+        }
       });
     }
 
     try {
-      final auth = context.read<AuthProvider>();
-      final response = await auth.dio.get('/notifications');
-      if (response.statusCode == 200) {
-        final list = List<Map<String, dynamic>>.from(response.data as List);
-        if (mounted) {
-          setState(() {
-            _notifications = list;
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _errorMessage = '获取失败: ${response.statusCode}';
-            _isLoading = false;
-          });
-        }
+      final response = await auth.dio.get(
+        '/notifications',
+        queryParameters: {
+          'limit': 30,
+          if (loadMore && _nextCursor != null) 'cursor': _nextCursor,
+        },
+      );
+      if (!mounted ||
+          requestGeneration != _requestGeneration ||
+          !_isCurrentSession(auth, accountId, sessionGeneration)) {
+        return;
       }
+
+      final data = response.data;
+      final rawItems = data is List
+          ? data
+          : data is Map
+              ? data['items']
+              : null;
+      if (rawItems is! List) {
+        throw const FormatException('通知接口返回格式错误');
+      }
+      final items = rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final next = data is Map ? data['next_cursor']?.toString() : null;
+      final hasMore = data is Map
+          ? data['has_more'] == true || (next != null && next.isNotEmpty)
+          : false;
+
+      setState(() {
+        if (loadMore) {
+          final knownIds =
+              _notifications.map(_notificationId).whereType<int>().toSet();
+          _notifications = [
+            ..._notifications,
+            ...items.where((item) {
+              final id = _notificationId(item);
+              return id == null || knownIds.add(id);
+            }),
+          ];
+        } else {
+          _notifications = items;
+        }
+        _nextCursor = next == null || next.isEmpty ? null : next;
+        _hasMore = hasMore && _nextCursor != null;
+        _isLoading = false;
+        _isRefreshing = false;
+        _isLoadingMore = false;
+        _loadMoreError = null;
+        _errorMessage = null;
+      });
     } on DioException catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '通知加载失败');
-          _isLoading = false;
-        });
-      }
+      _handleLoadError(
+        auth,
+        accountId,
+        sessionGeneration,
+        requestGeneration,
+        loadMore,
+        AppFeedback.dioErrorMessage(e, fallback: '通知加载失败'),
+      );
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
-          _isLoading = false;
-        });
+      _handleLoadError(
+        auth,
+        accountId,
+        sessionGeneration,
+        requestGeneration,
+        loadMore,
+        '通知加载失败，请稍后重试',
+      );
+    }
+  }
+
+  void _handleLoadError(
+    AuthProvider auth,
+    int accountId,
+    int sessionGeneration,
+    int requestGeneration,
+    bool loadMore,
+    String message,
+  ) {
+    if (!mounted ||
+        requestGeneration != _requestGeneration ||
+        !_isCurrentSession(auth, accountId, sessionGeneration)) {
+      return;
+    }
+    setState(() {
+      if (loadMore) {
+        _isLoadingMore = false;
+        _loadMoreError = message;
+      } else {
+        _isLoading = false;
+        _isRefreshing = false;
+        if (_notifications.isEmpty) {
+          _errorMessage = message;
+        }
       }
+    });
+    if (_notifications.isNotEmpty) {
+      AppFeedback.showSnackBar(context, message, isError: true);
     }
   }
 
@@ -150,16 +308,24 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Future<void> _markAllRead() async {
     final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
+    if (accountId == null) return;
     try {
-      await auth.dio.post('/notifications/read');
-      if (mounted) {
-        setState(() {
-          for (var item in _notifications) {
-            item['is_read'] = true;
-          }
-        });
-        AppFeedback.showSnackBar(context, '已全部标记为已读');
+      await ReplyNotificationService(auth.dio).markAllRead();
+      if (!mounted || !_isCurrentSession(auth, accountId, sessionGeneration)) {
+        return;
       }
+      setState(() {
+        for (var item in _notifications) {
+          item['is_read'] = true;
+        }
+      });
+      ReplyNotificationState.instance.notifyAllRead(
+        accountId: accountId,
+        sessionGeneration: sessionGeneration,
+      );
+      AppFeedback.showSnackBar(context, '已全部标记为已读');
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '操作失败', isError: true);
@@ -179,6 +345,35 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       );
     }
 
+    final notificationBody = _isLoading && _notifications.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : _errorMessage != null && _notifications.isEmpty
+            ? _buildErrorView(isDark)
+            : _notifications.isEmpty
+                ? _buildEmptyView(isDark)
+                : RefreshIndicator(
+                    onRefresh: () => _loadReplies(),
+                    child: ListView.separated(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _notifications.length +
+                          (_hasMore || _isLoadingMore || _loadMoreError != null
+                              ? 1
+                              : 0),
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        if (index >= _notifications.length) {
+                          return _buildLoadMoreFooter(isDark);
+                        }
+                        final notification = _notifications[index];
+                        return _buildNotificationCard(notification, isDark);
+                      },
+                    ),
+                  );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('通知'),
@@ -191,33 +386,49 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? _buildErrorView(isDark)
-              : _notifications.isEmpty
-                  ? _buildEmptyView(isDark)
-                  : RefreshIndicator(
-                      onRefresh: _loadReplies,
-                      child: ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _notifications.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final notification = _notifications[index];
-                          return _buildNotificationCard(notification, isDark);
-                        },
-                      ),
-                    ),
+      body: Column(
+        children: [
+          if (_isRefreshing) const LinearProgressIndicator(minHeight: 2),
+          Expanded(child: notificationBody),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadMoreFooter(bool isDark) {
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Center(
+        child: TextButton.icon(
+          onPressed: () => _loadReplies(loadMore: true),
+          icon: Icon(
+            _loadMoreError == null ? Icons.expand_more : Icons.refresh,
+            size: 18,
+          ),
+          label: Text(_loadMoreError ?? '加载更多通知'),
+          style: TextButton.styleFrom(
+            foregroundColor: isDark ? Colors.white70 : Colors.black54,
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildNotificationCard(
       Map<String, dynamic> notification, bool isDark) {
-    final id = notification['id'] as int?;
+    final id = _notificationId(notification);
     final type = notification['type'] as String?;
     final postId = notification['post_id'] as int?;
     final relatedId = notification['related_id'] as int?;
@@ -252,36 +463,71 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
     return InkWell(
       onTap: () async {
-        if (!isRead && id != null) {
-          setState(() {
-            notification['is_read'] = true;
-          });
-          final auth = context.read<AuthProvider>();
-          try {
-            await auth.dio.post('/notifications/read-selected', data: {
-              'ids': [id]
-            });
-          } catch (_) {}
-        }
-
-        if (postId != null) {
-          try {
-            final response = await context.read<AuthProvider>().dio.get('/posts/$postId');
-            if (!mounted) return;
-            final post = Post.fromJson(Map<String, dynamic>.from(response.data as Map));
-            await Navigator.push(context, buildPostDetailRoute(post, targetReplyId: type == 'reply' ? relatedId : null));
-          } on DioException catch (error) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+        final auth = context.read<AuthProvider>();
+        if (id != null && !_openingNotificationIds.add(id)) return;
+        try {
+          if (!isRead && id != null) {
+            final accountId = auth.user?.id;
+            final sessionGeneration = auth.sessionGeneration;
+            if (accountId == null) return;
+            try {
+              await ReplyNotificationService(auth.dio).markRead(id);
+              if (!_isCurrentSession(auth, accountId, sessionGeneration)) {
+                return;
+              }
+              setState(() {
+                notification['is_read'] = true;
+              });
+              if (type == 'reply') {
+                ReplyNotificationState.instance.markRead(
+                  accountId: accountId,
+                  sessionGeneration: sessionGeneration,
+                  notificationId: id,
+                );
+              }
+            } catch (error) {
+              if (!mounted) return;
+              AppFeedback.showSnackBar(
+                context,
+                '标记已读失败，请重试',
+                isError: true,
+              );
+            }
           }
+
+          if (postId != null) {
+            try {
+              final response = await auth.dio.get('/posts/$postId');
+              if (!mounted) return;
+              final post = Post.fromJson(
+                  Map<String, dynamic>.from(response.data as Map));
+              await Navigator.push(
+                  context,
+                  buildPostDetailRoute(post,
+                      targetReplyId: type == 'reply' ? relatedId : null));
+            } on DioException catch (error) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                      AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+            }
+          }
+        } finally {
+          if (id != null) _openingNotificationIds.remove(id);
         }
       },
       borderRadius: BorderRadius.circular(12),
       child: GlassContainer(
         padding: const EdgeInsets.all(12),
         borderRadius: 12,
-        blur: 8,
-        opacity: isDark ? 0.15 : 0.3,
+        blur: 0,
+        showHighlight: false,
+        backgroundColor: isDark
+            ? const Color(0xFF1E2226).withValues(alpha: 0.96)
+            : Colors.white.withValues(alpha: 0.94),
+        borderColor: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFECEEF1),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -373,6 +619,17 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ),
       ),
     );
+  }
+
+  bool _isCurrentSession(
+    AuthProvider auth,
+    int accountId,
+    int sessionGeneration,
+  ) {
+    return mounted &&
+        auth.isLoggedIn &&
+        auth.user?.id == accountId &&
+        auth.sessionGeneration == sessionGeneration;
   }
 
   Widget _buildEmptyView(bool isDark) {

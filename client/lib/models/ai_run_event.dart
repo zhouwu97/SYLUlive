@@ -2,6 +2,7 @@ import 'ai_quota.dart';
 import 'ai_source.dart';
 import 'ai_personal_data_evidence.dart';
 import 'dart:convert';
+import 'user_calendar.dart';
 
 enum AiRunEventType {
   started,
@@ -13,6 +14,7 @@ enum AiRunEventType {
   toolExecuting,
   deviceWaiting,
   deviceClaimed,
+  agentActivity,
   consentRequired,
   eduFetching,
   toolCompleted,
@@ -27,6 +29,7 @@ enum AiRunEventType {
 class AiRunEvent {
   final String runId;
   final int seq;
+  final DateTime? timestamp;
   final AiRunEventType type;
   final String text;
   final String status;
@@ -38,10 +41,20 @@ class AiRunEvent {
   final AiQuota? quota;
   final String errorCode;
   final bool retryable;
+  final UserCalendarActionDraft? calendarActionDraft;
+  final String toolName;
+  final String callId;
+  final String jobId;
+  final String activityCode;
+  final String dataset;
+  final String freshnessBefore;
+  final String freshnessAfter;
+  final bool success;
 
   const AiRunEvent({
     this.runId = '',
     this.seq = 0,
+    this.timestamp,
     required this.type,
     this.text = '',
     this.status = '',
@@ -53,6 +66,15 @@ class AiRunEvent {
     this.quota,
     this.errorCode = '',
     this.retryable = false,
+    this.calendarActionDraft,
+    this.toolName = '',
+    this.callId = '',
+    this.jobId = '',
+    this.activityCode = '',
+    this.dataset = '',
+    this.freshnessBefore = '',
+    this.freshnessAfter = '',
+    this.success = false,
   });
 
   factory AiRunEvent.fromJson(Map<String, dynamic> json, {String? eventName}) {
@@ -65,10 +87,29 @@ class AiRunEvent {
     return AiRunEvent(
       runId: json['run_id']?.toString() ?? '',
       seq: _asInt(json['seq']),
+      timestamp: _parseTime(json['timestamp']),
       type: type,
       text: payload['text']?.toString() ?? '',
       status:
           payload['state']?.toString() ?? payload['status']?.toString() ?? '',
+      toolName: _firstString(payload['tool_name'], json['tool_name']),
+      callId: _firstString(payload['call_id'], json['call_id']),
+      jobId: _firstString(payload['job_id'], json['job_id']),
+      activityCode: _firstString(
+        payload['activity_code'],
+        payload['code'],
+        payload['stage'],
+      ),
+      dataset: _firstString(
+        payload['dataset'],
+        (payload['datasets'] is List &&
+                (payload['datasets'] as List).isNotEmpty)
+            ? (payload['datasets'] as List).first
+            : '',
+      ),
+      freshnessBefore: payload['freshness_before']?.toString() ?? '',
+      freshnessAfter: payload['freshness_after']?.toString() ?? '',
+      success: payload['success'] == true,
       sources: rawSources is List
           ? rawSources
               .whereType<Map>()
@@ -81,6 +122,11 @@ class AiRunEvent {
       consentReason: payload['reason']?.toString() ?? '',
       errorCode: payload['code']?.toString() ?? '',
       retryable: payload['retryable'] == true,
+      calendarActionDraft: payload['action_draft'] is Map
+          ? UserCalendarActionDraft.fromJson(
+              Map<String, dynamic>.from(payload['action_draft'] as Map),
+            )
+          : null,
       quota: payload['quota'] is Map
           ? AiQuota.fromJson(Map<String, dynamic>.from(payload['quota'] as Map))
           : null,
@@ -118,6 +164,8 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.deviceWaiting;
     case 'device.claimed':
       return AiRunEventType.deviceClaimed;
+    case 'agent.activity':
+      return AiRunEventType.agentActivity;
     case 'consent.required':
       return AiRunEventType.consentRequired;
     case 'edu.fetching':
@@ -161,4 +209,17 @@ List<String> _strings(Object? value) {
       .map((item) => item.toString().trim())
       .where((item) => item.isNotEmpty)
       .toList(growable: false);
+}
+
+String _firstString(Object? first, [Object? second, Object? third]) {
+  for (final value in <Object?>[first, second, third]) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty) return text;
+  }
+  return '';
+}
+
+DateTime? _parseTime(Object? value) {
+  if (value is! String || value.trim().isEmpty) return null;
+  return DateTime.tryParse(value)?.toLocal();
 }

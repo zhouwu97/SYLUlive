@@ -263,8 +263,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                             },
                           );
                         },
-                        onDelete: () =>
-                            _confirmDeleteRating(detail.myRating!),
+                        onDelete: () => _confirmDeleteRating(detail.myRating!),
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -341,44 +340,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                   color: RankingTokens.titleColor(isDark),
                 ),
               ),
-              const Spacer(),
-              InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('排序功能正在开发中')),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white10
-                        : Colors.black.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '最新',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: RankingTokens.subColor(isDark),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 14,
-                        color: RankingTokens.subColor(isDark),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -416,8 +377,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           helpfulCount: r.helpfulCount,
                           unhelpfulCount: r.unhelpfulCount,
                           myVote: r.myVote,
-                          onHelpful: () => provider.voteRating(r.id, widget.teacherId, 'up'),
-                          onUnhelpful: () => provider.voteRating(r.id, widget.teacherId, 'down'),
+                          onHelpful: () =>
+                              provider.voteRating(r.id, widget.teacherId, 'up'),
+                          onUnhelpful: () => provider.voteRating(
+                              r.id, widget.teacherId, 'down'),
                           onReport: () {
                             showRatingReportSheet(
                               context: context,

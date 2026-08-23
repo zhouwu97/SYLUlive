@@ -1,4 +1,3 @@
-import '../app_platform.dart';
 import '../other/unsupported_reminder_notification_client.dart';
 
 abstract class ReminderNotificationClient {
@@ -28,6 +27,18 @@ abstract class ReminderNotificationClient {
     required bool exactAllowWhileIdle,
   });
   Future<void> cancelCourseReminder(int id);
+
+  /// 通用个人日历提醒。平台不支持时保留服务端提醒，不影响日历数据。
+  Future<bool> scheduleCalendarReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String payload,
+  }) async =>
+      false;
+
+  Future<void> cancelCalendarReminder(int id) async {}
 
   Future<void> initializeGradeReminders();
   Future<bool> requestGradeReminderPermissions();

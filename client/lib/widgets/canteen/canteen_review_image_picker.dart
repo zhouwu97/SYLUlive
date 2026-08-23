@@ -11,7 +11,7 @@ import '../../screens/image_viewer_screen.dart';
 import '../../services/canteen_review_draft_repository.dart';
 import 'canteen_theme.dart';
 
-/// 食堂评价图片选择与草稿暂存组件。
+/// 商家评价图片选择与草稿暂存组件。
 ///
 /// 特性：
 /// - 最多 3 张图片（已有远端图片 + 本地待上传图片 <= 3）。

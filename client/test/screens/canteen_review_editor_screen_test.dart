@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -53,6 +54,23 @@ class _FakeAuthProvider extends AuthProvider {
 
   @override
   Dio get dio => fakeDio;
+}
+
+/// 让指定内容的自动保存停在写入中，覆盖发布删除与自动保存的竞态窗口。
+class _BlockingPreferencesStore extends MemoryPreferencesStore {
+  final Completer<void> firstMatchingWriteStarted = Completer<void>();
+  final Completer<void> releaseFirstMatchingWrite = Completer<void>();
+  bool _blocked = false;
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (!_blocked && value.contains('非常好吃，强烈推荐！')) {
+      _blocked = true;
+      firstMatchingWriteStarted.complete();
+      await releaseFirstMatchingWrite.future;
+    }
+    return super.setString(key, value);
+  }
 }
 
 Widget _buildEditorTestApp({
@@ -419,6 +437,66 @@ void main() {
     final draftAfter =
         await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(draftAfter, isNull);
+  });
+
+  testWidgets('发布时正在进行的自动保存不会在发布后重新写回草稿', (tester) async {
+    var reviewCalled = false;
+    final blockingStore = _BlockingPreferencesStore();
+    final blockingRepository = CanteenReviewDraftRepository(
+      storeOverride: blockingStore,
+      baseDirOverride: tempDir,
+    );
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        reviewCalled = true;
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
+      }
+      if (options.path == '/canteens/1/dishes') {
+        return _json('[]', 200);
+      }
+      return _json('{}', 200);
+    });
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: blockingRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _completeDimensions(tester);
+    await tester.enterText(find.byType(TextField).last, '非常好吃，强烈推荐！');
+    await tester.pump(const Duration(milliseconds: 700));
+    await blockingStore.firstMatchingWriteStarted.future;
+
+    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(reviewCalled, isTrue);
+
+    // 先释放被挂起的自动保存，验证生产代码会等待它完成后再删除草稿。
+    blockingStore.releaseFirstMatchingWrite.complete();
+    await tester.pumpAndSettle();
+
+    final draftAfter = await blockingRepository.loadDraft(
+      userId: 101,
+      canteenId: 1,
+    );
+    expect(draftAfter, isNull);
+
+    // 模拟下一次重新进入创建评价，旧内容不应再次出现。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: blockingRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('非常好吃，强烈推荐！'), findsNothing);
   });
 
   testWidgets('草稿中的本地图片丢失时阻止发布并保留草稿', (tester) async {

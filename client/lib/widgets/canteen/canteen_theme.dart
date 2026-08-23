@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// 校园食堂 Feature Token。
+/// 校园餐饮 Feature Token。
 ///
-/// 食堂视觉作为独立 Feature Token 收敛，不再依赖 RankingTokens，
-/// 校园榜单改主题时不会把食堂一起带跑（见 DESIGN_SYSTEM Known Debt #9）。
+/// 餐饮视觉作为独立 Feature Token 收敛，不再依赖 RankingTokens，
+/// 校园榜单改主题时不会把餐饮一起带跑（见 DESIGN_SYSTEM Known Debt #9）。
 abstract final class CanteenTheme {
   CanteenTheme._();
 

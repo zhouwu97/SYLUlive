@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+# 沈理校园官网受控发布脚本。
+# 官网与 Flutter Web 使用不同目录，避免把客户端构建产物误部署到官网根目录。
+set -Eeuo pipefail
+
+readonly SITE_ROOT="/opt/sylulive-site-v5"
+readonly BACKUP_ROOT="/opt/sylulive-site-v5-backups"
+readonly MANIFEST_ROOT="/var/lib/sylulive-site-v5"
+
+staging=""
+backup=""
+switched=0
+
+fail() {
+    printf '[错误] %s\n' "$*" >&2
+    exit 1
+}
+
+restore_on_failure() {
+    local exit_code=$?
+    if [[ "$exit_code" -ne 0 && "$switched" -eq 1 ]]; then
+        printf '[警告] Nginx 校验失败，恢复上一版官网。\n' >&2
+        chattr -i -R -- "$SITE_ROOT" 2>/dev/null || true
+        rm -rf -- "$SITE_ROOT"
+        if [[ -n "$backup" && -d "$backup" ]]; then
+            mv -- "$backup" "$SITE_ROOT"
+            chown -R root:root -- "$SITE_ROOT"
+            find "$SITE_ROOT" -type d -exec chmod 0755 {} +
+            find "$SITE_ROOT" -type f -exec chmod 0644 {} +
+            chattr +i -R -- "$SITE_ROOT" 2>/dev/null || true
+        fi
+    fi
+    if [[ -n "$staging" && -e "$staging" ]]; then
+        chattr -i -R -- "$staging" 2>/dev/null || true
+        rm -rf -- "$staging"
+    fi
+    exit "$exit_code"
+}
+trap restore_on_failure EXIT
+
+if [[ "$EUID" -ne 0 ]]; then
+    exec sudo -- "$0" "$@"
+fi
+
+[[ "$#" -eq 1 ]] || fail "用法: $0 <sylulive_site_v5目录>"
+source_dir=$1
+[[ -d "$source_dir" ]] || fail "官网目录不存在: $source_dir"
+
+# 拒绝符号链接，避免发布时把站点目录指向不可控路径。
+if [[ -n "$(find "$source_dir" -type l -print -quit)" ]]; then
+    fail "官网目录包含符号链接，拒绝发布。"
+fi
+
+# 这些文件是 Flutter Web 的特征，出现时说明传入了错误目录。
+if [[ -n "$(find "$source_dir" -maxdepth 1 -type f \( -name 'flutter_bootstrap.js' -o -name 'flutter.js' -o -name 'main.dart.js' \) -print -quit)" ]]; then
+    fail "检测到 Flutter Web 构建产物，拒绝覆盖官网。"
+fi
+
+[[ -f "$source_dir/index.html" ]] || fail "缺少 index.html"
+[[ -f "$source_dir/download.html" ]] || fail "缺少 download.html"
+[[ -f "$source_dir/assets/brand-mascot.webp" ]] || fail "缺少 assets/brand-mascot.webp"
+grep -Fq '<title>沈理校园 · SYLUlive</title>' "$source_dir/index.html" || fail "首页标题不是沈理校园官网标题"
+
+install -d -m 0755 "$BACKUP_ROOT" "$MANIFEST_ROOT"
+staging="${SITE_ROOT}.new.$$"
+rm -rf -- "$staging"
+install -d -m 0755 "$staging"
+cp -a -- "$source_dir/." "$staging/"
+chown -R root:root -- "$staging"
+find "$staging" -type d -exec chmod 0755 {} +
+find "$staging" -type f -exec chmod 0644 {} +
+
+# 官网目录默认加 immutable，普通复制、同步和误操作都会失败。
+chattr -i -R -- "$SITE_ROOT" 2>/dev/null || true
+if [[ -d "$SITE_ROOT" ]]; then
+    backup="$BACKUP_ROOT/site-$(date +%Y%m%d-%H%M%S)"
+    mv -- "$SITE_ROOT" "$backup"
+fi
+mv -- "$staging" "$SITE_ROOT"
+staging=""
+switched=1
+
+chown -R root:root -- "$SITE_ROOT"
+find "$SITE_ROOT" -type d -exec chmod 0755 {} +
+find "$SITE_ROOT" -type f -exec chmod 0644 {} +
+
+# 清单放在站点目录之外，供后续完整性检查使用。
+find "$SITE_ROOT" -type f -printf '%P\0' | sort -z | while IFS= read -r -d '' relative; do
+    sha256sum "$SITE_ROOT/$relative"
+done > "$MANIFEST_ROOT/manifest.sha256"
+chown root:root "$MANIFEST_ROOT/manifest.sha256"
+chmod 0644 "$MANIFEST_ROOT/manifest.sha256"
+
+nginx -t
+systemctl reload nginx
+chattr +i -R -- "$SITE_ROOT"
+
+switched=0
+printf '[完成] 官网已发布到 %s\n' "$SITE_ROOT"
+[[ -n "$backup" ]] && printf '[完成] 上一版备份: %s\n' "$backup"

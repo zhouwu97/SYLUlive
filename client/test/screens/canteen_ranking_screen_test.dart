@@ -62,7 +62,7 @@ void main() {
     await tester.pumpWidget(_app(dio));
     await tester.pumpAndSettle();
 
-    expect(find.text('食堂综合排行'), findsOneWidget);
+    expect(find.text('商家排行'), findsOneWidget);
     // rank 由服务端返回
     expect(find.text('01'), findsOneWidget);
     expect(find.text('02'), findsOneWidget);

@@ -789,6 +789,9 @@ func main() {
 	var externalMCPClient *mcpclient.Client
 	var toolRegistry *ai.ToolRegistry
 	var capabilityRegistry *ai.AgentCapabilityRegistry
+	var unifiedMCPGateway *ai.MCPV5Gateway
+	// Run Scoped Grant 由 Go Control Plane 创建，MCP 只通过 Authorization 接收 opaque token。
+	scopedGrantManager := ai.NewScopedGrantManager(time.Now)
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -802,13 +805,14 @@ func main() {
 		var provider ai.AIProvider
 		var retriever ai.PolicyRetriever
 		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
+		runtimeOptions = append(runtimeOptions, ai.WithScopedGrantManager(scopedGrantManager))
 		providerName, modelName := cfg.AIProvider, cfg.AIChatModel
 		if cfg.AILangChainRAGEnabled {
 			providerName, modelName = "rag-rollout", "policy-rag"
 			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
 		}
-		if cfg.AILegacyRAGEnabled {
-			// 灰度期只为分配到旧路径的请求调用这些依赖，同一请求不会双重检索或生成。
+		if cfg.AILegacyRAGEnabled || cfg.AILangChainRAGEnabled {
+			// 统一 Agent 路径也需要模型 Provider；Retriever 仅在确有政策召回依赖时启用。
 			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
 			if cfg.AIProvider == "mock" {
 				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
@@ -840,6 +844,21 @@ func main() {
 		)
 		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
 		tools = append(tools, handlers.NewCampusCalendarActionProposalTool(userCalendarHandler))
+		if strings.TrimSpace(cfg.AIUnifiedMCPURL) != "" {
+			var gatewayErr error
+			unifiedMCPGateway, gatewayErr = ai.NewMCPV5Gateway(cfg.AIUnifiedMCPURL, &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second})
+			if gatewayErr != nil {
+				log.Printf("[AI_UNIFIED_MCP_CONFIGURATION_INVALID] %v", gatewayErr)
+			} else {
+				tools = append(tools, ai.NewMCPV5Tools(
+					unifiedMCPGateway,
+					scopedGrantManager,
+					ai.WithMCPV5PersonalDataPermissionReader(aiUserPermissionService),
+					ai.WithMCPV5PermissionDB(db),
+				)...)
+				log.Printf("Agent Contract v5 MCP Gateway 已配置 endpoint=%s", cfg.AIUnifiedMCPURL)
+			}
+		}
 		if cfg.AIExternalMCPEnabled {
 			var externalMCPErr error
 			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{
@@ -940,6 +959,7 @@ func main() {
 				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
 				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
 				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
+				UnifiedAgentEnabled:            true,
 			},
 			runtimeOptions...,
 		)
@@ -1280,13 +1300,20 @@ func main() {
 	}
 
 	internalMCP := r.Group("/internal/mcp")
-	internalMCP.Use(handlers.InternalMCPGrantMiddleware(cfg.SyluliveMCPGrant))
+	internalMCP.Use(handlers.InternalMCPGrantOrScopedGrantMiddleware(cfg.SyluliveMCPGrant, scopedGrantManager))
 	{
 		internalMCP.POST("/competition/search", competitionHandler.InternalMCPCompetitionSearch)
 		internalMCP.POST("/competition/details", competitionHandler.InternalMCPCompetitionDetails)
 		internalMCP.POST("/competition/compare", competitionHandler.InternalMCPCompetitionCompare)
 		internalMCP.POST("/competition/candidate-context", competitionHandler.InternalMCPCompetitionCandidateContext)
 		internalMCP.POST("/competition/verify-records", competitionHandler.InternalMCPCompetitionVerifyRecords)
+		internalMCPV5 := handlers.NewInternalMCPV5Handler(db)
+		internalMCP.POST("/system/status", internalMCPV5.SystemStatus)
+		internalMCP.POST("/policy/search", internalMCPV5.PolicySearch)
+		internalMCP.POST("/policy/sources", internalMCPV5.PolicySources)
+		internalMCP.POST("/academic/summary", internalMCPV5.AcademicSummary)
+		internalMCP.POST("/schedule/free-windows", internalMCPV5.ScheduleFreeWindows)
+		internalMCP.POST("/schedule/validate-plan", internalMCPV5.ScheduleValidatePlan)
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)

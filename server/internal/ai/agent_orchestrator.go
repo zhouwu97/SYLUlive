@@ -1,0 +1,197 @@
+package ai
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// AgentPlanner 是唯一允许模型/规划框架参与的边界。
+// Planner 不持有用户身份、Grant、数据库连接或副作用客户端。
+type AgentPlanner interface {
+	Next(context.Context, AgentRunState, []AgentCapability) (AgentDecision, error)
+}
+
+// AgentCapabilityExecutor 负责把已通过 Control Plane 校验的语义能力映射到本地工具或 MCP。
+// 实现必须自行从受控 Context 解析当前 Run 的用户身份。
+type AgentCapabilityExecutor interface {
+	Execute(context.Context, string, AgentToolCall) (ToolResultEnvelope, error)
+}
+
+type AgentOrchestratorConfig struct {
+	Clock         func() time.Time
+	Activity      func(context.Context, AgentActivityEvent)
+	MaxCandidates int
+}
+
+type AgentRunInput struct {
+	RunID       string
+	Message     string
+	PageContext *AgentContextEnvelope
+	Goal        *GoalSpec
+}
+
+type AgentRunResult struct {
+	State       AgentRunState
+	Decision    AgentDecision
+	Activities  []AgentActivityEvent
+	ToolResults []ToolResultEnvelope
+}
+
+type AgentOrchestrator struct {
+	capabilities []AgentCapability
+	planner      AgentPlanner
+	executor     AgentCapabilityExecutor
+	config       AgentOrchestratorConfig
+}
+
+func NewAgentOrchestrator(capabilities []AgentCapability, planner AgentPlanner, executor AgentCapabilityExecutor, config AgentOrchestratorConfig) (*AgentOrchestrator, error) {
+	if planner == nil || executor == nil {
+		return nil, errors.New("agent_orchestrator_dependencies_required")
+	}
+	if config.Clock == nil {
+		config.Clock = time.Now
+	}
+	if config.MaxCandidates <= 0 || config.MaxCandidates > 32 {
+		config.MaxCandidates = 12
+	}
+	copyCapabilities := append([]AgentCapability(nil), capabilities...)
+	return &AgentOrchestrator{capabilities: copyCapabilities, planner: planner, executor: executor, config: config}, nil
+}
+
+func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (AgentRunResult, error) {
+	if o == nil || o.planner == nil || o.executor == nil {
+		return AgentRunResult{}, errors.New("agent_orchestrator_unavailable")
+	}
+	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.Message) == "" {
+		return AgentRunResult{}, errors.New("agent_run_input_invalid")
+	}
+	goal := ParseGoalSpec(input.Message, input.PageContext)
+	if input.Goal != nil {
+		goal = *input.Goal
+	}
+	state := AgentRunState{RunID: input.RunID, Goal: goal, Budget: BudgetForGoal(goal), ConstraintVersion: 1}
+	tracker := NewBudgetTracker(state.Budget)
+	activities := make([]AgentActivityEvent, 0, 16)
+	results := make([]ToolResultEnvelope, 0, 8)
+	emit := func(event AgentActivityEvent) {
+		if event.CreatedAt.IsZero() {
+			event.CreatedAt = o.config.Clock()
+		}
+		activities = append(activities, event)
+		if o.config.Activity != nil {
+			o.config.Activity(ctx, event)
+		}
+	}
+	emit(AgentActivityEvent{Type: "goal.updated", ActivityCode: "goal_initialized", Text: "已理解当前目标"})
+
+	deadline := state.Budget.MaxDuration
+	if deadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, deadline)
+		defer cancel()
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
+		}
+		candidates := RetrieveCapabilities(input.Message, o.capabilities, nil, o.config.MaxCandidates)
+		allowed := make(map[string]AgentCapability, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.Available {
+				allowed[candidate.ID] = candidate
+			}
+		}
+		decision, err := o.planner.Next(ctx, state, candidates)
+		if err != nil {
+			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
+		}
+		if err := ValidateAgentDecision(decision, allowed); err != nil {
+			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+		}
+		switch decision.Type {
+		case DecisionToolCall:
+			call := *decision.ToolCall
+			capability := allowed[call.Capability]
+			if err := tracker.Admit(call.Capability, call.Arguments, false); err != nil {
+				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+			}
+			emit(AgentActivityEvent{Type: "tool.started", ActivityCode: "capability_execution", ToolName: call.Capability, Text: capability.Description})
+			result, executeErr := o.executor.Execute(ctx, state.RunID, call)
+			tracker.Observe()
+			if executeErr != nil {
+				state.Failures = append(state.Failures, ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true})
+				results = append(results, ToolResultEnvelope{OK: false, Error: &ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true}})
+				emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: "failed", ToolName: call.Capability, Text: "能力执行失败，正在重新规划"})
+				continue
+			}
+			results = append(results, result)
+			state.CompletedSteps = append(state.CompletedSteps, call.Capability)
+			if !result.OK && result.Error != nil {
+				state.Failures = append(state.Failures, *result.Error)
+			}
+			emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: resultActivityCode(result), ToolName: call.Capability, Text: "已获得能力结果"})
+		case DecisionProposeAction:
+			proposal := *decision.ActionDraft
+			if proposal.IdempotencyKey == "" {
+				proposal.IdempotencyKey = actionIdempotencyKey(state.RunID, proposal)
+			}
+			state.PendingActions = append(state.PendingActions, proposal)
+			emit(AgentActivityEvent{Type: "approval.required", ActivityCode: "action_confirmation", Text: proposal.Preview})
+			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, nil
+		case DecisionRequestUser, DecisionRespond:
+			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, nil
+		}
+	}
+}
+
+func resultActivityCode(result ToolResultEnvelope) string {
+	if result.OK {
+		return "success"
+	}
+	if result.Error != nil && result.Error.Retryable {
+		return "retryable_failure"
+	}
+	return "failure"
+}
+
+func actionIdempotencyKey(runID string, proposal AgentActionProposal) string {
+	payload, _ := json.Marshal(struct {
+		RunID  string          `json:"run_id"`
+		Action string          `json:"action"`
+		Args   json.RawMessage `json:"arguments"`
+	}{runID, proposal.Action, proposal.Arguments})
+	return fmt.Sprintf("agent-%x", sha256Bytes(payload)[:24])
+}
+
+func sha256Bytes(value []byte) []byte {
+	// 通过标准库哈希保持 key 稳定，避免把完整参数写入 idempotency key。
+	hash := sha256.Sum256(value)
+	return hash[:]
+}
+
+// UpdateConstraints 供用户在 Run 进行期间追加约束。
+// 旧的待确认动作会被清空，调用方必须重新 validate 后才能再次提出 Action Proposal。
+func (o *AgentOrchestrator) UpdateConstraints(state *AgentRunState, constraints []GoalConstraint) error {
+	if state == nil {
+		return errors.New("agent_state_required")
+	}
+	for _, constraint := range constraints {
+		if strings.TrimSpace(constraint.Text) == "" {
+			continue
+		}
+		if constraint.Hard {
+			state.Goal.HardConstraints = append(state.Goal.HardConstraints, constraint)
+		} else {
+			state.Goal.SoftConstraints = append(state.Goal.SoftConstraints, constraint)
+		}
+	}
+	state.ConstraintVersion++
+	state.PendingActions = nil
+	state.Budget = BudgetForGoal(state.Goal)
+	return nil
+}

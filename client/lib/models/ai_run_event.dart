@@ -15,6 +15,12 @@ enum AiRunEventType {
   deviceWaiting,
   deviceClaimed,
   agentActivity,
+  goalUpdated,
+  contextResolved,
+  planRevised,
+  approvalRequired,
+  actionCommitted,
+  actionFailed,
   consentRequired,
   eduFetching,
   toolCompleted,
@@ -99,6 +105,7 @@ class AiRunEvent {
         payload['activity_code'],
         payload['code'],
         payload['stage'],
+        _activityCodeForType(rawType),
       ),
       dataset: _firstString(
         payload['dataset'],
@@ -166,6 +173,18 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.deviceClaimed;
     case 'agent.activity':
       return AiRunEventType.agentActivity;
+    case 'goal.updated':
+      return AiRunEventType.goalUpdated;
+    case 'context.resolved':
+      return AiRunEventType.contextResolved;
+    case 'plan.revised':
+      return AiRunEventType.planRevised;
+    case 'approval.required':
+      return AiRunEventType.approvalRequired;
+    case 'action.committed':
+      return AiRunEventType.actionCommitted;
+    case 'action.failed':
+      return AiRunEventType.actionFailed;
     case 'consent.required':
       return AiRunEventType.consentRequired;
     case 'edu.fetching':
@@ -184,6 +203,20 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.heartbeat;
     default:
       return AiRunEventType.unknown;
+  }
+}
+
+String _activityCodeForType(String type) {
+  switch (type) {
+    case 'goal.updated':
+    case 'context.resolved':
+    case 'plan.revised':
+    case 'approval.required':
+    case 'action.committed':
+    case 'action.failed':
+      return type;
+    default:
+      return '';
   }
 }
 
@@ -211,8 +244,9 @@ List<String> _strings(Object? value) {
       .toList(growable: false);
 }
 
-String _firstString(Object? first, [Object? second, Object? third]) {
-  for (final value in <Object?>[first, second, third]) {
+String _firstString(Object? first,
+    [Object? second, Object? third, Object? fourth]) {
+  for (final value in <Object?>[first, second, third, fourth]) {
     final text = value?.toString().trim() ?? '';
     if (text.isNotEmpty) return text;
   }

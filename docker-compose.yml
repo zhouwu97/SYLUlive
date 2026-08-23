@@ -102,7 +102,7 @@ services:
       - AI_CHAT_MODEL=${AI_CHAT_MODEL:-gpt-5.4-mini}
       - AI_REQUEST_TIMEOUT_SECONDS=${AI_REQUEST_TIMEOUT_SECONDS:-60}
       - AI_LEGACY_MAX_OUTPUT_TOKENS=${AI_LEGACY_MAX_OUTPUT_TOKENS:-4096}
-      - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-3}
+      - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-7}
       - AI_MAX_MESSAGE_CHARS=${AI_MAX_MESSAGE_CHARS:-500}
       - AI_HOURLY_MESSAGE_LIMIT=${AI_HOURLY_MESSAGE_LIMIT:-3}
       - AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}
@@ -120,6 +120,7 @@ services:
       - AI_EXTERNAL_MCP_SSH_USER=${AI_EXTERNAL_MCP_SSH_USER:-mcp-runner}
       - AI_EXTERNAL_MCP_SSH_KEY_PATH=/run/secrets/mcp_ed25519
       - AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/run/secrets/mcp_known_hosts
+      - AI_UNIFIED_MCP_URL=${AI_UNIFIED_MCP_URL:-http://pure-capability-mcp:8091}
       - AI_POLICY_RAG_ENABLED=${AI_POLICY_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ENABLED=${AI_LANGCHAIN_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ROLLOUT_PERCENT=${AI_LANGCHAIN_RAG_ROLLOUT_PERCENT:-0}
@@ -142,6 +143,21 @@ services:
       - source: mcp_known_hosts
         target: mcp_known_hosts
         mode: 0400
+    restart: unless-stopped
+    networks:
+      - shenliyuan_network
+
+  # Agent Contract v5 纯能力层：无数据库、无身份存储、无 LLM，只转发到 Go 内部事实接口。
+  pure-capability-mcp:
+    build:
+      context: ./_mcp
+      dockerfile: Dockerfile
+    environment:
+      - SYLULIVE_INTERNAL_URL=${SYLULIVE_INTERNAL_URL:-http://server:8080}
+    expose:
+      - "8091"
+    depends_on:
+      - server
     restart: unless-stopped
     networks:
       - shenliyuan_network

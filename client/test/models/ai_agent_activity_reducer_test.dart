@@ -56,4 +56,35 @@ void main() {
     expect(activities.single.status, AiAgentActivityStatus.failed);
     expect(activities.single.title, '没能获取最新成绩');
   });
+
+  test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
+    final activities = AiAgentActivityReducer.reduce([
+      AiRunEvent.fromJson({
+        'run_id': 'run-5',
+        'seq': 1,
+        'type': 'goal.updated',
+        'payload': {'objective': '选择竞赛'},
+      }),
+      AiRunEvent.fromJson({
+        'run_id': 'run-5',
+        'seq': 2,
+        'type': 'plan.revised',
+        'payload': {'text': '发现时间冲突，正在调整'},
+      }),
+      AiRunEvent.fromJson({
+        'run_id': 'run-5',
+        'seq': 3,
+        'type': 'approval.required',
+        'payload': {'text': '请确认安排'},
+      }),
+    ]);
+
+    expect(activities.map((item) => item.code), [
+      'goal.updated',
+      'plan.revised',
+      'approval.required',
+    ]);
+    expect(activities.last.status, AiAgentActivityStatus.pending);
+    expect(activities.last.detail, '请确认安排');
+  });
 }

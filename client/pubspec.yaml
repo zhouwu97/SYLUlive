@@ -65,7 +65,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/bg-mobile.png
-    - assets/images/map.jpg
+    - assets/images/map.png
     - assets/images/mingfeng.png
     - assets/images/morenbeijing.jpeg
     - assets/images/wallpaper_custom_01.png

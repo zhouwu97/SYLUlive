@@ -96,13 +96,14 @@ class HomeWidgetPinResult {
   bool get requestSent => status == HomeWidgetPinStatus.requested;
 }
 
-/// Flutter 与 Android RemoteViews 之间唯一的数据、外观和操作同步入口。
+/// Flutter 与 Android RemoteViews / iOS WidgetKit 之间唯一的数据同步入口。
 class HomeWidgetService {
   HomeWidgetService._();
 
   static const _channel = MethodChannel('shenliyuan/widget');
   static const _courseDataKey = 'widget_course_data';
   static const _examDataKey = 'widget_exam_data';
+  static const widgetSchemaVersion = 1;
 
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
@@ -225,7 +226,13 @@ class HomeWidgetService {
       final prefs = await AppPreferencesStore.getInstance();
       await prefs.setString(
         _courseDataKey,
-        jsonEncode({'title': '沈理院课表', 'date': date, 'courses': courses}),
+        jsonEncode({
+          'schema_version': widgetSchemaVersion,
+          'updated_at': now.toIso8601String(),
+          'title': '沈理院课表',
+          'date': date,
+          'courses': courses,
+        }),
       );
       await _refreshNative();
       debugPrint('课表小组件已同步：${courses.length} 门课，日期 $date');
@@ -255,7 +262,14 @@ class HomeWidgetService {
       }).toList();
 
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(_examDataKey, jsonEncode(exams));
+      await prefs.setString(
+        _examDataKey,
+        jsonEncode({
+          'schema_version': widgetSchemaVersion,
+          'updated_at': now.toIso8601String(),
+          'exams': exams,
+        }),
+      );
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
     } catch (error) {
@@ -356,7 +370,10 @@ class HomeWidgetService {
 
       final raw = prefs.getString(_examDataKey);
       if (raw == null) return const HomeWidgetPreviewData();
-      final exams = jsonDecode(raw) as List<dynamic>;
+      final decoded = jsonDecode(raw);
+      final exams = decoded is Map<String, dynamic>
+          ? (decoded['exams'] as List<dynamic>? ?? const [])
+          : decoded as List<dynamic>;
       return HomeWidgetPreviewData(
         items: exams.map((item) {
           final exam = item as Map<String, dynamic>;
@@ -378,7 +395,11 @@ class HomeWidgetService {
 
   static Future<void> _refreshNative() async {
     try {
-      await _channel.invokeMethod<void>('updateWidget');
+      final prefs = await AppPreferencesStore.getInstance();
+      await _channel.invokeMethod<void>('updateWidget', {
+        'course_data': prefs.getString(_courseDataKey),
+        'exam_data': prefs.getString(_examDataKey),
+      });
     } on MissingPluginException {
       // 桌面端和单元测试没有 Android 通道，数据仍会正常写入。
     } catch (error) {

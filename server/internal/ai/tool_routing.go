@@ -265,6 +265,12 @@ func isPersonalModelTool(name string) bool {
 		strings.HasPrefix(name, "schedule_") ||
 		strings.HasPrefix(name, "erke_") ||
 		strings.HasPrefix(name, "profile_") ||
+		strings.HasPrefix(name, "personal_calendar_") ||
+		strings.HasPrefix(name, "competition_get_my_") ||
+		strings.HasPrefix(name, "competition_get_deadlines") ||
+		strings.HasPrefix(name, "competition_get_calendar") ||
+		strings.HasPrefix(name, "calendar_propose_action") ||
+		strings.HasPrefix(name, "draft_calendar_action") ||
 		strings.HasPrefix(name, "hy3_decision_")
 }
 
@@ -273,7 +279,7 @@ func isPersonalToolIntent(message string) bool {
 	if normalized == "" {
 		return false
 	}
-	if containsAny(normalized, "我的", "帮我", "给我", "为我", "本人", "个人") {
+	if containsAny(normalized, "我的", "帮我", "给我", "为我", "本人", "个人", "适合我") || strings.Contains(normalized, "我") {
 		return true
 	}
 	academicTopic := containsAny(normalized, "学业", "成绩", "gpa", "绩点", "学分", "挂科")

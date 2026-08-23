@@ -3,6 +3,8 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +56,27 @@ func TestBudgetTrackerRejectsDuplicateUnlessRetryable(t *testing.T) {
 	require.Error(t, tracker.Admit("calendar.get_day", args, true))
 }
 
+func TestBudgetTrackerStopsSameToolPlanningAndInformationStall(t *testing.T) {
+	tracker := NewBudgetTracker(AgentBudget{
+		MaxToolCalls: 5, MaxSameToolCalls: 2, MaxPlanningRounds: 2,
+		MaxExternalCalls: 1, MaxConsecutiveNoGain: 2,
+	})
+	args := json.RawMessage(`{"query":"算法"}`)
+	require.NoError(t, tracker.BeginPlanningRound())
+	require.NoError(t, tracker.Admit("competition.search", args, true))
+	require.NoError(t, tracker.Admit("competition.search", json.RawMessage(`{"query":"机器学习"}`), true))
+	require.EqualError(t, tracker.Admit("competition.search", json.RawMessage(`{"query":"嵌入式"}`), true), "agent_same_tool_budget_exhausted")
+	require.NoError(t, tracker.AdmitExternalCall())
+	require.EqualError(t, tracker.AdmitExternalCall(), "agent_external_budget_exhausted")
+
+	result := ToolResultEnvelope{OK: true, Data: json.RawMessage(`{"items":[]}`)}
+	require.NoError(t, tracker.ObserveResult(result))
+	require.NoError(t, tracker.ObserveResult(result))
+	require.EqualError(t, tracker.ObserveResult(result), "agent_information_stalled")
+	require.NoError(t, tracker.BeginPlanningRound())
+	require.EqualError(t, tracker.BeginPlanningRound(), "agent_planning_budget_exhausted")
+}
+
 func TestValidateAgentDecisionRejectsIdentityArgumentsAndUnconfirmedAction(t *testing.T) {
 	allowed := map[string]AgentCapability{"academic.summary": {ID: "academic.summary", Available: true}}
 	require.Error(t, ValidateAgentDecision(AgentDecision{Type: DecisionToolCall, ToolCall: &AgentToolCall{Capability: "academic.summary", Arguments: json.RawMessage(`{"user_id":7}`)}}, allowed))
@@ -78,7 +101,10 @@ func (scriptedAgentExecutor) Execute(context.Context, string, AgentToolCall) (To
 
 func TestAgentOrchestratorReplansAndStopsAtApproval(t *testing.T) {
 	planner := &scriptedAgentPlanner{}
-	orchestrator, err := NewAgentOrchestrator([]AgentCapability{{ID: "competition.search", Available: true, Lane: "public", Description: "搜索比赛"}}, planner, scriptedAgentExecutor{}, AgentOrchestratorConfig{Clock: func() time.Time { return time.Unix(1, 0) }})
+	orchestrator, err := NewAgentOrchestrator([]AgentCapability{
+		{ID: "competition.search", Available: true, Lane: "public", Description: "搜索比赛"},
+		{ID: "calendar.create", Available: true, Lane: "personal", Kind: "action", SideEffect: SideEffectProposal, Confirmation: ConfirmationAlways, RequiresConfirmation: true, Description: "创建日历草稿", Tags: []string{"安排"}},
+	}, planner, scriptedAgentExecutor{}, AgentOrchestratorConfig{Clock: func() time.Time { return time.Unix(1, 0) }})
 	require.NoError(t, err)
 	result, err := orchestrator.Run(context.Background(), AgentRunInput{RunID: "run-1", Message: "找比赛并安排训练"})
 	require.NoError(t, err)
@@ -86,6 +112,78 @@ func TestAgentOrchestratorReplansAndStopsAtApproval(t *testing.T) {
 	require.Len(t, result.State.CompletedSteps, 1)
 	require.Len(t, result.State.PendingActions, 1)
 	require.Contains(t, result.Activities[0].Type, "goal.updated")
+}
+
+type observationDrivenPlanner struct{}
+
+func (observationDrivenPlanner) Next(_ context.Context, state AgentRunState, _ []AgentCapability) (AgentDecision, error) {
+	switch len(state.Observations) {
+	case 0:
+		return AgentDecision{Type: DecisionToolCall, ToolCall: &AgentToolCall{ID: "search", Capability: "competition.search", Arguments: json.RawMessage(`{"query":"算法比赛"}`)}}, nil
+	case 1:
+		if !strings.Contains(string(state.Observations[0].Result.Data), "candidate-a") {
+			return AgentDecision{}, errors.New("search_observation_not_visible")
+		}
+		return AgentDecision{Type: DecisionToolCall, ToolCall: &AgentToolCall{ID: "details", Capability: "competition.details", Arguments: json.RawMessage(`{"competition_id":"candidate-a"}`)}}, nil
+	case 2:
+		return AgentDecision{Type: DecisionToolCall, ToolCall: &AgentToolCall{ID: "schedule", Capability: "schedule.free_windows", Arguments: json.RawMessage(`{"from":"2026-08-24T00:00:00Z","to":"2026-08-31T00:00:00Z"}`)}}, nil
+	default:
+		return AgentDecision{Type: DecisionRespond, FinalAnswer: "候选 A 已核对，并完成课程冲突检查。"}, nil
+	}
+}
+
+type observationDrivenExecutor struct{}
+
+func (observationDrivenExecutor) Execute(_ context.Context, _ string, call AgentToolCall) (ToolResultEnvelope, error) {
+	switch call.Capability {
+	case "competition.search":
+		return ToolResultEnvelope{OK: true, Data: json.RawMessage(`{"items":[{"id":"candidate-a"}]}`), Freshness: FreshnessLive}, nil
+	case "competition.details":
+		return ToolResultEnvelope{OK: true, Data: json.RawMessage(`{"id":"candidate-a","deadline":"2026-09-10"}`), Freshness: FreshnessLive}, nil
+	case "schedule.free_windows":
+		return ToolResultEnvelope{OK: true, Data: json.RawMessage(`{"conflicts":[]}`), Freshness: FreshnessLive}, nil
+	default:
+		return ToolResultEnvelope{}, errors.New("unexpected_capability")
+	}
+}
+
+func TestAgentOrchestratorUsesObservationsForDynamicReplan(t *testing.T) {
+	orchestrator, err := NewAgentOrchestrator([]AgentCapability{
+		{ID: "competition.search", Available: true, Lane: "public", Description: "检索公开比赛", Tags: []string{"比赛"}},
+		{ID: "competition.details", Available: true, Lane: "public", Description: "读取比赛详情", Tags: []string{"比赛", "详情"}},
+		{ID: "schedule.free_windows", Available: true, Lane: "personal", Description: "计算课程空闲时间", Tags: []string{"课程", "冲突"}},
+	}, observationDrivenPlanner{}, observationDrivenExecutor{}, AgentOrchestratorConfig{Clock: func() time.Time { return time.Unix(1, 0) }})
+	require.NoError(t, err)
+	result, err := orchestrator.Run(context.Background(), AgentRunInput{RunID: "blackbox-replan", Message: "推荐一个比赛，但不要影响上课"})
+	require.NoError(t, err)
+	require.Equal(t, DecisionRespond, result.Decision.Type)
+	require.Len(t, result.State.Observations, 3)
+	require.GreaterOrEqual(t, result.State.PlanVersion, 4)
+	require.GreaterOrEqual(t, countAgentActivities(result.Activities, "plan.revised"), 3)
+}
+
+func countAgentActivities(events []AgentActivityEvent, eventType string) int {
+	count := 0
+	for _, event := range events {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+type mutatingGoalPlanner struct{}
+
+func (mutatingGoalPlanner) Next(context.Context, AgentRunState, []AgentCapability) (AgentDecision, error) {
+	return AgentDecision{Type: DecisionRespond, FinalAnswer: "不应改变题目", GoalUpdate: &GoalSpec{Objective: "改成另一个任务"}}, nil
+}
+
+func TestAgentOrchestratorDoesNotAllowPlannerToChangeObjective(t *testing.T) {
+	orchestrator, err := NewAgentOrchestrator([]AgentCapability{{ID: "system.status", Available: true, Lane: "public", Description: "读取状态"}}, mutatingGoalPlanner{}, scriptedAgentExecutor{}, AgentOrchestratorConfig{})
+	require.NoError(t, err)
+	result, err := orchestrator.Run(context.Background(), AgentRunInput{RunID: "blackbox-goal", Message: "帮我看看比赛截止时间"})
+	require.EqualError(t, err, "agent_goal_objective_immutable")
+	require.Equal(t, "帮我看看比赛截止时间", result.State.Goal.Objective)
 }
 
 func TestAgentOrchestratorConstraintUpdateInvalidatesPendingActions(t *testing.T) {

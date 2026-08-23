@@ -772,6 +772,14 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
 
   final userIdStr = userId.toString();
 
+  // JPush 的 Alias 在 Android/iOS 都由同一个 Dart 适配器维护；原生通道
+  // 仅作为旧 Android 状态协调兼容层，不能成为 iOS 登记的硬依赖。
+  try {
+    await pushClient.setAlias(userIdStr);
+  } catch (e) {
+    debugPrint('JPush Alias 设置失败: $e');
+  }
+
   // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
   // KeepAliveForegroundService 的 reconcileAliasState 机制接管
   try {
@@ -1470,12 +1478,14 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       );
       return false;
     }
-    if (uri == 'widget_timetable' || uri == 'campus://timetable') {
+    if (uri == 'widget_timetable' ||
+        uri == 'campus://timetable' ||
+        uri.startsWith('sylulive://schedule')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
       return true;
     }
-    if (uri.startsWith('widget_exam')) {
+    if (uri.startsWith('widget_exam') || uri.startsWith('sylulive://exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),

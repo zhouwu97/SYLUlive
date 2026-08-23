@@ -74,7 +74,7 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 	if input.Goal != nil {
 		goal = *input.Goal
 	}
-	state := AgentRunState{RunID: input.RunID, Goal: goal, Budget: BudgetForGoal(goal), ConstraintVersion: 1}
+	state := AgentRunState{RunID: input.RunID, Goal: goal, Budget: BudgetForGoal(goal), ConstraintVersion: 1, PlanVersion: 1}
 	tracker := NewBudgetTracker(state.Budget)
 	activities := make([]AgentActivityEvent, 0, 16)
 	results := make([]ToolResultEnvelope, 0, 8)
@@ -99,7 +99,11 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if err := ctx.Err(); err != nil {
 			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
 		}
-		candidates := RetrieveCapabilities(input.Message, o.capabilities, nil, o.config.MaxCandidates)
+		if err := tracker.BeginPlanningRound(); err != nil {
+			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
+		}
+		planningQuery := agentPlanningQuery(state.Goal)
+		candidates := RetrieveCapabilities(planningQuery, o.capabilities, nil, o.config.MaxCandidates)
 		allowed := make(map[string]AgentCapability, len(candidates))
 		for _, candidate := range candidates {
 			if candidate.Available {
@@ -113,6 +117,12 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if err := ValidateAgentDecision(decision, allowed); err != nil {
 			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
 		}
+		if decision.GoalUpdate != nil {
+			if err := applyAgentGoalUpdate(&state, *decision.GoalUpdate); err != nil {
+				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+			}
+			emit(AgentActivityEvent{Type: "goal.updated", ActivityCode: "goal_reconciled", Text: "已保留原目标并更新派生计划"})
+		}
 		switch decision.Type {
 		case DecisionToolCall:
 			call := *decision.ToolCall
@@ -120,21 +130,36 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 			if err := tracker.Admit(call.Capability, call.Arguments, false); err != nil {
 				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
 			}
+			if capability.SideEffect == SideEffectExternal {
+				if err := tracker.AdmitExternalCall(); err != nil {
+					return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+				}
+			}
 			emit(AgentActivityEvent{Type: "tool.started", ActivityCode: "capability_execution", ToolName: call.Capability, Text: capability.Description})
 			result, executeErr := o.executor.Execute(ctx, state.RunID, call)
-			tracker.Observe()
 			if executeErr != nil {
 				state.Failures = append(state.Failures, ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true})
-				results = append(results, ToolResultEnvelope{OK: false, Error: &ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true}})
+				result = ToolResultEnvelope{OK: false, Error: &ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true}}
+				results = append(results, result)
+				state.Observations = append(state.Observations, AgentObservation{Capability: call.Capability, Result: result, CreatedAt: o.config.Clock()})
 				emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: "failed", ToolName: call.Capability, Text: "能力执行失败，正在重新规划"})
+				state.PlanVersion++
+				emit(AgentActivityEvent{Type: "plan.revised", ActivityCode: "replan_after_failure", ToolName: call.Capability, Text: "已根据失败结果重新规划"})
 				continue
 			}
 			results = append(results, result)
+			state.Observations = append(state.Observations, AgentObservation{Capability: call.Capability, Result: result, CreatedAt: o.config.Clock()})
 			state.CompletedSteps = append(state.CompletedSteps, call.Capability)
+			state.KnownFacts = append(state.KnownFacts, observedFact(call.Capability, result))
 			if !result.OK && result.Error != nil {
 				state.Failures = append(state.Failures, *result.Error)
 			}
+			if err := tracker.ObserveResult(result); err != nil {
+				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+			}
 			emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: resultActivityCode(result), ToolName: call.Capability, Text: "已获得能力结果"})
+			state.PlanVersion++
+			emit(AgentActivityEvent{Type: "plan.revised", ActivityCode: "replan_after_observation", ToolName: call.Capability, Text: "已根据新事实重新规划"})
 		case DecisionProposeAction:
 			proposal := *decision.ActionDraft
 			if proposal.IdempotencyKey == "" {
@@ -159,6 +184,81 @@ func resultActivityCode(result ToolResultEnvelope) string {
 	return "failure"
 }
 
+func agentPlanningQuery(goal GoalSpec) string {
+	parts := []string{goal.Objective}
+	for _, constraint := range append(append([]GoalConstraint{}, goal.HardConstraints...), goal.SoftConstraints...) {
+		parts = append(parts, constraint.Text)
+	}
+	parts = append(parts, goal.DerivedSubgoals...)
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func observedFact(capability string, result ToolResultEnvelope) string {
+	status := "failed"
+	if result.OK {
+		status = "ok"
+	}
+	return capability + ":" + status
+}
+
+func applyAgentGoalUpdate(state *AgentRunState, update GoalSpec) error {
+	if state == nil {
+		return errors.New("agent_state_required")
+	}
+	if strings.TrimSpace(update.Objective) != "" && strings.TrimSpace(update.Objective) != strings.TrimSpace(state.Goal.Objective) {
+		return errors.New("agent_goal_objective_immutable")
+	}
+	state.Goal.RequiresPersonalContext = state.Goal.RequiresPersonalContext || update.RequiresPersonalContext
+	state.Goal.Unknowns = appendUniqueAgentStrings(state.Goal.Unknowns, update.Unknowns...)
+	state.Goal.DerivedSubgoals = appendUniqueAgentStrings(nil, update.DerivedSubgoals...)
+	for _, constraint := range append(append([]GoalConstraint{}, update.HardConstraints...), update.SoftConstraints...) {
+		if strings.TrimSpace(constraint.Text) == "" {
+			continue
+		}
+		if constraint.Hard {
+			state.Goal.HardConstraints = appendUniqueConstraints(state.Goal.HardConstraints, constraint)
+		} else {
+			state.Goal.SoftConstraints = appendUniqueConstraints(state.Goal.SoftConstraints, constraint)
+		}
+	}
+	state.Budget = BudgetForGoal(state.Goal)
+	return nil
+}
+
+func appendUniqueAgentStrings(values []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(additions))
+	result := make([]string, 0, len(values)+len(additions))
+	for _, value := range append(values, additions...) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func appendUniqueConstraints(values []GoalConstraint, additions ...GoalConstraint) []GoalConstraint {
+	result := append([]GoalConstraint(nil), values...)
+	for _, addition := range additions {
+		duplicate := false
+		for _, existing := range result {
+			if existing.Text == addition.Text && existing.Hard == addition.Hard {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			result = append(result, addition)
+		}
+	}
+	return result
+}
+
 func actionIdempotencyKey(runID string, proposal AgentActionProposal) string {
 	payload, _ := json.Marshal(struct {
 		RunID  string          `json:"run_id"`
@@ -180,17 +280,26 @@ func (o *AgentOrchestrator) UpdateConstraints(state *AgentRunState, constraints 
 	if state == nil {
 		return errors.New("agent_state_required")
 	}
+	changed := false
 	for _, constraint := range constraints {
 		if strings.TrimSpace(constraint.Text) == "" {
 			continue
 		}
 		if constraint.Hard {
-			state.Goal.HardConstraints = append(state.Goal.HardConstraints, constraint)
+			updated := appendUniqueConstraints(state.Goal.HardConstraints, constraint)
+			changed = changed || len(updated) != len(state.Goal.HardConstraints)
+			state.Goal.HardConstraints = updated
 		} else {
-			state.Goal.SoftConstraints = append(state.Goal.SoftConstraints, constraint)
+			updated := appendUniqueConstraints(state.Goal.SoftConstraints, constraint)
+			changed = changed || len(updated) != len(state.Goal.SoftConstraints)
+			state.Goal.SoftConstraints = updated
 		}
 	}
+	if !changed {
+		return nil
+	}
 	state.ConstraintVersion++
+	state.PlanVersion++
 	state.PendingActions = nil
 	state.Budget = BudgetForGoal(state.Goal)
 	return nil

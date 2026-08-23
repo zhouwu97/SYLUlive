@@ -1,3 +1,4 @@
+import Foundation
 import WidgetKit
 import SwiftUI
 
@@ -48,24 +49,28 @@ struct Provider: TimelineProvider {
     }
 
     private func readEntry() -> CourseEntry {
-        let defaults = UserDefaults(suiteName: "group.com.example.shenliyuan")
-        let title = defaults?.string(forKey: "widget_title") ?? "沈理院课表"
-        let dateInfo = defaults?.string(forKey: "widget_date") ?? ""
-        let content = defaults?.string(forKey: "widget_content") ?? ""
-        let isEmpty = defaults?.bool(forKey: "widget_empty") ?? true
-
+        let defaults = UserDefaults(suiteName: "group.com.sylu.sylulive")
+        let raw = defaults?.string(forKey: "widget_course_data")
+        var title = "沈理院课表"
+        var dateInfo = ""
         var courses: [CourseItem] = []
-        if !isEmpty && !content.isEmpty {
-            let lines = content.components(separatedBy: "\n")
-            for line in lines {
-                let parts = line.components(separatedBy: "|")
-                if parts.count >= 2 {
-                    courses.append(CourseItem(
-                        name: parts[0],
-                        time: parts[1],
-                        location: parts.count > 2 ? parts[2] : ""
-                    ))
-                }
+
+        if let raw,
+           let data = raw.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data),
+           let payload = object as? [String: Any],
+           (payload["schema_version"] as? Int) == 1 {
+            title = payload["title"] as? String ?? title
+            dateInfo = payload["date"] as? String ?? ""
+            let rawCourses = payload["courses"] as? [[String: Any]] ?? []
+            courses = rawCourses.compactMap { item in
+                guard let name = item["name"] as? String,
+                      let time = item["time"] as? String else { return nil }
+                return CourseItem(
+                    name: name,
+                    time: time,
+                    location: item["location"] as? String ?? ""
+                )
             }
         }
 
@@ -73,7 +78,7 @@ struct Provider: TimelineProvider {
             date: Date(),
             title: title,
             dateInfo: dateInfo,
-            isEmpty: isEmpty,
+            isEmpty: courses.isEmpty,
             courses: courses
         )
     }
@@ -148,7 +153,7 @@ struct CourseScheduleWidgetEntryView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "E5E7EB"), lineWidth: 0.5)
         )
-        .widgetURL(URL(string: "timetable://home"))
+        .widgetURL(URL(string: "sylulive://schedule"))
     }
 }
 

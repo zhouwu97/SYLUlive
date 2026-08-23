@@ -22,6 +22,7 @@ import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../platform/app_platform.dart';
 
 enum AuthState {
   unknown,
@@ -1551,6 +1552,7 @@ class AuthProvider extends ChangeNotifier {
     required String installationId,
     required String registrationId,
     required String noticeVersion,
+    String? platform,
   }) async {
     if (!isLoggedIn) return AuthResult.failure('请先登录');
     try {
@@ -1561,6 +1563,7 @@ class AuthProvider extends ChangeNotifier {
           'installation_id': installationId,
           'registration_id': registrationId,
           'notice_version': noticeVersion,
+          'platform': platform ?? AppPlatforms.current.wireName,
         },
       );
       return AuthResult.success();

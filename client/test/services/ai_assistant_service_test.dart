@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/models/agent_context.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
 void main() {
@@ -72,6 +73,54 @@ void main() {
             .having((error) => error.retryable, 'retryable', isTrue),
       ),
     );
+  });
+
+  test('创建 Run 只携带 Agent 实体引用', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/ai/runs');
+          final data = options.data as Map<String, dynamic>;
+          expect(data['context'], <String, dynamic>{
+            'entrypoint': 'competition_detail',
+            'context_refs': <Map<String, dynamic>>[
+              <String, dynamic>{'type': 'competition_event', 'id': '123'},
+            ],
+            'suggested_intent': '评估适配度',
+          });
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 202,
+              data: <String, dynamic>{
+                'run': <String, dynamic>{
+                  'id': 'run-context',
+                  'conversation_id': 'conv-context',
+                  'state': 'created',
+                },
+                'duplicate': false,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final creation = await AiAssistantService(dio).createRun(
+      conversationId: '',
+      clientRequestId: '00000000-0000-4000-8000-000000000099',
+      message: '我适合参加这个比赛吗？',
+      launchContext: const AgentLaunchContext(
+        entrypoint: 'competition_detail',
+        contextRefs: <AgentContextRef>[
+          AgentContextRef(type: 'competition_event', id: '123'),
+        ],
+        suggestedIntent: '评估适配度',
+      ),
+    );
+
+    expect(creation.run.id, 'run-context');
   });
 
   test('来源正文按 chunk id 缓存并合并并发请求', () async {

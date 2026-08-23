@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 
 import '../models/ai_capabilities.dart';
 import '../models/ai_chat_message.dart';
+import '../models/ai_agent_activity.dart';
+import '../models/ai_agent_activity_reducer.dart';
 import '../models/ai_conversation.dart';
 import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_quick_prompt.dart';
@@ -13,6 +15,7 @@ import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
+import '../models/agent_context.dart';
 import '../models/user_calendar.dart';
 import '../services/ai_assistant_service.dart';
 import '../utils/ai_citation_mapper.dart';
@@ -61,15 +64,18 @@ class AiAssistantProvider extends ChangeNotifier {
   final AiAssistantService _service;
   final Future<void> Function()? _deviceToolSync;
   final Random _random;
+  final AgentLaunchContext? _launchContext;
 
   AiAssistantProvider(
     this._service, {
     AiCapabilities? initialCapabilities,
     Future<void> Function()? deviceToolSync,
     Random? random,
+    AgentLaunchContext? launchContext,
   })  : _capabilities = initialCapabilities,
         _quota = initialCapabilities?.quota,
         _deviceToolSync = deviceToolSync,
+        _launchContext = launchContext,
         _random = random ?? Random() {
     _syncQuickPrompts();
   }
@@ -77,6 +83,7 @@ class AiAssistantProvider extends ChangeNotifier {
   AiCapabilities? _capabilities;
   AiQuota? _quota;
   final List<AiChatMessage> _messages = [];
+  final List<AiRunEvent> _agentActivityEvents = [];
   final List<AiConversation> _conversations = [];
   AiRunEvent? _currentRun;
   AiRunEvent? _agentEvent;
@@ -106,6 +113,9 @@ class AiAssistantProvider extends ChangeNotifier {
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   AiRunEvent? get currentRun => _currentRun;
   AiRunEvent? get agentEvent => _agentEvent;
+  List<AiAgentActivity> get agentActivities =>
+      AiAgentActivityReducer.reduce(_agentActivityEvents,
+          completed: _agentFlowCompleted);
   String? get activeSubmissionRequestId => _activeSubmissionRequestId;
   bool get agentFlowCompleted => _agentFlowCompleted;
   AiRunEvent? get pendingConsent => _pendingConsent;
@@ -118,6 +128,7 @@ class AiAssistantProvider extends ChangeNotifier {
   bool get loading => _loading;
   bool get loadingConversations => _loadingConversations;
   bool get canRetry => _lastFailedSubmission != null && !isRunning;
+  bool get canUseExistingData => _lastFailedSubmission != null && !isRunning;
   bool get canReconnectRun => _run != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
@@ -137,6 +148,10 @@ class AiAssistantProvider extends ChangeNotifier {
         return '正在读取已授权的校园数据';
       case AiRunEventType.deviceClaimed:
         return '你的手机正在读取本地缓存';
+      case AiRunEventType.agentActivity:
+        return _currentRun?.text.trim().isNotEmpty == true
+            ? _currentRun!.text.trim()
+            : '正在处理当前问题…';
       case AiRunEventType.toolCompleted:
         return '正在整理已授权数据';
       case AiRunEventType.personalDataEvidence:
@@ -385,6 +400,7 @@ class AiAssistantProvider extends ChangeNotifier {
         conversationId: submission.conversationId,
         clientRequestId: submission.requestId,
         message: submission.message,
+        launchContext: _launchContext,
       );
       _run = creation.run;
       _conversationId = creation.run.conversationId;
@@ -415,6 +431,31 @@ class AiAssistantProvider extends ChangeNotifier {
           item.status == AiMessageStatus.failed,
     );
     return _startSubmission(submission);
+  }
+
+  /// 刷新失败时，用户明确选择继续使用已有数据；这是新的 Run，
+  /// 通过自然语言约束服务端采用 allow_stale，而不是静默复用失败 Run。
+  AiSubmitResult useExistingData() {
+    final submission = _lastFailedSubmission;
+    if (submission == null) return AiSubmitResult.blank;
+    final blocked = _submissionBlocker();
+    if (blocked != null) return blocked;
+    final message = normalizeAiMessage(
+      '${submission.message}。请按已有校园数据分析，不要刷新最新数据。',
+    );
+    final maxChars =
+        _capabilities?.maxMessageChars ?? AiCapabilities.defaultMessageChars;
+    if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
+    _messages.removeWhere(
+      (item) =>
+          item.role == AiMessageRole.user &&
+          item.requestId == submission.requestId,
+    );
+    return _startSubmission(AiPendingSubmission(
+      requestId: _uuidV4(),
+      conversationId: submission.conversationId,
+      message: message,
+    ));
   }
 
   Future<void> cancel() async {
@@ -581,6 +622,7 @@ class AiAssistantProvider extends ChangeNotifier {
     if (_isAgentEvent(event.type)) {
       _agentEvent = event;
       _agentFlowCompleted = false;
+      _agentActivityEvents.add(event);
     }
     switch (event.type) {
       case AiRunEventType.started:
@@ -629,6 +671,7 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.toolRequested:
       case AiRunEventType.toolExecuting:
       case AiRunEventType.deviceClaimed:
+      case AiRunEventType.agentActivity:
         // 工具开始/执行本身不是授权请求。只有带 scope 的 consent.required
         // 才能进入授权 UI，否则“允许本次”没有可提交的授权范围。
         _pendingConsent = null;
@@ -682,6 +725,29 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.failed:
         _connectionState = AiConnectionState.failed;
         _error = _friendlyError(event.errorCode);
+        if (event.retryable && _activeSubmissionRequestId != null) {
+          final requestId = _activeSubmissionRequestId!;
+          final userMessage = _messages.lastWhere(
+            (item) =>
+                item.role == AiMessageRole.user && item.requestId == requestId,
+            orElse: () => AiChatMessage(
+              id: '',
+              requestId: '',
+              role: AiMessageRole.user,
+              content: '',
+              status: AiMessageStatus.failed,
+              createdAt: DateTime.now(),
+            ),
+          );
+          if (userMessage.requestId.isNotEmpty &&
+              userMessage.content.trim().isNotEmpty) {
+            _lastFailedSubmission = AiPendingSubmission(
+              requestId: userMessage.requestId,
+              conversationId: _conversationId ?? '',
+              message: userMessage.content,
+            );
+          }
+        }
         if (_streamedText.isNotEmpty) {
           _upsertAssistant(_streamedText, AiMessageStatus.failed,
               sources: _sources,
@@ -948,6 +1014,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _run = null;
     _currentRun = null;
     _agentEvent = null;
+    _agentActivityEvents.clear();
     _activeSubmissionRequestId = null;
     _agentFlowCompleted = false;
     _pendingConsent = null;
@@ -1024,6 +1091,7 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.toolExecuting ||
         AiRunEventType.deviceWaiting ||
         AiRunEventType.deviceClaimed ||
+        AiRunEventType.agentActivity ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
         AiRunEventType.toolCompleted ||
@@ -1070,9 +1138,26 @@ class AiAssistantProvider extends ChangeNotifier {
     List<AiPersonalDataEvidence> target,
     List<AiPersonalDataEvidence> incoming,
   ) {
-    final known = target.map((item) => item.stableKey).toSet();
+    final known = <String, int>{
+      for (var index = 0; index < target.length; index++)
+        target[index].datasetKey: index,
+    };
     for (final item in incoming) {
-      if (known.add(item.stableKey)) target.add(item);
+      final index = known[item.datasetKey];
+      if (index == null) {
+        known[item.datasetKey] = target.length;
+        target.add(item);
+        continue;
+      }
+      final current = target[index];
+      final currentTime = current.fetchedAt;
+      final incomingTime = item.fetchedAt;
+      final incomingIsBetter = current.isStale && !item.isStale ||
+          currentTime == null && incomingTime != null ||
+          currentTime != null &&
+              incomingTime != null &&
+              incomingTime.isAfter(currentTime);
+      if (incomingIsBetter) target[index] = item;
     }
   }
 

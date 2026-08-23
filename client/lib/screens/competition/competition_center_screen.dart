@@ -9,9 +9,12 @@ import 'package:provider/provider.dart';
 import '../../platform/contracts/external_navigator.dart';
 
 import '../../config/beta_release_policy.dart';
+import '../../models/agent_context.dart';
 import '../../models/competition.dart';
 import '../../models/competition_dashboard_summary.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/ai_assistant_service.dart';
+import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
 import '../../widgets/competition/competition_empty_state.dart';
@@ -29,6 +32,7 @@ import 'competition_calendar_item_detail_screen.dart';
 import 'competition_my_hub_screen.dart';
 
 import 'competition_admin_center_screen.dart';
+import '../ai/ai_assistant_screen.dart';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -84,6 +88,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   @override
   void initState() {
     super.initState();
+    DomainChangeBus.instance.addListener(_handleDomainChange);
     _dio = context.read<AuthProvider>().dio;
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
@@ -112,11 +117,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   @override
   void dispose() {
+    DomainChangeBus.instance.removeListener(_handleDomainChange);
     _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleDomainChange() {
+    if (!mounted ||
+        DomainChangeBus.instance.lastChange != DomainChange.competitionPlan) {
+      return;
+    }
+    unawaited(_loadUserState());
+    unawaited(_loadCompetitionDashboard());
   }
 
   Future<void> _loadAll() async {
@@ -1183,6 +1198,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           _calendarCount = (_calendarCount ?? 0) + 1;
         }
       });
+      DomainChangeBus.instance.emit(DomainChange.competitionPlan);
       AppFeedback.showSnackBar(
         context,
         alreadyExists ? '比赛已在我的计划中' : '已加入我的竞赛计划',
@@ -1284,6 +1300,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   Map<String, dynamic> _eventRaw = {};
   bool _loading = true;
   String? _error;
+  bool _askingAgent = false;
 
   @override
   void initState() {
@@ -1324,6 +1341,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
             '/user/competition-calendar/items/copy-from-official/${event.id}',
           );
       if (!mounted) return;
+      DomainChangeBus.instance.emit(DomainChange.competitionPlan);
       AppFeedback.showSnackBar(context, '已加入我的计划');
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1332,6 +1350,44 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
         AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
         isError: true,
       );
+    }
+  }
+
+  Future<void> _askAgent(CompetitionEvent event) async {
+    if (_askingAgent) return;
+    setState(() => _askingAgent = true);
+    final dio = context.read<AuthProvider>().dio;
+    try {
+      final service = AiAssistantService(dio);
+      final capabilities = await service.getCapabilities();
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AiAssistantScreen(
+            capabilities: capabilities,
+            service: service,
+            dio: dio,
+            initialPrompt: '我适合参加这个比赛吗？',
+            launchContext: AgentLaunchContext(
+              entrypoint: 'competition_detail',
+              contextRefs: <AgentContextRef>[
+                AgentContextRef(type: 'competition_event', id: '${event.id}'),
+              ],
+              suggestedIntent: '评估当前赛事是否适合我，并结合时间安排给出建议',
+            ),
+          ),
+        ),
+      );
+    } on AiAssistantServiceException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, error.message, isError: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '校园 Agent 暂不可用', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _askingAgent = false);
     }
   }
 
@@ -1516,6 +1572,26 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           ),
                           icon: const Icon(Icons.add),
                           label: const Text('加入我的计划'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              _askingAgent ? null : () => _askAgent(event),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: titleColor,
+                            side: BorderSide(
+                              color: CompetitionUiTokens.borderColor(isDark),
+                            ),
+                          ),
+                          icon: _askingAgent
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.auto_awesome_outlined),
+                          label:
+                              Text(_askingAgent ? '正在打开 Agent…' : '问问 Agent'),
                         ),
                         if (event.officialUrl.isNotEmpty)
                           OutlinedButton.icon(

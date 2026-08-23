@@ -1065,6 +1065,7 @@ func main() {
 		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
 		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
 		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
 		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
 		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
 		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
@@ -1083,6 +1084,12 @@ func main() {
 	{
 		personalDataAccessAPI.GET("", aiUserPermissionHandler.List)
 		personalDataAccessAPI.PUT("", aiUserPermissionHandler.Update)
+	}
+	permissionModeAPI := r.Group("/api/ai/permissions/mode")
+	permissionModeAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		permissionModeAPI.GET("", aiUserPermissionHandler.GetMode)
+		permissionModeAPI.PUT("", aiUserPermissionHandler.SetMode)
 	}
 
 	// 静态文件服务

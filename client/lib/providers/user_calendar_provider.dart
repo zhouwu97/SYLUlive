@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/user_calendar.dart';
 import '../platform/contracts/reminder_notification_client.dart';
 import '../services/user_calendar_service.dart';
+import '../services/domain_change_bus.dart';
 
 class UserCalendarProvider extends ChangeNotifier {
   UserCalendarProvider(this._service);
@@ -92,6 +93,7 @@ class UserCalendarProvider extends ChangeNotifier {
     _events = <UserCalendarEvent>[..._events, event]
       ..sort((a, b) => a.startAt.compareTo(b.startAt));
     notifyListeners();
+    DomainChangeBus.instance.emit(DomainChange.userCalendar);
     return event;
   }
 
@@ -137,6 +139,7 @@ class UserCalendarProvider extends ChangeNotifier {
       if (!scheduled) _reminderWarning = _reminderUnavailableMessage;
     }
     notifyListeners();
+    DomainChangeBus.instance.emit(DomainChange.userCalendar);
     return event;
   }
 
@@ -156,6 +159,7 @@ class UserCalendarProvider extends ChangeNotifier {
       } catch (_) {}
     }
     notifyListeners();
+    DomainChangeBus.instance.emit(DomainChange.userCalendar);
   }
 
   Future<UserCalendarReminder> createReminder(
@@ -181,6 +185,7 @@ class UserCalendarProvider extends ChangeNotifier {
       final scheduled = await _scheduleReminder(event, reminder);
       if (!scheduled) _reminderWarning = _reminderUnavailableMessage;
     }
+    DomainChangeBus.instance.emit(DomainChange.reminder);
     return reminder;
   }
 
@@ -194,6 +199,7 @@ class UserCalendarProvider extends ChangeNotifier {
         calendarReminderNotificationId(eventId, reminder.minutesBefore),
       );
     } catch (_) {}
+    DomainChangeBus.instance.emit(DomainChange.reminder);
   }
 
   Future<bool> _scheduleReminder(

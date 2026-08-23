@@ -706,7 +706,7 @@ func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "设备Token更新成功"})
 }
 
-// UpdatePushSettings 原子更新单活跃设备推送状态，避免多设备开启和关闭相互覆盖。
+// UpdatePushSettings 原子更新单个安装实例的推送状态，不影响同一用户的其他设备。
 func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var input UpdatePushSettingsInput

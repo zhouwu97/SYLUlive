@@ -157,9 +157,130 @@ struct CourseScheduleWidgetEntryView: View {
     }
 }
 
+// ── 考试 Widget ──
+
+struct ExamEntry: TimelineEntry {
+    let date: Date
+    let exams: [ExamItem]
+}
+
+struct ExamItem: Identifiable {
+    let id = UUID()
+    let name: String
+    let date: String
+    let time: String
+    let location: String
+    let countdown: String
+}
+
+struct ExamProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ExamEntry {
+        ExamEntry(date: Date(), exams: [
+            ExamItem(name: "高等数学", date: "2026-06-20", time: "08:00-10:00", location: "综合楼A201", countdown: "3天后")
+        ])
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ExamEntry) -> Void) {
+        completion(placeholder(in: context))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ExamEntry>) -> Void) {
+        completion(Timeline(entries: [readEntry()], policy: .never))
+    }
+
+    private func readEntry() -> ExamEntry {
+        let defaults = UserDefaults(suiteName: "group.com.sylu.sylulive")
+        guard let raw = defaults?.string(forKey: "widget_exam_data"),
+              let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let payload = object as? [String: Any],
+              (payload["schema_version"] as? Int) == 1 else {
+            return ExamEntry(date: Date(), exams: [])
+        }
+        let rawExams = payload["exams"] as? [[String: Any]] ?? []
+        let exams = rawExams.compactMap { item -> ExamItem? in
+            guard let name = item["name"] as? String else { return nil }
+            return ExamItem(
+                name: name,
+                date: item["date"] as? String ?? "",
+                time: item["time"] as? String ?? "",
+                location: item["location"] as? String ?? "",
+                countdown: item["countdown"] as? String ?? ""
+            )
+        }
+        return ExamEntry(date: Date(), exams: exams)
+    }
+}
+
+struct ExamScheduleWidgetEntryView: View {
+    var entry: ExamProvider.Entry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("考试安排")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Color(hex: "1A1A2E"))
+                Spacer()
+                Text("沈理院")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(hex: "EC4899"))
+            }
+            Divider()
+            if entry.exams.isEmpty {
+                Spacer()
+                Text("近期没有考试")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(hex: "9CA3AF"))
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            } else {
+                ForEach(entry.exams.prefix(3)) { exam in
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(Color(hex: "EC4899"))
+                            .frame(width: 3)
+                            .cornerRadius(1.5)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(exam.name)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(hex: "1A1A2E"))
+                                .lineLimit(1)
+                            Text([exam.date, exam.time].filter { !$0.isEmpty }.joined(separator: " "))
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "EC4899"))
+                        }
+                        Spacer()
+                        Text(exam.countdown)
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "9CA3AF"))
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: "FBCFE8"), lineWidth: 0.5))
+        .widgetURL(URL(string: "sylulive://exam"))
+    }
+}
+
+struct ExamScheduleWidget: Widget {
+    let kind: String = "ExamScheduleWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: ExamProvider()) { entry in
+            ExamScheduleWidgetEntryView(entry: entry)
+        }
+        .configurationDisplayName("沈理考试")
+        .description("显示近期考试安排")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
 // ── Widget 入口 ──
 
-@main
 struct CourseScheduleWidget: Widget {
     let kind: String = "CourseScheduleWidget"
 
@@ -170,6 +291,14 @@ struct CourseScheduleWidget: Widget {
         .configurationDisplayName("沈理课表")
         .description("显示当天课程安排")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+@main
+struct SYLUliveWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        CourseScheduleWidget()
+        ExamScheduleWidget()
     }
 }
 

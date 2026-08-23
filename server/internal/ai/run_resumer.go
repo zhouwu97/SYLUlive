@@ -296,6 +296,11 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	if err := r.db.WithContext(ctx).First(&run, "id = ?", resume.RunID).Error; err != nil {
 		return
 	}
+	agentState, stateErr := r.loadRuntimeAgentState(ctx, &run, "resume")
+	if stateErr != nil {
+		r.failRun(resume.RunID, "agent_state_corrupt", true)
+		return
+	}
 	retryConsentTools := resume.WaitingState == models.AIRunStateWaitingUserConsent
 	if retryConsentTools {
 		for _, item := range pending {
@@ -414,7 +419,7 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	_ = r.db.WithContext(ctx).Where("id = ? AND status = ?", resume.ID, "resuming").Delete(&models.AIRunResumeJob{}).Error
 
 	startedAt := time.Now()
-	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, requiredToolCompleted)
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, requiredToolCompleted, &agentState)
 	usage = mergeProviderUsage(usage, outcome.usage)
 	if outcome.cancelled {
 		r.finalizeCancelled(run.ID, true, usage, time.Since(startedAt))

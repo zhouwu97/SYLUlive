@@ -22,17 +22,31 @@ import (
 )
 
 type backfillPlan struct {
-	StandardTags int
-	SpecialTags  int
-	TaggedPosts  int
-	InvalidRefs  int
-	TopicNames   map[string]string
-	Associations []association
+	StandardTags          int
+	SpecialTags           int
+	TaggedPosts           int
+	MatchedStandardRefs   int
+	SkippedSpecialRefs    int
+	IgnoredLegacyRefs     int
+	InvalidRefs           int
+	InvalidNameRefs       int
+	DuplicateAssociations int
+	TopicNames            map[string]string
+	Associations          []association
 }
 
 type association struct {
 	PostID uint
 	Name   string
+}
+
+// 这些旧 WaterTag 没有稳定语义，不应污染新 Topic 推荐和首页展示。
+var ignoredLegacyTopicNames = map[string]struct{}{
+	"其他":  {},
+	"其它":  {},
+	"默认":  {},
+	"未分类": {},
+	"综合":  {},
 }
 
 func main() {
@@ -51,7 +65,12 @@ func main() {
 	log.Printf("standard WaterTag 数量: %d", plan.StandardTags)
 	log.Printf("special WaterTag 数量: %d", plan.SpecialTags)
 	log.Printf("历史带 WaterTag 帖子数: %d", plan.TaggedPosts)
+	log.Printf("匹配标准 WaterTag 引用数: %d", plan.MatchedStandardRefs)
+	log.Printf("跳过特殊 content_mode 引用数: %d", plan.SkippedSpecialRefs)
+	log.Printf("跳过无意义 legacy 名称引用数: %d", plan.IgnoredLegacyRefs)
 	log.Printf("非法引用数: %d", plan.InvalidRefs)
+	log.Printf("无效 Topic 名称数: %d", plan.InvalidNameRefs)
+	log.Printf("重复关联合并数: %d", plan.DuplicateAssociations)
 	log.Printf("预计 Topic 数量: %d", len(plan.TopicNames))
 	log.Printf("预计新增关联数: %d", len(plan.Associations))
 	if plan.InvalidRefs > 0 {
@@ -113,17 +132,26 @@ func buildPlan(db *gorm.DB) (backfillPlan, error) {
 			var special models.WaterSectionTag
 			if err := db.First(&special, *post.WaterTagID).Error; err != nil {
 				plan.InvalidRefs++
+			} else {
+				plan.SkippedSpecialRefs++
 			}
 			continue
 		}
+		plan.MatchedStandardRefs++
 		name, err := services.NormalizeTopicName(tag.Name)
 		if err != nil {
+			plan.InvalidNameRefs++
+			continue
+		}
+		if _, ignored := ignoredLegacyTopicNames[name]; ignored {
+			plan.IgnoredLegacyRefs++
 			continue
 		}
 		plan.TopicNames[name] = name
 		// Topic ID 在 dry-run 期间未知，先把业务上的唯一关联去重。
 		key := fmt.Sprintf("%d:%s", post.ID, name)
 		if _, ok := seen[key]; ok {
+			plan.DuplicateAssociations++
 			continue
 		}
 		seen[key] = struct{}{}

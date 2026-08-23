@@ -17,15 +17,20 @@ import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
 import '../../services/topic_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_spacing.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/water_section/section_avatar.dart';
-import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
+import 'widgets/publish_media_section.dart';
+import 'widgets/publish_section_selector.dart';
+import 'widgets/publish_topic_section.dart';
+import 'widgets/topic_picker_sheet.dart';
 import 'widgets/water_post_bottom_bar.dart';
 
 /// 水帖发布/编辑页（boardId == 1）。
 ///
-/// 采用全屏编辑布局：顶部标题，中间正文自适应填充，底部保留图片和发布工具栏。
+/// 采用整体滚动编辑布局：顶部标题、正文、话题与媒体顺序自然延展。
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
   final String? initialPostType;
@@ -39,14 +44,12 @@ class WaterPostComposer extends StatefulWidget {
 class _WaterPostComposerState extends State<WaterPostComposer>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
+  static const _maxTopics = 5;
   static const _maxContentLength = 2000;
-  static const Color _teal = Color(0xFF12B8A6);
-  static const Color _softTeal = Color(0xFFEAFBF8);
   static const Color _hintLight = Color(0xFFA7ABB2);
-  static const Color _dividerLight = Color(0xFFE1E4E8);
   static const Color _titleWarning = Color(0xFFE5484D);
-  static const double _titleFontSize = 18.5;
-  static const double _contentFontSize = 14.5;
+  static const double _titleFontSize = 18;
+  static const double _contentFontSize = 15;
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
@@ -63,7 +66,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   final List<TopicSelection> _selectedTopics = [];
   List<Topic> _recommendedTopics = const [];
   bool _topicLoading = false;
-  String? _topicError;
   Timer? _topicDebounce;
   String _lastTopicQuery = '';
 
@@ -177,8 +179,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   int get _charCount => _contentController.text.length;
 
-  bool get _hasImages => _totalImageCount > 0 || canAddMoreImages;
-
   String get _pageTitle => _isEditing ? '编辑水帖' : '发布水帖';
 
   String _userFacingPostError(String? message) {
@@ -225,7 +225,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _titleController.text = post.title;
       _contentController.text = post.content;
       _images.addAll(post.images.map(PublishImageItem.existing));
-      _selectedTagId = post.waterTagId;
+      // 普通 Composer 不再暴露 legacy WaterTag；编辑旧帖时一并清空。
+      _selectedTagId = null;
       _selectedTopics.addAll(
         post.topics.map(
           (topic) => TopicSelection.existing(id: topic.id, name: topic.name),
@@ -296,7 +297,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (!_hasExplicitInitialPostType && draft.postType.isNotEmpty) {
       _selectedPostType = draft.postType;
     }
-    _selectedTagId ??= draft.waterTagId;
+    // 兼容旧草稿结构，但不把普通 WaterTag 恢复到新 Composer。
+    _selectedTagId = null;
     _selectedTopics
       ..clear()
       ..addAll(draft.topics);
@@ -329,6 +331,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     }
   }
 
+  Future<void> _handleBack() async {
+    if (_isLoading) return;
+    _draftDebounce?.cancel();
+    await _persistDraft();
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
   Future<void> _writeDraft() async {
     final draft = PostDraft(
       title: _titleController.text.trim(),
@@ -356,9 +365,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   Future<void> _refreshTopicRecommendations() async {
-    final query =
+    final rawQuery =
         '${_titleController.text.trim()} ${_contentController.text.trim()}'
             .trim();
+    final query = rawQuery.runes.length < 4 ? '' : rawQuery;
     if (query == _lastTopicQuery && _recommendedTopics.isNotEmpty) return;
     _lastTopicQuery = query;
     if (mounted) setState(() => _topicLoading = true);
@@ -371,11 +381,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       if (!mounted) return;
       setState(() {
         _recommendedTopics = topics;
-        _topicError = null;
       });
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _topicError = '推荐暂不可用');
+      // 推荐是增强能力；失败时保留已有推荐或空态，不打扰发帖。
     } finally {
       if (mounted) setState(() => _topicLoading = false);
     }
@@ -399,145 +407,22 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     _scheduleDraftSave();
   }
 
-  String _cleanTopicName(String value) =>
-      value.trim().replaceFirst(RegExp(r'^[#＃]+'), '').trim();
-
   Future<void> _openTopicPicker() async {
-    final controller = TextEditingController();
-    Timer? searchDebounce;
-    var closed = false;
-    final result = await showModalBottomSheet<TopicSelection>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        var results = List<Topic>.from(_recommendedTopics);
-        var loading = false;
-        String? error;
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            Future<void> search(String value) async {
-              final query = value.trim();
-              searchDebounce?.cancel();
-              if (query.isEmpty) {
-                setSheetState(() {
-                  results = List<Topic>.from(_recommendedTopics);
-                  error = null;
-                  loading = false;
-                });
-                return;
-              }
-              setSheetState(() {
-                loading = true;
-                error = null;
-              });
-              searchDebounce =
-                  Timer(const Duration(milliseconds: 260), () async {
-                try {
-                  final found = await _topicService.search(
-                    query: query,
-                    section: _selectedPostType,
-                    limit: 20,
-                  );
-                  if (closed) return;
-                  setSheetState(() {
-                    results = found;
-                    loading = false;
-                  });
-                } catch (_) {
-                  if (closed) return;
-                  setSheetState(() {
-                    loading = false;
-                    error = '搜索失败，请重试';
-                  });
-                }
-              });
-            }
-
-            final customName = _cleanTopicName(controller.text);
-            final hasExact = results.any((topic) => topic.name == customName);
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                0,
-                16,
-                16 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: SizedBox(
-                height: 430,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '添加话题',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: controller,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onChanged: search,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search_rounded),
-                        hintText: '搜索或创建话题',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (loading) const LinearProgressIndicator(minHeight: 2),
-                    if (error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(error!,
-                            style: const TextStyle(color: Colors.red)),
-                      ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          if (customName.isNotEmpty && !hasExact)
-                            ListTile(
-                              leading: const Icon(Icons.add_circle_outline),
-                              title: Text('#$customName'),
-                              subtitle: const Text('发布时创建自定义话题'),
-                              onTap: () => Navigator.of(sheetContext).pop(
-                                TopicSelection.custom(customName),
-                              ),
-                            ),
-                          ...results.map(
-                            (topic) => ListTile(
-                              leading: const Icon(Icons.tag_rounded),
-                              title: Text('#${topic.name}'),
-                              onTap: () => Navigator.of(sheetContext).pop(
-                                TopicSelection.existing(
-                                  id: topic.id,
-                                  name: topic.name,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (!loading && results.isEmpty && customName.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.all(20),
-                              child: Text('暂无推荐话题，输入关键词搜索或创建'),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    final result = await showTopicPickerSheet(
+      context,
+      service: _topicService,
+      section: _selectedPostType,
+      recommendedTopics: _recommendedTopics,
+      selectedTopics: _selectedTopics,
+      maxTopics: _maxTopics,
     );
-    closed = true;
-    searchDebounce?.cancel();
-    controller.dispose();
-    if (result != null && mounted) _addTopic(result);
+    if (result == null || !mounted) return;
+    setState(() {
+      _selectedTopics
+        ..clear()
+        ..addAll(result);
+    });
+    _scheduleDraftSave();
   }
 
   // ---------------------------------------------------------------------------
@@ -640,9 +525,12 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         }
         await _draftService.clear();
 
-        _showSubmitSuccessFeedback(result.post);
+        final successMessage = _submitSuccessMessage(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          AppFeedback.success(successMessage);
+        });
       } else {
         AppFeedback.error(
           _userFacingPostError(result.errorMessage),
@@ -668,7 +556,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     return null;
   }
 
-  void _showSubmitSuccessFeedback(Post? post) {
+  String _submitSuccessMessage(Post? post) {
     final awards = post?.expAwards ?? const <ExpAward>[];
     final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
     final sectionAward =
@@ -700,7 +588,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
     }
 
-    AppFeedback.success(lines.join('\n'), context: context);
+    return lines.join('\n');
   }
 
   // ---------------------------------------------------------------------------
@@ -813,222 +701,22 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     }
   }
 
-  Widget _buildCategorySelector(bool isDark) {
-    final section = _selectedSection;
-    final color =
-        section.colorHex.isNotEmpty ? colorHexToColor(section.colorHex) : _teal;
-    final tags = section.enabledTags
-        .where((tag) => !tag.isTeamRecruitment)
-        .toList(growable: false);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: _showCategorySheet,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    '版块',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : _teal,
-                    ),
-                  ),
-                  const Spacer(),
-                  SectionAvatar(
-                    section: section,
-                    size: 24,
-                    radius: 8,
-                    accentColor: color,
-                    isDark: isDark,
-                    showBorder: true,
-                    borderColor: color.withValues(alpha: 0.15),
-                    borderWidth: 1,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    section.title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : const Color(0xFF20232A),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 22,
-                    color: _teal,
-                  ),
-                ],
-              ),
-              if (tags.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: tags.map((tag) {
-                    final selected = _selectedTagId == tag.id;
-                    return GestureDetector(
-                      onTap: () {
-                        setState(
-                            () => _selectedTagId = selected ? null : tag.id);
-                        _scheduleDraftSave();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? color.withValues(alpha: 0.2)
-                              : color.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
-                          border: selected
-                              ? Border.all(color: color.withValues(alpha: 0.4))
-                              : null,
-                        ),
-                        child: Text(
-                          tag.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w500,
-                            color: selected
-                                ? color
-                                : (isDark
-                                    ? Colors.white60
-                                    : const Color(0xFF667085)),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-              if (section.noticeText.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 14,
-                        color: section.isSensitive
-                            ? Colors.orange.shade600
-                            : color),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        section.noticeText,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.3,
-                          color:
-                              isDark ? Colors.white60 : const Color(0xFF7B818C),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (section.isSensitive) ...[
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.privacy_tip_outlined,
-                        size: 14, color: Colors.orange.shade600),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        '该版块内容更容易触发管理审核，请避免泄露隐私、攻击他人或发布无法核实的信息。',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.3,
-                          color: isDark
-                              ? Colors.orange.shade200
-                              : Colors.orange.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+  Widget _buildCategorySelector() {
+    return PublishSectionSelector(
+      section: _selectedSection,
+      onTap: _showCategorySheet,
     );
   }
 
-  Widget _buildTopicEditor(bool isDark) {
-    final visibleRecommendations = _recommendedTopics
-        .where((topic) => !_selectedTopics.any((item) => item.id == topic.id))
-        .take(5)
-        .toList(growable: false);
-    final foreground = isDark ? Colors.white70 : const Color(0xFF667085);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              ..._selectedTopics.map(
-                (topic) => InputChip(
-                  label: Text('#${topic.name}'),
-                  onDeleted: () => _removeTopic(topic),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              ActionChip(
-                avatar: const Icon(Icons.add, size: 16),
-                label: Text(_selectedTopics.isEmpty ? '添加话题' : '继续添加'),
-                onPressed:
-                    _selectedTopics.length >= 5 ? null : _openTopicPicker,
-              ),
-            ],
-          ),
-          if (_topicLoading || _topicError != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              _topicLoading ? '正在加载推荐话题…' : _topicError!,
-              style: TextStyle(fontSize: 11, color: foreground),
-            ),
-          ],
-          if (visibleRecommendations.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: visibleRecommendations
-                  .map(
-                    (topic) => GestureDetector(
-                      onTap: () => _addTopic(
-                        TopicSelection.existing(id: topic.id, name: topic.name),
-                      ),
-                      child: Text(
-                        '#${topic.name}',
-                        style: TextStyle(fontSize: 12, color: foreground),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-        ],
-      ),
+  Widget _buildTopicEditor() {
+    return PublishTopicSection(
+      selectedTopics: _selectedTopics,
+      recommendedTopics: _recommendedTopics,
+      loading: _topicLoading,
+      maxTopics: _maxTopics,
+      onAdd: _openTopicPicker,
+      onRemove: _removeTopic,
+      onSelectRecommendation: _addTopic,
     );
   }
 
@@ -1037,91 +725,112 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0D1117) : Colors.white,
+      backgroundColor:
+          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        toolbarHeight: 58,
+        toolbarHeight: 56,
         leading: IconButton(
+          tooltip: '返回',
           icon: const Icon(Icons.arrow_back_rounded),
-          color: _teal,
-          iconSize: 28,
-          onPressed: () => Navigator.of(context).maybePop(),
+          color: AppColors.brandPrimary,
+          iconSize: 26,
+          onPressed: _handleBack,
         ),
         title: Text(
           _pageTitle,
           style: TextStyle(
-            color: isDark ? Colors.white : Colors.black,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
+            color:
+                isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
       ),
-      bottomNavigationBar: _buildBottomArea(isDark),
+      bottomNavigationBar: _buildBottomArea(),
       body: SafeArea(
         bottom: false,
         child: Form(
           key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildCategorySelector(isDark),
-              AnimatedBuilder(
-                animation: _titleWarningController,
-                builder: (context, child) {
-                  final offset = _titleNeedsAttention
-                      ? math.sin(_titleWarningController.value * math.pi * 6) *
-                          6
-                      : 0.0;
-                  return Transform.translate(
-                    offset: Offset(offset, 0),
-                    child: child,
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                  child: TextFormField(
-                    controller: _titleController,
-                    focusNode: _titleFocusNode,
-                    decoration: InputDecoration(
-                      hintText: '添加标题',
-                      hintStyle: TextStyle(
-                        color:
-                            _titleNeedsAttention ? _titleWarning : _hintLight,
-                        fontSize: _titleFontSize,
-                        fontWeight: FontWeight.w500,
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildCategorySelector(),
+                AnimatedBuilder(
+                  animation: _titleWarningController,
+                  builder: (context, child) {
+                    final offset = _titleNeedsAttention
+                        ? math.sin(
+                                _titleWarningController.value * math.pi * 6) *
+                            6
+                        : 0.0;
+                    return Transform.translate(
+                      offset: Offset(offset, 0),
+                      child: child,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.xl,
+                      AppSpacing.lg,
+                      0,
+                    ),
+                    child: TextFormField(
+                      controller: _titleController,
+                      focusNode: _titleFocusNode,
+                      decoration: InputDecoration(
+                        hintText: '添加标题（选填）',
+                        hintStyle: TextStyle(
+                          color:
+                              _titleNeedsAttention ? _titleWarning : _hintLight,
+                          fontSize: _titleFontSize,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                       ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      style: TextStyle(
+                        fontSize: _titleFontSize,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                      maxLines: 1,
                     ),
-                    style: TextStyle(
-                      fontSize: _titleFontSize,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                    maxLines: 1,
                   ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Divider(height: 1, color: _dividerLight),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: Divider(
+                    height: 1,
+                    color: isDark
+                        ? AppColors.composerDividerDark
+                        : AppColors.composerDividerLight,
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                   child: TextFormField(
                     controller: _contentController,
                     inputFormatters: [
                       LengthLimitingTextInputFormatter(_maxContentLength),
                     ],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: '分享校园生活、提问或记录此时此刻···',
-                      hintStyle: TextStyle(
+                      hintStyle: const TextStyle(
                         color: _hintLight,
                         fontSize: _contentFontSize,
                         fontWeight: FontWeight.w500,
@@ -1129,48 +838,42 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.only(top: 28),
-                      errorStyle: TextStyle(fontSize: 13),
+                      contentPadding: const EdgeInsets.only(top: AppSpacing.lg),
+                      errorStyle: const TextStyle(fontSize: 13),
                     ),
                     style: TextStyle(
                       fontSize: _contentFontSize,
                       height: 1.55,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : const Color(0xFF333333),
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
                     ),
-                    expands: true,
+                    minLines: 6,
                     maxLines: null,
                     textAlignVertical: TextAlignVertical.top,
                   ),
                 ),
-              ),
-              _buildTopicEditor(isDark),
-              if (_hasImages)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                  child: PublishImageGrid(
-                    images: _images,
-                    canAddMore: canAddMoreImages,
-                    onAdd: showImageSourceDialog,
-                    onRemove: _removeImage,
-                    onReorder: _moveImage,
-                    onRetry: _retryImage,
-                    compact: true,
-                  ),
+                _buildTopicEditor(),
+                PublishMediaSection(
+                  images: _images,
+                  canAddMore: canAddMoreImages,
+                  maxImages: _maxImages,
+                  onAdd: showImageSourceDialog,
+                  onRemove: _removeImage,
+                  onReorder: _moveImage,
+                  onRetry: _retryImage,
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBottomArea(bool isDark) {
+  Widget _buildBottomArea() {
     return WaterPostBottomBar(
       isLoading: _isLoading,
-      imageCount: _totalImageCount,
-      maxImages: _maxImages,
       charCount: _charCount,
       maxContentLength: _maxContentLength,
       publishLabel: _isEditing ? '保存修改' : '发布',

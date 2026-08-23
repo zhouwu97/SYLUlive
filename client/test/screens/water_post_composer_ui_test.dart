@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
 import 'package:shenliyuan/services/post_draft_service.dart';
+import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:image_picker/image_picker.dart';
 
 class FakeAuthProvider extends Fake
@@ -148,10 +149,10 @@ void main() {
     await tester.tap(find.text('打开发布页'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).last, '暂未发布的草稿');
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
     await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     });
 
     await tester.tap(find.text('打开发布页'));
@@ -169,16 +170,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('发布水帖'), findsOneWidget);
-    expect(find.text('版块'), findsOneWidget);
+    expect(find.text('发布到'), findsOneWidget);
+    expect(find.text('版块'), findsNothing);
     expect(find.text('校园生活'), findsOneWidget);
     expect(find.text('今天想分享什么？'), findsNothing);
-    expect(find.text('添加标题'), findsOneWidget);
-    expect(find.text('添加标题（选填）'), findsNothing);
+    expect(find.text('添加标题（选填）'), findsOneWidget);
     expect(find.text('分享校园生活、提问或记录此时此刻···'), findsOneWidget);
-    expect(find.text('添加照片'), findsOneWidget);
-    expect(find.text('图片 0/9'), findsOneWidget);
+    expect(find.text('添加图片'), findsOneWidget);
+    expect(find.text('图片'), findsOneWidget);
+    expect(find.text('0/9'), findsOneWidget);
     expect(find.text('0/2000字'), findsOneWidget);
-    expect(find.text('话题'), findsNothing);
+    expect(find.text('话题'), findsOneWidget);
+    expect(find.text('0/5'), findsOneWidget);
     expect(find.text('地点'), findsNothing);
     expect(find.text('发布'), findsOneWidget);
     expect(find.byIcon(Icons.post_add_outlined), findsNothing);
@@ -195,20 +198,20 @@ void main() {
         tester.widget<EditableText>(find.byType(EditableText).first);
     final contentEditable =
         tester.widget<EditableText>(find.byType(EditableText).last);
-    final titleHint = tester.widget<Text>(find.text('添加标题'));
+    final titleHint = tester.widget<Text>(find.text('添加标题（选填）'));
     final contentHint = tester.widget<Text>(find.text('分享校园生活、提问或记录此时此刻···'));
     final pageTitle = tester.widget<Text>(find.text('发布水帖'));
-    final categoryTitle = tester.widget<Text>(find.text('版块'));
+    final categoryTitle = tester.widget<Text>(find.text('发布到'));
     final selectedCategory = tester.widget<Text>(find.text('校园生活'));
 
-    expect(pageTitle.style?.color, Colors.black);
-    expect(pageTitle.style?.fontSize, 18);
+    expect(pageTitle.style?.color, AppColors.textPrimaryLight);
+    expect(pageTitle.style?.fontSize, 17);
     expect(categoryTitle.style?.fontSize, lessThanOrEqualTo(18));
     expect(selectedCategory.style?.fontSize, lessThanOrEqualTo(18));
-    expect(titleEditable.style.fontSize, 18.5);
-    expect(titleHint.style?.fontSize, 18.5);
-    expect(contentEditable.style.fontSize, 14.5);
-    expect(contentHint.style?.fontSize, 14.5);
+    expect(titleEditable.style.fontSize, 18);
+    expect(titleHint.style?.fontSize, 18);
+    expect(contentEditable.style.fontSize, 15);
+    expect(contentHint.style?.fontSize, 15);
   });
 
   testWidgets('empty title with content publishes (title optional)',
@@ -298,5 +301,38 @@ void main() {
     expect(postProvider.createPostCalls, 1);
     expect(postProvider.lastTitle, '食堂窗口推荐');
     expect(postProvider.lastContent, '今天食堂二楼的窗口很好吃');
+  });
+
+  testWidgets('topic picker supports custom topic creation',
+      (WidgetTester tester) async {
+    final postProvider = FakePostProvider();
+
+    await tester.pumpWidget(buildComposerTestApp(postProvider));
+    await tester.pumpAndSettle();
+    final addTopic = find.ancestor(
+      of: find.text('添加话题'),
+      matching: find.byType(ActionChip),
+    );
+    tester.widget<ActionChip>(addTopic).onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(find.text('搜索或创建话题'), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
+
+    final topicSearchField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == '搜索或创建话题',
+    );
+    await tester.enterText(topicSearchField, '#新生互助');
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('#新生互助'), findsNWidgets(2));
+    expect(find.text('发布帖子时创建'), findsOneWidget);
+
+    await tester.tap(find.text('#新生互助').last);
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('#新生互助'), findsOneWidget);
+    expect(find.text('1/5'), findsOneWidget);
   });
 }

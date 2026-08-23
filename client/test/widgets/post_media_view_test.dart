@@ -158,6 +158,17 @@ void main() {
       expect(size.width, closeTo(390.0, 0.01));
       expect(size.height, closeTo(280.0, 0.01));
     });
+
+    test('sectionFeed 与首页共享全宽单图规则', () {
+      final size = calculateSinglePostImageSize(
+        availableWidth: 390,
+        aspectRatio: 9 / 16,
+        variant: PostMediaVariant.sectionFeed,
+      );
+
+      expect(size.width, closeTo(390.0, 0.01));
+      expect(size.height, closeTo(280.0, 0.01));
+    });
   });
 
   testWidgets('外层帖子点击回调优先于图片查看器', (tester) async {

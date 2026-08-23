@@ -449,7 +449,7 @@ class _PostCardState extends State<PostCard>
                     ),
                   ),
                 ],
-                if (hasUsefulTag) ...[
+                if (hasUsefulTag && post.topics.isEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '#${labels.tagLabel}',
@@ -702,8 +702,9 @@ class _PostCardState extends State<PostCard>
 
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {
     final labels = _waterLabels(context, post);
-    final text = labels.sectionLabel.isNotEmpty && labels.tagLabel.isNotEmpty
-        ? '${labels.sectionLabel} · ${labels.tagLabel}'
+    final legacyTag = post.topics.isEmpty ? labels.tagLabel : '';
+    final text = labels.sectionLabel.isNotEmpty && legacyTag.isNotEmpty
+        ? '${labels.sectionLabel} · $legacyTag'
         : labels.sectionLabel;
     if (text.isEmpty) return const SizedBox.shrink();
     return Container(
@@ -730,6 +731,7 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildWaterInlineTag(BuildContext context, bool isDark, Post post) {
+    if (post.topics.isNotEmpty) return const SizedBox.shrink();
     final tagLabel = _waterLabels(context, post).tagLabel;
     if (tagLabel.isEmpty) return const SizedBox.shrink();
     return Align(

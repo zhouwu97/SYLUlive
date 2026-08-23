@@ -1318,9 +1318,9 @@ func deviceRequestForDataset(dataset academic.DatasetType, request academic.Reso
 	switch dataset {
 	case academic.DatasetGrades:
 		if ensureFresh {
-			return "device.academic.ensure_fresh_overview", []string{"academic"}, json.RawMessage(`{"max_age_seconds":300}`), true
+			return "device.academic.ensure_fresh_grade_summary", []string{"grades"}, json.RawMessage(`{"max_age_seconds":300}`), true
 		}
-		return "device.academic.get_cached_overview", []string{"academic"}, json.RawMessage(`{}`), true
+		return "device.academic.get_cached_grade_summary", []string{"grades"}, json.RawMessage(`{}`), true
 	case academic.DatasetSchedule:
 		if ensureFresh {
 			arguments, err := json.Marshal(map[string]interface{}{
@@ -1337,7 +1337,12 @@ func deviceRequestForDataset(dataset academic.DatasetType, request academic.Reso
 			return "", nil, nil, false
 		}
 		return "device.schedule.get_cached_week", []string{"schedule"}, arguments, true
-	case academic.DatasetAcademicSituation, academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
+	case academic.DatasetAcademicSituation:
+		if ensureFresh {
+			return "device.academic.ensure_fresh_risk_context", []string{"grades"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
+		return "device.academic.get_cached_risk_context", []string{"grades"}, json.RawMessage(`{}`), true
+	case academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
 		if ensureFresh {
 			return "device.academic.ensure_fresh_credit_summary", []string{"academic"}, json.RawMessage(`{"max_age_seconds":300}`), true
 		}
@@ -1349,6 +1354,26 @@ func deviceRequestForDataset(dataset academic.DatasetType, request academic.Reso
 		return "device.erke.get_cached_overview", []string{"erke"}, json.RawMessage(`{}`), true
 	default:
 		return "", nil, nil, false
+	}
+}
+
+func deviceDatasetForTool(toolName string) string {
+	switch toolName {
+	case "device.academic.get_cached_grade_summary",
+		"device.academic.ensure_fresh_grade_summary",
+		"device.academic.get_cached_overview",
+		"device.academic.ensure_fresh_overview":
+		return string(academic.DatasetGrades)
+	case "device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
+		return string(academic.DatasetAcademicSituation)
+	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
+		return string(academic.DatasetSchedule)
+	case "device.academic.get_credit_summary", "device.academic.ensure_fresh_credit_summary":
+		return string(academic.DatasetCreditRequirements)
+	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
+		return string(academic.DatasetErke)
+	default:
+		return ""
 	}
 }
 
@@ -1406,6 +1431,10 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		if _, blocked := results[dataset]; blocked {
 			continue
 		}
+		if resumed, ok := resumedDeviceContextResult(ctx, dataset); ok {
+			results[dataset] = resumed
+			continue
+		}
 		if dataset == academic.DatasetErke {
 			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
 			continue
@@ -1452,6 +1481,55 @@ func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, fres
 	return result
 }
 
+// resumedDeviceContextResult 将设备任务结果还原为统一 ContextResult，
+// 但只供当前外层工具重试时读取。它不改变 Snapshot Store，也不绕过权限检查；
+// 下一次完整工具执行仍会重新构建分析输入并产出自己的 Tool Result。
+func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetType) (academic.ContextResult, bool) {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	if !ok || resume.Dataset != string(dataset) {
+		return academic.ContextResult{}, false
+	}
+	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
+		return personalContextUnavailable(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据"), true
+	}
+	var envelope struct {
+		Data      json.RawMessage     `json:"data"`
+		Source    academic.DataSource `json:"source"`
+		FetchedAt *time.Time          `json:"fetched_at"`
+		ExpiresAt *time.Time          `json:"expires_at"`
+		IsStale   bool                `json:"is_stale"`
+		IsPartial bool                `json:"is_partial"`
+		Warnings  []string            `json:"warnings"`
+		Evidence  []academic.Evidence `json:"evidence"`
+	}
+	if err := json.Unmarshal(resume.Result, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
+		return personalContextUnavailable(academic.DataStatusFailed, "手机返回的数据格式无法用于本次分析"), true
+	}
+	source := envelope.Source
+	if !source.Valid() || source == academic.DataSourceNone {
+		source = academic.DataSourceDeviceEncryptedCache
+	}
+	status := academic.DataStatusAvailable
+	if envelope.IsStale {
+		status = academic.DataStatusStale
+	} else if envelope.IsPartial {
+		status = academic.DataStatusPartial
+	}
+	evidence := envelope.Evidence
+	if len(evidence) == 0 {
+		evidence = []academic.Evidence{{
+			Source: source, Dataset: dataset, FetchedAt: envelope.FetchedAt,
+			ExpiresAt: envelope.ExpiresAt, IsStale: envelope.IsStale,
+		}}
+	}
+	return academic.ContextResult{
+		Data: envelope.Data, Status: status, Source: source,
+		FetchedAt: envelope.FetchedAt, ExpiresAt: envelope.ExpiresAt,
+		IsStale: envelope.IsStale, IsPartial: envelope.IsPartial,
+		Warnings: envelope.Warnings, Evidence: evidence,
+	}, true
+}
+
 func personalContextUnavailable(status academic.DataStatus, warning string) academic.ContextResult {
 	return academic.ContextResult{Data: json.RawMessage(`{"error_code":"personal_context_unavailable"}`), Status: status, Source: academic.DataSourceNone, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
 }
@@ -1460,7 +1538,8 @@ func (mcp *campusMCP) getGradeSummary(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary"})
+	policy := ResolveFreshnessPolicy("grade_summary", []academic.DatasetType{academic.DatasetGrades}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: policy.Preference, Reason: "grade_summary"})
 	if err != nil {
 		return nil, err
 	}
@@ -1501,7 +1580,8 @@ func (mcp *campusMCP) getFailureRisk(ctx context.Context, userID uint, arguments
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "failure_risk"})
+	policy := ResolveFreshnessPolicy("failure_risk", []academic.DatasetType{academic.DatasetGrades}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: policy.Preference, Reason: "failure_risk"})
 	if err != nil {
 		return nil, err
 	}
@@ -1528,8 +1608,9 @@ func (mcp *campusMCP) getRiskAnalysis(ctx context.Context, userID uint, argument
 		academic.DatasetAcademicSituation,
 		academic.DatasetErke,
 	}
+	policy := ResolveFreshnessPolicy("academic_risk_analysis", requested, "")
 	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
-		Datasets: requested, Freshness: academic.FreshnessPreferRecent, Reason: "academic_risk_analysis",
+		Datasets: requested, Freshness: policy.Preference, Reason: "academic_risk_analysis",
 	})
 	if err != nil {
 		return nil, err
@@ -1559,7 +1640,8 @@ func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, 
 	if !validWeekdays(input.Weekdays) {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability", ScheduleWeekContaining: input.WeekContaining})
+	policy := ResolveFreshnessPolicy("schedule_availability", []academic.DatasetType{academic.DatasetSchedule}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: policy.Preference, Reason: "schedule_availability", ScheduleWeekContaining: input.WeekContaining})
 	if err != nil {
 		return nil, err
 	}

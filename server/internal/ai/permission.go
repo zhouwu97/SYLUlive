@@ -65,6 +65,17 @@ func (mcp *campusMCP) permissionDecision(ctx context.Context, userID uint, scope
 			call.RunID, userID, scope, now,
 		).First(&consent).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 一个 Run 的个人数据计划只展示一次普通用户确认。当前
+			// scope 未单独记录时，已批准的同一 Run 计划覆盖其它只读/刷新 scope。
+			// 写操作不经过校园个人数据权限链路，仍保持独立确认。
+			var planConsent models.AIRunConsent
+			planErr := mcp.db.WithContext(ctx).Where(
+				"run_id = ? AND user_id = ? AND granted = ? AND expires_at > ?",
+				call.RunID, userID, true, now,
+			).First(&planConsent).Error
+			if planErr == nil && isRunPermissionPlanScope(scope) {
+				return PermissionDecisionAllow, nil
+			}
 			return PermissionDecisionAsk, nil
 		}
 		if err != nil {
@@ -76,6 +87,20 @@ func (mcp *campusMCP) permissionDecision(ctx context.Context, userID uint, scope
 		return PermissionDecisionDeny, nil
 	default:
 		return PermissionDecisionDeny, nil
+	}
+}
+
+func isRunPermissionPlanScope(scope models.AIUserPermissionScope) bool {
+	switch scope {
+	case models.AIUserPermissionPersonalDataAccess,
+		models.AIUserPermissionDeviceCacheAccess,
+		models.AIUserPermissionRemoteEduRefresh,
+		models.AIUserPermissionErkeSnapshotUpload,
+		models.AIUserPermissionAcademicCloudStorage,
+		models.AIUserPermissionExternalModelAnalysis:
+		return true
+	default:
+		return false
 	}
 }
 

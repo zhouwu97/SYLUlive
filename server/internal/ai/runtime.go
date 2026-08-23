@@ -158,6 +158,7 @@ type CreateRunRequest struct {
 	ConversationID  string
 	ClientRequestID string
 	Message         string
+	AgentContext    *AgentContextEnvelope
 }
 
 func NormalizeUserMessage(message string, maxChars int) (string, int, error) {
@@ -183,6 +184,18 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 	message, messageLength, err := NormalizeUserMessage(request.Message, r.config.MaxMessageChars)
 	if err != nil {
 		return models.AIRun{}, false, err
+	}
+	request.AgentContext, err = r.validateAgentContext(ctx, userID, request.AgentContext)
+	if err != nil {
+		return models.AIRun{}, false, err
+	}
+	agentContextPayload := datatypes.JSON([]byte("{}"))
+	if request.AgentContext != nil {
+		payload, marshalErr := json.Marshal(request.AgentContext)
+		if marshalErr != nil {
+			return models.AIRun{}, false, runtimeContextError("上下文序列化失败")
+		}
+		agentContextPayload = datatypes.JSON(payload)
 	}
 	requestHash := sha256.Sum256([]byte(message))
 	now := time.Now()
@@ -262,6 +275,7 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			ClientRequestID: request.ClientRequestID, State: models.AIRunStateBudgetReserved,
 			Provider: r.config.ProviderName, Model: r.config.Model, Attempt: 1,
 			MessageHash: hex.EncodeToString(requestHash[:]), MessageLength: messageLength,
+			AgentContext:        agentContextPayload,
 			BudgetReservationID: &reservationID, ExpiresAt: now.Add(r.config.RequestTimeout + 5*time.Minute),
 		}
 		if err := tx.Create(&run).Error; err != nil {
@@ -316,10 +330,19 @@ func (r *Runtime) Execute(runID, message string) {
 	if err := r.db.First(&run, "id = ?", runID).Error; err != nil {
 		return
 	}
+	contextPrompt := r.agentContextPrompt(ctx, run.UserID, run.AgentContext)
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
 		return
 	}
-	if r.useLangChain(run.UserID) {
+	preflightMessages, preflightErr := r.agentContextPreflight(ctx, &run)
+	if preflightErr != nil {
+		r.failBeforeGeneration(runID, "agent_context_preflight_failed", true)
+		return
+	}
+	if r.useLangChain(run.UserID) && contextPrompt == "" && len(preflightMessages) == 0 {
+		if contextPrompt != "" {
+			message += "\n\n" + contextPrompt
+		}
 		r.executeLangChain(ctx, &run, message)
 		return
 	}
@@ -376,8 +399,12 @@ func (r *Runtime) Execute(runID, message string) {
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: buildPolicyPrompt(message, queryPlan, coverage, promptChunks)},
+		{Role: "user", Content: appendAgentContextPrompt(
+			buildPolicyPrompt(message, queryPlan, coverage, promptChunks),
+			contextPrompt,
+		)},
 	}
+	messages = append(messages, preflightMessages...)
 	if !hasTools {
 		// 纯政策问答在 Provider 建连前进入生成态，使取消请求可以中断阻塞流。
 		if err := r.transition(ctx, &run, models.AIRunStatePlanning, models.AIRunStateGenerating); err != nil {
@@ -594,6 +621,13 @@ func buildPolicyPrompt(
 		))
 	}
 	return builder.String()
+}
+
+func appendAgentContextPrompt(prompt, contextPrompt string) string {
+	if strings.TrimSpace(contextPrompt) == "" {
+		return prompt
+	}
+	return prompt + "\n\n" + contextPrompt
 }
 
 func sanitizeAttribute(value string) string {
@@ -895,6 +929,43 @@ func (r *Runtime) appendEvent(ctx context.Context, runID, eventType string, payl
 		r.broker.Publish(event)
 	}
 	return event, err
+}
+
+// PublishDeviceJobProgress 将设备桥接已验证的固定阶段映射为用户可理解的 Agent activity。
+// 客户端只提交 stage，标题和细节由服务端/客户端受控映射，避免注入任意用户可见文案。
+func (r *Runtime) PublishDeviceJobProgress(ctx context.Context, jobID, stage string) error {
+	var job models.DeviceToolJob
+	if err := r.db.WithContext(ctx).First(&job, "id = ?", jobID).Error; err != nil {
+		return err
+	}
+	dataset := ""
+	var required []string
+	if json.Unmarshal(job.RequiredDataTypes, &required) == nil && len(required) > 0 {
+		dataset = required[0]
+	}
+	return func() error {
+		_, err := r.appendEvent(ctx, job.RunID, "agent.activity", map[string]interface{}{
+			"activity_code": stage,
+			"code":          stage,
+			"dataset":       dataset,
+			"status":        deviceActivityStatus(stage),
+			"success":       stage != models.DeviceJobStageRefreshFailed,
+			"tool_name":     job.ToolName,
+			"call_id":       job.ToolCallID,
+			"job_id":        job.ID,
+		}, true)
+		return err
+	}()
+}
+
+func deviceActivityStatus(stage string) string {
+	if stage == models.DeviceJobStageRefreshFailed {
+		return "failed"
+	}
+	if stage == models.DeviceJobStageRefreshStarted || stage == models.DeviceJobStageCheckingFreshness {
+		return "running"
+	}
+	return "success"
 }
 
 func (r *Runtime) markQuotaConsumed(runID string) {

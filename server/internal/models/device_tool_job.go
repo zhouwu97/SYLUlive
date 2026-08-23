@@ -18,6 +18,15 @@ const (
 	DeviceToolJobCancelled   = "cancelled"
 )
 
+const (
+	DeviceJobStageCheckingFreshness = "checking_freshness"
+	DeviceJobStageRequestReceived   = "request_received"
+	DeviceJobStageRefreshStarted    = "refresh_started"
+	DeviceJobStageRefreshCompleted  = "refresh_completed"
+	DeviceJobStageRefreshFailed     = "refresh_failed"
+	DeviceJobStageReadingResult     = "reading_result"
+)
+
 // DeviceToolJob 保存一次临时设备读取请求。结果只用于关联 AI Run，不能当作长期个人快照。
 type DeviceToolJob struct {
 	ID                string         `gorm:"type:varchar(36);primaryKey" json:"id"`
@@ -29,6 +38,7 @@ type DeviceToolJob struct {
 	ArgumentsJSON     datatypes.JSON `gorm:"type:jsonb;not null" json:"arguments"`
 	RequiredDataTypes datatypes.JSON `gorm:"type:jsonb;not null" json:"required_data_types"`
 	Status            string         `gorm:"size:24;not null;index:idx_device_jobs_user_status,priority:2" json:"status"`
+	ProgressStage     string         `gorm:"size:32;not null;default:''" json:"progress_stage,omitempty"`
 	StateVersion      int64          `gorm:"not null;default:0" json:"state_version"`
 	ExpiresAt         time.Time      `gorm:"not null;index" json:"expires_at"`
 	ClaimedAt         *time.Time     `json:"claimed_at,omitempty"`

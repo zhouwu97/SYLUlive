@@ -15,13 +15,18 @@ import (
 // DeviceJobHandler 为已认证的 Flutter 安装实例提供设备任务协议。
 // 所有作业接口都以 JWT user_id 和 X-Device-Installation-ID 双重鉴权。
 type DeviceJobHandler struct {
-	service *services.DeviceJobService
-	resumer DeviceJobRunResumer
+	service          *services.DeviceJobService
+	resumer          DeviceJobRunResumer
+	progressReporter DeviceJobActivityReporter
 }
 
 // DeviceJobRunResumer 隔离 Handler 与 AI Runtime，设备协议不依赖具体模型实现。
 type DeviceJobRunResumer interface {
 	ResumeDeviceJob(context.Context, string) error
+}
+
+type DeviceJobActivityReporter interface {
+	PublishDeviceJobProgress(context.Context, string, string) error
 }
 
 func NewDeviceJobHandler(service *services.DeviceJobService) *DeviceJobHandler {
@@ -31,6 +36,9 @@ func NewDeviceJobHandler(service *services.DeviceJobService) *DeviceJobHandler {
 // SetRunResumer 在 AI Runtime 初始化完成后接入回调；未启用 AI 时设备任务接口仍可独立使用。
 func (h *DeviceJobHandler) SetRunResumer(resumer DeviceJobRunResumer) {
 	h.resumer = resumer
+	if reporter, ok := resumer.(DeviceJobActivityReporter); ok {
+		h.progressReporter = reporter
+	}
 }
 
 type deviceRegistrationRequest struct {
@@ -79,6 +87,31 @@ func (h *DeviceJobHandler) Get(c *gin.Context) {
 
 type deviceJobStateRequest struct {
 	StateVersion int64 `json:"state_version"`
+}
+
+type deviceJobProgressRequest struct {
+	StateVersion int64  `json:"state_version"`
+	Stage        string `json:"stage"`
+}
+
+func (h *DeviceJobHandler) Progress(c *gin.Context) {
+	var request deviceJobProgressRequest
+	if err := decodeStrictJSON(c, &request, 2<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_progress_stage", "message": "设备进度无效"})
+		return
+	}
+	job, err := h.service.ProgressJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion, request.Stage)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	if h.progressReporter != nil {
+		_ = h.progressReporter.PublishDeviceJobProgress(c.Request.Context(), job.ID, request.Stage)
+	}
+	if job.Status == "failed" && h.resumer != nil {
+		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
 }
 
 func (h *DeviceJobHandler) Claim(c *gin.Context) {
@@ -177,7 +210,7 @@ func writeDeviceJobError(c *gin.Context, err error) {
 		status, message = http.StatusNotFound, "设备任务不存在"
 	case "job_expired":
 		status, message = http.StatusGone, "设备任务已过期"
-	case "invalid_device_registration", "invalid_device_job", "invalid_tool_arguments", "invalid_tool_result", "invalid_state_version", "invalid_error_code", "invalid_job_expiry":
+	case "invalid_device_registration", "invalid_device_job", "invalid_tool_arguments", "invalid_tool_result", "invalid_state_version", "invalid_error_code", "invalid_job_expiry", "invalid_progress_stage":
 		status, message = http.StatusBadRequest, "设备任务请求无效"
 	case "tool_not_allowed":
 		status, message = http.StatusForbidden, "设备工具不在允许列表中"

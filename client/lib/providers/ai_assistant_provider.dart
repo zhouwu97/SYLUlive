@@ -152,6 +152,18 @@ class AiAssistantProvider extends ChangeNotifier {
         return _currentRun?.text.trim().isNotEmpty == true
             ? _currentRun!.text.trim()
             : '正在处理当前问题…';
+      case AiRunEventType.goalUpdated:
+        return '正在理解你的目标…';
+      case AiRunEventType.contextResolved:
+        return '正在核对当前页面和授权上下文…';
+      case AiRunEventType.planRevised:
+        return '正在根据最新结果调整计划…';
+      case AiRunEventType.approvalRequired:
+        return '安排已拟好，等待你的确认';
+      case AiRunEventType.actionCommitted:
+        return '安排已添加';
+      case AiRunEventType.actionFailed:
+        return '安排未能添加';
       case AiRunEventType.toolCompleted:
         return '正在整理已授权数据';
       case AiRunEventType.personalDataEvidence:
@@ -672,6 +684,9 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.toolExecuting:
       case AiRunEventType.deviceClaimed:
       case AiRunEventType.agentActivity:
+      case AiRunEventType.goalUpdated:
+      case AiRunEventType.contextResolved:
+      case AiRunEventType.planRevised:
         // 工具开始/执行本身不是授权请求。只有带 scope 的 consent.required
         // 才能进入授权 UI，否则“允许本次”没有可提交的授权范围。
         _pendingConsent = null;
@@ -688,6 +703,7 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.eduFetching:
       case AiRunEventType.toolCompleted:
+      case AiRunEventType.approvalRequired:
         _connectionState = AiConnectionState.streaming;
         final actionDraft = event.calendarActionDraft;
         if (actionDraft != null) {
@@ -703,6 +719,10 @@ class AiAssistantProvider extends ChangeNotifier {
             );
           }
         }
+        break;
+      case AiRunEventType.actionCommitted:
+      case AiRunEventType.actionFailed:
+        _connectionState = AiConnectionState.streaming;
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
@@ -1092,6 +1112,12 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.deviceWaiting ||
         AiRunEventType.deviceClaimed ||
         AiRunEventType.agentActivity ||
+        AiRunEventType.goalUpdated ||
+        AiRunEventType.contextResolved ||
+        AiRunEventType.planRevised ||
+        AiRunEventType.approvalRequired ||
+        AiRunEventType.actionCommitted ||
+        AiRunEventType.actionFailed ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
         AiRunEventType.toolCompleted ||

@@ -176,6 +176,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			success := executeErr == nil
 			if executeErr != nil {
 				execution.Result = toolExecutionFailure(executeErr)
+				_, _ = r.appendEvent(ctx, run.ID, "plan.revised", map[string]interface{}{
+					"reason": "tool_execution_failed", "tool_name": call.name,
+				}, true)
 			}
 			if execution.Wait != nil {
 				pendingWaits = append(pendingWaits, pendingToolWait{CallID: call.id, Name: call.name, Wait: *execution.Wait})
@@ -204,6 +207,11 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 				var actionDraft map[string]interface{}
 				if json.Unmarshal(execution.Result, &actionDraft) == nil && actionDraft["id"] != nil {
 					eventPayload["action_draft"] = actionDraft
+					_, _ = r.appendEvent(ctx, run.ID, "approval.required", map[string]interface{}{
+						"activity_code": "action_confirmation",
+						"text":          "已生成待确认的操作安排",
+						"action_draft":  actionDraft,
+					}, true)
 				}
 			}
 			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", eventPayload, true)

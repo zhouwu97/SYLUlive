@@ -62,7 +62,10 @@ void main() {
     final page = await _pumpFeed(tester, gate: gate);
     await _pumpFrames(tester, count: 4);
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('feed-skeleton-card')),
+      findsNWidgets(3),
+    );
     gate.complete();
     await _pumpFrames(tester);
     await _disposeFeed(tester, page);

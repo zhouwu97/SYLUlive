@@ -8,7 +8,7 @@ import '../../models/post.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../utils/post_image_cache.dart';
 
-enum PostMediaVariant { feed, detail }
+enum PostMediaVariant { feed, homeFeed, detail }
 
 /// 所有帖子类型共用的图片布局与预览入口。
 class PostMediaView extends StatelessWidget {
@@ -54,6 +54,8 @@ class PostMediaView extends StatelessWidget {
       multiChild = _twoImages(context, displayUrls, previewUrls);
     } else if (displayUrls.length == 3) {
       multiChild = _threeImages(context, displayUrls, previewUrls);
+    } else if (displayUrls.length == 4) {
+      multiChild = _fourImages(context, displayUrls, previewUrls);
     } else {
       multiChild = _imageGrid(context, displayUrls, previewUrls);
     }
@@ -97,21 +99,37 @@ class PostMediaView extends StatelessWidget {
     List<String> previewUrls,
   ) {
     return AspectRatio(
-      aspectRatio: 1.18,
-      child: Column(
+      aspectRatio: 3,
+      child: Row(
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: _tile(context, urls, previewUrls, 0)),
-                const SizedBox(width: 4),
-                Expanded(child: _tile(context, urls, previewUrls, 1)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
+          Expanded(child: _tile(context, urls, previewUrls, 0)),
+          const SizedBox(width: 6),
+          Expanded(child: _tile(context, urls, previewUrls, 1)),
+          const SizedBox(width: 6),
           Expanded(child: _tile(context, urls, previewUrls, 2)),
         ],
+      ),
+    );
+  }
+
+  Widget _fourImages(
+    BuildContext context,
+    List<String> urls,
+    List<String> previewUrls,
+  ) {
+    return AspectRatio(
+      aspectRatio: 1,
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+        ),
+        itemCount: 4,
+        itemBuilder: (context, index) =>
+            _tile(context, urls, previewUrls, index),
       ),
     );
   }
@@ -121,7 +139,7 @@ class PostMediaView extends StatelessWidget {
     List<String> urls,
     List<String> previewUrls,
   ) {
-    final visibleCount = urls.length.clamp(4, 6);
+    final visibleCount = urls.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
     return AspectRatio(
       aspectRatio: rows == 1 ? 3 : 1.5,
@@ -221,6 +239,17 @@ Size calculateSinglePostImageSize({
   required PostMediaVariant variant,
 }) {
   final safeAspectRatio = aspectRatio > 0 ? aspectRatio : 4 / 3;
+
+  if (variant == PostMediaVariant.homeFeed) {
+    // 首页单图占满内容列，但限制超长图的纵向侵占；viewer 仍打开原图。
+    final clampedRatio = safeAspectRatio.clamp(0.55, 1.8);
+    const maxHeight = 280.0;
+    final naturalHeight = availableWidth / clampedRatio;
+    if (naturalHeight <= maxHeight) {
+      return Size(availableWidth, naturalHeight);
+    }
+    return Size(maxHeight * clampedRatio, maxHeight);
+  }
 
   if (variant == PostMediaVariant.feed) {
     // 首页信息流限制单图尺寸，优先控制纵向占用：

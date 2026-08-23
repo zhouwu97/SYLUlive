@@ -454,6 +454,130 @@ type AgentTraceFields struct {
 	NewFactCount      int    `json:"new_fact_count,omitempty"`
 }
 
+// AgentTraceMetrics 是从脱敏 Trace 派生的可长期比较指标，不包含问题正文、
+// 工具原文或个人事实。它既可用于单 Run 汇总，也可交给离线 Eval 聚合。
+type AgentTraceMetrics struct {
+	ToolCalls                  int     `json:"tool_calls"`
+	ReplanCount                int     `json:"replan_count"`
+	DiscardedLateResults       int     `json:"discarded_late_results"`
+	PermissionDenials          int     `json:"permission_denials"`
+	PersonalScopesAccessed     int     `json:"personal_scopes_accessed"`
+	ClarificationCount         int     `json:"clarification_count"`
+	TotalLatencyMs             int64   `json:"total_latency_ms"`
+	DegradedRuns               int     `json:"degraded_runs"`
+	ActionVerificationFailures int     `json:"action_verification_failures"`
+	RunSucceeded               bool    `json:"run_succeeded"`
+	RunFailed                  bool    `json:"run_failed"`
+	ToolLatencyMs              []int64 `json:"-"`
+}
+
+// Observe 从一个已脱敏的 Agent 事件中提取长期指标。
+func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
+	if metrics == nil {
+		return
+	}
+	var event struct {
+		DurationMs            int64  `json:"duration_ms"`
+		ErrorCode             string `json:"error_code"`
+		CapabilityStatus      string `json:"capability_status"`
+		PostconditionVerified *bool  `json:"postcondition_verified"`
+	}
+	_ = json.Unmarshal(payload, &event)
+	switch eventType {
+	case "tool.requested":
+		metrics.ToolCalls++
+	case "tool.completed":
+		if event.DurationMs > 0 {
+			metrics.TotalLatencyMs += event.DurationMs
+			metrics.ToolLatencyMs = append(metrics.ToolLatencyMs, event.DurationMs)
+		}
+		if event.ErrorCode == "permission_denied" {
+			metrics.PermissionDenials++
+		}
+		if event.CapabilityStatus == "unavailable" || strings.HasPrefix(event.ErrorCode, "mcp_") {
+			if metrics.DegradedRuns == 0 {
+				metrics.DegradedRuns = 1
+			}
+		}
+	case "plan.revised":
+		metrics.ReplanCount++
+	case "tool.discarded":
+		metrics.DiscardedLateResults++
+	case "personal_data.evidence":
+		metrics.PersonalScopesAccessed++
+	case "consent.required", "clarification.required":
+		metrics.ClarificationCount++
+	case "action.verification_failed":
+		metrics.ActionVerificationFailures++
+	case "run.completed":
+		metrics.RunSucceeded = true
+	case "run.failed", "run.cancelled", "run.expired":
+		metrics.RunFailed = true
+	}
+}
+
+// AgentEvalTrend 是跨提交/模型版本的稳定聚合格式。
+type AgentEvalTrend struct {
+	RunCount                   int     `json:"run_count"`
+	SuccessRate                float64 `json:"success_rate"`
+	AverageToolCalls           float64 `json:"average_tool_calls"`
+	P95ToolCalls               int     `json:"p95_tool_calls"`
+	ReplanRate                 float64 `json:"replan_rate"`
+	DiscardedLateResults       int     `json:"discarded_late_results"`
+	PermissionDenials          int     `json:"permission_denials"`
+	PersonalScopesAccessed     int     `json:"personal_scopes_accessed"`
+	ClarificationCount         int     `json:"clarification_count"`
+	AverageRunLatencyMs        float64 `json:"average_run_latency_ms"`
+	DegradedRuns               int     `json:"degraded_runs"`
+	ActionVerificationFailures int     `json:"action_verification_failures"`
+}
+
+func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
+	trend := AgentEvalTrend{RunCount: len(samples)}
+	if len(samples) == 0 {
+		return trend
+	}
+	toolCalls := make([]int, 0, len(samples))
+	completed, replanned := 0, 0
+	var toolCallTotal, latencyTotal int64
+	for _, sample := range samples {
+		if sample.RunSucceeded && !sample.RunFailed {
+			completed++
+		}
+		if sample.ReplanCount > 0 {
+			replanned++
+		}
+		toolCalls = append(toolCalls, sample.ToolCalls)
+		toolCallTotal += int64(sample.ToolCalls)
+		latencyTotal += sample.TotalLatencyMs
+		trend.DiscardedLateResults += sample.DiscardedLateResults
+		trend.PermissionDenials += sample.PermissionDenials
+		trend.PersonalScopesAccessed += sample.PersonalScopesAccessed
+		trend.ClarificationCount += sample.ClarificationCount
+		trend.DegradedRuns += sample.DegradedRuns
+		trend.ActionVerificationFailures += sample.ActionVerificationFailures
+	}
+	trend.SuccessRate = float64(completed) / float64(len(samples))
+	trend.AverageToolCalls = float64(toolCallTotal) / float64(len(samples))
+	trend.P95ToolCalls = percentile95Ints(toolCalls)
+	trend.ReplanRate = float64(replanned) / float64(len(samples))
+	trend.AverageRunLatencyMs = float64(latencyTotal) / float64(len(samples))
+	return trend
+}
+
+func percentile95Ints(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]int(nil), values...)
+	sort.Ints(sorted)
+	index := (len(sorted)*95 + 99) / 100
+	if index < 1 {
+		index = 1
+	}
+	return sorted[index-1]
+}
+
 type AgentActivityEvent struct {
 	Type              string    `json:"type"`
 	ActivityCode      string    `json:"activity_code,omitempty"`

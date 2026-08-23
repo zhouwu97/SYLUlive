@@ -87,3 +87,43 @@ func TestRuntimeAgentStateUsesStateVersionCASAcrossInstances(t *testing.T) {
 	require.NoError(t, json.Unmarshal(persisted.AgentStateJSON, &persistedState))
 	require.Equal(t, []string{"instance-a"}, persistedState.KnownFacts)
 }
+
+func TestPersistedTraceRedactsSecretsAndRawToolData(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime := newTestRuntime(t, db, &MockProvider{}, fixedRetriever{})
+	run := models.AIRun{
+		ID: "run-trace-redaction", UserID: 7, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStatePlanning, Provider: "test", Model: "test", MessageHash: "hash", MessageLength: 2,
+		ExpiresAt: time.Now().Add(time.Hour), ConstraintVersion: 1, PlanVersion: 1,
+	}
+	require.NoError(t, db.Create(&run).Error)
+	_, err := runtime.appendEvent(context.Background(), run.ID, "tool.completed", map[string]interface{}{
+		"call_id": "secret-call", "tool_name": "academic.summary", "success": true,
+		"result":        map[string]interface{}{"password": "super-secret", "student_id": "2400000000"},
+		"authorization": "Bearer super-secret-token",
+	}, true)
+	require.NoError(t, err)
+	var event models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "tool.completed").First(&event).Error)
+	payload := string(event.Payload)
+	require.NotContains(t, payload, "super-secret")
+	require.NotContains(t, payload, "2400000000")
+	require.NotContains(t, payload, "authorization")
+	require.Contains(t, payload, "[REDACTED]")
+}
+
+func TestResumeReadsCommittedToolResultInsteadOfReexecuting(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime := newTestRuntime(t, db, &MockProvider{}, fixedRetriever{})
+	require.NoError(t, db.Create(&models.AIToolCall{
+		CallID: "committed-call", RunID: "run-committed-call", UserID: 7,
+		ToolName: "competition.delayed", ToolVersion: "test", ArgumentsJSON: datatypes.JSON([]byte(`{}`)),
+		ArgumentsHash: "hash", Status: "completed", StateVersion: 2,
+		ResultJSON: datatypes.JSON([]byte(`{"status":"ok","data":{"id":"already-committed"}}`)),
+		ExpiresAt:  time.Now().Add(time.Hour),
+	}).Error)
+	result, committed, err := runtime.readCommittedToolResult(context.Background(), "committed-call", "run-committed-call", 7, "competition.delayed")
+	require.NoError(t, err)
+	require.True(t, committed)
+	require.JSONEq(t, `{"status":"ok","data":{"id":"already-committed"}}`, string(result))
+}

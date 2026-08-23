@@ -3,11 +3,18 @@ package ai
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
 	"time"
+
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 )
@@ -17,16 +24,16 @@ type scopedGrantContextKey struct{}
 // ScopedGrant 只存在于 Go 服务和 MCP Gateway 的受控 Context 中。
 // JSON 序列化时隐藏 UserID、RunID 和 token，防止它们进入模型消息或客户端事件。
 type ScopedGrant struct {
-	ID                  string    `json:"-"`
-	RunID               string    `json:"-"`
-	UserID              uint      `json:"-"`
-	AllowedCapabilities []string  `json:"allowed_capabilities"`
-	Scopes              []string  `json:"scopes"`
-	ExpiresAt           time.Time `json:"expires_at"`
-	MaxCalls            int       `json:"max_calls"`
-	Calls               int       `json:"-"`
+	ID                  string                       `json:"-"`
+	RunID               string                       `json:"-"`
+	UserID              uint                         `json:"-"`
+	AllowedCapabilities []string                     `json:"allowed_capabilities"`
+	Scopes              []string                     `json:"scopes"`
+	ExpiresAt           time.Time                    `json:"expires_at"`
+	MaxCalls            int                          `json:"max_calls"`
+	Calls               int                          `json:"-"`
 	PermissionScope     models.AIUserPermissionScope `json:"-"`
-	PermissionVersion   int64     `json:"-"`
+	PermissionVersion   int64                        `json:"-"`
 }
 
 // ScopedGrantPermissionVersionReader 由控制面提供实时权限版本。
@@ -40,11 +47,16 @@ func WithScopedGrantPermissionVersionReader(reader ScopedGrantPermissionVersionR
 	return func(manager *ScopedGrantManager) { manager.permissionVersions = reader }
 }
 
+func WithScopedGrantDB(db *gorm.DB) ScopedGrantManagerOption {
+	return func(manager *ScopedGrantManager) { manager.db = db }
+}
+
 type ScopedGrantManager struct {
-	mu                sync.Mutex
-	clock             func() time.Time
-	grants            map[string]ScopedGrant
+	mu                 sync.Mutex
+	clock              func() time.Time
+	grants             map[string]ScopedGrant
 	permissionVersions ScopedGrantPermissionVersionReader
+	db                 *gorm.DB
 }
 
 func NewScopedGrantManager(clock func() time.Time, options ...ScopedGrantManagerOption) *ScopedGrantManager {
@@ -90,6 +102,25 @@ func (m *ScopedGrantManager) IssueRunGrantWithContext(ctx context.Context, runID
 		}
 		grant.PermissionVersion = version
 	}
+	if m.db != nil {
+		allowedJSON, err := json.Marshal(capabilities)
+		if err != nil {
+			return "", ScopedGrant{}, err
+		}
+		scopesJSON, err := json.Marshal(scopes)
+		if err != nil {
+			return "", ScopedGrant{}, err
+		}
+		if err := m.db.Create(&models.AIScopedGrant{
+			TokenHash: grantTokenHash(token), RunID: runID, UserID: userID,
+			AllowedJSON: datatypes.JSON(allowedJSON), ScopesJSON: datatypes.JSON(scopesJSON),
+			PermissionScope: string(permissionScope), PermissionVersion: grant.PermissionVersion,
+			Status: "active", ExpiresAt: grant.ExpiresAt, MaxCalls: maxCalls,
+		}).Error; err != nil {
+			return "", ScopedGrant{}, err
+		}
+		return token, grant, nil
+	}
 	m.mu.Lock()
 	m.grants[token] = grant
 	m.mu.Unlock()
@@ -105,6 +136,9 @@ func (m *ScopedGrantManager) Verify(token, capability string) (ScopedGrant, erro
 func (m *ScopedGrantManager) VerifyContext(ctx context.Context, token, capability string) (ScopedGrant, error) {
 	if m == nil || strings.TrimSpace(token) == "" || strings.TrimSpace(capability) == "" {
 		return ScopedGrant{}, errors.New("mcp_grant_invalid")
+	}
+	if m.db != nil {
+		return m.verifyDatabaseGrant(ctx, token, capability)
 	}
 	m.mu.Lock()
 	grant, ok := m.grants[token]
@@ -146,6 +180,10 @@ func (m *ScopedGrantManager) Revoke(token string) {
 	m.mu.Lock()
 	delete(m.grants, token)
 	m.mu.Unlock()
+	if m.db != nil {
+		_ = m.db.Model(&models.AIScopedGrant{}).
+			Where("token_hash = ? AND status = ?", grantTokenHash(token), "active").Update("status", "revoked").Error
+	}
 }
 
 // RevokeRun 终止 Run 时撤销该 Run 的所有短期 Grant，避免取消后的迟到请求继续
@@ -155,12 +193,74 @@ func (m *ScopedGrantManager) RevokeRun(runID string) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for token, grant := range m.grants {
 		if grant.RunID == runID {
 			delete(m.grants, token)
 		}
 	}
+	m.mu.Unlock()
+	if m.db != nil {
+		_ = m.db.Model(&models.AIScopedGrant{}).
+			Where("run_id = ? AND status = ?", runID, "active").Update("status", "revoked").Error
+	}
+}
+
+func (m *ScopedGrantManager) verifyDatabaseGrant(ctx context.Context, token, capability string) (ScopedGrant, error) {
+	var row models.AIScopedGrant
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "token_hash = ?", grantTokenHash(token)).Error; err != nil {
+			return errors.New("mcp_grant_invalid")
+		}
+		if row.Status != "active" || !row.ExpiresAt.After(m.clock()) {
+			return errors.New("mcp_grant_expired")
+		}
+		var capabilities []string
+		if err := json.Unmarshal(row.AllowedJSON, &capabilities); err != nil || !containsScopedGrantString(capabilities, capability) {
+			return errors.New("mcp_grant_scope_denied")
+		}
+		if row.Calls >= row.MaxCalls {
+			return errors.New("mcp_grant_scope_denied")
+		}
+		if row.PermissionScope != "" && m.permissionVersions != nil {
+			version, err := m.permissionVersions.PermissionVersion(ctx, row.UserID, models.AIUserPermissionScope(row.PermissionScope))
+			if err != nil || version != row.PermissionVersion {
+				if updateErr := tx.Model(&models.AIScopedGrant{}).
+					Where("token_hash = ? AND status = ?", row.TokenHash, "active").Update("status", "revoked").Error; updateErr != nil {
+					return updateErr
+				}
+				return errors.New("mcp_grant_revoked")
+			}
+		}
+		result := tx.Model(&models.AIScopedGrant{}).
+			Where("token_hash = ? AND status = ? AND calls = ?", row.TokenHash, "active", row.Calls).
+			Updates(map[string]interface{}{"calls": gorm.Expr("calls + 1"), "updated_at": time.Now()})
+		if result.Error != nil || result.RowsAffected != 1 {
+			return errors.New("mcp_grant_scope_denied")
+		}
+		row.Calls++
+		return nil
+	})
+	if err != nil {
+		return ScopedGrant{}, err
+	}
+	var scopes []string
+	if err := json.Unmarshal(row.ScopesJSON, &scopes); err != nil {
+		return ScopedGrant{}, errors.New("mcp_grant_invalid")
+	}
+	var capabilities []string
+	if err := json.Unmarshal(row.AllowedJSON, &capabilities); err != nil {
+		return ScopedGrant{}, errors.New("mcp_grant_invalid")
+	}
+	return ScopedGrant{
+		ID: token, RunID: row.RunID, UserID: row.UserID, AllowedCapabilities: capabilities, Scopes: scopes,
+		ExpiresAt: row.ExpiresAt, MaxCalls: row.MaxCalls, Calls: row.Calls,
+		PermissionScope: models.AIUserPermissionScope(row.PermissionScope), PermissionVersion: row.PermissionVersion,
+	}, nil
+}
+
+func grantTokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 func WithScopedGrant(ctx context.Context, grant ScopedGrant) context.Context {

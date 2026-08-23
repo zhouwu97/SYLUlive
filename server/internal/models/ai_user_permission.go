@@ -43,14 +43,14 @@ const (
 // AIUserPermission 保存用户对校园 Agent 个人数据访问的长期选择。
 // 不保存任何成绩、课表、设备标识或教务凭据。
 type AIUserPermission struct {
-	ID        uint                   `gorm:"primaryKey" json:"id"`
-	UserID    uint                   `gorm:"not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:1;index" json:"-"`
-	Scope     AIUserPermissionScope  `gorm:"size:48;not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:2;index" json:"scope"`
-	Policy    AIUserPermissionPolicy `gorm:"size:16;not null;default:ask" json:"policy"`
+	ID     uint                   `gorm:"primaryKey" json:"id"`
+	UserID uint                   `gorm:"not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:1;index" json:"-"`
+	Scope  AIUserPermissionScope  `gorm:"size:48;not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:2;index" json:"scope"`
+	Policy AIUserPermissionPolicy `gorm:"size:16;not null;default:ask" json:"policy"`
 	// Version 在每次策略变化时递增，已签发的 Scoped Grant 用它做撤权栅栏。
-	Version   int64                  `gorm:"not null;default:1" json:"-"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
+	Version   int64     `gorm:"not null;default:1" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (AIUserPermission) TableName() string { return "ai_user_permissions" }

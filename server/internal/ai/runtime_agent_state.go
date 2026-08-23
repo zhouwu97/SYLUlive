@@ -76,7 +76,7 @@ func (r *Runtime) persistRuntimeAgentState(ctx context.Context, run *models.AIRu
 			"agent_state_json": datatypes.JSON(payload), "planning_round": state.PlanningRounds,
 			"constraint_version": state.ConstraintVersion, "plan_version": state.PlanVersion,
 			"state_version": gorm.Expr("state_version + 1"),
-			"updated_at": time.Now(),
+			"updated_at":    time.Now(),
 		})
 	if result.Error != nil {
 		return result.Error

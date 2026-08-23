@@ -19,6 +19,7 @@ import '../services/app_update_coordinator.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
@@ -1845,10 +1846,11 @@ class _HomeScreenState extends State<HomeScreen>
               child: FloatingActionButton(
                 heroTag: 'home_fab',
                 onPressed: () => _showPublishTypeSheet(context),
-                backgroundColor: const Color(0xFF16A34A),
+                backgroundColor: AppColors.brandPrimary,
                 elevation: 4,
                 shape: const CircleBorder(),
-                child: const Icon(Icons.add, color: Colors.white, size: 32),
+                child: const Icon(Icons.edit_rounded,
+                    color: Colors.white, size: 24),
               ),
             )
           : null,

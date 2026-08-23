@@ -30,7 +30,6 @@ class MajorDetailScreen extends StatefulWidget {
 
 class _MajorDetailScreenState extends State<MajorDetailScreen> {
   bool _isDeletingRating = false;
-  bool _didChange = false;
 
   @override
   void initState() {
@@ -167,7 +166,21 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
           if (m.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (m.selected == null) return const Center(child: Text('加载失败'));
+          if (m.selectedMajorId != widget.majorId || m.selected == null) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(m.errorMessage ?? '专业信息加载失败'),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => m.loadDetail(widget.majorId),
+                    child: const Text('重新加载'),
+                  ),
+                ],
+              ),
+            );
+          }
           return Stack(
             children: [
               ListView(
@@ -202,20 +215,25 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                           maxCommentLength: 500,
                           accentOverride: accent,
                           onSubmit: (star, comment) async {
-                            try {
-                              await m.rate(widget.majorId, star, comment);
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('评价修改成功'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                              return true;
-                            } catch (e) {
-                              return false;
+                            final messenger = ScaffoldMessenger.of(context);
+                            final ok = await m.rate(
+                              widget.majorId,
+                              star,
+                              comment,
+                            );
+                            if (ok && mounted) {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('评价修改成功'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } else if (!ok && mounted) {
+                              messenger.showSnackBar(
+                                const SnackBar(content: Text('评价修改失败，请稍后重试')),
+                              );
                             }
+                            return ok;
                           },
                         );
                       },
@@ -247,20 +265,25 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                       maxCommentLength: 500,
                       accentOverride: accent,
                       onSubmit: (star, comment) async {
-                        try {
-                          await m.rate(widget.majorId, star, comment);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('评价成功'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                          return true;
-                        } catch (e) {
-                          return false;
+                        final messenger = ScaffoldMessenger.of(context);
+                        final ok = await m.rate(
+                          widget.majorId,
+                          star,
+                          comment,
+                        );
+                        if (ok && mounted) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('评价成功'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } else if (!ok && mounted) {
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('评价失败，请稍后重试')),
+                          );
                         }
+                        return ok;
                       },
                     );
                   },
@@ -287,44 +310,6 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
                   color: RankingTokens.titleColor(isDark),
-                ),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('排序功能正在开发中')),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white10
-                        : Colors.black.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '最新',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: RankingTokens.subColor(isDark),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 14,
-                        color: RankingTokens.subColor(isDark),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],
@@ -402,9 +387,6 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                                   onSubmit: (star, comment) async {
                                     final ok = await m.rate(
                                         widget.majorId, star, comment);
-                                    if (ok) {
-                                      _didChange = true;
-                                    }
                                     return ok;
                                   },
                                 );

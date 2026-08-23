@@ -1,4 +1,4 @@
-# 今晚发布前回归清单
+# 发布前回归清单
 
 这份清单只覆盖当前版本最容易出问题、且一旦出问题就会直接影响上线体验的链路。
 
@@ -23,6 +23,8 @@ systemctl status shenliyuan --no-pager
 
 - 确认 APK 来自当前代码
 - 至少安装一遍最新 debug/release 包
+- CI 已通过 Flutter analyze、全量测试与 release APK smoke build
+- release APK/AAB 在目标 Android 设备上可安装并启动
 
 ## 1. 登录与身份
 
@@ -34,9 +36,15 @@ systemctl status shenliyuan --no-pager
 
 ### 超级管理员
 
-- 用 `admin / admin123` 登录
+- 使用部署环境中配置的超级管理员测试账号（不要在仓库或公开文档记录凭据）
 - “我”页显示“超级管理员”
 - 能进入“超级管理员”与“管理处”
+
+### 换账号隔离
+
+- 账号 A 打开“我的内容”“我的投票”、专业/教师详情和关注/粉丝列表
+- 退出并登录账号 B，确认不会短暂显示 A 的帖子、投票、评价、投票状态或关注状态
+- 在 A 的请求尚未返回时切换到 B，确认旧响应不会覆盖 B 的页面
 
 ## 2. 公告
 
@@ -92,6 +100,7 @@ systemctl status shenliyuan --no-pager
 - 学科详情页里能看到该学科下教师排名
 - 提交一条教师评分后，返回榜单页平均分立刻刷新
 - 新增教师时“课程名称”输入与引导文案正常
+- 专业与教师评价页没有指向“排序功能正在开发中”的未完成入口
 
 ## 7. 管理员链路
 
@@ -167,11 +176,18 @@ journalctl -u shenliyuan -n 100 --no-pager
 - 图片上传失败
 - 教务接口异常
 
-## 12. 可接受的已知非阻塞项
+## 12. 客户端可靠性测试范围
+
+- 投票创建、分页、我的投票、投票/关闭/删除失败恢复
+- 通知 cursor、后台恢复、Dio retry、图片保存与图片详情
+- 集市类型分页、食堂 V2、AI、Emoji、ResumeCoordinator
+- 账号切换缓存隔离与 stale response 防护
+
+## 13. 可接受的已知非阻塞项
 
 当前版本仍存在一些历史代码告警：
 
 - Flutter 全量 `analyze` 还有旧 warning / info
-- 客户端自动化测试覆盖仍然很薄
+- 少量历史 analyzer warning/info（不得掩盖 reliability-critical surfaces 的 fatal analyze）
 
 这两项目前不阻塞上线，但不要把它们误判成“本次发布新增缺陷”。

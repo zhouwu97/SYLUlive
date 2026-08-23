@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/competition_action_draft.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiCompetitionPlanDraftCard extends StatefulWidget {
   const AiCompetitionPlanDraftCard({
@@ -49,16 +50,19 @@ class _AiCompetitionPlanDraftCardState
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F7FB),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: CampusTheme.softBorder),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.borderNormalLight),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.playlist_add_rounded, size: 20),
+              const Icon(Icons.playlist_add_rounded,
+                  size: 20, color: AppColors.brandPrimary),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('建议加入计划',
@@ -66,7 +70,7 @@ class _AiCompetitionPlanDraftCardState
               ),
               Text(statusText,
                   style: const TextStyle(
-                      fontSize: 12, color: CampusTheme.subText)),
+                      fontSize: 12, color: AppColors.textSecondaryLight)),
             ],
           ),
           const SizedBox(height: 10),
@@ -105,10 +109,12 @@ class _AiCompetitionPlanDraftCardState
               ),
           ],
           const SizedBox(height: 8),
-          const Text(
-            'AI 只解释平台现有推荐结果，加入计划前将由服务端再次校验。不会自动报名，也不代表学校确认参赛资格。',
+          Text(
+            'Agent 只解释平台现有推荐结果；不会自动报名，也不代表学校确认参赛资格。',
             style: TextStyle(
-                fontSize: 12, color: CampusTheme.subText, height: 1.4),
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.4),
           ),
           const SizedBox(height: 10),
           Wrap(

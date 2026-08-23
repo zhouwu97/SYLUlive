@@ -45,6 +45,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   int _marketSoldCount = 0;
   int _currentTabIndex = 0;
   bool _isLoading = true;
+  String? _errorMessage;
+  int _accountSessionEpoch = -1;
 
   @override
   void initState() {
@@ -59,22 +61,24 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     if (widget.userId == null) {
       _user = context.read<AuthProvider>().user;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
-    });
   }
 
   int _loadGeneration = 0;
 
   Future<void> _loadData() async {
     final generation = ++_loadGeneration;
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
 
     if (mounted) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
     }
 
     try {
-      final auth = context.read<AuthProvider>();
       final targetId = widget.userId ?? auth.user?.id;
       if (targetId == null) return;
 
@@ -94,7 +98,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       final posts = await postsFuture;
       final marketResult = await marketFuture;
 
-      if (!mounted || generation != _loadGeneration) return;
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
 
       setState(() {
         _user = isSelf ? context.read<AuthProvider>().user : loadedUser;
@@ -103,6 +112,15 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         _marketTotal = marketResult.total;
         _marketSoldCount = marketResult.sold;
       });
+    } on SocialRequestException catch (error) {
+      if (!mounted || error.sessionChanged) return;
+      if (generation == _loadGeneration) {
+        setState(() => _errorMessage = error.message);
+      }
+    } catch (_) {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _errorMessage = '加载用户内容失败，请稍后重试');
+      }
     } finally {
       if (mounted && generation == _loadGeneration) {
         setState(() => _isLoading = false);
@@ -170,6 +188,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authUser = context.watch<AuthProvider>().user;
+    final auth = context.read<AuthProvider>();
+    if (_accountSessionEpoch != auth.accountSessionEpoch) {
+      _accountSessionEpoch = auth.accountSessionEpoch;
+      _posts = [];
+      _marketPosts = [];
+      _marketTotal = 0;
+      _marketSoldCount = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadData();
+      });
+    }
     final isSelfProfile =
         widget.userId == null || widget.userId == authUser?.id;
     final displayedUser = isSelfProfile ? authUser ?? _user : _user;
@@ -180,7 +209,40 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       }
       return Scaffold(
         appBar: AppBar(title: const Text('错误')),
-        body: const Center(child: Text('用户不存在或加载失败')),
+        body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
+      );
+    }
+
+    if (_errorMessage != null && !_isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('加载失败')),
+        body: RefreshIndicator(
+          onRefresh: _loadData,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              SizedBox(
+                height: 320,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off, color: Colors.grey, size: 42),
+                      const SizedBox(height: 12),
+                      Text(_errorMessage!,
+                          style: const TextStyle(color: Colors.grey)),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _loadData,
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -342,7 +404,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                       return CommunityPostCard(
                                         post: _posts[index],
                                         disableAuthorNavigation: true,
-                                        pollVariant: PollCardVariant.profileCompact,
+                                        pollVariant:
+                                            PollCardVariant.profileCompact,
                                         onTap: () => _openProfilePostDetail(
                                           _posts[index],
                                         ),

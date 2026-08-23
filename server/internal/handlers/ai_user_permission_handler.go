@@ -48,6 +48,32 @@ func (handler *AIUserPermissionHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"permission": permission})
 }
 
+type setAIUserPermissionModeRequest struct {
+	Mode string `json:"mode"`
+}
+
+func (handler *AIUserPermissionHandler) GetMode(c *gin.Context) {
+	mode, err := handler.service.Mode(c.Request.Context(), c.GetUint("user_id"))
+	if err != nil {
+		writeAIUserPermissionError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"mode": mode})
+}
+
+func (handler *AIUserPermissionHandler) SetMode(c *gin.Context) {
+	var request setAIUserPermissionModeRequest
+	if err := decodeStrictJSON(c, &request, 1<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_ai_personal_data_permission", "message": "Agent 权限模式无效"})
+		return
+	}
+	if err := handler.service.SetMode(c.Request.Context(), c.GetUint("user_id"), request.Mode); err != nil {
+		writeAIUserPermissionError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"mode": request.Mode})
+}
+
 func writeAIUserPermissionError(c *gin.Context, err error) {
 	if errors.Is(err, services.ErrInvalidAIUserPermission) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_ai_personal_data_permission", "message": "个人数据权限参数无效"})

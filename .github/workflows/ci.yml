@@ -98,7 +98,52 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze --no-fatal-warnings --no-fatal-infos
+      # 关键可靠性路径使用默认 fatal 规则；保留全仓库历史样式告警的渐进式收口。
+      - name: Analyze reliability-critical surfaces
+        run: >-
+          flutter analyze
+          lib/screens/market_screen.dart
+          lib/screens/poll/poll_detail_screen.dart
+          lib/screens/notifications_screen.dart
+          lib/screens/admin_panel_screen.dart
+          lib/screens/admin_candidates_screen.dart
+          lib/services/app_resume_coordinator.dart
+          lib/services/retry_interceptor.dart
+          lib/services/root_page_state_service.dart
+          lib/services/keep_alive_service.dart
+          lib/widgets/bottom_nav.dart
+          lib/screens/image_viewer_screen.dart
+          lib/providers/poll_provider.dart
+          lib/providers/major_provider.dart
+          lib/providers/teacher_provider.dart
+          lib/providers/social_provider.dart
+          lib/screens/my_content_screen.dart
+          lib/screens/major_detail_screen.dart
+          lib/screens/social_list_screen.dart
       - run: flutter test --reporter compact
+      - name: Create ephemeral Android signing key
+        working-directory: client/android/app
+        env:
+          ANDROID_STORE_PASSWORD: codex-ci-store
+          ANDROID_KEY_PASSWORD: codex-ci-key
+        run: >-
+          keytool -genkeypair -v
+          -keystore xiaoyuan.jks
+          -storepass "$ANDROID_STORE_PASSWORD"
+          -keypass "$ANDROID_KEY_PASSWORD"
+          -alias xiaoyuan
+          -keyalg RSA
+          -keysize 2048
+          -validity 1
+          -dname "CN=CI,O=SYLUlive,C=CN"
+      - name: Build release APK smoke
+        env:
+          ANDROID_STORE_PASSWORD: codex-ci-store
+          ANDROID_KEY_PASSWORD: codex-ci-key
+        run: >-
+          flutter build apk --release
+          --dart-define=APP_API_URL=https://example.invalid/api
+          --dart-define=JPUSH_APP_KEY=000000000000000000000000
 
   pgvector-integration:
     runs-on: ubuntu-latest

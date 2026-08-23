@@ -19,6 +19,7 @@ import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
 import '../../features/ai_runtime/skills/competition_advisor_skills.dart';
 import '../../features/ai_runtime/skills/competition_plan_action_skill.dart';
+import '../../features/ai_runtime/skills/calendar_action_skill.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
 import '../../features/ai_runtime/skills/personal_skill.dart';
 import '../../features/ai_runtime/skills/skill_execution_context.dart';
@@ -32,7 +33,11 @@ import '../../features/ai_runtime/tool_calling/tool_permission_dialog.dart';
 import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../models/ai_capabilities.dart';
 import '../../models/ai_chat_message.dart';
+import '../../models/ai_run_event.dart';
 import '../../models/competition_action_draft.dart';
+import '../../models/agent_context.dart';
+import '../../models/user_calendar.dart';
+import '../../platform/contracts/reminder_notification_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
@@ -56,6 +61,10 @@ import 'personal_data_center_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
+import '../../widgets/ai/ai_agent_execution_card.dart';
+import '../../widgets/ai/ai_agent_permission_card.dart';
+import '../../widgets/ai/ai_agent_permission_sheet.dart';
+import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
 
@@ -67,6 +76,7 @@ class AiAssistantScreen extends StatefulWidget {
   final Dio dio;
   final bool initialPersonalMode;
   final String? initialPrompt;
+  final AgentLaunchContext? launchContext;
   final PersonalConversationStore Function(String accountKey)?
       personalConversationStoreFactory;
 
@@ -77,6 +87,7 @@ class AiAssistantScreen extends StatefulWidget {
     required this.dio,
     this.initialPersonalMode = false,
     this.initialPrompt,
+    this.launchContext,
     this.personalConversationStoreFactory,
   });
 
@@ -93,6 +104,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   String? _lastBootstrapAuthKey;
   bool _consentDialogVisible = false;
   String _lastConsentDialogKey = '';
+  bool _agentTrusted = false;
+  bool _agentPermissionLoaded = false;
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -122,6 +135,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       widget.service,
       initialCapabilities: widget.capabilities,
       deviceToolSync: DeviceToolBridge.syncPending,
+      launchContext: widget.launchContext,
     );
     _permissionService = AiPersonalDataPermissionService(widget.dio);
     _provider.addListener(_handleRunConsentRequired);
@@ -133,6 +147,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       );
     }
     unawaited(_provider.initialize());
+    unawaited(_loadAgentPermissionMode());
   }
 
   @override
@@ -168,9 +183,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final consent = _provider.pendingConsent;
     if (!mounted ||
         _personalMode ||
+        !_agentPermissionLoaded ||
         consent == null ||
         consent.consentScope.isEmpty ||
         _consentDialogVisible) {
+      return;
+    }
+    if (_agentTrusted) {
+      unawaited(_autoApproveTrustedConsent(consent));
+      return;
+    }
+    if (consent.consentScope !=
+        AiPersonalDataPermissionScope.externalModelAnalysis.wireValue) {
       return;
     }
     final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
@@ -183,6 +207,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         return;
       }
       final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
+      final isDeviceConsent = consent.consentScope == 'ai_device_cache_access';
+      final requestedData = consent.datasets
+          .map(
+            (dataset) => switch (dataset) {
+              'grades' || 'academic' => '成绩摘要',
+              'schedule' => '课表摘要',
+              'erke' => '二课摘要',
+              _ => '相关校园数据',
+            },
+          )
+          .toSet()
+          .join('、');
       final choice = await showDialog<_ConsentChoice>(
         context: context,
         barrierDismissible: false,
@@ -190,14 +226,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           data: dialogTheme,
           child: AlertDialog(
             title: Text(
-              consent.consentScope == 'ai_external_model_analysis'
-                  ? '允许外部模型辅助分析？'
-                  : '允许本次读取个人数据？',
+              isDeviceConsent
+                  ? '校园 Agent 想在你的设备上执行一次操作'
+                  : consent.consentScope == 'ai_external_model_analysis'
+                      ? '允许外部模型辅助分析？'
+                      : '允许本次读取个人数据？',
             ),
             content: Text(
-              consent.consentScope == 'ai_external_model_analysis'
-                  ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
-                  : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
+              isDeviceConsent
+                  ? '为了回答当前问题，Agent 会检查数据新鲜度，必要时刷新并读取${requestedData.isEmpty ? '相关校园数据' : requestedData}，然后只回传本次问题所需的最小化摘要。\n\n不会读取密码、Cookie、Token 或设备标识。此选择只对当前请求生效，不会修改长期设置。'
+                  : consent.consentScope == 'ai_external_model_analysis'
+                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                      : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
             ),
             actions: [
               TextButton(
@@ -208,7 +248,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               TextButton(
                 onPressed: () =>
                     Navigator.of(dialogContext).pop(_ConsentChoice.always),
-                child: const Text('以后允许'),
+                child: Text(isDeviceConsent ? '今后自动执行' : '以后允许'),
               ),
               FilledButton(
                 onPressed: () =>
@@ -259,6 +299,23 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _consentDialogVisible = false;
       if (mounted) _handleRunConsentRequired();
     });
+  }
+
+  /// 完全信任模式下，当前 Run 的安全范围已经由长期策略覆盖，
+  /// 不再把同一件事重复展示成一次性申请；仍通过服务端 Run consent
+  /// 接口确认本轮授权，避免绕过后端的范围校验。
+  Future<void> _autoApproveTrustedConsent(AiRunEvent consent) async {
+    final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
+    if (key == _lastConsentDialogKey || _provider.submittingConsent) return;
+    _lastConsentDialogKey = key;
+    final submitted = await _provider.submitConsent(true);
+    if (!submitted && mounted) {
+      _lastConsentDialogKey = '';
+      AppFeedback.error(
+        _provider.error ?? '自动继续失败，请重试',
+        context: context,
+      );
+    }
   }
 
   String _currentPersonalAccountKey() {
@@ -571,6 +628,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           widget.dio,
         ),
         competitionPlanActionSource: DioCompetitionPlanActionSource(widget.dio),
+        calendarActionSource: DioCalendarActionSource(widget.dio),
         graduationRuleProvider: const _NoVerifiedRuleProvider(),
       );
       final loop = LocalToolLoop(
@@ -633,6 +691,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           createdAt: DateTime.now(),
           actionDrafts: outcome.actionArtifacts
               .whereType<CompetitionPlanActionDraft>()
+              .toList(growable: false),
+          calendarActionDrafts: outcome.actionArtifacts
+              .whereType<UserCalendarActionDraft>()
               .toList(growable: false),
         );
         setState(() {
@@ -752,6 +813,72 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
+  Future<void> _loadAgentPermissionMode() async {
+    try {
+      final mode = await _permissionService.getMode();
+      if (mounted) {
+        setState(() {
+          _agentTrusted = mode == AiAgentPermissionMode.trusted;
+          _agentPermissionLoaded = true;
+        });
+        _handleRunConsentRequired();
+      }
+    } on AiPersonalDataPermissionException {
+      if (mounted) {
+        setState(() {
+          _agentTrusted = false;
+          _agentPermissionLoaded = true;
+        });
+        _handleRunConsentRequired();
+      }
+    }
+  }
+
+  Future<void> _showAgentPermissions() async {
+    await AiAgentPermissionSheet.show(context, widget.dio);
+    if (mounted) unawaited(_loadAgentPermissionMode());
+  }
+
+  Future<void> _submitInlineAgentConsent(_ConsentChoice choice) async {
+    final consent = _provider.pendingConsent;
+    if (consent == null ||
+        consent.consentScope.isEmpty ||
+        _provider.submittingConsent) {
+      return;
+    }
+    var shouldSubmit = true;
+    if (choice == _ConsentChoice.always) {
+      final scope = AiPersonalDataPermissionScope.fromWireValue(
+        consent.consentScope,
+      );
+      if (scope == null) {
+        shouldSubmit = false;
+        if (mounted) AppFeedback.error('授权范围无效，请稍后重试', context: context);
+      } else {
+        try {
+          await _permissionService.update(
+            scope: scope,
+            policy: AiPersonalDataPermissionPolicy.always,
+          );
+          unawaited(_loadAgentPermissionMode());
+        } on AiPersonalDataPermissionException catch (error) {
+          shouldSubmit = false;
+          if (mounted) AppFeedback.error(error.message, context: context);
+        }
+      }
+    }
+    if (!shouldSubmit) return;
+    final submitted = await _provider.submitConsent(
+      choice != _ConsentChoice.denied,
+    );
+    if (!submitted && mounted) {
+      AppFeedback.error(
+        _provider.error ?? '提交本次授权失败，请稍后重试',
+        context: context,
+      );
+    }
+  }
+
   Future<void> _confirmCompetitionDraft(
     CompetitionPlanActionDraft draft,
   ) async {
@@ -806,6 +933,140 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         AppFeedback.error('加入计划失败，请稍后重试', context: context);
       }
     }
+  }
+
+  Future<void> _confirmCalendarDraft(UserCalendarActionDraft draft) async {
+    if (!draft.isPending || draft.isExpired) return;
+    final actionLabel = switch (draft.actionType) {
+      'calendar_event_update' => '更新日历事件',
+      'calendar_event_delete' => '删除日历事件',
+      'calendar_reminder_create' => '添加日历提醒',
+      _ => '创建日历事件',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('确认$actionLabel？'),
+        content: Text(
+          draft.actionType == 'calendar_event_delete'
+              ? '确认后将删除“${draft.title}”，此操作不会自动恢复。'
+              : '确认后才会把“${draft.title}”写入你的个人日历。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('确认$actionLabel'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final requestEpoch = _personalSessionEpoch.capture();
+    try {
+      final updated =
+          await DioCalendarActionSource(widget.dio).confirm(draft.id);
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      final localReminderScheduled =
+          await _scheduleConfirmedCalendarReminder(updated);
+      _replaceCalendarDraft(updated);
+      await _persistPersonalHistory();
+      if (mounted) {
+        AppFeedback.info(
+          localReminderScheduled ? '日历操作已执行' : '提醒已保存，但当前设备未启用本地系统提醒',
+          context: context,
+        );
+      }
+    } on CalendarActionException catch (error) {
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (error.draft != null) _replaceCalendarDraft(error.draft!);
+      if (mounted) AppFeedback.error(error.message, context: context);
+    } catch (_) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
+        AppFeedback.error('日历操作失败，请稍后重试', context: context);
+      }
+    }
+  }
+
+  Future<void> _cancelCalendarDraft(UserCalendarActionDraft draft) async {
+    if (!draft.isPending || draft.isExpired) return;
+    final requestEpoch = _personalSessionEpoch.capture();
+    try {
+      final updated =
+          await DioCalendarActionSource(widget.dio).cancel(draft.id);
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      _replaceCalendarDraft(updated);
+      await _persistPersonalHistory();
+      if (mounted) AppFeedback.success('日历草稿已取消', context: context);
+    } on CalendarActionException catch (error) {
+      if (mounted) AppFeedback.error(error.message, context: context);
+    } catch (_) {
+      if (mounted) AppFeedback.error('取消日历草稿失败，请稍后重试', context: context);
+    }
+  }
+
+  Future<bool> _scheduleConfirmedCalendarReminder(
+    UserCalendarActionDraft draft,
+  ) async {
+    final event = draft.event;
+    final minutes = draft.reminderMinutesBefore;
+    if (draft.actionType != 'calendar_reminder_create' ||
+        event == null ||
+        minutes == null) {
+      return true;
+    }
+    final scheduledTime = event.startAt.subtract(Duration(minutes: minutes));
+    if (!scheduledTime.isAfter(DateTime.now())) return true;
+    try {
+      return await ReminderNotificationClient.instance.scheduleCalendarReminder(
+        id: calendarReminderNotificationId(event.id, minutes),
+        title: event.title,
+        body: event.location.isEmpty ? '日历事件即将开始' : event.location,
+        scheduledTime: scheduledTime,
+        payload: 'calendar_event:${event.id}:reminder:$minutes',
+      );
+    } catch (_) {
+      // 服务端日历操作已经成功；平台通知失败通过明确的降级反馈告知用户。
+      return false;
+    }
+  }
+
+  void _replaceCalendarDraft(UserCalendarActionDraft updated) {
+    _provider.replaceCalendarActionDraft(updated);
+    setState(() {
+      for (var index = 0; index < _personalMessages.length; index++) {
+        final message = _personalMessages[index];
+        if (!message.calendarActionDrafts
+            .any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalMessages[index] = message.copyWith(
+          calendarActionDrafts: message.calendarActionDrafts
+              .map((item) => item.id == updated.id ? updated : item)
+              .toList(growable: false),
+        );
+      }
+      for (var index = 0;
+          index < _personalConversationEntries.length;
+          index++) {
+        final entry = _personalConversationEntries[index];
+        if (!entry.message.calendarActionDrafts
+            .any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalConversationEntries[index] = PersonalConversationEntry(
+          message: entry.message.copyWith(
+            calendarActionDrafts: entry.message.calendarActionDrafts
+                .map((item) => item.id == updated.id ? updated : item)
+                .toList(growable: false),
+          ),
+          evidence: entry.evidence,
+        );
+      }
+    });
   }
 
   void _replaceCompetitionDraft(CompetitionPlanActionDraft updated) {
@@ -867,13 +1128,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         for (final message in _personalMessages)
           AiMessageCard(
             message: message,
+            assistantLabel: '个人助手',
             onConfirmDraft: _confirmCompetitionDraft,
             onViewCompetition: _openCompetitionDetail,
             loadSourceContent: widget.service.getSourceContent,
           ),
         if (_personalEvidence.isNotEmpty)
           AiEvidenceCard(evidence: _personalEvidence),
-        if (_personalSending) const AiTypingStatus(status: '正在本地校验并执行已授权能力'),
+        if (_personalSending)
+          const AiTypingStatus(status: '正在先读取 App 数据，再进行分析'),
         if (_personalError != null)
           AiErrorCard(
             message: _personalError!,
@@ -887,6 +1150,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   Future<void> _openAiSetting(String value) async {
+    if (value == 'permissions') {
+      await _showAgentPermissions();
+      return;
+    }
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
       AppFeedback.info('毕业助手在当前内测版本中暂未开放', context: context);
       return;
@@ -970,6 +1237,19 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       onPressed: () => _openAiSetting('data'),
                       icon: const Icon(Icons.refresh_rounded),
                     ),
+                  if (capabilities.capabilities.isNotEmpty)
+                    IconButton(
+                      tooltip: '能力范围',
+                      onPressed: () => _showCapabilitySheet(capabilities),
+                      icon: const Icon(Icons.hub_outlined),
+                    ),
+                  if (context.read<AuthProvider>().user?.isAdmin == true)
+                    IconButton(
+                      tooltip: 'AI 调用管理',
+                      onPressed: () =>
+                          AdminAiControlSheet.show(context, widget.dio),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
                   AppActionPopupMenu(
                     icon: const Icon(Icons.settings_outlined),
                     entries: const <Object>[
@@ -982,6 +1262,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         value: 'data',
                         label: '个人数据保险箱',
                         icon: Icons.shield_outlined,
+                      ),
+                      AppPopupAction(
+                        value: 'permissions',
+                        label: 'Agent 权限',
+                        icon: Icons.admin_panel_settings_outlined,
                       ),
                       if (BetaReleasePolicy.aiGraduationAssistant)
                         AppPopupAction(
@@ -1028,81 +1313,115 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     child: _personalMode
                         ? _buildPersonalBody()
                         : provider.messages.isEmpty
-                            ? ListView(
-                                children: [
-                                  AiPublicEmptyState(
-                                    chatEnabled: capabilities.chatEnabled,
-                                    quickPrompts: provider.quickPrompts,
-                                    suggestedPrompts: [
-                                      if (capabilities
-                                          .features.supportsAcademicAnalysis)
-                                        const AiSuggestedPrompt(
-                                          title: '学业分析',
-                                          subtitle: '分析我的学业情况',
-                                          prompt: '分析我的学业情况，找出主要风险并给出改进建议',
+                            ? AiPublicEmptyState(
+                                chatEnabled: capabilities.chatEnabled,
+                                quickPrompts: provider.quickPrompts,
+                                suggestedPrompts: const [],
+                                onRefreshPrompts: provider.refreshQuickPrompts,
+                                onPromptSelected: (prompt) {
+                                  _inputController.text = prompt;
+                                  _inputController.selection =
+                                      TextSelection.collapsed(
+                                    offset: prompt.length,
+                                  );
+                                },
+                                footer: provider.error == null
+                                    ? null
+                                    : Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 12,
                                         ),
-                                      if (capabilities
-                                          .features.hy3CompetitionCompare)
-                                        const AiSuggestedPrompt(
-                                          title: '竞赛对比',
-                                          subtitle: '对比适合我的竞赛',
-                                          prompt: '对比适合我的竞赛',
+                                        child: AiErrorCard(
+                                          message: provider.error!,
+                                          actionLabel: provider.canRetry
+                                              ? '重试'
+                                              : provider.canReconnectRun
+                                                  ? '重新连接'
+                                                  : '重试加载',
+                                          onAction: provider.canRetry
+                                              ? provider.retryLast
+                                              : provider.canReconnectRun
+                                                  ? provider.reconnect
+                                                  : provider.retryBootstrap,
                                         ),
-                                      if (capabilities.features.hy3WeekPlan)
-                                        const AiSuggestedPrompt(
-                                          title: '本周计划',
-                                          subtitle: '制定本周学习计划',
-                                          prompt: '结合我的课表和目标，帮我制定本周学习计划',
-                                        ),
-                                    ],
-                                    onRefreshPrompts:
-                                        provider.refreshQuickPrompts,
-                                    onPromptSelected: (prompt) {
-                                      _inputController.text = prompt;
-                                      _inputController.selection =
-                                          TextSelection.collapsed(
-                                        offset: prompt.length,
-                                      );
-                                    },
-                                  ),
-                                  if (provider.error != null)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
                                       ),
-                                      child: AiErrorCard(
-                                        message: provider.error!,
-                                        actionLabel: provider.canRetry
-                                            ? '重试'
-                                            : provider.canReconnectRun
-                                                ? '重新连接'
-                                                : '重试加载',
-                                        onAction: provider.canRetry
-                                            ? provider.retryLast
-                                            : provider.canReconnectRun
-                                                ? provider.reconnect
-                                                : provider.retryBootstrap,
-                                      ),
-                                    ),
-                                ],
                               )
                             : ListView(
                                 padding:
                                     const EdgeInsets.fromLTRB(16, 10, 16, 18),
                                 children: [
-                                  for (final message in provider.messages)
+                                  for (final message in provider.messages) ...[
                                     AiMessageCard(
                                       message: message,
+                                      onConfirmCalendarDraft:
+                                          _confirmCalendarDraft,
+                                      onCancelCalendarDraft:
+                                          _cancelCalendarDraft,
                                       loadSourceContent:
                                           widget.service.getSourceContent,
                                       onRetrySources: () => unawaited(
                                         _provider.retryMessageSources(message),
                                       ),
                                     ),
-                                  if (provider.isRunning)
-                                    AiTypingStatus(
-                                      status: provider.friendlyRunStatus,
-                                    ),
+                                    if (message.role == AiMessageRole.user &&
+                                        message.requestId ==
+                                            provider.activeSubmissionRequestId)
+                                      AiAgentExecutionCard(
+                                        activities: provider.agentActivities,
+                                        event: provider.agentEvent,
+                                        running: provider.isRunning,
+                                        completed: provider.agentFlowCompleted,
+                                        onOpenPermissions:
+                                            _showAgentPermissions,
+                                        onAllowOnce: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.once,
+                                          ),
+                                        ),
+                                        onAllowAlways: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.always,
+                                          ),
+                                        ),
+                                        onDeny: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.denied,
+                                          ),
+                                        ),
+                                        onRetryRefresh: provider.canRetry
+                                            ? provider.retryLast
+                                            : null,
+                                        onUseExistingData:
+                                            provider.canUseExistingData
+                                                ? provider.useExistingData
+                                                : null,
+                                      ),
+                                    if (message.role == AiMessageRole.user &&
+                                        message.requestId ==
+                                            provider
+                                                .activeSubmissionRequestId &&
+                                        _agentPermissionLoaded &&
+                                        !_agentTrusted &&
+                                        provider.pendingConsent?.consentScope
+                                                .trim()
+                                                .isNotEmpty ==
+                                            true)
+                                      AiAgentPermissionCard(
+                                        event: provider.agentEvent ??
+                                            provider.pendingConsent!,
+                                        onDeny: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.denied,
+                                          ),
+                                        ),
+                                        onAllowOnce: () => unawaited(
+                                          _submitInlineAgentConsent(
+                                            _ConsentChoice.once,
+                                          ),
+                                        ),
+                                        submitting: provider.submittingConsent,
+                                      ),
+                                  ],
                                   if (provider.error != null)
                                     AiErrorCard(
                                       message: provider.error!,
@@ -1133,6 +1452,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     onSend: _submit,
                     onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                     hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',
+                    showAgentPermissionMode: !_personalMode,
+                    agentTrusted: _agentTrusted,
+                    onAgentPermissionTap: _showAgentPermissions,
                   ),
                 ],
               ),
@@ -1140,6 +1462,57 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           },
         ),
       ),
+    );
+  }
+
+  Future<void> _showCapabilitySheet(AiCapabilities capabilities) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          minChildSize: 0.42,
+          maxChildSize: 0.92,
+          builder: (_, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              Text('校园 Agent 能力范围',
+                  style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text(
+                '只读能力可读取公开或已授权数据；日历写入始终先生成草稿并等待确认。',
+                style: TextStyle(color: colors.onSurfaceVariant, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              for (final capability in capabilities.capabilities)
+                Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      capability.requiresConfirmation
+                          ? Icons.fact_check_outlined
+                          : Icons.visibility_outlined,
+                      color: capability.available
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                    ),
+                    title: Text(capability.description),
+                    subtitle: Text(
+                      '${capability.id} · ${capability.available ? '可用' : '暂不可用'}'
+                      '${capability.requiresConfirmation ? ' · 需要确认' : ''}',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

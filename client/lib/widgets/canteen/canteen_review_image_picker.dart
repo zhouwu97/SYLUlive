@@ -24,6 +24,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
   final int maxImages;
   final int userId;
   final int canteenId;
+  final String draftMode;
+  final int? draftReviewEventId;
   final CanteenReviewDraftRepository draftRepository;
   final ValueChanged<List<CanteenReviewDraftImage>> onImagesChanged;
   final bool enabled;
@@ -34,6 +36,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
     this.maxImages = 3,
     required this.userId,
     required this.canteenId,
+    this.draftMode = 'create',
+    this.draftReviewEventId,
     required this.draftRepository,
     required this.onImagesChanged,
     this.enabled = true,
@@ -85,6 +89,8 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
       final draftPath = await widget.draftRepository.copyImageToDraftStorage(
         userId: widget.userId,
         canteenId: widget.canteenId,
+        mode: widget.draftMode,
+        reviewEventId: widget.draftReviewEventId,
         sourcePath: file.path,
       );
 

@@ -32,6 +32,23 @@ class OhosReminderNotificationClient implements ReminderNotificationClient {
   }
 
   @override
+  Future<bool> scheduleCalendarReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String payload,
+  }) async {
+    // Unsupported on OHOS for now; server-side reminder remains available.
+    return false;
+  }
+
+  @override
+  Future<void> cancelCalendarReminder(int id) async {
+    // Unsupported on OHOS for now
+  }
+
+  @override
   Future<void> initializeGradeReminders() async {
     // Unsupported on OHOS for now
   }

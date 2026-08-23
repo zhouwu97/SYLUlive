@@ -27,6 +27,21 @@ abstract final class AppMotion {
   // 已经存在于屏幕上的元素从 A 移动到 B；最终曲线待真机 A/B 冻结。
   static const movement = Curves.easeInOutCubic;
 
+  /// 根据系统的 reduced-motion 设置收窄动效时长。
+  ///
+  /// reduced motion 不等于完全没有反馈：保留极短的 opacity/color 变化，
+  /// 但避免大距离位移、scale 和装饰性 stagger 阻碍操作确认。
+  static Duration duration(
+    BuildContext context,
+    Duration value, {
+    Duration reduced = const Duration(milliseconds: 40),
+  }) {
+    return MediaQuery.disableAnimationsOf(context) ? reduced : value;
+  }
+
+  static bool reducedMotion(BuildContext context) =>
+      MediaQuery.disableAnimationsOf(context);
+
   // 临时兼容别名：迁移完成后删除，禁止新代码使用。
   @Deprecated('Use AppMotion.tab instead.')
   static const nav = Duration(milliseconds: 220);

@@ -36,6 +36,16 @@ void main() {
       comment: '非常好吃，下次还来',
       tags: ['taste_good', 'portion_enough'],
       recommendedDishes: ['红烧牛肉面', '油泼面'],
+      dishReviews: const [
+        CanteenReviewDraftDishReview(
+          dishId: 7,
+          name: '红烧牛肉面',
+          taste: 5,
+          value: 4,
+          portion: 3,
+          comment: '面量足',
+        ),
+      ],
       images: [
         const CanteenReviewDraftImage(
           type: ReviewDraftImageType.localPending,
@@ -60,6 +70,11 @@ void main() {
     expect(loaded.comment, '非常好吃，下次还来');
     expect(loaded.tags, ['taste_good', 'portion_enough']);
     expect(loaded.recommendedDishes, ['红烧牛肉面', '油泼面']);
+    expect(loaded.schemaVersion, CanteenReviewDraft.currentSchemaVersion);
+    expect(loaded.dishReviews, hasLength(1));
+    expect(loaded.dishReviews.single.dishId, 7);
+    expect(loaded.dishReviews.single.taste, 5);
+    expect(loaded.dishReviews.single.comment, '面量足');
     expect(loaded.images.length, 2);
     expect(loaded.images[0].type, ReviewDraftImageType.localPending);
     expect(loaded.images[0].localPath, '/path/to/local.jpg');
@@ -114,6 +129,51 @@ void main() {
     expect(loaded2!.comment, '二食堂草稿');
   });
 
+  test('创建与编辑草稿命名空间隔离', () async {
+    final createDraft = CanteenReviewDraft(
+      userId: 101,
+      canteenId: 1,
+      mode: 'create',
+      comment: '新增一条到店体验',
+      updatedAt: DateTime.now(),
+    );
+    final editDraft = CanteenReviewDraft(
+      userId: 101,
+      canteenId: 1,
+      mode: 'edit',
+      reviewEventId: 42,
+      comment: '修改最近一条体验',
+      updatedAt: DateTime.now(),
+    );
+
+    await repository.saveDraft(createDraft);
+    await repository.saveDraft(editDraft);
+
+    expect(
+      (await repository.loadDraft(userId: 101, canteenId: 1))!.comment,
+      '新增一条到店体验',
+    );
+    expect(
+      (await repository.loadDraft(
+        userId: 101,
+        canteenId: 1,
+        mode: 'edit',
+        reviewEventId: 42,
+      ))!
+          .comment,
+      '修改最近一条体验',
+    );
+    expect(
+      CanteenReviewDraftRepository.buildKey(101, 1),
+      isNot(CanteenReviewDraftRepository.buildKey(
+        101,
+        1,
+        mode: 'edit',
+        reviewEventId: 42,
+      )),
+    );
+  });
+
   test('保存空草稿自动触发删除', () async {
     final draft = CanteenReviewDraft(
       userId: 101,
@@ -139,6 +199,28 @@ void main() {
     await repository.saveDraft(emptyDraft);
 
     expect(await repository.loadDraft(userId: 101, canteenId: 1), isNull);
+  });
+
+  test('部分五维草稿保存后恢复时保留未填写状态，不用旧星级补齐', () async {
+    await repository.saveDraft(
+      CanteenReviewDraft(
+        userId: 101,
+        canteenId: 1,
+        star: 5,
+        tasteScore: 5,
+        valueScore: 4,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    final draft = await repository.loadDraft(userId: 101, canteenId: 1);
+
+    expect(draft, isNotNull);
+    final restored = draft!;
+    expect(restored.tasteScore, 5);
+    expect(restored.valueScore, 4);
+    expect(restored.queueScore, 0);
+    expect(restored.hygieneScore, 0);
+    expect(restored.serviceScore, 0);
   });
 
   test('本地草稿图片复制与清理', () async {

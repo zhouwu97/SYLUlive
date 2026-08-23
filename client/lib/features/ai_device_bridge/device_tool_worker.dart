@@ -1,6 +1,7 @@
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
 import 'device_job_client.dart';
+import 'device_automation_gateway.dart';
 import 'device_job_models.dart';
 import 'device_tool_registry.dart';
 
@@ -10,12 +11,14 @@ class DeviceToolWorkerContext {
     required this.sourceAccountId,
     required this.createGateway,
     required this.isCurrent,
+    this.createAutomationGateway,
   });
 
   final String appUserId;
   final String sourceAccountId;
   final PersonalDataGateway Function() createGateway;
   final Future<bool> Function() isCurrent;
+  final DeviceAutomationGateway Function()? createAutomationGateway;
 }
 
 typedef DeviceToolContextResolver = Future<DeviceToolWorkerContext?> Function();
@@ -106,7 +109,9 @@ class DeviceToolWorker {
     String installationId,
     DeviceToolWorkerContext context,
   ) async {
-    if ((job.status != 'pending' && job.status != 'pushed') ||
+    if ((job.status != 'pending' &&
+            job.status != 'pushed' &&
+            job.status != 'waiting_user') ||
         job.expiresAt.isBefore(DateTime.now().toUtc()) ||
         !DeviceToolRegistry.supportedToolNames.contains(job.toolName) ||
         !await context.isCurrent()) {
@@ -114,6 +119,8 @@ class DeviceToolWorker {
     }
     final resolver = _permissionResolver;
     if (resolver == null) return;
+    // resolver 可根据状态决定是否展示 UI。这样保留 Worker 的 fail-closed
+    // 默认行为，同时允许现有服务端 pending 任务跳过重复确认。
     final decision = await resolver(job);
     if (!await context.isCurrent()) return;
     if (decision == DeviceToolPermissionDecision.defer) return;
@@ -129,36 +136,109 @@ class DeviceToolWorker {
       return;
     }
 
-    final gateway = context.createGateway();
+    var current = claimed;
+    current = await _reportProgress(
+      installationId,
+      current,
+      'checking_freshness',
+    );
+    current = await _reportProgress(
+      installationId,
+      current,
+      'request_received',
+    );
+    final refreshing = current.toolName.contains('.ensure_fresh_');
+    if (refreshing) {
+      current = await _reportProgress(
+        installationId,
+        current,
+        'refresh_started',
+      );
+    }
+
+    final automation = context.createAutomationGateway?.call();
+    final gateway = automation == null ? context.createGateway() : null;
     try {
-      final result = await _registry.execute(claimed, gateway);
+      final result = await _registry.execute(
+        current,
+        gateway,
+        automationGateway: automation,
+      );
       if (!await context.isCurrent()) return;
+      if (refreshing) {
+        current = await _reportProgress(
+          installationId,
+          current,
+          'refresh_completed',
+        );
+      }
+      current = await _reportProgress(
+        installationId,
+        current,
+        'reading_result',
+      );
       await _client.complete(
         installationId,
-        claimed.id,
-        claimed.stateVersion,
+        current.id,
+        current.stateVersion,
         result.value,
       );
     } on DeviceToolExecutionException catch (error) {
       if (await context.isCurrent()) {
+        if (refreshing) {
+          current = await _reportProgress(
+            installationId,
+            current,
+            'refresh_failed',
+          );
+        }
         await _client.fail(
           installationId,
-          claimed.id,
-          claimed.stateVersion,
+          current.id,
+          current.stateVersion,
           error.code,
         );
       }
     } catch (_) {
       if (await context.isCurrent()) {
+        if (refreshing) {
+          current = await _reportProgress(
+            installationId,
+            current,
+            'refresh_failed',
+          );
+        }
         await _client.fail(
           installationId,
-          claimed.id,
-          claimed.stateVersion,
+          current.id,
+          current.stateVersion,
           'device_tool_failed',
         );
       }
     } finally {
-      await gateway.close();
+      if (automation != null) {
+        await automation.close();
+      } else {
+        await gateway?.close();
+      }
+    }
+  }
+
+  Future<DeviceToolJob> _reportProgress(
+    String installationId,
+    DeviceToolJob job,
+    String stage,
+  ) async {
+    try {
+      return await _client.progress(
+        installationId,
+        job.id,
+        job.stateVersion,
+        stage,
+      );
+    } on DeviceJobApiException {
+      // 进度是可恢复的增量，不能因为旧客户端/网络抖动阻断真实工具执行。
+      return job;
     }
   }
 

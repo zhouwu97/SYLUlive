@@ -17,7 +17,7 @@ import (
 	"shenliyuan/internal/models"
 )
 
-const campusMCPToolVersion = "2026-07-25"
+const campusMCPToolVersion = "2026-08-22"
 
 // CampusToolResult 是校园 MCP 对模型返回的统一结果信封。
 // 它只携带语义化结果及来源证据，绝不返回数据库、凭据或爬虫细节。
@@ -147,9 +147,22 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"campus.search_service", "检索校园服务办理信息与服务说明。", searchSchema(), mcp.searchService},
 		campusMCPTool{"campus.search_notifications", "检索已发布的教务、创新创业和站内公告。", searchSchema(), mcp.searchNotifications},
 		campusMCPTool{"campus.get_term_info", "读取当前或指定学年的已发布校历与教学周信息。", termSchema(), mcp.getTermInfo},
+		campusMCPTool{"calendar.get_day", "读取指定日期的校历语义：学期、教学周、调休和校历事件。", calendarDaySchema(), mcp.getCalendarDay},
+		campusMCPTool{"calendar.get_range", "读取日期范围内的官方校历语义，最多 31 天。", calendarRangeSchema(), mcp.getCalendarRange},
+		campusMCPTool{"calendar.get_current_term", "读取当前已发布校历的学期与教学周配置。", emptySchema(), mcp.getCurrentTerm},
+		campusMCPTool{"calendar.get_teaching_week", "读取指定日期对应的教学周和调休信息。", calendarDaySchema(), mcp.getTeachingWeek},
+		campusMCPTool{"canteen.search", "检索已审核且当前营业的食堂与菜品。", canteenSearchSchema(), mcp.searchCanteens},
+		campusMCPTool{"canteen.get_details", "读取一个已审核食堂的公开信息和在售菜品。", canteenIDSchema(), mcp.getCanteenDetails},
+		campusMCPTool{"canteen.search_dishes", "检索当前营业食堂中的公开在售菜品。", dishSearchSchema(), mcp.searchDishes},
+		campusMCPTool{"canteen.get_dish_details", "读取一个公开在售菜品及其安全评分摘要。", dishIDSchema(), mcp.getDishDetails},
+		campusMCPTool{"canteen.get_rankings", "读取当前营业食堂的公开评分排行。", rankingSchema(), mcp.getCanteenRankings},
+		campusMCPTool{"canteen.get_recent_reviews", "读取当前营业食堂的近期公开评价摘要。", recentReviewsSchema(), mcp.getRecentCanteenReviews},
 		campusMCPTool{"competition.search_catalog", "按关键词检索当前公开赛事目录。", competitionSearchSchema(), mcp.searchCompetitionCatalog},
 		campusMCPTool{"competition.get_details", "读取一项公开赛事的报名、认定和限制条件。", eventIDSchema(), mcp.getCompetitionDetails},
 		campusMCPTool{"competition.compare", "比较两到四项公开赛事的报名期限、认定和参与条件。", compareSchema(), mcp.compareCompetitions},
+		campusMCPTool{"competition.get_my_plan", "读取当前用户自己的竞赛计划，不返回其他用户数据。", limitSchema(), mcp.getMyCompetitionPlan},
+		campusMCPTool{"competition.get_deadlines", "读取当前用户竞赛计划中即将到来的报名截止时间。", deadlineSchema(), mcp.getCompetitionDeadlines},
+		campusMCPTool{"competition.get_calendar", "读取当前用户竞赛计划日历事件。", limitSchema(), mcp.getMyCompetitionPlan},
 		campusMCPTool{"exam.search_materials", "检索已发布试卷资料的安全元数据，不返回文件内部存储地址。", searchSchema(), mcp.searchExamMaterials},
 		campusMCPTool{"community.search_public_posts", "检索公开校园讨论，不返回联系方式或作者私有资料。", searchSchema(), mcp.searchPublicPosts},
 		campusMCPTool{"academic.resolve_context", "解析已授权的服务端学业快照，返回来源、更新时间和过期状态。", resolveContextSchema(), mcp.resolveAcademicContext},
@@ -160,6 +173,10 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"schedule.get_availability", "根据已授权课表快照计算指定教学周的空闲节次。", availabilitySchema(), mcp.getScheduleAvailability},
 		campusMCPTool{"erke.get_overview", "读取用户已授权上传的二课概览；没有上传时明确说明缺失。", emptySchema(), mcp.getErkeOverview},
 		campusMCPTool{"profile.get_academic_identity", "读取当前用户已授权的年级、学院和专业，不返回学号或账号信息。", emptySchema(), mcp.getAcademicIdentity},
+		campusMCPTool{"personal_calendar.get_events", "读取当前用户自己的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
+		campusMCPTool{"personal_calendar.get_range", "读取当前用户日期范围内的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
+		campusMCPTool{"personal_calendar.get_day", "读取当前用户指定日期的个人日历事件。", calendarDaySchema(), mcp.getPersonalCalendarDay},
+		campusMCPTool{"personal_calendar.find_free_time", "根据个人日历事件计算可用时间窗口，不写入任何数据。", freeTimeSchema(), mcp.findPersonalFreeTime},
 	}
 }
 
@@ -181,6 +198,88 @@ func termSchema() map[string]interface{} {
 		"type": "object", "properties": map[string]interface{}{
 			"academic_year": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{4}$"},
 		}, "additionalProperties": false,
+	}
+}
+
+func calendarDaySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"date": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		}, "required": []string{"date"}, "additionalProperties": false,
+	}
+}
+
+func calendarRangeSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"from": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+			"to":   map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		}, "required": []string{"from", "to"}, "additionalProperties": false,
+	}
+}
+
+func dishSearchSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"query":      map[string]interface{}{"type": "string", "minLength": 1, "maxLength": 80},
+		"canteen_id": map[string]interface{}{"type": "integer", "minimum": 1},
+		"limit":      map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 20},
+	}, "required": []string{"query"}, "additionalProperties": false}
+}
+
+func dishIDSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"dish_id": map[string]interface{}{"type": "integer", "minimum": 1},
+	}, "required": []string{"dish_id"}, "additionalProperties": false}
+}
+
+func rankingSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 20},
+	}, "additionalProperties": false}
+}
+
+func recentReviewsSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"canteen_id": map[string]interface{}{"type": "integer", "minimum": 1},
+		"limit":      map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 20},
+	}, "required": []string{"canteen_id"}, "additionalProperties": false}
+}
+
+func limitSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 50},
+	}, "additionalProperties": false}
+}
+
+func deadlineSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 20},
+		"from":  map[string]interface{}{"type": "string", "format": "date-time"},
+	}, "additionalProperties": false}
+}
+
+func freeTimeSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+		"from":             map[string]interface{}{"type": "string", "format": "date-time"},
+		"to":               map[string]interface{}{"type": "string", "format": "date-time"},
+		"duration_minutes": map[string]interface{}{"type": "integer", "minimum": 15, "maximum": 720},
+	}, "required": []string{"from", "to", "duration_minutes"}, "additionalProperties": false}
+}
+
+func canteenSearchSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"query": map[string]interface{}{"type": "string", "minLength": 1, "maxLength": 80},
+			"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 10},
+		}, "required": []string{"query"}, "additionalProperties": false,
+	}
+}
+
+func canteenIDSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"canteen_id": map[string]interface{}{"type": "integer", "minimum": 1},
+		}, "required": []string{"canteen_id"}, "additionalProperties": false,
 	}
 }
 
@@ -437,6 +536,360 @@ func (mcp *campusMCP) getTermInfo(ctx context.Context, _ uint, arguments json.Ra
 	return publicResult(data, academic.DataSourcePublicDatabase, []CampusToolEvidence{{Source: academic.DataSourcePublicDatabase, Title: calendar.SourceName, FetchedAt: &publishedAt}}, publishedAt), nil
 }
 
+func (mcp *campusMCP) getCalendarDay(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Date string `json:"date"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || !calendarDateInputValid(input.Date) {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var calendar models.CampusCalendar
+	if err := mcp.db.WithContext(ctx).Where("status = ?", "published").Order("academic_year DESC, version DESC").First(&calendar).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("暂未发布可用校历"), nil
+		}
+		return nil, err
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(calendar.Data, &root); err != nil {
+		return nil, errors.New("campus_calendar_corrupted")
+	}
+	date, _ := time.Parse("2006-01-02", input.Date)
+	var semester map[string]interface{}
+	var teachingWeek map[string]interface{}
+	for _, raw := range calendarObjectList(root["semesters"]) {
+		start, startOK := calendarDateValue(raw["start_date"])
+		end, endOK := calendarDateValue(raw["end_date"])
+		if !startOK || !endOK || date.Before(start) || date.After(end) {
+			continue
+		}
+		semester = raw
+		for _, week := range calendarObjectList(raw["teaching_weeks"]) {
+			weekStart, weekStartOK := calendarDateValue(week["start_date"])
+			weekEnd, weekEndOK := calendarDateValue(week["end_date"])
+			if weekStartOK && weekEndOK && !date.Before(weekStart) && !date.After(weekEnd) {
+				teachingWeek = week
+				break
+			}
+		}
+		break
+	}
+	var override map[string]interface{}
+	for _, raw := range calendarObjectList(root["day_overrides"]) {
+		if value, ok := raw["date"].(string); ok && value == input.Date {
+			override = raw
+			break
+		}
+	}
+	events := make([]map[string]interface{}, 0)
+	for _, raw := range calendarObjectList(root["events"]) {
+		start, startOK := calendarDateValue(raw["start_date"])
+		end, endOK := calendarDateValue(raw["end_date"])
+		if startOK && endOK && !date.Before(start) && !date.After(end) {
+			events = append(events, raw)
+		}
+	}
+	publishedAt := calendar.UpdatedAt
+	return publicResult(map[string]interface{}{
+		"date": input.Date, "academic_year": calendar.AcademicYear,
+		"semester": semester, "teaching_week": teachingWeek, "override": override, "events": events,
+	}, academic.DataSourcePublicDatabase, []CampusToolEvidence{{Source: academic.DataSourcePublicDatabase, Title: calendar.SourceName, FetchedAt: &publishedAt}}, publishedAt), nil
+}
+
+func (mcp *campusMCP) getCalendarRange(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct{ From, To string }
+	if err := decodeToolArguments(arguments, &input); err != nil || !calendarDateInputValid(input.From) || !calendarDateInputValid(input.To) {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	from, _ := time.Parse("2006-01-02", input.From)
+	to, _ := time.Parse("2006-01-02", input.To)
+	if to.Before(from) || to.Sub(from) > 31*24*time.Hour {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	days := make([]interface{}, 0, int(to.Sub(from)/24/time.Hour)+1)
+	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+		value, err := mcp.getCalendarDay(ctx, 0, mustMarshal(map[string]string{"date": day.Format("2006-01-02")}))
+		if err != nil {
+			return nil, err
+		}
+		result, ok := value.(CampusToolResult)
+		if !ok {
+			return nil, errors.New("calendar_result_invalid")
+		}
+		days = append(days, result.Data)
+	}
+	return publicResult(map[string]interface{}{"from": input.From, "to": input.To, "days": days}, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getCurrentTerm(ctx context.Context, _ uint, _ json.RawMessage) (interface{}, error) {
+	return mcp.getTermInfo(ctx, 0, json.RawMessage(`{}`))
+}
+
+func (mcp *campusMCP) getTeachingWeek(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	value, err := mcp.getCalendarDay(ctx, 0, arguments)
+	if err != nil {
+		return nil, err
+	}
+	result, ok := value.(CampusToolResult)
+	if !ok {
+		return nil, errors.New("calendar_result_invalid")
+	}
+	data, ok := result.Data.(map[string]interface{})
+	if !ok {
+		return value, nil
+	}
+	return publicResult(map[string]interface{}{
+		"date": data["date"], "academic_year": data["academic_year"],
+		"semester": data["semester"], "teaching_week": data["teaching_week"], "override": data["override"],
+	}, result.Source, result.Evidence, mcp.now()), nil
+}
+
+func calendarDateInputValid(value string) bool {
+	if len(value) != len("2006-01-02") {
+		return false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
+}
+
+func calendarDateValue(value interface{}) (time.Time, bool) {
+	text, ok := value.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", text)
+	return parsed, err == nil
+}
+
+func calendarObjectList(value interface{}) []map[string]interface{} {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if object, ok := item.(map[string]interface{}); ok {
+			result = append(result, object)
+		}
+	}
+	return result
+}
+
+func (mcp *campusMCP) searchCanteens(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || strings.TrimSpace(input.Query) == "" || len([]rune(input.Query)) > 80 || input.Limit < 0 || input.Limit > 10 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if input.Limit == 0 {
+		input.Limit = 5
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	pattern := "%" + strings.ToLower(strings.TrimSpace(input.Query)) + "%"
+	var canteens []models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '') AND (LOWER(name) LIKE ? OR LOWER(normalized_name) LIKE ?)", true, models.CanteenOperatingActive, pattern, pattern).Order("name ASC, id ASC").Limit(input.Limit).Find(&canteens).Error; err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(canteens))
+	for _, canteen := range canteens {
+		items = append(items, map[string]interface{}{"id": canteen.ID, "name": canteen.Name, "image": canteen.Image, "verified": canteen.Verified, "operating_status": canteen.OperatingStatus})
+	}
+	return publicResult(items, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getCanteenDetails(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		CanteenID uint `json:"canteen_id"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.CanteenID == 0 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var canteen models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("id = ? AND verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '')", input.CanteenID, true, models.CanteenOperatingActive).First(&canteen).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("食堂不存在或当前不可用"), nil
+		}
+		return nil, err
+	}
+	var dishes []models.CanteenDish
+	if err := mcp.db.WithContext(ctx).Where("canteen_id = ? AND status = ?", canteen.ID, models.DishStatusActive).Order("name ASC, id ASC").Limit(100).Find(&dishes).Error; err != nil {
+		return nil, err
+	}
+	publicDishes := make([]map[string]interface{}, 0, len(dishes))
+	for _, dish := range dishes {
+		publicDishes = append(publicDishes, map[string]interface{}{"id": dish.ID, "name": dish.Name, "status": dish.Status})
+	}
+	data := map[string]interface{}{"id": canteen.ID, "name": canteen.Name, "image": canteen.Image, "operating_status": canteen.OperatingStatus, "dishes": publicDishes}
+	return publicResult(data, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) searchDishes(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Query     string `json:"query"`
+		CanteenID uint   `json:"canteen_id"`
+		Limit     int    `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || strings.TrimSpace(input.Query) == "" || len([]rune(input.Query)) > 80 || input.Limit < 0 || input.Limit > 20 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	if input.Limit == 0 {
+		input.Limit = 10
+	}
+	pattern := "%" + strings.ToLower(strings.TrimSpace(input.Query)) + "%"
+	query := mcp.db.WithContext(ctx).Table("canteen_dishes AS d").
+		Select("d.*").Joins("JOIN canteens c ON c.id = d.canteen_id").
+		Where("d.status = ? AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '') AND (LOWER(d.name) LIKE ? OR LOWER(d.normalized_name) LIKE ?)", models.DishStatusActive, true, models.CanteenOperatingActive, pattern, pattern)
+	if input.CanteenID != 0 {
+		query = query.Where("d.canteen_id = ?", input.CanteenID)
+	}
+	var dishes []models.CanteenDish
+	if err := query.Order("d.name ASC, d.id ASC").Limit(input.Limit).Find(&dishes).Error; err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(dishes))
+	for _, dish := range dishes {
+		items = append(items, map[string]interface{}{"dish_id": dish.ID, "canteen_id": dish.CanteenID, "name": dish.Name, "status": dish.Status})
+	}
+	return publicResult(items, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getDishDetails(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		DishID uint `json:"dish_id"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.DishID == 0 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var dish models.CanteenDish
+	if err := mcp.db.WithContext(ctx).Table("canteen_dishes AS d").Select("d.*").Joins("JOIN canteens c ON c.id = d.canteen_id").Where("d.id = ? AND d.status = ? AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '')", input.DishID, models.DishStatusActive, true, models.CanteenOperatingActive).First(&dish).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("菜品不存在或当前不可用"), nil
+		}
+		return nil, err
+	}
+	var summaries []models.CanteenDishRatingSummary
+	if err := mcp.db.WithContext(ctx).Where("dish_id = ?", dish.ID).Find(&summaries).Error; err != nil {
+		return nil, err
+	}
+	var total float64
+	for _, summary := range summaries {
+		total += summary.EffectiveScore
+	}
+	data := map[string]interface{}{"dish_id": dish.ID, "canteen_id": dish.CanteenID, "name": dish.Name, "status": dish.Status, "rating_count": len(summaries), "average_score": 0.0}
+	if len(summaries) > 0 {
+		data["average_score"] = roundToolNumber(total / float64(len(summaries)))
+	}
+	return publicResult(data, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getCanteenRankings(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Limit int `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.Limit < 0 || input.Limit > 20 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	if input.Limit == 0 {
+		input.Limit = 10
+	}
+	var canteens []models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '')", true, models.CanteenOperatingActive).Find(&canteens).Error; err != nil {
+		return nil, err
+	}
+	var ratings []models.CanteenRating
+	if err := mcp.db.WithContext(ctx).Where("status = ?", models.ReviewEventStatusActive).Find(&ratings).Error; err != nil {
+		return nil, err
+	}
+	totals := map[uint]struct {
+		sum   float64
+		count int
+	}{}
+	for _, rating := range ratings {
+		current := totals[rating.CanteenID]
+		score := rating.EffectiveScore
+		if score == 0 {
+			score = float64(rating.Star)
+		}
+		current.sum += score
+		current.count++
+		totals[rating.CanteenID] = current
+	}
+	type ranked struct {
+		item  map[string]interface{}
+		score float64
+	}
+	items := make([]ranked, 0, len(canteens))
+	for _, canteen := range canteens {
+		current := totals[canteen.ID]
+		if current.count == 0 {
+			continue
+		}
+		items = append(items, ranked{map[string]interface{}{"canteen_id": canteen.ID, "name": canteen.Name, "average_score": roundToolNumber(current.sum / float64(current.count)), "rating_count": current.count}, current.sum / float64(current.count)})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].score == items[j].score {
+			return fmt.Sprint(items[i].item["name"]) < fmt.Sprint(items[j].item["name"])
+		}
+		return items[i].score > items[j].score
+	})
+	data := make([]map[string]interface{}, 0, minInt(input.Limit, len(items)))
+	for _, item := range items[:minInt(input.Limit, len(items))] {
+		data = append(data, item.item)
+	}
+	return publicResult(data, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getRecentCanteenReviews(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		CanteenID uint `json:"canteen_id"`
+		Limit     int  `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.CanteenID == 0 || input.Limit < 0 || input.Limit > 20 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	if input.Limit == 0 {
+		input.Limit = 10
+	}
+	var canteen models.Canteen
+	if err := mcp.db.WithContext(ctx).Where("id = ? AND verified = ? AND (operating_status = ? OR operating_status IS NULL OR operating_status = '')", input.CanteenID, true, models.CanteenOperatingActive).First(&canteen).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return publicMissingResult("食堂不存在或当前不可用"), nil
+		}
+		return nil, err
+	}
+	var reviews []models.CanteenReviewEvent
+	if err := mcp.db.WithContext(ctx).Where("canteen_id = ? AND status = ?", canteen.ID, models.ReviewEventStatusActive).Order("created_at DESC, id DESC").Limit(input.Limit).Find(&reviews).Error; err != nil {
+		return nil, err
+	}
+	items := make([]map[string]interface{}, 0, len(reviews))
+	for _, review := range reviews {
+		items = append(items, map[string]interface{}{"review_id": review.ID, "overall_score": review.OverallScore, "taste_score": review.TasteScore, "value_score": review.ValueScore, "queue_score": review.QueueScore, "hygiene_score": review.HygieneScore, "service_score": review.ServiceScore, "comment": truncateToolText(review.Comment, 240), "created_at": review.CreatedAt})
+	}
+	return publicResult(items, academic.DataSourcePublicDatabase, nil, mcp.now()), nil
+}
+
 type competitionSearchArguments struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit"`
@@ -531,6 +984,146 @@ func (mcp *campusMCP) compareCompetitions(ctx context.Context, _ uint, arguments
 		result.Warnings = append(result.Warnings, "部分赛事不存在或未公开")
 	}
 	return result, nil
+}
+
+func (mcp *campusMCP) getMyCompetitionPlan(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	limit, err := toolLimit(arguments, 50)
+	if err != nil || userID == 0 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var items []models.UserCompetitionCalendarItem
+	if err := mcp.db.WithContext(ctx).Where("user_id = ?", userID).Order("sort_date ASC, is_pinned DESC, id ASC").Limit(limit).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	data := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		data = append(data, map[string]interface{}{"id": item.ID, "title": item.Title, "summary": item.Summary, "plan_status": item.PlanStatus, "registration_end": item.RegistrationEnd, "event_start": item.EventStart, "event_end": item.EventEnd, "user_deadline": item.UserDeadline, "official_url": item.OfficialURL, "source_type": item.SourceType})
+	}
+	return publicResult(data, academic.DataSourceServerSnapshot, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getCompetitionDeadlines(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Limit int    `json:"limit"`
+		From  string `json:"from"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || userID == 0 || input.Limit < 0 || input.Limit > 20 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	if input.Limit == 0 {
+		input.Limit = 10
+	}
+	from := mcp.now()
+	if strings.TrimSpace(input.From) != "" {
+		parsed, err := time.Parse(time.RFC3339, input.From)
+		if err != nil {
+			return nil, errors.New("invalid_tool_arguments")
+		}
+		from = parsed
+	}
+	var items []models.UserCompetitionCalendarItem
+	if err := mcp.db.WithContext(ctx).Where("user_id = ? AND registration_end IS NOT NULL AND registration_end >= ?", userID, from).Order("registration_end ASC, id ASC").Limit(input.Limit).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	data := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		data = append(data, map[string]interface{}{"id": item.ID, "title": item.Title, "registration_end": item.RegistrationEnd, "registration_end_text": item.RegistrationEndText, "official_url": item.OfficialURL, "plan_status": item.PlanStatus})
+	}
+	return publicResult(data, academic.DataSourceServerSnapshot, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getPersonalCalendarRange(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	if userID == 0 || mcp.db == nil {
+		return nil, errors.New("mcp_not_configured")
+	}
+	var input struct{ From, To string }
+	if err := decodeToolArguments(arguments, &input); err != nil || !calendarDateInputValid(input.From) || !calendarDateInputValid(input.To) {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	from, _ := time.ParseInLocation("2006-01-02", input.From, time.FixedZone("Asia/Shanghai", 8*60*60))
+	toDate, _ := time.ParseInLocation("2006-01-02", input.To, time.FixedZone("Asia/Shanghai", 8*60*60))
+	to := toDate.AddDate(0, 0, 1)
+	if to.Before(from) || to.Sub(from) > 31*24*time.Hour {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	var events []models.UserCalendarEvent
+	if err := mcp.db.WithContext(ctx).Where("user_id = ? AND start_at < ? AND end_at > ?", userID, to.UTC(), from.UTC()).Order("start_at ASC, id ASC").Find(&events).Error; err != nil {
+		return nil, err
+	}
+	data := make([]map[string]interface{}, 0, len(events))
+	for _, event := range events {
+		data = append(data, map[string]interface{}{"id": event.ID, "title": event.Title, "description": event.Description, "start_at": event.StartAt, "end_at": event.EndAt, "all_day": event.AllDay, "location": event.Location, "timezone": event.Timezone, "source_type": event.SourceType})
+	}
+	return publicResult(map[string]interface{}{"from": input.From, "to": input.To, "events": data}, academic.DataSourceServerSnapshot, nil, mcp.now()), nil
+}
+
+func (mcp *campusMCP) getPersonalCalendarDay(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		Date string `json:"date"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || !calendarDateInputValid(input.Date) {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	return mcp.getPersonalCalendarRange(ctx, userID, mustMarshal(map[string]string{"from": input.Date, "to": input.Date}))
+}
+
+func (mcp *campusMCP) findPersonalFreeTime(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	var input struct {
+		From            string `json:"from"`
+		To              string `json:"to"`
+		DurationMinutes int    `json:"duration_minutes"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || userID == 0 || input.DurationMinutes < 15 || input.DurationMinutes > 720 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	from, err := time.Parse(time.RFC3339, input.From)
+	if err != nil {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	to, err := time.Parse(time.RFC3339, input.To)
+	if err != nil || !to.After(from) || to.Sub(from) > 14*24*time.Hour {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	var events []models.UserCalendarEvent
+	if err := mcp.db.WithContext(ctx).Where("user_id = ? AND start_at < ? AND end_at > ?", userID, to, from).Order("start_at ASC").Find(&events).Error; err != nil {
+		return nil, err
+	}
+	var competitionItems []models.UserCompetitionCalendarItem
+	if err := mcp.db.WithContext(ctx).Where("user_id = ? AND event_start IS NOT NULL AND event_end IS NOT NULL AND event_start < ? AND event_end > ?", userID, to, from).Find(&competitionItems).Error; err != nil {
+		return nil, err
+	}
+	type busyRange struct{ start, end time.Time }
+	busy := make([]busyRange, 0, len(events)+len(competitionItems))
+	for _, event := range events {
+		busy = append(busy, busyRange{event.StartAt, event.EndAt})
+	}
+	for _, item := range competitionItems {
+		busy = append(busy, busyRange{*item.EventStart, *item.EventEnd})
+	}
+	sort.Slice(busy, func(i, j int) bool { return busy[i].start.Before(busy[j].start) })
+	busyEnd := from
+	data := make([]map[string]interface{}, 0, 20)
+	for _, event := range busy {
+		if event.start.After(busyEnd) && event.start.Sub(busyEnd) >= time.Duration(input.DurationMinutes)*time.Minute {
+			data = append(data, map[string]interface{}{"start": busyEnd, "end": event.start})
+			if len(data) >= 20 {
+				break
+			}
+		}
+		if event.end.After(busyEnd) {
+			busyEnd = event.end
+		}
+	}
+	if len(data) < 20 && to.After(busyEnd) && to.Sub(busyEnd) >= time.Duration(input.DurationMinutes)*time.Minute {
+		data = append(data, map[string]interface{}{"start": busyEnd, "end": to})
+	}
+	return publicResult(map[string]interface{}{"from": from, "to": to, "duration_minutes": input.DurationMinutes, "available_windows": data}, academic.DataSourceServerSnapshot, nil, mcp.now()), nil
 }
 
 func (mcp *campusMCP) searchExamMaterials(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
@@ -663,6 +1256,38 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if wait != nil {
 		return wait
 	}
+	// 强制新鲜度不仅需要读取设备缓存，还可能触发教务刷新。
+	// 两个权限必须在创建设备任务前分别通过，避免把“读取缓存”权限
+	// 意外扩大成“联网刷新教务”权限。
+	if request.Freshness == academic.FreshnessRequireFresh {
+		refreshWait, refreshDenied, refreshErr := mcp.requirePermission(
+			ctx,
+			userID,
+			models.AIUserPermissionRemoteEduRefresh,
+			request.Reason,
+		)
+		if refreshErr != nil {
+			for _, dataset := range request.Datasets {
+				result := results[dataset]
+				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+					results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
+				}
+			}
+			return nil
+		}
+		if refreshDenied {
+			for _, dataset := range request.Datasets {
+				result := results[dataset]
+				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
+				}
+			}
+			return nil
+		}
+		if refreshWait != nil {
+			return refreshWait
+		}
+	}
 	for _, dataset := range request.Datasets {
 		result := results[dataset]
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
@@ -689,21 +1314,66 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
+	ensureFresh := request.Freshness == academic.FreshnessRequireFresh
 	switch dataset {
 	case academic.DatasetGrades:
-		return "device.academic.get_cached_overview", []string{"academic"}, json.RawMessage(`{}`), true
+		if ensureFresh {
+			return "device.academic.ensure_fresh_grade_summary", []string{"grades"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
+		return "device.academic.get_cached_grade_summary", []string{"grades"}, json.RawMessage(`{}`), true
 	case academic.DatasetSchedule:
+		if ensureFresh {
+			arguments, err := json.Marshal(map[string]interface{}{
+				"week_containing": request.ScheduleWeekContaining,
+				"max_age_seconds": 600,
+			})
+			if err != nil {
+				return "", nil, nil, false
+			}
+			return "device.schedule.ensure_fresh_week", []string{"schedule"}, arguments, true
+		}
 		arguments, err := json.Marshal(map[string]string{"week_containing": request.ScheduleWeekContaining})
 		if err != nil {
 			return "", nil, nil, false
 		}
 		return "device.schedule.get_cached_week", []string{"schedule"}, arguments, true
-	case academic.DatasetAcademicSituation, academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
+	case academic.DatasetAcademicSituation:
+		if ensureFresh {
+			return "device.academic.ensure_fresh_risk_context", []string{"grades"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
+		return "device.academic.get_cached_risk_context", []string{"grades"}, json.RawMessage(`{}`), true
+	case academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
+		if ensureFresh {
+			return "device.academic.ensure_fresh_credit_summary", []string{"academic"}, json.RawMessage(`{"max_age_seconds":300}`), true
+		}
 		return "device.academic.get_credit_summary", []string{"academic"}, json.RawMessage(`{}`), true
 	case academic.DatasetErke:
+		if ensureFresh {
+			return "device.erke.ensure_fresh_overview", []string{"erke"}, json.RawMessage(`{"max_age_seconds":1800}`), true
+		}
 		return "device.erke.get_cached_overview", []string{"erke"}, json.RawMessage(`{}`), true
 	default:
 		return "", nil, nil, false
+	}
+}
+
+func deviceDatasetForTool(toolName string) string {
+	switch toolName {
+	case "device.academic.get_cached_grade_summary",
+		"device.academic.ensure_fresh_grade_summary",
+		"device.academic.get_cached_overview",
+		"device.academic.ensure_fresh_overview":
+		return string(academic.DatasetGrades)
+	case "device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
+		return string(academic.DatasetAcademicSituation)
+	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
+		return string(academic.DatasetSchedule)
+	case "device.academic.get_credit_summary", "device.academic.ensure_fresh_credit_summary":
+		return string(academic.DatasetCreditRequirements)
+	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
+		return string(academic.DatasetErke)
+	default:
+		return ""
 	}
 }
 
@@ -761,6 +1431,10 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		if _, blocked := results[dataset]; blocked {
 			continue
 		}
+		if resumed, ok := resumedDeviceContextResult(ctx, dataset); ok {
+			results[dataset] = resumed
+			continue
+		}
 		if dataset == academic.DatasetErke {
 			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
 			continue
@@ -807,6 +1481,55 @@ func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, fres
 	return result
 }
 
+// resumedDeviceContextResult 将设备任务结果还原为统一 ContextResult，
+// 但只供当前外层工具重试时读取。它不改变 Snapshot Store，也不绕过权限检查；
+// 下一次完整工具执行仍会重新构建分析输入并产出自己的 Tool Result。
+func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetType) (academic.ContextResult, bool) {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	if !ok || resume.Dataset != string(dataset) {
+		return academic.ContextResult{}, false
+	}
+	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
+		return personalContextUnavailable(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据"), true
+	}
+	var envelope struct {
+		Data      json.RawMessage     `json:"data"`
+		Source    academic.DataSource `json:"source"`
+		FetchedAt *time.Time          `json:"fetched_at"`
+		ExpiresAt *time.Time          `json:"expires_at"`
+		IsStale   bool                `json:"is_stale"`
+		IsPartial bool                `json:"is_partial"`
+		Warnings  []string            `json:"warnings"`
+		Evidence  []academic.Evidence `json:"evidence"`
+	}
+	if err := json.Unmarshal(resume.Result, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
+		return personalContextUnavailable(academic.DataStatusFailed, "手机返回的数据格式无法用于本次分析"), true
+	}
+	source := envelope.Source
+	if !source.Valid() || source == academic.DataSourceNone {
+		source = academic.DataSourceDeviceEncryptedCache
+	}
+	status := academic.DataStatusAvailable
+	if envelope.IsStale {
+		status = academic.DataStatusStale
+	} else if envelope.IsPartial {
+		status = academic.DataStatusPartial
+	}
+	evidence := envelope.Evidence
+	if len(evidence) == 0 {
+		evidence = []academic.Evidence{{
+			Source: source, Dataset: dataset, FetchedAt: envelope.FetchedAt,
+			ExpiresAt: envelope.ExpiresAt, IsStale: envelope.IsStale,
+		}}
+	}
+	return academic.ContextResult{
+		Data: envelope.Data, Status: status, Source: source,
+		FetchedAt: envelope.FetchedAt, ExpiresAt: envelope.ExpiresAt,
+		IsStale: envelope.IsStale, IsPartial: envelope.IsPartial,
+		Warnings: envelope.Warnings, Evidence: evidence,
+	}, true
+}
+
 func personalContextUnavailable(status academic.DataStatus, warning string) academic.ContextResult {
 	return academic.ContextResult{Data: json.RawMessage(`{"error_code":"personal_context_unavailable"}`), Status: status, Source: academic.DataSourceNone, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
 }
@@ -815,7 +1538,8 @@ func (mcp *campusMCP) getGradeSummary(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary"})
+	policy := ResolveFreshnessPolicy("grade_summary", []academic.DatasetType{academic.DatasetGrades}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: policy.Preference, Reason: "grade_summary"})
 	if err != nil {
 		return nil, err
 	}
@@ -856,7 +1580,8 @@ func (mcp *campusMCP) getFailureRisk(ctx context.Context, userID uint, arguments
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "failure_risk"})
+	policy := ResolveFreshnessPolicy("failure_risk", []academic.DatasetType{academic.DatasetGrades}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: policy.Preference, Reason: "failure_risk"})
 	if err != nil {
 		return nil, err
 	}
@@ -883,8 +1608,9 @@ func (mcp *campusMCP) getRiskAnalysis(ctx context.Context, userID uint, argument
 		academic.DatasetAcademicSituation,
 		academic.DatasetErke,
 	}
+	policy := ResolveFreshnessPolicy("academic_risk_analysis", requested, "")
 	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
-		Datasets: requested, Freshness: academic.FreshnessPreferRecent, Reason: "academic_risk_analysis",
+		Datasets: requested, Freshness: policy.Preference, Reason: "academic_risk_analysis",
 	})
 	if err != nil {
 		return nil, err
@@ -914,7 +1640,8 @@ func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, 
 	if !validWeekdays(input.Weekdays) {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability", ScheduleWeekContaining: input.WeekContaining})
+	policy := ResolveFreshnessPolicy("schedule_availability", []academic.DatasetType{academic.DatasetSchedule}, "")
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: policy.Preference, Reason: "schedule_availability", ScheduleWeekContaining: input.WeekContaining})
 	if err != nil {
 		return nil, err
 	}
@@ -1003,19 +1730,33 @@ type gradeSummary struct {
 	FailedCredits     float64  `json:"failed_credits"`
 	UnknownGradeCount int      `json:"unknown_grade_count"`
 	FailedCourses     []string `json:"failed_courses"`
+	CoveredTerms      []string `json:"covered_terms"`
 }
 
 func summarizeGrades(raw json.RawMessage) gradeSummary {
 	data := decodeJSONObject(raw)
 	values, _ := data["grades"].([]interface{})
-	summary := gradeSummary{CourseCount: len(values), FailedCourses: make([]string, 0)}
-	var weightedPoints float64
-	for _, value := range values {
-		item, ok := value.(map[string]interface{})
-		if !ok {
-			summary.UnknownGradeCount++
-			continue
+	selected := selectBestGradeRecords(values)
+	summary := gradeSummary{CourseCount: len(selected), FailedCourses: make([]string, 0), CoveredTerms: make([]string, 0)}
+	if terms, ok := data["covered_terms"].([]interface{}); ok {
+		for _, rawTerm := range terms {
+			term, ok := rawTerm.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if scope := firstString(term, "scope_key"); scope != "" {
+				summary.CoveredTerms = append(summary.CoveredTerms, academicTermLabel(scope))
+				continue
+			}
+			year := firstString(term, "year")
+			semester, semesterOK := jsonNumber(term["semester"])
+			if year != "" && semesterOK {
+				summary.CoveredTerms = append(summary.CoveredTerms, academicTermLabel(fmt.Sprintf("%s:%d", year, int(semester))))
+			}
 		}
+	}
+	var weightedPoints float64
+	for _, item := range selected {
 		credits, creditOK := jsonNumber(item["credits"])
 		gpa, gpaOK := jsonNumber(item["gpa"])
 		if creditOK {
@@ -1045,6 +1786,125 @@ func summarizeGrades(raw json.RawMessage) gradeSummary {
 	return summary
 }
 
+func academicTermLabel(scope string) string {
+	parts := strings.Split(strings.TrimSpace(scope), ":")
+	if len(parts) != 2 {
+		return strings.TrimSpace(scope)
+	}
+	semester, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return strings.TrimSpace(scope)
+	}
+	semesterLabel := map[int]string{3: "第一学期", 12: "第二学期"}[semester]
+	if semesterLabel == "" {
+		return strings.TrimSpace(scope)
+	}
+	return strings.TrimSpace(parts[0]) + " " + semesterLabel
+}
+
+// selectBestGradeRecords 合并跨学期成绩时只保留每门课程的最佳有效记录。
+// 教务系统可能同时返回首次成绩、补考和重修记录；全部累加会重复计算学分，
+// 也会把已经通过的课程继续当成挂科风险。
+func selectBestGradeRecords(values []interface{}) []map[string]interface{} {
+	selected := make([]map[string]interface{}, 0, len(values))
+	indexes := make(map[string]int, len(values))
+	for index, raw := range values {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		key := firstString(item, "course_id", "course_code")
+		if key == "" {
+			key = normalizeGradeCourseName(firstString(item, "course_name", "name", "title"))
+		}
+		if key == "" {
+			key = fmt.Sprintf("__row_%d", index)
+		}
+		if existingIndex, exists := indexes[key]; exists {
+			if shouldReplaceGradeRecord(selected[existingIndex], item) {
+				selected[existingIndex] = item
+			}
+			continue
+		}
+		indexes[key] = len(selected)
+		selected = append(selected, item)
+	}
+	return selected
+}
+
+func normalizeGradeCourseName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n', '·', '・', '-', '_', '—':
+			return -1
+		default:
+			return r
+		}
+	}, value)
+}
+
+func shouldReplaceGradeRecord(existing, candidate map[string]interface{}) bool {
+	existingPassed, existingKnown := gradePassState(existing)
+	candidatePassed, candidateKnown := gradePassState(candidate)
+	if candidateKnown && existingKnown && candidatePassed != existingPassed {
+		return candidatePassed
+	}
+	if candidateScore, ok := gradeScore(candidate); ok {
+		if existingScore, existingOK := gradeScore(existing); existingOK && candidateScore != existingScore {
+			return candidateScore > existingScore
+		}
+	}
+	// 快照按 fetched_at 倒序合并；相同成绩保留先出现的最新记录。
+	return false
+}
+
+func gradePassState(item map[string]interface{}) (bool, bool) {
+	if passed, ok := item["passed"].(bool); ok {
+		return passed, true
+	}
+	text := academicGradeText(item)
+	switch text {
+	case "优秀", "良好", "中等", "合格", "及格", "通过":
+		return true, true
+	case "不及格", "不合格", "未通过", "缺考", "旷考", "作弊":
+		return false, true
+	}
+	if score, ok := gradeScore(item); ok {
+		return score >= 60, true
+	}
+	return false, false
+}
+
+func gradeScore(item map[string]interface{}) (float64, bool) {
+	text := academicGradeText(item)
+	if text != "" {
+		if score, err := strconv.ParseFloat(text, 64); err == nil && score >= 0 && score <= 100 {
+			return score, true
+		}
+	}
+	for _, key := range []string{"fraction", "score"} {
+		if score, ok := jsonNumber(item[key]); ok && score >= 0 && score <= 100 {
+			return score, true
+		}
+	}
+	return 0, false
+}
+
+func academicGradeText(item map[string]interface{}) string {
+	for _, key := range []string{"grade", "effective_grade", "score_text"} {
+		value, ok := item[key]
+		if !ok || value == nil {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text != "" && text != "<nil>" && text != "--" && text != "未录入" && text != "缓考" {
+			return text
+		}
+	}
+	return ""
+}
+
 func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.ContextResult, requested []academic.DatasetType) (map[string]interface{}, []string) {
 	data := map[string]interface{}{
 		"coverage":   make(map[string]string, len(requested)),
@@ -1058,6 +1918,7 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	actions := data["actions"].([]string)
 	toConfirm := data["to_confirm"].([]string)
 	usableCount := 0
+	incompleteData := false
 
 	grades := results[academic.DatasetGrades]
 	coverage[string(academic.DatasetGrades)] = string(grades.Status)
@@ -1065,6 +1926,14 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		usableCount++
 		summary := summarizeGrades(grades.Data)
 		data["grades"] = summary
+		if grades.IsStale {
+			incompleteData = true
+			toConfirm = append(toConfirm, "成绩快照已过期，最新变动请先刷新教务数据后再核对")
+		}
+		if grades.IsPartial {
+			incompleteData = true
+			toConfirm = append(toConfirm, "成绩快照覆盖不完整，不能据此断言全部学期没有风险")
+		}
 		if summary.FailedCourseCount > 0 {
 			risk := fmt.Sprintf("发现 %d 门未通过课程", summary.FailedCourseCount)
 			if len(summary.FailedCourses) > 0 {
@@ -1090,6 +1959,9 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		coverage[string(dataset)] = string(result.Status)
 		if usablePersonalResult(result) {
 			usableCount++
+			if result.IsStale || result.IsPartial {
+				incompleteData = true
+			}
 			if len(credit) == 0 || (len(credit) == 1 && credit["available"] == true) {
 				credit = extractCreditFields(result.Data)
 			}
@@ -1119,6 +1991,9 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	coverage[string(academic.DatasetErke)] = string(erke.Status)
 	if usablePersonalResult(erke) {
 		usableCount++
+		if erke.IsStale || erke.IsPartial {
+			incompleteData = true
+		}
 		overview := extractErkeOverview(erke.Data)
 		data["erke"] = overview
 		if gap, ok := jsonNumber(overview["graduation_gap"]); ok && gap > 0 {
@@ -1132,10 +2007,10 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 
 	data["available_dataset_count"] = usableCount
 	data["requested_dataset_count"] = len(requested)
-	if len(risks) == 0 {
+	if len(risks) == 0 && !incompleteData && usableCount >= len(requested) {
 		data["risk_level"] = "no_observed_risk"
 		toConfirm = append(toConfirm, "毕业学分、必修课和二课要求以学校当期培养方案及教务审核为准")
-	} else if usableCount < len(requested) {
+	} else if incompleteData || usableCount < len(requested) {
 		data["risk_level"] = "incomplete"
 		toConfirm = append(toConfirm, "当前数据覆盖不完整，不能据此断言整体没有风险")
 	} else {
@@ -1208,18 +2083,26 @@ func gradeFailed(item map[string]interface{}) bool {
 	if passed, ok := item["passed"].(bool); ok {
 		return !passed
 	}
-	if score, ok := jsonNumber(item["fraction"]); ok {
+	value := strings.ToUpper(academicGradeText(item))
+	if value == "优秀" || value == "良好" || value == "中等" || value == "合格" || value == "及格" || value == "通过" {
+		return false
+	}
+	if value == "F" || strings.Contains(value, "不及格") || strings.Contains(value, "不合格") || strings.Contains(value, "未通过") || strings.Contains(value, "挂科") {
+		return true
+	}
+	if score, ok := gradeScore(item); ok {
 		return score < 60
 	}
-	value := strings.ToUpper(strings.TrimSpace(fmt.Sprint(item["grade"])))
-	return value == "F" || strings.Contains(value, "不及格") || strings.Contains(value, "挂科")
+	return false
 }
 func gradeKnown(item map[string]interface{}) bool {
+	if academicGradeText(item) != "" {
+		return true
+	}
 	if _, ok := jsonNumber(item["fraction"]); ok {
 		return true
 	}
-	value := strings.TrimSpace(fmt.Sprint(item["grade"]))
-	return value != "" && value != "<nil>"
+	return false
 }
 
 func extractCreditFields(raw json.RawMessage) map[string]interface{} {
@@ -1397,6 +2280,31 @@ func validWeekdays(values []int) bool {
 		seen[value] = struct{}{}
 	}
 	return true
+}
+
+func mustMarshal(value interface{}) json.RawMessage {
+	encoded, _ := json.Marshal(value)
+	return encoded
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func toolLimit(arguments json.RawMessage, maximum int) (int, error) {
+	var input struct {
+		Limit int `json:"limit"`
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil || input.Limit < 0 || input.Limit > maximum {
+		return 0, errors.New("invalid_tool_arguments")
+	}
+	if input.Limit == 0 {
+		input.Limit = maximum
+	}
+	return input.Limit, nil
 }
 
 func competitionSummaries(events []models.CompetitionEvent) []map[string]interface{} {

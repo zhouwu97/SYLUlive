@@ -9,6 +9,7 @@ import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
 import '../models/exam_schedule.dart';
 import '../services/ai_assistant_service.dart';
+import '../services/app_resume_coordinator.dart';
 import '../services/campus_article_service.dart';
 import '../services/exam_schedule_repository.dart';
 import '../providers/course_schedule_provider.dart';
@@ -16,6 +17,7 @@ import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 import '../utils/app_feedback.dart';
 import '../utils/campus_today.dart';
+import '../utils/app_navigator.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
@@ -86,6 +88,7 @@ class _CampusScreenState extends State<CampusScreen>
 
   Future<void>? _loadFuture;
   int _loadGeneration = 0;
+  VoidCallback? _unregisterResumeRefresh;
 
   @override
   void initState() {
@@ -94,12 +97,18 @@ class _CampusScreenState extends State<CampusScreen>
     final dio = getSharedDio();
     _articleService = widget.articleService ?? CampusArticleService(dio);
     _aiService = widget.aiService ?? AiAssistantService(dio);
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      () => _loadAll(force: true),
+      isVisible: () => currentHomeTabIndex.value == 3,
+    );
     _loadAll();
     _startTodayTimer();
   }
 
   @override
   void dispose() {
+    _unregisterResumeRefresh?.call();
     WidgetsBinding.instance.removeObserver(this);
     _todayTimer?.cancel();
     super.dispose();

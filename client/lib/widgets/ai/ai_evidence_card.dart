@@ -40,19 +40,26 @@ class AiEvidenceCard extends StatelessWidget {
 
 /// 校园 Agent 的个人数据证据只显示来源元数据，避免在卡片中重复展示工具结果正文。
 class AiCampusEvidenceCard extends StatelessWidget {
-  const AiCampusEvidenceCard({super.key, required this.evidence});
+  const AiCampusEvidenceCard({
+    super.key,
+    required this.evidence,
+    this.initiallyExpanded = false,
+  });
 
   final List<AiPersonalDataEvidence> evidence;
+  final bool initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
-    if (evidence.isEmpty) return const SizedBox.shrink();
+    final grouped = groupAiPersonalDataEvidence(evidence);
+    if (grouped.isEmpty) return const SizedBox.shrink();
     return ExpansionTile(
+      initiallyExpanded: initiallyExpanded,
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.zero,
       leading: const Icon(Icons.verified_user_outlined, size: 20),
       title: const Text('个人数据来源', style: TextStyle(fontSize: 14)),
-      children: evidence
+      children: grouped
           .map(
             (item) => _PersonalEvidenceDetails(item: item),
           )

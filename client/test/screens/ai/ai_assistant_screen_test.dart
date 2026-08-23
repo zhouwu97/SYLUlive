@@ -74,8 +74,8 @@ void main() {
       ),
     );
 
-    // Initial load expects "校园问答" and an input field
-    expect(find.text('校园问答'), findsWidgets);
+    // Initial load expects "校园 Agent" and an input field
+    expect(find.text('校园 Agent'), findsWidgets);
     expect(find.text('个人助手'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(
@@ -114,7 +114,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('校园问答'), findsWidgets);
+    expect(find.text('校园 Agent'), findsWidgets);
     expect(find.byType(TextField), findsOneWidget);
   });
 
@@ -151,17 +151,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('对比适合我的竞赛'), findsOneWidget);
-    expect(find.text('分析我的学业情况'), findsOneWidget);
-    expect(find.text('制定本周学习计划'), findsOneWidget);
+    expect(find.text('近期竞赛'), findsOneWidget);
+    expect(find.text('学业风险'), findsOneWidget);
+    expect(find.text('本周空闲'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(buildScreen(const {}));
     await tester.pumpAndSettle();
 
-    expect(find.text('对比适合我的竞赛'), findsNothing);
-    expect(find.text('分析我的学业情况'), findsNothing);
-    expect(find.text('制定本周学习计划'), findsNothing);
+    expect(find.text('近期竞赛'), findsOneWidget);
+    expect(find.text('学业风险'), findsOneWidget);
+    expect(find.text('本周空闲'), findsOneWidget);
   });
 
   testWidgets('个人历史在页面重建后恢复且切换账号立即隔离', (tester) async {
@@ -274,7 +274,7 @@ void main() {
       isNull,
     );
 
-    await tester.tap(find.text('校园问答'));
+    await tester.tap(find.text('校园 Agent'));
     await tester.pump();
     expect(find.text('8001/500'), findsOneWidget);
   });

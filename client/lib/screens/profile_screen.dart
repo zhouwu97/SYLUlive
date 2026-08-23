@@ -10,6 +10,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/startup_destination.dart';
+import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
 
@@ -40,6 +41,7 @@ import 'settings_screen.dart';
 import 'feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
+import 'my_canteen_reviews_screen.dart';
 
 @visibleForTesting
 ({
@@ -80,16 +82,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<Map<String, int>>? _adminOverviewFuture;
   Future<Response<dynamic>>? _invitationsFuture;
   int? _loadedAccountSessionEpoch;
+  VoidCallback? _unregisterResumeRefresh;
 
   @override
   void initState() {
     super.initState();
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshAfterResume,
+      isVisible: () => currentHomeTabIndex.value == 4,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
       _loadPrefs();
       _fetchPostCount();
     });
+  }
+
+  @override
+  void dispose() {
+    _unregisterResumeRefresh?.call();
+    super.dispose();
   }
 
   @override
@@ -105,22 +119,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || auth.user == null) return;
 
-    // 如果有缓存，直接使用缓存秒开
-    if (MyContentScreen.globalPostCount != null) {
-      if (mounted) {
-        setState(() {
-          _postCount = MyContentScreen.globalPostCount;
-        });
-      }
-      // 不直接 return，在后台静默刷新以保证数据一致性
-    }
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestUserId = auth.user!.id;
 
     try {
-      final res = await auth.dio.get('/user/${auth.user!.id}/posts/count');
-      if (res.statusCode == 200 && mounted) {
+      final res = await auth.dio.get('/user/$requestUserId/posts/count');
+      if (res.statusCode == 200 &&
+          mounted &&
+          auth.accountSessionEpoch == requestEpoch &&
+          auth.user?.id == requestUserId) {
         setState(() {
           _postCount = res.data['count'] ?? 0;
-          MyContentScreen.globalPostCount = _postCount; // 同步更新缓存
         });
       }
     } catch (e) {
@@ -158,6 +167,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {}
   }
 
+  Future<void> _refreshAfterResume() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
+    await Future.wait<void>([
+      auth.refreshUser(),
+      _loadUnreadCount(),
+      _fetchPostCount(),
+    ]);
+    if (mounted) _loadPrefs();
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
@@ -166,12 +186,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (_loadedAccountSessionEpoch != authProvider.accountSessionEpoch) {
       _loadedAccountSessionEpoch = authProvider.accountSessionEpoch;
-      _adminOverviewFuture = user?.isAdmin == true
-          ? _loadAdminOverview(authProvider, user)
-          : null;
+      _postCount = null;
+      _unreadReplyCount = 0;
+      _unreadMessageCount = 0;
+      _adminOverviewFuture =
+          user?.isAdmin == true ? _loadAdminOverview(authProvider, user) : null;
       _invitationsFuture = authProvider.isLoggedIn
           ? authProvider.dio.get('/user/invitations')
           : null;
+      if (authProvider.isLoggedIn) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted ||
+              context.read<AuthProvider>().accountSessionEpoch !=
+                  _loadedAccountSessionEpoch) {
+            return;
+          }
+          _fetchPostCount();
+          _loadUnreadCount();
+        });
+      }
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -628,9 +661,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.admin_panel_settings,
             iconColor: Colors.red,
             title: '管理处',
-            subtitle: adminTodo > 0
-                ? '处理举报、审核教师和专业 · $adminTodo 条待办'
-                : '处理举报与社区治理',
+            subtitle:
+                adminTodo > 0 ? '处理举报、审核教师和专业 · $adminTodo 条待办' : '处理举报与社区治理',
             badgeText: adminTodo > 0 ? '$adminTodo' : null,
             onTap: () {
               Navigator.push(
@@ -694,64 +726,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? badgeText,
     required VoidCallback onTap,
   }) {
-    return GlassContainer(
-      padding: const EdgeInsets.all(12),
-      borderRadius: 16,
-      blur: 10,
-      opacity: 0.15,
-      onTap: onTap,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return _buildSettingsTile(
+      icon: icon,
+      iconColor: iconColor,
+      title: title,
+      subtitle: subtitle,
+      isDark: isDark,
+      trailing: badgeText == null
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
                   ),
+                  child: Text(badgeText,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w700,
+                      )),
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white60 : Colors.grey[600],
-                  ),
-                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.chevron_right),
               ],
             ),
-          ),
-          if (badgeText != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                badgeText,
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          const Icon(Icons.chevron_right),
-        ],
-      ),
+      onTap: onTap,
     );
   }
 
@@ -809,32 +812,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ),
-          if (ResponsiveUtil.isDesktop(context))
-            LayoutBuilder(
-              builder: (context, constraints) {
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: items
-                      .map(
-                        (e) => SizedBox(
-                          width: (constraints.maxWidth - 12) / 2,
-                          child: e,
-                        ),
-                      )
-                      .toList(),
-                );
-              },
-            )
-          else
-            Column(
-              children: [
-                for (int i = 0; i < items.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 12),
-                  items[i],
-                ],
+          _buildSettingsCard(
+            isDark,
+            children: [
+              for (int i = 0; i < items.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    indent: 68,
+                    color: isDark ? Colors.white12 : Colors.black12,
+                  ),
+                items[i],
               ],
-            ),
+            ],
+          ),
           const SizedBox(height: 8),
         ],
       ),
@@ -904,6 +896,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ).then((_) {
               _loadUnreadCount();
             });
+          },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.restaurant_outlined,
+          iconColor: const Color(0xFFD97706),
+          title: '食堂评价',
+          subtitle: '查看与管理我的历史评价',
+          isDark: isDark,
+          onTap: () {
+            if (!context.read<AuthProvider>().isLoggedIn) {
+              Navigator.pushNamed(context, '/login');
+              return;
+            }
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MyCanteenReviewsScreen()),
+            );
           },
         ),
       ),
@@ -989,11 +1000,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ) {
               final selected = _startupDestination == mode;
               return ListTile(
-                leading: Icon(icon, color: selected ? AppColors.brandPrimary : colors.onSurfaceVariant),
-                title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w600 : FontWeight.normal)),
-                subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+                leading: Icon(icon,
+                    color: selected
+                        ? AppColors.brandPrimary
+                        : colors.onSurfaceVariant),
+                title: Text(title,
+                    style: TextStyle(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.normal)),
+                subtitle: Text(subtitle,
+                    style: TextStyle(
+                        fontSize: 12, color: colors.onSurfaceVariant)),
                 trailing: selected
-                    ? Icon(Icons.check_rounded, color: AppColors.brandPrimary, size: 20)
+                    ? Icon(Icons.check_rounded,
+                        color: AppColors.brandPrimary, size: 20)
                     : null,
                 onTap: () async {
                   final provider = context.read<ThemeProvider>();
@@ -1004,7 +1024,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       await RootPageStateStore.instance.saveLastPage(
                         RestorablePageState(
                           type: RestorablePageType.rootTab,
-                          arguments: <String, dynamic>{'index': currentHomeTabIndex.value},
+                          arguments: <String, dynamic>{
+                            'index': currentHomeTabIndex.value
+                          },
                           accountId: userId,
                         ),
                       );
@@ -1093,25 +1115,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
     return GlassContainer(
       padding: EdgeInsets.zero,
-      borderRadius: 12,
+      borderRadius: 18,
       blur: 12,
       opacity: 0.15,
       child: Column(children: children),
     );
   }
 
-  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）
+  /// Section 内的单行内容。Surface 由 _buildSectionLayout 统一承载。
   Widget _buildSettingsRow({required Widget child}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: GlassContainer(
-        padding: EdgeInsets.zero,
-        borderRadius: 12,
-        blur: 12,
-        opacity: 0.15,
-        child: child,
-      ),
-    );
+    return child;
   }
 
   Widget _buildSettingsTile({

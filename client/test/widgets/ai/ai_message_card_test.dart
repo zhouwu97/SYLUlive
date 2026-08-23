@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
 import 'package:shenliyuan/models/ai_personal_data_evidence.dart';
 import 'package:shenliyuan/widgets/ai/ai_message_card.dart';
-import 'package:shenliyuan/widgets/campus/campus_theme.dart';
+import 'package:shenliyuan/theme/app_colors.dart';
 
 void main() {
   final message = AiChatMessage(
@@ -15,7 +15,7 @@ void main() {
     createdAt: DateTime.utc(2026, 8, 11),
   );
 
-  testWidgets('AI 回答使用校园青绿色 surface，而不是 Material 紫灰色', (tester) async {
+  testWidgets('AI 回答使用无外层气泡的 Agent 正文结构', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
@@ -26,15 +26,12 @@ void main() {
     final bubble = tester.widget<Container>(
       find.byKey(const ValueKey('ai-message-card-answer-1')),
     );
-    final decoration = bubble.decoration! as BoxDecoration;
-    expect(decoration.color, CampusTheme.primaryLight);
-    expect((decoration.border! as Border).top.color, CampusTheme.border);
+    expect(bubble.decoration, isNull);
+    expect(find.text('校园 Agent'), findsOneWidget);
   });
 
-  testWidgets('AI 回答在暗色主题下沿用页面品牌容器色', (tester) async {
-    final theme = CampusTheme.withBrandAccent(
-      ThemeData.dark(useMaterial3: true),
-    );
+  testWidgets('AI 回答在暗色主题下仍保持无外层气泡', (tester) async {
+    final theme = ThemeData.dark(useMaterial3: true);
     await tester.pumpWidget(
       MaterialApp(
         theme: theme,
@@ -45,10 +42,8 @@ void main() {
     final bubble = tester.widget<Container>(
       find.byKey(const ValueKey('ai-message-card-answer-1')),
     );
-    expect(
-      (bubble.decoration! as BoxDecoration).color,
-      theme.colorScheme.primaryContainer,
-    );
+    expect(bubble.decoration, isNull);
+    expect(find.text('校园 Agent'), findsOneWidget);
   });
 
   testWidgets('个人学业来源可展开核对成绩和学分输入', (tester) async {

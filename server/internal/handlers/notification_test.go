@@ -45,18 +45,21 @@ func TestNotificationHandlerExcludesRetiredMarketPostNotifications(t *testing.T)
 
 	listRecorder := httptest.NewRecorder()
 	listContext, _ := gin.CreateTestContext(listRecorder)
-	listContext.Request = httptest.NewRequest(http.MethodGet, "/notifications", nil)
+	listContext.Request = httptest.NewRequest(http.MethodGet, "/notifications?limit=30", nil)
 	listContext.Set("user_id", uint(1))
 	handler.GetNotifications(listContext)
 	if listRecorder.Code != http.StatusOK {
 		t.Fatalf("通知列表状态码=%d，响应=%s", listRecorder.Code, listRecorder.Body.String())
 	}
-	var notifications []models.Notification
-	if err := json.Unmarshal(listRecorder.Body.Bytes(), &notifications); err != nil {
+	var response struct {
+		Items   []models.Notification `json:"items"`
+		HasMore bool                  `json:"has_more"`
+	}
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("解析通知列表失败: %v", err)
 	}
-	if len(notifications) != 1 || notifications[0].Type != "reply" {
-		t.Fatalf("通知列表=%+v，期望仅包含回复通知", notifications)
+	if len(response.Items) != 1 || response.Items[0].Type != "reply" || response.HasMore {
+		t.Fatalf("通知列表=%+v，期望仅包含回复通知且没有下一页", response)
 	}
 
 	countRecorder := httptest.NewRecorder()
@@ -75,6 +78,129 @@ func TestNotificationHandlerExcludesRetiredMarketPostNotifications(t *testing.T)
 	}
 	if unread.Count != 1 {
 		t.Fatalf("未读数=%d，期望=1", unread.Count)
+	}
+}
+
+func TestNotificationHandlerCursorPagination(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Notification{}); err != nil {
+		t.Fatalf("迁移通知表失败: %v", err)
+	}
+	now := time.Now().UTC()
+	items := make([]models.Notification, 0, 5)
+	for index := 0; index < 5; index++ {
+		items = append(items, models.Notification{
+			ID:        uint(index + 1),
+			UserID:    1,
+			Type:      "reply",
+			Content:   "通知",
+			CreatedAt: now.Add(-time.Duration(index) * time.Minute),
+		})
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("写入通知失败: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	handler := NewNotificationHandler(db)
+	request := func(path string) (struct {
+		Items      []models.Notification `json:"items"`
+		NextCursor string                `json:"next_cursor"`
+		HasMore    bool                  `json:"has_more"`
+	}, *httptest.ResponseRecorder) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		ctx.Set("user_id", uint(1))
+		handler.GetNotifications(ctx)
+		var response struct {
+			Items      []models.Notification `json:"items"`
+			NextCursor string                `json:"next_cursor"`
+			HasMore    bool                  `json:"has_more"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("解析分页响应失败: %v; body=%s", err, recorder.Body.String())
+		}
+		return response, recorder
+	}
+
+	first, firstRecorder := request("/notifications?limit=2")
+	if firstRecorder.Code != http.StatusOK || len(first.Items) != 2 ||
+		!first.HasMore || first.NextCursor == "" {
+		t.Fatalf("第一页不符合预期: code=%d body=%s", firstRecorder.Code, firstRecorder.Body.String())
+	}
+	second, secondRecorder := request("/notifications?limit=2&cursor=" + first.NextCursor)
+	if secondRecorder.Code != http.StatusOK || len(second.Items) != 2 ||
+		second.Items[0].ID != 3 || second.Items[1].ID != 4 {
+		t.Fatalf("第二页不符合预期: code=%d body=%s", secondRecorder.Code, secondRecorder.Body.String())
+	}
+	if !second.HasMore || second.NextCursor == "" {
+		t.Fatalf("第二页应继续提供游标: %s", secondRecorder.Body.String())
+	}
+}
+
+func TestNotificationHandlerLegacyResponseKeepsHundredItemCapacity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Notification{}); err != nil {
+		t.Fatalf("迁移通知表失败: %v", err)
+	}
+	now := time.Now().UTC()
+	items := make([]models.Notification, 0, 50)
+	for index := 0; index < 50; index++ {
+		items = append(items, models.Notification{
+			ID:        uint(index + 1),
+			UserID:    1,
+			Type:      "reply",
+			Content:   "通知",
+			CreatedAt: now.Add(-time.Duration(index) * time.Minute),
+		})
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("写入通知失败: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	handler := NewNotificationHandler(db)
+	request := func(path string) (*httptest.ResponseRecorder, []byte) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		ctx.Set("user_id", uint(1))
+		handler.GetNotifications(ctx)
+		return recorder, recorder.Body.Bytes()
+	}
+
+	legacyRecorder, legacyBody := request("/notifications")
+	if legacyRecorder.Code != http.StatusOK {
+		t.Fatalf("旧接口状态码=%d，响应=%s", legacyRecorder.Code, legacyRecorder.Body.String())
+	}
+	var legacy []map[string]any
+	if err := json.Unmarshal(legacyBody, &legacy); err != nil {
+		t.Fatalf("解析旧数组响应失败: %v; body=%s", err, legacyRecorder.Body.String())
+	}
+	if len(legacy) != 50 {
+		t.Fatalf("旧接口返回=%d条，期望保留50条容量", len(legacy))
+	}
+
+	paginatedRecorder, paginatedBody := request("/notifications?limit=30")
+	if paginatedRecorder.Code != http.StatusOK {
+		t.Fatalf("分页接口状态码=%d，响应=%s", paginatedRecorder.Code, paginatedRecorder.Body.String())
+	}
+	var paginated struct {
+		Items   []map[string]any `json:"items"`
+		HasMore bool             `json:"has_more"`
+	}
+	if err := json.Unmarshal(paginatedBody, &paginated); err != nil {
+		t.Fatalf("解析分页响应失败: %v; body=%s", err, paginatedRecorder.Body.String())
+	}
+	if len(paginated.Items) != 30 || !paginated.HasMore {
+		t.Fatalf("分页响应=%d条，has_more=%v，期望30条且有下一页", len(paginated.Items), paginated.HasMore)
 	}
 }
 

@@ -49,15 +49,17 @@ class AiAgentActivityReducer {
         event.status == 'failed';
     final status = isFailure
         ? AiAgentActivityStatus.failed
-        : event.type == AiRunEventType.agentActivity &&
-                (event.status == 'running' ||
-                    event.activityCode == 'refresh_started')
-            ? AiAgentActivityStatus.running
-            : (event.type == AiRunEventType.toolExecuting ||
-                    event.type == AiRunEventType.eduFetching ||
-                    event.activityCode == 'checking_freshness')
+        : event.type == AiRunEventType.approvalRequired
+            ? AiAgentActivityStatus.pending
+            : event.type == AiRunEventType.agentActivity &&
+                    (event.status == 'running' ||
+                        event.activityCode == 'refresh_started')
                 ? AiAgentActivityStatus.running
-                : AiAgentActivityStatus.success;
+                : (event.type == AiRunEventType.toolExecuting ||
+                        event.type == AiRunEventType.eduFetching ||
+                        event.activityCode == 'checking_freshness')
+                    ? AiAgentActivityStatus.running
+                    : AiAgentActivityStatus.success;
     final title = _title(code, dataset, event);
     final detail = event.text.trim().isNotEmpty
         ? event.text.trim()
@@ -88,6 +90,12 @@ class AiAgentActivityReducer {
         AiRunEventType.consentRequired => 'consent.required',
         AiRunEventType.eduFetching => 'refresh_started',
         AiRunEventType.toolCompleted => 'tool.completed',
+        AiRunEventType.goalUpdated => 'goal.updated',
+        AiRunEventType.contextResolved => 'context.resolved',
+        AiRunEventType.planRevised => 'plan.revised',
+        AiRunEventType.approvalRequired => 'approval.required',
+        AiRunEventType.actionCommitted => 'action.committed',
+        AiRunEventType.actionFailed => 'action.failed',
         AiRunEventType.completed => 'run.completed',
         AiRunEventType.failed => 'run.failed',
         AiRunEventType.cancelled => 'run.cancelled',
@@ -107,6 +115,12 @@ class AiAgentActivityReducer {
       'tool.requested' => _toolTitle(event.toolName, label),
       'tool.executing' => _toolTitle(event.toolName, label),
       'tool.completed' => '已读取$label数据',
+      'goal.updated' => '已理解你的目标和限制',
+      'context.resolved' => '已核对当前页面和授权上下文',
+      'plan.revised' => '正在根据最新结果调整计划',
+      'approval.required' => '安排已拟好，等待你的确认',
+      'action.committed' => '安排已添加',
+      'action.failed' => '安排未能添加',
       'consent.required' => '需要你的许可才能更新$label',
       'run.completed' => '已完成分析',
       'run.failed' => label == '成绩' ? '没能获取最新成绩' : 'Agent 处理未完成',

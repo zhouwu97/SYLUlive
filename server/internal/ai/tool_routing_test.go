@@ -12,8 +12,10 @@ func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t 
 		{Name: "academic_get_grade_summary"},
 		{Name: "academic_get_risk_analysis"},
 		{Name: "competition_search_catalog"},
+		{Name: "competition_get_my_plan"},
 		{Name: "hy3_decision_analyze_academic"},
 		{Name: "hy3_decision_compare_competitions"},
+		{Name: "hy3_decision_explain_competition_candidates"},
 		{Name: "hy3_decision_plan_student_week"},
 		{Name: "schedule_get_availability"},
 	}
@@ -54,6 +56,21 @@ func TestRouteModelToolsUsesUnifiedAcademicAnalysisAndKeepsOtherDecisionTools(t 
 				"competition_search_catalog",
 				"hy3_decision_compare_competitions",
 			},
+		},
+		{
+			name:     "个性化竞赛适配",
+			message:  "请分析我适合参加哪些竞赛",
+			expected: []string{"hy3_decision_explain_competition_candidates"},
+		},
+		{
+			name:     "个人竞赛计划分析",
+			message:  "请分析我的竞赛计划和截止时间",
+			expected: []string{"competition_get_my_plan"},
+		},
+		{
+			name:     "个人日程分析",
+			message:  "请分析我的课程安排",
+			expected: []string{"schedule_get_availability"},
 		},
 	}
 	for _, test := range tests {
@@ -137,4 +154,13 @@ func TestCampusProcedureClaimRequiresCitation(t *testing.T) {
 	require.True(t, containsCampusProcedureClaim("请关注后续补考或重修安排"))
 	require.True(t, containsCampusProcedureClaim("按学院安排报名"))
 	require.False(t, containsCampusProcedureClaim("信号与系统目前未通过，建议优先复习"))
+}
+
+func TestShortlistModelToolsKeepsPersonalToolsOutOfPublicRequests(t *testing.T) {
+	definitions := []ToolDefinition{
+		{Name: "academic_get_grade_summary", Description: "读取个人成绩和学业风险"},
+		{Name: "campus_search_policy", Description: "检索已发布校园政策"},
+	}
+	require.Equal(t, []ToolDefinition{{Name: "campus_search_policy", Description: "检索已发布校园政策"}}, shortlistModelTools("补考成绩怎么算", definitions))
+	require.Len(t, shortlistModelTools("查看我的成绩", definitions), 2)
 }

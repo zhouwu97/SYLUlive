@@ -40,6 +40,9 @@ type RuntimeConfig struct {
 	LangChainRAGEnabled            bool
 	LangChainRAGRolloutPercent     int
 	LegacyRAGEnabled               bool
+	// UnifiedAgentEnabled 启用 Agent Contract v5 的能力检索与快速路径。
+	// 关闭时保留旧的工具路由，便于灰度和兼容已有运行时测试。
+	UnifiedAgentEnabled bool
 }
 
 type RuntimeError struct {
@@ -61,6 +64,7 @@ type Runtime struct {
 	langChainRAG        LangChainRAG
 	broker              *EventBroker
 	tools               *ToolRegistry
+	scopedGrants        *ScopedGrantManager
 	config              RuntimeConfig
 	unlimitedStudentIDs map[string]struct{}
 	quotaExemptUserIDs  map[uint]struct{}
@@ -88,6 +92,22 @@ func WithToolRegistry(registry *ToolRegistry) RuntimeOption {
 	}
 }
 
+// WithScopedGrantManager 让同一 Run 的 MCP 调用共享短期、限次数的 opaque Grant。
+func WithScopedGrantManager(manager *ScopedGrantManager) RuntimeOption {
+	return func(runtime *Runtime) {
+		runtime.scopedGrants = manager
+	}
+}
+
+// IssueRunScopedGrant 是 MCP Gateway 的唯一 Grant 创建入口。
+// 调用方传入的是语义能力，不是模型生成的 user_id 或 JWT。
+func (r *Runtime) IssueRunScopedGrant(runID string, userID uint, capabilities, scopes []string, maxCalls int, ttl time.Duration) (string, ScopedGrant, error) {
+	if r == nil || r.scopedGrants == nil {
+		return "", ScopedGrant{}, errors.New("scoped_grant_manager_unavailable")
+	}
+	return r.scopedGrants.IssueRunGrant(runID, userID, capabilities, scopes, ttl, maxCalls)
+}
+
 func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, broker *EventBroker, config RuntimeConfig, options ...RuntimeOption) (*Runtime, error) {
 	if db == nil {
 		return nil, errors.New("AI runtime dependencies are required")
@@ -101,7 +121,7 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if config.MaxToolSteps == 0 {
 		config.MaxToolSteps = 3
 	}
-	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 5 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 500 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
+	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 12 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 500 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
 	unlimitedStudentIDs := make(map[string]struct{}, len(config.UnlimitedStudentIDs))
@@ -339,22 +359,43 @@ func (r *Runtime) Execute(runID, message string) {
 		r.failBeforeGeneration(runID, "agent_context_preflight_failed", true)
 		return
 	}
-	if r.useLangChain(run.UserID) && contextPrompt == "" && len(preflightMessages) == 0 {
-		if contextPrompt != "" {
-			message += "\n\n" + contextPrompt
-		}
+	goal := ParseGoalSpec(message, nil)
+	_, _ = r.appendEvent(ctx, runID, "goal.updated", map[string]interface{}{
+		"action_intent":             goal.ActionIntent,
+		"requires_personal_context": goal.RequiresPersonalContext,
+		"hard_constraint_count":     len(goal.HardConstraints),
+		"soft_constraint_count":     len(goal.SoftConstraints),
+	}, true)
+	_, _ = r.appendEvent(ctx, runID, "context.resolved", map[string]interface{}{
+		"page_context":    len(run.AgentContext) > 0,
+		"preflight_count": len(preflightMessages),
+	}, true)
+	// Agent Contract v5 将页面上下文、普通文本和政策问题统一交给同一套
+	// Goal/Capability/Tool Loop；旧 LangChain Policy Runner 仅保留在灰度兼容分支。
+	if !r.config.UnifiedAgentEnabled && r.useLangChain(run.UserID) && contextPrompt == "" && len(preflightMessages) == 0 {
 		r.executeLangChain(ctx, &run, message)
 		return
 	}
-	toolDefinitions := routeModelTools(message, r.toolDefinitions())
-	requiredTool, _ := requiredDecisionTool(message, toolDefinitions)
+	toolDefinitions := r.toolDefinitions()
+	var requiredTool string
+	if r.config.UnifiedAgentEnabled {
+		toolDefinitions = shortlistModelTools(message, toolDefinitions)
+		requiredTool, _ = requiredFastPathTool(message, toolDefinitions)
+	} else {
+		toolDefinitions = routeModelTools(message, toolDefinitions)
+		requiredTool, _ = requiredDecisionTool(message, toolDefinitions)
+	}
 	hasTools := len(toolDefinitions) > 0
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)
 	retrieval := RetrievalResult{}
 	var err error
 	retrievalQuery := policyRetrievalQuery(message, requiredTool)
 	if retrievalQuery != "" {
-		retrieval, err = r.retriever.Retrieve(ctx, retrievalQuery)
+		if r.retriever == nil {
+			err = errors.New("policy_retriever_unavailable")
+		} else {
+			retrieval, err = r.retriever.Retrieve(ctx, retrievalQuery)
+		}
 	}
 	if err != nil {
 		if !hasTools {

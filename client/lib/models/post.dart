@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'user.dart';
 import 'poll.dart';
+import 'topic.dart';
 
 // 水帖版块内作者称号及等级
 class WaterSectionAuthorMeta {
@@ -277,6 +278,7 @@ class Post {
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
   final TeamRecruitmentMeta? teamRecruitment;
   final PollMeta? pollMeta;
+  final List<Topic> topics;
   final int? expEarned; // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
   final List<ExpAward> expAwards;
   final List<PostImage> images;
@@ -321,6 +323,7 @@ class Post {
     this.waterSectionAuthorMeta,
     this.teamRecruitment,
     this.pollMeta,
+    this.topics = const [],
     this.expEarned,
     this.expAwards = const [],
     this.images = const [],
@@ -380,6 +383,11 @@ class Post {
       pollMeta: json['poll_meta'] != null
           ? PollMeta.fromJson(json['poll_meta'] as Map<String, dynamic>)
           : null,
+      topics: (json['topics'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((e) => Topic.fromJson(Map<String, dynamic>.from(e)))
+              .toList(growable: false) ??
+          const [],
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
           : null,
@@ -475,6 +483,7 @@ class Post {
     WaterSectionAuthorMeta? waterSectionAuthorMeta,
     TeamRecruitmentMeta? teamRecruitment,
     PollMeta? pollMeta,
+    List<Topic>? topics,
     bool clearPollMeta = false,
     bool clearTeamRecruitment = false,
     bool clearTeamRecruitmentMeta = false,
@@ -526,6 +535,7 @@ class Post {
           ? null
           : (teamRecruitment ?? this.teamRecruitment),
       pollMeta: clearPollMeta ? null : (pollMeta ?? this.pollMeta),
+      topics: topics ?? this.topics,
       expEarned: expEarned ?? this.expEarned,
       expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,

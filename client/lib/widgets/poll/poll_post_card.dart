@@ -14,6 +14,7 @@ import '../../utils/app_feedback.dart';
 import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
+import '../topic_chips.dart';
 import 'poll_option_tile.dart';
 
 enum PollCardVariant { homeCompact, centerFull, profileCompact }
@@ -130,25 +131,30 @@ class _PollPostCardState extends State<PollPostCard> {
     final authorName = widget.post.author?.nickname ?? '匿名用户';
 
     return Card(
-      margin: EdgeInsets.only(bottom: homeCompact ? AppSpacing.sm : 10),
+      margin: EdgeInsets.only(bottom: homeCompact ? AppSpacing.xs : 10),
       elevation: 0,
       color: isDark
           ? AppColors.surfaceSecondaryDark
           : AppColors.surfaceSecondaryLight,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          homeCompact ? AppRadius.lg : AppRadius.sm,
+          homeCompact ? AppRadius.md : AppRadius.sm,
         ),
         side: BorderSide(
-            color: isDark
-                ? AppColors.borderNormalDark
-                : AppColors.borderNormalLight),
+          color: (isDark
+                  ? AppColors.borderSubtleDark
+                  : AppColors.borderSubtleLight)
+              .withValues(alpha: homeCompact ? 0.52 : 1),
+          width: homeCompact ? 0.8 : 1,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: widget.onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: homeCompact
+              ? const EdgeInsets.fromLTRB(12, 10, 12, 8)
+              : const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -231,6 +237,10 @@ class _PollPostCardState extends State<PollPostCard> {
                           ? AppColors.textSecondaryDark
                           : const Color(0xFF4E565A),
                     )),
+              ],
+              if (widget.post.topics.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.xs),
+                PostTopicChips(topics: widget.post.topics),
               ],
               if (widget.post.images.any(
                 (image) => image.resolvedOriginUrl.isNotEmpty,

@@ -147,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen>
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
   VoidCallback? _unregisterResumeRefresh;
+  bool _feedFabVisible = true;
 
   int get _currentIndex => _mainTabLedger.currentIndex;
   set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
@@ -1598,6 +1599,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabTapped(int index) {
+    if (index == 0 && !_feedFabVisible) {
+      setState(() => _feedFabVisible = true);
+    }
     final useSideRail = ResponsiveUtil.useDesktopShell(context) &&
         !context.read<ThemeProvider>().floatingNavBar;
     if (useSideRail) {
@@ -1631,7 +1635,9 @@ class _HomeScreenState extends State<HomeScreen>
     return _tabPages.putIfAbsent(index, () {
       switch (index) {
         case 0:
-          return const ShuitieScreen();
+          return ShuitieScreen(
+            onFabVisibilityChanged: _handleFeedFabVisibility,
+          );
         case 1:
           return const MarketScreen();
         case 2:
@@ -1644,6 +1650,13 @@ class _HomeScreenState extends State<HomeScreen>
           return const SizedBox.shrink();
       }
     });
+  }
+
+  void _handleFeedFabVisibility(bool visible) {
+    if (!mounted || _currentIndex != 0 || _feedFabVisible == visible) {
+      return;
+    }
+    setState(() => _feedFabVisible = visible);
   }
 
   List<Widget> _buildLazyTabChildren() {
@@ -1807,7 +1820,6 @@ class _HomeScreenState extends State<HomeScreen>
     // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
     final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
     final useBottomNav = !useSideRail;
-    final showFloatingNavBar = themeProvider.floatingNavBar;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1839,18 +1851,43 @@ class _HomeScreenState extends State<HomeScreen>
               },
             ),
       floatingActionButton: _currentIndex == 0 && useBottomNav
-          ? Padding(
-              padding: EdgeInsets.only(
-                bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
-              ),
-              child: FloatingActionButton(
-                heroTag: 'home_fab',
-                onPressed: () => _showPublishTypeSheet(context),
-                backgroundColor: AppColors.brandPrimary,
-                elevation: 4,
-                shape: const CircleBorder(),
-                child: const Icon(Icons.edit_rounded,
-                    color: Colors.white, size: 24),
+          ? ExcludeSemantics(
+              excluding: !_feedFabVisible,
+              child: IgnorePointer(
+                ignoring: !_feedFabVisible,
+                child: AnimatedOpacity(
+                  opacity: _feedFabVisible ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : AppMotion.micro,
+                  child: AnimatedScale(
+                    scale: _feedFabVisible ? 1 : 0.92,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : AppMotion.micro,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        floatingActionButtonTheme: Theme.of(context)
+                            .floatingActionButtonTheme
+                            .copyWith(
+                              sizeConstraints: const BoxConstraints.tightFor(
+                                width: 52,
+                                height: 52,
+                              ),
+                            ),
+                      ),
+                      child: FloatingActionButton(
+                        heroTag: 'home_fab',
+                        onPressed: () => _showPublishTypeSheet(context),
+                        backgroundColor: AppColors.brandPrimary,
+                        elevation: 2,
+                        shape: const CircleBorder(),
+                        child: const Icon(Icons.edit_rounded,
+                            color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             )
           : null,

@@ -10,11 +10,13 @@ import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
+import '../../models/topic.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
+import '../../services/topic_service.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
@@ -55,6 +57,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
   int? _selectedTagId;
+  bool _hasExplicitInitialPostType = false;
+
+  late final TopicService _topicService;
+  final List<TopicSelection> _selectedTopics = [];
+  List<Topic> _recommendedTopics = const [];
+  bool _topicLoading = false;
+  String? _topicError;
+  Timer? _topicDebounce;
+  String _lastTopicQuery = '';
 
   // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
   final List<PublishImageItem> _images = [];
@@ -197,6 +208,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void initState() {
     super.initState();
+    _topicService = TopicService(context.read<AuthProvider>().dio);
     _titleWarningController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -207,11 +219,18 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         }
       });
     final post = widget.editingPost;
+    _hasExplicitInitialPostType =
+        post != null || (widget.initialPostType?.trim().isNotEmpty ?? false);
     if (post != null) {
       _titleController.text = post.title;
       _contentController.text = post.content;
       _images.addAll(post.images.map(PublishImageItem.existing));
       _selectedTagId = post.waterTagId;
+      _selectedTopics.addAll(
+        post.topics.map(
+          (topic) => TopicSelection.existing(id: topic.id, name: topic.name),
+        ),
+      );
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
     _selectedPostType = rawPostType != null && rawPostType.trim().isNotEmpty
@@ -222,6 +241,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (!_isEditing) {
       unawaited(_restoreDraft());
     }
+    _scheduleTopicRecommendationRefresh();
     // 加载版块列表供标签选择
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<WaterSectionProvider>();
@@ -232,6 +252,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void dispose() {
     _draftDebounce?.cancel();
+    _topicDebounce?.cancel();
     if (!_draftPersistenceDisabled) {
       unawaited(_persistDraft()); // 普通退出仍保留当前草稿
     }
@@ -246,6 +267,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   void _onTitleChanged() {
     _scheduleDraftSave();
+    _scheduleTopicRecommendationRefresh();
     if (!_titleNeedsAttention || _titleController.text.trim().isEmpty) {
       return;
     }
@@ -256,6 +278,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   void _onContentChanged() {
     _scheduleDraftSave();
+    _scheduleTopicRecommendationRefresh();
     setState(() {});
   }
 
@@ -270,10 +293,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (_contentController.text.isEmpty) {
       _contentController.text = draft.content;
     }
-    if (_selectedPostType == 'campus_life' && draft.postType.isNotEmpty) {
+    if (!_hasExplicitInitialPostType && draft.postType.isNotEmpty) {
       _selectedPostType = draft.postType;
     }
     _selectedTagId ??= draft.waterTagId;
+    _selectedTopics
+      ..clear()
+      ..addAll(draft.topics);
     for (final path in draft.draftImagePaths) {
       final file = File(path);
       if (await file.exists()) {
@@ -309,6 +335,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       content: _contentController.text.trim(),
       postType: _selectedPostType,
       waterTagId: _selectedTagId,
+      topics: List<TopicSelection>.unmodifiable(_selectedTopics),
       draftImagePaths: _images
           .where((e) => e.source == PublishImageSource.local)
           .map((e) => e.localFile!.path)
@@ -320,6 +347,197 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       return;
     }
     await _draftService.save(draft);
+  }
+
+  void _scheduleTopicRecommendationRefresh({bool immediate = false}) {
+    _topicDebounce?.cancel();
+    final delay = immediate ? Duration.zero : const Duration(milliseconds: 500);
+    _topicDebounce = Timer(delay, _refreshTopicRecommendations);
+  }
+
+  Future<void> _refreshTopicRecommendations() async {
+    final query =
+        '${_titleController.text.trim()} ${_contentController.text.trim()}'
+            .trim();
+    if (query == _lastTopicQuery && _recommendedTopics.isNotEmpty) return;
+    _lastTopicQuery = query;
+    if (mounted) setState(() => _topicLoading = true);
+    try {
+      final topics = await _topicService.recommend(
+        query: query,
+        section: _selectedPostType,
+        limit: 8,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recommendedTopics = topics;
+        _topicError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _topicError = '推荐暂不可用');
+    } finally {
+      if (mounted) setState(() => _topicLoading = false);
+    }
+  }
+
+  void _addTopic(TopicSelection selection) {
+    if (_selectedTopics.any(
+        (item) => item.id == selection.id && item.name == selection.name)) {
+      return;
+    }
+    if (_selectedTopics.length >= 5) {
+      AppFeedback.error('最多选择 5 个话题', context: context);
+      return;
+    }
+    setState(() => _selectedTopics.add(selection));
+    _scheduleDraftSave();
+  }
+
+  void _removeTopic(TopicSelection selection) {
+    setState(() => _selectedTopics.remove(selection));
+    _scheduleDraftSave();
+  }
+
+  String _cleanTopicName(String value) =>
+      value.trim().replaceFirst(RegExp(r'^[#＃]+'), '').trim();
+
+  Future<void> _openTopicPicker() async {
+    final controller = TextEditingController();
+    Timer? searchDebounce;
+    var closed = false;
+    final result = await showModalBottomSheet<TopicSelection>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        var results = List<Topic>.from(_recommendedTopics);
+        var loading = false;
+        String? error;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Future<void> search(String value) async {
+              final query = value.trim();
+              searchDebounce?.cancel();
+              if (query.isEmpty) {
+                setSheetState(() {
+                  results = List<Topic>.from(_recommendedTopics);
+                  error = null;
+                  loading = false;
+                });
+                return;
+              }
+              setSheetState(() {
+                loading = true;
+                error = null;
+              });
+              searchDebounce =
+                  Timer(const Duration(milliseconds: 260), () async {
+                try {
+                  final found = await _topicService.search(
+                    query: query,
+                    section: _selectedPostType,
+                    limit: 20,
+                  );
+                  if (closed) return;
+                  setSheetState(() {
+                    results = found;
+                    loading = false;
+                  });
+                } catch (_) {
+                  if (closed) return;
+                  setSheetState(() {
+                    loading = false;
+                    error = '搜索失败，请重试';
+                  });
+                }
+              });
+            }
+
+            final customName = _cleanTopicName(controller.text);
+            final hasExact = results.any((topic) => topic.name == customName);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                16 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: SizedBox(
+                height: 430,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '添加话题',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onChanged: search,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search_rounded),
+                        hintText: '搜索或创建话题',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (loading) const LinearProgressIndicator(minHeight: 2),
+                    if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(error!,
+                            style: const TextStyle(color: Colors.red)),
+                      ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          if (customName.isNotEmpty && !hasExact)
+                            ListTile(
+                              leading: const Icon(Icons.add_circle_outline),
+                              title: Text('#$customName'),
+                              subtitle: const Text('发布时创建自定义话题'),
+                              onTap: () => Navigator.of(sheetContext).pop(
+                                TopicSelection.custom(customName),
+                              ),
+                            ),
+                          ...results.map(
+                            (topic) => ListTile(
+                              leading: const Icon(Icons.tag_rounded),
+                              title: Text('#${topic.name}'),
+                              onTap: () => Navigator.of(sheetContext).pop(
+                                TopicSelection.existing(
+                                  id: topic.id,
+                                  name: topic.name,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (!loading && results.isEmpty && customName.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Text('暂无推荐话题，输入关键词搜索或创建'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    closed = true;
+    searchDebounce?.cancel();
+    controller.dispose();
+    if (result != null && mounted) _addTopic(result);
   }
 
   // ---------------------------------------------------------------------------
@@ -389,9 +607,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               title: title,
               postType: _selectedPostType,
               waterTagId: _selectedTagId,
+              topics: List<TopicSelection>.unmodifiable(_selectedTopics),
               price: 0,
               contact: '',
               fileIds: fileIds,
+              sendWaterTagField: true,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -399,6 +619,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               title: title,
               postType: _selectedPostType,
               waterTagId: _selectedTagId,
+              topics: List<TopicSelection>.unmodifiable(_selectedTopics),
               price: null,
               contact: null,
               fileIds: fileIds.isNotEmpty ? fileIds : null,
@@ -587,6 +808,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         _selectedPostType = selected;
         _selectedTagId = null;
       });
+      _scheduleDraftSave();
+      _scheduleTopicRecommendationRefresh(immediate: true);
     }
   }
 
@@ -660,6 +883,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                       onTap: () {
                         setState(
                             () => _selectedTagId = selected ? null : tag.id);
+                        _scheduleDraftSave();
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -742,6 +966,68 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTopicEditor(bool isDark) {
+    final visibleRecommendations = _recommendedTopics
+        .where((topic) => !_selectedTopics.any((item) => item.id == topic.id))
+        .take(5)
+        .toList(growable: false);
+    final foreground = isDark ? Colors.white70 : const Color(0xFF667085);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ..._selectedTopics.map(
+                (topic) => InputChip(
+                  label: Text('#${topic.name}'),
+                  onDeleted: () => _removeTopic(topic),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.add, size: 16),
+                label: Text(_selectedTopics.isEmpty ? '添加话题' : '继续添加'),
+                onPressed:
+                    _selectedTopics.length >= 5 ? null : _openTopicPicker,
+              ),
+            ],
+          ),
+          if (_topicLoading || _topicError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _topicLoading ? '正在加载推荐话题…' : _topicError!,
+              style: TextStyle(fontSize: 11, color: foreground),
+            ),
+          ],
+          if (visibleRecommendations.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: visibleRecommendations
+                  .map(
+                    (topic) => GestureDetector(
+                      onTap: () => _addTopic(
+                        TopicSelection.existing(id: topic.id, name: topic.name),
+                      ),
+                      child: Text(
+                        '#${topic.name}',
+                        style: TextStyle(fontSize: 12, color: foreground),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -859,6 +1145,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                   ),
                 ),
               ),
+              _buildTopicEditor(isDark),
               if (_hasImages)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),

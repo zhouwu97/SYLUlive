@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
+import '../models/topic.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
 
@@ -897,6 +898,7 @@ class PostProvider extends ChangeNotifier {
     int? teamNeededCount,
     List<String>? teamRoles,
     DateTime? teamDeadline,
+    List<TopicSelection>? topics,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -917,6 +919,9 @@ class PostProvider extends ChangeNotifier {
         if (teamRoles != null) 'team_roles_json': jsonEncode(teamRoles),
         if (teamDeadline != null)
           'team_deadline': teamDeadline.toUtc().toIso8601String(),
+        if (topics != null)
+          'topics_json':
+              jsonEncode(topics.map((topic) => topic.toJson()).toList()),
       });
 
       final response = await _dio.post('/posts', data: formData);
@@ -958,6 +963,7 @@ class PostProvider extends ChangeNotifier {
     DateTime? teamDeadline,
     bool sendTeamFields = false,
     bool sendWaterTagField = false,
+    List<TopicSelection>? topics,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -978,6 +984,9 @@ class PostProvider extends ChangeNotifier {
           'team_roles_json': jsonEncode(teamRoles ?? const <String>[]),
         if (sendTeamFields)
           'team_deadline': teamDeadline?.toUtc().toIso8601String() ?? '',
+        if (topics != null)
+          'topics_json':
+              jsonEncode(topics.map((topic) => topic.toJson()).toList()),
       });
 
       final response = await _dio.put('/posts/$postId', data: formData);
@@ -1276,7 +1285,8 @@ class PostProvider extends ChangeNotifier {
       return const ReplyLikeRequestResult(success: false, conflict: true);
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
-      final isConflict = statusCode != null && statusCode >= 400 && statusCode < 500;
+      final isConflict =
+          statusCode != null && statusCode >= 400 && statusCode < 500;
       return ReplyLikeRequestResult(
         success: false,
         conflict: isConflict,

@@ -579,6 +579,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子失败"})
 		return
 	}
+	_ = services.LoadTopicsForPosts(h.db, posts)
 
 	c.JSON(http.StatusOK, posts)
 }
@@ -634,6 +635,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	_ = services.LoadTopicsForPosts(h.db, posts)
 
 	c.JSON(http.StatusOK, gin.H{
 		"items": posts,

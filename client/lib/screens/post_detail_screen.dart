@@ -29,6 +29,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
+import '../widgets/topic_chips.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -1073,9 +1074,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     if (!mounted) return;
     if (outcome.ok) {
       final msg = outcome.warning ??
-          (outcome.homePending
-              ? '已入版块精华 · 首页推荐待审核'
-              : '已设为版块精华');
+          (outcome.homePending ? '已入版块精华 · 首页推荐待审核' : '已设为版块精华');
       AppFeedback.showSnackBar(
         context,
         msg,
@@ -1911,7 +1910,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         );
 
         if (_post?.waterSectionFeatured == true) {
-          if (_post?.homeFeaturedPending == false && _post?.isFeatured != true) {
+          if (_post?.homeFeaturedPending == false &&
+              _post?.isFeatured != true) {
             entries.add(
               const AppPopupAction(
                 value: 'section_retry_home_feature',
@@ -2707,6 +2707,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 ),
               ),
             ),
+          if (p.topics.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            PostTopicChips(topics: p.topics, maxTopics: 5),
+          ],
         ],
       ),
     );
@@ -4336,9 +4340,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     builder: (context, scrollController) {
                       return Container(
                         decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF171B24)
-                              : Colors.white,
+                          color:
+                              isDark ? const Color(0xFF171B24) : Colors.white,
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(16),
                           ),
@@ -4402,8 +4405,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                   if (created != null) {
                                     if (sheetContentContext.mounted) {
                                       setSheetState(() {
-                                        if (!sheetChildren.any(
-                                            (c) => c.id == created.id)) {
+                                        if (!sheetChildren
+                                            .any((c) => c.id == created.id)) {
                                           sheetChildren.add(created);
                                           childrenTotal++;
                                         }
@@ -4413,8 +4416,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                       parentReplyId: parentReply.id,
                                       replyToUserId: parentReply.authorId,
                                       replyToReplyId: parentReply.id,
-                                      replyToName:
-                                          parentReply.author?.nickname,
+                                      replyToName: parentReply.author?.nickname,
                                     );
                                     return true;
                                   }

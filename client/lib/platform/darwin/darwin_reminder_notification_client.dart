@@ -33,17 +33,17 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
       defaultPresentSound: false,
     );
 
-    await _plugin.initialize(
-      const InitializationSettings(macOS: darwin),
-    );
+    await _plugin.initialize(const InitializationSettings(macOS: darwin));
     _initialized = true;
   }
 
   @override
   Future<bool> requestCourseReminderPermissions() async {
     await initializeCourseReminders();
-    final macOSPlugin = _plugin.resolvePlatformSpecificImplementation<
-        MacOSFlutterLocalNotificationsPlugin>();
+    final macOSPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >();
     if (macOSPlugin == null) return false;
 
     final granted = await macOSPlugin.requestPermissions(
@@ -74,9 +74,7 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
         title,
         body,
         tz.TZDateTime.from(scheduledTime, tz.local),
-        NotificationDetails(
-          macOS: _courseNotificationDetails(detailText),
-        ),
+        NotificationDetails(macOS: _courseNotificationDetails(detailText)),
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         payload: payload,

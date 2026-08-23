@@ -469,6 +469,7 @@ class _PostCardState extends State<PostCard>
                   PostMediaView(
                     images: post.images,
                     variant: PostMediaVariant.homeFeed,
+                    onTap: widget.onTap,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.sm),

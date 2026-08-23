@@ -253,6 +253,7 @@ class _PollPostCardState extends State<PollPostCard> {
                       : homeCompact
                           ? PostMediaVariant.homeFeed
                           : PostMediaVariant.feed,
+                  onTap: widget.onTap,
                 ),
               ],
               const SizedBox(height: AppSpacing.sm),

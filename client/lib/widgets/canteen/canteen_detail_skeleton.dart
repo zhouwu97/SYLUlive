@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'canteen_theme.dart';
 
-/// 食堂详情首屏骨架。保持与实际布局相同的高度，避免请求返回时页面结构跳变。
+/// 商家详情首屏骨架。保持与实际布局相同的高度，避免请求返回时页面结构跳变。
 /// 静态色块，不做 shimmer 循环动画。
 class CanteenDetailSkeleton extends StatelessWidget {
   const CanteenDetailSkeleton({super.key});
@@ -55,7 +55,7 @@ class CanteenDetailSkeleton extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        // “大家都在吃”标题 + 图鉴横排
+        // “商家菜品”标题 + 图鉴横排
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: block(96, 17, CanteenTheme.radiusSm),

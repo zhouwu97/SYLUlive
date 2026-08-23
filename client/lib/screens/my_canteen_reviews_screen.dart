@@ -186,7 +186,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除这条评价？',
-      message: '删除后将从食堂评价中移除，历史记录不会再参与评分统计。',
+      message: '删除后将从商家评价中移除，历史记录不会再参与评分统计。',
       confirmText: '删除',
     );
     if (!confirmed || !mounted) return;
@@ -215,7 +215,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
-      appBar: const AppPageAppBar(title: Text('我的食堂评价')),
+      appBar: const AppPageAppBar(title: Text('我的商家评价')),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: _buildBody(isDark),
@@ -261,7 +261,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         size: 42,
                         color: CanteenTheme.textTertiaryColor(isDark)),
                     const SizedBox(height: 16),
-                    Text('还没有食堂评价',
+                    Text('还没有商家评价',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -269,7 +269,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         )),
                     const SizedBox(height: 8),
                     Text(
-                      '吃过学校食堂后，\n可以留下真实体验给其他同学参考。',
+                      '体验过学校商家后，\n可以留下真实感受给其他同学参考。',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         height: 1.5,
@@ -282,7 +282,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         MaterialPageRoute(
                             builder: (_) => const CanteenScreen()),
                       ),
-                      child: const Text('去看看食堂'),
+                      child: const Text('去看看商家'),
                     ),
                   ],
                 ),
@@ -403,7 +403,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(canteen?.name ?? '未知食堂',
+                      Text(canteen?.name ?? '未知商家',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

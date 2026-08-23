@@ -11,6 +11,23 @@
 - 不要用 `/root/SYLUlive`、`/root/server`、`/root/client` 直接更新线上服务
 - 排查顺序固定为：`commit -> 编译 -> 进程 -> token`
 `
+
+## 官网目录隔离
+
+官网静态文件与 Flutter Web 构建产物必须分开管理：
+
+- 生产 Nginx 官网根目录为 `/opt/sylulive-site-v5`，该目录默认设置为不可写保护
+- `/opt/shenliyuan/web` 不是官网发布入口，禁止把 `client/build/web` 复制到该目录或官网根目录
+- 官网更新只能使用服务器上的 `/usr/local/sbin/update-sylulive-site-v5`，脚本会检查首页标题、必需资源，并拒绝 Flutter Web 特征文件
+- Android 模拟器调试、`flutter run` 和 `flutter build apk` 不需要也不允许触碰官网目录
+
+发布官网时，将完整的 `sylulive_site_v5` 目录传到服务器临时目录后执行：
+
+```bash
+sudo /usr/local/sbin/update-sylulive-site-v5 /tmp/sylulive_site_v5
+```
+
+脚本会先保留上一版官网、校验 Nginx 配置，再 reload；发布失败会恢复上一版。后端 `deploy-shenliyuan` 只更新后端二进制，不得扩展为网页目录同步。
 ## 当前部署结构
 `
 服务配置以 systemd 为准：

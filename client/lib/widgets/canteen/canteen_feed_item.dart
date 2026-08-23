@@ -6,8 +6,8 @@ import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
 
 /// 推荐信息流条目：按 type 分支渲染。
-/// 店铺类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
-/// 所有卡片统一点按 → 进入对应食堂详情页（P1 再做菜品深度定位）。
+/// 商家类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
+/// 所有卡片统一点按 → 进入对应商家详情页（P1 再做菜品深度定位）。
 class CanteenFeedItemCard extends StatefulWidget {
   final CanteenFeedItem item;
   final VoidCallback onTap;
@@ -46,7 +46,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     );
   }
 
-  // ── 店铺类卡片（推荐 / 稳妥 / 热门）─────────────────────────────────
+  // ── 商家类卡片（推荐 / 稳妥 / 热门）─────────────────────────────────
 
   Widget _buildStoreCard(bool isDark) {
     final item = widget.item;

@@ -4,7 +4,7 @@ import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 
-/// 首页“综合排行”快捷入口。
+/// 首页“商家排行”快捷入口。
 ///
 /// 这里解释排序依据，不把榜单数字塞进首页，避免用户误以为它是另一组评分。
 class CanteenRankingEntryCard extends StatefulWidget {
@@ -70,7 +70,7 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '综合排行',
+                      '商家排行',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -84,6 +84,8 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
                         fontSize: 12,
                         color: CanteenTheme.textSecondaryColor(isDark),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

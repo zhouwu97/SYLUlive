@@ -37,7 +37,6 @@ void main() {
             onVote: (id, source, vote) async {
               calls.add('$id:$source:$vote');
             },
-            onWriteReview: () {},
           ),
         ),
       ),
@@ -97,7 +96,6 @@ void main() {
             onSortChanged: (_) {},
             onFilterChanged: (_) {},
             onVote: (_, __, ___) async {},
-            onWriteReview: () {},
           ),
         ),
       ),

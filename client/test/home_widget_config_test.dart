@@ -1,10 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shenliyuan/models/home_widget_config.dart';
 import 'package:shenliyuan/services/home_widget_service.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -107,5 +108,45 @@ void main() {
     expect(dark.primaryText, const Color(0xFFF9FAFB));
     expect(blue.background, const Color(0xF2EFF6FF));
     expect(blue.accent, const Color(0xFF3B82F6));
+  });
+
+  test('小组件未知或损坏 schema 安全降级为空数据', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'widget_course_data': jsonEncode({
+        'schema_version': 99,
+        'courses': [
+          {'name': '不应展示', 'time': '08:00-09:00'},
+        ],
+      }),
+      'widget_exam_data': '{invalid-json',
+    });
+
+    final course = await HomeWidgetService.getPreviewData(
+      HomeWidgetKind.course,
+    );
+    final exam = await HomeWidgetService.getPreviewData(HomeWidgetKind.exam);
+
+    expect(course.items, isEmpty);
+    expect(exam.items, isEmpty);
+  });
+
+  test('小组件考试 schema v0 顶层数组仍可读取', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'widget_exam_data': jsonEncode([
+        {
+          'name': '兼容考试',
+          'date': '2026-08-30',
+          'time': '08:00-10:00',
+          'location': '综合楼A101',
+        },
+      ]),
+    });
+
+    final preview = await HomeWidgetService.getPreviewData(
+      HomeWidgetKind.exam,
+    );
+
+    expect(preview.items, hasLength(1));
+    expect(preview.items.single.title, '兼容考试');
   });
 }

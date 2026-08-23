@@ -90,6 +90,21 @@ func (m *ScopedGrantManager) Revoke(token string) {
 	m.mu.Unlock()
 }
 
+// RevokeRun 终止 Run 时撤销该 Run 的所有短期 Grant，避免取消后的迟到请求继续
+// 通过已签发 token 访问纯能力层。
+func (m *ScopedGrantManager) RevokeRun(runID string) {
+	if m == nil || strings.TrimSpace(runID) == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for token, grant := range m.grants {
+		if grant.RunID == runID {
+			delete(m.grants, token)
+		}
+	}
+}
+
 func WithScopedGrant(ctx context.Context, grant ScopedGrant) context.Context {
 	return context.WithValue(ctx, scopedGrantContextKey{}, grant)
 }

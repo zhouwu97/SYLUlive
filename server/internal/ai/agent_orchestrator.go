@@ -82,6 +82,18 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if event.CreatedAt.IsZero() {
 			event.CreatedAt = o.config.Clock()
 		}
+		if event.RunID == "" {
+			event.RunID = state.RunID
+		}
+		if event.PlanningRound == 0 {
+			event.PlanningRound = tracker.PlanningRounds
+		}
+		if event.ConstraintVersion == 0 {
+			event.ConstraintVersion = state.ConstraintVersion
+		}
+		if event.PlanVersion == 0 {
+			event.PlanVersion = state.PlanVersion
+		}
 		activities = append(activities, event)
 		if o.config.Activity != nil {
 			o.config.Activity(ctx, event)
@@ -127,6 +139,8 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		switch decision.Type {
 		case DecisionToolCall:
 			call := *decision.ToolCall
+			call.PlanningRound = tracker.PlanningRounds
+			call.ConstraintVersion = state.ConstraintVersion
 			capability := allowed[call.Capability]
 			if err := tracker.Admit(call.Capability, call.Arguments, false); err != nil {
 				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
@@ -145,14 +159,20 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 				state.Failures = append(state.Failures, ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true})
 				result = ToolResultEnvelope{OK: false, Error: &ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true}}
 				results = append(results, result)
-				state.Observations = append(state.Observations, AgentObservation{Capability: call.Capability, Result: result, CreatedAt: o.config.Clock()})
+				state.Observations = append(state.Observations, AgentObservation{
+					Capability: call.Capability, Result: result, PlanningRound: call.PlanningRound,
+					ConstraintVersion: call.ConstraintVersion, PlanVersion: state.PlanVersion, CreatedAt: o.config.Clock(),
+				})
 				emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: "failed", ToolName: call.Capability, Text: "能力执行失败，正在重新规划"})
 				state.PlanVersion++
 				emit(AgentActivityEvent{Type: "plan.revised", ActivityCode: "replan_after_failure", ToolName: call.Capability, Text: "已根据失败结果重新规划"})
 				continue
 			}
 			results = append(results, result)
-			state.Observations = append(state.Observations, AgentObservation{Capability: call.Capability, Result: result, CreatedAt: o.config.Clock()})
+			state.Observations = append(state.Observations, AgentObservation{
+				Capability: call.Capability, Result: result, PlanningRound: call.PlanningRound,
+				ConstraintVersion: call.ConstraintVersion, PlanVersion: state.PlanVersion, CreatedAt: o.config.Clock(),
+			})
 			state.CompletedSteps = append(state.CompletedSteps, call.Capability)
 			state.KnownFacts = append(state.KnownFacts, observedFact(call.Capability, result))
 			if !result.OK && result.Error != nil {

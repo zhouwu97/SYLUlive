@@ -179,9 +179,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			assistantCallMessages = append(assistantCallMessages, ToolCallMessage{
 				ID: call.id, Type: "function", Function: ToolCallFunction{Name: call.name, Arguments: arguments},
 			})
-			_, _ = r.appendEvent(ctx, run.ID, "tool.executing", map[string]interface{}{
+			_, _ = r.appendEvent(ctx, run.ID, "tool.executing", r.agentTracePayload(run, map[string]interface{}{
 				"call_id": call.id, "tool_name": call.name,
-			}, true)
+			}, 0, 0), true)
 
 			planContext := AgentTraceFields{RunID: run.ID, PlanningRound: run.PlanningRound, ConstraintVersion: run.ConstraintVersion, PlanVersion: run.PlanVersion}
 			toolCtx := withAgentPlanContext(ctx, planContext)
@@ -199,9 +199,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 					}, 0, 0), true)
 					continue
 				}
-				_, _ = r.appendEvent(ctx, run.ID, "plan.revised", map[string]interface{}{
+				_, _ = r.appendEvent(ctx, run.ID, "plan.revised", r.agentTracePayload(run, map[string]interface{}{
 					"reason": "tool_execution_failed", "tool_name": call.name,
-				}, true)
+				}, 0, 0), true)
 			}
 			if execution.Wait != nil {
 				pendingWaits = append(pendingWaits, pendingToolWait{CallID: call.id, Name: call.name, Wait: *execution.Wait})
@@ -246,7 +246,8 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 					}, true)
 				}
 			}
-			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", eventPayload, true)
+			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", r.agentTracePayload(run, eventPayload,
+				eventPayload["duration_ms"].(int64), eventPayload["new_fact_count"].(int)), true)
 			r.appendPersonalDataEvidence(ctx, run.ID, call.id, execution.Result)
 		}
 		messages = append(messages, Message{Role: "assistant", Content: answer, ToolCalls: assistantCallMessages})
@@ -732,9 +733,9 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 			}
 			byID[event.CallID] = len(calls)
 			calls = append(calls, collectedToolCall{id: event.CallID, name: event.ToolName})
-			_, _ = r.appendEvent(ctx, run.ID, "tool.requested", map[string]interface{}{
+			_, _ = r.appendEvent(ctx, run.ID, "tool.requested", r.agentTracePayload(run, map[string]interface{}{
 				"call_id": event.CallID, "tool_name": event.ToolName,
-			}, true)
+			}, 0, 0), true)
 		case ProviderEventToolArgumentsDelta:
 			callIndex, found := byID[event.CallID]
 			if !found || event.ToolName == "" || calls[callIndex].name != event.ToolName {

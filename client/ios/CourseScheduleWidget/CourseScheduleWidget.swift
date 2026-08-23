@@ -43,9 +43,14 @@ struct Provider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CourseEntry>) -> Void) {
         let entry = readEntry()
-        // 不设置自动刷新策略（由 Flutter 端主动推送更新）
-        let timeline = Timeline(entries: [entry], policy: .never)
+        let timeline = Timeline(entries: [entry], policy: .after(nextMidnight()))
         completion(timeline)
+    }
+
+    private func nextMidnight() -> Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        return tomorrow ?? Date().addingTimeInterval(24 * 60 * 60)
     }
 
     private func readEntry() -> CourseEntry {
@@ -62,6 +67,17 @@ struct Provider: TimelineProvider {
            (payload["schema_version"] as? Int) == 1 {
             title = payload["title"] as? String ?? title
             dateInfo = payload["date"] as? String ?? ""
+            if let dateKey = payload["date_key"] as? String,
+               !dateKey.isEmpty,
+               dateKey != currentDateKey() {
+                return CourseEntry(
+                    date: Date(),
+                    title: title,
+                    dateInfo: "暂无今日数据",
+                    isEmpty: true,
+                    courses: []
+                )
+            }
             let rawCourses = payload["courses"] as? [[String: Any]] ?? []
             courses = rawCourses.compactMap { item in
                 guard let name = item["name"] as? String,
@@ -81,6 +97,14 @@ struct Provider: TimelineProvider {
             isEmpty: courses.isEmpty,
             courses: courses
         )
+    }
+
+    private func currentDateKey() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar.current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
     }
 }
 
@@ -185,7 +209,13 @@ struct ExamProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ExamEntry>) -> Void) {
-        completion(Timeline(entries: [readEntry()], policy: .never))
+        completion(Timeline(entries: [readEntry()], policy: .after(nextMidnight())))
+    }
+
+    private func nextMidnight() -> Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        return tomorrow ?? Date().addingTimeInterval(24 * 60 * 60)
     }
 
     private func readEntry() -> ExamEntry {

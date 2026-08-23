@@ -228,6 +228,7 @@ class HomeWidgetService {
         jsonEncode({
           'schema_version': widgetSchemaVersion,
           'updated_at': now.toIso8601String(),
+          'date_key': _date(now),
           'title': '沈理院课表',
           'date': date,
           'courses': courses,
@@ -348,6 +349,9 @@ class HomeWidgetService {
         final raw = prefs.getString(_courseDataKey);
         if (raw == null) return const HomeWidgetPreviewData();
         final data = jsonDecode(raw) as Map<String, dynamic>;
+        if (data['schema_version'] != widgetSchemaVersion) {
+          return const HomeWidgetPreviewData();
+        }
         final courses = (data['courses'] as List<dynamic>? ?? const []);
         return HomeWidgetPreviewData(
           subtitle: data['date']?.toString() ?? '',
@@ -371,7 +375,9 @@ class HomeWidgetService {
       if (raw == null) return const HomeWidgetPreviewData();
       final decoded = jsonDecode(raw);
       final exams = decoded is Map<String, dynamic>
-          ? (decoded['exams'] as List<dynamic>? ?? const [])
+          ? decoded['schema_version'] == widgetSchemaVersion
+              ? (decoded['exams'] as List<dynamic>? ?? const [])
+              : const <dynamic>[]
           : decoded as List<dynamic>;
       return HomeWidgetPreviewData(
         items: exams.map((item) {

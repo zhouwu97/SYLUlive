@@ -177,6 +177,24 @@ func TestCalendarActionDraftIsIdempotentAndOwned(t *testing.T) {
 	if firstResponse.ID != retryResponse.ID {
 		t.Fatalf("idempotency IDs differ: %d vs %d", firstResponse.ID, retryResponse.ID)
 	}
+	confirmPath := fmt.Sprintf("/user/calendar-action-drafts/%d/confirm", firstResponse.ID)
+	firstConfirm := performAIActionRequest(t, http.MethodPost, confirmPath, `{}`, owner.ID,
+		gin.Params{{Key: "id", Value: fmt.Sprint(firstResponse.ID)}}, map[string]string{"X-Client-Request-ID": "confirm-retry-1"}, handler.ConfirmCalendarEventDraft)
+	if firstConfirm.Code != http.StatusOK {
+		t.Fatalf("first confirmation status=%d body=%s", firstConfirm.Code, firstConfirm.Body.String())
+	}
+	secondConfirm := performAIActionRequest(t, http.MethodPost, confirmPath, `{}`, owner.ID,
+		gin.Params{{Key: "id", Value: fmt.Sprint(firstResponse.ID)}}, map[string]string{"X-Client-Request-ID": "confirm-retry-1"}, handler.ConfirmCalendarEventDraft)
+	if secondConfirm.Code != http.StatusOK {
+		t.Fatalf("duplicate confirmation status=%d body=%s", secondConfirm.Code, secondConfirm.Body.String())
+	}
+	var confirmationAudits int64
+	if err := db.Model(&models.UserCalendarActionAudit{}).Where("draft_id = ? AND action = ?", firstResponse.ID, "confirmed").Count(&confirmationAudits).Error; err != nil {
+		t.Fatal(err)
+	}
+	if confirmationAudits != 1 {
+		t.Fatalf("duplicate confirmation created %d audit rows", confirmationAudits)
+	}
 	otherConfirm := calendarActionRequest(t, handler.ConfirmCalendarEventDraft, http.MethodPost, "/confirm", `{}`, other.ID, firstResponse.ID)
 	if otherConfirm.Code != http.StatusNotFound {
 		t.Fatalf("ownership status=%d body=%s", otherConfirm.Code, otherConfirm.Body.String())

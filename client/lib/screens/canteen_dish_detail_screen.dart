@@ -226,7 +226,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          '所属食堂已下架，历史菜品与实拍仅供参考',
+                          '所属商家已下架，历史菜品与实拍仅供参考',
                           style: TextStyle(
                             fontSize: 12,
                             color: CanteenTheme.textSecondaryColor(isDark),
@@ -519,7 +519,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   Widget _buildOfflineUploadNotice(bool isDark) {
     return Text(
-      '所属食堂已下架，暂不能新增菜品实拍或评价',
+      '所属商家已下架，暂不能新增菜品实拍或评价',
       style: TextStyle(
         fontSize: 12,
         color: CanteenTheme.textSecondaryColor(isDark),
@@ -528,7 +528,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 }
 
-/// 在食堂详情页复用的上传 Sheet 入口。
+/// 在商家详情页复用的上传 Sheet 入口。
 /// 返回 true 表示提交成功。
 Future<bool?> showDishPhotoUploadSheet(
   BuildContext context, {

@@ -8,7 +8,7 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
 
-/// 食堂全部菜品列表页。
+/// 商家菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
   final int canteenId;
   final String canteenName;
@@ -81,7 +81,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
-          '全部菜品',
+          '商家菜品',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -104,10 +104,9 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
               : _dishes.isEmpty
                   ? CanteenEmptyState(
                       icon: Icons.photo_camera_outlined,
-                      title: '还没有实拍菜品',
-                      subtitle: widget.offline
-                          ? '所属食堂已下架，历史菜品暂不支持新增'
-                          : '上传第一道菜的第一张实拍吧',
+                      title: '还没有收录菜品',
+                      subtitle:
+                          widget.offline ? '所属商家已下架，历史菜品暂不支持新增' : '上传第一道菜实拍吧',
                       actionLabel: widget.offline ? null : '上传第一道菜实拍',
                       onAction: widget.offline ? null : _openUploadSheet,
                     )

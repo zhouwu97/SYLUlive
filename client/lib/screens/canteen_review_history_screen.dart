@@ -76,7 +76,7 @@ class _CanteenReviewHistoryScreenState
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除这条评价？',
-      message: '删除后将从这家食堂的有效评价中移除。',
+      message: '删除后将从这家商家的有效评价中移除。',
       confirmText: '删除',
     );
     if (!confirmed || !mounted) return;
@@ -181,7 +181,7 @@ class _CanteenReviewHistoryScreenState
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         Text(
-          '共 ${_items.length} 次到店评价',
+          '共 ${_items.length} 次商家评价',
           style: TextStyle(
             fontSize: 13,
             color: CanteenTheme.textSecondaryColor(isDark),

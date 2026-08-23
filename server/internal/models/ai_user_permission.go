@@ -47,6 +47,8 @@ type AIUserPermission struct {
 	UserID    uint                   `gorm:"not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:1;index" json:"-"`
 	Scope     AIUserPermissionScope  `gorm:"size:48;not null;uniqueIndex:idx_ai_user_permissions_user_scope,priority:2;index" json:"scope"`
 	Policy    AIUserPermissionPolicy `gorm:"size:16;not null;default:ask" json:"policy"`
+	// Version 在每次策略变化时递增，已签发的 Scoped Grant 用它做撤权栅栏。
+	Version   int64                  `gorm:"not null;default:1" json:"-"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
 }

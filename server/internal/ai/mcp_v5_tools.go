@@ -109,7 +109,11 @@ func (t *mcpV5Tool) Execute(ctx context.Context, userID uint, arguments json.Raw
 			return ToolResultEnvelope{OK: false, Error: &ToolError{Code: "permission_denied", Message: "个人数据访问未获授权"}}, nil
 		}
 	}
-	token, _, err := t.grants.IssueRunGrant(call.RunID, userID, []string{t.name}, t.scopes, 90*time.Second, 1)
+	permissionScope := models.AIUserPermissionScope("")
+	if len(t.scopes) > 0 {
+		permissionScope = models.AIUserPermissionPersonalDataAccess
+	}
+	token, _, err := t.grants.IssueRunGrantWithContext(ctx, call.RunID, userID, []string{t.name}, t.scopes, permissionScope, 90*time.Second, 1)
 	if err != nil {
 		return nil, err
 	}

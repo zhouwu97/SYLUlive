@@ -21,6 +21,30 @@ func TestParseGoalSpecExtractsConstraintsWithoutChoosingWorkflow(t *testing.T) {
 	require.Empty(t, goal.Unknowns)
 }
 
+func TestAgentTraceMetricsProducesTrendFields(t *testing.T) {
+	var first AgentTraceMetrics
+	first.Observe("tool.requested", []byte(`{}`))
+	first.Observe("tool.completed", []byte(`{"duration_ms":100}`))
+	first.Observe("plan.revised", []byte(`{}`))
+	first.Observe("run.completed", []byte(`{}`))
+	var second AgentTraceMetrics
+	second.Observe("tool.requested", []byte(`{}`))
+	second.Observe("tool.requested", []byte(`{}`))
+	second.Observe("tool.completed", []byte(`{"duration_ms":300,"capability_status":"unavailable"}`))
+	second.Observe("tool.discarded", []byte(`{}`))
+	second.Observe("run.failed", []byte(`{}`))
+
+	trend := BuildAgentEvalTrend([]AgentTraceMetrics{first, second})
+	require.Equal(t, 2, trend.RunCount)
+	require.Equal(t, 0.5, trend.SuccessRate)
+	require.Equal(t, 1.5, trend.AverageToolCalls)
+	require.Equal(t, 2, trend.P95ToolCalls)
+	require.Equal(t, 0.5, trend.ReplanRate)
+	require.Equal(t, 1, trend.DiscardedLateResults)
+	require.Equal(t, 1, trend.DegradedRuns)
+	require.Equal(t, 200.0, trend.AverageRunLatencyMs)
+}
+
 func TestContextBrokerNeverReturnsIdentityLayer(t *testing.T) {
 	broker := NewContextBroker()
 	require.NoError(t, broker.Register(ContextIdentity, func(context.Context, ContextRequest) ([]ContextValue, error) {

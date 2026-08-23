@@ -424,7 +424,8 @@ func TestAcademicAnalysisEmitsPersonalEvidenceAndPolicySources(t *testing.T) {
 
 	var personalEvent models.AIEvent
 	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "personal_data.evidence").First(&personalEvent).Error)
-	require.Contains(t, string(personalEvent.Payload), "信号与系统")
+	require.Contains(t, string(personalEvent.Payload), "academic_analysis")
+	require.NotContains(t, string(personalEvent.Payload), "信号与系统")
 	var sourcesEvent models.AIEvent
 	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourcesEvent).Error)
 	require.Contains(t, string(sourcesEvent.Payload), "学生手册")

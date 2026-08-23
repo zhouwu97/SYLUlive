@@ -7,6 +7,9 @@ import '../../models/post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
 import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
@@ -114,7 +117,10 @@ class _PollPostCardState extends State<PollPostCard> {
     final provider = context.watch<PollProvider>();
     final isMutating = provider.isMutating(poll.id);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).colorScheme.primary;
+    final homeCompact = widget.variant == PollCardVariant.homeCompact;
+    final primary = homeCompact
+        ? AppColors.brandPrimary
+        : Theme.of(context).colorScheme.primary;
     final options = widget.variant == PollCardVariant.centerFull
         ? poll.options
         : poll.options.take(3).toList();
@@ -124,13 +130,19 @@ class _PollPostCardState extends State<PollPostCard> {
     final authorName = widget.post.author?.nickname ?? '匿名用户';
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: EdgeInsets.only(bottom: homeCompact ? AppSpacing.sm : 10),
       elevation: 0,
-      color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
+      color: isDark
+          ? AppColors.surfaceSecondaryDark
+          : AppColors.surfaceSecondaryLight,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(
+          homeCompact ? AppRadius.lg : AppRadius.sm,
+        ),
         side: BorderSide(
-            color: isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight),
+            color: isDark
+                ? AppColors.borderNormalDark
+                : AppColors.borderNormalLight),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -200,42 +212,48 @@ class _PollPostCardState extends State<PollPostCard> {
                   ],
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.sm),
               Text(widget.post.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700, height: 1.3)),
+                  style: AppTextStyles.feedTitle.copyWith(
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  )),
               if (widget.post.content.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: AppSpacing.xs),
                 Text(widget.post.content,
-                    maxLines: 2,
+                    maxLines: homeCompact ? 3 : 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight)),
+                    style: AppTextStyles.feedBody.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : const Color(0xFF4E565A),
+                    )),
               ],
               if (widget.post.images.any(
                 (image) => image.resolvedOriginUrl.isNotEmpty,
               )) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.sm),
                 PostMediaView(
                   images: widget.post.images,
                   variant: widget.variant == PollCardVariant.centerFull
                       ? PostMediaVariant.detail
-                      : PostMediaVariant.feed,
+                      : homeCompact
+                          ? PostMediaVariant.homeFeed
+                          : PostMediaVariant.feed,
                 ),
               ],
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.sm),
               Text(
-                poll.isMultiple
-                    ? '多选 · 最多选 ${poll.maxChoices} 项'
-                    : '单选 · 选择 1 项',
+                homeCompact
+                    ? '投票'
+                    : poll.isMultiple
+                        ? '多选 · 最多选 ${poll.maxChoices} 项'
+                        : '单选 · 选择 1 项',
                 style: TextStyle(
-                    color: primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
+                    color: primary, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 7),
               ...options.map((option) => Padding(
@@ -253,11 +271,13 @@ class _PollPostCardState extends State<PollPostCard> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                      '还有 ${poll.options.length - options.length} 个选项，进入详情查看',
+                      homeCompact
+                          ? '还有 ${poll.options.length - options.length} 个选项 >'
+                          : '还有 ${poll.options.length - options.length} 个选项，进入详情查看',
                       style: TextStyle(
                           fontSize: 12, color: Theme.of(context).hintColor)),
                 ),
-              if (!poll.resultsVisible)
+              if (!homeCompact && !poll.resultsVisible)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
@@ -275,13 +295,13 @@ class _PollPostCardState extends State<PollPostCard> {
               const SizedBox(height: 3),
               SizedBox(
                 width: double.infinity,
-                height: 42,
+                height: homeCompact ? 36 : 42,
                 child: FilledButton(
                   onPressed: canSubmit && !isMutating ? _submit : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: primary,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(7)),
+                        borderRadius: BorderRadius.circular(AppRadius.md)),
                   ),
                   child: isMutating
                       ? const SizedBox(

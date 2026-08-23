@@ -54,6 +54,8 @@ type RuntimeError struct {
 func (e *RuntimeError) Error() string { return e.Code }
 
 var newlinePattern = regexp.MustCompile(`(?:\r?\n)+`)
+var traceBearerPattern = regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9._~+/=-]+`)
+var traceJWTPattern = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b`)
 
 const unverifiableCampusAnswer = "我暂时无法从已发布的校园资料中核验这项具体信息。你可以补充涉及的校区、课程或办理事项，我会继续帮你缩小查询范围；也可以查看对应事项的当期通知，或向负责该事项的学院老师确认。"
 
@@ -964,7 +966,7 @@ func (r *Runtime) transition(ctx context.Context, run *models.AIRun, from, to st
 }
 
 func (r *Runtime) appendEvent(ctx context.Context, runID, eventType string, payload interface{}, persist bool) (RunEvent, error) {
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := marshalEventPayload(eventType, payload, persist)
 	if err != nil {
 		return RunEvent{}, err
 	}
@@ -995,6 +997,72 @@ func (r *Runtime) appendEvent(ctx context.Context, runID, eventType string, payl
 		r.broker.Publish(event)
 	}
 	return event, err
+}
+
+// marshalEventPayload 是 Trace 的最后一道脱敏边界。工具原文、授权凭据和
+// 个人身份字段不能因为某个新调用方忘记清洗，就进入持久化事件。
+func marshalEventPayload(eventType string, payload interface{}, persist bool) ([]byte, error) {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil || !persist {
+		return payloadBytes, err
+	}
+	var value interface{}
+	if err := json.Unmarshal(payloadBytes, &value); err != nil {
+		return nil, err
+	}
+	value = sanitizeTraceValue(eventType, value)
+	return json.Marshal(value)
+}
+
+func sanitizeTraceValue(eventType string, value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(typed))
+		for key, child := range typed {
+			lowerKey := strings.ToLower(strings.TrimSpace(key))
+			if sensitiveTraceKey(lowerKey) {
+				continue
+			}
+			if strings.HasPrefix(eventType, "tool.") && traceRawToolKey(lowerKey) {
+				result[key] = "[REDACTED]"
+				continue
+			}
+			result[key] = sanitizeTraceValue(eventType, child)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for index, child := range typed {
+			result[index] = sanitizeTraceValue(eventType, child)
+		}
+		return result
+	case string:
+		value := traceBearerPattern.ReplaceAllString(typed, "[REDACTED]")
+		return traceJWTPattern.ReplaceAllString(value, "[REDACTED]")
+	default:
+		return value
+	}
+}
+
+func sensitiveTraceKey(key string) bool {
+	for _, fragment := range []string{
+		"authorization", "access_token", "refresh_token", "token", "grant", "cookie", "password",
+		"secret", "credential", "student_id", "studentid", "edu_student_id", "id_card", "analysis_input",
+	} {
+		if strings.Contains(key, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func traceRawToolKey(key string) bool {
+	switch key {
+	case "result", "raw_result", "arguments", "headers", "request_headers", "response_headers":
+		return true
+	default:
+		return false
+	}
 }
 
 // PublishDeviceJobProgress 将设备桥接已验证的固定阶段映射为用户可理解的 Agent activity。

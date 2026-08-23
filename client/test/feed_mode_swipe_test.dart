@@ -45,8 +45,8 @@ void main() {
     await tester.dragFrom(const Offset(300, 400), const Offset(-160, 0));
     await tester.pumpAndSettle();
 
-    expect(_modeWeight(tester, '精华'), FontWeight.w600);
-    expect(_modeWeight(tester, '综合'), FontWeight.w500);
+    expect(_modeWeight(tester, '精华'), FontWeight.w700);
+    expect(_modeWeight(tester, '综合'), FontWeight.w400);
 
     await _disposeFeed(tester, page);
   });
@@ -58,8 +58,8 @@ void main() {
     await tester.dragFrom(const Offset(300, 760), const Offset(-160, 0));
     await tester.pumpAndSettle();
 
-    expect(_modeWeight(tester, '精华'), FontWeight.w600);
-    expect(_modeWeight(tester, '综合'), FontWeight.w500);
+    expect(_modeWeight(tester, '精华'), FontWeight.w700);
+    expect(_modeWeight(tester, '综合'), FontWeight.w400);
 
     await _disposeFeed(tester, page);
   });

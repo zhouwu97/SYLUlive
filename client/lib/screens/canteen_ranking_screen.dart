@@ -55,7 +55,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         ),
         content: const Text(
           '综合排序采用贝叶斯加权评分，既看平均星级、也看评价人数：评分越高、人数越多越靠前；'
-          '评价很少的高分店会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
+          '评价很少的高分商家会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
           '“评分优先”只按星级排，样本很少时会标注“样本较少”；'
           '“评价人数”按参与评价的人数排序。\n\n'
           '菜品和实拍数量仅供参考，不参与综合分计算。',
@@ -95,8 +95,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除店铺'),
-        content: Text('确定要删除食堂/店铺 "${item.name}" 吗？'),
+        title: const Text('删除商家'),
+        content: Text('确定要删除商家 "${item.name}" 吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -129,7 +129,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
-          '食堂综合排行',
+          '商家排行',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -198,9 +198,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         }
         if (items.isEmpty) {
           return CanteenEmptyState(
-            title: '暂无食堂',
-            subtitle: '成为第一个收录食堂的同学吧',
-            actionLabel: '返回食堂页提交',
+            title: '暂无商家',
+            subtitle: '成为第一个收录商家的同学吧',
+            actionLabel: '返回餐饮页添加',
             onAction: () => Navigator.pop(context),
           );
         }

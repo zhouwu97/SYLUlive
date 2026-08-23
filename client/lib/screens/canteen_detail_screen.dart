@@ -23,7 +23,9 @@ import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import '../utils/app_feedback.dart';
 
-/// 食堂详情页：Hero + 信息区 + 大家都在吃 + 评价区 + 底部写评价。
+enum _ContributionAction { review, dishPhoto }
+
+/// 商家详情页：Hero + 信息区 + 菜品区 + 评价区 + 底部贡献入口。
 ///
 /// Loading 拆两层：
 /// - [_initialLoading]：首次进入，展示 [CanteenDetailSkeleton]
@@ -95,16 +97,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return raw is num ? raw.toInt() : int.tryParse('$raw');
   }
 
-  String _reviewCooldownText() {
-    final seconds =
-        (_reviewAction['retry_after_seconds'] as num?)?.toInt() ?? 0;
-    if (seconds <= 0) return '暂时不能新增评价';
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600 + 59) ~/ 60;
-    if (hours > 0) return '距下次评价还有 ${hours}小时${minutes}分钟';
-    return '距下次评价还有 $minutes 分钟';
-  }
-
   @override
   void initState() {
     super.initState();
@@ -136,7 +128,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     });
   }
 
-  /// 筛选/排序切换：Hero、店铺信息、菜品区一律不动，只刷新评价区。
+  /// 筛选/排序切换：Hero、商家信息、菜品区一律不动，只刷新评价区。
   /// 参数在发起请求时冻结，不读取可变全局。
   /// 返回三态：
   /// - `true`：成功应用（同步更新 applied 状态）
@@ -203,7 +195,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
     if (_canteenData == null || _canteenData!['canteen'] == null) {
       final errorMessage =
-          context.watch<CanteenProvider>().errorMessage ?? '加载食堂详情失败，请检查网络后重试';
+          context.watch<CanteenProvider>().errorMessage ?? '加载商家详情失败，请检查网络后重试';
       return Scaffold(
         backgroundColor: CanteenTheme.pageBg(isDark),
         appBar: AppBar(
@@ -281,7 +273,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       ),
       child: Scaffold(
         backgroundColor: CanteenTheme.pageBg(isDark),
-        bottomNavigationBar: _buildFloatingRatingComposer(isDark, accent),
+        bottomNavigationBar: _buildContributionBar(isDark, accent),
         body: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildHeroSection()),
@@ -304,7 +296,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     canteenId: widget.canteenId,
                     canteenName: widget.canteenName,
                     onViewAll: _openDishList,
-                    onUpload: _isOffline ? null : _openDishPhotoUpload,
                     onStatsChanged: (count, photos) {
                       if (!mounted) return;
                       if (count == _dishCount && photos == _dishPhotoCount) {
@@ -359,7 +350,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       }
                     },
                     onVote: _voteRating,
-                    onWriteReview: _openPrimaryReviewEditor,
                     canWriteReview:
                         !_isOffline && (_canCreateReview || _canEditLatest),
                     latestReviewId: _latestReviewId,
@@ -574,7 +564,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 const Spacer(),
                 if (visitCount > 0)
                   Text(
-                    '$visitCount 次到店评价 · 近一人一票',
+                    '$visitCount 次商家评价 · 近一人一票',
                     style: TextStyle(
                       fontSize: 10,
                       color: CanteenTheme.textTertiaryColor(isDark),
@@ -749,24 +739,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  // ── 底部写评价 ────────────────────────────────────────────────
+  // ── 底部贡献入口 ──────────────────────────────────────────────
 
-  Widget _buildFloatingRatingComposer(bool isDark, Color accent) {
+  Widget _buildContributionBar(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final auth = context.watch<AuthProvider>();
-    final ratingHint = _isOffline
-        ? '该店已下架，历史评价仅供参考'
-        : !auth.isLoggedIn
-            ? '登录后可评价'
-            : auth.user?.studentVerified != true
-                ? '绑定教务后可评价'
-                : _canCreateReview
-                    ? '添加一条新的到店评价...'
-                    : _canEditLatest
-                        ? _reviewCooldownText()
-                        : '暂时不能添加评价';
-
-    final canOpenPrimary = !_isOffline && (_canCreateReview || _canEditLatest);
+    final canContribute = !_isOffline;
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
@@ -776,52 +753,138 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           top: BorderSide(color: CanteenTheme.borderColor(isDark)),
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                onTap: canOpenPrimary ? _openPrimaryReviewEditor : null,
-                child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: CanteenTheme.surfaceMutedBg(isDark),
-                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                  ),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    ratingHint,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: CanteenTheme.textSecondaryColor(isDark),
+      child: FilledButton.icon(
+        onPressed: canContribute ? () => _showContributionSheet(isDark) : null,
+        icon: const Icon(Icons.add_rounded, size: 18),
+        label: Text(canContribute ? '贡献内容' : '暂不能贡献内容'),
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(44),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showContributionSheet(bool isDark) async {
+    final action = await showModalBottomSheet<_ContributionAction>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final canWriteReview = _canCreateReview || _canEditLatest;
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            decoration: BoxDecoration(
+              color: CanteenTheme.surfaceBg(isDark),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(CanteenTheme.radiusLg),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.borderColor(isDark),
+                      borderRadius: BorderRadius.circular(99),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Text(
+                  '你想贡献什么？',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.textPrimaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '选择一种内容，帮助其他同学做决定',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildContributionActionButton(
+                        isDark: isDark,
+                        icon: Icons.rate_review_outlined,
+                        label: '写商家评价',
+                        enabled: canWriteReview,
+                        onPressed: () => Navigator.pop(
+                          sheetContext,
+                          _ContributionAction.review,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildContributionActionButton(
+                        isDark: isDark,
+                        icon: Icons.photo_camera_outlined,
+                        label: '上传菜品实拍',
+                        onPressed: () => Navigator.pop(
+                          sheetContext,
+                          _ContributionAction.dishPhoto,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: canOpenPrimary ? _openPrimaryReviewEditor : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              minimumSize: const Size(74, 44),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-              ),
-            ),
-            child: Text(
-              _canCreateReview ? '添加' : '修改最近一次',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _ContributionAction.review:
+        await _openPrimaryReviewEditor();
+      case _ContributionAction.dishPhoto:
+        await _openDishPhotoUpload();
+    }
+  }
+
+  Widget _buildContributionActionButton({
+    required bool isDark,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    bool enabled = true,
+  }) {
+    return FilledButton.tonalIcon(
+      onPressed: enabled ? onPressed : null,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        foregroundColor: enabled
+            ? CanteenTheme.accentStrongColor(isDark)
+            : CanteenTheme.textTertiaryColor(isDark),
+        backgroundColor: enabled
+            ? CanteenTheme.accentSoftColor(isDark)
+            : CanteenTheme.surfaceMutedBg(isDark),
+        minimumSize: const Size.fromHeight(52),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+        ),
       ),
     );
   }
@@ -967,7 +1030,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   Future<bool> _ensureCanReview() async {
     if (_isOffline) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('该店当前已下架，暂不能发布新的评价')),
+        const SnackBar(content: Text('该商家当前已下架，暂不能发布新的评价')),
       );
       return false;
     }
@@ -1111,7 +1174,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               if (result != null) {
                 Navigator.pop(sheetContext);
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('食堂图片已更新')),
+                  const SnackBar(content: Text('商家图片已更新')),
                 );
                 setState(() {
                   _canteenData!['canteen'] = result;
@@ -1153,7 +1216,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        '编辑食堂封面',
+                        '编辑商家封面',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -1313,14 +1376,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   ) async {
     final cropperUiSettings = [
       AndroidUiSettings(
-        toolbarTitle: '调整食堂封面',
+        toolbarTitle: '调整商家封面',
         toolbarColor: accent,
         toolbarWidgetColor: Colors.white,
         lockAspectRatio: true,
         hideBottomControls: false,
       ),
       IOSUiSettings(
-        title: '调整食堂封面',
+        title: '调整商家封面',
         aspectRatioLockEnabled: true,
       ),
       WebUiSettings(
@@ -1376,9 +1439,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         return response.data['url'].toString();
       }
     } on DioException catch (e) {
-      debugPrint('上传食堂封面失败: ${e.type} status=${e.response?.statusCode}');
+      debugPrint('上传商家封面失败: ${e.type} status=${e.response?.statusCode}');
     } catch (e) {
-      debugPrint('处理食堂封面失败: ${e.runtimeType}');
+      debugPrint('处理商家封面失败: ${e.runtimeType}');
     }
     return null;
   }

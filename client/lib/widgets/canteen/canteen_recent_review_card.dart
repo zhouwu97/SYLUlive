@@ -256,7 +256,7 @@ class _CanteenRecentReviewCardState extends State<CanteenRecentReviewCard> {
 
   String _historyLabel(CanteenHomeReview review) {
     if (review.historyCount > 0) return '第${review.historyCount}次评价这家店';
-    return '最近到店评价';
+    return '最近商家评价';
   }
 
   String _formatTime(DateTime? createdAt) {

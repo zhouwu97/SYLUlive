@@ -5,7 +5,7 @@ import '../../config/api_constants.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 
-/// 食堂排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
+/// 商家排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
 /// 排名使用排版数字（01/02/03），图片 104x96 圆角 14，整行底部分割线。
 class CanteenRankingCard extends StatefulWidget {
   final int rank;

@@ -51,18 +51,33 @@ String _detailJson({
   ''';
 }
 
-Widget _buildApp(Dio dio) {
+Widget _buildApp(
+  Dio dio, {
+  Brightness brightness = Brightness.light,
+  TextScaler textScaler = TextScaler.noScaling,
+}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
       ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
     ],
-    child: const MaterialApp(
-      home: CanteenDetailScreen(
-        canteenId: 1,
-        canteenName: '我家有面',
-        dishCount: 2,
-        dishPhotoCount: 5,
+    child: MaterialApp(
+      theme: ThemeData(
+        brightness: brightness,
+        useMaterial3: true,
+      ),
+      home: Builder(
+        builder: (context) {
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: const CanteenDetailScreen(
+              canteenId: 1,
+              canteenName: '我家有面',
+              dishCount: 2,
+              dishPhotoCount: 5,
+            ),
+          );
+        },
       ),
     ),
   );
@@ -179,7 +194,7 @@ void main() {
     expect(find.text('带图评价'), findsNothing);
   });
 
-  testWidgets('菜品为空时图鉴区显示上传 CTA', (tester) async {
+  testWidgets('商家详情页收起时只有一个贡献内容入口', (tester) async {
     final dio = _dioWith(_detailJson());
     dio.httpClientAdapter = FakeAdapter((options) async {
       if (options.path == '/canteens/1' && options.method == 'GET') {
@@ -194,9 +209,48 @@ void main() {
     await tester.pumpWidget(_buildApp(dio));
     await tester.pumpAndSettle();
 
-    // 空态不再 SizedBox.shrink：显示上传 CTA
-    expect(find.text('还没有同学上传菜品实拍'), findsOneWidget);
+    // 菜品空态仍保留信息，但新增动作统一收进底部贡献入口。
+    expect(find.text('还没有菜品实拍'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsNothing);
+    expect(find.text('贡献内容'), findsOneWidget);
+    expect(find.text('添加一条新的商家评价...'), findsNothing);
+    expect(find.text('添加'), findsNothing);
+
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
+    expect(find.text('你想贡献什么？'), findsOneWidget);
+    expect(find.text('写商家评价'), findsOneWidget);
     expect(find.text('上传菜品实拍'), findsOneWidget);
+  });
+
+  testWidgets('暗色与大字号下贡献入口面板无溢出', (tester) async {
+    final dio = _dioWith(_detailJson());
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        return _json(_detailJson(), 200);
+      }
+      if (options.path == '/canteens/1/dishes' && options.method == 'GET') {
+        return _json('[]', 200);
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(
+      _buildApp(
+        dio,
+        brightness: Brightness.dark,
+        textScaler: const TextScaler.linear(1.3),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('贡献内容'), findsOneWidget);
+
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('写商家评价'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('筛选请求失败后回滚标签并提示，不拿旧数据冒充新筛选', (tester) async {

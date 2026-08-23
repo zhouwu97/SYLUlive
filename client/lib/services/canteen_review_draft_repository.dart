@@ -49,13 +49,29 @@ class CanteenReviewDraftRepository {
     int? reviewEventId,
   }) async {
     final baseDir = _baseDirOverride ?? await getApplicationSupportDirectory();
-    final dir = Directory(
-      '${baseDir.path}/canteen_review_drafts/$userId/$canteenId/${_normalizedMode(mode)}/${reviewEventId ?? 0}',
+    final dir = _draftDirectory(
+      baseDir: baseDir,
+      userId: userId,
+      canteenId: canteenId,
+      mode: mode,
+      reviewEventId: reviewEventId,
     );
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
     return dir;
+  }
+
+  Directory _draftDirectory({
+    required Directory baseDir,
+    required int userId,
+    required int canteenId,
+    required String mode,
+    required int? reviewEventId,
+  }) {
+    return Directory(
+      '${baseDir.path}/canteen_review_drafts/$userId/$canteenId/${_normalizedMode(mode)}/${reviewEventId ?? 0}',
+    );
   }
 
   /// 保存草稿。如果是空草稿，则执行删除。
@@ -185,13 +201,16 @@ class CanteenReviewDraftRepository {
     int? reviewEventId,
   }) async {
     try {
-      final dir = await getDraftDirectory(
+      final baseDir =
+          _baseDirOverride ?? await getApplicationSupportDirectory();
+      final dir = _draftDirectory(
+        baseDir: baseDir,
         userId: userId,
         canteenId: canteenId,
         mode: mode,
         reviewEventId: reviewEventId,
       );
-      if (await dir.exists()) {
+      if (dir.existsSync()) {
         await dir.delete(recursive: true);
       }
     } catch (e) {

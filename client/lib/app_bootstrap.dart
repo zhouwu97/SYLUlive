@@ -733,7 +733,10 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   pushClient.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: true,
+    production: const bool.fromEnvironment(
+      'JPUSH_PRODUCTION',
+      defaultValue: !kDebugMode,
+    ),
     debug: kDebugMode,
   );
 

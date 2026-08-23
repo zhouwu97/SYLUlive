@@ -16,6 +16,18 @@ import (
 	"shenliyuan/internal/models"
 )
 
+func unwrapAgentToolMessage(t *testing.T, content string) string {
+	t.Helper()
+	var envelope struct {
+		Source string          `json:"source"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err == nil && envelope.Source == "untrusted_tool_data" {
+		return string(envelope.Data)
+	}
+	return content
+}
+
 type scriptedToolProvider struct {
 	mu       sync.Mutex
 	rounds   [][]ProviderEvent
@@ -559,6 +571,20 @@ func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testi
 	require.True(t, eventTypes["tool.requested"])
 	require.True(t, eventTypes["tool.executing"])
 	require.True(t, eventTypes["tool.completed"])
+	for _, event := range events {
+		if event.Type != "tool.completed" {
+			continue
+		}
+		var trace map[string]interface{}
+		require.NoError(t, json.Unmarshal(event.Payload, &trace))
+		if trace["call_id"] == "call_1" {
+			require.Equal(t, run.ID, trace["run_id"])
+			require.NotZero(t, trace["planning_round"])
+			require.Equal(t, float64(1), trace["constraint_version"])
+			require.Contains(t, trace, "duration_ms")
+			require.Contains(t, trace, "new_fact_count")
+		}
+	}
 }
 
 func TestAcademicRiskFallbackRejectsFalseReassurance(t *testing.T) {
@@ -741,7 +767,7 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	secondRequest := provider.Requests()[1]
 	require.Len(t, secondRequest.Messages, 4)
 	require.Equal(t, "tool", secondRequest.Messages[3].Role)
-	require.JSONEq(t, `{"source":"server_snapshot","failed_course_count":0}`, secondRequest.Messages[3].Content)
+	require.JSONEq(t, `{"source":"server_snapshot","failed_course_count":0}`, unwrapAgentToolMessage(t, secondRequest.Messages[3].Content))
 }
 
 func TestRuntimeRetriesSameToolAcrossSequentialConsentsBeforeCallingProvider(t *testing.T) {
@@ -817,7 +843,7 @@ func TestRuntimeRetriesSameToolAcrossSequentialConsentsBeforeCallingProvider(t *
 	secondRequest := provider.Requests()[1]
 	require.Len(t, secondRequest.Messages, 4)
 	require.Equal(t, "hy3_consent_call", secondRequest.Messages[3].ToolCallID)
-	require.JSONEq(t, `{"source":"hy3_mcp","gpa":3.72,"credits":96}`, secondRequest.Messages[3].Content)
+	require.JSONEq(t, `{"source":"hy3_mcp","gpa":3.72,"credits":96}`, unwrapAgentToolMessage(t, secondRequest.Messages[3].Content))
 
 	var call models.AIToolCall
 	require.NoError(t, db.First(&call, "call_id = ?", "hy3_consent_call").Error)
@@ -873,7 +899,7 @@ func TestResumeRunConsentRejectsOtherUserAndMismatchedScope(t *testing.T) {
 	require.Equal(t, 1, executions)
 	require.JSONEq(t,
 		`{"status":"completed","consent_granted":false,"scope":"ai_personal_data_access","instruction":"用户拒绝了本次访问，不要再次请求或假设可读取该数据"}`,
-		provider.Requests()[1].Messages[3].Content,
+		unwrapAgentToolMessage(t, provider.Requests()[1].Messages[3].Content),
 	)
 }
 

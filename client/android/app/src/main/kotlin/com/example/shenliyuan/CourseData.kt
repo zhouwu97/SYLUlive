@@ -62,15 +62,32 @@ object CourseDataReader {
 
     private fun parse(raw: String): WidgetCourseData {
         val obj = JSONObject(raw)
+        if (obj.has("schema_version") && obj.optInt("schema_version", -1) != 1) {
+            return WidgetCourseData()
+        }
         val title = obj.optString("title", "沈理院课表")
         val date = obj.optString("date", "")
+        val dateKey = obj.optString("date_key", "")
         val arr = obj.optJSONArray("courses") ?: JSONArray()
 
         val calendar = java.util.Calendar.getInstance()
         val currentMonth = calendar.get(java.util.Calendar.MONTH) + 1
         val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
         val datePrefix = "$currentMonth.$currentDay"
-        val isToday = date.startsWith(datePrefix) || date.startsWith("0$currentMonth.$currentDay")
+        val todayKey = "%04d-%02d-%02d".format(
+            java.util.Locale.ROOT,
+            calendar.get(java.util.Calendar.YEAR),
+            currentMonth,
+            currentDay,
+        )
+        val isToday = if (dateKey.isNotEmpty()) {
+            dateKey == todayKey
+        } else {
+            date.startsWith(datePrefix) || date.startsWith("0$currentMonth.$currentDay")
+        }
+        if (dateKey.isNotEmpty() && !isToday) {
+            return WidgetCourseData(title = title, date = "暂无今日数据")
+        }
         val currentMinutes = calendar.get(java.util.Calendar.HOUR_OF_DAY) * 60 + calendar.get(java.util.Calendar.MINUTE)
 
         val courses = mutableListOf<WidgetCourseData.Course>()

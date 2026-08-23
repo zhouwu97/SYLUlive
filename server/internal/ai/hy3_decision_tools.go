@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -745,12 +746,9 @@ func buildHy3AcademicSnapshot(gradesRaw json.RawMessage, credits academic.Contex
 	if len(coursesRaw) > 500 {
 		return nil, nil, errors.New("too_many_courses")
 	}
-	courses := make([]map[string]interface{}, 0, len(coursesRaw))
-	for _, raw := range coursesRaw {
-		course, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
+	selectedCourses := selectBestGradeRecords(coursesRaw)
+	courses := make([]map[string]interface{}, 0, len(selectedCourses))
+	for _, course := range selectedCourses {
 		name := firstHy3String(course, "course_name", "name", "course")
 		if name == "" {
 			continue
@@ -764,11 +762,19 @@ func buildHy3AcademicSnapshot(gradesRaw json.RawMessage, credits academic.Contex
 		}
 		if passed, ok := course["passed"].(bool); ok {
 			item["passed"] = passed
+		} else if gradeText := academicGradeText(course); gradeText != "" {
+			if score, err := strconv.ParseFloat(gradeText, 64); err == nil && score >= 0 && score <= 100 {
+				item["grade"] = score
+				item["passed"] = score >= 60
+			} else {
+				item["grade"] = truncateHy3Text(gradeText, 100)
+				if passed, known := gradePassState(course); known {
+					item["passed"] = passed
+				}
+			}
 		} else if score, ok := firstHy3Number(course, "fraction", "score"); ok {
 			item["grade"] = score
 			item["passed"] = score >= 60
-		} else if grade := firstHy3String(course, "grade", "score_text"); grade != "" {
-			item["grade"] = truncateHy3Text(grade, 100)
 		}
 		courses = append(courses, item)
 	}

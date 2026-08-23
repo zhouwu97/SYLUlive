@@ -1648,19 +1648,33 @@ type gradeSummary struct {
 	FailedCredits     float64  `json:"failed_credits"`
 	UnknownGradeCount int      `json:"unknown_grade_count"`
 	FailedCourses     []string `json:"failed_courses"`
+	CoveredTerms      []string `json:"covered_terms"`
 }
 
 func summarizeGrades(raw json.RawMessage) gradeSummary {
 	data := decodeJSONObject(raw)
 	values, _ := data["grades"].([]interface{})
-	summary := gradeSummary{CourseCount: len(values), FailedCourses: make([]string, 0)}
-	var weightedPoints float64
-	for _, value := range values {
-		item, ok := value.(map[string]interface{})
-		if !ok {
-			summary.UnknownGradeCount++
-			continue
+	selected := selectBestGradeRecords(values)
+	summary := gradeSummary{CourseCount: len(selected), FailedCourses: make([]string, 0), CoveredTerms: make([]string, 0)}
+	if terms, ok := data["covered_terms"].([]interface{}); ok {
+		for _, rawTerm := range terms {
+			term, ok := rawTerm.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if scope := firstString(term, "scope_key"); scope != "" {
+				summary.CoveredTerms = append(summary.CoveredTerms, academicTermLabel(scope))
+				continue
+			}
+			year := firstString(term, "year")
+			semester, semesterOK := jsonNumber(term["semester"])
+			if year != "" && semesterOK {
+				summary.CoveredTerms = append(summary.CoveredTerms, academicTermLabel(fmt.Sprintf("%s:%d", year, int(semester))))
+			}
 		}
+	}
+	var weightedPoints float64
+	for _, item := range selected {
 		credits, creditOK := jsonNumber(item["credits"])
 		gpa, gpaOK := jsonNumber(item["gpa"])
 		if creditOK {
@@ -1690,6 +1704,125 @@ func summarizeGrades(raw json.RawMessage) gradeSummary {
 	return summary
 }
 
+func academicTermLabel(scope string) string {
+	parts := strings.Split(strings.TrimSpace(scope), ":")
+	if len(parts) != 2 {
+		return strings.TrimSpace(scope)
+	}
+	semester, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return strings.TrimSpace(scope)
+	}
+	semesterLabel := map[int]string{3: "第一学期", 12: "第二学期"}[semester]
+	if semesterLabel == "" {
+		return strings.TrimSpace(scope)
+	}
+	return strings.TrimSpace(parts[0]) + " " + semesterLabel
+}
+
+// selectBestGradeRecords 合并跨学期成绩时只保留每门课程的最佳有效记录。
+// 教务系统可能同时返回首次成绩、补考和重修记录；全部累加会重复计算学分，
+// 也会把已经通过的课程继续当成挂科风险。
+func selectBestGradeRecords(values []interface{}) []map[string]interface{} {
+	selected := make([]map[string]interface{}, 0, len(values))
+	indexes := make(map[string]int, len(values))
+	for index, raw := range values {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		key := firstString(item, "course_id", "course_code")
+		if key == "" {
+			key = normalizeGradeCourseName(firstString(item, "course_name", "name", "title"))
+		}
+		if key == "" {
+			key = fmt.Sprintf("__row_%d", index)
+		}
+		if existingIndex, exists := indexes[key]; exists {
+			if shouldReplaceGradeRecord(selected[existingIndex], item) {
+				selected[existingIndex] = item
+			}
+			continue
+		}
+		indexes[key] = len(selected)
+		selected = append(selected, item)
+	}
+	return selected
+}
+
+func normalizeGradeCourseName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n', '·', '・', '-', '_', '—':
+			return -1
+		default:
+			return r
+		}
+	}, value)
+}
+
+func shouldReplaceGradeRecord(existing, candidate map[string]interface{}) bool {
+	existingPassed, existingKnown := gradePassState(existing)
+	candidatePassed, candidateKnown := gradePassState(candidate)
+	if candidateKnown && existingKnown && candidatePassed != existingPassed {
+		return candidatePassed
+	}
+	if candidateScore, ok := gradeScore(candidate); ok {
+		if existingScore, existingOK := gradeScore(existing); existingOK && candidateScore != existingScore {
+			return candidateScore > existingScore
+		}
+	}
+	// 快照按 fetched_at 倒序合并；相同成绩保留先出现的最新记录。
+	return false
+}
+
+func gradePassState(item map[string]interface{}) (bool, bool) {
+	if passed, ok := item["passed"].(bool); ok {
+		return passed, true
+	}
+	text := academicGradeText(item)
+	switch text {
+	case "优秀", "良好", "中等", "合格", "及格", "通过":
+		return true, true
+	case "不及格", "不合格", "未通过", "缺考", "旷考", "作弊":
+		return false, true
+	}
+	if score, ok := gradeScore(item); ok {
+		return score >= 60, true
+	}
+	return false, false
+}
+
+func gradeScore(item map[string]interface{}) (float64, bool) {
+	text := academicGradeText(item)
+	if text != "" {
+		if score, err := strconv.ParseFloat(text, 64); err == nil && score >= 0 && score <= 100 {
+			return score, true
+		}
+	}
+	for _, key := range []string{"fraction", "score"} {
+		if score, ok := jsonNumber(item[key]); ok && score >= 0 && score <= 100 {
+			return score, true
+		}
+	}
+	return 0, false
+}
+
+func academicGradeText(item map[string]interface{}) string {
+	for _, key := range []string{"grade", "effective_grade", "score_text"} {
+		value, ok := item[key]
+		if !ok || value == nil {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text != "" && text != "<nil>" && text != "--" && text != "未录入" && text != "缓考" {
+			return text
+		}
+	}
+	return ""
+}
+
 func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.ContextResult, requested []academic.DatasetType) (map[string]interface{}, []string) {
 	data := map[string]interface{}{
 		"coverage":   make(map[string]string, len(requested)),
@@ -1703,6 +1836,7 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	actions := data["actions"].([]string)
 	toConfirm := data["to_confirm"].([]string)
 	usableCount := 0
+	incompleteData := false
 
 	grades := results[academic.DatasetGrades]
 	coverage[string(academic.DatasetGrades)] = string(grades.Status)
@@ -1710,6 +1844,14 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		usableCount++
 		summary := summarizeGrades(grades.Data)
 		data["grades"] = summary
+		if grades.IsStale {
+			incompleteData = true
+			toConfirm = append(toConfirm, "成绩快照已过期，最新变动请先刷新教务数据后再核对")
+		}
+		if grades.IsPartial {
+			incompleteData = true
+			toConfirm = append(toConfirm, "成绩快照覆盖不完整，不能据此断言全部学期没有风险")
+		}
 		if summary.FailedCourseCount > 0 {
 			risk := fmt.Sprintf("发现 %d 门未通过课程", summary.FailedCourseCount)
 			if len(summary.FailedCourses) > 0 {
@@ -1735,6 +1877,9 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		coverage[string(dataset)] = string(result.Status)
 		if usablePersonalResult(result) {
 			usableCount++
+			if result.IsStale || result.IsPartial {
+				incompleteData = true
+			}
 			if len(credit) == 0 || (len(credit) == 1 && credit["available"] == true) {
 				credit = extractCreditFields(result.Data)
 			}
@@ -1764,6 +1909,9 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	coverage[string(academic.DatasetErke)] = string(erke.Status)
 	if usablePersonalResult(erke) {
 		usableCount++
+		if erke.IsStale || erke.IsPartial {
+			incompleteData = true
+		}
 		overview := extractErkeOverview(erke.Data)
 		data["erke"] = overview
 		if gap, ok := jsonNumber(overview["graduation_gap"]); ok && gap > 0 {
@@ -1777,10 +1925,10 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 
 	data["available_dataset_count"] = usableCount
 	data["requested_dataset_count"] = len(requested)
-	if len(risks) == 0 {
+	if len(risks) == 0 && !incompleteData && usableCount >= len(requested) {
 		data["risk_level"] = "no_observed_risk"
 		toConfirm = append(toConfirm, "毕业学分、必修课和二课要求以学校当期培养方案及教务审核为准")
-	} else if usableCount < len(requested) {
+	} else if incompleteData || usableCount < len(requested) {
 		data["risk_level"] = "incomplete"
 		toConfirm = append(toConfirm, "当前数据覆盖不完整，不能据此断言整体没有风险")
 	} else {
@@ -1853,18 +2001,26 @@ func gradeFailed(item map[string]interface{}) bool {
 	if passed, ok := item["passed"].(bool); ok {
 		return !passed
 	}
-	if score, ok := jsonNumber(item["fraction"]); ok {
+	value := strings.ToUpper(academicGradeText(item))
+	if value == "优秀" || value == "良好" || value == "中等" || value == "合格" || value == "及格" || value == "通过" {
+		return false
+	}
+	if value == "F" || strings.Contains(value, "不及格") || strings.Contains(value, "不合格") || strings.Contains(value, "未通过") || strings.Contains(value, "挂科") {
+		return true
+	}
+	if score, ok := gradeScore(item); ok {
 		return score < 60
 	}
-	value := strings.ToUpper(strings.TrimSpace(fmt.Sprint(item["grade"])))
-	return value == "F" || strings.Contains(value, "不及格") || strings.Contains(value, "挂科")
+	return false
 }
 func gradeKnown(item map[string]interface{}) bool {
+	if academicGradeText(item) != "" {
+		return true
+	}
 	if _, ok := jsonNumber(item["fraction"]); ok {
 		return true
 	}
-	value := strings.TrimSpace(fmt.Sprint(item["grade"]))
-	return value != "" && value != "<nil>"
+	return false
 }
 
 func extractCreditFields(raw json.RawMessage) map[string]interface{} {

@@ -155,14 +155,15 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
       };
 
   static String _title(AiRunEvent? event, bool completed) {
-    if (completed) return '已使用最新数据';
+    if (completed) return '已完成本次数据核对';
     return switch (event?.type) {
       null || AiRunEventType.started || AiRunEventType.status => '正在连接校园 Agent',
       AiRunEventType.deviceWaiting ||
       AiRunEventType.consentRequired =>
         '正在准备设备数据',
       AiRunEventType.deviceClaimed => '正在读取个人数据',
-      AiRunEventType.eduFetching => '正在更新成绩数据',
+      AiRunEventType.eduFetching =>
+        '正在更新${_datasetLabel(event?.datasets ?? const [])}数据',
       AiRunEventType.toolCompleted => '数据已准备，正在继续回答',
       AiRunEventType.failed => 'Agent 处理未完成',
       AiRunEventType.cancelled => '本次处理已取消',
@@ -171,7 +172,9 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
   }
 
   static String _detail(AiRunEvent? event, bool completed) {
-    if (completed) return '课表与成绩来源已核对';
+    if (completed) {
+      return '已完成${_datasetLabel(event?.datasets ?? const [])}数据处理，回答仅使用已核验结果';
+    }
     return switch (event?.type) {
       null || AiRunEventType.started => '正在建立安全会话',
       AiRunEventType.deviceWaiting ||
@@ -246,7 +249,7 @@ class _DetailsPanel extends StatelessWidget {
       child: Column(
         children: [
           _StepRow(
-              title: '检查服务端快照', detail: '$dataLabel · 当前可用', state: _state(1)),
+              title: '检查服务端快照', detail: '$dataLabel · 已检查来源', state: _state(1)),
           _StepRow(
               title: '判断是否需要设备',
               detail: stage >= 2 ? '当前问题要求最新数据' : '先判断数据新鲜度',

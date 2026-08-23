@@ -372,7 +372,7 @@ func (r *Runtime) Execute(runID, message string) {
 	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
 	} else if hasTools {
-		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’。"
+		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’；如果结果提供 covered_terms，必须明确说明分析覆盖的学期范围，不能把单学期统计冒充全部成绩。"
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},
@@ -404,9 +404,16 @@ func (r *Runtime) Execute(runID, message string) {
 		r.failAfterProvider(runID, false, ProviderErrorInvalid, outcome.usage, time.Since(startedAt))
 		return
 	}
-	if academicAnswerNeedsGuard(outcome.answer, outcome.academicFallback, outcome.academicRiskSeen) {
-		outcome.answer = outcome.academicFallback
+	// 再从本次运行的审计结果读取一次综合学业分析。工具循环已经保留了
+	// fallback，但这里用持久化结果做最终兜底，避免 Provider 在工具完成后
+	// 返回泛化校园回答，导致已核验的个人成绩事实被覆盖。
+	if fallback, riskSeen := r.verifiedAcademicRiskFallback(ctx, runID); fallback != "" {
+		outcome.academicFallback = fallback
+		outcome.academicRiskSeen = riskSeen
 	}
+	// 综合学业分析的事实由确定性工具生成。只要工具已成功返回风险结果，
+	// 最终发布就使用同一份已校验事实，避免模型用泛化校园问答覆盖成绩结论。
+	outcome.answer = academicRiskFinalAnswer(outcome.answer, outcome.academicFallback, outcome.academicRiskSeen)
 	r.markQuotaConsumed(runID)
 	now := time.Now()
 	_ = r.db.Model(&models.AIRun{}).Where("id = ? AND started_at IS NULL", runID).Update("started_at", now).Error
@@ -417,10 +424,36 @@ func (r *Runtime) Execute(runID, message string) {
 	}
 	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
 	procedureClaim := containsCampusProcedureClaim(outcome.answer)
-	validateCitations := procedureClaim || (len(retrieval.Chunks) > 0 &&
+	// 学业风险回答的成绩事实和行动项来自已校验的个人工具结果；本轮没有
+	// 政策分块时，不应因为“补考/重修”等行动词触发无来源引用过滤。
+	validateCitations := (!outcome.academicRiskSeen && procedureClaim) || (len(retrieval.Chunks) > 0 &&
 		((!outcome.toolUsed && queryPlan.IsPolicyIntent()) ||
 			strings.Contains(outcome.answer, "[chunk:")))
 	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations, outcome.citationFallback)
+}
+
+// verifiedAcademicRiskFallback 从当前 Run 已完成的学业风险工具调用中读取
+// 持久化结果，保证最终回答和审计事实使用同一份数据。
+func (r *Runtime) verifiedAcademicRiskFallback(ctx context.Context, runID string) (string, bool) {
+	if r == nil || r.db == nil || strings.TrimSpace(runID) == "" {
+		return "", false
+	}
+	var calls []models.AIToolCall
+	err := r.db.WithContext(ctx).
+		Where("run_id = ? AND status = ? AND tool_name IN ?", runID, "completed", []string{
+			"academic.get_risk_analysis", "academic_get_risk_analysis",
+		}).
+		Order("completed_at DESC").
+		Find(&calls).Error
+	if err != nil {
+		return "", false
+	}
+	for _, call := range calls {
+		if fallback, riskSeen := academicRiskFallback(call.ToolName, json.RawMessage(call.ResultJSON)); fallback != "" {
+			return fallback, riskSeen
+		}
+	}
+	return "", false
 }
 
 func containsCampusProcedureClaim(answer string) bool {

@@ -80,7 +80,7 @@ func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int
 	return services.AggregateSummaryTagsInMemory(raws, topK)
 }
 
-// batchRecentReviewCounts 批量统计所有食堂近 days 天内的评价数（消除按店 N+1）。
+// batchRecentReviewCounts 批量统计所有食堂近 days 天内的评价事件数（消除按店 N+1）。
 func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
 	type countRow struct {
 		CanteenID uint  `gorm:"column:canteen_id"`
@@ -213,22 +213,26 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 
 // canteenFeedItem 首页信息流条目（对应客户端 CanteenFeedItem）。
 type canteenFeedItem struct {
-	ID              string   `json:"id"`
-	Type            string   `json:"type"`
-	CanteenID       uint     `json:"canteen_id"`
-	CanteenName     string   `json:"canteen_name"`
-	OperatingStatus string   `json:"operating_status"`
-	Image           string   `json:"image,omitempty"`
-	DishID          uint     `json:"dish_id,omitempty"`
-	DishName        string   `json:"dish_name,omitempty"`
-	Title           string   `json:"title"`
-	Reason          string   `json:"reason,omitempty"`
-	RankingScore    float64  `json:"ranking_score,omitempty"`
-	AverageStar     float64  `json:"average_star,omitempty"`
-	RatingCount     int      `json:"rating_count,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
-	Images          []string `json:"images,omitempty"`
-	CreatedAt       string   `json:"created_at,omitempty"`
+	ID                string             `json:"id"`
+	Type              string             `json:"type"`
+	CanteenID         uint               `json:"canteen_id"`
+	CanteenName       string             `json:"canteen_name"`
+	OperatingStatus   string             `json:"operating_status"`
+	Image             string             `json:"image,omitempty"`
+	DishID            uint               `json:"dish_id,omitempty"`
+	DishName          string             `json:"dish_name,omitempty"`
+	Title             string             `json:"title"`
+	Reason            string             `json:"reason,omitempty"`
+	RankingScore      float64            `json:"ranking_score,omitempty"`
+	AverageStar       float64            `json:"average_star,omitempty"`
+	RatingCount       int                `json:"rating_count,omitempty"`
+	Tags              []string           `json:"tags,omitempty"`
+	Images            []string           `json:"images,omitempty"`
+	CreatedAt         string             `json:"created_at,omitempty"`
+	DimensionScores   map[string]float64 `json:"dimension_scores,omitempty"`
+	ReviewerCount     int                `json:"reviewer_count,omitempty"`
+	VisitReviewCount  int                `json:"visit_review_count,omitempty"`
+	RecentReviewCount int                `json:"recent_review_count,omitempty"`
 }
 
 // buildFeedReason 由近 30 天标签聚合生成一句稳定、可解释的推荐理由。
@@ -384,12 +388,14 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 			CanteenName:     e.Name,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
-			Title:           "今天可以优先看看",
-			Reason:          buildFeedReason(tags, e.AverageStar, e.RatingCount),
-			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:     e.AverageStar,
-			RatingCount:     e.RatingCount,
-			Tags:            names,
+			// Title 仅保留兼容字段；首页客户端使用 Type 映射轻量标签，
+			// 不再把推荐理由当作店铺卡主标题。
+			Title:        "综合推荐",
+			Reason:       buildFeedReason(tags, e.AverageStar, e.RatingCount),
+			RankingScore: services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:  e.AverageStar,
+			RatingCount:  e.RatingCount,
+			Tags:         names,
 		}
 	}
 	return nil
@@ -414,7 +420,7 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 			CanteenName:     e.Name,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
-			Title:           "想吃稳一点？",
+			Title:           "评价稳定",
 			Reason:          "评价样本相对更多，结果受单条评价影响更小",
 			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
 			AverageStar:     e.AverageStar,
@@ -445,7 +451,7 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 			CanteenName:     e.Name,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
-			Title:           "最近大家也在吃",
+			Title:           "近期热门",
 			Reason:          fmt.Sprintf("近 7 天新增 %d 条评价", recent),
 			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
 			AverageStar:     e.AverageStar,
@@ -512,7 +518,7 @@ type canteenPhotoItem struct {
 	CreatedAt   time.Time
 }
 
-// canteenHotDishItem 首页“同学最近在吃”的菜品卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
+// canteenHotDishItem 首页“热门菜品”卡，数据只来自已上架菜品、审核通过实拍和 V2 菜品摘要。
 type canteenHotDishItem struct {
 	ID                     uint    `json:"id"`
 	Name                   string  `json:"name"`
@@ -617,7 +623,7 @@ func pickPhoto(pool []canteenPhotoItem, seen map[uint]int, lastCanteen uint, las
 			OperatingStatus: models.CanteenOperatingActive,
 			DishID:          p.DishID,
 			DishName:        p.DishName,
-			Title:           "同学最近实拍",
+			Title:           "最近实拍",
 			Reason:          p.DishName + " · 看看最近实际卖相",
 			Images:          []string{p.Image},
 			CreatedAt:       p.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -644,9 +650,22 @@ func itoa(v int) string {
 	return strconv.Itoa(v)
 }
 
+// sumRecentReviewCounts 汇总近 7 天到店评价事件，用于兼容旧首页字段。
+// 该字段不是今日按用户-食堂去重后的有效评价人数，不参与评分。
+func sumRecentReviewCounts(counts map[uint]int64) int {
+	total := 0
+	for _, count := range counts {
+		if count > 0 {
+			total += int(count)
+		}
+	}
+	return total
+}
+
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
-	cacheKey := "home:v2"
+	// 首页响应新增 recent_reviews 与今日去重样本计数，单独升级缓存键避免命中旧结构。
+	cacheKey := "home:v3"
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
@@ -684,18 +703,22 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			tagNames = append(tagNames, t.Name)
 		}
 		heroItem := &canteenFeedItem{
-			ID:              fmt.Sprintf("recommended_store:%d:v1", e.ID),
-			Type:            "recommended_store",
-			CanteenID:       e.ID,
-			CanteenName:     e.Name,
-			OperatingStatus: e.OperatingStatus,
-			Image:           e.Image,
-			Title:           "今日推荐",
-			Reason:          buildFeedReason(tags, e.AverageStar, e.RatingCount),
-			RankingScore:    services.BayesianScoreTo100(e.RankingScore),
-			AverageStar:     e.AverageStar,
-			RatingCount:     e.RatingCount,
-			Tags:            tagNames,
+			ID:                fmt.Sprintf("recommended_store:%d:v1", e.ID),
+			Type:              "recommended_store",
+			CanteenID:         e.ID,
+			CanteenName:       e.Name,
+			OperatingStatus:   e.OperatingStatus,
+			Image:             e.Image,
+			Title:             "综合推荐",
+			Reason:            buildFeedReason(tags, e.AverageStar, e.RatingCount),
+			RankingScore:      services.BayesianScoreTo100(e.RankingScore),
+			AverageStar:       e.AverageStar,
+			RatingCount:       e.RatingCount,
+			Tags:              tagNames,
+			DimensionScores:   e.DimensionScores,
+			ReviewerCount:     e.ReviewerCount,
+			VisitReviewCount:  e.VisitReviewCount,
+			RecentReviewCount: int(recentCounts[e.ID]),
 		}
 		hero = heroItem
 		break
@@ -724,13 +747,17 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	}
 	feed := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
 	hotDishes := h.hotDishes(4)
+	recentReviews := h.loadRecentHomeReviews(5)
 
 	resp := gin.H{
-		"generated_at":  time.Now(),
-		"hero":          hero,
-		"ranking_entry": rankingEntry,
-		"feed":          feed,
-		"hot_dishes":    hotDishes,
+		"generated_at":                   time.Now(),
+		"hero":                           hero,
+		"ranking_entry":                  rankingEntry,
+		"feed":                           feed,
+		"hot_dishes":                     hotDishes,
+		"recent_reviews":                 recentReviews,
+		"today_effective_reviewer_count": h.todayEffectiveReviewerCount(),
+		"recent_effective_review_count":  sumRecentReviewCounts(recentCounts),
 	}
 	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
 	c.JSON(200, resp)

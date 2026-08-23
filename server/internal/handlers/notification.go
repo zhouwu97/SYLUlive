@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"shenliyuan/internal/models"
 	textutils "shenliyuan/internal/utils"
@@ -12,8 +15,47 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"time"
 )
+
+const (
+	notificationPageSize       = 30
+	notificationMaxPageSize    = 50
+	legacyNotificationPageSize = 100
+)
+
+type notificationCursor struct {
+	CreatedAt string `json:"created_at"`
+	ID        uint   `json:"id"`
+}
+
+func encodeNotificationCursor(createdAt time.Time, id uint) string {
+	payload, err := json.Marshal(notificationCursor{
+		CreatedAt: createdAt.UTC().Format(time.RFC3339Nano),
+		ID:        id,
+	})
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeNotificationCursor(raw string) (notificationCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return notificationCursor{}, err
+	}
+	var cursor notificationCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return notificationCursor{}, err
+	}
+	if cursor.ID == 0 || cursor.CreatedAt == "" {
+		return notificationCursor{}, fmt.Errorf("invalid notification cursor")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt); err != nil {
+		return notificationCursor{}, err
+	}
+	return cursor, nil
+}
 
 // NotificationHandler 通知处理器
 type NotificationHandler struct {
@@ -48,15 +90,67 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
+	_, hasLimitParam := c.GetQuery("limit")
+	_, hasCursorParam := c.GetQuery("cursor")
+	paginationRequested := hasLimitParam || hasCursorParam
+
+	limit := notificationPageSize
+	if !paginationRequested {
+		// 无 query 的请求仍由旧客户端消费数组格式，保留历史最多 100 条行为。
+		limit = legacyNotificationPageSize
+	}
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":  "invalid_limit",
+				"error": "limit必须是正整数",
+			})
+			return
+		}
+		limit = parsed
+		if limit > notificationMaxPageSize {
+			limit = notificationMaxPageSize
+		}
+	}
+
+	var cursor notificationCursor
+	var cursorTime time.Time
+	if raw := c.Query("cursor"); raw != "" {
+		var err error
+		cursor, err = decodeNotificationCursor(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":  "invalid_cursor",
+				"error": "通知游标无效",
+			})
+			return
+		}
+		cursorTime, _ = time.Parse(time.RFC3339Nano, cursor.CreatedAt)
+	}
 
 	var notifications []models.Notification
-	if err := h.db.Where("user_id = ?", uid).
-		Where("type != ?", models.RetiredNotificationTypeMarketPost).
-		Order("created_at desc").
-		Limit(100).
-		Find(&notifications).Error; err != nil {
+	query := h.db.Where("user_id = ?", uid).
+		Where("type != ?", models.RetiredNotificationTypeMarketPost)
+	if c.Query("cursor") != "" {
+		query = query.Where(
+			"(created_at < ? OR (created_at = ? AND id < ?))",
+			cursorTime,
+			cursorTime,
+			cursor.ID,
+		)
+	}
+	queryLimit := limit
+	if paginationRequested {
+		queryLimit++
+	}
+	if err := query.Order("created_at desc, id desc").Limit(queryLimit).Find(&notifications).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取通知失败"})
 		return
+	}
+	hasMore := paginationRequested && len(notifications) > limit
+	if hasMore {
+		notifications = notifications[:limit]
 	}
 
 	type UserInfo struct {
@@ -70,7 +164,7 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 		FromUser *UserInfo `json:"from_user"`
 	}
 
-	var res []NotificationRes
+	res := make([]NotificationRes, 0, len(notifications))
 	userIDs := make([]uint, 0, len(notifications))
 	for _, n := range notifications {
 		if n.FromUID > 0 {
@@ -96,7 +190,21 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 		res = append(res, item)
 	}
 
-	c.JSON(http.StatusOK, res)
+	nextCursor := ""
+	if hasMore && len(notifications) > 0 {
+		last := notifications[len(notifications)-1]
+		nextCursor = encodeNotificationCursor(last.CreatedAt, last.ID)
+	}
+	if !paginationRequested {
+		// 保留无 query 请求的旧数组响应，避免旧客户端因新增分页 envelope 直接解析失败。
+		c.JSON(http.StatusOK, res)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":       res,
+		"next_cursor": nextCursor,
+		"has_more":    hasMore,
+	})
 }
 
 // MarkAllRead 将所有通知标记为已读

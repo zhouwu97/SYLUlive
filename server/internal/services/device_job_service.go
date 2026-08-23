@@ -27,10 +27,18 @@ const (
 )
 
 var deviceToolRequirements = map[string][]string{
-	"device.academic.get_cached_overview": {"academic"},
-	"device.schedule.get_cached_week":     {"schedule"},
-	"device.academic.get_credit_summary":  {"academic"},
-	"device.erke.get_cached_overview":     {"erke"},
+	"device.academic.get_cached_overview":         {"academic"},
+	"device.academic.get_cached_grade_summary":    {"grades"},
+	"device.academic.get_cached_risk_context":     {"grades"},
+	"device.schedule.get_cached_week":             {"schedule"},
+	"device.academic.get_credit_summary":          {"academic"},
+	"device.erke.get_cached_overview":             {"erke"},
+	"device.academic.ensure_fresh_overview":       {"academic"},
+	"device.academic.ensure_fresh_grade_summary":  {"grades"},
+	"device.academic.ensure_fresh_risk_context":   {"grades"},
+	"device.schedule.ensure_fresh_week":           {"schedule"},
+	"device.academic.ensure_fresh_credit_summary": {"academic"},
+	"device.erke.ensure_fresh_overview":           {"erke"},
 }
 
 type DeviceJobError struct {
@@ -140,6 +148,17 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 	if err != nil || containsForbiddenIdentity(arguments) || !validDeviceToolArguments(request.ToolName, arguments) {
 		return nil, newDeviceJobError("invalid_tool_arguments")
 	}
+	arguments = clampDeviceFreshnessArguments(request.ToolName, arguments)
+	var existing models.DeviceToolJob
+	lookupErr := s.db.WithContext(ctx).
+		Where("user_id = ? AND run_id = ? AND tool_call_id = ?", request.UserID, strings.TrimSpace(request.RunID), strings.TrimSpace(request.ToolCallID)).
+		First(&existing).Error
+	if lookupErr == nil {
+		return &existing, nil
+	}
+	if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+		return nil, lookupErr
+	}
 	now := s.clock().UTC()
 	expiresAt := request.ExpiresAt.UTC()
 	if expiresAt.IsZero() {
@@ -160,6 +179,13 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 		Status: models.DeviceToolJobPending, ExpiresAt: expiresAt,
 	}
 	if err := s.db.WithContext(ctx).Create(&job).Error; err != nil {
+		// 并发重试可能已经由另一请求创建了同一 tool call；唯一索引负责
+		// 最终裁决，此处返回已有 Job 让 Run resume 保持幂等。
+		if lookupErr := s.db.WithContext(ctx).
+			Where("user_id = ? AND run_id = ? AND tool_call_id = ?", request.UserID, job.RunID, job.ToolCallID).
+			First(&existing).Error; lookupErr == nil {
+			return &existing, nil
+		}
 		return nil, err
 	}
 	return &job, nil
@@ -211,7 +237,7 @@ func (s *DeviceJobService) PendingJobs(ctx context.Context, userID uint, install
 	}
 	var jobs []models.DeviceToolJob
 	err := s.db.WithContext(ctx).
-		Where("user_id = ? AND installation_id = ? AND status IN ? AND expires_at > ?", userID, installationID, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed}, now).
+		Where("user_id = ? AND installation_id = ? AND status IN ? AND expires_at > ?", userID, installationID, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobWaitingUser}, now).
 		Order("created_at ASC").Limit(20).Find(&jobs).Error
 	return jobs, err
 }
@@ -254,11 +280,51 @@ func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installati
 		if job.StateVersion != stateVersion {
 			return newDeviceJobError("state_version_conflict")
 		}
-		if job.Status != models.DeviceToolJobPending && job.Status != models.DeviceToolJobPushed {
+		if job.Status != models.DeviceToolJobPending && job.Status != models.DeviceToolJobPushed && job.Status != models.DeviceToolJobWaitingUser {
 			return newDeviceJobError("invalid_job_state")
 		}
 		updates := map[string]interface{}{"status": models.DeviceToolJobClaimed, "claimed_at": now, "state_version": gorm.Expr("state_version + 1")}
-		if err := tx.Model(&models.DeviceToolJob{}).Where("id = ? AND state_version = ? AND status IN ?", job.ID, stateVersion, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed}).Updates(updates).Error; err != nil {
+		if err := tx.Model(&models.DeviceToolJob{}).Where("id = ? AND state_version = ? AND status IN ?", job.ID, stateVersion, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobWaitingUser}).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", job.ID).First(&result).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ProgressJob 接受设备桥接的固定阶段，不接受客户端自定义文案或任意状态。
+func (s *DeviceJobService) ProgressJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, stage string) (*models.DeviceToolJob, error) {
+	if stateVersion < 0 || !validDeviceJobStage(stage) {
+		return nil, newDeviceJobError("invalid_progress_stage")
+	}
+	if err := s.requireActiveDevice(ctx, userID, installationID); err != nil {
+		return nil, err
+	}
+	now := s.clock().UTC()
+	var result models.DeviceToolJob
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var job models.DeviceToolJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ? AND installation_id = ?", jobID, userID, installationID).First(&job).Error; err != nil {
+			return mapDeviceJobNotFound(err)
+		}
+		if !job.ExpiresAt.After(now) {
+			return expireLockedJob(tx, &job, now)
+		}
+		if job.StateVersion != stateVersion || !isProgressTransitionAllowed(job, stage) {
+			return newDeviceJobError("state_version_conflict")
+		}
+		updates := map[string]interface{}{"progress_stage": stage, "state_version": gorm.Expr("state_version + 1")}
+		if stage == models.DeviceJobStageRefreshStarted || stage == models.DeviceJobStageReadingResult {
+			updates["status"] = models.DeviceToolJobRunning
+		}
+		if stage == models.DeviceJobStageRefreshFailed {
+			// 仅记录真实刷新阶段；FailJob 仍负责统一终态和错误码。
+		}
+		if err := tx.Model(&models.DeviceToolJob{}).Where("id = ? AND state_version = ?", job.ID, stateVersion).Updates(updates).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ?", job.ID).First(&result).Error
@@ -294,16 +360,42 @@ func (s *DeviceJobService) CompleteJob(ctx context.Context, userID uint, install
 // validDeviceToolResult 将设备回传固定为每个工具的最小化结果信封，阻止客户端把完整缓存或任意字段写入服务端。
 func validDeviceToolResult(job models.DeviceToolJob, value json.RawMessage) bool {
 	var envelope map[string]json.RawMessage
-	if json.Unmarshal(value, &envelope) != nil || !hasExactJSONKeys(envelope, []string{
+	if json.Unmarshal(value, &envelope) != nil || (!hasExactJSONKeys(envelope, []string{
 		"data", "source", "fetched_at", "expires_at", "is_stale", "is_partial", "warnings", "evidence",
-	}) {
+	}) && !hasExactJSONKeys(envelope, []string{
+		"data", "source", "freshness", "refresh_performed", "fetched_at", "expires_at", "is_stale", "is_partial", "warnings", "evidence",
+	})) {
 		return false
 	}
-	if !jsonStringEquals(envelope["source"], "device_encrypted_cache") ||
+	ensureFresh := strings.Contains(job.ToolName, ".ensure_fresh_")
+	if (!jsonStringEquals(envelope["source"], "device_encrypted_cache") &&
+		(!ensureFresh || !jsonStringEquals(envelope["source"], "remote_edu_fetch"))) ||
 		!validOptionalRFC3339(envelope["fetched_at"]) || !validOptionalRFC3339(envelope["expires_at"]) ||
 		!validJSONBool(envelope["is_stale"]) || !validJSONBool(envelope["is_partial"]) ||
-		!validLimitedStringArray(envelope["warnings"], 16, 240) || !validDeviceEvidence(envelope["evidence"]) {
+		!validLimitedStringArray(envelope["warnings"], 16, 240) || !validDeviceEvidence(envelope["evidence"], ensureFresh) {
 		return false
+	}
+	if _, extended := envelope["freshness"]; extended {
+		if !validFreshness(envelope["freshness"]) || !validJSONBool(envelope["refresh_performed"]) {
+			return false
+		}
+	}
+	if ensureFresh {
+		// ensure_fresh 的语义是“返回时已满足新鲜度”，而不是“尝试过刷新”。
+		// 客户端即使刷新失败，也不能把旧缓存伪装成远端新数据回传。
+		var freshness map[string]json.RawMessage
+		if json.Unmarshal(envelope["freshness"], &freshness) != nil ||
+			!jsonStringEquals(freshness["after"], "fresh") ||
+			!jsonBoolEquals(envelope["is_stale"], false) {
+			return false
+		}
+		var refreshPerformed bool
+		if json.Unmarshal(envelope["refresh_performed"], &refreshPerformed) != nil {
+			return false
+		}
+		if refreshPerformed && !jsonStringEquals(envelope["source"], "remote_edu_fetch") {
+			return false
+		}
 	}
 	var data map[string]json.RawMessage
 	if json.Unmarshal(envelope["data"], &data) != nil {
@@ -314,13 +406,16 @@ func validDeviceToolResult(job models.DeviceToolJob, value json.RawMessage) bool
 
 func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessage) bool {
 	switch job.ToolName {
-	case "device.academic.get_cached_overview":
+	case "device.academic.get_cached_overview", "device.academic.ensure_fresh_overview":
 		if !hasExactJSONKeys(data, []string{"total_recorded_courses", "covered_term_count", "covered_terms", "academic_situation_available"}) ||
 			!validIntegerRange(data["total_recorded_courses"], 0, 500) || !validIntegerRange(data["covered_term_count"], 0, 32) || !validJSONBool(data["academic_situation_available"]) {
 			return false
 		}
 		return validAcademicTerms(data["covered_terms"], data["covered_term_count"])
-	case "device.schedule.get_cached_week":
+	case "device.academic.get_cached_grade_summary", "device.academic.ensure_fresh_grade_summary",
+		"device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
+		return validAcademicGradeSummary(data)
+	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
 		if !hasExactJSONKeys(data, []string{"week_start", "week_end", "courses"}) ||
 			!validDateString(data["week_start"]) || !validDateString(data["week_end"]) {
 			return false
@@ -337,7 +432,7 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 			return false
 		}
 		return validScheduleCourses(data["courses"], weekStart, weekEnd)
-	case "device.academic.get_credit_summary":
+	case "device.academic.get_credit_summary", "device.academic.ensure_fresh_credit_summary":
 		if !hasExactJSONKeys(data, []string{"attempted_credits", "passed_credits", "failed_credits", "required_failed_credits", "unknown_credits"}) ||
 			!validNumberRange(data["attempted_credits"], 0, 10000) || !validNumberRange(data["passed_credits"], 0, 10000) || !validNumberRange(data["failed_credits"], 0, 10000) || !validNumberRange(data["required_failed_credits"], 0, 10000) || !validNumberRange(data["unknown_credits"], 0, 10000) {
 			return false
@@ -347,7 +442,7 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 		failed, _ := decodeNumber(data["failed_credits"])
 		requiredFailed, _ := decodeNumber(data["required_failed_credits"])
 		return passed+failed <= attempted && requiredFailed <= failed
-	case "device.erke.get_cached_overview":
+	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
 		if !hasExactJSONKeys(data, []string{"earned_total", "required_total", "unmet_categories", "activity_count", "latest_activity_date"}) ||
 			!validOptionalJSONNumber(data["earned_total"]) || !validOptionalJSONNumber(data["required_total"]) ||
 			!validIntegerRange(data["activity_count"], 0, 100000) || !validOptionalString(data["latest_activity_date"], 10) {
@@ -413,19 +508,38 @@ func validErkeCategories(value json.RawMessage) bool {
 	return true
 }
 
-func validDeviceEvidence(value json.RawMessage) bool {
+func validDeviceEvidence(value json.RawMessage, allowRemote bool) bool {
 	var evidence []map[string]json.RawMessage
 	if string(value) == "null" || json.Unmarshal(value, &evidence) != nil || len(evidence) > 4 {
 		return false
 	}
 	for _, item := range evidence {
 		if !hasExactJSONKeys(item, []string{"source", "fetched_at", "expires_at", "is_stale"}) ||
-			!jsonStringEquals(item["source"], "device_encrypted_cache") || !validOptionalRFC3339(item["fetched_at"]) ||
+			(!jsonStringEquals(item["source"], "device_encrypted_cache") &&
+				(!allowRemote || !jsonStringEquals(item["source"], "remote_edu_fetch"))) ||
+			!validOptionalRFC3339(item["fetched_at"]) ||
 			!validOptionalRFC3339(item["expires_at"]) || !validJSONBool(item["is_stale"]) {
 			return false
 		}
 	}
 	return true
+}
+
+func validFreshness(value json.RawMessage) bool {
+	var freshness map[string]json.RawMessage
+	if json.Unmarshal(value, &freshness) != nil ||
+		!hasExactJSONKeys(freshness, []string{"before", "after"}) {
+		return false
+	}
+	return validFreshnessLabel(freshness["before"]) && validFreshnessLabel(freshness["after"])
+}
+
+func validFreshnessLabel(value json.RawMessage) bool {
+	var label string
+	if json.Unmarshal(value, &label) != nil {
+		return false
+	}
+	return label == "fresh" || label == "stale"
 }
 
 func hasExactJSONKeys(value map[string]json.RawMessage, expected []string) bool {
@@ -443,6 +557,11 @@ func hasExactJSONKeys(value map[string]json.RawMessage, expected []string) bool 
 func validJSONBool(value json.RawMessage) bool {
 	var decoded bool
 	return string(value) != "null" && json.Unmarshal(value, &decoded) == nil
+}
+
+func jsonBoolEquals(value json.RawMessage, expected bool) bool {
+	var decoded bool
+	return json.Unmarshal(value, &decoded) == nil && decoded == expected
 }
 
 func validJSONNumber(value json.RawMessage) bool {
@@ -522,16 +641,82 @@ func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
 	switch toolName {
 	case "device.schedule.get_cached_week":
 		return hasExactJSONKeys(arguments, []string{"week_containing"}) && validDateString(arguments["week_containing"])
-	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview":
+	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview",
+		"device.academic.get_cached_grade_summary", "device.academic.get_cached_risk_context":
 		return len(arguments) == 0
+	case "device.schedule.ensure_fresh_week":
+		return hasExactJSONKeys(arguments, []string{"week_containing", "max_age_seconds"}) &&
+			validDateString(arguments["week_containing"]) && validMaxAgeSeconds(arguments["max_age_seconds"])
+	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview":
+		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validMaxAgeSeconds(arguments["max_age_seconds"])
 	default:
 		return false
 	}
 }
 
+func validAcademicGradeSummary(data map[string]json.RawMessage) bool {
+	if !hasExactJSONKeys(data, []string{"course_count", "earned_credits", "weighted_gpa", "failed_courses"}) ||
+		!validIntegerRange(data["course_count"], 0, 500) ||
+		!validNumberRange(data["earned_credits"], 0, 10000) ||
+		!validNumberRange(data["weighted_gpa"], 0, 4) {
+		return false
+	}
+	var courses []map[string]json.RawMessage
+	if json.Unmarshal(data["failed_courses"], &courses) != nil || len(courses) > 500 {
+		return false
+	}
+	for _, course := range courses {
+		if !hasExactJSONKeys(course, []string{"course_name", "grade", "credits"}) ||
+			!validJSONString(course["course_name"], 200) ||
+			!validNumberRange(course["grade"], 0, 100) ||
+			!validNumberRange(course["credits"], 0, 100) {
+			return false
+		}
+	}
+	return true
+}
+
+func validMaxAgeSeconds(value json.RawMessage) bool {
+	var seconds float64
+	if json.Unmarshal(value, &seconds) != nil || seconds != math.Trunc(seconds) {
+		return false
+	}
+	return seconds > 0 && seconds <= 24*60*60
+}
+
+// clampDeviceFreshnessArguments 把模型的意图收窄到服务端策略边界；设备仍会在
+// 最终执行前依据本地 fetched_at / expires_at 再判断一次。
+func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.RawMessage {
+	if !strings.Contains(toolName, ".ensure_fresh_") {
+		return value
+	}
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(value, &arguments) != nil {
+		return value
+	}
+	var requested float64
+	if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {
+		return value
+	}
+	minimum := 300.0
+	if strings.Contains(toolName, "schedule") {
+		minimum = 600
+	} else if strings.Contains(toolName, "erke") {
+		minimum = 1800
+	}
+	if requested < minimum {
+		arguments["max_age_seconds"], _ = json.Marshal(minimum)
+	}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return value
+	}
+	return encoded
+}
+
 func parseWeekContaining(value json.RawMessage) (time.Time, bool) {
 	var arguments map[string]json.RawMessage
-	if json.Unmarshal(value, &arguments) != nil || !hasExactJSONKeys(arguments, []string{"week_containing"}) {
+	if json.Unmarshal(value, &arguments) != nil {
 		return time.Time{}, false
 	}
 	return decodeDate(arguments["week_containing"])
@@ -743,6 +928,42 @@ func sameStringSet(left, right []string) bool {
 
 func activeDeviceJobStates() []string {
 	return []string{models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobClaimed, models.DeviceToolJobWaitingUser, models.DeviceToolJobRunning}
+}
+
+func validDeviceJobStage(stage string) bool {
+	switch stage {
+	case models.DeviceJobStageCheckingFreshness, models.DeviceJobStageRequestReceived,
+		models.DeviceJobStageRefreshStarted, models.DeviceJobStageRefreshCompleted,
+		models.DeviceJobStageRefreshFailed, models.DeviceJobStageReadingResult:
+		return true
+	default:
+		return false
+	}
+}
+
+func isProgressTransitionAllowed(job models.DeviceToolJob, next string) bool {
+	if job.Status != models.DeviceToolJobClaimed && job.Status != models.DeviceToolJobRunning {
+		return false
+	}
+	if next == models.DeviceJobStageRefreshFailed {
+		return job.ProgressStage == models.DeviceJobStageRefreshStarted || job.ProgressStage == models.DeviceJobStageCheckingFreshness
+	}
+	if job.ProgressStage == "" {
+		return next == models.DeviceJobStageCheckingFreshness || next == models.DeviceJobStageRequestReceived
+	}
+	order := map[string]int{
+		models.DeviceJobStageCheckingFreshness: 1,
+		models.DeviceJobStageRequestReceived:   2,
+		models.DeviceJobStageRefreshStarted:    3,
+		models.DeviceJobStageRefreshCompleted:  4,
+		models.DeviceJobStageReadingResult:     5,
+	}
+	previous, previousOK := order[job.ProgressStage]
+	current, currentOK := order[next]
+	if job.ProgressStage == models.DeviceJobStageRequestReceived && next == models.DeviceJobStageReadingResult {
+		return true
+	}
+	return previousOK && currentOK && current == previous+1
 }
 
 func isActiveDeviceJobState(status string) bool {

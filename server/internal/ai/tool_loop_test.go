@@ -653,11 +653,17 @@ func TestRuntimeResumesWaitingDeviceJobOnlyOnce(t *testing.T) {
 			{Type: ProviderEventCompleted},
 		},
 	}}
+	executions := 0
 	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
-		return ToolWait{
-			State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: "device-job-1",
-			Payload: map[string]interface{}{"datasets": []string{"grades"}},
-		}, nil
+		executions++
+		if executions == 1 {
+			return ToolWait{
+				State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: "device-job-1",
+				Payload: map[string]interface{}{"datasets": []string{"grades"}},
+			}, nil
+		}
+		// 恢复必须重新执行外层工具；设备结果不能直接冒充该工具的结果。
+		return map[string]interface{}{"source": "outer_tool", "analysis": "complete"}, nil
 	}}
 	runtime := newToolRuntime(t, db, provider, tool)
 
@@ -681,7 +687,8 @@ func TestRuntimeResumesWaitingDeviceJobOnlyOnce(t *testing.T) {
 	var call models.AIToolCall
 	require.NoError(t, db.First(&call, "call_id = ?", "device_call").Error)
 	require.Equal(t, "completed", call.Status)
-	require.JSONEq(t, `{"failed_course_count":1,"is_stale":false}`, string(call.ResultJSON))
+	require.JSONEq(t, `{"source":"outer_tool","analysis":"complete"}`, string(call.ResultJSON))
+	require.Equal(t, 2, executions)
 	require.Len(t, provider.Requests(), 2)
 
 	// 设备端网络重试可能重复上报完成，恢复入口必须保持幂等且不得再次调用 Provider。

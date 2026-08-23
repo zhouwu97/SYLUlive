@@ -52,6 +52,7 @@ class FakePollService extends PollService {
   Completer<Post>? ballotCompleter;
   bool failBallot = false;
   String? lastMineScope;
+  Completer<PollListResponse>? mineCompleter;
 
   @override
   Future<PollListResponse> listPolls({
@@ -80,9 +81,12 @@ class FakePollService extends PollService {
   }
 
   @override
-  Future<PollListResponse> listMyPolls({required String scope, int page = 1, int limit = 20}) async {
+  Future<PollListResponse> listMyPolls(
+      {required String scope, int page = 1, int limit = 20}) async {
     lastMineScope = scope;
-    return PollListResponse(items: [pollPost()], page: page, limit: limit, total: 1);
+    if (mineCompleter != null) return mineCompleter!.future;
+    return PollListResponse(
+        items: [pollPost()], page: page, limit: limit, total: 1);
   }
 
   @override
@@ -182,5 +186,39 @@ void main() {
     final provider = PollProvider(service);
     await provider.loadMine('voted');
     expect(service.lastMineScope, 'voted');
+  });
+
+  test('切换账号会清空我的投票状态', () async {
+    final provider = PollProvider(FakePollService());
+    provider.syncSessionUser(101);
+    await provider.loadMine('created');
+    expect(provider.mineState('created').items, isNotEmpty);
+
+    provider.syncSessionUser(202);
+
+    expect(provider.mineState('created').items, isEmpty);
+    expect(provider.mineState('created').hasLoaded, isFalse);
+  });
+
+  test('旧账号投票响应不会覆盖新账号状态', () async {
+    final service = FakePollService()
+      ..mineCompleter = Completer<PollListResponse>();
+    final provider = PollProvider(service);
+    provider.syncSessionUser(101);
+    final request = provider.loadMine('voted');
+
+    provider.syncSessionUser(202);
+    service.mineCompleter!.complete(
+      PollListResponse(
+        items: [pollPost(postId: 999)],
+        page: 1,
+        limit: 20,
+        total: 1,
+      ),
+    );
+    await request;
+
+    expect(provider.mineState('voted').items, isEmpty);
+    expect(provider.mineState('voted').hasLoaded, isFalse);
   });
 }

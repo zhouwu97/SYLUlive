@@ -309,6 +309,38 @@ void main() {
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 
+  test('普通 Tool 事件不会伪造授权卡，真实授权事件才设置 pendingConsent', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-consent',
+      seq: 1,
+      type: AiRunEventType.toolExecuting,
+    ));
+    expect(provider.pendingConsent, isNull);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-consent',
+      seq: 2,
+      type: AiRunEventType.consentRequired,
+      consentScope: 'ai_device_cache_access',
+    ));
+    expect(provider.pendingConsent?.consentScope, 'ai_device_cache_access');
+  });
+
   test('完成事件中的笼统来源标记会从 Run 来源接口恢复引用', () async {
     final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));

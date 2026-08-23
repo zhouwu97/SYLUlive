@@ -26,6 +26,13 @@ abstract interface class DeviceJobApi {
     int stateVersion,
   );
 
+  Future<DeviceToolJob> progress(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    String stage,
+  );
+
   Future<DeviceToolJob> complete(
     String installationId,
     String jobId,
@@ -138,6 +145,29 @@ class DioDeviceJobClient implements DeviceJobApi {
       ),
       operation: 'claim',
       route: '/device/jobs/:jobId/claim',
+      method: 'POST',
+    );
+  }
+
+  @override
+  Future<DeviceToolJob> progress(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    String stage,
+  ) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}/progress';
+    return _jobRequest(
+      () => _dio.post<Map<String, dynamic>>(
+        route,
+        data: <String, dynamic>{
+          'state_version': stateVersion,
+          'stage': stage,
+        },
+        options: _options(installationId),
+      ),
+      operation: 'progress',
+      route: '/device/jobs/:jobId/progress',
       method: 'POST',
     );
   }

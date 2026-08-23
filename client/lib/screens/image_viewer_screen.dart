@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -82,17 +83,25 @@ class _ImageBytesResult {
 
 String _guessExtensionFromBytes(List<int> bytes, String fallbackExt) {
   if (bytes.length >= 4) {
-    if (bytes[0] == 0xFF && bytes[1] == 0xD8) return 'jpg';
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+      return 'jpg';
+    }
     if (bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
-        bytes[3] == 0x47) return 'png';
-    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return 'gif';
+        bytes[3] == 0x47) {
+      return 'png';
+    }
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) {
+      return 'gif';
+    }
     if (bytes.length >= 12 &&
         bytes[0] == 0x52 &&
         bytes[1] == 0x49 &&
         bytes[2] == 0x46 &&
-        bytes[3] == 0x46) return 'webp';
+        bytes[3] == 0x46) {
+      return 'webp';
+    }
   }
   return fallbackExt;
 }
@@ -114,6 +123,9 @@ String _guessMimeType(String ext) {
 }
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
+  static const int _maxDownloadedImageEntries = 3;
+  static const int _maxGalleryDimension = 4096;
+
   late PageController _pageController;
   late int _currentIndex;
   late final List<ImageViewerItem> _resolvedItems;
@@ -200,7 +212,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
     // 尝试直接下载原始字节
     try {
-      final response = await Dio().get<List<int>>(
+      // 保存原图允许更长的接收时间，但仍设置明确超时，避免弱网无限挂起。
+      final response = await Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      ).get<List<int>>(
         url,
         options: Options(
           responseType: ResponseType.bytes,
@@ -257,7 +276,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       cacheManager: widget.cacheManager ?? PostImageCache.manager,
       cacheKey: cacheKey,
     );
-    final stream = provider.resolve(const ImageConfiguration());
+    // fallback 也限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
+    final constrainedProvider = ResizeImage.resizeIfNeeded(
+      _maxGalleryDimension,
+      _maxGalleryDimension,
+      provider,
+    );
+    final stream = constrainedProvider.resolve(const ImageConfiguration());
     final completer = Completer<ui.Image?>();
     late ImageStreamListener listener;
     listener = ImageStreamListener(
@@ -286,15 +311,37 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   Future<Uint8List> _encodeImageForGallery(ui.Image image) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    final size = Size(image.width.toDouble(), image.height.toDouble());
-    canvas.drawColor(Colors.white, BlendMode.src);
-    canvas.drawImage(image, Offset.zero, Paint());
-    final picture = recorder.endRecording();
-    final flattened = await picture.toImage(
-      size.width.toInt(),
-      size.height.toInt(),
+    final scale = math.min(
+      1.0,
+      _maxGalleryDimension /
+          math.max(image.width.toDouble(), image.height.toDouble()),
     );
+    final targetWidth = math.max(1, (image.width * scale).round());
+    final targetHeight = math.max(1, (image.height * scale).round());
+    final sourceRect = Rect.fromLTWH(
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    final targetRect = Rect.fromLTWH(
+      0,
+      0,
+      targetWidth.toDouble(),
+      targetHeight.toDouble(),
+    );
+    canvas.drawColor(Colors.white, BlendMode.src);
+    canvas.drawImageRect(
+      image,
+      sourceRect,
+      targetRect,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+    final picture = recorder.endRecording();
+    final flattened = await picture.toImage(targetWidth, targetHeight);
     final byteData = await flattened.toByteData(format: ui.ImageByteFormat.png);
+    flattened.dispose();
+    picture.dispose();
     if (byteData == null) {
       throw Exception('图片编码失败');
     }
@@ -378,7 +425,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
       if (!mounted) return;
       setState(() {
-        _downloadedImages[_currentIndex] = image;
+        _rememberDownloadedImage(_currentIndex, image);
       });
       ScaffoldMessenger.of(
         context,
@@ -493,10 +540,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
     final item = _resolvedItems[index];
+    final cacheDimension = _imageCacheDimension();
 
     // 优先级 1：内存字节
     if (item.bytes != null && item.bytes!.isNotEmpty) {
-      return Image.memory(item.bytes!, fit: BoxFit.contain);
+      return Image.memory(
+        item.bytes!,
+        fit: BoxFit.contain,
+        cacheWidth: cacheDimension,
+        cacheHeight: cacheDimension,
+      );
     }
 
     // 优先级 2：本地文件
@@ -505,6 +558,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return Image.file(
         File(localPath),
         fit: BoxFit.contain,
+        cacheWidth: cacheDimension,
+        cacheHeight: cacheDimension,
         errorBuilder: (_, __, ___) => _networkImageView(item.url),
       );
     }
@@ -514,6 +569,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return Image.memory(
         _downloadedImages[index]!.bytes,
         fit: BoxFit.contain,
+        cacheWidth: cacheDimension,
+        cacheHeight: cacheDimension,
       );
     }
 
@@ -525,6 +582,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (url == null || url.isEmpty) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
+    final cacheDimension = _imageCacheDimension();
     final cacheKey =
         widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
     return CachedNetworkImage(
@@ -533,6 +591,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       cacheKey: cacheKey,
       httpHeaders: widget.httpHeaders,
       fit: BoxFit.contain,
+      memCacheWidth: cacheDimension,
+      memCacheHeight: cacheDimension,
       placeholder: (context, url) => const Center(
         child: CircularProgressIndicator(color: Colors.white),
       ),
@@ -542,5 +602,19 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         size: 48,
       ),
     );
+  }
+
+  int _imageCacheDimension() {
+    final size = MediaQuery.sizeOf(context);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final logicalDimension = math.max(size.width, size.height);
+    return (logicalDimension * dpr * 1.5).ceil().clamp(1024, 2048).toInt();
+  }
+
+  void _rememberDownloadedImage(int index, _ImageBytesResult image) {
+    _downloadedImages[index] = image;
+    while (_downloadedImages.length > _maxDownloadedImageEntries) {
+      _downloadedImages.remove(_downloadedImages.keys.first);
+    }
   }
 }

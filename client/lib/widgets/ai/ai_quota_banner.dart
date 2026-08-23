@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_quota.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiQuotaBanner extends StatelessWidget {
   final AiQuota quota;
@@ -12,48 +14,51 @@ class AiQuotaBanner extends StatelessWidget {
   });
 
   String get _message {
-    if (quota.unlimited) {
-      return '使用次数不限';
+    if (quota.remaining <= 0) return '本次额度已用完，请稍后再试';
+    return '校园 Agent 额度即将用完 · 剩余 ${quota.remaining} 次';
+  }
+
+  bool get _shouldShow {
+    if (quota.unlimited) return false;
+    if (quota.limit <= 0 || quota.remaining <= 0) {
+      return quota.remaining <= 0;
     }
-    if (quota.remaining >= quota.limit) {
-      return '本小时可提问 ${quota.remaining} 次';
-    }
-    if (quota.remaining == 1) {
-      return '本小时仅剩 1 次';
-    }
-    if (quota.remaining > 1) {
-      return '本小时剩余 ${quota.remaining} 次';
-    }
-    final resetAt = quota.resetAt;
-    if (resetAt == null) return '本小时额度已用完，恢复时间以服务端为准';
-    final hour = resetAt.hour.toString().padLeft(2, '0');
-    final minute = resetAt.minute.toString().padLeft(2, '0');
-    return '本小时次数已用完 · 下一次可提问：$hour:$minute';
+    return quota.remaining / quota.limit <= 0.2;
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    if (!_shouldShow) return const SizedBox.shrink();
+    final isEmpty = quota.remaining <= 0;
     return Padding(
-      padding: const EdgeInsets.only(top: 14, bottom: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Container(
         width: double.infinity,
-        height: 44,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        constraints: const BoxConstraints(minHeight: 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: colors.primaryContainer,
-          borderRadius: BorderRadius.circular(14),
+          color: isEmpty
+              ? AppColors.dangerSurfaceLight
+              : AppColors.warningSurfaceLight,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: isEmpty ? AppColors.danger : const Color(0xFFF2DDBD),
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.info_outline_rounded, size: 18, color: colors.primary),
+            Icon(
+              isEmpty ? Icons.block_outlined : Icons.info_outline_rounded,
+              size: 16,
+              color: isEmpty ? AppColors.danger : AppColors.warning,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 '$_message · 每次最多 $maxCharacters 字',
                 style: TextStyle(
-                  color: colors.onPrimaryContainer,
-                  fontSize: 12.5,
+                  color: isEmpty ? AppColors.danger : const Color(0xFF8A5A12),
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),
               ),

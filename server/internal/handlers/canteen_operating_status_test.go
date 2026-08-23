@@ -174,6 +174,9 @@ func TestDeleteCanteenRemovesDependencyTreeWithoutDeletingFile(t *testing.T) {
 	if err := db.Create(&models.CanteenReviewEventDish{ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&models.CanteenReviewEventVote{ReviewEventID: event.ID, UserID: admin.ID, VoteType: "up"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&models.CanteenDishReviewEvent{DishID: dish.ID, UserID: admin.ID, OverallScore: 4, Status: models.ReviewEventStatusActive, CanteenReviewEventID: &event.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +204,7 @@ func TestDeleteCanteenRemovesDependencyTreeWithoutDeletingFile(t *testing.T) {
 		model interface{}
 	}{
 		{"canteen", &models.Canteen{}}, {"rating", &models.CanteenRating{}}, {"vote", &models.CanteenRatingVote{}},
-		{"recommendation", &models.CanteenRatingDishRecommendation{}}, {"event", &models.CanteenReviewEvent{}}, {"relation", &models.CanteenReviewEventDish{}},
+		{"recommendation", &models.CanteenRatingDishRecommendation{}}, {"event", &models.CanteenReviewEvent{}}, {"review event vote", &models.CanteenReviewEventVote{}}, {"relation", &models.CanteenReviewEventDish{}},
 		{"dish event", &models.CanteenDishReviewEvent{}}, {"summary", &models.CanteenDishRatingSummary{}}, {"alias", &models.CanteenDishAlias{}},
 		{"photo", &models.CanteenDishPhoto{}}, {"dish", &models.CanteenDish{}}, {"sanction", &models.CanteenSanction{}},
 	} {

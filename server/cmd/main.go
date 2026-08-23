@@ -349,6 +349,11 @@ func main() {
 		&models.CompetitionRecommendationSnapshot{},
 		&models.AIActionDraft{},
 		&models.AIActionAuditLog{},
+		&models.UserCalendar{},
+		&models.UserCalendarEvent{},
+		&models.UserCalendarReminder{},
+		&models.UserCalendarActionDraft{},
+		&models.UserCalendarActionAudit{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},
@@ -364,6 +369,9 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
+		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
 	}
 	if err := ensureSecurityHardeningSchema(db); err != nil {
 		log.Fatal("安全加固数据库迁移失败:", err)
@@ -481,9 +489,19 @@ func main() {
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
-	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
-	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
-	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
+	announcementBackfills := []struct {
+		name      string
+		statement string
+	}{
+		{name: "status", statement: `UPDATE announcements SET status = 'published' WHERE status = ''`},
+		{name: "display_mode", statement: `UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`},
+		{name: "priority", statement: `UPDATE announcements SET priority = 'normal' WHERE priority = ''`},
+	}
+	for _, backfill := range announcementBackfills {
+		if err := db.Exec(backfill.statement).Error; err != nil {
+			log.Fatal("公告字段回填失败（", backfill.name, "): ", err)
+		}
+	}
 
 	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
 	log.Println("跳过启动期全表统计回算")
@@ -603,6 +621,7 @@ func main() {
 	if competitionHandlerErr != nil {
 		log.Fatal("初始化竞赛证明材料私有存储失败:", competitionHandlerErr)
 	}
+	userCalendarHandler := handlers.NewUserCalendarHandler(db)
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
@@ -676,6 +695,7 @@ func main() {
 	)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
+	adminAIHandler := handlers.NewAdminAIHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
 	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
@@ -768,6 +788,7 @@ func main() {
 	var aiRuntime *ai.Runtime
 	var externalMCPClient *mcpclient.Client
 	var toolRegistry *ai.ToolRegistry
+	var capabilityRegistry *ai.AgentCapabilityRegistry
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -817,6 +838,8 @@ func main() {
 			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
+		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
+		tools = append(tools, handlers.NewCampusCalendarActionProposalTool(userCalendarHandler))
 		if cfg.AIExternalMCPEnabled {
 			var externalMCPErr error
 			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{
@@ -897,6 +920,7 @@ func main() {
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
+		capabilityRegistry = ai.NewAgentCapabilityRegistry(toolRegistry)
 		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
 			db, provider, retriever, ai.NewEventBroker(),
@@ -955,6 +979,7 @@ func main() {
 			ExternalMCPConfigured: cfg.AIExternalMCPEnabled,
 			ExternalMCPHealth:     externalMCPClient,
 			ToolRegistry:          toolRegistry,
+			CapabilityRegistry:    capabilityRegistry,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -1040,6 +1065,7 @@ func main() {
 		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
 		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
 		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
 		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
 		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
 		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
@@ -1058,6 +1084,12 @@ func main() {
 	{
 		personalDataAccessAPI.GET("", aiUserPermissionHandler.List)
 		personalDataAccessAPI.PUT("", aiUserPermissionHandler.Update)
+	}
+	permissionModeAPI := r.Group("/api/ai/permissions/mode")
+	permissionModeAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		permissionModeAPI.GET("", aiUserPermissionHandler.GetMode)
+		permissionModeAPI.PUT("", aiUserPermissionHandler.SetMode)
 	}
 
 	// 静态文件服务
@@ -1110,6 +1142,7 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
+		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -1173,6 +1206,17 @@ func main() {
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
+		user.GET("/calendar/events", userCalendarHandler.ListEvents)
+		user.POST("/calendar/events", userCalendarHandler.CreateEvent)
+		user.PATCH("/calendar/events/:id", userCalendarHandler.UpdateEvent)
+		user.DELETE("/calendar/events/:id", userCalendarHandler.DeleteEvent)
+		user.GET("/calendar/events/:id/reminders", userCalendarHandler.ListReminders)
+		user.POST("/calendar/events/:id/reminders", userCalendarHandler.CreateReminder)
+		user.DELETE("/calendar/events/:id/reminders/:reminder_id", userCalendarHandler.DeleteReminder)
+		user.GET("/calendar/unified", userCalendarHandler.Unified)
+		user.GET("/calendar-action-drafts/:id", userCalendarHandler.GetCalendarEventDraft)
+		user.POST("/calendar-action-drafts/:id/confirm", userCalendarHandler.ConfirmCalendarEventDraft)
+		user.POST("/calendar-action-drafts/:id/cancel", userCalendarHandler.CancelCalendarEventDraft)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
 		user.GET("/competitions/dashboard", competitionHandler.GetCompetitionDashboard)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
@@ -1958,6 +2002,8 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 		canteenAuth.POST("/:id/reviews", canteenHandler.CreateReview)
 		canteenAuth.PATCH("/reviews/:reviewId", canteenHandler.UpdateReview)
+		canteenAuth.DELETE("/reviews/:reviewId", canteenHandler.DeleteReview)
+		canteenAuth.DELETE("/ratings/:ratingId", canteenHandler.DeleteLegacyRating)
 		canteenAuth.PUT("/reviews/:reviewId/vote", canteenHandler.VoteReview)
 		canteenAuth.POST("/dishes/:dishId/reviews", canteenHandler.CreateDishReview)
 
@@ -1973,6 +2019,7 @@ func main() {
 	canteenReviewAuth := r.Group("/api/canteen-reviews")
 	canteenReviewAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	canteenReviewAuth.PATCH("/:reviewId", canteenHandler.UpdateReview)
+	canteenReviewAuth.DELETE("/:reviewId", canteenHandler.DeleteReview)
 
 	// 违规管理
 
@@ -2078,6 +2125,9 @@ func main() {
 		knowledgeAdmin.POST("/:id/revoke", knowledgeHandler.Revoke)
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
+	adminAI := r.Group("/api/admin/ai")
+	adminAI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	adminAI.GET("/metrics", adminAIHandler.GetMetrics)
 
 	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
@@ -2086,6 +2136,8 @@ func main() {
 		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
 		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
 		aiCapabilities.POST("/action-drafts/competition-plan", competitionHandler.CreateCompetitionPlanActionDraft)
+		aiCapabilities.POST("/action-drafts/calendar-event", userCalendarHandler.CreateCalendarEventDraft)
+		aiCapabilities.POST("/action-drafts/calendar-reminder", userCalendarHandler.CreateCalendarReminderDraft)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")
@@ -2267,6 +2319,29 @@ WHERE EXISTS (SELECT 1 FROM canteens
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
  ON reports (reporter_id, target_type, target_id)
  WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureUserCalendarReminderLiveUniqueIndex 将提醒唯一性限定在未软删除记录。
+// 旧版本既有表可能同时存在 SQL constraint 和 GORM index，必须先清理两者，
+// 否则删除后重新添加同一提前量仍会被历史软删除行挡住。
+func ensureUserCalendarReminderLiveUniqueIndex(db *gorm.DB) error {
+	statements := []string{
+		`DROP INDEX IF EXISTS idx_user_calendar_reminders_event_offset`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_reminders_event_offset_live
+ ON user_calendar_reminders (event_id, minutes_before)
+ WHERE deleted_at IS NULL`,
+	}
+	if db.Dialector.Name() == "postgres" {
+		statements = append([]string{
+			`ALTER TABLE user_calendar_reminders DROP CONSTRAINT IF EXISTS uq_user_calendar_reminders_event_offset`,
+		}, statements...)
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

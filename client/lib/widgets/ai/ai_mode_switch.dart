@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
+
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
 
 class AiModeSwitch extends StatelessWidget {
   final bool isPersonalMode;
@@ -13,33 +15,35 @@ class AiModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Container(
-        height: 42,
-        padding: const EdgeInsets.all(3),
+        height: 48,
+        padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: isDark
-              ? colors.surfaceContainerHighest
-              : CampusTheme.primaryLight,
-          borderRadius: BorderRadius.circular(21),
-          border: Border.all(color: colors.outlineVariant, width: 1),
+          color:
+              isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+            color: isDark
+                ? AppColors.borderNormalDark
+                : AppColors.borderNormalLight,
+          ),
         ),
         child: Row(
           children: [
             Expanded(
               child: _ModeButton(
-                icon: Icons.public_outlined,
-                label: '校园问答',
+                icon: Icons.auto_awesome_outlined,
+                label: '校园 Agent',
                 isSelected: !isPersonalMode,
                 onTap: () => onModeChanged(false),
               ),
             ),
             Expanded(
               child: _ModeButton(
-                icon: Icons.person_outline,
+                icon: Icons.person_outline_rounded,
                 label: '个人助手',
                 isSelected: isPersonalMode,
                 onTap: () => onModeChanged(true),
@@ -68,42 +72,54 @@ class _ModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isSelected ? colors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: colors.shadow.withValues(alpha: 0.08),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            decoration: BoxDecoration(
+              color: isSelected ? colors.surface : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: colors.shadow.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color:
+                        isSelected ? colors.primary : colors.onSurfaceVariant,
                   ),
-                ]
-              : null,
-        ),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected ? colors.primary : colors.onSurfaceVariant,
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color:
+                          isSelected ? colors.primary : colors.onSurfaceVariant,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isSelected ? colors.primary : colors.onSurfaceVariant,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

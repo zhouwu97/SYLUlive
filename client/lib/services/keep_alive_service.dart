@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../platform/app_platform.dart';
+import 'diagnostic_log_service.dart';
 
 class KeepAliveStatus {
   final bool supported;
@@ -10,6 +14,7 @@ class KeepAliveStatus {
   final String manufacturer;
   final int sdkInt;
   final bool isIgnoringBatteryOptimizations;
+  final String state;
 
   const KeepAliveStatus({
     required this.supported,
@@ -19,6 +24,7 @@ class KeepAliveStatus {
     required this.manufacturer,
     required this.sdkInt,
     required this.isIgnoringBatteryOptimizations,
+    this.state = 'unknown',
   });
 
   const KeepAliveStatus.unsupported()
@@ -28,19 +34,45 @@ class KeepAliveStatus {
         hideRecentsEnabled = false,
         manufacturer = '',
         sdkInt = 0,
-        isIgnoringBatteryOptimizations = true;
+        isIgnoringBatteryOptimizations = true,
+        state = 'unsupported';
+
+  const KeepAliveStatus.bridgeError()
+      : supported = false,
+        enabled = false,
+        serviceRunning = false,
+        hideRecentsEnabled = false,
+        manufacturer = '',
+        sdkInt = 0,
+        isIgnoringBatteryOptimizations = true,
+        state = 'native_error';
 
   factory KeepAliveStatus.fromMap(Map<dynamic, dynamic>? map) {
     if (map == null) return const KeepAliveStatus.unsupported();
+    final supported = map['supported'] == true;
+    final enabled = map['enabled'] == true;
+    final serviceRunning = map['serviceRunning'] == true;
+    final ignoringBattery = map['isIgnoringBatteryOptimizations'] != false;
+    final state = map['state']?.toString().trim();
     return KeepAliveStatus(
-      supported: map['supported'] == true,
-      enabled: map['enabled'] == true,
-      serviceRunning: map['serviceRunning'] == true,
+      supported: supported,
+      enabled: enabled,
+      serviceRunning: serviceRunning,
       hideRecentsEnabled: map['hideRecentsEnabled'] == true,
       manufacturer: map['manufacturer']?.toString() ?? '',
       sdkInt: (map['sdkInt'] as num?)?.toInt() ?? 0,
-      isIgnoringBatteryOptimizations:
-          map['isIgnoringBatteryOptimizations'] != false,
+      isIgnoringBatteryOptimizations: ignoringBattery,
+      state: state?.isNotEmpty == true
+          ? state!
+          : !supported
+              ? 'unsupported'
+              : !enabled
+                  ? 'disabled'
+                  : !ignoringBattery
+                      ? 'permission_missing'
+                      : !serviceRunning
+                          ? 'enabled_not_running'
+                          : 'ready',
     );
   }
 }
@@ -61,8 +93,9 @@ class KeepAliveService {
         'getKeepAliveStatus',
       );
       return KeepAliveStatus.fromMap(result);
-    } catch (_) {
-      return const KeepAliveStatus.unsupported();
+    } catch (error, stackTrace) {
+      _recordBridgeError('getKeepAliveStatus', error, stackTrace);
+      return const KeepAliveStatus.bridgeError();
     }
   }
 
@@ -74,8 +107,9 @@ class KeepAliveService {
         {'enabled': enabled},
       );
       return KeepAliveStatus.fromMap(result);
-    } catch (_) {
-      return const KeepAliveStatus.unsupported();
+    } catch (error, stackTrace) {
+      _recordBridgeError('setKeepAliveEnabled', error, stackTrace);
+      return const KeepAliveStatus.bridgeError();
     }
   }
 
@@ -87,8 +121,9 @@ class KeepAliveService {
         {'enabled': enabled},
       );
       return KeepAliveStatus.fromMap(result);
-    } catch (_) {
-      return const KeepAliveStatus.unsupported();
+    } catch (error, stackTrace) {
+      _recordBridgeError('setHideRecentsEnabled', error, stackTrace);
+      return const KeepAliveStatus.bridgeError();
     }
   }
 
@@ -97,7 +132,8 @@ class KeepAliveService {
     try {
       return await _channel.invokeMethod<bool>('openKeepAliveSettings') ??
           false;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _recordBridgeError('openKeepAliveSettings', error, stackTrace);
       return false;
     }
   }
@@ -108,6 +144,25 @@ class KeepAliveService {
       await _channel.invokeMethod<bool>('syncKeepAliveAuthToken', {
         'token': token,
       });
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      _recordBridgeError('syncKeepAliveAuthToken', error, stackTrace);
+    }
+  }
+
+  void _recordBridgeError(
+    String operation,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    debugPrint('保活桥接失败（$operation）: $error');
+    unawaited(DiagnosticLogService.instance.recordError(
+      source: 'Flutter保活桥接',
+      type: 'MethodChannel调用失败',
+      summary: '保活能力调用失败',
+      detail: '$operation\n$error\n$stackTrace',
+      eventCode: 'keep_alive_flutter_bridge_failed',
+      category: 'platform',
+      operation: operation,
+    ));
   }
 }

@@ -79,10 +79,12 @@ class ApiConstants {
     return normalized;
   }
 
-  static const Duration connectTimeout = Duration(seconds: 30);
-  static const Duration receiveTimeout = Duration(seconds: 30);
-  static const Duration sendTimeout = Duration(seconds: 30);
-  static const int maxRetries = 3;
+  // 普通接口使用短连接/接收超时，避免弱网下页面长时间像“点坏了”。
+  // 上传、AI 流式请求等长请求必须在调用点用 Options 覆盖这些默认值。
+  static const Duration connectTimeout = Duration(seconds: 10);
+  static const Duration receiveTimeout = Duration(seconds: 20);
+  static const Duration sendTimeout = Duration(seconds: 20);
+  static const int maxRetries = 2;
 
   // Public alias for announcements. Some mobile networks stall plaintext
   // direct-IP requests whose path contains "announcement".

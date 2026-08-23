@@ -2,18 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../models/canteen_review.dart';
 import '../models/canteen_review_draft.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../services/canteen_review_draft_repository.dart';
+import '../theme/app_colors.dart';
 import '../widgets/canteen/canteen_review_image_picker.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
@@ -35,6 +34,8 @@ const List<({String key, String label})> kCanteenTagOptions = [
 ///
 /// 具备星级打分、体验标签、200字输入、3张图片上传状态机、推荐菜品选择、
 /// 跨账号隔离草稿存储、防抖与生命周期自动保存、多端冲突检测与退出保护。
+enum CanteenReviewEditorMode { create, edit }
+
 class CanteenReviewEditorScreen extends StatefulWidget {
   final int canteenId;
   final String canteenName;
@@ -43,7 +44,8 @@ class CanteenReviewEditorScreen extends StatefulWidget {
   final int ratingCount;
   final int dishCount;
   final int dishPhotoCount;
-  final Map<String, dynamic>? existingRating;
+  final CanteenReviewEditorMode mode;
+  final Map<String, dynamic>? existingReview;
   final CanteenReviewDraftRepository? draftRepositoryOverride;
 
   const CanteenReviewEditorScreen({
@@ -55,9 +57,15 @@ class CanteenReviewEditorScreen extends StatefulWidget {
     this.ratingCount = 0,
     this.dishCount = 0,
     this.dishPhotoCount = 0,
-    this.existingRating,
+    this.mode = CanteenReviewEditorMode.create,
+    this.existingReview,
     this.draftRepositoryOverride,
-  });
+  }) : assert(
+          mode == CanteenReviewEditorMode.edit
+              ? existingReview != null
+              : existingReview == null,
+          '创建态不能传入 existingReview，编辑态必须传入 existingReview',
+        );
 
   @override
   State<CanteenReviewEditorScreen> createState() =>
@@ -73,6 +81,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   late final TextEditingController _dishInputController;
 
   int _star = 0;
+  // 仅用于旧版星级草稿/历史评价的展示，不参与 V2 请求的五维评分。
   CanteenReviewDimensions _dimensions = const CanteenReviewDimensions();
   List<String> _selectedTags = [];
   List<String> _recommendedDishes = [];
@@ -80,6 +89,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   List<CanteenDish> _allDishes = [];
   List<CanteenDishSuggestion> _dishSuggestions = [];
   final Map<int, CanteenDishReviewInput> _dishReviews = {};
+  final Map<int, String> _dishReviewNames = {};
+  final Map<String, int> _selectedDishIds = {};
 
   bool _isSubmitting = false;
   _DraftSaveStatus _saveStatus = _DraftSaveStatus.idle;
@@ -95,7 +106,13 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     return user?.id ?? 0;
   }
 
-  bool get _isEditingExisting => widget.existingRating != null;
+  bool get _isEditing => widget.mode == CanteenReviewEditorMode.edit;
+
+  int? get _existingReviewId {
+    final raw = widget.existingReview?['review_event_id'] ??
+        widget.existingReview?['latest_review_event_id'];
+    return raw is num ? raw.toInt() : int.tryParse('$raw');
+  }
 
   @override
   void initState() {
@@ -134,7 +151,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final userId = _userId;
     if (userId <= 0) return;
 
-    final existing = widget.existingRating;
+    final existing = widget.existingReview;
     if (existing != null) {
       _baseRatingUpdatedAt =
           DateTime.tryParse(existing['updated_at']?.toString() ?? '');
@@ -143,25 +160,30 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final draft = await _draftRepo.loadDraft(
       userId: userId,
       canteenId: widget.canteenId,
+      mode: _isEditing ? 'edit' : 'create',
+      reviewEventId: _isEditing ? _existingReviewId : null,
     );
 
     if (!mounted) return;
 
     // Case A: 新建评价 + 发现草稿
-    if (existing == null && draft != null) {
+    if (!_isEditing && draft != null) {
       _applyDraft(draft);
-      _showDraftRestoredToast(draft.updatedAt);
+      _showDraftRestoredToast(
+        draft.updatedAt,
+        requiresDimensionCompletion: !draftDimensionsAreComplete(draft),
+      );
       return;
     }
 
     // Case B: 修改评价 + 无本地草稿
-    if (existing != null && draft == null) {
-      _applyExistingRating(existing);
+    if (_isEditing && draft == null) {
+      _applyExistingRating(existing!);
       return;
     }
 
     // Case C & D: 修改评价 + 有本地草稿
-    if (existing != null && draft != null) {
+    if (_isEditing && draft != null) {
       final remoteUpdated = _baseRatingUpdatedAt;
       final draftBaseUpdated = draft.baseRatingUpdatedAt;
 
@@ -169,30 +191,60 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           draftBaseUpdated != null &&
           remoteUpdated.isAfter(draftBaseUpdated)) {
         // Case D: 远端在其他设备更新过，冲突提示
-        _showConflictDialog(draft, existing);
+        _showConflictDialog(draft, existing!);
       } else {
         // Case C: 草稿基于当前版本，恢复草稿
         _applyDraft(draft);
-        _showDraftRestoredToast(draft.updatedAt);
+        _showDraftRestoredToast(
+          draft.updatedAt,
+          requiresDimensionCompletion: !draftDimensionsAreComplete(draft),
+        );
       }
       return;
     }
   }
 
   void _applyDraft(CanteenReviewDraft draft, {DateTime? rebaseTo}) {
-    final fallback = draft.star;
     setState(() {
+      // star 只为旧草稿/旧客户端保留，V2 编辑状态不再把它当作五维评分来源。
       _star = draft.star;
       _dimensions = CanteenReviewDimensions(
-        taste: draft.tasteScore == 0 ? fallback : draft.tasteScore,
-        value: draft.valueScore == 0 ? fallback : draft.valueScore,
-        queue: draft.queueScore == 0 ? fallback : draft.queueScore,
-        hygiene: draft.hygieneScore == 0 ? fallback : draft.hygieneScore,
-        service: draft.serviceScore == 0 ? fallback : draft.serviceScore,
+        taste: draft.tasteScore,
+        value: draft.valueScore,
+        queue: draft.queueScore,
+        hygiene: draft.hygieneScore,
+        service: draft.serviceScore,
       );
       _commentController.text = draft.comment;
       _selectedTags = List.from(draft.tags);
       _recommendedDishes = List.from(draft.recommendedDishes);
+      _selectedDishIds
+        ..clear()
+        ..addEntries(
+          draft.dishReviews
+              .where((item) => item.dishId > 0 && item.name.trim().isNotEmpty)
+              .map((item) => MapEntry(item.name.toLowerCase(), item.dishId)),
+        );
+      _dishReviews
+        ..clear()
+        ..addEntries(
+          draft.dishReviews.map(
+            (item) => MapEntry(
+              item.dishId,
+              CanteenDishReviewInput(
+                dishId: item.dishId,
+                taste: item.taste,
+                value: item.value,
+                portion: item.portion,
+                comment: item.comment,
+              ),
+            ),
+          ),
+        );
+      _dishReviewNames
+        ..clear()
+        ..addEntries(
+            draft.dishReviews.map((item) => MapEntry(item.dishId, item.name)));
       _draftImages = List.from(draft.images);
       _baseRatingUpdatedAt = rebaseTo ?? draft.baseRatingUpdatedAt;
       _isDirty = false;
@@ -201,11 +253,12 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
   void _applyExistingRating(Map<String, dynamic> existing) {
     final star = (existing['star'] as num?)?.toInt() ?? 0;
-    final dimensions = _dimensionsFromJson(existing, fallback: star);
+    final dimensions = _dimensionsFromJson(existing);
     final comment = existing['comment']?.toString() ?? '';
     final imagesList = _parseImagesList(existing['images']);
     final tagsList = _parseTagsList(existing['tags']);
     final dishNames = _parseDishNames(existing);
+    final dishReviews = _parseDishReviews(existing);
 
     setState(() {
       _star = star;
@@ -213,6 +266,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _commentController.text = comment;
       _selectedTags = tagsList;
       _recommendedDishes = dishNames;
+      _selectedDishIds
+        ..clear()
+        ..addEntries(_recommendedDishIdNames(existing));
+      _dishReviews
+        ..clear()
+        ..addEntries(dishReviews.map((item) => MapEntry(item.dishId, item)));
+      _dishReviewNames
+        ..clear()
+        ..addEntries(dishReviews.map((item) =>
+            MapEntry(item.dishId, _dishNameForId(existing, item.dishId))));
       _draftImages = imagesList
           .map((url) => CanteenReviewDraftImage(
                 type: ReviewDraftImageType.publishedRemote,
@@ -223,14 +286,58 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     });
   }
 
-  CanteenReviewDimensions _dimensionsFromJson(
-    Map<String, dynamic> json, {
-    int fallback = 0,
-  }) {
+  List<CanteenDishReviewInput> _parseDishReviews(
+      Map<String, dynamic> existing) {
+    final raw = existing['dish_reviews'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((item) {
+          final data = Map<String, dynamic>.from(item);
+          return CanteenDishReviewInput(
+            dishId: (data['dish_id'] as num?)?.toInt() ?? 0,
+            taste: (data['taste_score'] as num?)?.toInt() ??
+                (data['taste'] as num?)?.toInt() ??
+                0,
+            value: (data['value_score'] as num?)?.toInt() ??
+                (data['value'] as num?)?.toInt() ??
+                0,
+            portion: (data['portion_score'] as num?)?.toInt() ??
+                (data['portion'] as num?)?.toInt() ??
+                0,
+            comment: data['comment']?.toString() ?? '',
+          );
+        })
+        .where((item) => item.dishId > 0)
+        .toList();
+  }
+
+  List<CanteenReviewDraftDishReview> get _draftDishReviews =>
+      _dishReviews.values.map((review) {
+        final name = _allDishes
+                .where((dish) => dish.id == review.dishId)
+                .map((dish) => dish.name)
+                .firstOrNull ??
+            _dishReviewNames[review.dishId] ??
+            _recommendedDishes
+                .where((dish) => _findDish(dish)?.id == review.dishId)
+                .firstOrNull ??
+            '';
+        return CanteenReviewDraftDishReview(
+          dishId: review.dishId,
+          name: name,
+          taste: review.taste,
+          value: review.value,
+          portion: review.portion,
+          comment: review.comment,
+        );
+      }).toList();
+
+  CanteenReviewDimensions _dimensionsFromJson(Map<String, dynamic> json) {
     int score(String key) {
       final raw = json[key];
       if (raw is num) return raw.toInt();
-      return int.tryParse('$raw') ?? fallback;
+      return int.tryParse('$raw') ?? 0;
     }
 
     return CanteenReviewDimensions(
@@ -240,6 +347,14 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       hygiene: score('hygiene_score'),
       service: score('service_score'),
     );
+  }
+
+  bool draftDimensionsAreComplete(CanteenReviewDraft draft) {
+    return draft.tasteScore > 0 &&
+        draft.valueScore > 0 &&
+        draft.queueScore > 0 &&
+        draft.hygieneScore > 0 &&
+        draft.serviceScore > 0;
   }
 
   List<String> _parseImagesList(dynamic raw) {
@@ -290,12 +405,43 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     return [];
   }
 
-  void _showDraftRestoredToast(DateTime updatedAt) {
+  String _dishNameForId(Map<String, dynamic> existing, int dishId) {
+    final raw = existing['recommended_dishes'];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is Map && (item['dish_id'] as num?)?.toInt() == dishId) {
+          return item['name']?.toString() ?? '';
+        }
+      }
+    }
+    return '';
+  }
+
+  Iterable<MapEntry<String, int>> _recommendedDishIdNames(
+      Map<String, dynamic> existing) sync* {
+    final raw = existing['recommended_dishes'];
+    if (raw is! List) return;
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final name = item['name']?.toString().trim() ?? '';
+      final dishId = (item['dish_id'] as num?)?.toInt() ?? 0;
+      if (name.isNotEmpty && dishId > 0) {
+        yield MapEntry(name.toLowerCase(), dishId);
+      }
+    }
+  }
+
+  void _showDraftRestoredToast(
+    DateTime updatedAt, {
+    bool requiresDimensionCompletion = false,
+  }) {
     final timeStr =
         '${updatedAt.hour.toString().padLeft(2, '0')}:${updatedAt.minute.toString().padLeft(2, '0')}';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已恢复 $timeStr 保存的草稿'),
+        content: Text(requiresDimensionCompletion
+            ? '已恢复 $timeStr 保存的草稿，请补全五项评分'
+            : '已恢复 $timeStr 保存的草稿'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -383,6 +529,9 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final draft = CanteenReviewDraft(
       userId: userId,
       canteenId: widget.canteenId,
+      mode: _isEditing ? 'edit' : 'create',
+      reviewEventId: _isEditing ? _existingReviewId : null,
+      // star 只为旧草稿读取兼容保留；V2 提交使用下方五个显式维度。
       star: _star,
       tasteScore: _dimensions.taste,
       valueScore: _dimensions.value,
@@ -392,6 +541,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       comment: _commentController.text,
       tags: _selectedTags,
       recommendedDishes: _recommendedDishes,
+      dishReviews: _draftDishReviews,
       images: _draftImages,
       updatedAt: DateTime.now(),
       baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -414,8 +564,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Future<void> _handleExit() async {
     if (_isSubmitting) return;
 
-    final isFormClean = !_dimensions.isComplete &&
-        _star == 0 &&
+    final isFormClean = _dimensions.taste == 0 &&
+        _dimensions.value == 0 &&
+        _dimensions.queue == 0 &&
+        _dimensions.hygiene == 0 &&
+        _dimensions.service == 0 &&
         _commentController.text.trim().isEmpty &&
         _selectedTags.isEmpty &&
         _recommendedDishes.isEmpty &&
@@ -495,6 +648,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                     await _draftRepo.deleteDraft(
                       userId: _userId,
                       canteenId: widget.canteenId,
+                      mode: _isEditing ? 'edit' : 'create',
+                      reviewEventId: _isEditing ? _existingReviewId : null,
                     );
                     if (!mounted) return;
                     Navigator.pop(sheetContext);
@@ -541,9 +696,35 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     _debounceTimer?.cancel();
     _statusTimer?.cancel();
 
+    final missingLocalImage = _draftImages.any(
+      (image) =>
+          image.type == ReviewDraftImageType.localPending &&
+          image.localPath != null &&
+          !File(image.localPath!).existsSync(),
+    );
+    if (missingLocalImage) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('草稿中的图片本地文件已丢失，请重新选择或删除该图片后发布')),
+      );
+      return;
+    }
+
     if (!_dimensions.isComplete) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先为食堂打个分吧')),
+      );
+      return;
+    }
+
+    final existingScoreVersion =
+        (widget.existingReview?['score_version'] as num?)?.toInt() ?? 0;
+    if (_isEditing &&
+        (_existingReviewId == null ||
+            (existingScoreVersion != 0 && existingScoreVersion < 2))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('这条评价不是可修改的新版评价，请从最近一条评价重新进入')),
       );
       return;
     }
@@ -557,6 +738,18 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text('“${unresolvedDishes.first}”尚未收录，请先上传菜品照片并等待审核')),
+      );
+      return;
+    }
+
+    final partialDishReviews = _dishReviews.values
+        .where((review) =>
+            (review.taste > 0 || review.value > 0 || review.portion > 0) &&
+            !(review.taste >= 1 && review.value >= 1 && review.portion >= 1))
+        .toList(growable: false);
+    if (partialDishReviews.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请补全已开始评分的菜品三项评分，或清空后再提交')),
       );
       return;
     }
@@ -633,6 +826,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               CanteenReviewDraft(
                 userId: _userId,
                 canteenId: widget.canteenId,
+                mode: _isEditing ? 'edit' : 'create',
+                reviewEventId: _isEditing ? _existingReviewId : null,
                 star: _star,
                 tasteScore: _dimensions.taste,
                 valueScore: _dimensions.value,
@@ -642,6 +837,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 comment: _commentController.text,
                 tags: _selectedTags,
                 recommendedDishes: _recommendedDishes,
+                dishReviews: _draftDishReviews,
                 images: updatedDraftImages,
                 updatedAt: DateTime.now(),
                 baseRatingUpdatedAt: _baseRatingUpdatedAt,
@@ -676,18 +872,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       return;
     }
 
-    // 2. 提交五维评价；旧摘要评价仍由 Provider 在旧服务端上兼容回退。
-    final existingReviewId = (widget.existingRating?['review_event_id'] as num?)
-            ?.toInt() ??
-        (widget.existingRating?['latest_review_event_id'] as num?)?.toInt() ??
-        int.tryParse(
-          '${widget.existingRating?['review_event_id'] ?? widget.existingRating?['latest_review_event_id'] ?? ''}',
-        );
-    final existingScoreVersion =
-        (widget.existingRating?['score_version'] as num?)?.toInt() ?? 1;
-    final result = existingReviewId != null && existingScoreVersion >= 2
+    // 创建态永远新增 ReviewEvent；只有显式编辑态才 PATCH 最近一条 V2 评价。
+    final result = _isEditing
         ? await canteenProvider.updateReview(
-            existingReviewId,
+            _existingReviewId!,
             dimensions: _dimensions,
             comment: _commentController.text.trim(),
             images: finalImages,
@@ -717,17 +905,21 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       await _draftRepo.deleteDraft(
         userId: _userId,
         canteenId: widget.canteenId,
+        mode: _isEditing ? 'edit' : 'create',
+        reviewEventId: _isEditing ? _existingReviewId : null,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isEditingExisting ? '评价已更新' : '评价发布成功'),
+            content: Text(_isEditing ? '评价已更新' : '评价发布成功'),
           ),
         );
         Navigator.of(context).pop(true);
       }
     } else {
-      if (result.errorCode == 'rating_conflict' && mounted) {
+      if ((result.errorCode == 'review_conflict' ||
+              result.errorCode == 'rating_conflict') &&
+          mounted) {
         if (result.remoteUpdatedAt != null) {
           _baseRatingUpdatedAt = result.remoteUpdatedAt;
         }
@@ -786,9 +978,9 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   List<int> get _recommendedDishIds => _recommendedDishes
-      .map(_findDish)
-      .whereType<CanteenDish>()
-      .map((dish) => dish.id)
+      .map(
+          (name) => _selectedDishIds[name.toLowerCase()] ?? _findDish(name)?.id)
+      .whereType<int>()
       .toList(growable: false);
 
   List<CanteenDishReviewInput> get _completedDishReviews => _dishReviews.values
@@ -817,17 +1009,21 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildCanteenSummaryCard(isDark),
-              const SizedBox(height: 16),
+              if (!_isEditing) ...[
+                _buildCreateNotice(isDark),
+                const SizedBox(height: 16),
+              ],
               _buildStarRatingCard(isDark, accent),
+              const SizedBox(height: 16),
+              _buildDishSectionCard(isDark, accent),
               const SizedBox(height: 16),
               _buildExperienceTagsCard(isDark, accent),
               const SizedBox(height: 16),
               _buildCommentInputCard(isDark),
               const SizedBox(height: 16),
-              _buildImageAndDishCard(isDark, accent),
+              _buildPhotoSectionCard(isDark),
               const SizedBox(height: 16),
-              _buildPublicNoticeCard(isDark),
+              _buildCreditNotice(isDark),
               const SizedBox(height: 24),
             ],
           ),
@@ -860,7 +1056,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         onPressed: _handleExit,
       ),
       title: Text(
-        _isEditingExisting ? '修改评价' : '发布评价',
+        _isEditing ? '修改评价' : '发布评价',
         style: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w700,
@@ -899,100 +1095,59 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  Widget _buildCanteenSummaryCard(bool isDark) {
-    final imageUrl = widget.canteenImage ?? '';
-    final avgStar = widget.averageStar;
-    final ratingCount = widget.ratingCount;
+  Widget _buildCreateNotice(bool isDark) {
+    return _buildNoticeSurface(
+      isDark,
+      icon: Icons.verified_user_outlined,
+      color: AppColors.success,
+      title: '可以再次评价',
+      message: '历史评价会保留，但店铺总分中每位同学最多贡献一个有效样本，避免重复刷分。',
+    );
+  }
 
+  Widget _buildNoticeSurface(
+    bool isDark, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String message,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: CanteenTheme.surfaceBg(isDark),
+        color: color.withValues(alpha: isDark ? 0.16 : 0.08),
         borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-        border: Border.all(color: CanteenTheme.borderColor(isDark), width: 0.5),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: imageUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: ApiConstants.fullUrl(imageUrl),
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          _canteenThumbPlaceholder(isDark),
-                      placeholder: (_, __) => _canteenThumbPlaceholder(isDark),
-                    )
-                  : _canteenThumbPlaceholder(isDark),
-            ),
-          ),
-          const SizedBox(width: 12),
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.canteenName,
+                  title,
                   style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
                     color: CanteenTheme.textPrimaryColor(isDark),
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.star_rounded,
-                      size: 14,
-                      color: CanteenTheme.accentColor(isDark),
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      avgStar > 0 ? avgStar.toStringAsFixed(1) : '暂无评分',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: CanteenTheme.textPrimaryColor(isDark),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$ratingCount人评价',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: CanteenTheme.textSecondaryColor(isDark),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '菜品 ${widget.dishCount} · 实拍 ${widget.dishPhotoCount}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: CanteenTheme.textTertiaryColor(isDark),
-                      ),
-                    ),
-                  ],
+                Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.45,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _canteenThumbPlaceholder(bool isDark) {
-    return Container(
-      color: CanteenTheme.surfaceMutedBg(isDark),
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.restaurant_rounded,
-        size: 22,
-        color: CanteenTheme.textTertiaryColor(isDark),
       ),
     );
   }
@@ -1011,7 +1166,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '食堂体验评分',
+                '这次店铺体验',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1028,7 +1183,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '请分别评价味道、性价比、排队、卫生和服务，综合分由服务端按权重计算。',
+              '五项都会影响本次综合体验分，提交前请全部填写。',
               style: TextStyle(
                 fontSize: 12,
                 color: CanteenTheme.textSecondaryColor(isDark),
@@ -1038,30 +1193,66 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           const SizedBox(height: 14),
           Divider(height: 1, color: CanteenTheme.borderColor(isDark)),
           const SizedBox(height: 14),
-          _buildDimensionRow('味道（35%）', _dimensions.taste, isDark, (score) {
+          _buildDimensionRow('味道', _dimensions.taste, isDark, (score) {
             _setDimension(_dimensions.copyWith(taste: score));
           }),
-          _buildDimensionRow('性价比（20%）', _dimensions.value, isDark, (score) {
+          _buildDimensionRow('性价比', _dimensions.value, isDark, (score) {
             _setDimension(_dimensions.copyWith(value: score));
           }),
-          _buildDimensionRow('排队体验（15%）', _dimensions.queue, isDark, (score) {
+          _buildDimensionRow('排队效率', _dimensions.queue, isDark, (score) {
             _setDimension(_dimensions.copyWith(queue: score));
           }),
-          _buildDimensionRow('卫生（20%）', _dimensions.hygiene, isDark, (score) {
+          _buildDimensionRow('卫生环境', _dimensions.hygiene, isDark, (score) {
             _setDimension(_dimensions.copyWith(hygiene: score));
           }),
-          _buildDimensionRow('服务（10%）', _dimensions.service, isDark, (score) {
+          _buildDimensionRow('服务态度', _dimensions.service, isDark, (score) {
             _setDimension(_dimensions.copyWith(service: score));
           }),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '当前综合分 ${_dimensions.isComplete ? _dimensions.overall.toStringAsFixed(2) : '--'}',
-              style: TextStyle(
-                fontSize: 12,
-                color: CanteenTheme.textSecondaryColor(isDark),
-              ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: CanteenTheme.accentSoftColor(isDark),
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  _dimensions.isComplete
+                      ? _dimensions.overall.toStringAsFixed(2)
+                      : '--',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: CanteenTheme.accentStrongColor(isDark),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '本次综合体验',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '味道35% · 性价比20%\n排队15% · 卫生20% · 服务10%',
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.35,
+                      color: CanteenTheme.textTertiaryColor(isDark),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1072,6 +1263,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void _setDimension(CanteenReviewDimensions next) {
     setState(() {
       _dimensions = next;
+      // 只保留旧草稿的兼容快照，不能再把它作为 V2 评分提交。
       _star = next.taste;
     });
     _onFormChanged();
@@ -1085,59 +1277,88 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 88,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: CanteenTheme.textSecondaryColor(isDark),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Wrap(
-              spacing: 4,
-              children: List.generate(5, (index) {
-                final score = index + 1;
-                final active = score == selected;
-                return InkWell(
-                  onTap: _isSubmitting ? null : () => onChanged(score),
-                  borderRadius: BorderRadius.circular(6),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    width: 28,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: active
-                          ? CanteenTheme.accentSoftColor(isDark)
-                          : CanteenTheme.surfaceMutedBg(isDark),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: active
-                            ? CanteenTheme.accentColor(isDark)
-                            : CanteenTheme.borderColor(isDark),
-                      ),
-                    ),
-                    child: Text(
-                      '$score',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                        color: active
-                            ? CanteenTheme.accentStrongColor(isDark)
-                            : CanteenTheme.textSecondaryColor(isDark),
-                      ),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 评分按钮保留 44dp 触控热区；窄屏时允许按钮自然换行，避免挤压出屏。
+          final labelWidth = constraints.maxWidth < 360 ? 64.0 : 88.0;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: labelWidth,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: CanteenTheme.textSecondaryColor(isDark),
                   ),
-                );
-              }),
-            ),
-          ),
-        ],
+                ),
+              ),
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  children: List.generate(5, (index) {
+                    final score = index + 1;
+                    final active = score == selected;
+                    return SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: InkWell(
+                        onTap: _isSubmitting ? null : () => onChanged(score),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 120),
+                            width: 28,
+                            height: 26,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? CanteenTheme.accentSoftColor(isDark)
+                                  : CanteenTheme.surfaceMutedBg(isDark),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: active
+                                    ? CanteenTheme.accentColor(isDark)
+                                    : CanteenTheme.borderColor(isDark),
+                              ),
+                            ),
+                            child: Text(
+                              '$score',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight:
+                                    active ? FontWeight.w700 : FontWeight.w500,
+                                color: active
+                                    ? CanteenTheme.accentStrongColor(isDark)
+                                    : CanteenTheme.textSecondaryColor(isDark),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 30,
+                child: Text(
+                  selected > 0 ? '$selected.0' : '--',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: selected > 0
+                        ? CanteenTheme.textSecondaryColor(isDark)
+                        : CanteenTheme.textTertiaryColor(isDark),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1157,7 +1378,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '本次体验（可多选）',
+                '本次体验标签（可选）',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1263,7 +1484,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '详细评价',
+                '补充评价',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1290,7 +1511,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             enabled: !_isSubmitting,
             decoration: InputDecoration(
               counterText: '',
-              hintText: '说说味道、价格、排队情况、推荐菜品…',
+              hintText: '比如：几点去的、排了多久、味道和之前有什么变化……',
               hintStyle: TextStyle(
                 fontSize: 13,
                 color: CanteenTheme.textTertiaryColor(isDark),
@@ -1314,7 +1535,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  Widget _buildImageAndDishCard(bool isDark, Color accent) {
+  Widget _buildDishSectionCard(bool isDark, Color accent) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1325,52 +1546,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 图片区域
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '上传图片（选填）',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: CanteenTheme.textPrimaryColor(isDark),
-                ),
-              ),
-              Text(
-                '最多 3 张',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CanteenTheme.textSecondaryColor(isDark),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          CanteenReviewImagePicker(
-            images: _draftImages,
-            userId: _userId,
-            canteenId: widget.canteenId,
-            draftRepository: _draftRepo,
-            enabled: !_isSubmitting,
-            onImagesChanged: (nextImages) {
-              setState(() => _draftImages = nextImages);
-              _onFormChanged();
-            },
-          ),
-          const SizedBox(height: 16),
-          Divider(
-            height: 1,
-            thickness: 0.5,
-            color: CanteenTheme.borderColor(isDark),
-          ),
-          const SizedBox(height: 16),
-          // 推荐菜品区域
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '推荐菜品（选填）',
+                '这次吃了什么',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1393,13 +1573,73 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  void _addRecommendedDish(String rawName) {
+  Widget _buildPhotoSectionCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceBg(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+        border: Border.all(color: CanteenTheme.borderColor(isDark), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '实拍图片',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: CanteenTheme.textPrimaryColor(isDark),
+                ),
+              ),
+              Text(
+                '最多 3 张',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CanteenTheme.textSecondaryColor(isDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '图片会进入对应菜品的实拍图候选库，最多上传 3 张。',
+            style: TextStyle(
+              fontSize: 12,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CanteenReviewImagePicker(
+            images: _draftImages,
+            userId: _userId,
+            canteenId: widget.canteenId,
+            draftMode: _isEditing ? 'edit' : 'create',
+            draftReviewEventId: _isEditing ? _existingReviewId : null,
+            draftRepository: _draftRepo,
+            enabled: !_isSubmitting,
+            onImagesChanged: (nextImages) {
+              setState(() => _draftImages = nextImages);
+              _onFormChanged();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addRecommendedDish(String rawName, {int? dishId}) {
     final trimmed = rawName.trim();
     if (trimmed.isEmpty) return;
 
+    final resolvedDishId = dishId ?? _findDish(trimmed)?.id;
+
     // 自由输入只用于查找候选，不直接制造一个无法落库的菜名。
     // 新菜请从菜品页上传至少一张照片，进入 pending 审核后再回来选择。
-    if (_findDish(trimmed) == null) {
+    if (resolvedDishId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('该菜品尚未收录，请先上传菜品照片并等待审核')),
       );
@@ -1433,6 +1673,16 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
     setState(() {
       _recommendedDishes.add(trimmed);
+      _selectedDishIds[trimmed.toLowerCase()] = resolvedDishId;
+      _dishReviews.putIfAbsent(
+        resolvedDishId,
+        () => CanteenDishReviewInput(
+          dishId: resolvedDishId,
+          taste: 0,
+          value: 0,
+          portion: 0,
+        ),
+      );
       _dishInputController.clear();
       _dishSuggestions = [];
     });
@@ -1457,7 +1707,13 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   void _removeRecommendedDish(int index) {
     if (index < 0 || index >= _recommendedDishes.length) return;
     setState(() {
-      _recommendedDishes.removeAt(index);
+      final removed = _recommendedDishes.removeAt(index);
+      final removedId = _selectedDishIds.remove(removed.toLowerCase()) ??
+          _findDish(removed)?.id;
+      if (removedId != null) {
+        _dishReviews.remove(removedId);
+        _dishReviewNames.remove(removedId);
+      }
     });
     _onFormChanged();
   }
@@ -1489,6 +1745,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         taste: taste ?? current.taste,
         value: value ?? current.value,
         portion: portion ?? current.portion,
+        comment: current.comment,
       );
     });
     _onFormChanged();
@@ -1537,7 +1794,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                       color: CanteenTheme.textPrimaryColor(isDark),
                     ),
                     decoration: InputDecoration(
-                      hintText: '输入你觉得值得推荐的菜名',
+                      hintText: '搜索这次吃到的菜品',
                       hintStyle: TextStyle(
                         fontSize: 13,
                         color: CanteenTheme.textTertiaryColor(isDark),
@@ -1568,6 +1825,29 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
               ],
             ),
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      final name = _dishInputController.text.trim();
+                      if (name.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('先输入菜名，再提交新菜')),
+                        );
+                        return;
+                      }
+                      _openNewDishSubmission(name);
+                    },
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('没找到，提交新菜'),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(44, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+            ),
+          ),
         ],
 
         if (_dishSuggestions.isNotEmpty && _recommendedDishes.length < 3) ...[
@@ -1575,7 +1855,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           Text(
             _dishSuggestions.any((item) => item.isExact)
                 ? '匹配到菜品（点击快速填入）'
-                : '可能是这些菜（仅作提示）',
+                : '可能是这些菜（点击“就是这个”确认）',
             style: TextStyle(
               fontSize: 12,
               color: CanteenTheme.textTertiaryColor(isDark),
@@ -1586,27 +1866,53 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             spacing: 8,
             runSpacing: 8,
             children: _dishSuggestions.take(6).map((suggestion) {
-              return GestureDetector(
-                onTap: suggestion.isExact
-                    ? () => _addRecommendedDish(suggestion.name)
-                    : null,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: suggestion.isExact
-                        ? CanteenTheme.accentSoftColor(isDark)
-                        : CanteenTheme.surfaceMutedBg(isDark),
-                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                    border: Border.all(color: CanteenTheme.borderColor(isDark)),
-                  ),
-                  child: Text(
+              return Semantics(
+                button: true,
+                label: '${suggestion.name}，点击确认绑定现有菜品',
+                child: GestureDetector(
+                  onTap: () => _addRecommendedDish(
                     suggestion.name,
-                    style: TextStyle(
-                      fontSize: 12,
+                    dishId: suggestion.dishId > 0 ? suggestion.dishId : null,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
                       color: suggestion.isExact
-                          ? CanteenTheme.accentStrongColor(isDark)
-                          : CanteenTheme.textSecondaryColor(isDark),
+                          ? CanteenTheme.accentSoftColor(isDark)
+                          : CanteenTheme.surfaceMutedBg(isDark),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusSm),
+                      border: Border.all(
+                        color: CanteenTheme.borderColor(isDark),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          suggestion.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: suggestion.isExact
+                                ? CanteenTheme.accentStrongColor(isDark)
+                                : CanteenTheme.textSecondaryColor(isDark),
+                          ),
+                        ),
+                        if (!suggestion.isExact) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '就是这个',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: CanteenTheme.accentStrongColor(isDark),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -1674,7 +1980,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         if (_recommendedDishes.length < 3 && unselectedDishes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            '大家常推荐（点击快速填入）：',
+            '已有菜品（点击快速填入）：',
             style: TextStyle(
               fontSize: 12,
               color: CanteenTheme.textTertiaryColor(isDark),
@@ -1743,7 +2049,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '给「${dish.name}」评分（选填）',
+            '给「${dish.name}」评分（选填，三项需一起填写）',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -1822,53 +2128,22 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  Widget _buildPublicNoticeCard(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: CanteenTheme.surfaceMutedBg(isDark),
-        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.shield_outlined,
-            size: 18,
-            color: Color(0xFF6B7280),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '评价将公开展示给其他同学',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: CanteenTheme.textPrimaryColor(isDark),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '请真实客观评价，将显示校园昵称和头像',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  Widget _buildCreditNotice(bool isDark) {
+    return _buildNoticeSurface(
+      isDark,
+      icon: Icons.verified_user_rounded,
+      color: const Color(0xFF10B981),
+      title: '你的诚信度 96 · 权重约 0.96',
+      message: '评价会公开展示校园昵称和头像。若发现异常评价，可在评价菜单中举报。',
     );
   }
 
   Widget _buildBottomBar(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final canSubmit = _dimensions.isComplete && !_isSubmitting;
+    // 旧版星级草稿仍允许进入提交校验流程（例如先提示丢失图片），但真正的
+    // V2 请求仍会在 _submitReview 中要求五个显式维度完整。
+    final canSubmit =
+        (_dimensions.isComplete || _draftImages.isNotEmpty) && !_isSubmitting;
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
@@ -1922,7 +2197,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                       ),
                     )
                   : Text(
-                      _isEditingExisting ? '保存修改' : '发布评价',
+                      _isEditing ? '保存修改' : '发布评价',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

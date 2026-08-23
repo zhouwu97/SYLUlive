@@ -145,4 +145,30 @@ void main() {
 
     await ReplyNotificationService(dio).markRead(11);
   });
+
+  test('全部已读请求成功后正常返回', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(onRequest: (options, handler) {
+        expect(options.path, '/notifications/read');
+        handler.resolve(Response(requestOptions: options, statusCode: 200));
+      }),
+    );
+
+    await ReplyNotificationService(dio).markAllRead();
+  });
+
+  test('已读接口返回非 2xx 时抛出错误', () async {
+    final dio = Dio(BaseOptions(validateStatus: (_) => true));
+    dio.interceptors.add(
+      InterceptorsWrapper(onRequest: (options, handler) {
+        handler.resolve(Response(requestOptions: options, statusCode: 500));
+      }),
+    );
+
+    expect(
+      ReplyNotificationService(dio).markRead(11),
+      throwsA(isA<StateError>()),
+    );
+  });
 }

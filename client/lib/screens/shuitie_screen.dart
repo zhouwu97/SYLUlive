@@ -32,6 +32,7 @@ import '../services/feed_session_service.dart';
 import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
+import '../services/reply_notification_state.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
@@ -153,6 +154,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<UnreadReplyNotification> _unreadReplyNotifications = [];
   int _unreadReplyCount = 0;
   final Set<int> _openingUnreadReplyIds = <int>{};
+  int _unreadReplyLoadSerial = 0;
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
   bool _checkinStatusLoading = false;
@@ -213,6 +215,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ValueNotifier<double>(_currentModeIndex.toDouble());
 
     WidgetsBinding.instance.addObserver(this);
+    ReplyNotificationState.instance
+        .addListener(_handleReplyNotificationStateChanged);
     _feedSwitchController = AnimationController(
       vsync: this,
       duration: AppMotion.tab,
@@ -313,9 +317,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _autoRefreshTimer = null;
   }
 
+  void _handleReplyNotificationStateChanged() {
+    final change = ReplyNotificationState.instance.lastChange;
+    if (change == null) return;
+    final authProvider = context.read<AuthProvider>();
+    if (!_isCurrentReplyNotificationSession(
+      authProvider,
+      accountId: change.accountId,
+      sessionGeneration: change.sessionGeneration,
+    )) {
+      return;
+    }
+
+    switch (change.type) {
+      case ReplyNotificationStateChangeType.read:
+        final notificationId = change.notificationId;
+        if (notificationId != null) _removeUnreadReply(notificationId);
+      case ReplyNotificationStateChangeType.allRead:
+        _clearUnreadReplies();
+      case ReplyNotificationStateChangeType.refreshRequested:
+        unawaited(_loadUnreadReplyNotifications());
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ReplyNotificationState.instance
+        .removeListener(_handleReplyNotificationStateChanged);
     _stopAutoRefresh();
     _announcementDelayTimer?.cancel();
     _announcementDelayTimer = null;
@@ -556,6 +585,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _loadUnreadReplyNotifications() async {
+    final requestSerial = ++_unreadReplyLoadSerial;
     final authProvider = context.read<AuthProvider>();
     if (!authProvider.isLoggedIn) {
       if (mounted &&
@@ -569,12 +599,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     final generation = authProvider.sessionGeneration;
+    final syncVersion = ReplyNotificationState.instance.version;
     try {
       final page =
           await ReplyNotificationService(authProvider.dio).fetchUnread();
       if (!mounted ||
+          requestSerial != _unreadReplyLoadSerial ||
           !authProvider.isLoggedIn ||
-          authProvider.sessionGeneration != generation) {
+          authProvider.sessionGeneration != generation ||
+          ReplyNotificationState.instance.version != syncVersion) {
         return;
       }
       setState(() {
@@ -589,13 +622,25 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _removeUnreadReply(int notificationId) {
     if (!mounted) return;
+    final nextItems = _unreadReplyNotifications
+        .where((item) => item.id != notificationId)
+        .toList(growable: false);
+    final wasPresent = nextItems.length != _unreadReplyNotifications.length;
+    if (!wasPresent && _unreadReplyCount <= 0) return;
     setState(() {
-      _unreadReplyNotifications = _unreadReplyNotifications
-          .where((item) => item.id != notificationId)
-          .toList(growable: false);
-      _unreadReplyCount = _unreadReplyCount > 0
-          ? _unreadReplyCount - 1
-          : _unreadReplyNotifications.length;
+      _unreadReplyNotifications = nextItems;
+      _unreadReplyCount = _unreadReplyCount > 0 ? _unreadReplyCount - 1 : 0;
+    });
+  }
+
+  void _clearUnreadReplies() {
+    if (!mounted ||
+        (_unreadReplyNotifications.isEmpty && _unreadReplyCount == 0)) {
+      return;
+    }
+    setState(() {
+      _unreadReplyNotifications = [];
+      _unreadReplyCount = 0;
     });
   }
 
@@ -620,10 +665,23 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _openUnreadReply(UnreadReplyNotification item) async {
     if (_openingUnreadReplyIds.contains(item.id)) return;
     _openingUnreadReplyIds.add(item.id);
+    final authProvider = context.read<AuthProvider>();
+    final sessionGeneration = authProvider.sessionGeneration;
+    final accountIdOrNull = authProvider.user?.id;
+    if (!authProvider.isLoggedIn || accountIdOrNull == null) {
+      _openingUnreadReplyIds.remove(item.id);
+      return;
+    }
+    final accountId = accountIdOrNull;
     try {
-      final authProvider = context.read<AuthProvider>();
-      if (!authProvider.isLoggedIn) return;
       final response = await authProvider.dio.get('/posts/${item.postId}');
+      if (!_isCurrentReplyNotificationSession(
+        authProvider,
+        accountId: accountId,
+        sessionGeneration: sessionGeneration,
+      )) {
+        return;
+      }
       if (response.statusCode != 200 ||
           response.data is! Map<String, dynamic>) {
         throw StateError('帖子响应格式错误');
@@ -631,9 +689,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
         await ReplyNotificationService(authProvider.dio).markRead(item.id);
-        _removeUnreadReply(item.id);
+        if (_isCurrentReplyNotificationSession(
+          authProvider,
+          accountId: accountId,
+          sessionGeneration: sessionGeneration,
+        )) {
+          ReplyNotificationState.instance.markRead(
+            accountId: accountId,
+            sessionGeneration: sessionGeneration,
+            notificationId: item.id,
+          );
+        }
       } catch (error) {
         debugPrint('消费回复通知失败: $error');
+        if (mounted) {
+          AppFeedback.showSnackBar(context, '标记已读失败，请重试', isError: true);
+        }
       }
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -644,9 +715,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       if (!mounted) return;
       if (error.response?.statusCode == 404) {
         try {
-          final authProvider = context.read<AuthProvider>();
           await ReplyNotificationService(authProvider.dio).markRead(item.id);
-          _removeUnreadReply(item.id);
+          if (!_isCurrentReplyNotificationSession(
+            authProvider,
+            accountId: accountId,
+            sessionGeneration: sessionGeneration,
+          )) {
+            return;
+          }
+          ReplyNotificationState.instance.markRead(
+            accountId: accountId,
+            sessionGeneration: sessionGeneration,
+            notificationId: item.id,
+          );
           if (mounted) {
             AppFeedback.showSnackBar(context, '原帖已删除，已移除提醒');
           }
@@ -667,6 +748,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     } finally {
       _openingUnreadReplyIds.remove(item.id);
     }
+  }
+
+  bool _isCurrentReplyNotificationSession(
+    AuthProvider authProvider, {
+    required int accountId,
+    required int sessionGeneration,
+  }) {
+    return mounted &&
+        authProvider.isLoggedIn &&
+        authProvider.user?.id == accountId &&
+        authProvider.sessionGeneration == sessionGeneration;
   }
 
   /// 后台自动刷新语义：先探测，不打断阅读。
@@ -2487,6 +2579,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _SliverSearchBarDelegate oldDelegate) {
     return oldDelegate.child != child;
   }
+
 }
 
 

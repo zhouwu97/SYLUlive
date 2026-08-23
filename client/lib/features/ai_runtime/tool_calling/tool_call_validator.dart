@@ -9,6 +9,7 @@ import '../skills/today_schedule_skill.dart';
 import '../skills/week_schedule_skill.dart';
 import '../skills/competition_plan_action_skill.dart';
 import 'tool_call_models.dart';
+import '../skills/calendar_action_skill.dart';
 
 class ValidatedToolCall {
   const ValidatedToolCall({required this.call, required this.input});
@@ -66,7 +67,9 @@ class LocalToolCallValidator {
           call.arguments,
           const EmptyCompetitionAdvisorInput(),
         ),
-      DraftAddCompetitionToPlanSkill.skillId => _draftAddCompetition(call.arguments),
+      DraftAddCompetitionToPlanSkill.skillId =>
+        _draftAddCompetition(call.arguments),
+      CalendarActionSkill.skillId => _calendarAction(call.arguments, call.id),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
       AcademicFailureRiskSkill.skillId ||
@@ -141,10 +144,124 @@ class LocalToolCallValidator {
   Object _draftAddCompetition(Map<String, dynamic> arguments) {
     _requireOnly(arguments, const <String>{'event_id'});
     final eventID = arguments['event_id'];
-    if (eventID is! num || eventID % 1 != 0 || eventID < 1 || eventID > 2147483647) {
+    if (eventID is! num ||
+        eventID % 1 != 0 ||
+        eventID < 1 ||
+        eventID > 2147483647) {
       throw const ToolCallValidationException('赛事 ID 无效');
     }
     return DraftAddCompetitionToPlanInput(eventID.toInt());
+  }
+
+  Object _calendarAction(Map<String, dynamic> arguments, String requestId) {
+    const allowed = <String>{
+      'action_type',
+      'event_id',
+      'title',
+      'description',
+      'start_at',
+      'end_at',
+      'all_day',
+      'location',
+      'timezone',
+      'reminder_minutes_before',
+    };
+    _requireOnly(arguments, allowed);
+    final actionType = arguments['action_type'];
+    const actionTypes = <String>{
+      'calendar_event_create',
+      'calendar_event_update',
+      'calendar_event_delete',
+      'calendar_reminder_create',
+    };
+    if (actionType is! String || !actionTypes.contains(actionType)) {
+      throw const ToolCallValidationException('日历操作类型无效');
+    }
+    final eventId = _positiveInt(arguments['event_id'], '日历事件 ID 无效');
+    final title = _optionalString(arguments['title'], 160, '日历标题无效');
+    final description =
+        _optionalString(arguments['description'], 4000, '日历描述无效');
+    final location = _optionalString(arguments['location'], 200, '日历地点无效');
+    final timezone = _optionalString(arguments['timezone'], 64, '日历时区无效');
+    final startAt = _optionalDateTime(arguments['start_at'], '开始时间无效');
+    final endAt = _optionalDateTime(arguments['end_at'], '结束时间无效');
+    final allDay = arguments['all_day'];
+    if (allDay != null && allDay is! bool) {
+      throw const ToolCallValidationException('全天参数无效');
+    }
+    final reminder = arguments['reminder_minutes_before'];
+    if (reminder != null &&
+        (reminder is! num ||
+            reminder % 1 != 0 ||
+            reminder < 0 ||
+            reminder > 10080)) {
+      throw const ToolCallValidationException('提醒时间无效');
+    }
+    final reminderValue = reminder == null ? null : (reminder as num).toInt();
+    switch (actionType) {
+      case 'calendar_event_create':
+        if (title == null || startAt == null || endAt == null) {
+          throw const ToolCallValidationException('创建日历事件需要标题、开始和结束时间');
+        }
+      case 'calendar_event_update':
+        if (eventId == null ||
+            <Object?>[
+              title,
+              description,
+              startAt,
+              endAt,
+              allDay,
+              location,
+              timezone
+            ].every((item) => item == null)) {
+          throw const ToolCallValidationException('更新日历事件需要事件 ID 和至少一个字段');
+        }
+      case 'calendar_event_delete':
+        if (eventId == null) {
+          throw const ToolCallValidationException('删除日历事件需要事件 ID');
+        }
+      case 'calendar_reminder_create':
+        if (eventId == null || reminderValue == null) {
+          throw const ToolCallValidationException('添加日历提醒需要事件 ID 和提前分钟数');
+        }
+    }
+    return CalendarActionInput(
+      actionType: actionType,
+      requestId: requestId,
+      eventId: eventId,
+      title: title,
+      description: description,
+      startAt: startAt,
+      endAt: endAt,
+      allDay: allDay as bool?,
+      location: location,
+      timezone: timezone,
+      reminderMinutesBefore: reminderValue,
+    );
+  }
+
+  int? _positiveInt(Object? value, String message) {
+    if (value == null) return null;
+    if (value is! num || value % 1 != 0 || value < 1 || value > 2147483647) {
+      throw ToolCallValidationException(message);
+    }
+    return value.toInt();
+  }
+
+  String? _optionalString(Object? value, int maxLength, String message) {
+    if (value == null) return null;
+    if (value is! String || value.length > maxLength) {
+      throw ToolCallValidationException(message);
+    }
+    return value;
+  }
+
+  DateTime? _optionalDateTime(Object? value, String message) {
+    if (value == null) return null;
+    if (value is! String || DateTime.tryParse(value) == null) {
+      throw ToolCallValidationException(message);
+    }
+    return DateTime.parse(value).toUtc();
   }
 
   Object _empty(Map<String, dynamic> arguments, Object input) {

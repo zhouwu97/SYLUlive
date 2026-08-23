@@ -247,8 +247,11 @@ Future<void> _disposeCourse(WidgetTester tester, _CourseTestPage page) async {
   page.themeProvider.dispose();
 }
 
-CourseScheduleProvider _newProvider(AccountScopedSnapshotStore store) {
-  final provider = CourseScheduleProvider(Dio(), (_) => store);
+CourseScheduleProvider _newProvider(
+  AccountScopedSnapshotStore store, {
+  Dio? dio,
+}) {
+  final provider = CourseScheduleProvider(dio ?? Dio(), (_) => store);
   provider.syncSessionContext('1', 'edu-1');
   provider.switchTerm(
     const CourseTerm(
@@ -279,6 +282,36 @@ void main() {
     expect(find.textContaining('本地课表'), findsOneWidget);
     expect(find.textContaining('已同步'), findsOneWidget);
 
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('恢复前台只同步本地状态，不自动拉取教务课表', (tester) async {
+    final store = _MemorySnapshotStore();
+    await _seedVault(store, fetchedAt: DateTime.now());
+    var eduRequestCount = 0;
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/edu/courses') {
+            eduRequestCount++;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.cancel,
+            ),
+          );
+        },
+      ),
+    );
+    final provider = _newProvider(store, dio: dio);
+    final page = await _pumpCourse(tester, scheduleProvider: provider);
+
+    final state = tester.state(find.byType(CourseScheduleScreen)) as dynamic;
+    await state.refreshAfterResumeForTesting();
+
+    expect(eduRequestCount, 0);
     await _disposeCourse(tester, page);
   });
 

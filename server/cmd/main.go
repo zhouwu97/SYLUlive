@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"gorm.io/driver/postgres"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
@@ -355,6 +357,7 @@ func main() {
 		&models.UserCalendarReminder{},
 		&models.UserCalendarActionDraft{},
 		&models.UserCalendarActionAudit{},
+		&models.UserCalendarActionMigrationConflict{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},
@@ -373,6 +376,9 @@ func main() {
 	}
 	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
 		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
+	}
+	if err := models.EnsurePushDeviceIndexes(db); err != nil {
+		log.Fatal("推送设备唯一索引迁移失败:", err)
 	}
 	if err := ensureUserCalendarAgentActionUniqueIndex(db); err != nil {
 		log.Fatal("个人日历 Agent 动作幂等索引迁移失败:", err)
@@ -795,7 +801,7 @@ func main() {
 	var capabilityRegistry *ai.AgentCapabilityRegistry
 	var unifiedMCPGateway *ai.MCPV5Gateway
 	// Run Scoped Grant 由 Go Control Plane 创建，MCP 只通过 Authorization 接收 opaque token。
-	scopedGrantManager := ai.NewScopedGrantManager(time.Now)
+	scopedGrantManager := ai.NewScopedGrantManager(time.Now, ai.WithScopedGrantPermissionVersionReader(aiUserPermissionService))
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -2385,6 +2391,33 @@ func ensureUserCalendarReminderLiveUniqueIndex(db *gorm.DB) error {
 // ensureUserCalendarAgentActionUniqueIndex 以草稿 ID 作为 Agent 写入的幂等键，
 // 即使确认请求并发到达，也不允许同一草稿落出两条创建事件。
 func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("数据库连接为空")
+	}
+	var conflicts []struct {
+		UserID         uint
+		SourceType     string
+		SourceID       string
+		DuplicateCount int
+	}
+	if err := db.Table("user_calendar_events").
+		Select("user_id, source_type, source_id, COUNT(*) AS duplicate_count").
+		Where("source_type = ? AND NULLIF(TRIM(source_id), '') IS NOT NULL", models.UserCalendarSourceAgentAction).
+		Group("user_id, source_type, source_id").Having("COUNT(*) > 1").Scan(&conflicts).Error; err != nil {
+		return fmt.Errorf("个人日历 Agent 动作幂等预检失败: %w", err)
+	}
+	for _, conflict := range conflicts {
+		row := models.UserCalendarActionMigrationConflict{
+			UserID: conflict.UserID, SourceType: conflict.SourceType, SourceID: conflict.SourceID,
+			DuplicateCount: conflict.DuplicateCount, DetectedAt: time.Now(),
+		}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return fmt.Errorf("记录个人日历 Agent 动作幂等冲突失败: %w", err)
+		}
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("发现 %d 组个人日历 Agent 动作历史重复，已记录到 user_calendar_action_migration_conflicts；请先显式去重", len(conflicts))
+	}
 	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_events_agent_action
  ON user_calendar_events (user_id, source_type, source_id)
  WHERE source_type = 'agent_action' AND source_id <> ''`).Error

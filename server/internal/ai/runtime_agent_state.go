@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 	"shenliyuan/internal/models"
 )
 
@@ -70,10 +71,11 @@ func (r *Runtime) persistRuntimeAgentState(ctx context.Context, run *models.AIRu
 		return errors.New("agent_state_encode_failed")
 	}
 	result := r.db.WithContext(ctx).Model(&models.AIRun{}).
-		Where("id = ? AND constraint_version = ?", run.ID, run.ConstraintVersion).
+		Where("id = ? AND state_version = ? AND constraint_version = ?", run.ID, run.StateVersion, run.ConstraintVersion).
 		Updates(map[string]interface{}{
 			"agent_state_json": datatypes.JSON(payload), "planning_round": state.PlanningRounds,
 			"constraint_version": state.ConstraintVersion, "plan_version": state.PlanVersion,
+			"state_version": gorm.Expr("state_version + 1"),
 			"updated_at": time.Now(),
 		})
 	if result.Error != nil {
@@ -86,6 +88,7 @@ func (r *Runtime) persistRuntimeAgentState(ctx context.Context, run *models.AIRu
 	run.PlanningRound = state.PlanningRounds
 	run.ConstraintVersion = state.ConstraintVersion
 	run.PlanVersion = state.PlanVersion
+	run.StateVersion++
 	return nil
 }
 

@@ -53,3 +53,37 @@ func TestRuntimeAgentStateSurvivesRecoveryBoundary(t *testing.T) {
 	require.NoError(t, db.First(&resume, "run_id = ?", run.ID).Error)
 	require.Equal(t, "waiting", resume.Status)
 }
+
+func TestRuntimeAgentStateUsesStateVersionCASAcrossInstances(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime := newTestRuntime(t, db, &MockProvider{Response: ChatResponse{Content: "不会执行"}}, fixedRetriever{})
+	state := AgentRunState{
+		RunID: "run-state-cas", Goal: ParseGoalSpec("只读取公开政策", nil), Budget: AgentBudget{MaxToolCalls: 3},
+		ConstraintVersion: 1, PlanVersion: 1,
+	}
+	raw, err := json.Marshal(state)
+	require.NoError(t, err)
+	run := models.AIRun{
+		ID: "run-state-cas", UserID: 7, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStatePlanning, Provider: "test", Model: "test", MessageHash: "hash", MessageLength: 2,
+		AgentStateJSON: datatypes.JSON(raw), ConstraintVersion: 1, PlanVersion: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&run).Error)
+
+	// A 与 B 模拟分别从两个 Go 实例读到的同一份旧快照；B 不能覆盖 A 的新状态。
+	instanceA := run
+	instanceB := run
+	stateA := state
+	stateA.KnownFacts = []string{"instance-a"}
+	stateB := state
+	stateB.KnownFacts = []string{"instance-b"}
+	require.NoError(t, runtime.persistRuntimeAgentState(context.Background(), &instanceA, stateA))
+	require.ErrorContains(t, runtime.persistRuntimeAgentState(context.Background(), &instanceB, stateB), "agent_state_version_conflict")
+
+	var persisted models.AIRun
+	require.NoError(t, db.First(&persisted, "id = ?", run.ID).Error)
+	require.Equal(t, int64(1), persisted.StateVersion)
+	var persistedState AgentRunState
+	require.NoError(t, json.Unmarshal(persisted.AgentStateJSON, &persistedState))
+	require.Equal(t, []string{"instance-a"}, persistedState.KnownFacts)
+}

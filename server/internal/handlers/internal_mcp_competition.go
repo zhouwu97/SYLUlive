@@ -45,7 +45,7 @@ func InternalMCPScopedGrantMiddleware(manager *ai.ScopedGrantManager) gin.Handle
 		}
 		provided := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 		capability := internalMCPCapabilityForPath(c.Request.URL.Path)
-		grant, err := manager.Verify(provided, capability)
+		grant, err := manager.VerifyContext(c.Request.Context(), provided, capability)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "MCP Grant 无效"})
 			return
@@ -69,7 +69,7 @@ func InternalMCPGrantOrScopedGrantMiddleware(expected string, manager *ai.Scoped
 			return
 		}
 		capability := internalMCPCapabilityForPath(c.Request.URL.Path)
-		grant, err := manager.Verify(provided, capability)
+		grant, err := manager.VerifyContext(c.Request.Context(), provided, capability)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "MCP Grant 无效"})
 			return

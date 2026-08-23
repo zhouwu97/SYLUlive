@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,6 +147,14 @@ func (service *AcademicSnapshotService) LookupLatest(ctx context.Context, userID
 	if !dataset.Valid() || userID == 0 {
 		return AcademicSnapshotLookup{}, errors.New("学业快照查询参数无效")
 	}
+	if dataset == academic.DatasetGrades {
+		return service.lookupLatestGrades(ctx, userID, generation)
+	}
+	return service.lookupLatestSingle(ctx, userID, dataset, generation)
+}
+
+// lookupLatestSingle 读取只有一个全局作用域的数据集。
+func (service *AcademicSnapshotService) lookupLatestSingle(ctx context.Context, userID uint, dataset academic.DatasetType, generation uint) (AcademicSnapshotLookup, error) {
 	var snapshot models.AcademicSnapshot
 	err := service.db.WithContext(ctx).
 		Where("user_id = ? AND dataset_type = ? AND credential_generation = ?", userID, dataset, generation).
@@ -198,6 +207,131 @@ func (service *AcademicSnapshotService) LookupLatest(ctx context.Context, userID
 			}},
 		},
 	}, nil
+}
+
+// lookupLatestGrades 将各学期成绩快照合并为一次学业分析输入。
+//
+// 成绩快照按学期写入 academic_snapshots；如果只取 fetched_at 最新的一行，
+// 综合分析就会把“最近同步的学期”误当成“全部成绩”。这里按学期合并，
+// 同时把最早过期时间和任一部分失败状态向上汇总，防止全量结论伪装成新鲜数据。
+func (service *AcademicSnapshotService) lookupLatestGrades(ctx context.Context, userID, generation uint) (AcademicSnapshotLookup, error) {
+	var snapshots []models.AcademicSnapshot
+	err := service.db.WithContext(ctx).
+		Where("user_id = ? AND dataset_type = ? AND credential_generation = ?", userID, academic.DatasetGrades, generation).
+		Order("fetched_at DESC, id DESC").Find(&snapshots).Error
+	if err != nil {
+		return AcademicSnapshotLookup{}, err
+	}
+	if len(snapshots) == 0 {
+		return AcademicSnapshotLookup{}, nil
+	}
+
+	grades := make([]interface{}, 0, 128)
+	coveredTerms := make([]map[string]interface{}, 0, len(snapshots))
+	evidence := make([]academic.Evidence, 0, len(snapshots))
+	warnings := make([]string, 0, len(snapshots))
+	status := academic.DataStatusAvailable
+	isStale := false
+	isPartial := false
+	fetchedAt := snapshots[0].FetchedAt
+	expiresAt := snapshots[0].ExpiresAt
+
+	for _, snapshot := range snapshots {
+		payload := json.RawMessage(snapshot.PayloadJSON)
+		if !json.Valid(payload) || snapshot.PayloadHash != academicPayloadHash(payload) {
+			return AcademicSnapshotLookup{Found: true, Corrupted: true}, ErrAcademicSnapshotCorrupted
+		}
+
+		var envelope map[string]interface{}
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			return AcademicSnapshotLookup{Found: true, Corrupted: true}, ErrAcademicSnapshotCorrupted
+		}
+		rawGrades, ok := envelope["grades"].([]interface{})
+		if !ok {
+			return AcademicSnapshotLookup{Found: true, Corrupted: true}, ErrAcademicSnapshotCorrupted
+		}
+		grades = append(grades, rawGrades...)
+
+		year, semester := splitGradeScope(snapshot.ScopeKey)
+		coveredTerms = append(coveredTerms, map[string]interface{}{
+			"scope_key":    snapshot.ScopeKey,
+			"year":         year,
+			"semester":     semester,
+			"course_count": len(rawGrades),
+		})
+		fetched := snapshot.FetchedAt
+		expires := snapshot.ExpiresAt
+		evidence = append(evidence, academic.Evidence{
+			Source: academic.DataSourceServerSnapshot, Dataset: academic.DatasetGrades,
+			ScopeKey: snapshot.ScopeKey, FetchedAt: &fetched, ExpiresAt: &expires,
+			IsStale: !snapshot.ExpiresAt.After(service.now()),
+		})
+
+		if snapshot.FetchedAt.After(fetchedAt) {
+			fetchedAt = snapshot.FetchedAt
+		}
+		if snapshot.ExpiresAt.Before(expiresAt) {
+			expiresAt = snapshot.ExpiresAt
+		}
+		if snapshot.IsPartial {
+			isPartial = true
+			warnings = append(warnings, "成绩覆盖不完整，不能据此断言全部学期没有风险")
+		}
+		if !snapshot.ExpiresAt.After(service.now()) {
+			isStale = true
+			warnings = append(warnings, "部分成绩快照已过期，最新变动请先刷新教务数据")
+		}
+	}
+
+	if isStale {
+		status = academic.DataStatusStale
+	} else if isPartial {
+		status = academic.DataStatusPartial
+	}
+	merged, err := json.Marshal(map[string]interface{}{
+		"grades":        grades,
+		"covered_terms": coveredTerms,
+	})
+	if err != nil {
+		return AcademicSnapshotLookup{Found: true, Corrupted: true}, ErrAcademicSnapshotCorrupted
+	}
+	return AcademicSnapshotLookup{
+		Found: true,
+		Result: academic.ContextResult{
+			Data: merged, Status: status, Source: academic.DataSourceServerSnapshot,
+			FetchedAt: &fetchedAt, ExpiresAt: &expiresAt, IsStale: isStale,
+			IsPartial: isPartial, Warnings: uniqueAcademicWarnings(warnings), Evidence: evidence,
+		},
+	}, nil
+}
+
+func splitGradeScope(scope string) (string, int) {
+	parts := strings.Split(strings.TrimSpace(scope), ":")
+	if len(parts) != 2 {
+		return strings.TrimSpace(scope), 0
+	}
+	semester, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return strings.TrimSpace(parts[0]), 0
+	}
+	return strings.TrimSpace(parts[0]), semester
+}
+
+func uniqueAcademicWarnings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // StoreRemote 在同一事务内复核当前教务授权代次，再写入或更新快照。

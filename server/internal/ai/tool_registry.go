@@ -17,6 +17,8 @@ import (
 	"shenliyuan/internal/models"
 )
 
+var ErrStaleToolResult = errors.New("stale_tool_result_discarded")
+
 type PureReadTool interface {
 	Name() string
 	Version() string
@@ -49,14 +51,56 @@ type ToolExecutionResult struct {
 type toolCallContextKey struct{}
 
 type toolCallContext struct {
-	RunID    string
-	CallID   string
-	UserID   uint
-	ToolName string
+	RunID             string
+	CallID            string
+	UserID            uint
+	ToolName          string
+	PlanningRound     int
+	ConstraintVersion int
+	PlanVersion       int
 }
 
+// deviceJobResumeContext 只在服务端重试原始外层工具的调用栈中存在。
+// 它不会写入 Run 消息或 Tool Call Result，设备结果因此只是外层工具的依赖。
+type deviceJobResumeContext struct {
+	JobID    string
+	ToolName string
+	Dataset  string
+	Status   string
+	Result   json.RawMessage
+}
+
+type deviceJobResumeContextKey struct{}
+
 func withToolCallContext(ctx context.Context, runID, callID string, userID uint, toolName string) context.Context {
-	return context.WithValue(ctx, toolCallContextKey{}, toolCallContext{RunID: runID, CallID: callID, UserID: userID, ToolName: toolName})
+	return withToolCallContextVersioned(ctx, runID, callID, userID, toolName, currentAgentPlanContext(ctx))
+}
+
+func withToolCallContextVersioned(ctx context.Context, runID, callID string, userID uint, toolName string, plan AgentTraceFields) context.Context {
+	return context.WithValue(ctx, toolCallContextKey{}, toolCallContext{
+		RunID: runID, CallID: callID, UserID: userID, ToolName: toolName,
+		PlanningRound: plan.PlanningRound, ConstraintVersion: plan.ConstraintVersion, PlanVersion: plan.PlanVersion,
+	})
+}
+
+type agentPlanContextKey struct{}
+
+func withAgentPlanContext(ctx context.Context, plan AgentTraceFields) context.Context {
+	return context.WithValue(ctx, agentPlanContextKey{}, plan)
+}
+
+func currentAgentPlanContext(ctx context.Context) AgentTraceFields {
+	value, _ := ctx.Value(agentPlanContextKey{}).(AgentTraceFields)
+	return value
+}
+
+func withDeviceJobResumeContext(ctx context.Context, value deviceJobResumeContext) context.Context {
+	return context.WithValue(ctx, deviceJobResumeContextKey{}, value)
+}
+
+func currentDeviceJobResumeContext(ctx context.Context) (deviceJobResumeContext, bool) {
+	value, ok := ctx.Value(deviceJobResumeContextKey{}).(deviceJobResumeContext)
+	return value, ok && value.JobID != "" && value.Dataset != ""
 }
 
 func currentToolCallContext(ctx context.Context) (toolCallContext, bool) {
@@ -177,7 +221,10 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 	call := models.AIToolCall{
 		CallID: callID, RunID: runID, UserID: userID, ToolName: tool.Name(), ToolVersion: tool.Version(),
 		ArgumentsJSON: datatypes.JSON(arguments), ArgumentsHash: hashText, Status: "pending",
-		ExpiresAt: time.Now().Add(2 * time.Minute),
+		PlanningRound:     currentAgentPlanContext(ctx).PlanningRound,
+		ConstraintVersion: currentAgentPlanContext(ctx).ConstraintVersion,
+		PlanVersion:       currentAgentPlanContext(ctx).PlanVersion,
+		ExpiresAt:         time.Now().Add(2 * time.Minute),
 	}
 	err := r.db.WithContext(ctx).Create(&call).Error
 	if err != nil {
@@ -200,8 +247,12 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 		return ToolExecutionResult{}, false, errors.New("tool_state_conflict")
 	}
 
-	value, executeErr := tool.Execute(withToolCallContext(ctx, runID, callID, userID, canonicalName), userID, arguments)
+	plan := currentAgentPlanContext(ctx)
+	value, executeErr := tool.Execute(withToolCallContextVersioned(ctx, runID, callID, userID, canonicalName, plan), userID, arguments)
 	if executeErr != nil {
+		if r.isToolCallStale(ctx, callID, runID) {
+			return ToolExecutionResult{}, false, ErrStaleToolResult
+		}
 		now := time.Now()
 		_ = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
 			Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", 1).
@@ -224,18 +275,57 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 	if err != nil || len(encoded) > 256<<10 {
 		return ToolExecutionResult{}, false, errors.New("tool_result_invalid")
 	}
+	if r.isToolCallStale(ctx, callID, runID) {
+		return ToolExecutionResult{}, false, ErrStaleToolResult
+	}
 	resultHash := sha256.Sum256(encoded)
 	now := time.Now()
 	result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
-		Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", 1).
+		Where("call_id = ? AND status = ? AND state_version = ? AND (planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))", callID, "running", 1).
 		Updates(map[string]interface{}{
 			"status": "completed", "state_version": 2, "result_json": datatypes.JSON(encoded),
 			"result_hash": hex.EncodeToString(resultHash[:]), "completed_at": now,
 		})
 	if result.Error != nil || result.RowsAffected != 1 {
+		if r.isToolCallStale(ctx, callID, runID) {
+			return ToolExecutionResult{}, false, ErrStaleToolResult
+		}
 		return ToolExecutionResult{}, false, errors.New("tool_state_conflict")
 	}
 	return ToolExecutionResult{Result: encoded}, false, nil
+}
+
+func (r *ToolRegistry) isToolCallStale(ctx context.Context, callID, runID string) bool {
+	if r == nil || r.db == nil || callID == "" || runID == "" {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		_ = r.db.Model(&models.AIToolCall{}).
+			Where("call_id = ? AND run_id = ? AND status = ?", callID, runID, "running").
+			Updates(map[string]interface{}{"status": "discarded", "state_version": gorm.Expr("state_version + 1"), "completed_at": time.Now()}).Error
+		return true
+	}
+	var call models.AIToolCall
+	if err := r.db.WithContext(ctx).Select("planning_round", "constraint_version", "state_version", "status").First(&call, "call_id = ? AND run_id = ?", callID, runID).Error; err != nil {
+		return false
+	}
+	if call.Status != "running" {
+		return true
+	}
+	if call.PlanningRound == 0 && call.ConstraintVersion == 0 {
+		return false
+	}
+	var run models.AIRun
+	if err := r.db.WithContext(ctx).Select("planning_round", "constraint_version").First(&run, "id = ?", runID).Error; err != nil {
+		return true
+	}
+	if run.PlanningRound != call.PlanningRound || run.ConstraintVersion != call.ConstraintVersion {
+		_ = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+			Where("call_id = ? AND status = ?", callID, "running").
+			Updates(map[string]interface{}{"status": "discarded", "state_version": gorm.Expr("state_version + 1"), "completed_at": time.Now()}).Error
+		return true
+	}
+	return false
 }
 
 // CompleteWaitingCall 将已完成的外部操作结果写回原 Tool Call，保证恢复可重试且不重复执行工具。
@@ -303,8 +393,15 @@ func (r *ToolRegistry) RetryWaitingCall(ctx context.Context, callID, runID strin
 		return ToolExecutionResult{}, errors.New("tool_state_conflict")
 	}
 
-	value, executeErr := tool.Execute(withToolCallContext(ctx, runID, callID, userID, canonicalName), userID, arguments)
+	plan := AgentTraceFields{
+		RunID: call.RunID, PlanningRound: call.PlanningRound,
+		ConstraintVersion: call.ConstraintVersion, PlanVersion: call.PlanVersion,
+	}
+	value, executeErr := tool.Execute(withToolCallContextVersioned(ctx, runID, callID, userID, canonicalName, plan), userID, arguments)
 	if executeErr != nil {
+		if r.isToolCallStale(ctx, callID, runID) {
+			return ToolExecutionResult{}, ErrStaleToolResult
+		}
 		_ = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
 			Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion).
 			Updates(map[string]interface{}{
@@ -329,14 +426,20 @@ func (r *ToolRegistry) RetryWaitingCall(ctx context.Context, callID, runID strin
 	if err != nil || len(encoded) > 256<<10 {
 		return ToolExecutionResult{}, errors.New("tool_result_invalid")
 	}
+	if r.isToolCallStale(ctx, callID, runID) {
+		return ToolExecutionResult{}, ErrStaleToolResult
+	}
 	resultHash := sha256.Sum256(encoded)
 	result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
-		Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion).
+		Where("call_id = ? AND status = ? AND state_version = ? AND (planning_round = 0 AND constraint_version = 0 OR EXISTS (SELECT 1 FROM ai_runs WHERE ai_runs.id = ai_tool_calls.run_id AND ai_runs.planning_round = ai_tool_calls.planning_round AND ai_runs.constraint_version = ai_tool_calls.constraint_version))", callID, "running", runningVersion).
 		Updates(map[string]interface{}{
 			"status": "completed", "state_version": runningVersion + 1,
 			"result_json": datatypes.JSON(encoded), "result_hash": hex.EncodeToString(resultHash[:]), "completed_at": time.Now(),
 		})
 	if result.Error != nil || result.RowsAffected != 1 {
+		if r.isToolCallStale(ctx, callID, runID) {
+			return ToolExecutionResult{}, ErrStaleToolResult
+		}
 		return ToolExecutionResult{}, errors.New("tool_state_conflict")
 	}
 	return ToolExecutionResult{Result: encoded}, nil

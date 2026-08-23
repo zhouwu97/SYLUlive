@@ -970,6 +970,26 @@ void main() {
       expect(audit.entries.single.status, SkillStatus.success.name);
     });
 
+    test('分析个人数据前先读取 App 内的相关概览', () async {
+      final gateway = _Gateway();
+      final model = _ScriptedModel(
+        const <ToolModelTurn>[ToolModelTurn.finalAnswer('已根据数据完成分析。')],
+      );
+      final outcome = await _loop(model: model, gateway: gateway).run(
+        userMessage: '请分析我的成绩风险',
+        tools: buildStageSixToolDefinitions(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      expect(gateway.academicReads, 1);
+      expect(
+        model.receivedMessages
+            .where((message) => message.role == ToolMessageRole.tool)
+            .map((message) => message.content),
+        contains(predicate<String>((content) => content.contains('evidence'))),
+      );
+    });
+
     test('工具循环把模型推理上下文带入下一轮请求', () async {
       final model = _ScriptedModel(<ToolModelTurn>[
         ToolModelTurn.call(
@@ -1286,7 +1306,7 @@ void main() {
       );
     });
 
-    test('账号代际变化会在读取确定性竞赛结果前取消', () async {
+    test('账号代际变化会在模型分析前完成竞赛数据预读取', () async {
       var generation = 1;
       final source = _ToolCompetitionMatchSource();
       final model = _ScriptedModel(
@@ -1312,7 +1332,7 @@ void main() {
 
       expect(outcome.status, ToolLoopStatus.cancelled);
       expect(model.cancelled, isTrue);
-      expect(source.reads, 0);
+      expect(source.reads, 1);
     });
 
     test('单次 Skill 超时后失败关闭', () async {

@@ -3,12 +3,21 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/campus_calendar.dart';
+import '../models/agent_context.dart';
+import '../models/campus_timeline.dart';
 import '../models/exam_schedule.dart';
 import '../models/user_calendar.dart';
 import '../providers/campus_calendar_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/course_schedule_provider.dart';
 import '../providers/user_calendar_provider.dart';
 import '../services/exam_schedule_repository.dart';
 import '../services/app_resume_coordinator.dart';
+import '../services/ai_assistant_service.dart';
+import '../services/domain_change_bus.dart';
+import '../services/unified_timeline_service.dart';
+import '../utils/app_feedback.dart';
+import 'ai/ai_assistant_screen.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class CampusCalendarScreen extends StatefulWidget {
@@ -28,6 +37,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   late final PageController _monthPageController;
   final _examRepository = ExamScheduleRepository();
   List<ExamModel> _importedExams = const [];
+  List<CompetitionTimelineEntry> _competitionTimeline = const [];
+  bool _askingAgent = false;
   DateTime? _pendingSelectedDate;
   bool _isMonthPagerScrolling = false;
   bool? _pendingMonthPagerScrolling;
@@ -37,9 +48,11 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   @override
   void initState() {
     super.initState();
+    DomainChangeBus.instance.addListener(_handleDomainChange);
     _monthBase = _displayMonth;
     _monthPageController = PageController(initialPage: _monthCenterPage);
     _loadImportedExams();
+    _loadCompetitionTimeline();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final provider = _optionalUserCalendar(context, listen: false);
@@ -56,9 +69,119 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
 
   @override
   void dispose() {
+    DomainChangeBus.instance.removeListener(_handleDomainChange);
     _unregisterCalendarRefresh?.call();
     _monthPageController.dispose();
     super.dispose();
+  }
+
+  void _handleDomainChange() {
+    final change = DomainChangeBus.instance.lastChange;
+    if (!mounted ||
+        (change != DomainChange.competitionPlan &&
+            change != DomainChange.userCalendar)) {
+      return;
+    }
+    _optionalUserCalendar(context, listen: false)?.load();
+    if (change == DomainChange.competitionPlan) {
+      _loadCompetitionTimeline();
+    }
+  }
+
+  Future<void> _loadCompetitionTimeline() async {
+    final auth = _optionalAuth(context);
+    if (auth == null || !auth.isLoggedIn) return;
+    try {
+      final response = await auth.dio.get('/user/competition-calendar');
+      final rawItems = response.data is Map
+          ? (response.data as Map)['items']
+          : response.data;
+      if (rawItems is! List || !mounted) return;
+      final entries = <CompetitionTimelineEntry>[];
+      for (final raw in rawItems.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        final eventId = _readInt(
+          item['source_event_id'] ??
+              item['competition_event_id'] ??
+              item['event_id'],
+        );
+        if (eventId <= 0) continue;
+        entries.add(
+          CompetitionTimelineEntry(
+            eventId: eventId,
+            title: '${item['title'] ?? item['event_title'] ?? '竞赛'}',
+            registrationEnd: _readDate(item['registration_end']),
+            eventStart: _readDate(item['event_start']),
+            eventEnd: _readDate(item['event_end']),
+            version: _readInt(item['source_version']),
+            location: '${item['location'] ?? ''}',
+          ),
+        );
+      }
+      setState(() => _competitionTimeline = List.unmodifiable(entries));
+    } catch (_) {
+      // 竞赛计划不可用时仍保留官方校历、考试和个人事件。
+    }
+  }
+
+  CourseScheduleProvider? _optionalSchedule(
+    BuildContext context, {
+    required bool listen,
+  }) {
+    try {
+      return Provider.of<CourseScheduleProvider>(context, listen: listen);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  AuthProvider? _optionalAuth(BuildContext context) {
+    try {
+      return Provider.of<AuthProvider>(context, listen: false);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _openAgentForSelectedDate() async {
+    if (_askingAgent) return;
+    setState(() => _askingAgent = true);
+    final dio = context.read<AuthProvider>().dio;
+    try {
+      final service = AiAssistantService(dio);
+      final capabilities = await service.getCapabilities();
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AiAssistantScreen(
+            capabilities: capabilities,
+            service: service,
+            dio: dio,
+            initialPrompt: '这天有什么安排？',
+            launchContext: AgentLaunchContext(
+              entrypoint: 'calendar',
+              contextRefs: <AgentContextRef>[
+                AgentContextRef(
+                  type: 'date',
+                  id: _formatContextDate(_selectedDate),
+                ),
+              ],
+              suggestedIntent: '总结这一天的安排，并判断是否还有可用时间',
+            ),
+          ),
+        ),
+      );
+    } on AiAssistantServiceException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, error.message, isError: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '校园 Agent 暂不可用', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _askingAgent = false);
+    }
   }
 
   Future<void> _loadImportedExams() async {
@@ -171,8 +294,21 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
 
   Widget _buildCalendar(CampusCalendar calendar, bool isDark) {
     final userCalendar = _optionalUserCalendar(context, listen: true);
+    final schedule = _optionalSchedule(context, listen: true);
     final selectedInfo = calendar.dayInfo(_selectedDate);
     final selectedExams = _examsOn(_selectedDate, _importedExams);
+    final selectedTimeline = const UnifiedTimelineService().build(
+      range: DateTimeRange(
+        start: selectedInfo.date,
+        end: selectedInfo.date.add(const Duration(days: 1)),
+      ),
+      officialCalendar: calendar,
+      courses: schedule?.courses ?? const <CourseBlock>[],
+      semesterStart: schedule?.semesterStart,
+      exams: selectedExams,
+      competitions: _competitionTimeline,
+      personalEvents: userCalendar?.events ?? const <UserCalendarEvent>[],
+    );
 
     return SafeArea(
       top: false,
@@ -200,7 +336,10 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
                       .where((event) =>
                           sameDay(event.startAt.toLocal(), selectedInfo.date))
                       .toList(growable: false),
+              timelineItems: selectedTimeline,
               isDark: isDark,
+              isAskingAgent: _askingAgent,
+              onAskAgent: _openAgentForSelectedDate,
             ),
           ),
         ],
@@ -1221,13 +1360,19 @@ class _DayDetailCard extends StatelessWidget {
     required this.info,
     required this.exams,
     required this.personalEvents,
+    required this.timelineItems,
     required this.isDark,
+    required this.isAskingAgent,
+    required this.onAskAgent,
   });
 
   final CampusDayInfo info;
   final List<ExamModel> exams;
   final List<UserCalendarEvent> personalEvents;
+  final List<CampusTimelineItem> timelineItems;
   final bool isDark;
+  final bool isAskingAgent;
+  final VoidCallback onAskAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -1236,6 +1381,24 @@ class _DayDetailCard extends StatelessWidget {
     final status = _dayStatus(info, exams);
     final eventLines = <_DayDetailLine>[
       ..._eventLines(info, exams),
+      ...timelineItems
+          .where((item) =>
+              item.type == CampusTimelineType.course ||
+              item.type == CampusTimelineType.competition)
+          .map(
+            (item) => _DayDetailLine(
+              title: item.title,
+              description: item.location.isEmpty
+                  ? _timelineTypeLabel(item.type)
+                  : item.location,
+              icon: item.type == CampusTimelineType.course
+                  ? Icons.school_outlined
+                  : Icons.emoji_events_outlined,
+              color: item.type == CampusTimelineType.course
+                  ? _CalendarPalette.primary
+                  : _CalendarPalette.warm,
+            ),
+          ),
       ...personalEvents.map(
         (event) => _DayDetailLine(
           title: event.title,
@@ -1305,6 +1468,31 @@ class _DayDetailCard extends StatelessWidget {
             _DetailLine(line: line, isDark: isDark),
             if (line != eventLines.last) const SizedBox(height: 10),
           ],
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: isAskingAgent ? null : onAskAgent,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              foregroundColor: isDark
+                  ? _CalendarPalette.darkPrimary
+                  : _CalendarPalette.primary,
+              side: BorderSide(
+                color: isDark
+                    ? _CalendarPalette.darkPrimary.withValues(alpha: 0.45)
+                    : _CalendarPalette.primary.withValues(alpha: 0.35),
+              ),
+            ),
+            icon: isAskingAgent
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome_outlined, size: 18),
+            label: Text(
+              isAskingAgent ? '正在打开 Agent…' : '问 Agent：这天怎么安排？',
+            ),
+          ),
         ],
       ),
     );
@@ -1538,6 +1726,25 @@ String _dayStatus(CampusDayInfo info, List<ExamModel> exams) {
   if (info.isWeekend) return '周末';
   return '非教学周';
 }
+
+String _formatContextDate(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
+
+String _timelineTypeLabel(CampusTimelineType type) => switch (type) {
+      CampusTimelineType.course => '课程安排',
+      CampusTimelineType.exam => '考试安排',
+      CampusTimelineType.competition => '竞赛计划',
+      CampusTimelineType.campusEvent => '校历事件',
+      CampusTimelineType.personal => '我的日历',
+    };
+
+int _readInt(dynamic value) =>
+    value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+
+DateTime? _readDate(dynamic value) =>
+    value == null ? null : DateTime.tryParse('$value');
 
 List<_DayDetailLine> _eventLines(CampusDayInfo info, List<ExamModel> exams) {
   final lines = <_DayDetailLine>[];

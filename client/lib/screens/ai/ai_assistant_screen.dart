@@ -35,6 +35,7 @@ import '../../models/ai_capabilities.dart';
 import '../../models/ai_chat_message.dart';
 import '../../models/ai_run_event.dart';
 import '../../models/competition_action_draft.dart';
+import '../../models/agent_context.dart';
 import '../../models/user_calendar.dart';
 import '../../platform/contracts/reminder_notification_client.dart';
 import '../../providers/auth_provider.dart';
@@ -75,6 +76,7 @@ class AiAssistantScreen extends StatefulWidget {
   final Dio dio;
   final bool initialPersonalMode;
   final String? initialPrompt;
+  final AgentLaunchContext? launchContext;
   final PersonalConversationStore Function(String accountKey)?
       personalConversationStoreFactory;
 
@@ -85,6 +87,7 @@ class AiAssistantScreen extends StatefulWidget {
     required this.dio,
     this.initialPersonalMode = false,
     this.initialPrompt,
+    this.launchContext,
     this.personalConversationStoreFactory,
   });
 
@@ -132,6 +135,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       widget.service,
       initialCapabilities: widget.capabilities,
       deviceToolSync: DeviceToolBridge.syncPending,
+      launchContext: widget.launchContext,
     );
     _permissionService = AiPersonalDataPermissionService(widget.dio);
     _provider.addListener(_handleRunConsentRequired);
@@ -811,10 +815,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _loadAgentPermissionMode() async {
     try {
-      final permissions = await _permissionService.list();
+      final mode = await _permissionService.getMode();
       if (mounted) {
         setState(() {
-          _agentTrusted = aiAgentPermissionIsTrusted(permissions);
+          _agentTrusted = mode == AiAgentPermissionMode.trusted;
           _agentPermissionLoaded = true;
         });
         _handleRunConsentRequired();
@@ -966,6 +970,17 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final updated =
           await DioCalendarActionSource(widget.dio).confirm(draft.id);
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (updated.postconditionVerified == false) {
+        _replaceCalendarDraft(updated);
+        await _persistPersonalHistory();
+        if (mounted) {
+          AppFeedback.error(
+            '操作接口已返回，但回读未确认日历是否生效，请刷新日历后再判断',
+            context: context,
+          );
+        }
+        return;
+      }
       final localReminderScheduled =
           await _scheduleConfirmedCalendarReminder(updated);
       _replaceCalendarDraft(updated);
@@ -1131,7 +1146,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           ),
         if (_personalEvidence.isNotEmpty)
           AiEvidenceCard(evidence: _personalEvidence),
-        if (_personalSending) const AiTypingStatus(status: '正在本地校验并执行已授权能力'),
+        if (_personalSending)
+          const AiTypingStatus(status: '正在先读取 App 数据，再进行分析'),
         if (_personalError != null)
           AiErrorCard(
             message: _personalError!,
@@ -1362,6 +1378,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         message.requestId ==
                                             provider.activeSubmissionRequestId)
                                       AiAgentExecutionCard(
+                                        activities: provider.agentActivities,
                                         event: provider.agentEvent,
                                         running: provider.isRunning,
                                         completed: provider.agentFlowCompleted,
@@ -1382,6 +1399,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                             _ConsentChoice.denied,
                                           ),
                                         ),
+                                        onRetryRefresh: provider.canRetry
+                                            ? provider.retryLast
+                                            : null,
+                                        onUseExistingData:
+                                            provider.canUseExistingData
+                                                ? provider.useExistingData
+                                                : null,
                                       ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==

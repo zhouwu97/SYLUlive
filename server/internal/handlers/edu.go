@@ -1150,15 +1150,15 @@ type gradesResponse struct {
 }
 
 type gradeInfo struct {
-	Name        string  `json:"name"`
-	ClassID     string  `json:"class_id"`
-	Teacher     string  `json:"teacher"`
-	IsDegree    bool    `json:"is_degree"`
-	Credits     float64 `json:"credits"`
-	GPA         float64 `json:"gpa"`
-	GradePoints float64 `json:"grade_points"`
-	Fraction    float64 `json:"fraction"`
-	Grade       string  `json:"grade"`
+	Name        string   `json:"name"`
+	ClassID     string   `json:"class_id"`
+	Teacher     string   `json:"teacher"`
+	IsDegree    bool     `json:"is_degree"`
+	Credits     float64  `json:"credits"`
+	GPA         *float64 `json:"gpa,omitempty"`
+	GradePoints *float64 `json:"grade_points,omitempty"`
+	Fraction    *float64 `json:"fraction,omitempty"`
+	Grade       string   `json:"grade"`
 }
 
 func getGradesByInfo(client *resty.Client, cookie, year string, semester int) ([]gradeInfo, error) {
@@ -1208,14 +1208,22 @@ func getGradesByInfo(client *resty.Client, cookie, year string, semester int) ([
 			IsDegree: v.Sfxwkc == "是",
 		}
 		grade.Credits, _ = strconv.ParseFloat(v.Xf, 64)
-		grade.GPA, _ = strconv.ParseFloat(v.Jd, 64)
-		grade.GradePoints, _ = strconv.ParseFloat(v.Xfjd, 64)
-		grade.Fraction, _ = strconv.ParseFloat(v.Bfzcj, 64)
+		grade.GPA = optionalGradeNumber(v.Jd)
+		grade.GradePoints = optionalGradeNumber(v.Xfjd)
+		grade.Fraction = optionalGradeNumber(v.Bfzcj)
 		grade.Grade = v.Cj
 		result = append(result, grade)
 	}
 
 	return result, nil
+}
+
+func optionalGradeNumber(value string) *float64 {
+	number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return nil
+	}
+	return &number
 }
 
 func parseWeekday(s string) int {

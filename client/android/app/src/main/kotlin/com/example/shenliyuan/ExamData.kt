@@ -9,15 +9,21 @@ import org.json.JSONObject
  *
  * JSON 结构（由 Flutter 端 shared_preferences 写入）：
  * ```json
- * [
- *   {
- *     "name": "高等数学",
- *     "date": "2026-06-24",
- *     "time": "08:00-10:00",
- *     "location": "综合楼A101"
- *   }
- * ]
+ * {
+ *   "schema_version": 1,
+ *   "updated_at": "2026-06-01T00:00:00.000Z",
+ *   "exams": [
+ *     {
+ *       "name": "高等数学",
+ *       "date": "2026-06-24",
+ *       "time": "08:00-10:00",
+ *       "location": "综合楼A101"
+ *     }
+ *   ]
+ * }
  * ```
+ *
+ * 仍兼容 schema_version 引入前的顶层数组，避免升级后已缓存的小组件数据失效。
  */
 data class WidgetExamData(
     val title: String = "考试日程",
@@ -56,7 +62,13 @@ object ExamDataReader {
     }
 
     private fun parse(raw: String): WidgetExamData {
-        val arr = JSONArray(raw)
+        val normalized = raw.trim()
+        val (title, arr) = if (normalized.startsWith("[")) {
+            "考试日程" to JSONArray(normalized)
+        } else {
+            val root = JSONObject(normalized)
+            root.optString("title", "考试日程") to (root.optJSONArray("exams") ?: JSONArray())
+        }
         val exams = mutableListOf<WidgetExamData.Exam>()
         for (i in 0 until arr.length()) {
             val c = arr.getJSONObject(i)
@@ -107,6 +119,6 @@ object ExamDataReader {
             ))
         }
 
-        return WidgetExamData(exams = exams)
+        return WidgetExamData(title = title, exams = exams)
     }
 }

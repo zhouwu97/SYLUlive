@@ -3,12 +3,70 @@ package ai
 import "strings"
 
 const (
-	modelToolHy3Competition = "hy3_decision_compare_competitions"
-	modelToolHy3WeekPlan    = "hy3_decision_plan_student_week"
-	modelToolCompetition    = "competition_search_catalog"
-	modelToolAcademicRisk   = "academic_get_risk_analysis"
-	modelToolSchedule       = "schedule_get_availability"
+	modelToolHy3Competition    = "hy3_decision_compare_competitions"
+	modelToolHy3CompetitionFit = "hy3_decision_explain_competition_candidates"
+	modelToolHy3WeekPlan       = "hy3_decision_plan_student_week"
+	modelToolCompetition       = "competition_search_catalog"
+	modelToolCompetitionPlan   = "competition_get_my_plan"
+	modelToolAcademicRisk      = "academic_get_risk_analysis"
+	modelToolSchedule          = "schedule_get_availability"
 )
+
+// shortlistModelTools 使用 Capability Registry 做第一轮语义召回，避免把整张工具表
+// 直接暴露给模型。个人能力仍由后续 subject/grant 校验决定，不能通过检索绕过权限。
+func shortlistModelTools(message string, definitions []ToolDefinition) []ToolDefinition {
+	if len(definitions) == 0 {
+		return nil
+	}
+	sourceDefinitions := definitions
+	personal := isPersonalToolIntent(message)
+	if !personal {
+		sourceDefinitions = publicToolDefinitions(definitions)
+	}
+	allowed := make([]AgentCapability, 0, len(sourceDefinitions))
+	for _, definition := range sourceDefinitions {
+		allowed = append(allowed, AgentCapability{
+			ID:          definition.Name,
+			Version:     AgentContractVersion,
+			Description: definition.Description,
+			// sourceDefinitions 已先完成公开/个人边界过滤；这里保留 public
+			// fallback，让个人问题仍可同时看到不直接命中的公共事实工具。
+			Lane:      "public",
+			Available: true,
+		})
+	}
+	matched := RetrieveCapabilities(message, allowed, nil, 12)
+	if len(matched) == 0 {
+		if personal {
+			return definitions
+		}
+		return publicToolDefinitions(definitions)
+	}
+	matchedNames := make(map[string]struct{}, len(matched))
+	for _, capability := range matched {
+		matchedNames[capability.ID] = struct{}{}
+	}
+	selected := make([]ToolDefinition, 0, len(matchedNames))
+	for _, definition := range sourceDefinitions {
+		if _, ok := matchedNames[definition.Name]; ok {
+			selected = append(selected, definition)
+		}
+	}
+	return selected
+}
+
+// requiredFastPathTool 只保留确定性、低歧义的硬约束入口；复杂请求交给模型在
+// shortlist 后自主规划，避免把旧路由器变成第二套隐式 Agent。
+func requiredFastPathTool(message string, definitions []ToolDefinition) (string, bool) {
+	if isScheduleAvailabilityIntent(message) {
+		for _, definition := range definitions {
+			if definition.Name == modelToolSchedule {
+				return definition.Name, true
+			}
+		}
+	}
+	return "", false
+}
 
 // routeModelTools 根据用户意图缩小模型可见工具集合。
 // Hy3 能力缺失时只暴露同领域的普通校园工具，避免模型跨领域乱选工具。
@@ -26,6 +84,11 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 			return selected
 		}
 		return definitions
+	}
+	if isPersonalCompetitionPlanIntent(message) {
+		if selected := competitionPlanToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
 	}
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
@@ -80,6 +143,13 @@ func requiredDecisionTool(message string, definitions []ToolDefinition) (string,
 			}
 		}
 		return "", false
+	}
+	if isPersonalCompetitionPlanIntent(message) {
+		for _, definition := range definitions {
+			if definition.Name == modelToolCompetitionPlan {
+				return modelToolCompetitionPlan, true
+			}
+		}
 	}
 	_, required := hy3RouteTargets(message)
 	if required == "" {
@@ -167,6 +237,16 @@ func scheduleAvailabilityToolDefinitions(definitions []ToolDefinition) []ToolDef
 	return selected
 }
 
+func competitionPlanToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, 1)
+	for _, definition := range definitions {
+		if definition.Name == modelToolCompetitionPlan {
+			selected = append(selected, definition)
+		}
+	}
+	return selected
+}
+
 // publicToolDefinitions 禁止普通校园问答误读个人成绩、课表或画像。
 // 个人数据工具只有在问题明确指向当前用户或要求执行个人查询时才对模型可见。
 func publicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
@@ -185,6 +265,12 @@ func isPersonalModelTool(name string) bool {
 		strings.HasPrefix(name, "schedule_") ||
 		strings.HasPrefix(name, "erke_") ||
 		strings.HasPrefix(name, "profile_") ||
+		strings.HasPrefix(name, "personal_calendar_") ||
+		strings.HasPrefix(name, "competition_get_my_") ||
+		strings.HasPrefix(name, "competition_get_deadlines") ||
+		strings.HasPrefix(name, "competition_get_calendar") ||
+		strings.HasPrefix(name, "calendar_propose_action") ||
+		strings.HasPrefix(name, "draft_calendar_action") ||
 		strings.HasPrefix(name, "hy3_decision_")
 }
 
@@ -193,7 +279,7 @@ func isPersonalToolIntent(message string) bool {
 	if normalized == "" {
 		return false
 	}
-	if containsAny(normalized, "我的", "帮我", "给我", "为我", "本人", "个人") {
+	if containsAny(normalized, "我的", "帮我", "给我", "为我", "本人", "个人", "适合我") || strings.Contains(normalized, "我") {
 		return true
 	}
 	academicTopic := containsAny(normalized, "学业", "成绩", "gpa", "绩点", "学分", "挂科")
@@ -209,12 +295,24 @@ func isPersonalToolIntent(message string) bool {
 // 这类问题不能只把 schedule 工具“展示”给模型，否则模型可能直接用政策检索结果作答。
 func isScheduleAvailabilityIntent(message string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(message))
-	if normalized == "" || !containsAny(normalized, "空闲", "有空", "比较空", "空余", "空档", "没课", "无课") {
+	if normalized == "" {
 		return false
 	}
-	return containsAny(normalized,
-		"本周", "这周", "下周", "今天", "明天", "上午", "下午", "晚上", "时间", "哪天", "星期",
-		"周一", "周二", "周三", "周四", "周五", "周六", "周日")
+	if containsAny(normalized, "空闲", "有空", "比较空", "空余", "空档", "没课", "无课") {
+		return containsAny(normalized,
+			"本周", "这周", "下周", "今天", "明天", "上午", "下午", "晚上", "时间", "哪天", "星期",
+			"周一", "周二", "周三", "周四", "周五", "周六", "周日")
+	}
+	return isPersonalToolIntent(normalized) &&
+		containsAny(normalized, "课表", "课程", "日程", "安排") &&
+		containsAny(normalized, "分析", "评估", "规划", "建议")
+}
+
+func isPersonalCompetitionPlanIntent(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return containsAny(normalized, "竞赛", "比赛") &&
+		containsAny(normalized, "我的", "个人", "计划", "安排", "截止", "进度") &&
+		containsAny(normalized, "分析", "查看", "总结", "规划", "建议", "提醒", "安排")
 }
 
 func routeModelToolsForMessages(messages []Message, definitions []ToolDefinition) []ToolDefinition {
@@ -245,6 +343,10 @@ func hy3RouteTargets(message string) (map[string]struct{}, string) {
 			modelToolCompetition:    {},
 			modelToolHy3Competition: {},
 		}, modelToolHy3Competition
+	}
+	competitionSuitability := containsAny(normalized, "适合我", "推荐我", "匹配我", "适合参加")
+	if competitionTopic && competitionSuitability {
+		return map[string]struct{}{modelToolHy3CompetitionFit: {}}, modelToolHy3CompetitionFit
 	}
 	return nil, ""
 }

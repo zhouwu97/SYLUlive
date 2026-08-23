@@ -443,7 +443,12 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 	if err := db.Where("id = ?", toUserID).Select("id, nickname, device_token").First(&user).Error; err != nil {
 		return
 	}
-	if user.DeviceToken == "" {
+	var devices []models.PushDevice
+	if err := db.Where("user_id = ? AND enabled = ? AND registration_id <> ''", toUserID, true).
+		Find(&devices).Error; err != nil {
+		return
+	}
+	if len(devices) == 0 && user.DeviceToken == "" {
 		return
 	}
 
@@ -454,15 +459,24 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 
 	contentPreview := textutils.TruncateGraphemes(content, 50)
 
-	go func() {
+	legacyToken := user.DeviceToken
+	go func(devices []models.PushDevice, legacyToken string) {
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
 		extras := replyPushExtras(toUserID, replyID, postID)
 		title := "您有新的回复"
 		alert := fmt.Sprintf("%s: %s", fromUser.Nickname, contentPreview)
-		if err := jpush.SendNotification(user.DeviceToken, title, alert, extras); err != nil {
-			fmt.Printf("JPush send failed: %v\n", err)
+		if len(devices) == 0 {
+			if err := jpush.SendNotification(legacyToken, title, alert, extras); err != nil {
+				fmt.Printf("JPush send failed: %v\n", err)
+			}
+			return
 		}
-	}()
+		for _, device := range devices {
+			if err := jpush.SendRegistrationNotification(device.RegistrationID, device.Platform, title, alert, extras); err != nil {
+				fmt.Printf("JPush send failed for %s: %v\n", device.Platform, err)
+			}
+		}
+	}(devices, legacyToken)
 }
 
 func replyPushExtras(toUserID, replyID, postID uint) map[string]interface{} {
@@ -542,8 +556,16 @@ func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret 
 
 	if jpushAppKey != "" && jpushMasterSecret != "" {
 		var user models.User
-		if err := db.Where("id = ?", toUserID).Select("device_token").First(&user).Error; err == nil && user.DeviceToken != "" {
-			go func() {
+		if err := db.Where("id = ?", toUserID).Select("device_token").First(&user).Error; err == nil {
+			var devices []models.PushDevice
+			if err := db.Where("user_id = ? AND enabled = ? AND registration_id <> ''", toUserID, true).Find(&devices).Error; err != nil {
+				return
+			}
+			if len(devices) == 0 && user.DeviceToken == "" {
+				return
+			}
+			legacyToken := user.DeviceToken
+			go func(devices []models.PushDevice, legacyToken string) {
 				jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
 				extras := map[string]interface{}{
 					"type":           "featured_application",
@@ -551,10 +573,18 @@ func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret 
 					"application_id": appID,
 					"status":         status,
 				}
-				if err := jpush.SendNotification(user.DeviceToken, "系统通知", content, extras); err != nil {
-					fmt.Printf("JPush send failed: %v\n", err)
+				if len(devices) == 0 {
+					if err := jpush.SendNotification(legacyToken, "系统通知", content, extras); err != nil {
+						fmt.Printf("JPush send failed: %v\n", err)
+					}
+					return
 				}
-			}()
+				for _, device := range devices {
+					if err := jpush.SendRegistrationNotification(device.RegistrationID, device.Platform, "系统通知", content, extras); err != nil {
+						fmt.Printf("JPush send failed for %s: %v\n", device.Platform, err)
+					}
+				}
+			}(devices, legacyToken)
 		}
 	}
 }

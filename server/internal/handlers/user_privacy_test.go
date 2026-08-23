@@ -20,7 +20,7 @@ func newUserPrivacyTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}, &models.PushDevice{}); err != nil {
 		t.Fatalf("migrate users: %v", err)
 	}
 	return db
@@ -68,6 +68,52 @@ func TestUpdatePushSettingsKeepsActiveDeviceWhenAnotherInstallationDisables(t *t
 	}
 	if updated.PushDataProcessingEnabled || updated.PushInstallationID != "" || updated.DeviceToken != "" {
 		t.Fatalf("active device did not clear push state: %#v", updated)
+	}
+}
+
+func TestUpdatePushSettingsStoresMultiplePlatformsPerUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUserPrivacyTestDB(t)
+	user := models.User{StudentID: "multi-device-user", PasswordHash: "hash"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	handler := NewUserHandler(db)
+
+	call := func(body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPut, "/api/user/push-settings", strings.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		context.Set("user_id", user.ID)
+		handler.UpdatePushSettings(context)
+		return recorder
+	}
+
+	if recorder := call(`{"enabled":true,"installation_id":"iphone","registration_id":"ios-rid","notice_version":"v1","platform":"ios"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("iOS enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := call(`{"enabled":true,"installation_id":"android","registration_id":"android-rid","notice_version":"v1","platform":"android"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("Android enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var devices []models.PushDevice
+	if err := db.Where("user_id = ?", user.ID).Order("device_id").Find(&devices).Error; err != nil {
+		t.Fatalf("load push devices: %v", err)
+	}
+	if len(devices) != 2 || devices[0].Platform != "android" || devices[1].Platform != "ios" || !devices[0].Enabled || !devices[1].Enabled {
+		t.Fatalf("unexpected multi-device state: %#v", devices)
+	}
+
+	if recorder := call(`{"enabled":false,"installation_id":"iphone","notice_version":"v1","platform":"ios"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("iOS disable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var android models.PushDevice
+	if err := db.Where("device_id = ?", "android").First(&android).Error; err != nil {
+		t.Fatalf("reload Android device: %v", err)
+	}
+	if !android.Enabled {
+		t.Fatal("disabling iOS device unexpectedly disabled Android device")
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/ai"
@@ -95,6 +96,10 @@ func TestCalendarActionDraftSupportsCreateUpdateDeleteAndReminder(t *testing.T) 
 	if confirmedCreate.Code != http.StatusOK || !containsJSON(confirmedCreate.Body.Bytes(), "executed") {
 		t.Fatalf("confirm create status=%d body=%s", confirmedCreate.Code, confirmedCreate.Body.String())
 	}
+	var confirmedCreateResponse calendarActionResponse
+	if err := json.Unmarshal(confirmedCreate.Body.Bytes(), &confirmedCreateResponse); err != nil || confirmedCreateResponse.PostconditionVerified == nil || !*confirmedCreateResponse.PostconditionVerified {
+		t.Fatalf("confirm create postcondition=%+v err=%v", confirmedCreateResponse, err)
+	}
 
 	update := calendarActionRequest(t, handler.CreateCalendarEventDraft, http.MethodPost, "/ai/action-drafts/calendar-event", fmt.Sprintf(`{"action_type":"calendar_event_update","event_id":%d,"title":"更新后的事件"}`, event.ID), user.ID, 0)
 	if update.Code != http.StatusCreated {
@@ -141,6 +146,10 @@ func TestCalendarActionDraftSupportsCreateUpdateDeleteAndReminder(t *testing.T) 
 	confirmedDelete := calendarActionRequest(t, handler.ConfirmCalendarEventDraft, http.MethodPost, "/confirm", `{}`, user.ID, deleteResponse.ID)
 	if confirmedDelete.Code != http.StatusOK {
 		t.Fatalf("confirm delete status=%d body=%s", confirmedDelete.Code, confirmedDelete.Body.String())
+	}
+	var confirmedDeleteResponse calendarActionResponse
+	if err := json.Unmarshal(confirmedDelete.Body.Bytes(), &confirmedDeleteResponse); err != nil || confirmedDeleteResponse.PostconditionVerified == nil || !*confirmedDeleteResponse.PostconditionVerified {
+		t.Fatalf("confirm delete postcondition=%+v err=%v", confirmedDeleteResponse, err)
 	}
 	var deleted models.UserCalendarEvent
 	if err := db.Unscoped().First(&deleted, event.ID).Error; err != nil || !deleted.DeletedAt.Valid {
@@ -313,6 +322,20 @@ func TestCampusCalendarActionProposalOnlyCreatesDraft(t *testing.T) {
 	if retryDraft.ID != draft.ID {
 		t.Fatalf("proposal idempotency IDs differ: %d vs %d", draft.ID, retryDraft.ID)
 	}
+}
+
+func TestCalendarActionPostconditionFailsClosedWhenReadBackIsMissing(t *testing.T) {
+	db := newUserCalendarActionTestDB(t)
+	handler := NewUserCalendarHandler(db)
+	user := createCalendarActionTestUser(t, db, "postcondition-missing")
+	missingID := uint(999999)
+	verified, reason, err := handler.verifyCalendarActionPostcondition(context.Background(), user.ID, calendarActionResponse{
+		ActionType:      models.UserCalendarActionCreate,
+		CalendarEventID: &missingID,
+	})
+	require.NoError(t, err)
+	require.False(t, verified)
+	require.Equal(t, "postcondition_not_confirmed", reason)
 }
 
 func TestCampusCalendarActionProposalScopesIdempotencyToRun(t *testing.T) {

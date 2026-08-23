@@ -41,7 +41,7 @@ type User struct {
 	CanteenMutedUntil *time.Time `gorm:"index" json:"-"`                           // 食堂内容治理确认后的临时禁投期限
 	// QQ 仅用于兼容历史账号，不能作为新账号身份。
 	QQ                            string     `gorm:"size:20" json:"-"`
-	DeviceToken                   string     `gorm:"size:255" json:"-"`            // 极光 RegistrationID
+	DeviceToken                   string     `gorm:"size:255" json:"-"`            // 旧版极光 RegistrationID，PushDevice 是新模型
 	PushDataProcessingEnabled     bool       `gorm:"default:false;index" json:"-"` // 是否主动开启远程推送数据处理
 	PushInstallationID            string     `gorm:"size:128" json:"-"`            // 当前活跃安装实例
 	PushNoticeVersion             string     `gorm:"size:64" json:"-"`             // 用户确认的推送告知版本

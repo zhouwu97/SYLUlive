@@ -10,6 +10,7 @@ import 'tool_call_models.dart';
 import 'tool_call_validator.dart';
 import 'tool_permission.dart';
 import 'tool_preview_metadata.dart';
+import 'personal_data_preflight.dart';
 
 /// 本地 Tool 编排器。模型只能提出调用，校验、授权和执行均由客户端完成。
 class LocalToolLoop {
@@ -86,6 +87,16 @@ class LocalToolLoop {
     final actionArtifacts = <SkillActionArtifact>[];
     var personalSkillCount = 0;
     var toolRounds = 0;
+
+    final preflight = await _runPreflight(
+      userMessage: userMessage,
+      allowedDefinitions: allowedDefinitions,
+      messages: messages,
+      evidence: evidence,
+      cancellationToken: token,
+      initialGeneration: initialGeneration,
+    );
+    if (preflight != null) return preflight;
 
     try {
       while (true) {
@@ -265,6 +276,138 @@ class LocalToolLoop {
         warnings: <String>['Tool Calling 执行失败'],
       );
     }
+  }
+
+  /// 在模型第一次生成前先读取与问题相关的最小个人数据。
+  ///
+  /// 这一步仍走同一套 Schema、权限、审计、账号代际和超时保护，不能被
+  /// 模型跳过，也不会把原始账号凭据或未声明字段交给模型。
+  Future<ToolLoopOutcome?> _runPreflight({
+    required String userMessage,
+    required List<ToolDefinition> allowedDefinitions,
+    required List<ToolConversationMessage> messages,
+    required List<SkillEvidence> evidence,
+    required ToolLoopCancellationToken cancellationToken,
+    required int initialGeneration,
+  }) async {
+    final allowedToolIds = allowedDefinitions.map((item) => item.id).toSet();
+    final calls = PersonalDataPreflightPlanner.plan(
+      message: userMessage,
+      allowedToolIds: allowedToolIds,
+      now: _executionContext.now(),
+    );
+    for (final call in calls) {
+      if (_isCancelled(cancellationToken, initialGeneration)) {
+        await _model.cancel();
+        return const ToolLoopOutcome(status: ToolLoopStatus.cancelled);
+      }
+      final registered = _registry.contains(call.tool);
+      if (!registered) continue;
+
+      final sensitivity = _registry.sensitivityFor(call.tool);
+      final dataTypes = _registry.requiredDataTypesFor(call.tool);
+      if (sensitivity == null || dataTypes == null) {
+        return const ToolLoopOutcome(
+          status: ToolLoopStatus.rejected,
+          warnings: <String>['预读取能力未通过本地安全校验'],
+        );
+      }
+      if (dataTypes.isNotEmpty &&
+          _model.providerKind != AIModelProviderKind.openAICompatible) {
+        await _audit(call.tool, ToolPermissionDecision.denied, dataTypes,
+            'provider_rejected');
+        return const ToolLoopOutcome(
+          status: ToolLoopStatus.rejected,
+          warnings: <String>['校园公共模型不能接收个人数据'],
+        );
+      }
+
+      ValidatedToolCall validated;
+      try {
+        validated = _validator.validate(call);
+      } on ToolCallValidationException catch (error) {
+        return ToolLoopOutcome(
+          status: ToolLoopStatus.rejected,
+          warnings: <String>[error.message],
+        );
+      }
+      final previewMetadata = await _previewMetadataSource.describe(
+        ToolPreviewRequest(
+          toolId: call.tool,
+          validatedInput: validated.input,
+          dataTypes: dataTypes,
+        ),
+      );
+      final permission = await _permissionManager.authorize(
+        ToolPermissionPreview(
+          toolId: call.tool,
+          sensitivity: sensitivity,
+          providerKind: _model.providerKind,
+          destination: _model.destinationLabel,
+          dataItems: previewMetadata.inputItems,
+          excludedDataLabels: previewMetadata.excludedDataLabels,
+          outputFields: previewMetadata.outputFields,
+        ),
+      );
+      if (permission == ToolPermissionDecision.denied) {
+        await _audit(call.tool, permission, dataTypes, 'permission_denied');
+        return const ToolLoopOutcome(status: ToolLoopStatus.permissionDenied);
+      }
+      if (_isCancelled(cancellationToken, initialGeneration)) {
+        await _audit(call.tool, permission, dataTypes, 'cancelled');
+        await _model.cancel();
+        return const ToolLoopOutcome(status: ToolLoopStatus.cancelled);
+      }
+
+      SkillResult<Object?> result;
+      try {
+        result = await _registry
+            .execute(
+              id: call.tool,
+              input: validated.input,
+              context: _executionContext,
+            )
+            .timeout(_skillTimeout);
+      } on TimeoutException {
+        await _audit(call.tool, permission, dataTypes, 'timeout');
+        return const ToolLoopOutcome(
+          status: ToolLoopStatus.failed,
+          warnings: <String>['预读取个人数据超时'],
+        );
+      }
+      if (_isCancelled(cancellationToken, initialGeneration)) {
+        await _audit(call.tool, permission, dataTypes, 'cancelled');
+        await _model.cancel();
+        return const ToolLoopOutcome(status: ToolLoopStatus.cancelled);
+      }
+      final serialized = _serializer.serialize(result);
+      if (serialized.length > maximumResultCharacters) {
+        await _audit(call.tool, permission, dataTypes, 'result_too_large');
+        return const ToolLoopOutcome(
+          status: ToolLoopStatus.rejected,
+          warnings: <String>['预读取结果超过安全上限'],
+        );
+      }
+      evidence.addAll(result.evidence);
+      await _audit(call.tool, permission, dataTypes, result.status.name);
+      messages
+        ..add(
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: '已先读取与问题相关的 App 数据。',
+            toolCall: call,
+          ),
+        )
+        ..add(
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: serialized,
+            toolCallId: call.id,
+            toolCall: call,
+          ),
+        );
+    }
+    return null;
   }
 
   bool _isCancelled(ToolLoopCancellationToken token, int generation) =>

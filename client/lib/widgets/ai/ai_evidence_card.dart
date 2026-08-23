@@ -51,14 +51,15 @@ class AiCampusEvidenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (evidence.isEmpty) return const SizedBox.shrink();
+    final grouped = groupAiPersonalDataEvidence(evidence);
+    if (grouped.isEmpty) return const SizedBox.shrink();
     return ExpansionTile(
       initiallyExpanded: initiallyExpanded,
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.zero,
       leading: const Icon(Icons.verified_user_outlined, size: 20),
       title: const Text('个人数据来源', style: TextStyle(fontSize: 14)),
-      children: evidence
+      children: grouped
           .map(
             (item) => _PersonalEvidenceDetails(item: item),
           )

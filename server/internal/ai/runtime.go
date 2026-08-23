@@ -40,6 +40,9 @@ type RuntimeConfig struct {
 	LangChainRAGEnabled            bool
 	LangChainRAGRolloutPercent     int
 	LegacyRAGEnabled               bool
+	// UnifiedAgentEnabled 启用 Agent Contract v5 的能力检索与快速路径。
+	// 关闭时保留旧的工具路由，便于灰度和兼容已有运行时测试。
+	UnifiedAgentEnabled bool
 }
 
 type RuntimeError struct {
@@ -61,6 +64,7 @@ type Runtime struct {
 	langChainRAG        LangChainRAG
 	broker              *EventBroker
 	tools               *ToolRegistry
+	scopedGrants        *ScopedGrantManager
 	config              RuntimeConfig
 	unlimitedStudentIDs map[string]struct{}
 	quotaExemptUserIDs  map[uint]struct{}
@@ -88,6 +92,22 @@ func WithToolRegistry(registry *ToolRegistry) RuntimeOption {
 	}
 }
 
+// WithScopedGrantManager 让同一 Run 的 MCP 调用共享短期、限次数的 opaque Grant。
+func WithScopedGrantManager(manager *ScopedGrantManager) RuntimeOption {
+	return func(runtime *Runtime) {
+		runtime.scopedGrants = manager
+	}
+}
+
+// IssueRunScopedGrant 是 MCP Gateway 的唯一 Grant 创建入口。
+// 调用方传入的是语义能力，不是模型生成的 user_id 或 JWT。
+func (r *Runtime) IssueRunScopedGrant(runID string, userID uint, capabilities, scopes []string, maxCalls int, ttl time.Duration) (string, ScopedGrant, error) {
+	if r == nil || r.scopedGrants == nil {
+		return "", ScopedGrant{}, errors.New("scoped_grant_manager_unavailable")
+	}
+	return r.scopedGrants.IssueRunGrant(runID, userID, capabilities, scopes, ttl, maxCalls)
+}
+
 func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, broker *EventBroker, config RuntimeConfig, options ...RuntimeOption) (*Runtime, error) {
 	if db == nil {
 		return nil, errors.New("AI runtime dependencies are required")
@@ -101,7 +121,7 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if config.MaxToolSteps == 0 {
 		config.MaxToolSteps = 3
 	}
-	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 5 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 500 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
+	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 12 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 500 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
 	unlimitedStudentIDs := make(map[string]struct{}, len(config.UnlimitedStudentIDs))
@@ -158,6 +178,7 @@ type CreateRunRequest struct {
 	ConversationID  string
 	ClientRequestID string
 	Message         string
+	AgentContext    *AgentContextEnvelope
 }
 
 func NormalizeUserMessage(message string, maxChars int) (string, int, error) {
@@ -184,7 +205,25 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 	if err != nil {
 		return models.AIRun{}, false, err
 	}
+	request.AgentContext, err = r.validateAgentContext(ctx, userID, request.AgentContext)
+	if err != nil {
+		return models.AIRun{}, false, err
+	}
+	agentContextPayload := datatypes.JSON([]byte("{}"))
+	if request.AgentContext != nil {
+		payload, marshalErr := json.Marshal(request.AgentContext)
+		if marshalErr != nil {
+			return models.AIRun{}, false, runtimeContextError("上下文序列化失败")
+		}
+		agentContextPayload = datatypes.JSON(payload)
+	}
 	requestHash := sha256.Sum256([]byte(message))
+	initialGoal := ParseGoalSpec(message, request.AgentContext)
+	initialAgentState := AgentRunState{Goal: initialGoal, Budget: BudgetForGoal(initialGoal), ConstraintVersion: 1, PlanVersion: 1}
+	initialAgentStatePayload, err := json.Marshal(initialAgentState)
+	if err != nil {
+		return models.AIRun{}, false, errors.New("agent_state_encode_failed")
+	}
 	now := time.Now()
 	var run models.AIRun
 	duplicate := false
@@ -262,6 +301,10 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			ClientRequestID: request.ClientRequestID, State: models.AIRunStateBudgetReserved,
 			Provider: r.config.ProviderName, Model: r.config.Model, Attempt: 1,
 			MessageHash: hex.EncodeToString(requestHash[:]), MessageLength: messageLength,
+			AgentContext:        agentContextPayload,
+			AgentStateJSON:      datatypes.JSON(initialAgentStatePayload),
+			ConstraintVersion:   1,
+			PlanVersion:         1,
 			BudgetReservationID: &reservationID, ExpiresAt: now.Add(r.config.RequestTimeout + 5*time.Minute),
 		}
 		if err := tx.Create(&run).Error; err != nil {
@@ -316,22 +359,68 @@ func (r *Runtime) Execute(runID, message string) {
 	if err := r.db.First(&run, "id = ?", runID).Error; err != nil {
 		return
 	}
+	agentState, stateErr := r.loadRuntimeAgentState(ctx, &run, message)
+	if stateErr != nil {
+		r.failBeforeGeneration(runID, stateErr.Error(), true)
+		return
+	}
+	agentState.RunID = run.ID
+	if agentState.ConstraintVersion <= 0 {
+		agentState.ConstraintVersion = maxInt(run.ConstraintVersion, 1)
+	}
+	if agentState.PlanVersion <= 0 {
+		agentState.PlanVersion = maxInt(run.PlanVersion, 1)
+	}
+	if err := r.persistRuntimeAgentState(ctx, &run, agentState); err != nil {
+		r.failBeforeGeneration(runID, "agent_state_version_conflict", true)
+		return
+	}
+	contextPrompt := r.agentContextPrompt(ctx, run.UserID, run.AgentContext)
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
 		return
 	}
-	if r.useLangChain(run.UserID) {
+	preflightMessages, preflightErr := r.agentContextPreflight(ctx, &run)
+	if preflightErr != nil {
+		r.failBeforeGeneration(runID, "agent_context_preflight_failed", true)
+		return
+	}
+	goal := agentState.Goal
+	_, _ = r.appendEvent(ctx, runID, "goal.updated", map[string]interface{}{
+		"action_intent":             goal.ActionIntent,
+		"requires_personal_context": goal.RequiresPersonalContext,
+		"hard_constraint_count":     len(goal.HardConstraints),
+		"soft_constraint_count":     len(goal.SoftConstraints),
+	}, true)
+	_, _ = r.appendEvent(ctx, runID, "context.resolved", map[string]interface{}{
+		"page_context":    len(run.AgentContext) > 0,
+		"preflight_count": len(preflightMessages),
+	}, true)
+	// Agent Contract v5 将页面上下文、普通文本和政策问题统一交给同一套
+	// Goal/Capability/Tool Loop；旧 LangChain Policy Runner 仅保留在灰度兼容分支。
+	if !r.config.UnifiedAgentEnabled && r.useLangChain(run.UserID) && contextPrompt == "" && len(preflightMessages) == 0 {
 		r.executeLangChain(ctx, &run, message)
 		return
 	}
-	toolDefinitions := routeModelTools(message, r.toolDefinitions())
-	requiredTool, _ := requiredDecisionTool(message, toolDefinitions)
+	toolDefinitions := r.toolDefinitions()
+	var requiredTool string
+	if r.config.UnifiedAgentEnabled {
+		toolDefinitions = shortlistModelTools(message, toolDefinitions)
+		requiredTool, _ = requiredFastPathTool(message, toolDefinitions)
+	} else {
+		toolDefinitions = routeModelTools(message, toolDefinitions)
+		requiredTool, _ = requiredDecisionTool(message, toolDefinitions)
+	}
 	hasTools := len(toolDefinitions) > 0
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)
 	retrieval := RetrievalResult{}
 	var err error
 	retrievalQuery := policyRetrievalQuery(message, requiredTool)
 	if retrievalQuery != "" {
-		retrieval, err = r.retriever.Retrieve(ctx, retrievalQuery)
+		if r.retriever == nil {
+			err = errors.New("policy_retriever_unavailable")
+		} else {
+			retrieval, err = r.retriever.Retrieve(ctx, retrievalQuery)
+		}
 	}
 	if err != nil {
 		if !hasTools {
@@ -372,12 +461,16 @@ func (r *Runtime) Execute(runID, message string) {
 	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
 	} else if hasTools {
-		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’。"
+		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’；如果结果提供 covered_terms，必须明确说明分析覆盖的学期范围，不能把单学期统计冒充全部成绩。"
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: buildPolicyPrompt(message, queryPlan, coverage, promptChunks)},
+		{Role: "user", Content: appendAgentContextPrompt(
+			buildPolicyPrompt(message, queryPlan, coverage, promptChunks),
+			contextPrompt,
+		)},
 	}
+	messages = append(messages, preflightMessages...)
 	if !hasTools {
 		// 纯政策问答在 Provider 建连前进入生成态，使取消请求可以中断阻塞流。
 		if err := r.transition(ctx, &run, models.AIRunStatePlanning, models.AIRunStateGenerating); err != nil {
@@ -385,7 +478,7 @@ func (r *Runtime) Execute(runID, message string) {
 		}
 	}
 	startedAt := time.Now()
-	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false)
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false, &agentState)
 	if outcome.cancelled {
 		r.finalizeCancelled(runID, outcome.generated, outcome.usage, time.Since(startedAt))
 		return
@@ -404,9 +497,16 @@ func (r *Runtime) Execute(runID, message string) {
 		r.failAfterProvider(runID, false, ProviderErrorInvalid, outcome.usage, time.Since(startedAt))
 		return
 	}
-	if academicAnswerNeedsGuard(outcome.answer, outcome.academicFallback, outcome.academicRiskSeen) {
-		outcome.answer = outcome.academicFallback
+	// 再从本次运行的审计结果读取一次综合学业分析。工具循环已经保留了
+	// fallback，但这里用持久化结果做最终兜底，避免 Provider 在工具完成后
+	// 返回泛化校园回答，导致已核验的个人成绩事实被覆盖。
+	if fallback, riskSeen := r.verifiedAcademicRiskFallback(ctx, runID); fallback != "" {
+		outcome.academicFallback = fallback
+		outcome.academicRiskSeen = riskSeen
 	}
+	// 综合学业分析的事实由确定性工具生成。只要工具已成功返回风险结果，
+	// 最终发布就使用同一份已校验事实，避免模型用泛化校园问答覆盖成绩结论。
+	outcome.answer = academicRiskFinalAnswer(outcome.answer, outcome.academicFallback, outcome.academicRiskSeen)
 	r.markQuotaConsumed(runID)
 	now := time.Now()
 	_ = r.db.Model(&models.AIRun{}).Where("id = ? AND started_at IS NULL", runID).Update("started_at", now).Error
@@ -417,10 +517,36 @@ func (r *Runtime) Execute(runID, message string) {
 	}
 	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
 	procedureClaim := containsCampusProcedureClaim(outcome.answer)
-	validateCitations := procedureClaim || (len(retrieval.Chunks) > 0 &&
+	// 学业风险回答的成绩事实和行动项来自已校验的个人工具结果；本轮没有
+	// 政策分块时，不应因为“补考/重修”等行动词触发无来源引用过滤。
+	validateCitations := (!outcome.academicRiskSeen && procedureClaim) || (len(retrieval.Chunks) > 0 &&
 		((!outcome.toolUsed && queryPlan.IsPolicyIntent()) ||
 			strings.Contains(outcome.answer, "[chunk:")))
 	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations, outcome.citationFallback)
+}
+
+// verifiedAcademicRiskFallback 从当前 Run 已完成的学业风险工具调用中读取
+// 持久化结果，保证最终回答和审计事实使用同一份数据。
+func (r *Runtime) verifiedAcademicRiskFallback(ctx context.Context, runID string) (string, bool) {
+	if r == nil || r.db == nil || strings.TrimSpace(runID) == "" {
+		return "", false
+	}
+	var calls []models.AIToolCall
+	err := r.db.WithContext(ctx).
+		Where("run_id = ? AND status = ? AND tool_name IN ?", runID, "completed", []string{
+			"academic.get_risk_analysis", "academic_get_risk_analysis",
+		}).
+		Order("completed_at DESC").
+		Find(&calls).Error
+	if err != nil {
+		return "", false
+	}
+	for _, call := range calls {
+		if fallback, riskSeen := academicRiskFallback(call.ToolName, json.RawMessage(call.ResultJSON)); fallback != "" {
+			return fallback, riskSeen
+		}
+	}
+	return "", false
 }
 
 func containsCampusProcedureClaim(answer string) bool {
@@ -561,6 +687,13 @@ func buildPolicyPrompt(
 		))
 	}
 	return builder.String()
+}
+
+func appendAgentContextPrompt(prompt, contextPrompt string) string {
+	if strings.TrimSpace(contextPrompt) == "" {
+		return prompt
+	}
+	return prompt + "\n\n" + contextPrompt
 }
 
 func sanitizeAttribute(value string) string {
@@ -862,6 +995,43 @@ func (r *Runtime) appendEvent(ctx context.Context, runID, eventType string, payl
 		r.broker.Publish(event)
 	}
 	return event, err
+}
+
+// PublishDeviceJobProgress 将设备桥接已验证的固定阶段映射为用户可理解的 Agent activity。
+// 客户端只提交 stage，标题和细节由服务端/客户端受控映射，避免注入任意用户可见文案。
+func (r *Runtime) PublishDeviceJobProgress(ctx context.Context, jobID, stage string) error {
+	var job models.DeviceToolJob
+	if err := r.db.WithContext(ctx).First(&job, "id = ?", jobID).Error; err != nil {
+		return err
+	}
+	dataset := ""
+	var required []string
+	if json.Unmarshal(job.RequiredDataTypes, &required) == nil && len(required) > 0 {
+		dataset = required[0]
+	}
+	return func() error {
+		_, err := r.appendEvent(ctx, job.RunID, "agent.activity", map[string]interface{}{
+			"activity_code": stage,
+			"code":          stage,
+			"dataset":       dataset,
+			"status":        deviceActivityStatus(stage),
+			"success":       stage != models.DeviceJobStageRefreshFailed,
+			"tool_name":     job.ToolName,
+			"call_id":       job.ToolCallID,
+			"job_id":        job.ID,
+		}, true)
+		return err
+	}()
+}
+
+func deviceActivityStatus(stage string) string {
+	if stage == models.DeviceJobStageRefreshFailed {
+		return "failed"
+	}
+	if stage == models.DeviceJobStageRefreshStarted || stage == models.DeviceJobStageCheckingFreshness {
+		return "running"
+	}
+	return "success"
 }
 
 func (r *Runtime) markQuotaConsumed(runID string) {

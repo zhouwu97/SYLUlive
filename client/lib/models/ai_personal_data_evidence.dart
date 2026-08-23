@@ -54,6 +54,9 @@ class AiPersonalDataEvidence {
   String get stableKey =>
       '$source|$dataset|$title|${fetchedAt?.toUtc().toIso8601String() ?? ''}';
 
+  /// 来源卡按数据集聚合，避免同一成绩快照因多次工具调用重复出现。
+  String get datasetKey => dataset.trim().isEmpty ? source : dataset.trim();
+
   List<AiAcademicCourseEvidence> get academicCourses {
     final raw = analysisInput['courses'];
     if (raw is! List) return const [];
@@ -78,6 +81,26 @@ class AiPersonalDataEvidence {
     if (value is! String || value.trim().isEmpty) return null;
     return DateTime.tryParse(value)?.toLocal();
   }
+}
+
+/// 按数据集合并个人数据来源；同一数据集只保留最新、非过期的一条摘要。
+List<AiPersonalDataEvidence> groupAiPersonalDataEvidence(
+  Iterable<AiPersonalDataEvidence> evidence,
+) {
+  final grouped = <String, AiPersonalDataEvidence>{};
+  for (final item in evidence) {
+    final key = item.datasetKey;
+    final previous = grouped[key];
+    if (previous == null ||
+        previous.isStale && !item.isStale ||
+        previous.fetchedAt == null && item.fetchedAt != null ||
+        previous.fetchedAt != null &&
+            item.fetchedAt != null &&
+            item.fetchedAt!.isAfter(previous.fetchedAt!)) {
+      grouped[key] = item;
+    }
+  }
+  return grouped.values.toList(growable: false);
 }
 
 class AiAcademicCourseEvidence {

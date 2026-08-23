@@ -301,7 +301,7 @@ func academicCitationFallback(toolName string, result json.RawMessage) string {
 // academicRiskFallback 是模型输出的最后一道事实护栏：当模型把明确的挂科或
 // 数据缺口说成“风险不大”，直接使用工具基于同一份快照生成的边界化回答。
 func academicRiskFallback(toolName string, result json.RawMessage) (string, bool) {
-	if toolName != "academic_get_risk_analysis" || !json.Valid(result) {
+	if !isAcademicRiskToolName(toolName) || !json.Valid(result) {
 		return "", false
 	}
 	var envelope struct {
@@ -323,6 +323,35 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 	riskSeen := riskLevel != "no_observed_risk" || len(risks) > 0
 	var builder strings.Builder
 	builder.WriteString("基于当前已授权快照，能确认的范围如下：\n")
+	if grades, ok := data["grades"].(map[string]interface{}); ok {
+		courseCount, courseCountOK := jsonNumber(grades["course_count"])
+		totalCredits, totalCreditsOK := jsonNumber(grades["total_credits"])
+		weightedGPA, weightedGPAOK := jsonNumber(grades["weighted_gpa"])
+		if courseCountOK || totalCreditsOK || weightedGPAOK {
+			builder.WriteString("成绩事实：")
+			if courseCountOK {
+				builder.WriteString(formatAcademicNumber(courseCount) + " 门课程")
+			}
+			if totalCreditsOK {
+				builder.WriteString("，累计 " + formatAcademicNumber(totalCredits) + " 学分")
+			}
+			if weightedGPAOK {
+				builder.WriteString("，加权 GPA " + formatAcademicNumber(weightedGPA))
+			}
+			builder.WriteString("。\n")
+		}
+		if terms, ok := grades["covered_terms"].([]interface{}); ok && len(terms) > 0 {
+			labels := make([]string, 0, len(terms))
+			for _, rawTerm := range terms {
+				if label, ok := rawTerm.(string); ok && strings.TrimSpace(label) != "" {
+					labels = append(labels, strings.TrimSpace(label))
+				}
+			}
+			if len(labels) > 0 {
+				builder.WriteString("覆盖学期：" + strings.Join(labels, "、") + "。\n")
+			}
+		}
+	}
 	if len(risks) > 0 {
 		builder.WriteString("主要风险：\n")
 		for _, risk := range risks {
@@ -356,6 +385,10 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 	return strings.TrimSpace(builder.String()), riskSeen
 }
 
+func isAcademicRiskToolName(toolName string) bool {
+	return toolName == "academic_get_risk_analysis" || toolName == "academic.get_risk_analysis"
+}
+
 func stringList(value interface{}) []string {
 	items, ok := value.([]interface{})
 	if !ok {
@@ -378,10 +411,24 @@ func academicAnswerNeedsGuard(answer, fallback string, riskSeen bool) bool {
 	if !riskSeen {
 		return false
 	}
-	if containsAny(normalized, "总体风险不大", "风险不大", "没有风险", "无明显风险", "风险很小") {
+	if containsAny(normalized,
+		"总体风险不大", "风险不大", "没有风险", "无明显风险", "风险很小",
+		"没有观察到挂科风险", "未观察到挂科风险", "未发现挂科风险", "没有挂科风险",
+		"没有不及格", "未出现不及格", "未发现不及格", "没有挂科", "未出现挂科",
+	) {
 		return true
 	}
 	return !containsAny(normalized, "未通过", "挂科", "学分缺口", "成绩缺失", "数据覆盖", "风险")
+}
+
+func academicRiskFinalAnswer(answer, fallback string, riskSeen bool) string {
+	if riskSeen && strings.TrimSpace(fallback) != "" {
+		return fallback
+	}
+	if academicAnswerNeedsGuard(answer, fallback, riskSeen) {
+		return fallback
+	}
+	return answer
 }
 
 func formatAcademicNumber(value interface{}) string {

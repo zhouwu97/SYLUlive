@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -14,6 +16,9 @@ import 'package:image_picker/image_picker.dart';
 class FakeAuthProvider extends Fake
     with ChangeNotifier
     implements AuthProvider {
+  @override
+  Dio get dio => Dio();
+
   @override
   User? get user => User(
         id: 1,
@@ -49,6 +54,7 @@ class FakePostProvider extends Fake
     int? teamNeededCount,
     List<String>? teamRoles,
     DateTime? teamDeadline,
+    List<TopicSelection>? topics,
   }) async {
     createPostCalls++;
     lastContent = content;
@@ -118,8 +124,7 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
   });
 
-  testWidgets('成功发布后下一次打开发布页不恢复已发布草稿',
-      (WidgetTester tester) async {
+  testWidgets('成功发布后下一次打开发布页不恢复已发布草稿', (WidgetTester tester) async {
     final postProvider = FakePostProvider();
 
     await tester.pumpWidget(buildComposerNavigationTestApp(postProvider));

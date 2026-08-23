@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
@@ -50,6 +51,7 @@ class _FakePostProvider extends Fake
     int? teamNeededCount,
     List<String>? teamRoles,
     DateTime? teamDeadline,
+    List<TopicSelection>? topics,
   }) async {
     createPostCalls++;
     lastContent = content;

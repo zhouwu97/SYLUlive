@@ -506,6 +506,7 @@ func (s *PollService) HydratePollPosts(posts []models.Post, viewerID uint) error
 			posts[i].WaterSectionAuthorMeta = nil
 		}
 	}
+	_ = LoadTopicsForPosts(s.db, posts)
 	if len(postIDs) == 0 {
 		return nil
 	}

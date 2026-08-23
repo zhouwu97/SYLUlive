@@ -159,8 +159,9 @@ func TestCampusProcedureClaimRequiresCitation(t *testing.T) {
 func TestShortlistModelToolsKeepsPersonalToolsOutOfPublicRequests(t *testing.T) {
 	definitions := []ToolDefinition{
 		{Name: "academic_get_grade_summary", Description: "读取个人成绩和学业风险"},
+		{Name: "personal_calendar_get_day", Description: "读取个人日历"},
 		{Name: "campus_search_policy", Description: "检索已发布校园政策"},
 	}
 	require.Equal(t, []ToolDefinition{{Name: "campus_search_policy", Description: "检索已发布校园政策"}}, shortlistModelTools("补考成绩怎么算", definitions))
-	require.Len(t, shortlistModelTools("查看我的成绩", definitions), 2)
+	require.Len(t, shortlistModelTools("查看我的成绩", definitions), 3)
 }

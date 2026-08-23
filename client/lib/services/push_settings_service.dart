@@ -283,7 +283,9 @@ class PushSettingsService {
       supported: true,
       optedIn: optedIn,
       notificationsEnabled: native['notificationsEnabled'] == true,
-      registrationId: native['registrationId']?.toString(),
+      registrationId: (native['registrationId']?.toString().trim().isNotEmpty ?? false)
+          ? native['registrationId']?.toString()
+          : await _pushClient.getRegistrationId(),
       aliasState: native['storedAliasState']?.toString(),
       privateChannelExists: native['privateMessageChannelExists'] == true,
       privateChannelBlocked: native['privateMessageChannelBlocked'] == true,

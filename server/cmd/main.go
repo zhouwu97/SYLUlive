@@ -203,6 +203,7 @@ func main() {
 		&models.AIUserPermission{},
 		&models.AIRunConsent{},
 		&models.UserDevice{},
+		&models.PushDevice{},
 		&models.DeviceToolJob{},
 
 		&models.Post{},

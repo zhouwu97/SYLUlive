@@ -104,6 +104,8 @@ class UserCalendarActionDraft implements SkillActionArtifact {
     this.reminderMinutesBefore,
     this.calendarEventId,
     this.event,
+    this.postconditionVerified,
+    this.postconditionError = '',
   });
 
   final int id;
@@ -121,6 +123,8 @@ class UserCalendarActionDraft implements SkillActionArtifact {
   final int? reminderMinutesBefore;
   final int? calendarEventId;
   final UserCalendarEvent? event;
+  final bool? postconditionVerified;
+  final String postconditionError;
 
   bool get isPending => status == 'waiting_confirmation';
   bool get isExpired =>
@@ -131,6 +135,8 @@ class UserCalendarActionDraft implements SkillActionArtifact {
     DateTime? expiresAt,
     int? calendarEventId,
     UserCalendarEvent? event,
+    bool? postconditionVerified,
+    String? postconditionError,
   }) {
     return UserCalendarActionDraft(
       id: id,
@@ -148,6 +154,9 @@ class UserCalendarActionDraft implements SkillActionArtifact {
       reminderMinutesBefore: reminderMinutesBefore,
       calendarEventId: calendarEventId ?? this.calendarEventId,
       event: event ?? this.event,
+      postconditionVerified:
+          postconditionVerified ?? this.postconditionVerified,
+      postconditionError: postconditionError ?? this.postconditionError,
     );
   }
 
@@ -168,6 +177,10 @@ class UserCalendarActionDraft implements SkillActionArtifact {
           'reminder_minutes_before': reminderMinutesBefore,
         if (calendarEventId != null) 'calendar_event_id': calendarEventId,
         if (event != null) 'event': event!.toJson(),
+        if (postconditionVerified != null)
+          'postcondition_verified': postconditionVerified,
+        if (postconditionError.isNotEmpty)
+          'postcondition_error': postconditionError,
       };
 
   factory UserCalendarActionDraft.fromJson(Map<String, dynamic> json) {
@@ -200,6 +213,10 @@ class UserCalendarActionDraft implements SkillActionArtifact {
               Map<String, dynamic>.from(json['event'] as Map),
             )
           : null,
+      postconditionVerified: json['postcondition_verified'] is bool
+          ? json['postcondition_verified'] as bool
+          : null,
+      postconditionError: json['postcondition_error']?.toString() ?? '',
     );
   }
 }

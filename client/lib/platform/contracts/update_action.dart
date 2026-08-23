@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 
@@ -35,6 +34,10 @@ abstract interface class AppUpdateAction {
         return const OhosMarketUpdateAction();
       }
       return const UnsupportedUpdateAction();
+    }
+
+    if (capabilities.platform == AppPlatform.ios) {
+      return const IOSAppStoreUpdateAction();
     }
 
     if (capabilities.supportsMarketUpdate) {
@@ -88,6 +91,33 @@ class OhosMarketUpdateAction implements AppUpdateAction {
     if (!opened) {
       throw StateError('无法打开应用市场或链接，请手动更新');
     }
+    return AppUpdateActionResult.externalStoreOpened;
+  }
+}
+
+/// iOS 通过 App Store / TestFlight 分发，禁止下载 IPA 后由 App 内安装。
+class IOSAppStoreUpdateAction implements AppUpdateAction {
+  const IOSAppStoreUpdateAction();
+
+  @override
+  File? get readyApk => null;
+
+  @override
+  Future<AppUpdateActionResult> execute(
+    AppUpdateInfo info, {
+    File? existingApk,
+    void Function(AppDownloadProgress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final target = info.actionUrl.trim().isNotEmpty
+        ? info.actionUrl.trim()
+        : info.downloadUrl.trim();
+    final uri = Uri.tryParse(target);
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      throw StateError('App Store 更新链接无效');
+    }
+    final opened = await ExternalNavigator.current().open(uri);
+    if (!opened) throw StateError('无法打开 App Store 或 TestFlight');
     return AppUpdateActionResult.externalStoreOpened;
   }
 }

@@ -54,6 +54,7 @@ type GoalSpec struct {
 	Objective               string           `json:"objective"`
 	HardConstraints         []GoalConstraint `json:"hard_constraints,omitempty"`
 	SoftConstraints         []GoalConstraint `json:"soft_constraints,omitempty"`
+	DerivedSubgoals         []string         `json:"derived_subgoals,omitempty"`
 	Unknowns                []string         `json:"unknowns,omitempty"`
 	RequiresPersonalContext bool             `json:"requires_personal_context"`
 	ActionIntent            string           `json:"action_intent"` // answer / recommend / plan / change
@@ -88,8 +89,17 @@ func ParseGoalSpec(message string, pageContext *AgentContextEnvelope) GoalSpec {
 		goal.HardConstraints = append(goal.HardConstraints, GoalConstraint{Text: "避开用户明确排除的时间", Source: "explicit", Hard: true})
 		goal.RequiresPersonalContext = true
 	}
-	if containsAnyContract(message, "我的", "我适合", "我参加", "我当前", "本学期", "我的成绩", "我的课表") {
+	if containsAnyContract(message, "我的", "我适合", "适合我", "我参加", "我当前", "本学期", "我的成绩", "我的课表") {
 		goal.RequiresPersonalContext = true
+	}
+	if goal.ActionIntent == "recommend" {
+		goal.DerivedSubgoals = append(goal.DerivedSubgoals, "核对候选事实与截止时间")
+	}
+	if goal.RequiresPersonalContext {
+		goal.DerivedSubgoals = append(goal.DerivedSubgoals, "只在必要且获授权时读取个人上下文")
+	}
+	if len(goal.HardConstraints) > 0 {
+		goal.DerivedSubgoals = append(goal.DerivedSubgoals, "验证候选方案是否满足硬约束")
 	}
 	if pageContext != nil && len(pageContext.ContextRefs) > 0 {
 		// 页面引用是最小实体上下文，不自动升级为个人数据授权。
@@ -238,19 +248,37 @@ const (
 )
 
 type AgentBudget struct {
-	Class        BudgetClass   `json:"class"`
-	MaxToolCalls int           `json:"max_tool_calls"`
-	MaxDuration  time.Duration `json:"max_duration"`
+	Class                BudgetClass   `json:"class"`
+	MaxToolCalls         int           `json:"max_tool_calls"`
+	MaxSameToolCalls     int           `json:"max_same_tool_calls"`
+	MaxPlanningRounds    int           `json:"max_planning_rounds"`
+	MaxDurationMs        int64         `json:"max_duration_ms"`
+	MaxModelTokens       int           `json:"max_model_tokens"`
+	MaxExternalCalls     int           `json:"max_external_calls"`
+	MaxConsecutiveNoGain int           `json:"max_consecutive_no_gain"`
+	MaxDuration          time.Duration `json:"-"`
 }
 
 func BudgetForGoal(goal GoalSpec) AgentBudget {
 	if goal.ActionIntent == "plan" || len(goal.HardConstraints)+len(goal.SoftConstraints) >= 3 {
-		return AgentBudget{Class: BudgetComplex, MaxToolCalls: 12, MaxDuration: 90 * time.Second}
+		return AgentBudget{
+			Class: BudgetComplex, MaxToolCalls: 12, MaxSameToolCalls: 3, MaxPlanningRounds: 8,
+			MaxDurationMs: 90000, MaxModelTokens: 12000, MaxExternalCalls: 3, MaxConsecutiveNoGain: 2,
+			MaxDuration: 90 * time.Second,
+		}
 	}
 	if goal.RequiresPersonalContext || goal.ActionIntent == "recommend" || len(goal.Unknowns) > 0 {
-		return AgentBudget{Class: BudgetNormal, MaxToolCalls: 7, MaxDuration: 60 * time.Second}
+		return AgentBudget{
+			Class: BudgetNormal, MaxToolCalls: 7, MaxSameToolCalls: 2, MaxPlanningRounds: 5,
+			MaxDurationMs: 60000, MaxModelTokens: 8192, MaxExternalCalls: 2, MaxConsecutiveNoGain: 2,
+			MaxDuration: 60 * time.Second,
+		}
 	}
-	return AgentBudget{Class: BudgetSimple, MaxToolCalls: 3, MaxDuration: 30 * time.Second}
+	return AgentBudget{
+		Class: BudgetSimple, MaxToolCalls: 3, MaxSameToolCalls: 1, MaxPlanningRounds: 3,
+		MaxDurationMs: 30000, MaxModelTokens: 4096, MaxExternalCalls: 1, MaxConsecutiveNoGain: 2,
+		MaxDuration: 30 * time.Second,
+	}
 }
 
 type ToolCallFingerprint struct {
@@ -264,14 +292,23 @@ func NewToolCallFingerprint(toolName string, arguments json.RawMessage) ToolCall
 }
 
 type BudgetTracker struct {
-	Budget       AgentBudget
-	Calls        int
-	Seen         map[ToolCallFingerprint]int
-	Observations int
+	Budget                 AgentBudget
+	Calls                  int
+	Seen                   map[ToolCallFingerprint]int
+	ToolCallsByName        map[string]int
+	PlanningRounds         int
+	ExternalCalls          int
+	Observations           int
+	LastObservationHash    string
+	ConsecutiveNoGainCount int
 }
 
 func NewBudgetTracker(budget AgentBudget) *BudgetTracker {
-	return &BudgetTracker{Budget: budget, Seen: make(map[ToolCallFingerprint]int)}
+	return &BudgetTracker{
+		Budget:          budget,
+		Seen:            make(map[ToolCallFingerprint]int),
+		ToolCallsByName: make(map[string]int),
+	}
 }
 
 func (t *BudgetTracker) Admit(toolName string, arguments json.RawMessage, retryable bool) error {
@@ -281,12 +318,38 @@ func (t *BudgetTracker) Admit(toolName string, arguments json.RawMessage, retrya
 	if t.Calls >= t.Budget.MaxToolCalls {
 		return errors.New("agent_tool_budget_exhausted")
 	}
+	if t.Budget.MaxSameToolCalls > 0 && t.ToolCallsByName[toolName] >= t.Budget.MaxSameToolCalls {
+		return errors.New("agent_same_tool_budget_exhausted")
+	}
 	fingerprint := NewToolCallFingerprint(toolName, arguments)
 	if t.Seen[fingerprint] > 0 && !retryable {
 		return errors.New("agent_duplicate_tool_call")
 	}
 	t.Seen[fingerprint]++
+	t.ToolCallsByName[toolName]++
 	t.Calls++
+	return nil
+}
+
+func (t *BudgetTracker) BeginPlanningRound() error {
+	if t == nil || t.Budget.MaxPlanningRounds <= 0 {
+		return errors.New("agent_planning_budget_unavailable")
+	}
+	if t.PlanningRounds >= t.Budget.MaxPlanningRounds {
+		return errors.New("agent_planning_budget_exhausted")
+	}
+	t.PlanningRounds++
+	return nil
+}
+
+func (t *BudgetTracker) AdmitExternalCall() error {
+	if t == nil || t.Budget.MaxExternalCalls <= 0 {
+		return errors.New("agent_external_budget_unavailable")
+	}
+	if t.ExternalCalls >= t.Budget.MaxExternalCalls {
+		return errors.New("agent_external_budget_exhausted")
+	}
+	t.ExternalCalls++
 	return nil
 }
 
@@ -294,6 +357,30 @@ func (t *BudgetTracker) Observe() {
 	if t != nil {
 		t.Observations++
 	}
+}
+
+// ObserveResult 用语义结果而不是工具名称判断信息增益，防止通过改变参数重复返回同一事实。
+func (t *BudgetTracker) ObserveResult(result ToolResultEnvelope) error {
+	if t == nil {
+		return errors.New("agent_budget_unavailable")
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return errors.New("agent_observation_invalid")
+	}
+	hash := sha256.Sum256(encoded)
+	observationHash := hex.EncodeToString(hash[:])
+	if observationHash == t.LastObservationHash {
+		t.ConsecutiveNoGainCount++
+	} else {
+		t.ConsecutiveNoGainCount = 0
+	}
+	t.LastObservationHash = observationHash
+	t.Observations++
+	if t.Budget.MaxConsecutiveNoGain > 0 && t.ConsecutiveNoGainCount >= t.Budget.MaxConsecutiveNoGain {
+		return errors.New("agent_information_stalled")
+	}
+	return nil
 }
 
 type AgentDecisionType string
@@ -334,11 +421,19 @@ type AgentRunState struct {
 	RunID             string                `json:"run_id"`
 	Goal              GoalSpec              `json:"goal"`
 	KnownFacts        []string              `json:"known_facts,omitempty"`
+	Observations      []AgentObservation    `json:"observations,omitempty"`
 	CompletedSteps    []string              `json:"completed_steps,omitempty"`
 	PendingActions    []AgentActionProposal `json:"pending_actions,omitempty"`
 	Failures          []ToolError           `json:"failures,omitempty"`
 	Budget            AgentBudget           `json:"budget"`
 	ConstraintVersion int                   `json:"constraint_version"`
+	PlanVersion       int                   `json:"plan_version"`
+}
+
+type AgentObservation struct {
+	Capability string             `json:"capability"`
+	Result     ToolResultEnvelope `json:"result"`
+	CreatedAt  time.Time          `json:"created_at"`
 }
 
 type AgentActivityEvent struct {
@@ -367,6 +462,16 @@ func ValidateAgentDecision(decision AgentDecision, allowed map[string]AgentCapab
 		}
 	case DecisionProposeAction:
 		if decision.ActionDraft == nil || strings.TrimSpace(decision.ActionDraft.Action) == "" || !decision.ActionDraft.RequiresConfirmation {
+			return errors.New("action_confirmation_required")
+		}
+		capability, ok := allowed[decision.ActionDraft.Action]
+		if !ok {
+			return errors.New("capability_not_allowed")
+		}
+		if capability.Kind != "action" && capability.SideEffect == SideEffectNone {
+			return errors.New("action_capability_invalid")
+		}
+		if !capability.RequiresConfirmation && capability.Confirmation != ConfirmationAlways && capability.Confirmation != ConfirmationIfRisk {
 			return errors.New("action_confirmation_required")
 		}
 	case DecisionRespond:

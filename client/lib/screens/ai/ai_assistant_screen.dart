@@ -970,6 +970,17 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final updated =
           await DioCalendarActionSource(widget.dio).confirm(draft.id);
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (updated.postconditionVerified == false) {
+        _replaceCalendarDraft(updated);
+        await _persistPersonalHistory();
+        if (mounted) {
+          AppFeedback.error(
+            '操作接口已返回，但回读未确认日历是否生效，请刷新日历后再判断',
+            context: context,
+          );
+        }
+        return;
+      }
       final localReminderScheduled =
           await _scheduleConfirmedCalendarReminder(updated);
       _replaceCalendarDraft(updated);

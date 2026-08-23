@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
@@ -214,5 +215,60 @@ void main() {
 
     expect(find.text('请先登录'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('长按信息流正文复制完整内容且不进入详情', (tester) async {
+    String? copiedText;
+    var onTapCount = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedText = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    final dio = Dio();
+    final auth = _CardAuthProvider(client: dio, loggedIn: true);
+    final postProvider = PostProvider(dio, enableCache: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+          ChangeNotifierProvider<ThemeProvider>.value(
+            value: ThemeProvider(loadOnStart: false),
+          ),
+          ChangeNotifierProvider<WaterSectionProvider>.value(
+            value: WaterSectionProvider(null),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: PostCard(
+              post: _post(),
+              onTap: () => onTapCount++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('测试内容'));
+    await tester.pump();
+
+    expect(copiedText, '测试内容');
+    expect(find.text('帖子正文已复制'), findsOneWidget);
+    expect(onTapCount, 0);
   });
 }

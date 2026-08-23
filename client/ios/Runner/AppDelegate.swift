@@ -63,6 +63,7 @@ import WidgetKit
         }
         if #available(iOS 14.0, *) {
           WidgetCenter.shared.reloadTimelines(ofKind: "CourseScheduleWidget")
+          WidgetCenter.shared.reloadTimelines(ofKind: "ExamScheduleWidget")
         }
         result(nil)
       }

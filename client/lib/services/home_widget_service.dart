@@ -7,7 +7,6 @@ import '../models/home_widget_config.dart';
 import '../providers/course_schedule_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 class HomeWidgetExamEntry {
   const HomeWidgetExamEntry({
     required this.name,

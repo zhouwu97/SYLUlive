@@ -418,22 +418,35 @@ type AgentDecision struct {
 }
 
 type AgentRunState struct {
-	RunID             string                `json:"run_id"`
-	Goal              GoalSpec              `json:"goal"`
-	KnownFacts        []string              `json:"known_facts,omitempty"`
-	Observations      []AgentObservation    `json:"observations,omitempty"`
-	CompletedSteps    []string              `json:"completed_steps,omitempty"`
-	PendingActions    []AgentActionProposal `json:"pending_actions,omitempty"`
-	Failures          []ToolError           `json:"failures,omitempty"`
-	Budget            AgentBudget           `json:"budget"`
-	ConstraintVersion int                   `json:"constraint_version"`
-	PlanVersion       int                   `json:"plan_version"`
+	RunID                   string                `json:"run_id"`
+	Goal                    GoalSpec              `json:"goal"`
+	KnownFacts              []string              `json:"known_facts,omitempty"`
+	Observations            []AgentObservation    `json:"observations,omitempty"`
+	CompletedSteps          []string              `json:"completed_steps,omitempty"`
+	PendingActions          []AgentActionProposal `json:"pending_actions,omitempty"`
+	Failures                []ToolError           `json:"failures,omitempty"`
+	PlanningRounds          int                   `json:"planning_rounds"`
+	ToolCalls               int                   `json:"tool_calls"`
+	UnavailableCapabilities []string              `json:"unavailable_capabilities,omitempty"`
+	Budget                  AgentBudget           `json:"budget"`
+	ConstraintVersion       int                   `json:"constraint_version"`
+	PlanVersion             int                   `json:"plan_version"`
 }
 
 type AgentObservation struct {
 	Capability string             `json:"capability"`
 	Result     ToolResultEnvelope `json:"result"`
 	CreatedAt  time.Time          `json:"created_at"`
+}
+
+// AgentTraceFields 是审计事件中的运行元数据，不包含 CoT、提示词或工具原始结果。
+type AgentTraceFields struct {
+	RunID             string `json:"run_id,omitempty"`
+	PlanningRound     int    `json:"planning_round,omitempty"`
+	ConstraintVersion int    `json:"constraint_version,omitempty"`
+	PlanVersion       int    `json:"plan_version,omitempty"`
+	DurationMs        int64  `json:"duration_ms,omitempty"`
+	NewFactCount      int    `json:"new_fact_count,omitempty"`
 }
 
 type AgentActivityEvent struct {

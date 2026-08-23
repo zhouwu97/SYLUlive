@@ -251,6 +251,9 @@ class PushSettingsService {
     } catch (_) {
       // 服务端已完成原子关闭；原生链路会在下次启动读取本地状态后停止恢复。
     }
+    try {
+      await _pushClient.setPushOptIn(false);
+    } catch (_) {}
     return result;
   }
 
@@ -283,9 +286,10 @@ class PushSettingsService {
       supported: true,
       optedIn: optedIn,
       notificationsEnabled: native['notificationsEnabled'] == true,
-      registrationId: (native['registrationId']?.toString().trim().isNotEmpty ?? false)
-          ? native['registrationId']?.toString()
-          : await _pushClient.getRegistrationId(),
+      registrationId:
+          (native['registrationId']?.toString().trim().isNotEmpty ?? false)
+              ? native['registrationId']?.toString()
+              : await _pushClient.getRegistrationId(),
       aliasState: native['storedAliasState']?.toString(),
       privateChannelExists: native['privateMessageChannelExists'] == true,
       privateChannelBlocked: native['privateMessageChannelBlocked'] == true,
@@ -301,6 +305,9 @@ class PushSettingsService {
     await prefs.setBool(enabledKey, false);
     try {
       await _aliasChannel.invokeMethod('setPushOptIn', {'enabled': false});
+    } catch (_) {}
+    try {
+      await _pushClient.setPushOptIn(false);
     } catch (_) {}
   }
 }

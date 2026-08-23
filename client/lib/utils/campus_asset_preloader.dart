@@ -5,7 +5,7 @@ class CampusAssetPreloader {
   CampusAssetPreloader._();
 
   static const mapImage = ResizeImage(
-    AssetImage('assets/images/map.jpg'),
+    AssetImage('assets/images/map.png'),
     width: 3072,
   );
 

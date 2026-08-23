@@ -36,17 +36,19 @@ class LocalReminderNotificationClient implements ReminderNotificationClient {
       ),
     );
     await _plugin.initialize(settings);
-    await _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _courseChannelId,
-        _courseChannelName,
-        description: '上课前 5 分钟静音提醒',
-        importance: Importance.defaultImportance,
-        playSound: false,
-        enableVibration: false,
-      ),
-    );
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _courseChannelId,
+            _courseChannelName,
+            description: '上课前 5 分钟静音提醒',
+            importance: Importance.defaultImportance,
+            playSound: false,
+            enableVibration: false,
+          ),
+        );
   }
 
   @override

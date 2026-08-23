@@ -218,6 +218,12 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 		agentContextPayload = datatypes.JSON(payload)
 	}
 	requestHash := sha256.Sum256([]byte(message))
+	initialGoal := ParseGoalSpec(message, request.AgentContext)
+	initialAgentState := AgentRunState{Goal: initialGoal, Budget: BudgetForGoal(initialGoal), ConstraintVersion: 1, PlanVersion: 1}
+	initialAgentStatePayload, err := json.Marshal(initialAgentState)
+	if err != nil {
+		return models.AIRun{}, false, errors.New("agent_state_encode_failed")
+	}
 	now := time.Now()
 	var run models.AIRun
 	duplicate := false
@@ -296,6 +302,9 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			Provider: r.config.ProviderName, Model: r.config.Model, Attempt: 1,
 			MessageHash: hex.EncodeToString(requestHash[:]), MessageLength: messageLength,
 			AgentContext:        agentContextPayload,
+			AgentStateJSON:      datatypes.JSON(initialAgentStatePayload),
+			ConstraintVersion:   1,
+			PlanVersion:         1,
 			BudgetReservationID: &reservationID, ExpiresAt: now.Add(r.config.RequestTimeout + 5*time.Minute),
 		}
 		if err := tx.Create(&run).Error; err != nil {
@@ -350,6 +359,22 @@ func (r *Runtime) Execute(runID, message string) {
 	if err := r.db.First(&run, "id = ?", runID).Error; err != nil {
 		return
 	}
+	agentState, stateErr := r.loadRuntimeAgentState(ctx, &run, message)
+	if stateErr != nil {
+		r.failBeforeGeneration(runID, stateErr.Error(), true)
+		return
+	}
+	agentState.RunID = run.ID
+	if agentState.ConstraintVersion <= 0 {
+		agentState.ConstraintVersion = maxInt(run.ConstraintVersion, 1)
+	}
+	if agentState.PlanVersion <= 0 {
+		agentState.PlanVersion = maxInt(run.PlanVersion, 1)
+	}
+	if err := r.persistRuntimeAgentState(ctx, &run, agentState); err != nil {
+		r.failBeforeGeneration(runID, "agent_state_version_conflict", true)
+		return
+	}
 	contextPrompt := r.agentContextPrompt(ctx, run.UserID, run.AgentContext)
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
 		return
@@ -359,7 +384,7 @@ func (r *Runtime) Execute(runID, message string) {
 		r.failBeforeGeneration(runID, "agent_context_preflight_failed", true)
 		return
 	}
-	goal := ParseGoalSpec(message, nil)
+	goal := agentState.Goal
 	_, _ = r.appendEvent(ctx, runID, "goal.updated", map[string]interface{}{
 		"action_intent":             goal.ActionIntent,
 		"requires_personal_context": goal.RequiresPersonalContext,
@@ -453,7 +478,7 @@ func (r *Runtime) Execute(runID, message string) {
 		}
 	}
 	startedAt := time.Now()
-	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false)
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false, &agentState)
 	if outcome.cancelled {
 		r.finalizeCancelled(runID, outcome.generated, outcome.usage, time.Since(startedAt))
 		return

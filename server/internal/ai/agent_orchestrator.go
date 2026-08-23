@@ -104,6 +104,7 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		}
 		planningQuery := agentPlanningQuery(state.Goal)
 		candidates := RetrieveCapabilities(planningQuery, o.capabilities, nil, o.config.MaxCandidates)
+		candidates = filterUnavailableCapabilities(candidates, state.UnavailableCapabilities)
 		allowed := make(map[string]AgentCapability, len(candidates))
 		for _, candidate := range candidates {
 			if candidate.Available {
@@ -138,6 +139,9 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 			emit(AgentActivityEvent{Type: "tool.started", ActivityCode: "capability_execution", ToolName: call.Capability, Text: capability.Description})
 			result, executeErr := o.executor.Execute(ctx, state.RunID, call)
 			if executeErr != nil {
+				if isCapabilityUnavailableError(executeErr) {
+					state.UnavailableCapabilities = appendUniqueAgentStrings(state.UnavailableCapabilities, call.Capability)
+				}
 				state.Failures = append(state.Failures, ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true})
 				result = ToolResultEnvelope{OK: false, Error: &ToolError{Code: "tool_execution_failed", Message: executeErr.Error(), Retryable: true}}
 				results = append(results, result)
@@ -172,6 +176,32 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, nil
 		}
 	}
+}
+
+func filterUnavailableCapabilities(candidates []AgentCapability, unavailable []string) []AgentCapability {
+	if len(unavailable) == 0 {
+		return candidates
+	}
+	blocked := make(map[string]struct{}, len(unavailable))
+	for _, value := range unavailable {
+		blocked[strings.TrimSpace(value)] = struct{}{}
+	}
+	result := make([]AgentCapability, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, found := blocked[candidate.ID]; !found {
+			result = append(result, candidate)
+		}
+	}
+	return result
+}
+
+func isCapabilityUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	value := strings.ToLower(err.Error())
+	return strings.Contains(value, "mcp_v5_connect") || strings.Contains(value, "mcp_v5_call") ||
+		strings.Contains(value, "mcp_unavailable") || strings.Contains(value, "timeout")
 }
 
 func resultActivityCode(result ToolResultEnvelope) string {

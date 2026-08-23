@@ -53,18 +53,23 @@ func (AIConversationMessage) TableName() string { return "ai_conversation_messag
 
 // AIRun 是一次正式请求的唯一状态载体。ClientRequestID 与用户联合唯一，保证幂等。
 type AIRun struct {
-	ID                  string         `gorm:"type:varchar(36);primaryKey" json:"id"`
-	UserID              uint           `gorm:"not null;uniqueIndex:idx_ai_runs_user_request,priority:1;index" json:"user_id"`
-	ConversationID      string         `gorm:"type:varchar(36);not null;index" json:"conversation_id"`
-	ClientRequestID     string         `gorm:"type:varchar(36);not null;uniqueIndex:idx_ai_runs_user_request,priority:2" json:"client_request_id"`
-	State               string         `gorm:"size:32;not null;index" json:"state"`
-	StateVersion        int64          `gorm:"not null;default:0" json:"state_version"`
-	Provider            string         `gorm:"size:32;not null" json:"provider"`
-	Model               string         `gorm:"size:100;not null" json:"model"`
-	Attempt             int            `gorm:"not null;default:1" json:"attempt"`
-	MessageHash         string         `gorm:"size:64;not null" json:"-"`
-	MessageLength       int            `gorm:"not null" json:"message_length"`
-	AgentContext        datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	ID              string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	UserID          uint           `gorm:"not null;uniqueIndex:idx_ai_runs_user_request,priority:1;index" json:"user_id"`
+	ConversationID  string         `gorm:"type:varchar(36);not null;index" json:"conversation_id"`
+	ClientRequestID string         `gorm:"type:varchar(36);not null;uniqueIndex:idx_ai_runs_user_request,priority:2" json:"client_request_id"`
+	State           string         `gorm:"size:32;not null;index" json:"state"`
+	StateVersion    int64          `gorm:"not null;default:0" json:"state_version"`
+	Provider        string         `gorm:"size:32;not null" json:"provider"`
+	Model           string         `gorm:"size:100;not null" json:"model"`
+	Attempt         int            `gorm:"not null;default:1" json:"attempt"`
+	MessageHash     string         `gorm:"size:64;not null" json:"-"`
+	MessageLength   int            `gorm:"not null" json:"message_length"`
+	AgentContext    datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	// AgentStateJSON 保存可恢复的 Goal、预算、观察和版本信息；不保存提示词或个人原始数据。
+	AgentStateJSON      datatypes.JSON `gorm:"column:agent_state_json;type:jsonb;not null;default:'{}'" json:"-"`
+	PlanningRound       int            `gorm:"not null;default:0" json:"planning_round"`
+	ConstraintVersion   int            `gorm:"not null;default:1" json:"constraint_version"`
+	PlanVersion         int            `gorm:"not null;default:1" json:"plan_version"`
 	BudgetReservationID *string        `gorm:"type:varchar(36);index" json:"-"`
 	LastEventSeq        int64          `gorm:"not null;default:0" json:"last_event_seq"`
 	AnswerCheckpoint    string         `gorm:"type:text;not null;default:''" json:"answer_checkpoint,omitempty"`
@@ -93,20 +98,23 @@ func (AIEvent) TableName() string { return "ai_events" }
 
 // AIToolCall 记录经过服务端 Schema 与权限校验的工具调用。
 type AIToolCall struct {
-	CallID        string         `gorm:"type:varchar(100);primaryKey" json:"call_id"`
-	RunID         string         `gorm:"type:varchar(36);not null;index" json:"run_id"`
-	UserID        uint           `gorm:"not null;index" json:"user_id"`
-	ToolName      string         `gorm:"size:100;not null" json:"tool_name"`
-	ToolVersion   string         `gorm:"size:32;not null" json:"tool_version"`
-	ArgumentsJSON datatypes.JSON `gorm:"type:jsonb;not null" json:"arguments"`
-	ArgumentsHash string         `gorm:"size:64;not null" json:"-"`
-	Status        string         `gorm:"size:24;not null;index" json:"status"`
-	StateVersion  int64          `gorm:"not null;default:0" json:"state_version"`
-	ExpiresAt     time.Time      `gorm:"not null;index" json:"expires_at"`
-	ResultJSON    datatypes.JSON `gorm:"type:jsonb" json:"result,omitempty"`
-	ResultHash    string         `gorm:"size:64" json:"-"`
-	CreatedAt     time.Time      `json:"created_at"`
-	CompletedAt   *time.Time     `json:"completed_at,omitempty"`
+	CallID            string         `gorm:"type:varchar(100);primaryKey" json:"call_id"`
+	RunID             string         `gorm:"type:varchar(36);not null;index" json:"run_id"`
+	UserID            uint           `gorm:"not null;index" json:"user_id"`
+	ToolName          string         `gorm:"size:100;not null" json:"tool_name"`
+	ToolVersion       string         `gorm:"size:32;not null" json:"tool_version"`
+	ArgumentsJSON     datatypes.JSON `gorm:"type:jsonb;not null" json:"arguments"`
+	ArgumentsHash     string         `gorm:"size:64;not null" json:"-"`
+	Status            string         `gorm:"size:24;not null;index" json:"status"`
+	StateVersion      int64          `gorm:"not null;default:0" json:"state_version"`
+	PlanningRound     int            `gorm:"not null;default:0;index" json:"planning_round"`
+	ConstraintVersion int            `gorm:"not null;default:0;index" json:"constraint_version"`
+	PlanVersion       int            `gorm:"not null;default:0" json:"plan_version"`
+	ExpiresAt         time.Time      `gorm:"not null;index" json:"expires_at"`
+	ResultJSON        datatypes.JSON `gorm:"type:jsonb" json:"result,omitempty"`
+	ResultHash        string         `gorm:"size:64" json:"-"`
+	CreatedAt         time.Time      `json:"created_at"`
+	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
 }
 
 func (AIToolCall) TableName() string { return "ai_tool_calls" }

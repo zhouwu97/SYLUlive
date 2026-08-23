@@ -39,18 +39,20 @@ class LocalSystemNotificationClient implements SystemNotificationClient {
       );
     }
 
-    await _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        'private_message_channel',
-        '私信通知',
-        description: '接收新私信时的横幅和声音提醒',
-        importance: Importance.max,
-        playSound: true,
-        showBadge: true,
-        enableVibration: true,
-      ),
-    );
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'private_message_channel',
+            '私信通知',
+            description: '接收新私信时的横幅和声音提醒',
+            importance: Importance.max,
+            playSound: true,
+            showBadge: true,
+            enableVibration: true,
+          ),
+        );
     _ready = true;
   }
 

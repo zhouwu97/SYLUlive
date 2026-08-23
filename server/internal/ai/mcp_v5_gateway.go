@@ -59,12 +59,12 @@ func (g *MCPV5Gateway) CallTool(ctx context.Context, grant, capability string, a
 	client := mcp.NewClient(&mcp.Implementation{Name: "sylulive-agent-runtime", Version: AgentContractVersion}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return ToolResultEnvelope{}, fmt.Errorf("mcp_v5_connect: %w", err)
+		return ToolResultEnvelope{}, classifyMCPV5Error("mcp_v5_connect", err, ctx)
 	}
 	defer session.Close()
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: capability, Arguments: args})
 	if err != nil {
-		return ToolResultEnvelope{}, fmt.Errorf("mcp_v5_call: %w", err)
+		return ToolResultEnvelope{}, classifyMCPV5Error("mcp_v5_call", err, ctx)
 	}
 	raw, err := mcpV5ResultJSON(result)
 	if err != nil {
@@ -79,6 +79,13 @@ func (g *MCPV5Gateway) CallTool(ctx context.Context, grant, capability string, a
 		envelope.Error = &ToolError{Code: "mcp_tool_error", Message: "纯能力 MCP 返回工具错误", Retryable: true}
 	}
 	return envelope, nil
+}
+
+func classifyMCPV5Error(prefix string, err error, ctx context.Context) error {
+	if ctx != nil && ctx.Err() != nil {
+		return fmt.Errorf("%s_timeout: %w", prefix, ctx.Err())
+	}
+	return fmt.Errorf("%s_unavailable: %w", prefix, err)
 }
 
 type bearerRoundTripper struct {

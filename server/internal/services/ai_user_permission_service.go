@@ -162,7 +162,7 @@ func (service *AIUserPermissionService) SetMode(ctx context.Context, userID uint
 			}
 			row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: scopePolicy}
 			if err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "user_id"}, {Name: "scope"}},
+				Columns: []clause.Column{{Name: "user_id"}, {Name: "scope"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
 					"policy": scopePolicy, "version": gorm.Expr("version + 1"), "updated_at": time.Now(),
 				}),

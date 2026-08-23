@@ -2,6 +2,27 @@
 ALTER TABLE ai_user_permissions
     ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
 
+CREATE TABLE IF NOT EXISTS ai_scoped_grants (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(36) NOT NULL,
+    user_id BIGINT NOT NULL,
+    allowed_json JSONB NOT NULL,
+    scopes_json JSONB NOT NULL,
+    permission_scope VARCHAR(48) NOT NULL DEFAULT '',
+    permission_version BIGINT NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    max_calls INTEGER NOT NULL,
+    calls INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_scoped_grants_run_status
+    ON ai_scoped_grants (run_id, status);
+CREATE INDEX IF NOT EXISTS idx_ai_scoped_grants_expiry
+    ON ai_scoped_grants (expires_at);
+
 CREATE TABLE IF NOT EXISTS user_calendar_action_migration_conflicts (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,

@@ -203,6 +203,7 @@ func main() {
 		&models.AcademicSnapshot{},
 		&models.PersonalUploadedSnapshot{},
 		&models.AIUserPermission{},
+		&models.AIScopedGrant{},
 		&models.AIRunConsent{},
 		&models.UserDevice{},
 		&models.PushDevice{},
@@ -801,7 +802,10 @@ func main() {
 	var capabilityRegistry *ai.AgentCapabilityRegistry
 	var unifiedMCPGateway *ai.MCPV5Gateway
 	// Run Scoped Grant 由 Go Control Plane 创建，MCP 只通过 Authorization 接收 opaque token。
-	scopedGrantManager := ai.NewScopedGrantManager(time.Now, ai.WithScopedGrantPermissionVersionReader(aiUserPermissionService))
+	scopedGrantManager := ai.NewScopedGrantManager(time.Now,
+		ai.WithScopedGrantDB(db),
+		ai.WithScopedGrantPermissionVersionReader(aiUserPermissionService),
+	)
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)

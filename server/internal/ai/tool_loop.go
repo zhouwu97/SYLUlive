@@ -227,6 +227,12 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 				"call_id": call.id, "tool_name": call.name, "success": success, "cached": cached,
 				"duration_ms": time.Since(startedAt).Milliseconds(), "new_fact_count": 0,
 			}
+			if envelope, decodeErr := DecodeToolResult(execution.Result); decodeErr == nil && envelope.Error != nil {
+				eventPayload["error_code"] = envelope.Error.Code
+				if envelope.Error.Code == "mcp_unavailable" || strings.HasPrefix(envelope.Error.Code, "mcp_v5_") {
+					eventPayload["capability_status"] = "unavailable"
+				}
+			}
 			if agentState != nil {
 				eventPayload["new_fact_count"] = addRuntimeObservation(agentState, call.name, execution.Result, time.Now())
 				agentState.PlanVersion++
@@ -575,8 +581,17 @@ func (r *Runtime) appendPersonalDataEvidence(ctx context.Context, runID, callID 
 	if len(evidence) == 0 {
 		return
 	}
+	traceEvidence := make([]map[string]interface{}, 0, len(evidence))
+	for _, item := range evidence {
+		// Trace 只保留来源和新鲜度元数据；课程名、成绩、学号等事实仍只
+		// 留在受控的 Tool Result / 最终回答链路，不进入事件审计。
+		traceEvidence = append(traceEvidence, map[string]interface{}{
+			"source": item.Source, "dataset": item.Dataset, "fetched_at": item.FetchedAt,
+			"expires_at": item.ExpiresAt, "is_stale": item.IsStale,
+		})
+	}
 	_, _ = r.appendEvent(ctx, runID, "personal_data.evidence", map[string]interface{}{
-		"call_id": callID, "evidence": evidence,
+		"call_id": callID, "evidence": traceEvidence,
 	}, true)
 }
 

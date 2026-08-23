@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 type applicationReasonInput struct {
@@ -81,6 +82,7 @@ func (h *PostHandler) GetFeaturedList(c *gin.Context) {
 		return
 	}
 	h.fillLikes(c, posts)
+	_ = services.LoadTopicsForPosts(h.db, posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}

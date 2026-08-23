@@ -25,14 +25,14 @@ abstract final class AppTextStyles {
 
   // 首页信息流角色：只供 PostCard(homeFeed) 使用，避免在卡片内散落排版魔法值。
   static const feedTitle = TextStyle(
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: FontWeight.w700,
-    height: 1.35,
+    height: 1.3,
   );
   static const feedBody = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w400,
-    height: 1.58,
+    height: 1.5,
   );
   static const feedAuthor = TextStyle(
     fontSize: 14,
@@ -44,9 +44,19 @@ abstract final class AppTextStyles {
     fontWeight: FontWeight.w400,
     height: 1.25,
   );
+  static const feedTime = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
+    height: 1.2,
+  );
   static const feedTag = TextStyle(
-    fontSize: 12.5,
-    fontWeight: FontWeight.w600,
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
     height: 1.3,
+  );
+  static const feedBadge = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w500,
+    height: 1.2,
   );
 }

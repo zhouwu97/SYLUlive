@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+import '../models/topic.dart';
+
 /// 一条未发布的帖子草稿（C-1）。
 class PostDraft {
   const PostDraft({
@@ -9,6 +11,7 @@ class PostDraft {
     required this.content,
     this.postType = '',
     this.waterTagId,
+    this.topics = const [],
     this.draftImagePaths = const [],
     required this.updatedAt,
   });
@@ -17,18 +20,21 @@ class PostDraft {
   final String content;
   final String postType;
   final int? waterTagId;
+  final List<TopicSelection> topics;
 
   /// 本地草稿图片路径（顺序即展示顺序）。
   final List<String> draftImagePaths;
   final DateTime updatedAt;
 
-  bool get isEmpty => title.isEmpty && content.isEmpty && draftImagePaths.isEmpty;
+  bool get isEmpty =>
+      title.isEmpty && content.isEmpty && draftImagePaths.isEmpty;
 
   Map<String, dynamic> toJson() => {
         'title': title,
         'content': content,
         'post_type': postType,
         'water_tag_id': waterTagId,
+        'topics': topics.map((topic) => topic.toJson()).toList(),
         'draft_image_paths': draftImagePaths,
         'updated_at': updatedAt.toUtc().toIso8601String(),
       };
@@ -37,9 +43,26 @@ class PostDraft {
         title: json['title']?.toString() ?? '',
         content: json['content']?.toString() ?? '',
         postType: json['post_type']?.toString() ?? '',
-        waterTagId: json['water_tag_id'] as int?,
-        draftImagePaths:
-            (json['draft_image_paths'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        waterTagId: json['water_tag_id'] != null
+            ? (json['water_tag_id'] as num).toInt()
+            : null,
+        topics: (json['topics'] as List?)
+                ?.whereType<Map>()
+                .map((e) {
+                  final item = Map<String, dynamic>.from(e);
+                  final id = item['id'];
+                  return TopicSelection(
+                    id: id is num ? id.toInt() : null,
+                    name: item['name']?.toString() ?? '',
+                  );
+                })
+                .where((topic) => topic.name.trim().isNotEmpty)
+                .toList(growable: false) ??
+            const [],
+        draftImagePaths: (json['draft_image_paths'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
         updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
             DateTime.now(),
       );
@@ -50,7 +73,8 @@ class PostDraft {
 /// 保存：标题 / 正文 / postType / waterTagId / 本地图片路径顺序 / updatedAt。
 /// 复用 AppPreferencesStore，不引入新存储层；composer 负责防抖节流。
 class PostDraftService {
-  static const String _draftKey = 'post_draft_v1';
+  static const String _draftKey = 'post_draft_v2';
+  static const String _legacyDraftKey = 'post_draft_v1';
 
   /// 保存草稿（覆盖）。
   Future<void> save(PostDraft draft) async {
@@ -61,12 +85,22 @@ class PostDraftService {
   /// 读取草稿；无草稿或损坏时返回 null。
   Future<PostDraft?> load() async {
     final prefs = await AppPreferencesStore.getInstance();
-    final encoded = prefs.getString(_draftKey);
+    var encoded = prefs.getString(_draftKey);
+    var migrated = false;
+    if (encoded == null || encoded.isEmpty) {
+      encoded = prefs.getString(_legacyDraftKey);
+      migrated = encoded != null && encoded.isNotEmpty;
+    }
     if (encoded == null || encoded.isEmpty) return null;
     try {
       final decoded = jsonDecode(encoded);
       if (decoded is! Map<String, dynamic>) return null;
-      return PostDraft.fromJson(decoded);
+      final draft = PostDraft.fromJson(decoded);
+      if (migrated) {
+        await prefs.setString(_draftKey, jsonEncode(draft.toJson()));
+        await prefs.remove(_legacyDraftKey);
+      }
+      return draft;
     } catch (_) {
       return null;
     }
@@ -76,5 +110,6 @@ class PostDraftService {
   Future<void> clear() async {
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_draftKey);
+    await prefs.remove(_legacyDraftKey);
   }
 }

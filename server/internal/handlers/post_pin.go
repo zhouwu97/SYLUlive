@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 var (
@@ -133,6 +134,7 @@ func (h *PostHandler) AdminPinPost(c *gin.Context) {
 
 	responsePosts := []models.Post{updatedPost}
 	h.fillLikes(c, responsePosts)
+	_ = services.LoadTopicsForPosts(h.db, responsePosts)
 	updatedPost = responsePosts[0]
 	c.JSON(http.StatusOK, updatedPost)
 }
@@ -180,6 +182,7 @@ func (h *PostHandler) AdminUnpinPost(c *gin.Context) {
 
 	responsePosts := []models.Post{updatedPost}
 	h.fillLikes(c, responsePosts)
+	_ = services.LoadTopicsForPosts(h.db, responsePosts)
 	updatedPost = responsePosts[0]
 	c.JSON(http.StatusOK, updatedPost)
 }
@@ -213,6 +216,7 @@ func (h *PostHandler) AdminGetPinnedPosts(c *gin.Context) {
 		return
 	}
 	h.fillLikes(c, posts)
+	_ = services.LoadTopicsForPosts(h.db, posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}

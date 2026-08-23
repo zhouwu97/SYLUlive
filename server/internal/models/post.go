@@ -93,6 +93,7 @@ type Post struct {
 	WaterSectionAuthorMeta *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
 	TeamRecruitmentMeta    *TeamRecruitmentMeta    `gorm:"-" json:"team_recruitment_meta,omitempty"`
 	PollMeta               *PollSummaryDTO         `gorm:"-" json:"poll_meta,omitempty"`
+	Topics                 []TopicBrief            `gorm:"-" json:"topics"`
 	Images                 []PostImage             `gorm:"foreignKey:PostID" json:"images"`
 	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt              time.Time               `json:"created_at"`

@@ -39,14 +39,23 @@ abstract final class AppColors {
   static const textPrimaryLight = Color(0xFF1F2328);
   static const textSecondaryLight = Color(0xFF747B82);
   static const textMutedLight = Color(0xFF858C89);
+  static const textTertiaryLight = Color(0xFF9AA1A1);
   static const textPrimaryDark = Color(0xFFF2F4F3);
   static const textSecondaryDark = Color(0xFFA7AFAB);
+  static const textTertiaryDark = Color(0xFF8E9894);
 
   // Border Tokens
   static const borderNormalLight = Color(0xFFE2EFEA);
   static const borderSubtleLight = Color(0xFFE8EEE9);
   static const borderNormalDark = Color(0xFF303638);
   static const borderSubtleDark = Color(0xFF252A2C);
+
+  // 首页 Feed 轻量状态表面：用于版块 badge 与弱化的精华 badge。
+  static const feedSectionSurfaceLight = Color(0xFFE8F5F1);
+  static const feedFeaturedSurfaceLight = Color(0xFFFFF3E0);
+  static const feedFeaturedTextLight = Color(0xFFD97706);
+  static const feedFeaturedSurfaceDark = Color(0xFF3A2A18);
+  static const feedFeaturedTextDark = Color(0xFFF2B15A);
 
   // Composer & Control Tokens
   static const composerSurfaceLight = Color(0xFFFFFFFF);

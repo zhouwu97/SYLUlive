@@ -210,6 +210,8 @@ func main() {
 		&models.DeviceToolJob{},
 
 		&models.Post{},
+		&models.Topic{},
+		&models.PostTopic{},
 		&models.Poll{},
 		&models.PollOption{},
 		&models.PollBallot{},
@@ -619,6 +621,7 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	topicHandler := handlers.NewTopicHandler(db)
 	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
 	postHandler.SetFeedPersonalizationV5(cfg.HomeFeedV5PersonalizationShadow, cfg.HomeFeedV5PersonalizationPercent)
 	feedHandler := handlers.NewFeedHandler(db)
@@ -1338,6 +1341,11 @@ func main() {
 	r.POST("/api/notifications/read-selected", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkSelectedRead)
 
 	// 帖子路由
+	topics := r.Group("/api/topics")
+	{
+		topics.GET("/search", topicHandler.Search)
+		topics.GET("/recommend", topicHandler.Recommend)
+	}
 
 	posts := r.Group("/api/posts")
 

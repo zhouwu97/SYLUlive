@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../models/post.dart';
 import '../../screens/image_viewer_screen.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
 import '../../utils/post_image_cache.dart';
 
 enum PostMediaVariant { feed, homeFeed, detail }
@@ -197,13 +199,18 @@ class PostMediaView extends StatelessWidget {
     );
   }
 
-  static Widget _networkImage(String url, {required BoxFit fit}) {
+  static Widget _networkImage(
+    String url, {
+    required BoxFit fit,
+    Alignment alignment = Alignment.center,
+  }) {
     return CachedNetworkImage(
       cacheManager: PostImageCache.manager,
       imageUrl: url,
       width: double.infinity,
       height: double.infinity,
       fit: fit,
+      alignment: alignment,
       placeholder: (_, __) => Container(color: Colors.grey[200]),
       errorWidget: (_, failedUrl, __) {
         Future.microtask(() => PostImageCache.manager.removeFile(failedUrl));
@@ -241,14 +248,18 @@ Size calculateSinglePostImageSize({
   final safeAspectRatio = aspectRatio > 0 ? aspectRatio : 4 / 3;
 
   if (variant == PostMediaVariant.homeFeed) {
-    // 首页单图占满内容列，但限制超长图的纵向侵占；viewer 仍打开原图。
-    final clampedRatio = safeAspectRatio.clamp(0.55, 1.8);
-    const maxHeight = 280.0;
-    final naturalHeight = availableWidth / clampedRatio;
-    if (naturalHeight <= maxHeight) {
-      return Size(availableWidth, naturalHeight);
+    // 首页单图始终铺满内容列，避免窄竖图把卡片撑成“左图右空白”。
+    // 超长图固定预览高度，点击后仍打开原图查看器。
+    final clampedRatio = safeAspectRatio.clamp(0.55, 1.8).toDouble();
+    final maxHeight =
+        clampedRatio < 0.7 ? 280.0 : (clampedRatio < 1.2 ? 300.0 : 280.0);
+    if (clampedRatio < 0.7) {
+      return Size(availableWidth, maxHeight);
     }
-    return Size(maxHeight * clampedRatio, maxHeight);
+    return Size(
+      availableWidth,
+      math.min(availableWidth / clampedRatio, maxHeight),
+    );
   }
 
   if (variant == PostMediaVariant.feed) {
@@ -366,17 +377,55 @@ class _SinglePostImageState extends State<_SinglePostImage> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.onTap,
-              child: ColoredBox(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white10
-                    : const Color(0xFFF3F4F6),
-                child: SizedBox(
-                  key: const ValueKey('single-post-image-tap-target'),
-                  width: imageSize.width,
-                  height: imageSize.height,
-                  child: PostMediaView._networkImage(
-                    widget.url,
-                    fit: BoxFit.cover,
+              child: SizedBox(
+                key: const ValueKey('single-post-image-tap-target'),
+                width: imageSize.width,
+                height: imageSize.height,
+                child: ColoredBox(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white10
+                      : const Color(0xFFF3F4F6),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PostMediaView._networkImage(
+                        widget.url,
+                        fit: BoxFit.cover,
+                        alignment: _aspectRatio < 0.7
+                            ? Alignment.topCenter
+                            : Alignment.center,
+                      ),
+                      if (widget.variant == PostMediaVariant.homeFeed &&
+                          _aspectRatio < 0.7)
+                        Positioned(
+                          right: AppSpacing.sm,
+                          bottom: AppSpacing.sm,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
+                              ),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sm,
+                                  vertical: AppSpacing.xs,
+                                ),
+                                child: Text(
+                                  '长图',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

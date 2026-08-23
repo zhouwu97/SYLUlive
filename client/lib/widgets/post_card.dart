@@ -17,6 +17,7 @@ import '../utils/app_feedback.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_media/post_media_view.dart';
+import 'topic_chips.dart';
 import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -312,6 +313,10 @@ class _PostCardState extends State<PostCard>
                 fontSize: isDesktop ? 15 : 13,
               ),
             ),
+            if (post.topics.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              PostTopicChips(topics: post.topics),
+            ],
             if (validImageCount > 0) ...[
               SizedBox(height: isDesktop ? 12 : 6),
               _buildImageGrid(context, post.images),
@@ -360,27 +365,26 @@ class _PostCardState extends State<PostCard>
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     final secondary =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
-    final contentMaxLines = validImageCount == 0 ? 4 : 3;
+    final contentMaxLines = validImageCount == 0 ? 3 : 2;
+    final hasUsefulTag = labels.tagLabel.isNotEmpty && labels.tagLabel != '其他';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: border.withValues(alpha: isDark ? 0.82 : 0.52),
+          width: 0.8,
+        ),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.md,
-              AppSpacing.sm,
-            ),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, AppSpacing.xs),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -403,10 +407,20 @@ class _PostCardState extends State<PostCard>
                         const SizedBox(width: AppSpacing.xs),
                       ],
                       if (post.isFeatured) ...[
-                        _buildFeaturedBadge(false, label: '精华'),
+                        _buildFeaturedBadge(
+                          false,
+                          label: '精华',
+                          subtle: true,
+                          isDark: isDark,
+                        ),
                         const SizedBox(width: AppSpacing.xs),
                       ] else if (post.waterSectionFeatured) ...[
-                        _buildFeaturedBadge(false, label: '版块精华'),
+                        _buildFeaturedBadge(
+                          false,
+                          label: '版块精华',
+                          subtle: true,
+                          isDark: isDark,
+                        ),
                         const SizedBox(width: AppSpacing.xs),
                       ],
                       Expanded(
@@ -423,7 +437,7 @@ class _PostCardState extends State<PostCard>
                   ),
                 ],
                 if (post.content.trim().isNotEmpty) ...[
-                  SizedBox(height: post.title.isEmpty ? 0 : AppSpacing.xs),
+                  SizedBox(height: post.title.isEmpty ? 0 : 6),
                   Text(
                     post.content,
                     maxLines: contentMaxLines,
@@ -435,7 +449,7 @@ class _PostCardState extends State<PostCard>
                     ),
                   ),
                 ],
-                if (labels.tagLabel.isNotEmpty) ...[
+                if (hasUsefulTag) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '#${labels.tagLabel}',
@@ -445,6 +459,10 @@ class _PostCardState extends State<PostCard>
                       color: AppColors.brandPrimary,
                     ),
                   ),
+                ],
+                if (post.topics.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  PostTopicChips(topics: post.topics),
                 ],
                 if (validImageCount > 0) ...[
                   const SizedBox(height: AppSpacing.sm),
@@ -486,7 +504,7 @@ class _PostCardState extends State<PostCard>
             customBorder: const CircleBorder(),
             child: Center(
               child: CachedAvatar(
-                radius: 20,
+                radius: 18,
                 imageUrl: displayAvatar.isNotEmpty
                     ? ApiConstants.fullUrl(displayAvatar)
                     : null,
@@ -524,13 +542,9 @@ class _PostCardState extends State<PostCard>
                       if (sectionLabel.isNotEmpty) ...[
                         const SizedBox(width: AppSpacing.xs),
                         Flexible(
-                          child: Text(
+                          child: _buildHomeSectionBadge(
                             sectionLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.feedMeta.copyWith(
-                              color: AppColors.brandPrimary,
-                            ),
+                            isDark: isDark,
                           ),
                         ),
                       ],
@@ -541,7 +555,11 @@ class _PostCardState extends State<PostCard>
                     _formatTime(post.createdAt),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.feedMeta.copyWith(color: secondary),
+                    style: AppTextStyles.feedTime.copyWith(
+                      color: isDark
+                          ? AppColors.textTertiaryDark
+                          : AppColors.textTertiaryLight,
+                    ),
                   ),
                 ],
               ),
@@ -558,6 +576,27 @@ class _PostCardState extends State<PostCard>
             allowReport: widget.allowReport,
           ),
       ],
+    );
+  }
+
+  Widget _buildHomeSectionBadge(String label, {required bool isDark}) {
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.brandSurfaceDark
+            : AppColors.feedSectionSurfaceLight,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.feedBadge.copyWith(
+          color: AppColors.brandPrimary,
+        ),
+      ),
     );
   }
 
@@ -599,7 +638,7 @@ class _PostCardState extends State<PostCard>
         Expanded(
           child: _buildHomeMetaAction(
             icon: Icons.ios_share_outlined,
-            label: '分享',
+            label: '',
             color: secondary,
             onTap: () => _sharePost(post),
             alignEnd: true,
@@ -637,11 +676,13 @@ class _PostCardState extends State<PostCard>
                   curve: AppMotion.standard,
                   child: Icon(icon, size: 17, color: color),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  label,
-                  style: AppTextStyles.feedMeta.copyWith(color: color),
-                ),
+                if (label.isNotEmpty) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    label,
+                    style: AppTextStyles.feedMeta.copyWith(color: color),
+                  ),
+                ],
               ],
             ),
           ),
@@ -906,7 +947,34 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildFeaturedBadge(bool isDesktop, {String label = '精华'}) {
+  Widget _buildFeaturedBadge(
+    bool isDesktop, {
+    String label = '精华',
+    bool subtle = false,
+    bool isDark = false,
+  }) {
+    if (subtle) {
+      return Container(
+        height: 20,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.feedFeaturedSurfaceDark
+              : AppColors.feedFeaturedSurfaceLight,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.feedBadge.copyWith(
+            color: isDark
+                ? AppColors.feedFeaturedTextDark
+                : AppColors.feedFeaturedTextLight,
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 7 : 6,

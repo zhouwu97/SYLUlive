@@ -24,7 +24,7 @@ class CachedPostFeed {
 
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
-  static const int cacheSchemaVersion = 6;
+  static const int cacheSchemaVersion = 7;
   static const String homeAllAlgorithmVersion = 'home_all_v3_poll';
   static const String homeTimeAlgorithmVersion = 'home_time_v3_poll';
   static const String fallbackAlgorithmVersion = 'feed_v1';
@@ -304,6 +304,7 @@ class PostCacheService {
           : null,
       'team_recruitment_meta': post.teamRecruitment?.toJson(),
       'poll_meta': post.pollMeta?.toJson(),
+      'topics': post.topics.map((topic) => topic.toJson()).toList(),
       'images': post.images
           .map(
             (img) => {

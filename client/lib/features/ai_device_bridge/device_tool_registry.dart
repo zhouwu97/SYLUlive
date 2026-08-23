@@ -21,10 +21,14 @@ class DeviceToolRegistry {
 
   static const supportedToolNames = <String>{
     'device.academic.get_cached_overview',
+    'device.academic.get_cached_grade_summary',
+    'device.academic.get_cached_risk_context',
     'device.schedule.get_cached_week',
     'device.academic.get_credit_summary',
     'device.erke.get_cached_overview',
     'device.academic.ensure_fresh_overview',
+    'device.academic.ensure_fresh_grade_summary',
+    'device.academic.ensure_fresh_risk_context',
     'device.schedule.ensure_fresh_week',
     'device.academic.ensure_fresh_credit_summary',
     'device.erke.ensure_fresh_overview',
@@ -39,10 +43,22 @@ class DeviceToolRegistry {
   }) async {
     return switch (job.toolName) {
       'device.academic.get_cached_overview' => _academicOverview(job, gateway),
+      'device.academic.get_cached_grade_summary' => _gradeSummary(job, gateway),
+      'device.academic.get_cached_risk_context' => _riskContext(job, gateway),
       'device.schedule.get_cached_week' => _scheduleWeek(job, gateway),
       'device.academic.get_credit_summary' => _creditSummary(job, gateway),
       'device.erke.get_cached_overview' => _erkeOverview(job, gateway),
       'device.academic.ensure_fresh_overview' => _academicOverview(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.academic.ensure_fresh_grade_summary' => _gradeSummary(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.academic.ensure_fresh_risk_context' => _riskContext(
           job,
           gateway,
           automationGateway: automationGateway,
@@ -64,6 +80,77 @@ class DeviceToolRegistry {
         ),
       _ => throw const DeviceToolExecutionException('tool_not_allowed'),
     };
+  }
+
+  Future<DeviceToolExecutionResult> _gradeSummary(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    return _academicGradeProjection(
+      job,
+      gateway,
+      automationGateway: automationGateway,
+    );
+  }
+
+  Future<DeviceToolExecutionResult> _riskContext(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    return _academicGradeProjection(
+      job,
+      gateway,
+      automationGateway: automationGateway,
+    );
+  }
+
+  Future<DeviceToolExecutionResult> _academicGradeProjection(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.academic,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['grades'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getAcademicRecords(),
+    );
+    final records = _requiredData(result);
+    final credits = _academicEngine.calculateCredits(records.courses);
+    final gpa = _academicEngine.calculateGpa(records.courses);
+    final failures = _academicEngine.calculateFailures(records.courses);
+    final failedCourses = failures.failedCourses.take(500).map((course) {
+      final score =
+          course.score ?? double.tryParse(course.gradeText ?? '') ?? 0;
+      return <String, dynamic>{
+        'course_name': course.courseName,
+        'grade': score,
+        'credits': course.credit,
+      };
+    }).toList(growable: false);
+    return DeviceToolExecutionResult(
+      _envelope(
+        result,
+        data: <String, dynamic>{
+          'course_count': records.courses.length,
+          'earned_credits': credits.passedCredits,
+          'weighted_gpa': gpa.gpa ?? 0,
+          'failed_courses': failedCourses,
+        },
+        freshness: freshness,
+      ),
+    );
   }
 
   Future<DeviceToolExecutionResult> _academicOverview(

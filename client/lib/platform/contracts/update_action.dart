@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 
@@ -26,15 +25,21 @@ abstract interface class AppUpdateAction {
 
   File? get readyApk;
 
-  factory AppUpdateAction.current(AppUpdateInfo info, AppInstaller installer, AppUpdateDownloadService downloadService) {
+  factory AppUpdateAction.current(AppUpdateInfo info, AppInstaller installer,
+      AppUpdateDownloadService downloadService) {
     final capabilities = PlatformCapabilities.current;
-    
+
     // 如果是鸿蒙平台，只有在服务端明确指明为 external_market 且提供了有效 actionUrl 时才允许外部跳转
     if (capabilities.platform == AppPlatform.ohos) {
-      if (info.deliveryMode == AppUpdateDeliveryMode.externalMarket && info.actionUrl.trim().isNotEmpty) {
+      if (info.deliveryMode == AppUpdateDeliveryMode.externalMarket &&
+          info.actionUrl.trim().isNotEmpty) {
         return const OhosMarketUpdateAction();
       }
       return const UnsupportedUpdateAction();
+    }
+
+    if (capabilities.platform == AppPlatform.ios) {
+      return const IOSAppStoreUpdateAction();
     }
 
     if (capabilities.supportsMarketUpdate) {
@@ -77,17 +82,47 @@ class OhosMarketUpdateAction implements AppUpdateAction {
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final canOpenExternal = info.deliveryMode == AppUpdateDeliveryMode.externalMarket && info.actionUrl.trim().isNotEmpty;
-    final targetUrl = canOpenExternal ? info.actionUrl.trim() : info.downloadUrl.trim();
+    final canOpenExternal =
+        info.deliveryMode == AppUpdateDeliveryMode.externalMarket &&
+            info.actionUrl.trim().isNotEmpty;
+    final targetUrl =
+        canOpenExternal ? info.actionUrl.trim() : info.downloadUrl.trim();
     if (targetUrl.isEmpty) throw StateError('更新链接无效');
     final url = Uri.tryParse(targetUrl);
     if (url == null) throw StateError('更新链接无效');
-    
+
     final nav = ExternalNavigator.current();
     final opened = await nav.open(url);
     if (!opened) {
       throw StateError('无法打开应用市场或链接，请手动更新');
     }
+    return AppUpdateActionResult.externalStoreOpened;
+  }
+}
+
+/// iOS 通过 App Store / TestFlight 分发，禁止下载 IPA 后由 App 内安装。
+class IOSAppStoreUpdateAction implements AppUpdateAction {
+  const IOSAppStoreUpdateAction();
+
+  @override
+  File? get readyApk => null;
+
+  @override
+  Future<AppUpdateActionResult> execute(
+    AppUpdateInfo info, {
+    File? existingApk,
+    void Function(AppDownloadProgress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final target = info.actionUrl.trim().isNotEmpty
+        ? info.actionUrl.trim()
+        : info.downloadUrl.trim();
+    final uri = Uri.tryParse(target);
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      throw StateError('App Store 更新链接无效');
+    }
+    final opened = await ExternalNavigator.current().open(uri);
+    if (!opened) throw StateError('无法打开 App Store 或 TestFlight');
     return AppUpdateActionResult.externalStoreOpened;
   }
 }

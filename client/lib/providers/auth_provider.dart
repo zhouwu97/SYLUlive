@@ -13,6 +13,7 @@ import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
 import '../platform/contracts/secure_store.dart';
 import '../platform/contracts/system_notification_client.dart';
+import '../platform/contracts/push_client.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -22,6 +23,7 @@ import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../platform/app_platform.dart';
 
 enum AuthState {
   unknown,
@@ -1042,6 +1044,11 @@ class AuthProvider extends ChangeNotifier {
   /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
   Future<void> _clearPushAlias() async {
     try {
+      await PushClient.current().clearAlias();
+    } catch (e) {
+      debugPrint('清除 JPush Alias 失败: ${e.runtimeType}');
+    }
+    try {
       await const MethodChannel('shenliyuan/private_message_notifications')
           .invokeMethod('clearAlias');
     } catch (e) {
@@ -1551,6 +1558,7 @@ class AuthProvider extends ChangeNotifier {
     required String installationId,
     required String registrationId,
     required String noticeVersion,
+    String? platform,
   }) async {
     if (!isLoggedIn) return AuthResult.failure('请先登录');
     try {
@@ -1561,6 +1569,7 @@ class AuthProvider extends ChangeNotifier {
           'installation_id': installationId,
           'registration_id': registrationId,
           'notice_version': noticeVersion,
+          'platform': platform ?? AppPlatforms.current.wireName,
         },
       );
       return AuthResult.success();

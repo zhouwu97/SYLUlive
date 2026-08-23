@@ -29,9 +29,10 @@ func NewAIRuntimeHandler(db *gorm.DB, runtime *ai.Runtime) *AIRuntimeHandler {
 }
 
 type createAIRunRequest struct {
-	ConversationID  string `json:"conversation_id"`
-	ClientRequestID string `json:"client_request_id"`
-	Message         string `json:"message"`
+	ConversationID  string                   `json:"conversation_id"`
+	ClientRequestID string                   `json:"client_request_id"`
+	Message         string                   `json:"message"`
+	AgentContext    *ai.AgentContextEnvelope `json:"context"`
 }
 
 type submitAIRunConsentRequest struct {
@@ -47,6 +48,7 @@ func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	}
 	run, duplicate, err := h.runtime.CreateRun(c.Request.Context(), c.GetUint("user_id"), ai.CreateRunRequest{
 		ConversationID: request.ConversationID, ClientRequestID: request.ClientRequestID, Message: request.Message,
+		AgentContext: request.AgentContext,
 	})
 	if err != nil {
 		logCreateRunOutcome(c, request.ClientRequestID, "", false, err)

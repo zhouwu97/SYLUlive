@@ -1,14 +1,6 @@
-import 'package:url_launcher/url_launcher.dart';
-import '../contracts/external_navigator.dart';
+import '../common/url_launcher_external_navigator.dart';
+export '../common/url_launcher_external_navigator.dart'
+    show UrlLauncherExternalNavigator;
 
-class AndroidExternalNavigator implements ExternalNavigator {
-  const AndroidExternalNavigator();
-
-  @override
-  Future<bool> open(Uri uri) async {
-    if (await canLaunchUrl(uri)) {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-    return false;
-  }
-}
+@Deprecated('Use UrlLauncherExternalNavigator')
+typedef AndroidExternalNavigator = UrlLauncherExternalNavigator;

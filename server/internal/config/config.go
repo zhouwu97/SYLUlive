@@ -13,30 +13,30 @@ import (
 
 // Config 应用配置
 type Config struct {
-	JWTSecret                      string // JWT密钥
-	DSN                            string // 数据库连接字符串
-	UploadDir                      string // 文件上传目录
-	HomeFeedPersonalizationShadow  bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
-	HomeFeedPersonalizationPercent int    // FEED-5 个性化 active rollout 百分比（0~100）
-	HomeFeedV5PersonalizationShadow  bool // FEED-V5 个性化 shadow
-	HomeFeedV5PersonalizationPercent int // FEED-V5 个性化 active rollout 百分比（0~100）
-	CompetitionAwardEvidenceDir    string // 竞赛证明材料私有目录
-	ExamPaperDir                   string // 试卷私有文件目录
-	ExamPaperStorageMode           string // 试卷文件存储模式
-	ExamPaperStorageBaseURL        string // 试卷文件服务地址
-	ExamPaperStorageSigningSecret  string // 试卷文件签名密钥
-	ExamPaperStorageReceiptSecret  string // 试卷上传回执密钥
-	MaxFileSize                    int64  // 最大文件大小(字节)
-	EduServiceURL                  string // Python教务服务地址
-	SMTPHost                       string // SMTP 地址
-	SMTPPort                       string // SMTP 端口
-	SMTPUser                       string // SMTP 用户名
-	SMTPPass                       string // SMTP 密码/授权码
-	SMTPFrom                       string // 发件人邮箱
-	JPushAppKey                    string // 极光推送 AppKey
-	JPushMasterSecret              string // 极光推送 MasterSecret
-	SuperAdminID                   string // 超级管理员账号
-	SuperAdminPass                 string // 超级管理员密码
+	JWTSecret                        string // JWT密钥
+	DSN                              string // 数据库连接字符串
+	UploadDir                        string // 文件上传目录
+	HomeFeedPersonalizationShadow    bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
+	HomeFeedPersonalizationPercent   int    // FEED-5 个性化 active rollout 百分比（0~100）
+	HomeFeedV5PersonalizationShadow  bool   // FEED-V5 个性化 shadow
+	HomeFeedV5PersonalizationPercent int    // FEED-V5 个性化 active rollout 百分比（0~100）
+	CompetitionAwardEvidenceDir      string // 竞赛证明材料私有目录
+	ExamPaperDir                     string // 试卷私有文件目录
+	ExamPaperStorageMode             string // 试卷文件存储模式
+	ExamPaperStorageBaseURL          string // 试卷文件服务地址
+	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
+	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
+	MaxFileSize                      int64  // 最大文件大小(字节)
+	EduServiceURL                    string // Python教务服务地址
+	SMTPHost                         string // SMTP 地址
+	SMTPPort                         string // SMTP 端口
+	SMTPUser                         string // SMTP 用户名
+	SMTPPass                         string // SMTP 密码/授权码
+	SMTPFrom                         string // 发件人邮箱
+	JPushAppKey                      string // 极光推送 AppKey
+	JPushMasterSecret                string // 极光推送 MasterSecret
+	SuperAdminID                     string // 超级管理员账号
+	SuperAdminPass                   string // 超级管理员密码
 
 	AIEnabled                              bool     // AI 总开关
 	AIProvider                             string   // AI Provider 名称
@@ -71,6 +71,7 @@ type Config struct {
 	AIExternalMCPSshUser                   string // 受限 MCP SSH 用户
 	AIExternalMCPSshKeyPath                string // Go 服务读取的专用 SSH 私钥绝对路径
 	AIExternalMCPKnownHostsPath            string // 专用 known_hosts 绝对路径
+	AIUnifiedMCPURL                        string // Agent Contract v5 纯能力 MCP Streamable HTTP 地址
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
@@ -303,7 +304,7 @@ func Load() *Config {
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
-	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
+	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 7, 1, 12)
 	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 500, 1, 500)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
 	aiUnlimitedStudentIDs := splitNonEmpty(os.Getenv("AI_UNLIMITED_STUDENT_IDS"))
@@ -346,6 +347,7 @@ func Load() *Config {
 	aiExternalMCPSshUser := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_USER"))
 	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
+	aiUnifiedMCPURL := strings.TrimSpace(os.Getenv("AI_UNIFIED_MCP_URL"))
 	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
 	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
 	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
@@ -368,30 +370,30 @@ func Load() *Config {
 	}
 
 	return &Config{
-	JWTSecret:                      jwtSecret,
-	DSN:                            dsn,
-	UploadDir:                      uploadDir,
-	HomeFeedPersonalizationShadow:  homeFeedShadow(),
-	HomeFeedPersonalizationPercent: homeFeedPercent(),
-	HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
-	HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
-		CompetitionAwardEvidenceDir:    competitionAwardEvidenceDir,
-		ExamPaperDir:                   examPaperDir,
-		ExamPaperStorageMode:           examPaperStorageMode,
-		ExamPaperStorageBaseURL:        examPaperStorageBaseURL,
-		ExamPaperStorageSigningSecret:  examPaperStorageSigningSecret,
-		ExamPaperStorageReceiptSecret:  examPaperStorageReceiptSecret,
-		MaxFileSize:                    10 * 1024 * 1024, // 10MB
-		EduServiceURL:                  eduServiceURL,
-		SMTPHost:                       smtpHost,
-		SMTPPort:                       smtpPort,
-		SMTPUser:                       smtpUser,
-		SMTPPass:                       smtpPass,
-		SMTPFrom:                       smtpFrom,
-		JPushAppKey:                    jpushAppKey,
-		JPushMasterSecret:              jpushMasterSecret,
-		SuperAdminID:                   superAdminID,
-		SuperAdminPass:                 superAdminPass,
+		JWTSecret:                        jwtSecret,
+		DSN:                              dsn,
+		UploadDir:                        uploadDir,
+		HomeFeedPersonalizationShadow:    homeFeedShadow(),
+		HomeFeedPersonalizationPercent:   homeFeedPercent(),
+		HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
+		HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
+		CompetitionAwardEvidenceDir:      competitionAwardEvidenceDir,
+		ExamPaperDir:                     examPaperDir,
+		ExamPaperStorageMode:             examPaperStorageMode,
+		ExamPaperStorageBaseURL:          examPaperStorageBaseURL,
+		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
+		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
+		MaxFileSize:                      10 * 1024 * 1024, // 10MB
+		EduServiceURL:                    eduServiceURL,
+		SMTPHost:                         smtpHost,
+		SMTPPort:                         smtpPort,
+		SMTPUser:                         smtpUser,
+		SMTPPass:                         smtpPass,
+		SMTPFrom:                         smtpFrom,
+		JPushAppKey:                      jpushAppKey,
+		JPushMasterSecret:                jpushMasterSecret,
+		SuperAdminID:                     superAdminID,
+		SuperAdminPass:                   superAdminPass,
 
 		AIEnabled:                              aiEnabled,
 		AIProvider:                             aiProvider,
@@ -426,6 +428,7 @@ func Load() *Config {
 		AIExternalMCPSshUser:                   aiExternalMCPSshUser,
 		AIExternalMCPSshKeyPath:                aiExternalMCPSshKeyPath,
 		AIExternalMCPKnownHostsPath:            aiExternalMCPKnownHostsPath,
+		AIUnifiedMCPURL:                        aiUnifiedMCPURL,
 
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,

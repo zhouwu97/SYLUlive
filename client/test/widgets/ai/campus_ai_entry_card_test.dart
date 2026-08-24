@@ -5,7 +5,7 @@ import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/widgets/campus/campus_ai_entry_card.dart';
 
 void main() {
-  testWidgets('校园页只显示紧凑的沈理 AI 主入口', (tester) async {
+  testWidgets('校园页只显示紧凑的校园 Agent 主入口', (tester) async {
     const capabilities = AiCapabilities(
       enabled: true,
       accessAllowed: true,
@@ -36,14 +36,14 @@ void main() {
       ),
     );
 
-    expect(find.text('沈理 AI'), findsOneWidget);
-    expect(find.text('校园政策与课表助手'), findsOneWidget);
+    expect(find.text('校园 Agent'), findsOneWidget);
+    expect(find.text('帮你查信息、看安排、做计划'), findsOneWidget);
     expect(find.text('剩余 2 次'), findsOneWidget);
     expect(find.text('赛事对比'), findsNothing);
     expect(find.text('学业分析'), findsNothing);
     expect(find.text('本周计划'), findsNothing);
 
-    await tester.tap(find.text('沈理 AI'));
+    await tester.tap(find.text('校园 Agent'));
     expect(opened, isTrue);
   });
 

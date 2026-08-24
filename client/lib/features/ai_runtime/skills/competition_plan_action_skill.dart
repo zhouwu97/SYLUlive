@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../models/competition_action_draft.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
+import '../../../services/async_action_guard.dart';
 import 'personal_skill.dart';
 import 'skill_execution_context.dart';
 
@@ -34,6 +35,7 @@ class DioCompetitionPlanActionSource implements CompetitionPlanActionSource {
   DioCompetitionPlanActionSource(this._dio);
 
   final Dio _dio;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
 
   @override
   Future<CompetitionPlanActionDraft> create(int eventId) async {
@@ -45,26 +47,40 @@ class DioCompetitionPlanActionSource implements CompetitionPlanActionSource {
   }
 
   @override
-  Future<CompetitionPlanActionDraft> confirm(int draftId) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        '/user/ai-action-drafts/$draftId/confirm',
-        data: const <String, dynamic>{},
+  Future<CompetitionPlanActionDraft> confirm(int draftId) =>
+      _actionGuard.run<CompetitionPlanActionDraft>(
+        'competition-confirm:$draftId',
+        () async {
+          try {
+            final response = await _dio.post<dynamic>(
+              '/user/ai-action-drafts/$draftId/confirm',
+              data: const <String, dynamic>{},
+              options: Options(headers: <String, dynamic>{
+                'Idempotency-Key': 'agent-competition-confirm-$draftId',
+              }),
+            );
+            return _parse(response.data);
+          } on DioException catch (error) {
+            throw _actionError(error);
+          }
+        },
       );
-      return _parse(response.data);
-    } on DioException catch (error) {
-      throw _actionError(error);
-    }
-  }
 
   @override
-  Future<CompetitionPlanActionDraft> cancel(int draftId) async {
-    final response = await _dio.post<dynamic>(
-      '/user/ai-action-drafts/$draftId/cancel',
-      data: const <String, dynamic>{},
-    );
-    return _parse(response.data);
-  }
+  Future<CompetitionPlanActionDraft> cancel(int draftId) =>
+      _actionGuard.run<CompetitionPlanActionDraft>(
+        'competition-cancel:$draftId',
+        () async {
+          final response = await _dio.post<dynamic>(
+            '/user/ai-action-drafts/$draftId/cancel',
+            data: const <String, dynamic>{},
+            options: Options(headers: <String, dynamic>{
+              'Idempotency-Key': 'agent-competition-cancel-$draftId',
+            }),
+          );
+          return _parse(response.data);
+        },
+      );
 
   CompetitionPlanActionDraft _parse(Object? value) {
     if (value is! Map) throw const FormatException('竞赛操作草稿响应格式错误');
@@ -103,8 +119,9 @@ class DioCompetitionPlanActionSource implements CompetitionPlanActionSource {
 }
 
 class DraftAddCompetitionToPlanSkill
-    implements PersonalSkill<DraftAddCompetitionToPlanInput,
-        CompetitionPlanActionDraft> {
+    implements
+        PersonalSkill<DraftAddCompetitionToPlanInput,
+            CompetitionPlanActionDraft> {
   DraftAddCompetitionToPlanSkill(this._source);
 
   static const String skillId = 'draft_add_competition_to_plan';

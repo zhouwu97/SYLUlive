@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/post.dart';
 import '../services/poll_service.dart';
+import '../services/idempotency_key.dart';
 import 'post_provider.dart';
 
 class PollListState {
@@ -24,6 +25,7 @@ class PollProvider extends ChangeNotifier {
   int? _sessionUserId;
   int _sessionGeneration = 0;
   String? lastActionError;
+  final Map<String, String> _idempotencyKeys = <String, String>{};
 
   PollProvider(this.service, [this._postProvider]);
 
@@ -40,6 +42,7 @@ class PollProvider extends ChangeNotifier {
     _states.clear();
     _mutatingPollIds.clear();
     _mutationErrors.clear();
+    _idempotencyKeys.clear();
     lastActionError = null;
     notifyListeners();
   }
@@ -129,17 +132,43 @@ class PollProvider extends ChangeNotifier {
 
   Future<Post?> submitBallot(int pollId, List<int> optionIds) async {
     if (_mutatingPollIds.contains(pollId)) return null;
-    return _mutate(pollId, () => service.putBallot(pollId, optionIds));
+    final actionKey = 'poll-ballot:$pollId:${optionIds.join(',')}';
+    return _mutate(
+      pollId,
+      actionKey,
+      (idempotencyKey) => service.putBallot(
+        pollId,
+        optionIds,
+        idempotencyKey: idempotencyKey,
+      ),
+    );
   }
 
   Future<Post?> closePoll(int pollId) async {
     if (_mutatingPollIds.contains(pollId)) return null;
-    return _mutate(pollId, () => service.closePoll(pollId));
+    final actionKey = 'poll-close:$pollId';
+    return _mutate(
+      pollId,
+      actionKey,
+      (idempotencyKey) => service.closePoll(
+        pollId,
+        idempotencyKey: idempotencyKey,
+      ),
+    );
   }
 
   Future<Post?> updatePoll(int pollId, PollDraft draft) async {
     if (_mutatingPollIds.contains(pollId)) return null;
-    return _mutate(pollId, () => service.updatePoll(pollId, draft));
+    final actionKey = 'poll-update:$pollId:${draft.title}:${draft.endsAt}';
+    return _mutate(
+      pollId,
+      actionKey,
+      (idempotencyKey) => service.updatePoll(
+        pollId,
+        draft,
+        idempotencyKey: idempotencyKey,
+      ),
+    );
   }
 
   Future<Post?> createPoll(PollDraft draft) async {
@@ -147,7 +176,12 @@ class PollProvider extends ChangeNotifier {
     final requestUserId = _sessionUserId;
     lastActionError = null;
     try {
-      final post = await service.createPoll(draft);
+      final actionKey = 'poll-create:${draft.title}:${draft.endsAt}';
+      final post = await service.createPoll(
+        draft,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      );
+      _idempotencyKeys.remove(actionKey);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
       _upsertIntoLoadedState('latest|all', post, insert: true);
       _postProvider?.applyExternalPostUpdate(post);
@@ -167,7 +201,12 @@ class PollProvider extends ChangeNotifier {
     _mutationErrors.remove(pollId);
     notifyListeners();
     try {
-      await service.deletePoll(pollId);
+      final actionKey = 'poll-delete:$pollId';
+      await service.deletePoll(
+        pollId,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      );
+      _idempotencyKeys.remove(actionKey);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return false;
       int? postId;
       for (final state in _states.values) {
@@ -190,14 +229,19 @@ class PollProvider extends ChangeNotifier {
     }
   }
 
-  Future<Post?> _mutate(int pollId, Future<Post> Function() request) async {
+  Future<Post?> _mutate(
+    int pollId,
+    String actionKey,
+    Future<Post> Function(String idempotencyKey) request,
+  ) async {
     final requestGeneration = _sessionGeneration;
     final requestUserId = _sessionUserId;
     _mutatingPollIds.add(pollId);
     _mutationErrors.remove(pollId);
     notifyListeners();
     try {
-      final post = await request();
+      final post = await request(_idempotencyKeyFor(actionKey));
+      _idempotencyKeys.remove(actionKey);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
       _replaceEverywhere(post);
       _postProvider?.applyExternalPostUpdate(post);
@@ -240,4 +284,9 @@ class PollProvider extends ChangeNotifier {
       state.items.insert(0, post);
     }
   }
+
+  String _idempotencyKeyFor(String actionKey) => _idempotencyKeys.putIfAbsent(
+        actionKey,
+        () => newIdempotencyKey('poll'),
+      );
 }

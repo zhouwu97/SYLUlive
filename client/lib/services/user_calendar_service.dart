@@ -36,17 +36,19 @@ class UserCalendarService {
     bool allDay = false,
     String location = '',
     String timezone = 'Asia/Shanghai',
+    String? idempotencyKey,
   }) async {
-    final response =
-        await _dio.post('/user/calendar/events', data: <String, dynamic>{
-      'title': title,
-      'description': description,
-      'start_at': startAt.toUtc().toIso8601String(),
-      'end_at': endAt.toUtc().toIso8601String(),
-      'all_day': allDay,
-      'location': location,
-      'timezone': timezone,
-    });
+    final response = await _dio.post('/user/calendar/events',
+        data: <String, dynamic>{
+          'title': title,
+          'description': description,
+          'start_at': startAt.toUtc().toIso8601String(),
+          'end_at': endAt.toUtc().toIso8601String(),
+          'all_day': allDay,
+          'location': location,
+          'timezone': timezone,
+        },
+        options: _writeOptions(idempotencyKey));
     _expect(response, 201);
     return UserCalendarEvent.fromJson(_map(response.data));
   }
@@ -61,6 +63,7 @@ class UserCalendarService {
     bool? allDay,
     String? location,
     String? timezone,
+    String? idempotencyKey,
   }) async {
     final response = await _dio.patch(
       '/user/calendar/events/$eventId',
@@ -74,21 +77,26 @@ class UserCalendarService {
         if (location != null) 'location': location,
         if (timezone != null) 'timezone': timezone,
       },
+      options: _writeOptions(idempotencyKey),
     );
     _expect(response, 200);
     return UserCalendarEvent.fromJson(_map(response.data));
   }
 
-  Future<void> deleteEvent(int eventId) async {
-    final response = await _dio.delete('/user/calendar/events/$eventId');
+  Future<void> deleteEvent(int eventId, {String? idempotencyKey}) async {
+    final response = await _dio.delete(
+      '/user/calendar/events/$eventId',
+      options: _writeOptions(idempotencyKey),
+    );
     _expect(response, 204);
   }
 
-  Future<UserCalendarReminder> createReminder(
-      int eventId, int minutesBefore) async {
+  Future<UserCalendarReminder> createReminder(int eventId, int minutesBefore,
+      {String? idempotencyKey}) async {
     final response = await _dio.post(
       '/user/calendar/events/$eventId/reminders',
       data: <String, dynamic>{'minutes_before': minutesBefore},
+      options: _writeOptions(idempotencyKey),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw DioException.badResponse(
@@ -100,9 +108,11 @@ class UserCalendarService {
     return UserCalendarReminder.fromJson(_map(response.data));
   }
 
-  Future<void> deleteReminder(int eventId, int reminderId) async {
+  Future<void> deleteReminder(int eventId, int reminderId,
+      {String? idempotencyKey}) async {
     final response = await _dio.delete(
       '/user/calendar/events/$eventId/reminders/$reminderId',
+      options: _writeOptions(idempotencyKey),
     );
     _expect(response, 204);
   }
@@ -149,16 +159,24 @@ class UserCalendarService {
     return UserCalendarActionDraft.fromJson(_map(response.data));
   }
 
-  Future<UserCalendarActionDraft> confirmDraft(int id) async {
-    final response = await _dio.post('/user/calendar-action-drafts/$id/confirm',
-        data: const <String, dynamic>{});
+  Future<UserCalendarActionDraft> confirmDraft(int id,
+      {String? idempotencyKey}) async {
+    final response = await _dio.post(
+      '/user/calendar-action-drafts/$id/confirm',
+      data: const <String, dynamic>{},
+      options: _writeOptions(idempotencyKey),
+    );
     _expect(response, 200);
     return UserCalendarActionDraft.fromJson(_map(response.data));
   }
 
-  Future<UserCalendarActionDraft> cancelDraft(int id) async {
-    final response = await _dio.post('/user/calendar-action-drafts/$id/cancel',
-        data: const <String, dynamic>{});
+  Future<UserCalendarActionDraft> cancelDraft(int id,
+      {String? idempotencyKey}) async {
+    final response = await _dio.post(
+      '/user/calendar-action-drafts/$id/cancel',
+      data: const <String, dynamic>{},
+      options: _writeOptions(idempotencyKey),
+    );
     _expect(response, 200);
     return UserCalendarActionDraft.fromJson(_map(response.data));
   }
@@ -176,6 +194,12 @@ class UserCalendarService {
 
   static Map<String, dynamic> _map(dynamic value) =>
       value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  static Options? _writeOptions(String? idempotencyKey) {
+    final key = idempotencyKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
+  }
 
   static void _expect(Response<dynamic> response, int status) {
     if (response.statusCode != status) {

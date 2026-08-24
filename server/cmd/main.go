@@ -195,6 +195,7 @@ func main() {
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
+		&models.IdempotencyRecord{},
 
 		&models.UserLegalConsent{},
 
@@ -553,7 +554,7 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 
 		if c.Request.Method == "OPTIONS" {
 
@@ -581,6 +582,8 @@ func main() {
 		cfg.AppUpdateEnforcementEnabled,
 		cfg.AllowMissingVersionHeaders,
 	))
+	// 只有显式携带 Idempotency-Key 的写请求才会建立记录；无键旧客户端保持兼容。
+	r.Use(middleware.IdempotencyMiddleware(db))
 
 	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL

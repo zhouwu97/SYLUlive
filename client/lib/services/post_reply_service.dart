@@ -4,23 +4,61 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../config/api_constants.dart';
 import '../controllers/post_reply_composer_controller.dart';
 import '../models/reply.dart';
+import 'async_action_guard.dart';
+import 'idempotency_key.dart';
 
 class PostReplyService {
   PostReplyService(this._dio);
 
   final Dio _dio;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
+  final Map<String, String> _idempotencyKeys = <String, String>{};
+  final Map<String, List<int>> _uploadedFileIds = <String, List<int>>{};
 
-  Future<Reply> submit(int postId, PostReplyDraft draft) async {
-    final fileIds = <int>[];
-    if (draft.localImage != null) {
-      fileIds.add(
-        await _uploadLocalImage(
-          draft.localImage!.path,
-          draft.localImage!.name,
-        ),
+  Future<Reply> submit(
+    int postId,
+    PostReplyDraft draft, {
+    String? idempotencyKey,
+  }) {
+    final actionKey = _replyActionKey(postId, draft);
+    return _actionGuard.run<Reply>(actionKey, () async {
+      final suppliedKey = idempotencyKey?.trim();
+      final requestKey = suppliedKey == null || suppliedKey.isEmpty
+          ? (_idempotencyKeys[actionKey] ??= newIdempotencyKey('reply'))
+          : suppliedKey;
+      final reply = await _submitOnce(
+        postId,
+        draft,
+        actionKey: actionKey,
+        idempotencyKey: requestKey,
       );
-    } else if (draft.favoriteImage != null) {
-      fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!.imageUrl));
+      _idempotencyKeys.remove(actionKey);
+      _uploadedFileIds.remove(actionKey);
+      return reply;
+    });
+  }
+
+  Future<Reply> _submitOnce(
+    int postId,
+    PostReplyDraft draft, {
+    required String actionKey,
+    required String idempotencyKey,
+  }) async {
+    final cachedFileIds = _uploadedFileIds[actionKey];
+    final fileIds =
+        cachedFileIds == null ? <int>[] : List<int>.from(cachedFileIds);
+    if (cachedFileIds == null) {
+      if (draft.localImage != null) {
+        fileIds.add(
+          await _uploadLocalImage(
+            draft.localImage!.path,
+            draft.localImage!.name,
+          ),
+        );
+      } else if (draft.favoriteImage != null) {
+        fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!.imageUrl));
+      }
+      _uploadedFileIds[actionKey] = List<int>.from(fileIds);
     }
     final response = await _dio.post(
       '/posts/$postId/replies',
@@ -35,8 +73,16 @@ class PostReplyService {
         if (draft.replyToReplyId != null)
           'reply_to_reply_id': draft.replyToReplyId.toString(),
       }),
+      options: _writeOptions(idempotencyKey),
     );
     return Reply.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  String _replyActionKey(int postId, PostReplyDraft draft) {
+    return 'reply:$postId:${draft.text}:${draft.parentReplyId}:'
+        '${draft.replyToUserId}:${draft.replyToReplyId}:'
+        '${draft.sticker?.id}:${draft.favoriteImage?.imageUrl}:'
+        '${draft.localImage?.path}';
   }
 
   Future<int> _uploadFavoriteImage(String? rawImageUrl) async {
@@ -93,5 +139,11 @@ class PostReplyService {
       return const <String, String>{};
     }
     return <String, String>{'Authorization': authorization};
+  }
+
+  Options? _writeOptions(String? idempotencyKey) {
+    final key = idempotencyKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
   }
 }

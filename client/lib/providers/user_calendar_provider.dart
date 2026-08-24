@@ -4,6 +4,8 @@ import '../models/user_calendar.dart';
 import '../platform/contracts/reminder_notification_client.dart';
 import '../services/user_calendar_service.dart';
 import '../services/domain_change_bus.dart';
+import '../services/async_action_guard.dart';
+import '../services/idempotency_key.dart';
 
 class UserCalendarProvider extends ChangeNotifier {
   UserCalendarProvider(this._service);
@@ -16,6 +18,8 @@ class UserCalendarProvider extends ChangeNotifier {
   int? _sessionUserId;
   int _authSessionGeneration = 0;
   int _requestGeneration = 0;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
+  final Map<String, String> _idempotencyKeys = <String, String>{};
 
   List<UserCalendarEvent> get events => _events;
   bool get isLoading => _isLoading;
@@ -33,6 +37,7 @@ class UserCalendarProvider extends ChangeNotifier {
     _sessionUserId = normalizedUserId;
     _authSessionGeneration = authSessionGeneration;
     _requestGeneration++;
+    _idempotencyKeys.clear();
     _events = const <UserCalendarEvent>[];
     _isLoading = false;
     _error = null;
@@ -80,15 +85,21 @@ class UserCalendarProvider extends ChangeNotifier {
     String timezone = 'Asia/Shanghai',
   }) async {
     final capture = _capture();
-    final event = await _service.createEvent(
-      title: title,
-      startAt: startAt,
-      endAt: endAt,
-      description: description,
-      allDay: allDay,
-      location: location,
-      timezone: timezone,
+    final actionKey = 'calendar-create:$title:$startAt:$endAt:$location';
+    final event = await _actionGuard.run<UserCalendarEvent>(
+      actionKey,
+      () => _service.createEvent(
+        title: title,
+        startAt: startAt,
+        endAt: endAt,
+        description: description,
+        allDay: allDay,
+        location: location,
+        timezone: timezone,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      ),
     );
+    _idempotencyKeys.remove(actionKey);
     if (!_isCurrentCapture(capture)) return null;
     _events = <UserCalendarEvent>[..._events, event]
       ..sort((a, b) => a.startAt.compareTo(b.startAt));
@@ -113,17 +124,25 @@ class UserCalendarProvider extends ChangeNotifier {
     if (!_isCurrentCapture(capture)) {
       throw StateError('calendar_session_changed');
     }
-    final event = await _service.updateEvent(
-      eventId,
-      version: version,
-      title: title,
-      description: description,
-      startAt: startAt,
-      endAt: endAt,
-      allDay: allDay,
-      location: location,
-      timezone: timezone,
+    final actionKey =
+        'calendar-update:$eventId:$version:$title:$description:$startAt:'
+        '$endAt:$allDay:$location:$timezone';
+    final event = await _actionGuard.run<UserCalendarEvent>(
+      actionKey,
+      () => _service.updateEvent(
+        eventId,
+        version: version,
+        title: title,
+        description: description,
+        startAt: startAt,
+        endAt: endAt,
+        allDay: allDay,
+        location: location,
+        timezone: timezone,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      ),
     );
+    _idempotencyKeys.remove(actionKey);
     if (!_isCurrentCapture(capture)) {
       return event;
     }
@@ -147,7 +166,15 @@ class UserCalendarProvider extends ChangeNotifier {
     final capture = _capture();
     final reminders = await _service.listReminders(eventId);
     if (!_isCurrentCapture(capture)) return;
-    await _service.deleteEvent(eventId);
+    final actionKey = 'calendar-delete:$eventId';
+    await _actionGuard.run<void>(
+      actionKey,
+      () => _service.deleteEvent(
+        eventId,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      ),
+    );
+    _idempotencyKeys.remove(actionKey);
     if (!_isCurrentCapture(capture)) return;
     _events =
         _events.where((event) => event.id != eventId).toList(growable: false);
@@ -167,7 +194,16 @@ class UserCalendarProvider extends ChangeNotifier {
     int minutesBefore,
   ) async {
     final capture = _capture();
-    final reminder = await _service.createReminder(eventId, minutesBefore);
+    final actionKey = 'calendar-reminder-create:$eventId:$minutesBefore';
+    final reminder = await _actionGuard.run<UserCalendarReminder>(
+      actionKey,
+      () => _service.createReminder(
+        eventId,
+        minutesBefore,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      ),
+    );
+    _idempotencyKeys.remove(actionKey);
     if (!_isCurrentCapture(capture)) return reminder;
     UserCalendarEvent? event;
     for (final item in _events) {
@@ -192,7 +228,16 @@ class UserCalendarProvider extends ChangeNotifier {
   Future<void> deleteReminder(
       int eventId, UserCalendarReminder reminder) async {
     final capture = _capture();
-    await _service.deleteReminder(eventId, reminder.id);
+    final actionKey = 'calendar-reminder-delete:$eventId:${reminder.id}';
+    await _actionGuard.run<void>(
+      actionKey,
+      () => _service.deleteReminder(
+        eventId,
+        reminder.id,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      ),
+    );
+    _idempotencyKeys.remove(actionKey);
     if (!_isCurrentCapture(capture)) return;
     try {
       await ReminderNotificationClient.instance.cancelCalendarReminder(
@@ -279,4 +324,9 @@ class UserCalendarProvider extends ChangeNotifier {
     next.sort((a, b) => a.startAt.compareTo(b.startAt));
     return next;
   }
+
+  String _idempotencyKeyFor(String actionKey) => _idempotencyKeys.putIfAbsent(
+        actionKey,
+        () => newIdempotencyKey('calendar'),
+      );
 }

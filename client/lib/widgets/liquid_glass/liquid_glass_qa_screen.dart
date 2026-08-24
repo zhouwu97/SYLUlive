@@ -6,6 +6,8 @@ import '../../providers/auth_provider.dart';
 import '../bottom_nav.dart';
 import 'liquid_glass_runtime.dart';
 
+enum LiquidGlassQaPattern { horizontal, vertical, checker, text }
+
 /// 仅 Debug/Profile 开发包使用的 Liquid Glass 视觉 QA 页面。
 ///
 /// 页面不改变业务导航，只把纹理背景和光学参数暴露出来，便于在真实
@@ -21,6 +23,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   late final ValueNotifier<double> _visualPosition;
   var _currentIndex = 2;
   var _tuning = const LiquidGlassTuning();
+  var _pattern = LiquidGlassQaPattern.checker;
 
   @override
   void initState() {
@@ -49,7 +52,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const CustomPaint(painter: _LiquidGlassQaPatternPainter()),
+          CustomPaint(painter: _LiquidGlassQaPatternPainter(_pattern)),
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -84,10 +87,34 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '拖动底栏 Lens，观察首尾裁切、动态轮廓和文字折射。',
+              '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是可见曲面。',
               style: TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 8),
+            const Text('Preset', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                _buildQaChip(
+                  'Natural',
+                  _isPreset(LiquidGlassTuning.natural),
+                  () => _setPreset(LiquidGlassTuning.natural),
+                ),
+                _buildQaChip(
+                  'Coolapk',
+                  _isPreset(LiquidGlassTuning.coolapk),
+                  () => _setPreset(LiquidGlassTuning.coolapk),
+                ),
+                _buildQaChip(
+                  'Strong',
+                  _isPreset(LiquidGlassTuning.strong),
+                  () => _setPreset(LiquidGlassTuning.strong),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             const Text('Mode', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
             Wrap(
@@ -106,6 +133,34 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                   .toList(),
             ),
             const SizedBox(height: 6),
+            const Text('Pattern', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: LiquidGlassQaPattern.values
+                  .map(
+                    (pattern) => _buildQaChip(
+                      _patternLabel(pattern),
+                      _pattern == pattern,
+                      () => setState(() => _pattern = pattern),
+                    ),
+                  )
+                  .toList(),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Show capture bounds',
+                style: TextStyle(color: Colors.white),
+              ),
+              value: _tuning.showCaptureBounds,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(showCaptureBounds: value),
+              ),
+            ),
+            const SizedBox(height: 6),
             _buildSlider(
               label: 'Refraction',
               value: _tuning.refraction,
@@ -119,9 +174,36 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               label: 'Magnification',
               value: _tuning.magnification,
               min: 1,
-              max: 1.14,
+              max: 1.20,
               onChanged: (value) => _setTuning(
                 _tuning.copyWith(magnification: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Vertical scale',
+              value: _tuning.verticalRefractionScale,
+              min: 0.08,
+              max: 0.70,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(verticalRefractionScale: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Overscan X',
+              value: _tuning.overscanX,
+              min: 12,
+              max: 40,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(overscanX: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Overscan Y',
+              value: _tuning.overscanY,
+              min: 8,
+              max: 32,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(overscanY: value),
               ),
             ),
             _buildSlider(
@@ -203,6 +285,29 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
     );
   }
 
+  Widget _buildQaChip(String label, bool selected, VoidCallback onTap) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+    );
+  }
+
+  bool _isPreset(LiquidGlassTuning preset) {
+    return _tuning.magnification == preset.magnification &&
+        _tuning.refraction == preset.refraction &&
+        _tuning.chromatic == preset.chromatic;
+  }
+
+  void _setPreset(LiquidGlassTuning preset) {
+    _setTuning(
+      preset.copyWith(
+        mode: _tuning.mode,
+        showCaptureBounds: _tuning.showCaptureBounds,
+      ),
+    );
+  }
+
   void _setTuning(LiquidGlassTuning tuning) {
     setState(() => _tuning = tuning);
   }
@@ -213,16 +318,37 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         return 'Final';
       case LiquidGlassQaMode.identity:
         return 'Identity';
+      case LiquidGlassQaMode.coreOnly:
+        return 'Core Only';
       case LiquidGlassQaMode.refractionOnly:
         return 'Refraction Only';
+      case LiquidGlassQaMode.chromaticOnly:
+        return 'Chromatic Only';
+      case LiquidGlassQaMode.fresnelOnly:
+        return 'Fresnel Only';
       case LiquidGlassQaMode.shapeOnly:
         return 'Shape Only';
+    }
+  }
+
+  String _patternLabel(LiquidGlassQaPattern pattern) {
+    switch (pattern) {
+      case LiquidGlassQaPattern.horizontal:
+        return 'Horizontal';
+      case LiquidGlassQaPattern.vertical:
+        return 'Vertical';
+      case LiquidGlassQaPattern.checker:
+        return 'Checker';
+      case LiquidGlassQaPattern.text:
+        return 'Text';
     }
   }
 }
 
 class _LiquidGlassQaPatternPainter extends CustomPainter {
-  const _LiquidGlassQaPatternPainter();
+  const _LiquidGlassQaPatternPainter(this.pattern);
+
+  final LiquidGlassQaPattern pattern;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -237,12 +363,29 @@ class _LiquidGlassQaPatternPainter extends CustomPainter {
     final grid = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
-      ..color = Colors.white.withValues(alpha: 0.22);
-    for (var x = -size.height; x < size.width + size.height; x += 22) {
-      canvas.drawLine(Offset(x, 0), Offset(x + size.height, size.height), grid);
-    }
-    for (var y = 18.0; y < size.height; y += 36) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+      ..color = Colors.white.withValues(alpha: 0.25);
+    switch (pattern) {
+      case LiquidGlassQaPattern.horizontal:
+        for (var y = 40.0; y < size.height; y += 34) {
+          canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+        }
+      case LiquidGlassQaPattern.vertical:
+        for (var x = 16.0; x < size.width; x += 28) {
+          canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+        }
+      case LiquidGlassQaPattern.checker:
+        for (var x = -size.height; x < size.width + size.height; x += 22) {
+          canvas.drawLine(
+            Offset(x, 0),
+            Offset(x + size.height, size.height),
+            grid,
+          );
+        }
+        for (var y = 18.0; y < size.height; y += 36) {
+          canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+        }
+      case LiquidGlassQaPattern.text:
+        _paintText(canvas, size);
     }
 
     final blobs = Paint()..color = const Color(0x66FFFFFF);
@@ -254,5 +397,21 @@ class _LiquidGlassQaPatternPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LiquidGlassQaPatternPainter oldDelegate) =>
-      false;
+      oldDelegate.pattern != pattern;
+
+  void _paintText(Canvas canvas, Size size) {
+    final painter = TextPainter(
+      text: const TextSpan(
+        text: '沈理校园  SYLUlive\nABCDE  123456789',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 26,
+          height: 1.55,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 32);
+    painter.paint(canvas, const Offset(16, 180));
+  }
 }

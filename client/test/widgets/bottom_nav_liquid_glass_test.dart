@@ -37,10 +37,24 @@ void main() {
       }
 
       await tester.tap(find.byKey(const ValueKey('bottom-nav-item-3')));
+      // 先让 tap-up 回调启动两条 spring，再推进动画时间。
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+
+      expect(harness.phase.value, LiquidNavPhase.settling);
+      expect(harness.activation.value, greaterThan(0));
+      expect(harness.visualIndex.value, greaterThan(0));
+      expect(harness.visualIndex.value, lessThan(3));
+      expect(harness.selectedIndex.value, 0);
+      expect(harness.commitCount.value, 0);
+
+      await tester.pumpAndSettle();
 
       expect(harness.selectedIndex.value, 3);
-      expect(harness.lastTappedIndex.value, 3);
+      expect(harness.lastTappedIndex.value, isNull);
+      expect(harness.lastCommittedIndex.value, 3);
+      expect(harness.commitCount.value, 1);
+      expect(harness.phase.value, LiquidNavPhase.idle);
       expect(
           tester
               .getSize(find.byKey(const ValueKey('bottom-nav-item-3')))
@@ -60,7 +74,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-surface')),
@@ -78,12 +92,16 @@ void main() {
       find.byKey(const ValueKey('bottom-nav-selection-foreground')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsNothing,
+    );
     final material = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-material')),
     );
     final decoration = material.decoration as BoxDecoration;
     expect(decoration.boxShadow, isNull);
-    expect(decoration.border, isNull);
+    expect(decoration.border, isNotNull);
     final backdrop = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
     );
@@ -97,7 +115,7 @@ void main() {
         matching: find.byType(ColoredBox),
       ),
     );
-    expect(surface.color.a, closeTo(0.08, 0.001));
+    expect(surface.color.a, closeTo(1.0, 0.001));
     final dockWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
         .width;
@@ -281,6 +299,14 @@ void main() {
     expect(harness.phase.value, LiquidNavPhase.pressing);
     expect(harness.activation.value, greaterThan(0));
     expect(harness.activation.value, lessThan(1));
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
 
     await tester.pumpFrames(harness, const Duration(milliseconds: 70));
@@ -306,6 +332,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(harness.phase.value, LiquidNavPhase.idle);
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
     expect(harness.commitCount.value, 0);
   });

@@ -1638,6 +1638,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _handleLiquidNavigationCommitted(int index) {
     if (!mounted) return;
+    if (index == 0 && !_feedFabVisible) {
+      setState(() => _feedFabVisible = true);
+    }
     if (index == _currentIndex) {
       _mainVisualIndex = index.toDouble();
       _mainVisualIndexListenable.value = _mainVisualIndex;

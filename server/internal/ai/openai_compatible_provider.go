@@ -228,7 +228,7 @@ func (s *openAICompatibleStream) Next(ctx context.Context) (ProviderEvent, error
 			return ProviderEvent{}, &ProviderError{Class: ProviderErrorInvalid, Err: err}
 		}
 		if chunk.Usage != nil {
-			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens})
+			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens, UsageAvailable: true})
 		}
 		for _, choice := range chunk.Choices {
 			if choice.FinishReason != nil {

@@ -221,7 +221,11 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 	}
 	requestHash := sha256.Sum256([]byte(message))
 	initialGoal := ParseGoalSpec(message, request.AgentContext)
-	initialAgentState := AgentRunState{Goal: initialGoal, Budget: BudgetForGoal(initialGoal), ConstraintVersion: 1, PlanVersion: 1}
+	initialProfile := ExecutionProfileForGoal(initialGoal)
+	initialAgentState := AgentRunState{
+		Goal: initialGoal, ExecutionMode: initialProfile.Mode, ExecutionProfile: initialProfile,
+		Budget: BudgetForExecutionProfile(initialProfile), ConstraintVersion: 1, PlanVersion: 1,
+	}
 	initialAgentStatePayload, err := json.Marshal(initialAgentState)
 	if err != nil {
 		return models.AIRun{}, false, errors.New("agent_state_encode_failed")
@@ -377,6 +381,10 @@ func (r *Runtime) Execute(runID, message string) {
 		r.failBeforeGeneration(runID, "agent_state_version_conflict", true)
 		return
 	}
+	_, _ = r.appendEvent(ctx, run.ID, "run.started", map[string]interface{}{
+		"execution_mode": agentState.ExecutionMode,
+		"budget":         agentState.ExecutionProfile,
+	}, true)
 	contextPrompt := r.agentContextPrompt(ctx, run.UserID, run.AgentContext)
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
 		return
@@ -481,6 +489,16 @@ func (r *Runtime) Execute(runID, message string) {
 	}
 	startedAt := time.Now()
 	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false, &agentState)
+	agentState.Cost.ModelCalls += outcome.cost.ModelCalls
+	agentState.Cost.InputTokens += outcome.cost.InputTokens
+	agentState.Cost.OutputTokens += outcome.cost.OutputTokens
+	agentState.Cost.ToolCalls = agentState.ToolCalls
+	agentState.Cost.ExternalCalls += outcome.cost.ExternalCalls
+	agentState.Cost.PlanningRounds = agentState.PlanningRounds
+	agentState.Cost.WallTimeMS = outcome.cost.WallTimeMS
+	agentState.Cost.ActiveComputeTimeMS = outcome.cost.ActiveComputeTimeMS
+	agentState.Cost.TokenUsageAvailable = agentState.Cost.TokenUsageAvailable || outcome.cost.TokenUsageAvailable
+	_ = r.persistRuntimeAgentState(ctx, &run, agentState)
 	if outcome.cancelled {
 		r.finalizeCancelled(runID, outcome.generated, outcome.usage, time.Since(startedAt))
 		return

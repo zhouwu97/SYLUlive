@@ -7,6 +7,48 @@ import 'package:flutter/foundation.dart';
 /// 成任何一个真实渲染等级。
 enum LiquidGlassTier { unknown, a, b, c }
 
+/// QA 页面可调整的光学参数。默认值就是线上底栏的基线，避免调试入口
+/// 改变正常页面的参数来源。
+class LiquidGlassTuning {
+  const LiquidGlassTuning({
+    this.refraction = 14.0,
+    this.magnification = 1.055,
+    this.chromatic = 1.2,
+    this.rimStrength = 0.16,
+    this.lightStrength = 0.34,
+    this.dockAlpha = 1.0,
+    this.dockBlur = 4.5,
+  });
+
+  final double refraction;
+  final double magnification;
+  final double chromatic;
+  final double rimStrength;
+  final double lightStrength;
+  final double dockAlpha;
+  final double dockBlur;
+
+  LiquidGlassTuning copyWith({
+    double? refraction,
+    double? magnification,
+    double? chromatic,
+    double? rimStrength,
+    double? lightStrength,
+    double? dockAlpha,
+    double? dockBlur,
+  }) {
+    return LiquidGlassTuning(
+      refraction: refraction ?? this.refraction,
+      magnification: magnification ?? this.magnification,
+      chromatic: chromatic ?? this.chromatic,
+      rimStrength: rimStrength ?? this.rimStrength,
+      lightStrength: lightStrength ?? this.lightStrength,
+      dockAlpha: dockAlpha ?? this.dockAlpha,
+      dockBlur: dockBlur ?? this.dockBlur,
+    );
+  }
+}
+
 class LiquidGlassRuntimeStatus {
   const LiquidGlassRuntimeStatus({
     this.tier = LiquidGlassTier.unknown,

@@ -27,8 +27,10 @@ func (r *Runtime) loadRuntimeAgentState(ctx context.Context, run *models.AIRun, 
 			return AgentRunState{}, errors.New("agent_state_run_mismatch")
 		}
 		state.RunID = run.ID
-		if state.Budget.MaxToolCalls <= 0 {
-			state.Budget = BudgetForGoal(state.Goal)
+		if state.ExecutionMode == "" || state.ExecutionProfile.MaxToolCalls <= 0 {
+			refreshExecutionProfile(&state)
+		} else if state.Budget.MaxToolCalls <= 0 {
+			state.Budget = BudgetForExecutionProfile(state.ExecutionProfile)
 		}
 		state.Budget.MaxDuration = time.Duration(state.Budget.MaxDurationMs) * time.Millisecond
 		if state.ConstraintVersion <= 0 {
@@ -43,8 +45,10 @@ func (r *Runtime) loadRuntimeAgentState(ctx context.Context, run *models.AIRun, 
 		return AgentRunState{}, errors.New("agent_state_missing")
 	}
 	goal := ParseGoalSpec(message, decodeAgentContextPointer(run.AgentContext))
+	profile := ExecutionProfileForGoal(goal)
 	state = AgentRunState{
-		RunID: run.ID, Goal: goal, Budget: BudgetForGoal(goal),
+		RunID: run.ID, Goal: goal, ExecutionMode: profile.Mode, ExecutionProfile: profile,
+		Budget:            BudgetForExecutionProfile(profile),
 		ConstraintVersion: maxInt(run.ConstraintVersion, 1), PlanVersion: maxInt(run.PlanVersion, 1),
 		PlanningRounds: run.PlanningRound,
 	}
@@ -150,7 +154,7 @@ func filterUnavailableToolDefinitions(definitions []ToolDefinition, unavailable 
 }
 
 func (r *Runtime) agentTracePayload(run *models.AIRun, payload map[string]interface{}, durationMs int64, newFactCount int) map[string]interface{} {
-	result := make(map[string]interface{}, len(payload)+6)
+	result := make(map[string]interface{}, len(payload)+9)
 	for key, value := range payload {
 		result[key] = value
 	}
@@ -159,6 +163,15 @@ func (r *Runtime) agentTracePayload(run *models.AIRun, payload map[string]interf
 		result["planning_round"] = run.PlanningRound
 		result["constraint_version"] = run.ConstraintVersion
 		result["plan_version"] = run.PlanVersion
+		var state AgentRunState
+		if len(run.AgentStateJSON) > 0 && json.Unmarshal(run.AgentStateJSON, &state) == nil {
+			if state.ExecutionMode != "" {
+				result["execution_mode"] = state.ExecutionMode
+			}
+			if state.ExecutionProfile.MaxToolCalls > 0 {
+				result["budget"] = state.ExecutionProfile
+			}
+		}
 	}
 	if durationMs > 0 {
 		result["duration_ms"] = durationMs

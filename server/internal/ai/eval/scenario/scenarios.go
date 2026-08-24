@@ -37,6 +37,18 @@ func DefaultScenarios() []ScenarioSpec {
 		scenarioSpec("degradation", "scenario.tool_loop_budget", "重复 Tool + Args 触发 loop fence", probeToolLoopBudget),
 		scenarioSpec("context", "scenario.referent_continuity", "第二个引用最终绑定 B 的 Action", probeReferentContinuity),
 		scenarioSpec("security", "scenario.cross_user_isolation", "不同 user 的 ToolCall 幂等边界不串线", probeCrossUserIsolation),
+		executionScenarioSpec("execution_policy", "scenario.execution_fast_fact", "FAST：单一公开事实只执行一次工具", ai.ExecutionFast, "这个比赛什么时候截止？", 1),
+		executionScenarioSpec("execution_policy", "scenario.execution_fast_week", "FAST：明确的单领域事实查询", ai.ExecutionFast, "今天第几周？", 1),
+		executionScenarioSpec("execution_policy", "scenario.execution_fast_canteen", "FAST：单一校园服务时间查询", ai.ExecutionFast, "食堂几点关门？", 1),
+		executionScenarioSpec("execution_policy", "scenario.execution_fast_location", "FAST：单一活动地点查询", ai.ExecutionFast, "这个活动在哪里？", 1),
+		executionScenarioSpec("execution_policy", "scenario.execution_normal_fit", "NORMAL：带个人上下文的适配判断", ai.ExecutionNormal, "这个比赛适合我吗？", 2),
+		executionScenarioSpec("execution_policy", "scenario.execution_normal_compare", "NORMAL：有限候选比较", ai.ExecutionNormal, "A 和 B 哪个更适合我？", 2),
+		executionScenarioSpec("execution_policy", "scenario.execution_normal_schedule", "NORMAL：单一个人日程查询", ai.ExecutionNormal, "我今天晚上有空吗？", 2),
+		executionScenarioSpec("execution_policy", "scenario.execution_normal_recommend", "NORMAL：公开候选推荐", ai.ExecutionNormal, "找几个比赛", 2),
+		executionScenarioSpec("execution_policy", "scenario.execution_deep_term_plan", "DEEP：跨约束学期规划", ai.ExecutionDeep, "结合我的课表、成绩、兴趣和时间规划比赛", 3),
+		executionScenarioSpec("execution_policy", "scenario.execution_deep_competition_plan", "DEEP：本学期多候选规划", ai.ExecutionDeep, "帮我规划本学期比赛", 3),
+		executionScenarioSpec("execution_policy", "scenario.execution_deep_training_plan", "DEEP：带硬软约束的计划", ai.ExecutionDeep, "安排一个不撞课且不太忙的训练计划", 3),
+		executionScenarioSpec("execution_policy", "scenario.execution_deep_candidate_plan", "DEEP：个人数据与候选组合规划", ai.ExecutionDeep, "根据我的成绩、课表、兴趣和时间规划多个候选", 3),
 	}
 }
 
@@ -61,6 +73,37 @@ func scenarioSpec(category, id, description string, probe func(context.Context, 
 			return result
 		},
 	}
+}
+
+func executionScenarioSpec(category, id, description string, expected ai.ExecutionMode, message string, toolCalls int) ScenarioSpec {
+	spec := scenarioSpec(category, id, description, func(ctx context.Context, harness *scenarioHarness) ScenarioResult {
+		steps := make([]func(ai.AgentRunState) ai.AgentDecision, 0, toolCalls+1)
+		for index := 0; index < toolCalls; index++ {
+			argument := fmt.Sprintf(`{"event_id":"execution-%d"}`, index+1)
+			steps = append(steps, toolDecision("competition.details", argument))
+		}
+		steps = append(steps, respondDecision("已完成执行策略场景"))
+		run, result := runScenario(harness, ctx, message, nil, &scriptedPlanner{steps: steps})
+		result.ExpectedMode = expected
+		if result.ObservedMode != expected {
+			return failed(result, fmt.Errorf("execution mode mismatch: expected=%s actual=%s", expected, result.ObservedMode))
+		}
+		if expected == ai.ExecutionFast && result.ToolCalls > 2 {
+			return failed(result, errors.New("fast scenario exceeded two tool calls"))
+		}
+		if expected == ai.ExecutionNormal && result.ToolCalls > 5 {
+			return failed(result, errors.New("normal scenario exceeded five tool calls"))
+		}
+		if expected == ai.ExecutionDeep && result.ToolCalls > 12 {
+			return failed(result, errors.New("deep scenario exceeded twelve tool calls"))
+		}
+		if run.Decision.Type != ai.DecisionRespond {
+			return failed(result, errors.New("execution policy scenario did not reach final response"))
+		}
+		return successful(result)
+	})
+	spec.ExpectedMode = expected
+	return spec
 }
 
 func runScenario(harness *scenarioHarness, ctx context.Context, message string, page *ai.AgentContextEnvelope, planner ai.AgentPlanner) (ai.AgentRunResult, ScenarioResult) {

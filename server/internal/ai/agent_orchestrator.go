@@ -63,7 +63,7 @@ func NewAgentOrchestrator(capabilities []AgentCapability, planner AgentPlanner, 
 	return &AgentOrchestrator{capabilities: copyCapabilities, planner: planner, executor: executor, config: config}, nil
 }
 
-func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (AgentRunResult, error) {
+func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (runResult AgentRunResult, runErr error) {
 	if o == nil || o.planner == nil || o.executor == nil {
 		return AgentRunResult{}, errors.New("agent_orchestrator_unavailable")
 	}
@@ -74,10 +74,29 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 	if input.Goal != nil {
 		goal = *input.Goal
 	}
-	state := AgentRunState{RunID: input.RunID, Goal: goal, Budget: BudgetForGoal(goal), ConstraintVersion: 1, PlanVersion: 1}
+	profile := ExecutionProfileForGoal(goal)
+	state := AgentRunState{
+		RunID: input.RunID, Goal: goal, ExecutionMode: profile.Mode, ExecutionProfile: profile,
+		Budget: BudgetForExecutionProfile(profile), ConstraintVersion: 1, PlanVersion: 1,
+	}
 	tracker := NewBudgetTracker(state.Budget)
 	activities := make([]AgentActivityEvent, 0, 16)
 	results := make([]ToolResultEnvelope, 0, 8)
+	startedAt := time.Now()
+	defer func() {
+		state.PlanningRounds = tracker.PlanningRounds
+		state.ToolCalls = tracker.Calls
+		state.Cost.ToolCalls = tracker.Calls
+		state.Cost.PlanningRounds = tracker.PlanningRounds
+		state.Cost.ExternalCalls = tracker.ExternalCalls
+		state.Cost.WallTimeMS = time.Since(startedAt).Milliseconds()
+		state.Cost.ActiveComputeTimeMS = state.Cost.WallTimeMS
+		if runResult.State.RunID != "" {
+			runResult.State = state
+			runResult.Activities = activities
+			runResult.ToolResults = results
+		}
+	}()
 	emit := func(event AgentActivityEvent) {
 		if event.CreatedAt.IsZero() {
 			event.CreatedAt = o.config.Clock()
@@ -94,12 +113,23 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if event.PlanVersion == 0 {
 			event.PlanVersion = state.PlanVersion
 		}
+		if event.ExecutionMode == "" {
+			event.ExecutionMode = state.ExecutionMode
+		}
+		if event.Budget == nil {
+			currentProfile := state.ExecutionProfile
+			event.Budget = &currentProfile
+		}
+		if event.Type == "plan.revised" {
+			state.Cost.ReplanCount++
+		}
 		activities = append(activities, event)
 		if o.config.Activity != nil {
 			o.config.Activity(ctx, event)
 		}
 	}
 	emit(AgentActivityEvent{Type: "goal.updated", ActivityCode: "goal_initialized", Text: "已理解当前目标"})
+	emit(AgentActivityEvent{Type: "run.started", ActivityCode: "run_started", Text: "已开始执行当前目标"})
 
 	deadline := state.Budget.MaxDuration
 	if deadline > 0 {
@@ -111,9 +141,16 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if err := ctx.Err(); err != nil {
 			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
 		}
-		if err := tracker.BeginPlanningRound(); err != nil {
-			return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
+		finalDecisionRound := tracker.PlanningRounds >= tracker.Budget.MaxPlanningRounds && len(results) > 0
+		if !finalDecisionRound {
+			if err := tracker.BeginPlanningRound(); err != nil {
+				emit(AgentActivityEvent{Type: "budget.exhausted", ActivityCode: "planning_rounds", Text: "规划轮次预算已用尽"})
+				return AgentRunResult{State: state, Activities: activities, ToolResults: results}, err
+			}
 		}
+		state.PlanningRounds = tracker.PlanningRounds
+		state.ToolCalls = tracker.Calls
+		state.Cost.ModelCalls++
 		planningQuery := agentPlanningQuery(state.Goal)
 		candidates := RetrieveCapabilities(planningQuery, o.capabilities, nil, o.config.MaxCandidates)
 		candidates = filterUnavailableCapabilities(candidates, state.UnavailableCapabilities)
@@ -130,6 +167,13 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 		if err := ValidateAgentDecision(decision, allowed); err != nil {
 			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
 		}
+		if finalDecisionRound && decision.Type == DecisionToolCall {
+			if err := tracker.Admit(decision.ToolCall.Capability, decision.ToolCall.Arguments, false); err != nil {
+				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+			}
+			emit(AgentActivityEvent{Type: "budget.exhausted", ActivityCode: "planning_rounds", Text: "规划轮次预算已用尽"})
+			return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, errors.New("agent_planning_budget_exhausted")
+		}
 		if decision.GoalUpdate != nil {
 			if err := applyAgentGoalUpdate(&state, *decision.GoalUpdate); err != nil {
 				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
@@ -143,10 +187,12 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 			call.ConstraintVersion = state.ConstraintVersion
 			capability := allowed[call.Capability]
 			if err := tracker.Admit(call.Capability, call.Arguments, false); err != nil {
+				emit(AgentActivityEvent{Type: "budget.exhausted", ActivityCode: "tool_calls", Text: "工具调用预算已用尽"})
 				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
 			}
 			if capability.SideEffect == SideEffectExternal {
 				if err := tracker.AdmitExternalCall(); err != nil {
+					emit(AgentActivityEvent{Type: "budget.exhausted", ActivityCode: "external_calls", Text: "外部调用预算已用尽"})
 					return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
 				}
 			}
@@ -164,6 +210,15 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 					ConstraintVersion: call.ConstraintVersion, PlanVersion: state.PlanVersion, CreatedAt: o.config.Clock(),
 				})
 				emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: "failed", ToolName: call.Capability, Text: "能力执行失败，正在重新规划"})
+				if state.ExecutionMode == ExecutionFast {
+					fromMode := state.ExecutionMode
+					if UpgradeExecutionProfile(&state.ExecutionProfile, ExecutionNormal) {
+						state.ExecutionMode = state.ExecutionProfile.Mode
+						state.Budget = BudgetForExecutionProfile(state.ExecutionProfile)
+						tracker.Budget = state.Budget
+						emit(AgentActivityEvent{Type: "execution_mode.upgraded", ActivityCode: "retry_after_failure", Text: "失败后已升级为普通执行预算", FromMode: fromMode, ToMode: state.ExecutionMode})
+					}
+				}
 				state.PlanVersion++
 				emit(AgentActivityEvent{Type: "plan.revised", ActivityCode: "replan_after_failure", ToolName: call.Capability, Text: "已根据失败结果重新规划"})
 				continue
@@ -179,7 +234,16 @@ func (o *AgentOrchestrator) Run(ctx context.Context, input AgentRunInput) (Agent
 				state.Failures = append(state.Failures, *result.Error)
 			}
 			if err := tracker.ObserveResult(result); err != nil {
+				emit(AgentActivityEvent{Type: "budget.exhausted", ActivityCode: "information_gain", Text: "信息增益停滞"})
 				return AgentRunResult{State: state, Decision: decision, Activities: activities, ToolResults: results}, err
+			}
+			fromMode, toMode, upgraded := UpgradeExecutionFromObservation(&state, result)
+			if upgraded {
+				tracker.Budget = state.Budget
+				emit(AgentActivityEvent{
+					Type: "execution_mode.upgraded", ActivityCode: "complexity_detected",
+					Text: "已根据新事实升级执行预算", FromMode: fromMode, ToMode: toMode,
+				})
 			}
 			emit(AgentActivityEvent{Type: "tool.completed", ActivityCode: resultActivityCode(result), ToolName: call.Capability, Text: "已获得能力结果"})
 			state.PlanVersion++
@@ -271,7 +335,7 @@ func applyAgentGoalUpdate(state *AgentRunState, update GoalSpec) error {
 			state.Goal.SoftConstraints = appendUniqueConstraints(state.Goal.SoftConstraints, constraint)
 		}
 	}
-	state.Budget = BudgetForGoal(state.Goal)
+	refreshExecutionProfile(state)
 	return nil
 }
 
@@ -351,6 +415,6 @@ func (o *AgentOrchestrator) UpdateConstraints(state *AgentRunState, constraints 
 	state.ConstraintVersion++
 	state.PlanVersion++
 	state.PendingActions = nil
-	state.Budget = BudgetForGoal(state.Goal)
+	refreshExecutionProfile(state)
 	return nil
 }

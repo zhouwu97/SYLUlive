@@ -1271,6 +1271,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _sources = [];
     _personalDataEvidence.clear();
     _lastEventSeq = 0;
+    _sentRunSignals.clear();
     _lastFailedSubmission = null;
     _error = null;
   }
@@ -1333,7 +1334,7 @@ class AiAssistantProvider extends ChangeNotifier {
           item.role == AiMessageRole.assistant &&
           item.requestId.trim().isNotEmpty &&
           item.status == AiMessageStatus.completed,
-      orElse: () => const AiChatMessage(
+      orElse: () => AiChatMessage(
         id: '',
         requestId: '',
         role: AiMessageRole.user,

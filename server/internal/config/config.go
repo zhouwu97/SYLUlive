@@ -69,6 +69,8 @@ type Config struct {
 	AIAgentActionsEnabled                  bool     // Agent Action 提案开关
 	AIAgentPersonalDataEnabled             bool     // Agent 个人数据能力开关
 	AIAgentDeepModeEnabled                 bool     // Agent deep 模式开关
+	AIShadowTraceRetentionDays             int      // Shadow 观测事件保留天数
+	AIFailureTraceRetentionDays            int      // 用户反馈/失败分类事件保留天数
 	RAGServiceURL                          string   // 独立 Embedding/分词服务地址
 	RAGServiceToken                        string   // 内部服务鉴权令牌
 	RAGEmbeddingModelVersion               string   // 当前写入和查询使用的模型版本
@@ -351,6 +353,8 @@ func Load() *Config {
 	aiAgentActionsEnabled := envBool("AI_AGENT_ACTIONS_ENABLED", true)
 	aiAgentPersonalDataEnabled := envBool("AI_AGENT_PERSONAL_DATA_ENABLED", true)
 	aiAgentDeepModeEnabled := envBool("AI_AGENT_DEEP_MODE_ENABLED", true)
+	aiShadowTraceRetentionDays := envIntInRange("AI_SHADOW_TRACE_RETENTION_DAYS", 14, 1, 90)
+	aiFailureTraceRetentionDays := envIntInRange("AI_FAILURE_TRACE_RETENTION_DAYS", 60, 7, 180)
 	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
 	if ragServiceURL == "" {
 		ragServiceURL = "http://127.0.0.1:18001"
@@ -452,6 +456,8 @@ func Load() *Config {
 		AIAgentActionsEnabled:                  aiAgentActionsEnabled,
 		AIAgentPersonalDataEnabled:             aiAgentPersonalDataEnabled,
 		AIAgentDeepModeEnabled:                 aiAgentDeepModeEnabled,
+		AIShadowTraceRetentionDays:             aiShadowTraceRetentionDays,
+		AIFailureTraceRetentionDays:            aiFailureTraceRetentionDays,
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,

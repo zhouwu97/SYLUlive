@@ -217,7 +217,7 @@ func (h *AdminAIHandler) GetGrayDashboard(c *gin.Context) {
 			}
 		}
 	}
-	correction, possible, degraded, verify, upgrades, upgradeRuns := 0, 0, 0, 0, 0, 0
+	correction, possible, degraded, verify, upgrades := 0, 0, 0, 0, 0
 	for _, trace := range byRun {
 		correction += trace.UserCorrections
 		possible += trace.PossibleUserCorrections
@@ -226,9 +226,6 @@ func (h *AdminAIHandler) GetGrayDashboard(c *gin.Context) {
 		}
 		verify += trace.ActionVerificationFailures
 		upgrades += trace.FastEscalations
-		if trace.FastEscalations > 0 {
-			upgradeRuns++
-		}
 		if trace.TimeToUsefulAnswerMs > 0 {
 			latencies = append(latencies, trace.TimeToUsefulAnswerMs)
 		}
@@ -241,7 +238,7 @@ func (h *AdminAIHandler) GetGrayDashboard(c *gin.Context) {
 	metrics.PossibleCorrectionRate = rate(possible, denominator)
 	metrics.DegradedRunRate = rate(degraded, denominator)
 	metrics.ActionVerificationFailureRate = rate(verify, denominator)
-	metrics.FastNormalUpgradeRate = rate(upgrades, maxInt(denominator, upgradeRuns))
+	metrics.FastNormalUpgradeRate = rate(upgrades, denominator)
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	if len(latencies) > 0 {
 		metrics.P95TimeToUsefulAnswerMs = latencies[int(float64(len(latencies)-1)*0.95+0.5)]
@@ -254,9 +251,63 @@ func (h *AdminAIHandler) GetGrayDashboard(c *gin.Context) {
 	})
 }
 
-func maxInt(value, fallback int) int {
-	if value > 0 {
-		return value
+func (h *AdminAIHandler) ListRegressionCandidates(c *gin.Context) {
+	limit := 100
+	var events []models.AIEvent
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("type = ?", "regression.scenario_candidate").
+		Order("created_at DESC").Limit(limit).Find(&events).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "regression_candidates_unavailable"})
+		return
 	}
-	return fallback
+	var reviewEvents []models.AIEvent
+	_ = h.db.WithContext(c.Request.Context()).Where("type = ?", "regression.scenario_reviewed").Find(&reviewEvents).Error
+	reviewStatus := make(map[string]string, len(reviewEvents))
+	for _, event := range reviewEvents {
+		var payload struct {
+			CaseID   string `json:"case_id"`
+			Decision string `json:"decision"`
+		}
+		if json.Unmarshal(event.Payload, &payload) == nil && payload.CaseID != "" {
+			reviewStatus[event.RunID+":"+payload.CaseID] = payload.Decision
+		}
+	}
+	items := make([]map[string]interface{}, 0, len(events))
+	for _, event := range events {
+		var payload struct {
+			CaseID        string `json:"case_id"`
+			SourceTraceID string `json:"source_trace_id"`
+			FailureReason string `json:"failure_reason"`
+			Candidate     bool   `json:"candidate"`
+			Deterministic bool   `json:"deterministic"`
+		}
+		if json.Unmarshal(event.Payload, &payload) != nil || payload.CaseID == "" {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"run_id": event.RunID, "created_at": event.CreatedAt, "case_id": payload.CaseID,
+			"source_trace_id": payload.SourceTraceID, "failure_reason": payload.FailureReason,
+			"candidate": payload.Candidate, "deterministic": payload.Deterministic,
+			"review_status": reviewStatus[event.RunID+":"+payload.CaseID],
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"candidates": items, "review_contract": "approved candidates are manually copied into internal/ai/eval/scenario"})
+}
+
+func (h *AdminAIHandler) ReviewRegressionCandidate(c *gin.Context) {
+	var request struct {
+		CaseID   string `json:"case_id"`
+		Decision string `json:"decision"`
+	}
+	if err := decodeStrictJSON(c, &request, 2<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request"})
+		return
+	}
+	// Runtime owns the append-only event contract; route middleware supplies admin auth.
+	runtime := c.MustGet("ai_runtime").(*ai.Runtime)
+	if err := runtime.ReviewRegressionCandidate(c.Request.Context(), c.GetUint("user_id"), c.Param("run_id"), request.CaseID, request.Decision); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_regression_review"})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"run_id": c.Param("run_id"), "case_id": request.CaseID, "decision": request.Decision})
 }

@@ -18,10 +18,12 @@ void main() {
       expect(find.byKey(const ValueKey('bottom-nav-floating-dock')),
           findsOneWidget);
       expect(
-          find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
+        find.byKey(const ValueKey('bottom-nav-liquid-lens')),
+        findsNothing,
+      );
       expect(
         find.byKey(const ValueKey('bottom-nav-selection-fallback')),
-        findsNothing,
+        findsOneWidget,
       );
 
       for (final label in const ['首页', '集市', '课表', '校园', '我']) {
@@ -47,7 +49,7 @@ void main() {
   testWidgets('拖动透镜保持连续位置，松手后才吸附并恢复', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));
-    final settledWidth = tester.getSize(lensFinder).width;
+    expect(lensFinder, findsNothing);
 
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -57,6 +59,8 @@ void main() {
     final gesture = await tester.startGesture(
       Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
     );
+    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
+    expect(lensFinder, findsOneWidget);
     await gesture.moveTo(
       Offset(layerTopLeft.dx + itemWidth * 2.0, layerTopLeft.dy + 30),
     );
@@ -70,11 +74,117 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    expect(lensFinder, findsNothing);
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-fallback')),
+      findsOneWidget,
+    );
     expect(harness.visualIndex.value, closeTo(2, 0.01));
     expect(harness.selectedIndex.value, 2);
     expect(harness.lastCommittedIndex.value, 2);
     expect(harness.commitCount.value, 1);
-    expect(tester.getSize(lensFinder).width, closeTo(settledWidth, 0.01));
+  });
+
+  testWidgets('V7 按住当前选中块才激活玻璃，短按会完整收回', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+
+    expect(harness.phase.value, LiquidNavPhase.idle);
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
+
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+    await tester.pumpFrames(harness, const Duration(milliseconds: 60));
+
+    expect(harness.phase.value, LiquidNavPhase.pressing);
+    expect(harness.activation.value, greaterThan(0));
+    expect(harness.activation.value, lessThan(1));
+    expect(
+        find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
+
+    await tester.pumpFrames(harness, const Duration(milliseconds: 70));
+    expect(harness.activation.value, closeTo(1, 0.01));
+
+    // Hold 不应因为没有移动而超时收回；这是 Press-to-Liquid 与普通长按的
+    // 关键区别，完整 Lens 要一直保持到 pointer up。
+    await tester.pumpFrames(harness, const Duration(seconds: 2));
+    expect(harness.phase.value, LiquidNavPhase.pressing);
+    expect(harness.activation.value, closeTo(1, 0.01));
+    expect(
+      find.byKey(const ValueKey('bottom-nav-liquid-lens')),
+      findsOneWidget,
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(harness.phase.value, LiquidNavPhase.idle);
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
+    expect(harness.commitCount.value, 0);
+  });
+
+  testWidgets('V7 快速点击只短暂触发 Pressed，不提交也不残留 Lens',
+      (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+
+    await tester.pumpFrames(harness, const Duration(milliseconds: 40));
+    expect(harness.phase.value, LiquidNavPhase.pressing);
+    expect(harness.activation.value, lessThan(1));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(harness.phase.value, LiquidNavPhase.idle);
+    expect(harness.commitCount.value, 0);
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-fallback')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('V7 拖动经历 dragging → settling → collapsing 并只提交一次',
+      (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
+    await gesture.moveTo(
+      Offset(layerTopLeft.dx + itemWidth * 2.0, layerTopLeft.dy + 30),
+    );
+    await tester.pump();
+
+    expect(harness.phase.value, LiquidNavPhase.dragging);
+    expect(harness.visualIndex.value, closeTo(1.5, 0.02));
+
+    await gesture.up();
+    expect(harness.phase.value, LiquidNavPhase.settling);
+    expect(harness.commitCount.value, 0);
+    await tester.pumpAndSettle();
+
+    expect(harness.phase.value, LiquidNavPhase.idle);
+    expect(harness.selectedIndex.value, 2);
+    expect(harness.commitCount.value, 1);
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
   });
 
   testWidgets('多指触控锁定首个 pointer，不让第二个 pointer 接管 Lens', (tester) async {
@@ -116,6 +226,15 @@ void main() {
     final firstItem = find.byKey(const ValueKey('bottom-nav-item-0'));
     final lastItem = find.byKey(const ValueKey('bottom-nav-item-4'));
 
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
     expect(
       find.ancestor(of: lensFinder, matching: find.byType(ClipRRect)),
       findsNothing,
@@ -132,6 +251,8 @@ void main() {
       tester.getCenter(lensFinder).dx,
       closeTo(tester.getCenter(lastItem).dx, 1),
     );
+    await gesture.cancel();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('连续位置不会在跨过 Tab 中点时提前吸附', (tester) async {
@@ -165,10 +286,17 @@ void main() {
       initialVisualIndex: 0.4,
     );
 
-    final lens = tester.widget<Positioned>(
-      find.byKey(const ValueKey('bottom-nav-liquid-lens')),
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
+    expect(
+      tester
+          .getCenter(
+              find.byKey(const ValueKey('bottom-nav-selection-fallback')))
+          .dx,
+      closeTo(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3'))).dx,
+        1,
+      ),
     );
-    expect(lens.left, greaterThan(150));
   });
 
   testWidgets('关闭液态玻璃时使用稳定的实色选中态', (tester) async {
@@ -190,8 +318,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-        find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
   });
 }
 
@@ -242,7 +369,9 @@ class _NavHarness extends StatelessWidget {
     required this.textScale,
   })  : lastTappedIndex = ValueNotifier(null),
         lastCommittedIndex = ValueNotifier(null),
-        commitCount = ValueNotifier(0);
+        commitCount = ValueNotifier(0),
+        phase = ValueNotifier(LiquidNavPhase.idle),
+        activation = ValueNotifier(0);
 
   final ThemeProvider themeProvider;
   final AuthProvider authProvider;
@@ -254,6 +383,8 @@ class _NavHarness extends StatelessWidget {
   final ValueNotifier<int?> lastTappedIndex;
   final ValueNotifier<int?> lastCommittedIndex;
   final ValueNotifier<int> commitCount;
+  final ValueNotifier<LiquidNavPhase> phase;
+  final ValueNotifier<double> activation;
 
   void dispose() {
     selectedIndex.dispose();
@@ -261,6 +392,8 @@ class _NavHarness extends StatelessWidget {
     lastTappedIndex.dispose();
     lastCommittedIndex.dispose();
     commitCount.dispose();
+    phase.dispose();
+    activation.dispose();
     themeProvider.dispose();
     authProvider.dispose();
   }
@@ -308,6 +441,9 @@ class _NavHarness extends StatelessWidget {
                         commitCount.value++;
                         selectedIndex.value = index;
                       },
+                      onLiquidPhaseChanged: (value) => phase.value = value,
+                      onLiquidActivationChanged: (value) =>
+                          activation.value = value,
                       authProvider: authProvider,
                     ),
                   );

@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+
 /// 光学 QA 与生产渲染模式。
 ///
 /// 每种模式只启用一组光学效果，便于 QA 页面将几何问题与材质问题拆开观察。
@@ -16,6 +18,12 @@ enum LiquidGlassQaMode {
   shapeOnly,
 }
 
+/// 底栏选中态的色彩情绪预设。
+enum LiquidNavColorPreset {
+  sylulive,
+  coolapkReference,
+}
+
 /// 液态导航 Lens 的全部影响参数。
 ///
 /// 可见 Lens 与 shader 捕获区域都由这个对象派生。参数集中后，Widget、shader
@@ -23,26 +31,27 @@ enum LiquidGlassQaMode {
 class LiquidGlassTuning {
   const LiquidGlassTuning({
     this.lensExponent = 2.15,
-    this.lensWidthScale = 1.52,
+    this.lensWidthScale = 1.55,
     this.lensHeight = 62.0,
     this.overscanX = 24.0,
     this.overscanY = 16.0,
-    this.refraction = 16.0,
+    this.refraction = 18.0,
     this.verticalRefractionScale = 0.32,
     this.refractionBandStart = 0.60,
     this.refractionBandPeak = 0.80,
     this.refractionBandEnd = 0.92,
-    this.magnification = 1.12,
+    this.magnification = 1.14,
     this.magnificationRadius = 0.66,
-    this.chromatic = 0.95,
+    this.chromatic = 1.05,
     this.chromaticStart = 0.84,
-    this.rimStrength = 0.10,
-    this.lightStrength = 0.18,
+    this.rimStrength = 0.12,
+    this.lightStrength = 0.20,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
     this.dockAlpha = 0.68,
     this.dockBlur = 3.2,
     this.mode = LiquidGlassQaMode.finalGlass,
+    this.colorPreset = LiquidNavColorPreset.sylulive,
     this.showCaptureBounds = false,
   });
 
@@ -54,13 +63,15 @@ class LiquidGlassTuning {
   );
 
   /// 按用户提供的酷安截图调出的默认参考预设。
-  static const coolapk = LiquidGlassTuning();
+  static const coolapk = LiquidGlassTuning(
+    colorPreset: LiquidNavColorPreset.coolapkReference,
+  );
 
   /// 有意增强的 QA 预设，生产环境不使用。
   static const strong = LiquidGlassTuning(
-    magnification: 1.16,
-    refraction: 20.0,
-    chromatic: 1.25,
+    magnification: 1.18,
+    refraction: 22.0,
+    chromatic: 1.40,
   );
 
   final double lensExponent;
@@ -89,7 +100,27 @@ class LiquidGlassTuning {
   final double dockAlpha;
   final double dockBlur;
   final LiquidGlassQaMode mode;
+  final LiquidNavColorPreset colorPreset;
   final bool showCaptureBounds;
+
+  Color focusColorFor(bool isDark) {
+    switch (colorPreset) {
+      case LiquidNavColorPreset.sylulive:
+        return isDark ? const Color(0xFF72D5C6) : AppColors.brandPrimary;
+      case LiquidNavColorPreset.coolapkReference:
+        return isDark ? const Color(0xFFF0C978) : const Color(0xFFE7BC70);
+    }
+  }
+
+  Color focusPressedColorFor(bool isDark) {
+    final focus = focusColorFor(isDark);
+    switch (colorPreset) {
+      case LiquidNavColorPreset.sylulive:
+        return Color.lerp(focus, const Color(0xFFBCEDE4), 0.24)!;
+      case LiquidNavColorPreset.coolapkReference:
+        return Color.lerp(focus, const Color(0xFFF7DCA3), 0.24)!;
+    }
+  }
 
   double get effectiveRefraction {
     switch (mode) {
@@ -227,6 +258,7 @@ class LiquidGlassTuning {
     double? dockAlpha,
     double? dockBlur,
     LiquidGlassQaMode? mode,
+    LiquidNavColorPreset? colorPreset,
     bool? showCaptureBounds,
   }) {
     return LiquidGlassTuning(
@@ -253,9 +285,31 @@ class LiquidGlassTuning {
       dockAlpha: dockAlpha ?? this.dockAlpha,
       dockBlur: dockBlur ?? this.dockBlur,
       mode: mode ?? this.mode,
+      colorPreset: colorPreset ?? this.colorPreset,
       showCaptureBounds: showCaptureBounds ?? this.showCaptureBounds,
     );
   }
+}
+
+/// 计算导航 item 在 Idle 与连续 Lens 场之间的颜色权重。
+double liquidNavFocusWeight({
+  required int currentIndex,
+  required int index,
+  required double visualPosition,
+  required double activation,
+}) {
+  final distance = (visualPosition - index).abs();
+  final t = distance.clamp(0.0, 1.0).toDouble();
+  final smoothDistance = t * t * (3 - 2 * t);
+  final liquidWeight = 1 - smoothDistance;
+  final idleWeight = currentIndex == index ? 1.0 : 0.0;
+  return ui
+      .lerpDouble(
+        idleWeight,
+        liquidWeight,
+        activation.clamp(0.0, 1.0).toDouble(),
+      )!
+      .clamp(0.0, 1.0);
 }
 
 /// `liquid_nav_lens.frag` 的具名 uniform 布局。
@@ -284,6 +338,8 @@ class LiquidGlassShaderUniforms {
     required this.magnificationRadius,
     required this.chromaticStart,
     required this.flowStrength,
+    required this.activation,
+    required this.pressDepth,
     this.tint = const Color(0x00FFFFFF),
   });
 
@@ -314,6 +370,8 @@ class LiquidGlassShaderUniforms {
   static const magnificationRadiusIndex = 24;
   static const chromaticStartIndex = 25;
   static const flowStrengthIndex = 26;
+  static const activationIndex = 27;
+  static const pressDepthIndex = 28;
 
   final Size captureSize;
   final Offset lensCenter;
@@ -335,6 +393,8 @@ class LiquidGlassShaderUniforms {
   final double magnificationRadius;
   final double chromaticStart;
   final double flowStrength;
+  final double activation;
+  final double pressDepth;
   final Color tint;
 
   /// Fragment shader 期望收到的精确 float 序列。
@@ -366,6 +426,8 @@ class LiquidGlassShaderUniforms {
         magnificationRadius,
         chromaticStart,
         flowStrength,
+        activation,
+        pressDepth,
       ];
 
   void apply(ui.FragmentShader shader) {

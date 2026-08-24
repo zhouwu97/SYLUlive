@@ -626,7 +626,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     return GestureDetector(
       key: const ValueKey('bottom-nav-gesture-layer'),
       behavior: HitTestBehavior.opaque,
-      onTapUp: (details) => _handleTapUp(details, itemWidth),
+      onTapUp: (details) => _handleTapUp(details, itemWidth, useLiquidGlass),
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: _handlePointerDownEvent,
@@ -756,9 +756,27 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _grabOffsetX = localX - _controller.lensCenterX;
   }
 
-  void _handleTapUp(TapUpDetails details, double itemWidth) {
+  void _handleTapUp(
+    TapUpDetails details,
+    double itemWidth,
+    bool useLiquidGlass,
+  ) {
     _clearPointerState();
-    widget.onTap(_indexForX(details.localPosition.dx, itemWidth));
+    final target = _indexForX(details.localPosition.dx, itemWidth);
+    if (!useLiquidGlass || target == widget.currentIndex) {
+      widget.onTap(target);
+      return;
+    }
+    _startLiquidTapNavigation(target);
+  }
+
+  void _startLiquidTapNavigation(int target) {
+    _cancelSpring();
+    _velocityPixelsPerSecond = 0;
+    _collapseTargetIndex = null;
+    _commitAfterSettle = false;
+    _animateActivationTo(1);
+    _settleTo(target, 0, commit: true);
   }
 
   double _localPointerX(PointerEvent event) {
@@ -900,7 +918,14 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _setVisualPosition(target.toDouble());
     final commit = _commitAfterSettle;
     _commitAfterSettle = false;
-    if (commit) widget.onNavigationCommitted?.call(target);
+    if (commit) {
+      final onCommitted = widget.onNavigationCommitted;
+      if (onCommitted != null) {
+        onCommitted(target);
+      } else {
+        widget.onTap(target);
+      }
+    }
     if (mounted) _startCollapse(target);
   }
 
@@ -1544,9 +1569,17 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
   @override
   Widget build(BuildContext context) {
     final progress = widget.activation.clamp(0.0, 1.0).toDouble();
-    // 静止选中态也属于液态玻璃：保留低强度折射与高光，按压时再连续增强。
-    // 若直接使用 progress，idle=0 会退化为一块不透明的普通白色胶囊。
-    final opticalProgress = ui.lerpDouble(0.55, 1.0, progress)!;
+    // 闲置态只保留廉价的透明选中底，不创建选中块自己的模糊或 Shader。
+    // 点击/按压/拖动期间再启用完整光学，落位收回后重新归零。
+    final isOpticallyActive = widget.useLiquidGlass &&
+        widget.phase != LiquidNavPhase.idle &&
+        progress > 0.0001;
+    final opticalProgress =
+        isOpticallyActive ? ui.lerpDouble(0.68, 1.0, progress)! : 0.0;
+    final refractionProgress =
+        isOpticallyActive ? ui.lerpDouble(0.78, 1.0, progress)! : 0.0;
+    final liquidRevealProgress =
+        Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
     final speed = widget.reduceMotion || widget.phase != LiquidNavPhase.dragging
         ? 0.0
         : (widget.velocityPixelsPerSecond.abs() /
@@ -1577,7 +1610,7 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
     final captureSize = visibleSize;
     final captureLensCenter = Offset(lensWidth / 2, lensHeight / 2);
     final shader = _shader;
-    final canRefract = widget.useLiquidGlass &&
+    final canRefract = isOpticallyActive &&
         shader != null &&
         ui.ImageFilter.isShaderFilterSupported;
 
@@ -1587,9 +1620,9 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
         lensCenter: captureLensCenter,
         lensSize: visibleSize,
         lensExponent: widget.tuning.lensExponent,
-        refraction: widget.tuning.effectiveRefraction * opticalProgress,
+        refraction: widget.tuning.effectiveRefraction * refractionProgress,
         magnification: widget.tuning.effectiveMagnification,
-        chromatic: widget.tuning.effectiveChromatic * opticalProgress,
+        chromatic: widget.tuning.effectiveChromatic * refractionProgress,
         velocity: speed,
         direction: direction,
         edgeCompression: widget.edgeCompression,
@@ -1624,50 +1657,76 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
         width: lensWidth,
         height: lensHeight,
         child: IgnorePointer(
-          child: DecoratedBox(
-            key: const ValueKey('bottom-nav-selection-material'),
-            decoration: BoxDecoration(
-              borderRadius: lensRadius,
-            ),
-            child: ClipRRect(
-              borderRadius: lensRadius,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned.fill(
-                    key: const ValueKey('bottom-nav-accent-tabs'),
-                    child: OverflowBox(
-                      alignment: Alignment.topLeft,
-                      minWidth: widget.dockSize.width,
-                      maxWidth: widget.dockSize.width,
-                      minHeight: widget.dockSize.height,
-                      maxHeight: widget.dockSize.height,
-                      child: Transform.translate(
-                        offset: Offset(-left, -top),
-                        child: SizedBox(
-                          width: widget.dockSize.width,
-                          height: widget.dockSize.height,
-                          child: _AccentTabsContent(
-                            itemWidth: widget.itemWidth,
-                            activation: progress,
-                            color: widget.tuning.focusColorFor(widget.isDark),
-                            badges: widget.badges,
+          child: Stack(
+            clipBehavior: Clip.none,
+            fit: StackFit.expand,
+            children: [
+              if (isOpticallyActive)
+                CustomPaint(
+                  key: const ValueKey('bottom-nav-selection-edge-halo'),
+                  painter: _LiquidLensHaloPainter(
+                    highContrast: widget.highContrast,
+                    progress: opticalProgress,
+                    showShapeOutline:
+                        widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
+                  ),
+                ),
+              DecoratedBox(
+                key: const ValueKey('bottom-nav-selection-material'),
+                decoration: BoxDecoration(
+                  borderRadius: lensRadius,
+                  border: isOpticallyActive
+                      ? null
+                      : Border.all(
+                          color: Colors.white.withValues(
+                            alpha: widget.highContrast ? 0.42 : 0.16,
+                          ),
+                          width: widget.highContrast ? 1.1 : 0.8,
+                        ),
+                ),
+                child: ClipRRect(
+                  borderRadius: lensRadius,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Positioned.fill(
+                        key: const ValueKey('bottom-nav-accent-tabs'),
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: widget.dockSize.width,
+                          maxWidth: widget.dockSize.width,
+                          minHeight: widget.dockSize.height,
+                          maxHeight: widget.dockSize.height,
+                          child: Transform.translate(
+                            offset: Offset(-left, -top),
+                            child: SizedBox(
+                              width: widget.dockSize.width,
+                              height: widget.dockSize.height,
+                              child: _AccentTabsContent(
+                                itemWidth: widget.itemWidth,
+                                activation: progress,
+                                color:
+                                    widget.tuning.focusColorFor(widget.isDark),
+                                badges: widget.badges,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      if (isOpticallyActive)
+                        CustomPaint(
+                          painter: _LiquidLensRimPainter(
+                            highContrast: widget.highContrast,
+                            progress: opticalProgress,
+                            showShapeOutline: widget.tuning.mode ==
+                                LiquidGlassQaMode.shapeOnly,
+                          ),
+                        ),
+                    ],
                   ),
-                  CustomPaint(
-                    painter: _LiquidLensRimPainter(
-                      highContrast: widget.highContrast,
-                      progress: opticalProgress,
-                      showShapeOutline:
-                          widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       );
@@ -1717,7 +1776,7 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                   clipBehavior: Clip.none,
                   fit: StackFit.expand,
                   children: [
-                    if (widget.useLiquidGlass) ...[
+                    if (widget.useLiquidGlass && isOpticallyActive)
                       Positioned.fill(
                         key: const ValueKey(
                           'bottom-nav-selection-base-blur',
@@ -1743,22 +1802,26 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                           ),
                         ),
                       ),
+                    if (widget.useLiquidGlass)
                       Positioned.fill(
                         key: const ValueKey(
                           'bottom-nav-selection-base-surface',
                         ),
                         child: ColoredBox(
                           color: (widget.isDark
-                                  ? const Color(0xFF121212)
-                                  : const Color(0xFFFAFAFA))
+                                  ? const Color(0xFF26302F)
+                                  : const Color(0xFFF0F2EF))
                               .withValues(
-                            alpha: widget.isDark
-                                ? ui.lerpDouble(0.10, 0.06, progress)!
-                                : ui.lerpDouble(0.08, 0.04, progress)!,
+                            alpha: isOpticallyActive
+                                ? ui.lerpDouble(
+                                    1.0,
+                                    widget.isDark ? 0.06 : 0.04,
+                                    liquidRevealProgress,
+                                  )!
+                                : 1.0,
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
               ),
@@ -1781,6 +1844,78 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
         ),
       ),
     );
+  }
+}
+
+class _LiquidLensHaloPainter extends CustomPainter {
+  const _LiquidLensHaloPainter({
+    required this.highContrast,
+    required this.progress,
+    required this.showShapeOutline,
+  });
+
+  final bool highContrast;
+  final double progress;
+  final bool showShapeOutline;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (showShapeOutline) return;
+
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(math.min(size.width, size.height) / 2),
+    );
+    final halo = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 2.4 : 2.0
+      ..strokeCap = StrokeCap.round
+      ..blendMode = BlendMode.screen
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        highContrast ? 6.0 : 4.6 + 1.4 * progress,
+      )
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(
+            alpha: highContrast ? 0.58 : 0.28 + 0.16 * progress,
+          ),
+          const Color(0xFFAFEFFF).withValues(
+            alpha: highContrast ? 0.50 : 0.20 + 0.18 * progress,
+          ),
+          Colors.white.withValues(
+            alpha: highContrast ? 0.40 : 0.14 + 0.10 * progress,
+          ),
+          const Color(0xFFFFE7B5).withValues(
+            alpha: highContrast ? 0.42 : 0.16 + 0.12 * progress,
+          ),
+          Colors.white.withValues(
+            alpha: highContrast ? 0.54 : 0.26 + 0.16 * progress,
+          ),
+        ],
+        stops: const [0, 0.22, 0.50, 0.78, 1],
+      ).createShader(rect);
+    canvas.drawRRect(rrect.deflate(0.8), halo);
+
+    final haloCore = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 1.4 : 1.0
+      ..blendMode = BlendMode.screen
+      ..color = Colors.white.withValues(
+        alpha: highContrast ? 0.42 : 0.18 + 0.12 * progress,
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
+    canvas.drawRRect(rrect.deflate(0.6), haloCore);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiquidLensHaloPainter oldDelegate) {
+    return oldDelegate.highContrast != highContrast ||
+        oldDelegate.progress != progress ||
+        oldDelegate.showShapeOutline != showShapeOutline;
   }
 }
 

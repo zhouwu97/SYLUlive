@@ -2,6 +2,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// 启动阶段的独立应用根节点。
+///
+/// appBootstrap 在 MaterialApp 尚未创建前就需要展示恢复壳，因此这里提供
+/// 最小的 Material 根，确保方向性、主题和 MaterialLocalizations 已就绪。
+class StartupRecoveryApp extends StatelessWidget {
+  const StartupRecoveryApp({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: child,
+    );
+  }
+}
+
 /// 启动阶段的最小恢复壳。
 ///
 /// 这个页面不依赖 Provider、Hive 或业务导航，因此本地存储初始化失败时

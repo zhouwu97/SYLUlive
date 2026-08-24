@@ -3,6 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/widgets/startup_recovery_screen.dart';
 
 void main() {
+  testWidgets('启动恢复应用根节点提供方向性和 Material 环境', (tester) async {
+    await tester.pumpWidget(
+      const StartupRecoveryApp(child: StartupRecoveryScreen()),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('正在准备应用'), findsOneWidget);
+  });
+
   testWidgets('启动失败时显示用户级恢复入口', (tester) async {
     var retried = false;
     await tester.pumpWidget(

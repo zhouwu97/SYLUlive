@@ -120,6 +120,7 @@ class HomeWidgetService {
     for (final kind in HomeWidgetKind.values) {
       final themeKey = HomeWidgetPreferenceKeys.theme(kind);
       final titleKey = HomeWidgetPreferenceKeys.title(kind);
+      final fontSizeKey = HomeWidgetPreferenceKeys.fontSize(kind);
       if (!prefs.containsKey(themeKey)) {
         await prefs.setString(themeKey, legacyTheme.storageName);
       }
@@ -128,6 +129,12 @@ class HomeWidgetService {
         await prefs.setString(
           titleKey,
           title == null || title.isEmpty ? kind.defaultTitle : title,
+        );
+      }
+      if (!prefs.containsKey(fontSizeKey)) {
+        await prefs.setString(
+          fontSizeKey,
+          HomeWidgetFontSize.standard.storageName,
         );
       }
     }
@@ -145,22 +152,34 @@ class HomeWidgetService {
       ),
       title: prefs.getString(HomeWidgetPreferenceKeys.title(kind)) ??
           kind.defaultTitle,
+      fontSize: HomeWidgetFontSize.fromStorage(
+        prefs.getString(HomeWidgetPreferenceKeys.fontSize(kind)),
+      ),
     );
   }
 
   static Future<void> updateAppearance(HomeWidgetAppearance appearance) async {
     await migrateLegacyAppearance();
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(
-      HomeWidgetPreferenceKeys.theme(appearance.kind),
-      appearance.theme.storageName,
-    );
-    await prefs.setString(
-      HomeWidgetPreferenceKeys.title(appearance.kind),
-      appearance.title.trim().isEmpty
-          ? appearance.kind.defaultTitle
-          : appearance.title.trim(),
-    );
+    final results = await Future.wait([
+      prefs.setString(
+        HomeWidgetPreferenceKeys.theme(appearance.kind),
+        appearance.theme.storageName,
+      ),
+      prefs.setString(
+        HomeWidgetPreferenceKeys.title(appearance.kind),
+        appearance.title.trim().isEmpty
+            ? appearance.kind.defaultTitle
+            : appearance.title.trim(),
+      ),
+      prefs.setString(
+        HomeWidgetPreferenceKeys.fontSize(appearance.kind),
+        appearance.fontSize.storageName,
+      ),
+    ]);
+    if (results.any((saved) => !saved)) {
+      throw StateError('桌面小组件外观保存失败');
+    }
     await _refreshNative();
   }
 

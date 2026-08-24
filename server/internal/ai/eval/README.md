@@ -26,11 +26,11 @@
 
 ```text
 go test ./internal/ai/eval -count=1 -v
-go run ./cmd/shenliyuan-ai-regression -baseline internal/ai/eval/baseline.json
-go run ./cmd/shenliyuan-ai-regression -json -baseline internal/ai/eval/baseline.json
+go run ./cmd/shenliyuan-ai-regression -baseline internal/ai/eval/baseline_deterministic.json
+go run ./cmd/shenliyuan-ai-regression -json -baseline internal/ai/eval/baseline_deterministic.json
 ```
 
-`baseline.json` 只读加载，Suite 不会自动覆盖。超过安全阈值、成功率、P95 Tool Calls 或平均 Tool Calls 增长阈值时，CLI 返回非零退出码。
+`baseline_deterministic.json` 只读加载，Suite 不会自动覆盖。超过安全阈值、成功率、P95 Tool Calls 或平均 Tool Calls 增长阈值时，CLI 返回非零退出码。仓库保留旧的 `baseline.json` 作为兼容别名。
 
 ## Model behavior
 

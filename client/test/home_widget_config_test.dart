@@ -10,6 +10,85 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('桌面小组件字号', () {
+    test('未知存储值和空值默认标准', () {
+      expect(HomeWidgetFontSize.fromStorage(null), HomeWidgetFontSize.standard);
+      expect(
+        HomeWidgetFontSize.fromStorage('bad'),
+        HomeWidgetFontSize.standard,
+      );
+    });
+
+    test('三档字号保存读取正确且课表与考试互不污染', () async {
+      AppPreferencesStore.setMockInitialValues({});
+
+      await HomeWidgetService.updateAppearance(
+        const HomeWidgetAppearance(
+          kind: HomeWidgetKind.course,
+          theme: HomeWidgetTheme.light,
+          title: '今日课表',
+          fontSize: HomeWidgetFontSize.large,
+        ),
+      );
+      await HomeWidgetService.updateAppearance(
+        const HomeWidgetAppearance(
+          kind: HomeWidgetKind.exam,
+          theme: HomeWidgetTheme.dark,
+          title: '考试日程',
+          fontSize: HomeWidgetFontSize.small,
+        ),
+      );
+
+      expect(
+        (await HomeWidgetService.getAppearance(HomeWidgetKind.course)).fontSize,
+        HomeWidgetFontSize.large,
+      );
+      expect(
+        (await HomeWidgetService.getAppearance(HomeWidgetKind.exam)).fontSize,
+        HomeWidgetFontSize.small,
+      );
+    });
+
+    test('copyWith 修改其他外观字段不会丢失字号', () {
+      const appearance = HomeWidgetAppearance(
+        kind: HomeWidgetKind.course,
+        theme: HomeWidgetTheme.light,
+        title: '课表',
+        fontSize: HomeWidgetFontSize.large,
+      );
+
+      expect(appearance.copyWith(theme: HomeWidgetTheme.dark).fontSize,
+          HomeWidgetFontSize.large);
+      expect(
+          appearance.copyWith(title: '新标题').fontSize, HomeWidgetFontSize.large);
+      expect(
+        appearance.copyWith(fontSize: HomeWidgetFontSize.small).theme,
+        HomeWidgetTheme.light,
+      );
+      expect(
+        appearance.copyWith(fontSize: HomeWidgetFontSize.small).title,
+        '课表',
+      );
+    });
+
+    test('Typography resolver 只改变字号角色，不改变尺寸档位语义', () {
+      final compact = HomeWidgetTypography.resolve(
+        HomeWidgetSize.size2x2,
+        HomeWidgetFontSize.standard,
+      );
+      final detailed = HomeWidgetTypography.resolve(
+        HomeWidgetSize.size4x2,
+        HomeWidgetFontSize.large,
+      );
+
+      expect(compact.title, 13);
+      expect(compact.primary, 11);
+      expect(detailed.title, 15);
+      expect(detailed.primary, 13);
+      expect(detailed.tertiary, 9);
+    });
+  });
+
   group('桌面小组件外观迁移', () {
     test('旧白色文字迁移为两套独立深色主题和标题', () async {
       AppPreferencesStore.setMockInitialValues({
@@ -26,6 +105,8 @@ void main() {
       expect(exam.theme, HomeWidgetTheme.dark);
       expect(course.title, '我的校园');
       expect(exam.title, '我的校园');
+      expect(course.fontSize, HomeWidgetFontSize.standard);
+      expect(exam.fontSize, HomeWidgetFontSize.standard);
     });
 
     test('没有旧配置的新安装默认跟随系统', () async {

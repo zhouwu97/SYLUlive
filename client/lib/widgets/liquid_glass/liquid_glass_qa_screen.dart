@@ -91,7 +91,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是可见曲面。',
+              '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是 Capsule 可见曲面。',
               style: TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 8),
@@ -240,12 +240,12 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Magnification',
-              value: _tuning.magnification,
+              label: 'Pressed scale',
+              value: _tuning.pressedScale,
               min: 1,
-              max: 1.20,
+              max: 1.45,
               onChanged: (value) => _setTuning(
-                _tuning.copyWith(magnification: value),
+                _tuning.copyWith(pressedScale: value),
               ),
             ),
             _buildSlider(
@@ -363,7 +363,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   }
 
   bool _isPreset(LiquidGlassTuning preset) {
-    return _tuning.magnification == preset.magnification &&
+    return _tuning.pressedScale == preset.pressedScale &&
         _tuning.refraction == preset.refraction &&
         _tuning.chromatic == preset.chromatic &&
         _tuning.colorPreset == preset.colorPreset;

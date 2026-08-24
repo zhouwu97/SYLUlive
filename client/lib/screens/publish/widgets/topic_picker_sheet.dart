@@ -189,7 +189,7 @@ class _TopicPickerSheetState extends State<_TopicPickerSheet> {
             ),
             if (_selected.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
-              Text('已选择', style: AppTextStyles.labelMedium),
+              const Text('已选择', style: AppTextStyles.labelMedium),
               const SizedBox(height: AppSpacing.xs),
               Wrap(
                 spacing: AppSpacing.sm,
@@ -211,7 +211,7 @@ class _TopicPickerSheetState extends State<_TopicPickerSheet> {
                 padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(
                   _error!,
-                  style: TextStyle(color: AppColors.danger),
+                  style: const TextStyle(color: AppColors.danger),
                 ),
               ),
             const SizedBox(height: AppSpacing.sm),

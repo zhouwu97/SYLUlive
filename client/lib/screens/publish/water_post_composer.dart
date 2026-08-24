@@ -28,6 +28,10 @@ import 'widgets/publish_topic_section.dart';
 import 'widgets/topic_picker_sheet.dart';
 import 'widgets/water_post_bottom_bar.dart';
 
+class _PublishSessionChanged implements Exception {
+  const _PublishSessionChanged();
+}
+
 /// 水帖发布/编辑页（boardId == 1）。
 ///
 /// 采用整体滚动编辑布局：顶部标题、正文、话题与媒体顺序自然延展。
@@ -68,6 +72,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _topicLoading = false;
   Timer? _topicDebounce;
   String _lastTopicQuery = '';
+  int _topicRequestGeneration = 0;
 
   // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
   final List<PublishImageItem> _images = [];
@@ -131,23 +136,56 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
   /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试）。
-  Future<bool> _uploadLocalImages(PostProvider postProvider) {
+  Future<bool> _uploadLocalImages(
+    PostProvider postProvider, {
+    required AuthProvider auth,
+    required int accountId,
+    required int accountSessionEpoch,
+  }) {
     return uploadImagesConcurrently(
       _images,
       maxConcurrent: 3,
-      upload: (item) => postProvider.uploadImage(
-        item.localFile!,
-        onProgress: (sent, total) {
-          if (total > 0) {
-            item.progress = sent / total;
-            if (mounted) setState(() {});
-          }
-        },
-      ),
+      upload: (item) async {
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        final fileId = await postProvider.uploadImage(
+          item.localFile!,
+          onProgress: (sent, total) {
+            if (total > 0 &&
+                _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+              item.progress = sent / total;
+              if (mounted) setState(() {});
+            }
+          },
+        );
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        return fileId;
+      },
       onStateChanged: () {
-        if (mounted) setState(() {});
+        if (mounted &&
+            _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+          setState(() {});
+        }
       },
     );
+  }
+
+  bool _ownsPublishSession(
+    AuthProvider auth,
+    int accountId,
+    int accountSessionEpoch,
+  ) {
+    return auth.user?.id == accountId &&
+        auth.accountSessionEpoch == accountSessionEpoch;
+  }
+
+  void _ensurePublishSession(
+    AuthProvider auth,
+    int accountId,
+    int accountSessionEpoch,
+  ) {
+    if (!_ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+      throw const _PublishSessionChanged();
+    }
   }
 
   /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
@@ -254,6 +292,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   void dispose() {
     _draftDebounce?.cancel();
     _topicDebounce?.cancel();
+    _topicRequestGeneration++;
     if (!_draftPersistenceDisabled) {
       unawaited(_persistDraft()); // 普通退出仍保留当前草稿
     }
@@ -370,22 +409,30 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             .trim();
     final query = rawQuery.runes.length < 4 ? '' : rawQuery;
     if (query == _lastTopicQuery && _recommendedTopics.isNotEmpty) return;
+    final requestGeneration = ++_topicRequestGeneration;
+    final section = _selectedPostType;
     _lastTopicQuery = query;
     if (mounted) setState(() => _topicLoading = true);
     try {
       final topics = await _topicService.recommend(
         query: query,
-        section: _selectedPostType,
+        section: section,
         limit: 8,
       );
-      if (!mounted) return;
+      if (!mounted ||
+          requestGeneration != _topicRequestGeneration ||
+          section != _selectedPostType) {
+        return;
+      }
       setState(() {
         _recommendedTopics = topics;
       });
     } catch (_) {
       // 推荐是增强能力；失败时保留已有推荐或空态，不打扰发帖。
     } finally {
-      if (mounted) setState(() => _topicLoading = false);
+      if (mounted && requestGeneration == _topicRequestGeneration) {
+        setState(() => _topicLoading = false);
+      }
     }
   }
 
@@ -456,6 +503,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (_isLoading) return;
     if (!_validate()) return;
 
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null || accountId <= 0) {
+      AppFeedback.error('请先登录后再发布', context: context);
+      return;
+    }
+    final accountSessionEpoch = auth.accountSessionEpoch;
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
 
@@ -465,12 +519,18 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       final postProvider = context.read<PostProvider>();
 
       // C-3：并发上传本地图（失败项可重试，不提交）。
-      if (!await _uploadLocalImages(postProvider)) {
+      if (!await _uploadLocalImages(
+        postProvider,
+        auth: auth,
+        accountId: accountId,
+        accountSessionEpoch: accountSessionEpoch,
+      )) {
         if (mounted) {
           AppFeedback.error('图片上传失败，请点击图片重试', context: context);
         }
         return;
       }
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
 
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
       final fileIds = _orderedFileIds();
@@ -484,6 +544,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         return;
       }
 
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -510,10 +571,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               fileIds: fileIds.isNotEmpty ? fileIds : null,
             );
 
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
       if (!mounted) return;
       if (result.success) {
         _draftDebounce?.cancel();
-        _draftPersistenceDisabled = true;
 
         final pendingWrite = _draftWriteInFlight;
         if (pendingWrite != null) {
@@ -523,8 +584,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             // 草稿写入失败不应阻断已成功的帖子发布；下面仍执行清理。
           }
         }
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _draftPersistenceDisabled = true;
         await _draftService.clear();
 
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
         final successMessage = _submitSuccessMessage(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
@@ -534,6 +598,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       } else {
         AppFeedback.error(
           _userFacingPostError(result.errorMessage),
+          context: context,
+        );
+      }
+    } on _PublishSessionChanged {
+      if (mounted) {
+        AppFeedback.error(
+          '登录状态已变化，本次发布已取消，请重新确认',
           context: context,
         );
       }
@@ -828,9 +899,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     inputFormatters: [
                       LengthLimitingTextInputFormatter(_maxContentLength),
                     ],
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: '分享校园生活、提问或记录此时此刻···',
-                      hintStyle: const TextStyle(
+                      hintStyle: TextStyle(
                         color: _hintLight,
                         fontSize: _contentFontSize,
                         fontWeight: FontWeight.w500,
@@ -838,8 +909,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.only(top: AppSpacing.lg),
-                      errorStyle: const TextStyle(fontSize: 13),
+                      contentPadding: EdgeInsets.only(top: AppSpacing.lg),
+                      errorStyle: TextStyle(fontSize: 13),
                     ),
                     style: TextStyle(
                       fontSize: _contentFontSize,

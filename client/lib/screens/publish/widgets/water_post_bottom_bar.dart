@@ -88,6 +88,7 @@ class WaterPostBottomBar extends StatelessWidget {
                 ],
               )
             : Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   counter,

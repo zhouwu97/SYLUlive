@@ -2,10 +2,12 @@
 
 #include <flutter/runtime_effect.glsl>
 
-// ImageFilter.shader 提供的是 Lens 自己这块局部纹理，所有坐标都在
-// local pixel space 内计算。不要把屏幕坐标传进来，否则首尾 Tab 会产生
-// 不对称折射，横竖屏也会错位。
+// uSize 是完整的 overscan 捕获纹理。可见 Lens 使用独立的中心和半尺寸，
+// 光学采样不会把可见边缘误当成纹理边缘。
 uniform vec2 uSize;
+uniform vec2 uLensCenter;
+uniform vec2 uLensHalfSize;
+uniform float uLensExponent;
 uniform float uRefraction;
 uniform float uMagnification;
 uniform float uChromatic;
@@ -16,11 +18,16 @@ uniform float uDragState;
 uniform vec4 uTint;
 uniform float uLightStrength;
 uniform float uRimStrength;
+uniform float uVerticalRefractionScale;
+uniform float uRefractionBandStart;
+uniform float uRefractionBandPeak;
+uniform float uRefractionBandEnd;
+uniform float uMagnificationRadius;
+uniform float uChromaticStart;
+uniform float uFlowStrength;
 uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
-
-const float SUPERELLIPSE_EXPONENT = 2.2;
 
 struct LiquidState {
   float q;
@@ -33,19 +40,20 @@ float smoothProfile(float value) {
 }
 
 LiquidState liquidState(vec2 point) {
-  vec2 local = point - uSize * 0.5;
+  vec2 local = point - uLensCenter;
   float directionSign = uDirection < -0.01 ? -1.0 : 1.0;
-  float canonicalX = local.x * directionSign;
-  float halfHeight = max(uSize.y * 0.5, 0.001);
-  float tail = halfHeight * uVelocity * 0.45;
-  float bulge = halfHeight * uVelocity * 0.28;
-  float compression = halfHeight * uEdgeCompression * 0.16;
+  float halfHeight = max(uLensHalfSize.y, 0.001);
+  float exponent = clamp(uLensExponent, 2.02, 3.5);
+  float flow = clamp(uFlowStrength, 0.0, 1.4);
+  float tail = halfHeight * uVelocity * 0.45 * flow;
+  float bulge = halfHeight * uVelocity * 0.28 * flow;
+  float compression = halfHeight * uEdgeCompression * 0.16 * flow;
   float halfWidth = max(
-      (uSize.x - tail - bulge + compression) * 0.5,
+      uLensHalfSize.x - max(tail, bulge - compression),
       halfHeight * 0.72
   );
+
   float normalizedY = clamp(abs(local.y) / halfHeight, 0.0, 1.0);
-  float exponent = SUPERELLIPSE_EXPONENT;
   float yPower = pow(normalizedY, exponent);
   float baseFactor = pow(max(1.0 - yPower, 0.0001), 1.0 / exponent);
   float baseExtent = halfWidth * baseFactor;
@@ -55,12 +63,13 @@ LiquidState liquidState(vec2 point) {
   float rightExtent = baseExtent + (bulge - compression) * profile;
   float centerShift = (rightExtent - leftExtent) * 0.5;
   float halfExtent = max((leftExtent + rightExtent) * 0.5, 0.001);
+  float canonicalX = local.x * directionSign;
   float centeredX = canonicalX - centerShift;
   float normalizedX = centeredX / halfExtent;
   float q = pow(abs(normalizedX), exponent) + yPower;
 
-  // 对同一个 superellipse 隐式函数求解析梯度。这里不能再用
-  // min(sideDistance, verticalDistance)，否则在曲率切换处会产生法线折角。
+  // 对 q 使用的同一个 superellipse 隐式函数求解析梯度。距离场有限差分会在
+  // 上下过渡处引入明显的法线台阶，使折射看起来像有棱角。
   float profileDerivative = -6.0 * normalizedY * (1.0 - normalizedY);
   float baseDerivative = 0.0;
   if (normalizedY > 0.0001 && baseFactor > 0.0001) {
@@ -75,8 +84,7 @@ LiquidState liquidState(vec2 point) {
   float halfExtentDerivative = (leftDerivative + rightDerivative) * 0.5;
   float absX = max(abs(normalizedX), 0.000001);
   float xDerivative = exponent *
-      pow(absX, exponent - 1.0) *
-      sign(normalizedX) / halfExtent;
+      pow(absX, exponent - 1.0) * sign(normalizedX) / halfExtent;
   float dNormalizedX_dY =
       (-centerDerivative * halfExtent - centeredX * halfExtentDerivative) /
       (halfExtent * halfExtent);
@@ -90,13 +98,14 @@ LiquidState liquidState(vec2 point) {
   return LiquidState(q, gradient);
 }
 
-vec2 liquidNormal(vec2 point) {
-  LiquidState state = liquidState(point);
-  return normalize(state.gradient + vec2(0.0001));
+vec2 liquidNormal(LiquidState state) {
+  float lengthSquared = dot(state.gradient, state.gradient);
+  if (lengthSquared < 0.0000001) return vec2(0.0, 1.0);
+  return state.gradient / sqrt(lengthSquared);
 }
 
 vec2 textureUv(vec2 pixel) {
-  vec2 uv = clamp(pixel / uSize, vec2(0.0), vec2(1.0));
+  vec2 uv = clamp(pixel / max(uSize, vec2(0.001)), vec2(0.0), vec2(1.0));
 #ifdef IMPELLER_TARGET_OPENGLES
   uv.y = 1.0 - uv.y;
 #endif
@@ -105,78 +114,103 @@ vec2 textureUv(vec2 pixel) {
 
 void main() {
   vec2 fragment = FlutterFragCoord().xy;
-  vec2 center = uSize * 0.5;
-  vec2 halfSize = uSize * 0.5;
-  LiquidState state = liquidState(fragment);
-  float distanceToLens = (state.q - 1.0) * halfSize.y;
+  vec4 original = texture(uBackdrop, textureUv(fragment));
 
-  if (distanceToLens > 1.0) {
-    fragColor = texture(uBackdrop, textureUv(fragment));
+  // Identity 是显式闸门。除了便于 QA 对照，还能让无效果路径保持像素稳定，
+  // 避免执行不必要的颜色计算。
+  if (uRefraction == 0.0 &&
+      uMagnification == 1.0 &&
+      uChromatic == 0.0 &&
+      uLightStrength == 0.0 &&
+      uRimStrength == 0.0) {
+    fragColor = original;
     return;
   }
 
-  vec2 normal = liquidNormal(fragment);
+  LiquidState state = liquidState(fragment);
   float q = clamp(state.q, 0.0, 1.0);
+  vec2 normal = liquidNormal(state);
+
+  // q=1 附近使用平滑 coverage，shader 只保留一条光学边界。捕获区域仍是矩形，
+  // 解析曲面之外的像素自然混回未处理的背景。
+  float aa = max(fwidth(state.q), 0.0005);
+  float glassMask = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, state.q);
+
+  // 横向液态 Lens 以 x 方向法线为主；上下厚度同时受各向异性和 sideWeight 克制。
+  float sideWeight = pow(clamp(abs(normal.x), 0.0, 1.0), 1.7);
+  vec2 opticalNormal = normalize(vec2(
+      normal.x,
+      normal.y * max(uVerticalRefractionScale, 0.08)
+  ));
+  float leadingBand = smoothstep(
+      uRefractionBandStart,
+      uRefractionBandPeak,
+      q
+  );
+  float trailingBand = 1.0 - smoothstep(
+      uRefractionBandPeak,
+      uRefractionBandEnd,
+      q
+  );
+  float refractionBand = leadingBand * trailingBand;
   float thickness = pow(max(1.0 - q, 0.0), 0.55);
-  float refractBand = smoothstep(0.56, 0.84, q) *
-      (1.0 - smoothstep(0.90, 0.998, q));
-  float opticalStrength = refractBand * (0.84 + thickness * 0.32);
-  float outerRim = smoothstep(0.76, 0.94, q) *
-      (1.0 - smoothstep(0.965, 0.998, q));
-  float centerProfile = 1.0 - smoothstep(0.22, 0.70, q);
-  // 厚度不仅影响边缘折射，也给中心到边缘一个连续的光学衰减，
-  // 避免放大像一块生硬的贴图覆盖。
-  float zoomProfile = clamp(
-      centerProfile + thickness * 0.10 * (1.0 - centerProfile),
+  float opticalStrength = refractionBand *
+      mix(0.25, 1.0, sideWeight) *
+      (0.84 + thickness * 0.28) *
+      glassMask;
+
+  float centerProfile = 1.0 - smoothstep(
       0.0,
-      1.0
+      max(uMagnificationRadius, 0.08),
+      q
   );
+  float zoom = mix(1.0, uMagnification, centerProfile * glassMask);
+  vec2 samplePixel = uLensCenter + (fragment - uLensCenter) / zoom;
+  samplePixel -= opticalNormal * opticalStrength * uRefraction;
 
-  // Magnification 只作用中央区域，Refraction/Chromatic 只作用边缘
-  // 内侧的 ring，避免两套位移在整块 Lens 上叠成鱼眼。
-  float zoom = mix(1.0, uMagnification, zoomProfile);
-  vec2 samplePixel = center + (fragment - center) / zoom;
-  samplePixel -= normal * opticalStrength * uRefraction;
-
-  vec2 chromaticOffset = normal * uChromatic * opticalStrength;
+  float chromaticBand = smoothstep(
+      uChromaticStart,
+      min(uChromaticStart + 0.10, 0.995),
+      q
+  ) * (1.0 - smoothstep(0.975, 0.999, q));
+  vec2 chromaticOffset = opticalNormal * uChromatic * chromaticBand *
+      mix(0.30, 1.0, sideWeight) * glassMask;
   vec3 color = vec3(
-    texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
-    texture(uBackdrop, textureUv(samplePixel)).g,
-    texture(uBackdrop, textureUv(samplePixel + chromaticOffset)).b
+      texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
+      texture(uBackdrop, textureUv(samplePixel)).g,
+      texture(uBackdrop, textureUv(samplePixel + chromaticOffset)).b
   );
 
-  color = mix(color, uTint.rgb, uTint.a);
-
-  // Lens 内部保留少量饱和度和对比度提升，让被放大的图标/文字更像
-  // 透过一块有厚度的玻璃，而不是简单的 scale 变换。QA 的 Identity /
-  // Refraction Only 会把这些光学参数置零，因此不会污染对照模式。
   float finalSignal = clamp(
-      (uMagnification - 1.0) * 8.0 + uChromatic * 0.18 + uLightStrength * 0.5,
+      (uMagnification - 1.0) * 8.0 +
+      uChromatic * 0.12 +
+      uLightStrength * 0.45,
       0.0,
       1.0
-  );
+  ) * glassMask;
   float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  color = mix(vec3(luma), color, 1.0 + 0.09 * finalSignal);
-  color = (color - 0.5) * (1.0 + 0.035 * finalSignal) + 0.5;
+  color = mix(vec3(luma), color, 1.0 + 0.08 * finalSignal);
+  color = (color - 0.5) * (1.0 + 0.03 * finalSignal) + 0.5;
+  color = mix(color, uTint.rgb, uTint.a * glassMask);
 
-  // Fresnel：左上高光、右下暗边，并把色散集中在最外沿，形成
-  // 参考图中可见的蓝/紫/暖黄边缘，而不是大面积白色填充。
+  float outerRim = smoothstep(0.82, 0.95, q) *
+      (1.0 - smoothstep(0.965, 0.999, q)) * glassMask;
   vec2 lightDirection = normalize(
-    vec2(-0.72 + uDirection * uVelocity * 0.14, -0.70)
+      vec2(-0.72 + uDirection * uVelocity * 0.12, -0.70)
   );
-  float facingLight = max(dot(normal, lightDirection), 0.0);
-  float facingShade = max(dot(normal, -lightDirection), 0.0);
+  float facingLight = max(dot(opticalNormal, lightDirection), 0.0);
+  float facingShade = max(dot(opticalNormal, -lightDirection), 0.0);
   float specular = pow(facingLight, 4.0) * outerRim;
-  color += vec3(specular * uLightStrength * 1.15);
-  color -= vec3(facingShade * outerRim * 0.065 * uLightStrength);
+  color += vec3(specular * uLightStrength * 1.10);
+  color -= vec3(facingShade * outerRim * 0.055 * uLightStrength);
+
   vec3 dispersionTint = mix(
       vec3(0.54, 0.76, 1.0),
       vec3(1.0, 0.70, 0.36),
-      clamp(normal.x * 0.5 + 0.5, 0.0, 1.0)
+      clamp(opticalNormal.x * 0.5 + 0.5, 0.0, 1.0)
   );
-  color += dispersionTint * outerRim * uRimStrength * 0.82;
+  color += dispersionTint * outerRim * uRimStrength * 0.78;
+  color += dispersionTint * refractionBand * uDragState * 0.018 * glassMask;
 
-  // 拖动状态略微提高边缘响应，静止时保持克制。
-  color += dispersionTint * refractBand * uDragState * 0.024;
-  fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+  fragColor = vec4(clamp(mix(original.rgb, color, glassMask), 0.0, 1.0), original.a);
 }

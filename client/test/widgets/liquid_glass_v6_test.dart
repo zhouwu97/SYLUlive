@@ -1,0 +1,111 @@
+import 'dart:ui';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/widgets/bottom_nav.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
+
+void main() {
+  test('V6 tuning keeps optical samples inside the overscan budget', () {
+    const tuning = LiquidGlassTuning();
+    const lensWidth = 104.0;
+    const lensHeight = 62.0;
+
+    expect(
+      tuning.overscanXFor(lensWidth),
+      greaterThan(tuning.maxSampleOffsetXFor(lensWidth)),
+    );
+    expect(
+      tuning.overscanYFor(lensHeight),
+      greaterThan(tuning.maxSampleOffsetYFor(lensHeight)),
+    );
+  });
+
+  test('V6 shader uniform layout is stable and named', () {
+    const uniforms = LiquidGlassShaderUniforms(
+      captureSize: Size(160, 94),
+      lensCenter: Offset(80, 47),
+      lensSize: Size(104, 62),
+      lensExponent: 2.15,
+      refraction: 16,
+      magnification: 1.12,
+      chromatic: 0.95,
+      velocity: 0,
+      direction: 0,
+      edgeCompression: 0,
+      dragState: 0,
+      lightStrength: 0.18,
+      rimStrength: 0.1,
+      verticalRefractionScale: 0.32,
+      refractionBandStart: 0.6,
+      refractionBandPeak: 0.8,
+      refractionBandEnd: 0.92,
+      magnificationRadius: 0.66,
+      chromaticStart: 0.84,
+      flowStrength: 0.72,
+    );
+
+    expect(uniforms.values, hasLength(27));
+    expect(uniforms.values[LiquidGlassShaderUniforms.sizeX], 160);
+    expect(uniforms.values[LiquidGlassShaderUniforms.lensCenterX], 80);
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.lensHalfWidth],
+      52,
+    );
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.flowStrengthIndex],
+      0.72,
+    );
+  });
+
+  test('V6 QA modes isolate core, refraction, chromatic and Fresnel', () {
+    const core = LiquidGlassTuning(
+      mode: LiquidGlassQaMode.coreOnly,
+    );
+    expect(core.effectiveMagnification, greaterThan(1));
+    expect(core.effectiveRefraction, 0);
+
+    const refraction = LiquidGlassTuning(
+      mode: LiquidGlassQaMode.refractionOnly,
+    );
+    expect(refraction.effectiveRefraction, greaterThan(0));
+    expect(refraction.effectiveMagnification, 1);
+    expect(refraction.effectiveChromatic, 0);
+
+    const chromatic = LiquidGlassTuning(
+      mode: LiquidGlassQaMode.chromaticOnly,
+    );
+    expect(chromatic.effectiveChromatic, greaterThan(0));
+    expect(chromatic.effectiveRefraction, 0);
+
+    const fresnel = LiquidGlassTuning(
+      mode: LiquidGlassQaMode.fresnelOnly,
+    );
+    expect(fresnel.effectiveLightStrength, greaterThan(0));
+    expect(fresnel.effectiveRimStrength, greaterThan(0));
+  });
+
+  test('V6 CPU curve stays bounded, mirrored and free of line-only corners',
+      () {
+    const size = Size(108, 62);
+    final right = LiquidLensShape.pathForSize(
+      size,
+      speed: 0.85,
+      direction: 1,
+      edgeCompression: 0.2,
+    );
+    final left = LiquidLensShape.pathForSize(
+      size,
+      speed: 0.85,
+      direction: -1,
+      edgeCompression: 0.2,
+    );
+
+    expect(right.getBounds().left, greaterThanOrEqualTo(0));
+    expect(right.getBounds().right, lessThanOrEqualTo(size.width));
+    expect(right.getBounds().top, closeTo(0, 0.001));
+    expect(right.getBounds().bottom, closeTo(size.height, 0.001));
+    expect(right.computeMetrics().length,
+        closeTo(left.computeMetrics().length, 0.01));
+    expect(right.computeMetrics().length, greaterThan(0));
+  });
+}

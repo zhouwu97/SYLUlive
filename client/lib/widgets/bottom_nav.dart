@@ -14,6 +14,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_text_styles.dart';
 import 'liquid_glass/bottom_nav_controller.dart';
+import 'liquid_glass/liquid_lens_geometry.dart';
+export 'liquid_glass/liquid_lens_geometry.dart';
 import 'liquid_glass/liquid_glass_runtime.dart';
 
 const _navIcons = <IconData>[
@@ -26,20 +28,6 @@ const _navIcons = <IconData>[
 
 const _navLabels = <String>['首页', '集市', '课表', '校园', '我'];
 const _dockHeight = 66.0;
-const _lensHeight = 62.0;
-const _lensSpeedNormalization = 900.0;
-
-double _lensWidthFor({
-  required double itemWidth,
-  required double speed,
-  required double edgeCompression,
-}) {
-  final baseWidth = math.max(84.0, itemWidth * 1.55);
-  final normalizedSpeed = speed.clamp(0.0, 1.0).toDouble();
-  final stretch = math.min(1.18, 1.0 + normalizedSpeed * 0.14);
-  final edge = edgeCompression.clamp(0.0, 1.0).toDouble();
-  return baseWidth * stretch * (1.0 - edge * 0.04);
-}
 
 class _NavItemVisualState {
   const _NavItemVisualState({
@@ -397,6 +385,8 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                               motionFrame: _motionFrame,
                               isDragging: _isDragging,
                               velocityPixelsPerSecond: _velocityPixelsPerSecond,
+                              itemWidth: itemWidth,
+                              tuning: tuning,
                             ),
                           ),
                       ],
@@ -698,12 +688,14 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   bool _isPointInsideLens(double x) {
     final speed = MediaQuery.disableAnimationsOf(context)
         ? 0.0
-        : (_velocityPixelsPerSecond.abs() / _lensSpeedNormalization)
+        : (_velocityPixelsPerSecond.abs() /
+                math.max(widget.tuning.velocityNormalization, 1))
             .clamp(0.0, 1.0);
-    final width = _lensWidthFor(
+    final width = liquidLensWidthFor(
       itemWidth: _itemWidth,
       speed: speed,
       edgeCompression: _controller.edgeCompression,
+      widthScale: widget.tuning.lensWidthScale,
     );
     return (x - _controller.lensCenterX).abs() <= width / 2;
   }
@@ -975,115 +967,6 @@ class _FloatingSelectionFallback extends StatelessWidget {
   }
 }
 
-/// Lens 的唯一几何来源。
-///
-/// 静止状态是连续曲率的 superellipse，而不是 stadium。动态状态只在
-/// canonical 的向右坐标系里改变 X 方向的尾部/前缘，向左时整体镜像，保证
-/// Flutter ClipPath、QA 轮廓和 shader 隐式函数使用同一套语义。
-class LiquidLensShape {
-  const LiquidLensShape._();
-
-  static const exponent = 2.2;
-
-  static Path pathForSize(
-    Size size, {
-    required double speed,
-    required double direction,
-    required double edgeCompression,
-  }) {
-    final width = size.width;
-    final height = size.height;
-    final motion = speed.clamp(0.0, 1.0).toDouble();
-    final sign = direction < -0.01 ? -1.0 : 1.0;
-    final edge = edgeCompression.clamp(0.0, 1.0).toDouble();
-    final halfHeight = height * 0.5;
-    final tail = halfHeight * motion * 0.45;
-    final bulge = halfHeight * motion * 0.28;
-    final compression = halfHeight * edge * 0.16;
-    // 动态尾部从 Lens 的宽度预算中分配，不把 Path 画到自己的 render
-    // bounds 之外；这样外层 Stack 负责 Dock 溢出，Lens 自身不会截尾。
-    final halfWidth = math.max(
-      (width - tail - bulge + compression) * 0.5,
-      halfHeight * 0.72,
-    );
-
-    double smoothstep(double value) {
-      final t = value.clamp(0.0, 1.0).toDouble();
-      return t * t * (3 - 2 * t);
-    }
-
-    (double, double) sidesForY(double y) {
-      final normalizedY =
-          (y.abs() / math.max(halfHeight, 0.001)).clamp(0.0, 1.0).toDouble();
-      final yPower = math.pow(normalizedY, exponent).toDouble();
-      final baseFactor = math
-          .pow(
-            math.max(1 - yPower, 0.0),
-            1 / exponent,
-          )
-          .toDouble();
-      final baseExtent = halfWidth * baseFactor;
-      final profile = 1 - smoothstep(normalizedY);
-      final leftExtent = baseExtent + tail * profile;
-      final rightExtent = baseExtent + (bulge - compression) * profile;
-      final centerShift = (rightExtent - leftExtent) * 0.5;
-      final halfExtent = (leftExtent + rightExtent) * 0.5;
-      final canonicalLeft = centerShift - halfExtent;
-      final canonicalRight = centerShift + halfExtent;
-      if (sign < 0) {
-        return (-canonicalRight, -canonicalLeft);
-      }
-      return (canonicalLeft, canonicalRight);
-    }
-
-    const steps = 64;
-    final path = Path();
-    for (var index = 0; index <= steps; index++) {
-      final y = -halfHeight + height * index / steps;
-      final (left, _) = sidesForY(y);
-      final point = Offset(left + width * 0.5, y + halfHeight);
-      if (index == 0) {
-        path.moveTo(point.dx, point.dy);
-      } else {
-        path.lineTo(point.dx, point.dy);
-      }
-    }
-    for (var index = steps; index >= 0; index--) {
-      final y = -halfHeight + height * index / steps;
-      final (_, right) = sidesForY(y);
-      path.lineTo(right + width * 0.5, y + halfHeight);
-    }
-    return path..close();
-  }
-}
-
-class LiquidLensClipper extends CustomClipper<Path> {
-  const LiquidLensClipper({
-    required this.speed,
-    required this.direction,
-    required this.edgeCompression,
-  });
-
-  final double speed;
-  final double direction;
-  final double edgeCompression;
-
-  @override
-  Path getClip(Size size) => LiquidLensShape.pathForSize(
-        size,
-        speed: speed,
-        direction: direction,
-        edgeCompression: edgeCompression,
-      );
-
-  @override
-  bool shouldReclip(covariant LiquidLensClipper oldClipper) {
-    return oldClipper.speed != speed ||
-        oldClipper.direction != direction ||
-        oldClipper.edgeCompression != edgeCompression;
-  }
-}
-
 class _LiquidSelectionLens extends StatefulWidget {
   const _LiquidSelectionLens({
     required this.dockSize,
@@ -1173,73 +1056,68 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
   Widget build(BuildContext context) {
     final speed = widget.reduceMotion
         ? 0.0
-        : (widget.velocityPixelsPerSecond.abs() / _lensSpeedNormalization)
+        : (widget.velocityPixelsPerSecond.abs() /
+                math.max(widget.tuning.velocityNormalization, 1))
             .clamp(0.0, 1.0);
     final direction = widget.reduceMotion || speed < 0.01
         ? 0.0
         : widget.velocityPixelsPerSecond.sign;
-    final lensWidth = _lensWidthFor(
+    final lensWidth = liquidLensWidthFor(
       itemWidth: widget.itemWidth,
       speed: speed,
       edgeCompression: widget.edgeCompression,
+      widthScale: widget.tuning.lensWidthScale,
     );
     // Y 轴是 Dock 的稳定基准；速度只改变水平形状和光学场。
-    const lensHeight = _lensHeight;
+    final lensHeight = widget.tuning.lensHeight.clamp(48.0, 84.0).toDouble();
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
     // Lens 已移到 Dock 的 ClipRRect 外层，中心仍严格跟随固定 Tab 轨道，
     // 不能为了完整显示而向内推首尾入口。
     final left = requestedCenter - lensWidth / 2;
     final top = (widget.dockSize.height - lensHeight) / 2;
+    final visibleSize = Size(lensWidth, lensHeight);
+    final overscanX = widget.tuning.overscanXFor(lensWidth);
+    final overscanY = widget.tuning.overscanYFor(lensHeight);
+    final captureSize = Size(
+      lensWidth + overscanX * 2,
+      lensHeight + overscanY * 2,
+    );
+    final captureLensCenter = Offset(
+      overscanX + lensWidth / 2,
+      overscanY + lensHeight / 2,
+    );
     final shader = _shader;
     final canRefract = shader != null && ui.ImageFilter.isShaderFilterSupported;
 
     if (canRefract) {
-      shader
-        // uSize 占用 FragmentShader 的第 0、1 个 float。它必须使用
-        // Lens 自身的局部尺寸；缺失时 shader 会以零尺寸计算 SDF/UV，
-        // 产生跨页面的异常线条而不是液态玻璃。
-        ..setFloat(0, lensWidth)
-        ..setFloat(1, lensHeight)
-        ..setFloat(2, widget.tuning.effectiveRefraction)
-        ..setFloat(3, widget.tuning.effectiveMagnification)
-        ..setFloat(4, widget.tuning.effectiveChromatic)
-        ..setFloat(5, speed)
-        ..setFloat(6, direction)
-        ..setFloat(7, widget.edgeCompression)
-        ..setFloat(
-          8,
-          widget.tuning.mode == LiquidGlassQaMode.finalGlass &&
-                  widget.isDragging
-              ? 1.0
-              : 0.0,
-        )
-        ..setFloat(9, 1.0)
-        ..setFloat(10, 1.0)
-        ..setFloat(11, 1.0)
-        ..setFloat(
-          12,
-          widget.tuning.mode == LiquidGlassQaMode.finalGlass
-              ? (widget.isDark ? 0.015 : 0.01)
-              : 0.0,
-        )
-        ..setFloat(
-          13,
-          widget.tuning.effectiveLightStrength *
-              (widget.highContrast ? 1.24 : 1.0),
-        )
-        ..setFloat(
-          14,
-          widget.tuning.effectiveRimStrength *
-              (widget.highContrast ? 1.3 : 1.0),
-        );
+      LiquidGlassShaderUniforms(
+        captureSize: captureSize,
+        lensCenter: captureLensCenter,
+        lensSize: visibleSize,
+        lensExponent: widget.tuning.lensExponent,
+        refraction: widget.tuning.effectiveRefraction,
+        magnification: widget.tuning.effectiveMagnification,
+        chromatic: widget.tuning.effectiveChromatic,
+        velocity: speed,
+        direction: direction,
+        edgeCompression: widget.edgeCompression,
+        dragState: widget.tuning.mode == LiquidGlassQaMode.finalGlass &&
+                widget.isDragging
+            ? 1.0
+            : 0.0,
+        lightStrength: widget.tuning.effectiveLightStrength *
+            (widget.highContrast ? 1.24 : 1.0),
+        rimStrength: widget.tuning.effectiveRimStrength *
+            (widget.highContrast ? 1.3 : 1.0),
+        verticalRefractionScale: widget.tuning.verticalRefractionScale,
+        refractionBandStart: widget.tuning.refractionBandStart,
+        refractionBandPeak: widget.tuning.refractionBandPeak,
+        refractionBandEnd: widget.tuning.refractionBandEnd,
+        magnificationRadius: widget.tuning.magnificationRadius,
+        chromaticStart: widget.tuning.chromaticStart,
+        flowStrength: widget.tuning.flowStrength,
+      ).apply(shader);
     }
-
-    final filter = canRefract
-        ? ui.ImageFilter.shader(shader)
-        : ui.ImageFilter.blur(
-            sigmaX: widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
-            sigmaY: widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
-          );
 
     return Positioned(
       key: const ValueKey('bottom-nav-liquid-lens'),
@@ -1248,56 +1126,86 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
       width: lensWidth,
       height: lensHeight,
       child: IgnorePointer(
-        child: ClipPath(
-          clipper: LiquidLensClipper(
-            speed: speed,
-            direction: direction,
-            edgeCompression: widget.edgeCompression,
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              BackdropFilter(
-                filter: filter,
-                child: ColoredBox(
-                  color: canRefract
-                      ? const Color(0x01000000)
-                      : (widget.isDark
-                          ? Colors.white.withValues(alpha: 0.07)
-                          : Colors.white.withValues(alpha: 0.14)),
+        child: Stack(
+          clipBehavior: Clip.none,
+          fit: StackFit.expand,
+          children: [
+            if (canRefract)
+              Positioned(
+                left: -overscanX,
+                top: -overscanY,
+                width: captureSize.width,
+                height: captureSize.height,
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.shader(shader),
+                  // filter 自身负责绘制捕获到的背景；透明 child 不会污染 Identity 模式。
+                  child: const SizedBox.expand(),
                 ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(
-                        alpha: widget.isDark ? 0.01 : 0.015,
-                      ),
-                      Colors.transparent,
-                      Colors.black.withValues(
-                        alpha: widget.isDark ? 0.004 : 0.006,
-                      ),
-                    ],
+              )
+            else
+              Positioned(
+                left: -overscanX,
+                top: -overscanY,
+                width: captureSize.width,
+                height: captureSize.height,
+                child: ClipPath(
+                  clipper: LiquidLensCaptureClipper(
+                    visibleOffset: Offset(overscanX, overscanY),
+                    visibleSize: visibleSize,
+                    speed: speed,
+                    direction: direction,
+                    edgeCompression: widget.edgeCompression,
+                    lensExponent: widget.tuning.lensExponent,
+                    flowStrength: widget.tuning.flowStrength,
+                  ),
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(
+                      sigmaX:
+                          widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+                      sigmaY:
+                          widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+                    ),
+                    child: ColoredBox(
+                      color: widget.isDark
+                          ? Colors.white.withValues(alpha: 0.07)
+                          : Colors.white.withValues(alpha: 0.14),
+                    ),
                   ),
                 ),
               ),
-              CustomPaint(
-                painter: _LiquidLensRimPainter(
-                  isDark: widget.isDark,
-                  highContrast: widget.highContrast,
-                  motion: speed,
-                  direction: direction,
-                  edgeCompression: widget.edgeCompression,
-                  rimStrength: widget.tuning.rimStrength,
-                  showShapeOutline:
-                      widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
+            CustomPaint(
+              painter: _LiquidLensRimPainter(
+                isDark: widget.isDark,
+                highContrast: widget.highContrast,
+                motion: speed,
+                direction: direction,
+                edgeCompression: widget.edgeCompression,
+                lensExponent: widget.tuning.lensExponent,
+                flowStrength: widget.tuning.flowStrength,
+                rimStrength: widget.tuning.effectiveRimStrength,
+                showShapeOutline:
+                    widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
+              ),
+            ),
+            if (widget.tuning.showCaptureBounds)
+              Positioned(
+                left: -overscanX,
+                top: -overscanY,
+                width: captureSize.width,
+                height: captureSize.height,
+                child: CustomPaint(
+                  painter: _LiquidLensBoundsPainter(
+                    visibleOffset: Offset(overscanX, overscanY),
+                    visibleSize: visibleSize,
+                    speed: speed,
+                    direction: direction,
+                    edgeCompression: widget.edgeCompression,
+                    lensExponent: widget.tuning.lensExponent,
+                    flowStrength: widget.tuning.flowStrength,
+                  ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -1311,6 +1219,8 @@ class _LiquidLensRimPainter extends CustomPainter {
     required this.motion,
     required this.direction,
     required this.edgeCompression,
+    required this.lensExponent,
+    required this.flowStrength,
     required this.rimStrength,
     required this.showShapeOutline,
   });
@@ -1320,6 +1230,8 @@ class _LiquidLensRimPainter extends CustomPainter {
   final double motion;
   final double direction;
   final double edgeCompression;
+  final double lensExponent;
+  final double flowStrength;
   final double rimStrength;
   final bool showShapeOutline;
 
@@ -1336,6 +1248,8 @@ class _LiquidLensRimPainter extends CustomPainter {
           speed: motion,
           direction: direction,
           edgeCompression: edgeCompression,
+          lensExponent: lensExponent,
+          flowStrength: flowStrength,
         ),
         outline,
       );
@@ -1349,6 +1263,8 @@ class _LiquidLensRimPainter extends CustomPainter {
       speed: motion,
       direction: direction,
       edgeCompression: edgeCompression,
+      lensExponent: lensExponent,
+      flowStrength: flowStrength,
     ).computeMetrics().toList();
     if (metrics.isEmpty) return;
 
@@ -1379,8 +1295,65 @@ class _LiquidLensRimPainter extends CustomPainter {
         oldDelegate.motion != motion ||
         oldDelegate.direction != direction ||
         oldDelegate.edgeCompression != edgeCompression ||
+        oldDelegate.lensExponent != lensExponent ||
+        oldDelegate.flowStrength != flowStrength ||
         oldDelegate.rimStrength != rimStrength ||
         oldDelegate.showShapeOutline != showShapeOutline;
+  }
+}
+
+class _LiquidLensBoundsPainter extends CustomPainter {
+  const _LiquidLensBoundsPainter({
+    required this.visibleOffset,
+    required this.visibleSize,
+    required this.speed,
+    required this.direction,
+    required this.edgeCompression,
+    required this.lensExponent,
+    required this.flowStrength,
+  });
+
+  final Offset visibleOffset;
+  final Size visibleSize;
+  final double speed;
+  final double direction;
+  final double edgeCompression;
+  final double lensExponent;
+  final double flowStrength;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final capturePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8
+      ..color = Colors.redAccent.withValues(alpha: 0.75);
+    final visiblePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..color = Colors.cyanAccent.withValues(alpha: 0.9);
+    canvas.drawRect(Offset.zero & size, capturePaint);
+    canvas.drawPath(
+      LiquidLensShape.pathForSize(
+        visibleSize,
+        speed: speed,
+        direction: direction,
+        edgeCompression: edgeCompression,
+        lensExponent: lensExponent,
+        flowStrength: flowStrength,
+      ).shift(visibleOffset),
+      visiblePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiquidLensBoundsPainter oldDelegate) {
+    return oldDelegate.visibleOffset != visibleOffset ||
+        oldDelegate.visibleSize != visibleSize ||
+        oldDelegate.speed != speed ||
+        oldDelegate.direction != direction ||
+        oldDelegate.edgeCompression != edgeCompression ||
+        oldDelegate.lensExponent != lensExponent ||
+        oldDelegate.flowStrength != flowStrength;
   }
 }
 
@@ -1392,12 +1365,16 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
     required this.motionFrame,
     required this.isDragging,
     required this.velocityPixelsPerSecond,
+    required this.itemWidth,
+    required this.tuning,
   });
 
   final ValueNotifier<double> visualPosition;
   final ValueNotifier<int> motionFrame;
   final bool isDragging;
   final double velocityPixelsPerSecond;
+  final double itemWidth;
+  final LiquidGlassTuning tuning;
 
   @override
   Widget build(BuildContext context) {
@@ -1410,6 +1387,21 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
         ]),
         builder: (context, child) {
           final status = liquidGlassRuntimeStatus.value;
+          final speed = (velocityPixelsPerSecond.abs() /
+                  math.max(tuning.velocityNormalization, 1))
+              .clamp(0.0, 1.0)
+              .toDouble();
+          final lensWidth = liquidLensWidthFor(
+            itemWidth: itemWidth,
+            speed: speed,
+            edgeCompression: 0,
+            widthScale: tuning.lensWidthScale,
+          );
+          final lensHeight = tuning.lensHeight.clamp(48.0, 84.0).toDouble();
+          final overscanX = tuning.overscanXFor(lensWidth);
+          final overscanY = tuning.overscanYFor(lensHeight);
+          final maxOffsetX = tuning.maxSampleOffsetXFor(lensWidth);
+          final maxOffsetY = tuning.maxSampleOffsetYFor(lensHeight);
           return DecoratedBox(
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.68),
@@ -1430,7 +1422,13 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
                   'Shader: ${status.shaderSupported}\n'
                   'Dragging: $isDragging  '
                   'Position: ${visualPosition.value.toStringAsFixed(3)}  '
-                  'Velocity: ${velocityPixelsPerSecond.round()} px/s',
+                  'Velocity: ${velocityPixelsPerSecond.round()} px/s\n'
+                  'Visible: ${lensWidth.round()}×${lensHeight.round()}  '
+                  'Capture: ${(lensWidth + overscanX * 2).round()}×'
+                  '${(lensHeight + overscanY * 2).round()}  '
+                  'Overscan: ${overscanX.round()}×${overscanY.round()}\n'
+                  'Max sample: ${maxOffsetX.toStringAsFixed(1)}×'
+                  '${maxOffsetY.toStringAsFixed(1)} px',
                 ),
               ),
             ),

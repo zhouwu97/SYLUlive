@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
@@ -10,6 +11,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_text_styles.dart';
+import 'liquid_glass/bottom_nav_controller.dart';
 
 const _navIcons = <IconData>[
   Icons.home_rounded,
@@ -20,6 +22,7 @@ const _navIcons = <IconData>[
 ];
 
 const _navLabels = <String>['首页', '集市', '课表', '校园', '我'];
+const _dockHeight = 66.0;
 
 class _NavItemVisualState {
   const _NavItemVisualState({
@@ -31,10 +34,14 @@ class _NavItemVisualState {
   final FontWeight fontWeight;
 }
 
-class BottomNavWrapper extends StatelessWidget {
+/// 页面只提交离散 Tab；底栏自己管理连续视觉位置和可中断弹簧。
+class BottomNavWrapper extends StatefulWidget {
   final int currentIndex;
-  final ValueListenable<double> visualIndexListenable;
-  final Function(int) onTap;
+  final ValueNotifier<double> visualIndexListenable;
+  final ValueChanged<int> onTap;
+  final ValueChanged<int>? onNavigationCommitted;
+  final ValueChanged<double>? onVisualPositionChanged;
+  final VoidCallback? onInteractionStart;
   final AuthProvider authProvider;
   final Map<int, bool> badges;
 
@@ -44,8 +51,61 @@ class BottomNavWrapper extends StatelessWidget {
     required this.visualIndexListenable,
     required this.onTap,
     required this.authProvider,
+    this.onNavigationCommitted,
+    this.onVisualPositionChanged,
+    this.onInteractionStart,
     this.badges = const {},
   });
+
+  @override
+  State<BottomNavWrapper> createState() => _BottomNavWrapperState();
+}
+
+class _BottomNavWrapperState extends State<BottomNavWrapper>
+    with SingleTickerProviderStateMixin {
+  late final BottomNavController _controller;
+  late final AnimationController _springController;
+  late final ValueNotifier<int> _motionFrame;
+  late final Listenable _visualFrameListenable;
+
+  double _itemWidth = 1;
+  double _velocityPixelsPerSecond = 0;
+  double _lastPointerX = 0;
+  Duration? _lastPointerTime;
+  double? _pointerDownX;
+  Duration? _pointerDownTime;
+  bool _isDragging = false;
+  int _settleSerial = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialPosition = widget.visualIndexListenable.value
+        .clamp(0.0, _navLabels.length - 1)
+        .toDouble();
+    _controller = BottomNavController(
+      itemCount: _navLabels.length,
+      initialIndex: widget.currentIndex.clamp(0, _navLabels.length - 1),
+    )..position = initialPosition;
+    _motionFrame = ValueNotifier(0);
+    _visualFrameListenable = Listenable.merge([
+      widget.visualIndexListenable,
+      _motionFrame,
+    ]);
+    _springController = AnimationController.unbounded(
+      vsync: this,
+      value: initialPosition,
+    )..addListener(_handleSpringTick);
+  }
+
+  @override
+  void dispose() {
+    _springController
+      ..removeListener(_handleSpringTick)
+      ..dispose();
+    _motionFrame.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,151 +113,118 @@ class BottomNavWrapper extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
 
     if (themeProvider.floatingNavBar) {
-      return _buildFloatingNav(context, isDark);
+      return _buildFloatingNav(context, isDark, themeProvider.liquidGlass);
     }
-
     return _buildBlurNav(context, isDark);
   }
 
-  // 标准模式：毛玻璃底栏 紧贴底部 + 紧凑
+  // 标准模式保留原有逐项点击导航；连续 Lens 只属于悬浮 Dock。
   Widget _buildBlurNav(BuildContext context, bool isDark) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    const primaryColor = AppColors.brandPrimary;
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final itemWidth = constraints.maxWidth / 5;
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              child: Container(
-                padding: EdgeInsets.only(
-                  top: 2,
-                  bottom: bottomSafe > 0 ? bottomSafe : 2,
-                ),
-                decoration: BoxDecoration(
-                  color:
-                      (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
-                          .withValues(alpha: 0.85),
-                  border: Border(
-                    top: BorderSide(
-                      color: isDark
-                          ? Colors.white10
-                          : Colors.black.withValues(alpha: 0.06),
-                      width: 0.5,
-                    ),
-                  ),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
-                    Positioned.fill(
-                      child: RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: visualIndexListenable,
-                          builder: (context, visualIndex, child) {
-                            return Align(
-                              alignment: Alignment.centerLeft,
-                              child: Transform.translate(
-                                offset: Offset(itemWidth * visualIndex, 0),
-                                child: SizedBox(
-                                  width: itemWidth,
-                                  child: Center(
-                                    child: Container(
-                                      width: 48,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            primaryColor.withValues(
-                                                alpha: 0.18),
-                                            primaryColor.withValues(
-                                                alpha: 0.07),
-                                          ],
-                                        ),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: primaryColor.withValues(
-                                            alpha: 0.1,
-                                          ),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: primaryColor.withValues(
-                                              alpha: 0.12,
-                                            ),
-                                            blurRadius: 14,
-                                            offset: const Offset(0, 5),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    RepaintBoundary(
-                      child: ValueListenableBuilder<double>(
-                        valueListenable: visualIndexListenable,
-                        builder: (context, visualIndex, child) {
-                          const icons = [
-                            Icons.home_rounded,
-                            Icons.storefront_rounded,
-                            Icons.calendar_month_rounded,
-                            Icons.apartment_rounded,
-                            Icons.person_rounded,
-                          ];
-                          const labels = ['首页', '集市', '课表', '校园', '我'];
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: List.generate(
-                              icons.length,
-                              (index) => _labeledItem(
-                                icons[index],
-                                labels[index],
-                                index,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                                badges[index] == true,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+        final itemWidth = constraints.maxWidth / _navLabels.length;
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: Container(
+            padding: EdgeInsets.only(
+              top: 2,
+              bottom: bottomSafe > 0 ? bottomSafe : 2,
+            ),
+            decoration: BoxDecoration(
+              color: (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
+                  .withValues(alpha: 0.85),
+              border: Border(
+                top: BorderSide(
+                  color: isDark
+                      ? Colors.white10
+                      : Colors.black.withValues(alpha: 0.06),
+                  width: 0.5,
                 ),
               ),
             ),
-          ],
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: widget.visualIndexListenable,
+                      builder: (context, visualIndex, child) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Transform.translate(
+                            offset: Offset(itemWidth * visualIndex, 0),
+                            child: SizedBox(
+                              width: itemWidth,
+                              child: Center(
+                                child: Container(
+                                  width: 48,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        AppColors.brandPrimary
+                                            .withValues(alpha: 0.18),
+                                        AppColors.brandPrimary
+                                            .withValues(alpha: 0.07),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: AppColors.brandPrimary
+                                          .withValues(alpha: 0.1),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.brandPrimary
+                                            .withValues(alpha: 0.12),
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Row(
+                  children: List.generate(
+                    _navLabels.length,
+                    (index) => _standardItem(
+                      icon: _navIcons[index],
+                      label: _navLabels[index],
+                      index: index,
+                      context: context,
+                      width: itemWidth,
+                      visualIndex: widget.visualIndexListenable.value,
+                      showBadge: widget.badges[index] == true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  // 悬浮模式：连成一块的弧形 Dock
-  Widget _buildFloatingNav(BuildContext context, bool isDark) {
-    const primaryColor = AppColors.brandPrimary;
+  Widget _buildFloatingNav(
+    BuildContext context,
+    bool isDark,
+    bool useLiquidGlass,
+  ) {
     final mediaQuery = MediaQuery.of(context);
-    final useLiquidGlass = context.watch<ThemeProvider>().liquidGlass;
     final highContrast = mediaQuery.highContrast;
-    final reduceMotion = mediaQuery.disableAnimations;
-    const dockHeight = 64.0;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     const dockHorizontalInset = 12.0;
     const dockBottomInset = 8.0;
 
@@ -212,40 +239,25 @@ class BottomNavWrapper extends StatelessWidget {
         ),
         child: SizedBox(
           key: const ValueKey('bottom-nav-floating-dock'),
-          height: dockHeight,
+          height: _dockHeight,
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppRadius.pill),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: isDark ? 0.28 : 0.10,
-                  ),
-                  blurRadius: useLiquidGlass ? 24 : 18,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.09),
+                  blurRadius: useLiquidGlass ? 18 : 16,
+                  offset: const Offset(0, 7),
                 ),
-                if (useLiquidGlass)
-                  BoxShadow(
-                    color: primaryColor.withValues(alpha: isDark ? 0.12 : 0.08),
-                    blurRadius: 18,
-                    spreadRadius: -4,
-                  ),
               ],
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.pill),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final dockSize = Size(constraints.maxWidth, dockHeight);
-                  final itemWidth = dockSize.width / _navIcons.length;
-                  final obscuredBottom = math.max(
-                    mediaQuery.padding.bottom,
-                    mediaQuery.viewInsets.bottom,
-                  );
-                  final dockTop = mediaQuery.size.height -
-                      obscuredBottom -
-                      dockBottomInset -
-                      dockHeight;
+                  final dockSize = Size(constraints.maxWidth, _dockHeight);
+                  final itemWidth = dockSize.width / _navLabels.length;
+                  _itemWidth = itemWidth;
 
                   return Stack(
                     alignment: Alignment.center,
@@ -259,12 +271,15 @@ class BottomNavWrapper extends StatelessWidget {
                       ),
                       Positioned.fill(
                         child: RepaintBoundary(
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: visualIndexListenable,
-                            builder: (context, visualIndex, child) {
-                              final effectiveVisualIndex = reduceMotion
-                                  ? currentIndex.toDouble()
-                                  : visualIndex;
+                          child: AnimatedBuilder(
+                            animation: _visualFrameListenable,
+                            builder: (context, child) {
+                              final visualIndex =
+                                  widget.visualIndexListenable.value;
+                              final effectiveVisualIndex =
+                                  reduceMotion && !_isDragging
+                                      ? widget.currentIndex.toDouble()
+                                      : visualIndex;
                               return Stack(
                                 fit: StackFit.expand,
                                 children: [
@@ -274,33 +289,26 @@ class BottomNavWrapper extends StatelessWidget {
                                       visualIndex: effectiveVisualIndex,
                                       isDark: isDark,
                                     ),
-                                  Row(
-                                    children: List.generate(
-                                      _navIcons.length,
-                                      (index) => _floatingItem(
-                                        icon: _navIcons[index],
-                                        label: _navLabels[index],
-                                        index: index,
-                                        context: context,
-                                        primaryColor: primaryColor,
-                                        width: itemWidth,
-                                        visualIndex: effectiveVisualIndex,
-                                        showBadge: badges[index] == true,
-                                      ),
-                                    ),
+                                  _buildGestureLayer(
+                                    context: context,
+                                    itemWidth: itemWidth,
+                                    visualIndex: effectiveVisualIndex,
                                   ),
                                   if (useLiquidGlass)
                                     _LiquidSelectionLens(
                                       dockSize: dockSize,
-                                      dockGlobalTop: dockTop,
-                                      dockGlobalLeft: mediaQuery.padding.left +
-                                          dockHorizontalInset,
                                       itemWidth: itemWidth,
                                       visualIndex: effectiveVisualIndex,
-                                      currentIndex: currentIndex,
-                                      screenSize: mediaQuery.size,
+                                      velocityPixelsPerSecond: reduceMotion
+                                          ? 0
+                                          : _velocityPixelsPerSecond,
+                                      edgeCompression: reduceMotion
+                                          ? 0
+                                          : _controller.edgeCompression,
+                                      isDragging: _isDragging,
                                       isDark: isDark,
                                       highContrast: highContrast,
+                                      reduceMotion: reduceMotion,
                                     ),
                                 ],
                               );
@@ -310,8 +318,8 @@ class BottomNavWrapper extends StatelessWidget {
                       ),
                       Positioned(
                         top: 0,
-                        left: dockHeight * 0.55,
-                        right: dockHeight * 0.55,
+                        left: _dockHeight * 0.55,
+                        right: _dockHeight * 0.55,
                         height: 1,
                         child: IgnorePointer(
                           child: DecoratedBox(
@@ -320,7 +328,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 colors: [
                                   Colors.white.withValues(alpha: 0),
                                   Colors.white.withValues(
-                                    alpha: highContrast ? 0.75 : 0.52,
+                                    alpha: highContrast ? 0.72 : 0.42,
                                   ),
                                   Colors.white.withValues(alpha: 0),
                                 ],
@@ -340,26 +348,217 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 标准模式 Item（图标+文字）
-  Widget _labeledItem(
-    IconData icon,
-    String label,
-    int index,
-    BuildContext context,
-    Color primaryColor,
-    double width,
-    double visualIndex,
-    bool showBadge,
-  ) {
+  Widget _buildGestureLayer({
+    required BuildContext context,
+    required double itemWidth,
+    required double visualIndex,
+  }) {
+    return GestureDetector(
+      key: const ValueKey('bottom-nav-gesture-layer'),
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (details) {
+        _pointerDownX = details.localPosition.dx;
+        _pointerDownTime = null;
+      },
+      onTapUp: (details) => _handleTapUp(details, itemWidth),
+      onHorizontalDragStart: (details) => _handleDragStart(details, itemWidth),
+      onHorizontalDragUpdate: (details) =>
+          _handleDragUpdate(details, itemWidth),
+      onHorizontalDragEnd: (details) => _handleDragEnd(details, itemWidth),
+      onHorizontalDragCancel: _handleDragCancel,
+      child: Row(
+        children: List.generate(
+          _navLabels.length,
+          (index) => _floatingItem(
+            icon: _navIcons[index],
+            label: _navLabels[index],
+            index: index,
+            context: context,
+            width: itemWidth,
+            visualIndex: visualIndex,
+            showBadge: widget.badges[index] == true,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleTapUp(TapUpDetails details, double itemWidth) {
+    _pointerDownX = null;
+    _pointerDownTime = null;
+    _cancelSpring();
+    widget.onInteractionStart?.call();
+    widget.onTap(_indexForX(details.localPosition.dx, itemWidth));
+  }
+
+  void _handleDragStart(DragStartDetails details, double itemWidth) {
+    _cancelSpring();
+    widget.onInteractionStart?.call();
+    final startPosition = _positionForX(
+      _pointerDownX ?? details.localPosition.dx,
+      itemWidth,
+    );
+    final initialDelta =
+        details.localPosition.dx - (_pointerDownX ?? details.localPosition.dx);
+    _controller.beginDrag(startPosition);
+    // HorizontalDragStart 在 touch slop 之后才触发；用这段已发生的位移
+    // 初始化速度，保证第一次可见拖动就有真实的形变反馈。
+    _velocityPixelsPerSecond = initialDelta * 15;
+    _lastPointerX = _pointerDownX ?? details.localPosition.dx;
+    _lastPointerTime = _pointerDownTime ?? details.sourceTimeStamp;
+    setState(() => _isDragging = true);
+    _setVisualPosition(startPosition);
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details, double itemWidth) {
+    if (!_isDragging) return;
+    final x = details.localPosition.dx;
+    final sourceTime = details.sourceTimeStamp;
+    final previousTime = _lastPointerTime;
+    final elapsedSeconds = sourceTime != null && previousTime != null
+        ? math.max(
+            (sourceTime - previousTime).inMicroseconds /
+                Duration.microsecondsPerSecond,
+            1 / 120,
+          )
+        : 1 / 60;
+    final delta = details.primaryDelta ?? (x - _lastPointerX);
+    final instantaneousVelocity = delta / elapsedSeconds;
+    _velocityPixelsPerSecond =
+        _velocityPixelsPerSecond * 0.75 + instantaneousVelocity * 0.25;
+    _lastPointerX = x;
+    _lastPointerTime = sourceTime;
+
+    _controller.updateDrag(
+      rawPosition: _positionForX(x, itemWidth, allowOverdrag: true),
+      velocityPixelsPerSecond: _velocityPixelsPerSecond,
+    );
+    _setVisualPosition(_controller.position);
+  }
+
+  void _handleDragEnd(DragEndDetails details, double itemWidth) {
+    if (!_isDragging) return;
+    final velocity = details.primaryVelocity ?? _velocityPixelsPerSecond;
+    final target = _controller.endDrag(
+      velocityPixelsPerSecond: velocity,
+      itemWidth: itemWidth,
+    );
+    _pointerDownX = null;
+    _pointerDownTime = null;
+    _lastPointerTime = null;
+    _settleTo(target, velocity / itemWidth);
+  }
+
+  void _handleDragCancel() {
+    if (!_isDragging) return;
+    _pointerDownX = null;
+    _pointerDownTime = null;
+    _controller.cancelDrag(widget.currentIndex.toDouble());
+    _settleTo(widget.currentIndex, 0);
+  }
+
+  void _settleTo(int target, double initialVelocity) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final start = widget.visualIndexListenable.value
+        .clamp(0.0, _navLabels.length - 1)
+        .toDouble();
+    final serial = ++_settleSerial;
+    _springController.stop();
+
+    if (reduceMotion || (start - target).abs() < 0.001) {
+      _finishSettle(serial, target);
+      return;
+    }
+
+    _springController.value = start;
+    final simulation = SpringSimulation(
+      const SpringDescription(mass: 1, stiffness: 320, damping: 24),
+      start,
+      target.toDouble(),
+      initialVelocity,
+    );
+    unawaited(
+      _springController.animateWith(simulation).then<void>((_) {
+        _finishSettle(serial, target);
+      }).catchError((Object _) {}),
+    );
+  }
+
+  void _handleSpringTick() {
+    if (!mounted || _isDragging) return;
+    final rawPosition = _springController.value;
+    final position = rawPosition.clamp(0.0, _navLabels.length - 1).toDouble();
+    _controller.position = position;
+    _controller.edgeCompression =
+        (rawPosition - position).abs().clamp(0.0, 1.0);
+    _velocityPixelsPerSecond = _springController.velocity * _itemWidth;
+    _setVisualPosition(position);
+  }
+
+  void _finishSettle(int serial, int target) {
+    if (!mounted || serial != _settleSerial) return;
+    _controller.settle(target.toDouble());
+    _velocityPixelsPerSecond = 0;
+    _setVisualPosition(target.toDouble());
+    if (_isDragging) {
+      setState(() => _isDragging = false);
+    }
+    widget.onNavigationCommitted?.call(target);
+  }
+
+  void _cancelSpring() {
+    _settleSerial++;
+    _springController.stop();
+    final currentPosition = widget.visualIndexListenable.value
+        .clamp(0.0, _navLabels.length - 1)
+        .toDouble();
+    _controller.settle(currentPosition);
+    _velocityPixelsPerSecond = 0;
+  }
+
+  void _setVisualPosition(double position) {
+    final next = position.clamp(0.0, _navLabels.length - 1).toDouble();
+    _controller.position = next;
+    if ((widget.visualIndexListenable.value - next).abs() > 0.0001) {
+      widget.visualIndexListenable.value = next;
+    }
+    // 位置被边界 clamp 后仍要重绘 edgeCompression / velocity 形变；不让
+    // “手指继续向屏幕边缘拖”因为 position 没变化而丢失视觉反馈。
+    _motionFrame.value++;
+    widget.onVisualPositionChanged?.call(next);
+  }
+
+  int _indexForX(double x, double itemWidth) {
+    return ((x / itemWidth) - 0.5).round().clamp(0, _navLabels.length - 1);
+  }
+
+  double _positionForX(
+    double x,
+    double itemWidth, {
+    bool allowOverdrag = false,
+  }) {
+    final raw = x / itemWidth - 0.5;
+    if (allowOverdrag) return raw;
+    return raw.clamp(0.0, _navLabels.length - 1).toDouble();
+  }
+
+  Widget _standardItem({
+    required IconData icon,
+    required String label,
+    required int index,
+    required BuildContext context,
+    required double width,
+    required double visualIndex,
+    required bool showBadge,
+  }) {
     final visualState = _visualStateFor(
       context: context,
       index: index,
-      primaryColor: primaryColor,
       visualIndex: visualIndex,
     );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onTap(index),
+      onTap: () => widget.onTap(index),
       child: SizedBox(
         width: width,
         child: Padding(
@@ -403,13 +602,11 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 悬浮模式 Item：保留文字，确保图标语义与当前页面一眼可辨。
   Widget _floatingItem({
     required IconData icon,
     required String label,
     required int index,
     required BuildContext context,
-    required Color primaryColor,
     required double width,
     required double visualIndex,
     required bool showBadge,
@@ -417,60 +614,50 @@ class BottomNavWrapper extends StatelessWidget {
     final visualState = _visualStateFor(
       context: context,
       index: index,
-      primaryColor: primaryColor,
       visualIndex: visualIndex,
     );
-
     return Semantics(
+      key: ValueKey('bottom-nav-item-$index'),
       button: true,
-      selected: currentIndex == index,
+      selected: widget.currentIndex == index,
       label: label,
       child: ExcludeSemantics(
         child: SizedBox(
           width: width,
           height: double.infinity,
-          child: Material(
-            color: Colors.transparent,
-            child: InkResponse(
-              key: ValueKey('bottom-nav-item-$index'),
-              onTap: () => onTap(index),
-              containedInkWell: true,
-              highlightShape: BoxShape.rectangle,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Icon(icon, color: visualState.color, size: 24),
-                      if (showBadge)
-                        Positioned(
-                          top: -1,
-                          right: -3,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppColors.danger,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
+                  Icon(icon, color: visualState.color, size: 24),
+                  if (showBadge)
+                    Positioned(
+                      top: -1,
+                      right: -3,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.danger,
+                          shape: BoxShape.circle,
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.visible,
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: visualState.color,
+                      ),
                     ),
-                  ),
                 ],
               ),
-            ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: visualState.color,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -480,7 +667,6 @@ class BottomNavWrapper extends StatelessWidget {
   _NavItemVisualState _visualStateFor({
     required BuildContext context,
     required int index,
-    required Color primaryColor,
     required double visualIndex,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -488,7 +674,6 @@ class BottomNavWrapper extends StatelessWidget {
     final softenedT = Curves.easeOutCubic.transform(activeT);
     final inactiveColor =
         isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
-
     return _NavItemVisualState(
       color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
       fontWeight: FontWeight.w600,
@@ -517,19 +702,19 @@ class _FloatingDockSurface extends StatelessWidget {
           colors: useLiquidGlass
               ? (isDark
                   ? [
-                      const Color(0xFF202526).withValues(
-                        alpha: highContrast ? 0.78 : 0.62,
+                      const Color(0xFF202326).withValues(
+                        alpha: highContrast ? 0.44 : 0.36,
                       ),
-                      const Color(0xFF141718).withValues(
-                        alpha: highContrast ? 0.74 : 0.48,
+                      const Color(0xFF111315).withValues(
+                        alpha: highContrast ? 0.38 : 0.28,
                       ),
                     ]
                   : [
                       Colors.white.withValues(
-                        alpha: highContrast ? 0.86 : 0.62,
+                        alpha: highContrast ? 0.36 : 0.26,
                       ),
-                      const Color(0xFFEAF6F3).withValues(
-                        alpha: highContrast ? 0.78 : 0.42,
+                      Colors.white.withValues(
+                        alpha: highContrast ? 0.27 : 0.18,
                       ),
                     ])
               : (isDark
@@ -544,13 +729,9 @@ class _FloatingDockSurface extends StatelessWidget {
         ),
         border: Border.all(
           color: isDark
-              ? Colors.white.withValues(
-                  alpha: highContrast ? 0.28 : 0.14,
-                )
+              ? Colors.white.withValues(alpha: highContrast ? 0.28 : 0.16)
               : (useLiquidGlass
-                  ? Colors.white.withValues(
-                      alpha: highContrast ? 0.95 : 0.72,
-                    )
+                  ? Colors.white.withValues(alpha: highContrast ? 0.72 : 0.55)
                   : AppColors.borderNormalLight),
           width: highContrast ? 1.25 : 1,
         ),
@@ -558,9 +739,11 @@ class _FloatingDockSurface extends StatelessWidget {
     );
 
     if (!useLiquidGlass) return fill;
-
     return BackdropFilter(
-      filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+      filter: ui.ImageFilter.blur(
+        sigmaX: isDark ? 8 : 7,
+        sigmaY: isDark ? 8 : 7,
+      ),
       child: fill,
     );
   }
@@ -582,11 +765,10 @@ class _FloatingSelectionFallback extends StatelessWidget {
     const width = 56.0;
     const height = 48.0;
     final left = itemWidth * (visualIndex + 0.5) - width / 2;
-
     return Positioned(
       key: const ValueKey('bottom-nav-selection-fallback'),
       left: left,
-      top: (64 - height) / 2,
+      top: (_dockHeight - height) / 2,
       width: width,
       height: height,
       child: IgnorePointer(
@@ -621,25 +803,25 @@ class _FloatingSelectionFallback extends StatelessWidget {
 class _LiquidSelectionLens extends StatefulWidget {
   const _LiquidSelectionLens({
     required this.dockSize,
-    required this.dockGlobalTop,
-    required this.dockGlobalLeft,
     required this.itemWidth,
     required this.visualIndex,
-    required this.currentIndex,
-    required this.screenSize,
+    required this.velocityPixelsPerSecond,
+    required this.edgeCompression,
+    required this.isDragging,
     required this.isDark,
     required this.highContrast,
+    required this.reduceMotion,
   });
 
   final Size dockSize;
-  final double dockGlobalTop;
-  final double dockGlobalLeft;
   final double itemWidth;
   final double visualIndex;
-  final int currentIndex;
-  final Size screenSize;
+  final double velocityPixelsPerSecond;
+  final double edgeCompression;
+  final bool isDragging;
   final bool isDark;
   final bool highContrast;
+  final bool reduceMotion;
 
   @override
   State<_LiquidSelectionLens> createState() => _LiquidSelectionLensState();
@@ -657,13 +839,18 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
   static Future<ui.FragmentProgram?> _program() {
     return _programFuture ??= () async {
-      if (!ui.ImageFilter.isShaderFilterSupported) return null;
+      if (!ui.ImageFilter.isShaderFilterSupported) {
+        debugPrint('[LiquidGlass] renderer=fallback tier=C shader=false');
+        return null;
+      }
       try {
-        return await ui.FragmentProgram.fromAsset(
+        final program = await ui.FragmentProgram.fromAsset(
           'shaders/liquid_nav_lens.frag',
         );
+        debugPrint('[LiquidGlass] renderer=shader tier=A impeller=unknown');
+        return program;
       } catch (error) {
-        debugPrint('液态底栏折射着色器加载失败，已回退毛玻璃: $error');
+        debugPrint('[LiquidGlass] renderer=fallback tier=C error=$error');
         return null;
       }
     }();
@@ -683,13 +870,16 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
   @override
   Widget build(BuildContext context) {
-    final remaining = (widget.currentIndex - widget.visualIndex).abs();
-    final motion = math.min(remaining, 1.0);
-    final direction =
-        (widget.currentIndex - widget.visualIndex).sign.toDouble();
-    final baseWidth = math.max(84.0, widget.itemWidth * 1.30);
-    final lensWidth = baseWidth * (1 + motion * 0.12);
-    final lensHeight = 58.0 - motion * 2;
+    final speed = widget.reduceMotion
+        ? 0.0
+        : (widget.velocityPixelsPerSecond.abs() / 1400).clamp(0.0, 1.0);
+    final direction = widget.reduceMotion || speed < 0.01
+        ? 0.0
+        : widget.velocityPixelsPerSecond.sign;
+    final baseWidth = math.max(84.0, widget.itemWidth * 1.55);
+    final lensWidth = baseWidth *
+        (1 + speed * 0.18 - widget.edgeCompression.clamp(0.0, 1.0) * 0.10);
+    final lensHeight = 58.0 * (1 - speed * 0.06);
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
     final lensCenter = requestedCenter.clamp(
       lensWidth / 2 + 2,
@@ -697,39 +887,29 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
     );
     final left = lensCenter - lensWidth / 2;
     final top = (widget.dockSize.height - lensHeight) / 2;
-    final globalCenter = Offset(
-      widget.dockGlobalLeft + lensCenter,
-      widget.dockGlobalTop + top + lensHeight / 2,
-    );
     final shader = _shader;
-    final canRefract = shader != null &&
-        ui.ImageFilter.isShaderFilterSupported &&
-        widget.screenSize.width > 0 &&
-        widget.screenSize.height > 0;
+    final canRefract = shader != null && ui.ImageFilter.isShaderFilterSupported;
 
     if (canRefract) {
-      final tint = widget.isDark
-          ? AppColors.brandSurfaceDark
-          : AppColors.brandSurfaceLight;
       shader
-        ..setFloat(2, globalCenter.dx / widget.screenSize.width)
-        ..setFloat(3, globalCenter.dy / widget.screenSize.height)
-        ..setFloat(4, lensWidth / 2 / widget.screenSize.width)
-        ..setFloat(5, lensHeight / 2 / widget.screenSize.height)
-        ..setFloat(6, (widget.isDark ? 8.0 : 7.0) / widget.screenSize.width)
-        ..setFloat(7, widget.highContrast ? 0.055 : 0.075)
-        ..setFloat(8, widget.highContrast ? 0.35 : 0.85)
-        ..setFloat(9, motion)
-        ..setFloat(10, direction)
-        ..setFloat(11, tint.r)
-        ..setFloat(12, tint.g)
-        ..setFloat(13, tint.b)
-        ..setFloat(14, widget.highContrast ? 0.16 : 0.10);
+        ..setFloat(2, 14.0)
+        ..setFloat(3, 1.055)
+        ..setFloat(4, 1.2)
+        ..setFloat(5, speed)
+        ..setFloat(6, direction)
+        ..setFloat(7, widget.edgeCompression)
+        ..setFloat(8, widget.isDragging ? 1.0 : 0.0)
+        ..setFloat(9, 1.0)
+        ..setFloat(10, 1.0)
+        ..setFloat(11, 1.0)
+        ..setFloat(12, widget.isDark ? 0.045 : 0.03)
+        ..setFloat(13, widget.highContrast ? 0.42 : 0.34)
+        ..setFloat(14, widget.highContrast ? 0.22 : 0.16);
     }
 
     final filter = canRefract
         ? ui.ImageFilter.shader(shader)
-        : ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5);
+        : ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4);
 
     return Positioned(
       key: const ValueKey('bottom-nav-liquid-lens'),
@@ -744,17 +924,10 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(
-                  alpha: widget.isDark ? 0.28 : 0.12,
+                  alpha: widget.isDark ? 0.20 : 0.08,
                 ),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: AppColors.brandPrimary.withValues(
-                  alpha: widget.isDark ? 0.18 : 0.10,
-                ),
-                blurRadius: 16,
-                spreadRadius: -4,
               ),
             ],
           ),
@@ -769,8 +942,8 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                     color: canRefract
                         ? const Color(0x01000000)
                         : (widget.isDark
-                            ? Colors.white.withValues(alpha: 0.08)
-                            : Colors.white.withValues(alpha: 0.18)),
+                            ? Colors.white.withValues(alpha: 0.07)
+                            : Colors.white.withValues(alpha: 0.14)),
                   ),
                 ),
                 DecoratedBox(
@@ -780,12 +953,12 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                       end: Alignment.bottomRight,
                       colors: [
                         Colors.white.withValues(
-                          alpha: widget.isDark ? 0.10 : 0.18,
-                        ),
-                        AppColors.brandPrimary.withValues(
-                          alpha: widget.isDark ? 0.08 : 0.04,
+                          alpha: widget.isDark ? 0.07 : 0.045,
                         ),
                         Colors.transparent,
+                        Colors.black.withValues(
+                          alpha: widget.isDark ? 0.045 : 0.018,
+                        ),
                       ],
                     ),
                   ),
@@ -794,7 +967,7 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                   painter: _LiquidLensRimPainter(
                     isDark: widget.isDark,
                     highContrast: widget.highContrast,
-                    motion: motion,
+                    motion: speed,
                     direction: direction,
                   ),
                 ),
@@ -823,26 +996,23 @@ class _LiquidLensRimPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = (Offset.zero & size).deflate(highContrast ? 0.8 : 0.6);
-    final radius = Radius.circular(size.height / 2);
-    final rim = RRect.fromRectAndRadius(rect, radius);
+    final rim = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(size.height / 2),
+    );
     final begin = direction < 0 ? Alignment.topRight : Alignment.topLeft;
     final end = direction < 0 ? Alignment.bottomLeft : Alignment.bottomRight;
     final rimPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 1.6 : 1.15
+      ..strokeWidth = highContrast ? 1.5 : 1.0
       ..shader = LinearGradient(
         begin: begin,
         end: end,
         colors: [
-          Colors.white.withValues(alpha: highContrast ? 0.96 : 0.82),
-          const Color(0xFF8FE9DF).withValues(
-            alpha: isDark ? 0.62 : 0.48,
-          ),
-          Colors.white.withValues(alpha: 0.18),
-          const Color(0xFF9C8CFF).withValues(
-            alpha: 0.28 + motion * 0.14,
-          ),
-          Colors.white.withValues(alpha: highContrast ? 0.78 : 0.52),
+          Colors.white.withValues(alpha: highContrast ? 0.92 : 0.72),
+          Colors.white.withValues(alpha: isDark ? 0.30 : 0.18),
+          Colors.black.withValues(alpha: isDark ? 0.16 : 0.05),
+          Colors.white.withValues(alpha: highContrast ? 0.78 : 0.48),
         ],
       ).createShader(rect);
     canvas.drawRRect(rim, rimPaint);
@@ -855,11 +1025,13 @@ class _LiquidLensRimPainter extends CustomPainter {
     );
     final highlightPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 1.2 : 0.8
+      ..strokeWidth = highContrast ? 1.15 : 0.75
       ..shader = LinearGradient(
         colors: [
           Colors.white.withValues(alpha: 0),
-          Colors.white.withValues(alpha: highContrast ? 0.88 : 0.62),
+          Colors.white.withValues(
+            alpha: (highContrast ? 0.72 : 0.42) + motion * 0.12,
+          ),
           Colors.white.withValues(alpha: 0),
         ],
       ).createShader(highlightRect);

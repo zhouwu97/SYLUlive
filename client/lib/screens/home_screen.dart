@@ -1611,10 +1611,53 @@ class _HomeScreenState extends State<HomeScreen>
     unawaited(_animateMainTabTo(index));
   }
 
+  /// 拖拽接管时只取消 HomeScreen 自己的页面转场，不让每个 pointer move
+  /// 触发 Scaffold rebuild。连续位置由 BottomNavWrapper 直接写入 notifier。
+  void _handleLiquidInteractionStart() {
+    final hadPendingTransition = _mainTargetIndex != null;
+    if (!hadPendingTransition) return;
+
+    final visualPosition = _mainVisualIndexListenable.value;
+    _mainTabController.stop();
+    _contentTabController.stop();
+    _mainTabLedger.cancel(resetVisual: false);
+    _mainVisualIndex = visualPosition;
+    _mainVisualIndexListenable.value = visualPosition;
+    _updateBackgroundForTab(_currentIndex);
+
+    if (!mounted) return;
+    setState(() {
+      _mainAnimationStartVisualIndex = visualPosition;
+      _mainAnimationEndVisualIndex = visualPosition;
+    });
+  }
+
+  void _handleLiquidVisualPositionChanged(double position) {
+    _mainVisualIndex = position;
+  }
+
+  void _handleLiquidNavigationCommitted(int index) {
+    if (!mounted) return;
+    if (index == _currentIndex) {
+      _mainVisualIndex = index.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
+      return;
+    }
+
+    // Lens 已经在 BottomNav 内完成弹簧吸附；这里仅提交页面和首次
+    // reveal，避免把页面生命周期绑定到拖动中的连续位置。
+    unawaited(_settleMainTab(
+      targetIndex: index,
+      duration: AppMotion.tab,
+      commit: true,
+    ));
+  }
+
   Future<void> _animateMainTabTo(int index) async {
     final targetIndex = index.clamp(0, 4);
     if (targetIndex == _currentIndex) {
-      if (_mainTargetIndex != null) {
+      if (_mainTargetIndex != null ||
+          (_mainVisualIndex - _currentIndex).abs() > 0.001) {
         await _settleMainTab(
           targetIndex: targetIndex,
           duration: AppMotion.tab,
@@ -1845,6 +1888,9 @@ class _HomeScreenState extends State<HomeScreen>
               currentIndex: _currentIndex,
               visualIndexListenable: _mainVisualIndexListenable,
               onTap: _onTabTapped,
+              onNavigationCommitted: _handleLiquidNavigationCommitted,
+              onVisualPositionChanged: _handleLiquidVisualPositionChanged,
+              onInteractionStart: _handleLiquidInteractionStart,
               authProvider: authProvider,
               badges: {
                 4: _hasAdminTasks,

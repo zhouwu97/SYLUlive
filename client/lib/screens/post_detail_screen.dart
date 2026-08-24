@@ -25,6 +25,7 @@ import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/post_clipboard.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
@@ -1821,6 +1822,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   void _handlePostMenuAction(String value) {
     switch (value) {
+      case 'copy_content':
+        _copyPostContent();
+        break;
       case 'edit':
         _editPost();
         break;
@@ -1878,6 +1882,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         _muteAuthor();
         break;
     }
+  }
+
+  Future<void> _copyPostContent() async {
+    final post = _post;
+    if (post == null) return;
+    final copied = await PostClipboard.copy(post);
+    if (!mounted || !copied) return;
+    AppFeedback.success('帖子正文已复制', context: context);
   }
 
   List<Object> _buildPostMenuEntries({
@@ -2026,6 +2038,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
 
     entries.add(const Divider());
+
+    if (_post != null &&
+        (_post!.content.trim().isNotEmpty || _post!.title.trim().isNotEmpty)) {
+      entries.add(
+        const AppPopupAction(
+          value: 'copy_content',
+          label: '复制正文',
+          icon: Icons.copy_outlined,
+        ),
+      );
+    }
 
     if (isOwn) {
       entries.add(
@@ -2205,12 +2228,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (p.title.isNotEmpty) ...[
-                            Text(
-                              p.title,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
+                            SelectionArea(
+                              child: Text(
+                                p.title,
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -2248,12 +2273,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             _buildMarketTagWrap(p.marketTags, isDark),
                             const SizedBox(height: 16),
                           ],
-                          Text(
-                            p.content,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              color: isDark ? Colors.white70 : Colors.black87,
+                          SelectionArea(
+                            child: Text(
+                              p.content,
+                              style: TextStyle(
+                                fontSize: 16,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -2351,12 +2378,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (p.title.isNotEmpty) ...[
-                            Text(
-                              p.title,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
+                            SelectionArea(
+                              child: Text(
+                                p.title,
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -2394,12 +2423,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             _buildMarketTagWrap(p.marketTags, isDark),
                             const SizedBox(height: 16),
                           ],
-                          Text(
-                            p.content,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              color: isDark ? Colors.white70 : Colors.black87,
+                          SelectionArea(
+                            child: Text(
+                              p.content,
+                              style: TextStyle(
+                                fontSize: 16,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -2684,29 +2715,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildWaterSectionTagInfo(p, isDark),
-          if (p.title.isNotEmpty) ...[
-            Text(
-              p.title,
-              style: TextStyle(
-                fontSize: 18.5,
-                fontWeight: FontWeight.w700,
-                height: 1.25,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
-          if (p.content.isNotEmpty)
-            SelectionContainer.disabled(
-              child: Text(
-                p.content,
-                style: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.55,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.82)
-                      : const Color(0xFF333333),
-                ),
+          if (p.title.isNotEmpty || p.content.isNotEmpty)
+            SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (p.title.isNotEmpty) ...[
+                    Text(
+                      p.title,
+                      style: TextStyle(
+                        fontSize: 18.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  if (p.content.isNotEmpty)
+                    Text(
+                      p.content,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        height: 1.55,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.82)
+                            : const Color(0xFF333333),
+                      ),
+                    ),
+                ],
               ),
             ),
           if (p.topics.isNotEmpty) ...[

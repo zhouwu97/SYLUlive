@@ -756,6 +756,56 @@ void main() {
     expect(clearedDecoration.color, Colors.transparent);
   });
 
+  testWidgets('帖子详情正文支持系统选择并提供复制正文菜单', (tester) async {
+    String? copiedText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedText = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    final post = Post(
+      id: 106,
+      title: '下载提示',
+      content: 'https://example.com/download',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SelectionArea), findsOneWidget);
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('复制正文'), findsOneWidget);
+
+    await tester.tap(find.text('复制正文'));
+    await tester.pump();
+
+    expect(copiedText, 'Content');
+    expect(find.text('帖子正文已复制'), findsOneWidget);
+  });
+
   testWidgets('详情页不再请求或显示未读回复提醒', (WidgetTester tester) async {
     FakeDio.requestedPaths.clear();
     final post = Post(

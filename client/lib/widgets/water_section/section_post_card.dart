@@ -12,6 +12,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/post_clipboard.dart';
 import '../cached_avatar.dart';
 import '../post_media/post_media_view.dart';
 import '../topic_chips.dart';
@@ -90,14 +91,18 @@ class SectionPostCard extends StatelessWidget {
                 ],
                 if (post.content.trim().isNotEmpty) ...[
                   SizedBox(height: post.title.trim().isEmpty ? 0 : 6),
-                  Text(
-                    post.content,
-                    maxLines: validImages.isEmpty ? 3 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.feedBody.copyWith(
-                      color: dark
-                          ? AppColors.textPrimaryDark
-                          : const Color(0xFF4E565A),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onLongPress: () => _copyPostContent(context),
+                    child: Text(
+                      post.content,
+                      maxLines: validImages.isEmpty ? 3 : 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.feedBody.copyWith(
+                        color: dark
+                            ? AppColors.textPrimaryDark
+                            : const Color(0xFF4E565A),
+                      ),
                     ),
                   ),
                 ],
@@ -373,6 +378,12 @@ class SectionPostCard extends StatelessWidget {
   }
 
   String _formatCount(int count) => count > 999 ? '999+' : '$count';
+
+  Future<void> _copyPostContent(BuildContext context) async {
+    final copied = await PostClipboard.copy(post);
+    if (!context.mounted || !copied) return;
+    AppFeedback.success('帖子正文已复制', context: context);
+  }
 
   String _findTagName(int? tagId) {
     if (tagId == null || tagId <= 0) return '';

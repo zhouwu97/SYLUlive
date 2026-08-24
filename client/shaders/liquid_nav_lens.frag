@@ -20,53 +20,79 @@ uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
 
-float liquidDistance(vec2 point) {
-  vec2 center = uSize * 0.5;
-  vec2 halfSize = uSize * 0.5;
-  vec2 local = point - center;
-  float y = clamp(local.y, -halfSize.y, halfSize.y);
-  float cap = sqrt(max(halfSize.y * halfSize.y - y * y, 0.0));
-  float straightHalf = max(halfSize.x - halfSize.y, 0.0);
-  float profile = 1.0 - smoothstep(
-      0.0,
-      1.0,
-      abs(y) / max(halfSize.y, 0.001)
-  );
-  float tail = halfSize.y * uVelocity * 0.28;
-  float bulge = halfSize.y * uVelocity * 0.18;
-  float compression = halfSize.y * uEdgeCompression * 0.16;
-  float left = -straightHalf - cap;
-  float right = straightHalf + cap;
+const float SUPERELLIPSE_EXPONENT = 2.5;
 
-  // 这组左右边界与 Flutter 的 LiquidLensShape 逐项相同：只画向右
-  // canonical 形状，向左交换 tail/bulge 的左右位置，保证严格镜像。
-  if (uDirection > 0.01) {
-    left -= tail * profile;
-    right += bulge * profile - compression * profile;
-  } else if (uDirection < -0.01) {
-    left -= bulge * profile - compression * profile;
-    right += tail * profile;
+struct LiquidState {
+  float q;
+  vec2 gradient;
+};
+
+float smoothProfile(float value) {
+  float t = clamp(value, 0.0, 1.0);
+  return 1.0 - t * t * (3.0 - 2.0 * t);
+}
+
+LiquidState liquidState(vec2 point) {
+  vec2 local = point - uSize * 0.5;
+  float directionSign = uDirection < -0.01 ? -1.0 : 1.0;
+  float canonicalX = local.x * directionSign;
+  float halfHeight = max(uSize.y * 0.5, 0.001);
+  float tail = halfHeight * uVelocity * 0.50;
+  float bulge = halfHeight * uVelocity * 0.26;
+  float compression = halfHeight * uEdgeCompression * 0.16;
+  float halfWidth = max(
+      (uSize.x - tail - bulge + compression) * 0.5,
+      halfHeight * 0.72
+  );
+  float normalizedY = clamp(abs(local.y) / halfHeight, 0.0, 1.0);
+  float exponent = SUPERELLIPSE_EXPONENT;
+  float yPower = pow(normalizedY, exponent);
+  float baseFactor = pow(max(1.0 - yPower, 0.0001), 1.0 / exponent);
+  float baseExtent = halfWidth * baseFactor;
+  float profile = smoothProfile(normalizedY);
+
+  float leftExtent = baseExtent + tail * profile;
+  float rightExtent = baseExtent + (bulge - compression) * profile;
+  float centerShift = (rightExtent - leftExtent) * 0.5;
+  float halfExtent = max((leftExtent + rightExtent) * 0.5, 0.001);
+  float centeredX = canonicalX - centerShift;
+  float normalizedX = centeredX / halfExtent;
+  float q = pow(abs(normalizedX), exponent) + yPower;
+
+  // 对同一个 superellipse 隐式函数求解析梯度。这里不能再用
+  // min(sideDistance, verticalDistance)，否则在曲率切换处会产生法线折角。
+  float profileDerivative = -6.0 * normalizedY * (1.0 - normalizedY);
+  float baseDerivative = 0.0;
+  if (normalizedY > 0.0001 && baseFactor > 0.0001) {
+    baseDerivative = -halfWidth *
+        pow(normalizedY, exponent - 1.0) *
+        pow(max(1.0 - yPower, 0.0001), 1.0 / exponent - 1.0);
   }
-
-  float sideDistance = min(local.x - left, right - local.x);
-  float verticalDistance = halfSize.y - abs(local.y);
-  float insideDistance = min(sideDistance, verticalDistance);
-  if (insideDistance >= 0.0) return -insideDistance;
-
-  vec2 outside = vec2(
-      max(-sideDistance, 0.0),
-      max(-verticalDistance, 0.0)
+  float leftDerivative = baseDerivative + tail * profileDerivative;
+  float rightDerivative =
+      baseDerivative + (bulge - compression) * profileDerivative;
+  float centerDerivative = (rightDerivative - leftDerivative) * 0.5;
+  float halfExtentDerivative = (leftDerivative + rightDerivative) * 0.5;
+  float absX = max(abs(normalizedX), 0.000001);
+  float xDerivative = exponent *
+      pow(absX, exponent - 1.0) *
+      sign(normalizedX) / halfExtent;
+  float dNormalizedX_dY =
+      (-centerDerivative * halfExtent - centeredX * halfExtentDerivative) /
+      (halfExtent * halfExtent);
+  float dQ_dYNorm = xDerivative * dNormalizedX_dY +
+      exponent * pow(max(normalizedY, 0.000001), exponent - 1.0);
+  float ySign = sign(local.y);
+  vec2 gradient = vec2(
+      xDerivative * directionSign,
+      dQ_dYNorm * ySign / halfHeight
   );
-  return length(outside);
+  return LiquidState(q, gradient);
 }
 
 vec2 liquidNormal(vec2 point) {
-  const float epsilon = 0.45;
-  float dx = liquidDistance(point + vec2(epsilon, 0.0)) -
-      liquidDistance(point - vec2(epsilon, 0.0));
-  float dy = liquidDistance(point + vec2(0.0, epsilon)) -
-      liquidDistance(point - vec2(0.0, epsilon));
-  return normalize(vec2(dx, dy) + vec2(0.0001));
+  LiquidState state = liquidState(point);
+  return normalize(state.gradient + vec2(0.0001));
 }
 
 vec2 textureUv(vec2 pixel) {
@@ -81,7 +107,8 @@ void main() {
   vec2 fragment = FlutterFragCoord().xy;
   vec2 center = uSize * 0.5;
   vec2 halfSize = uSize * 0.5;
-  float distanceToLens = liquidDistance(fragment);
+  LiquidState state = liquidState(fragment);
+  float distanceToLens = (state.q - 1.0) * halfSize.y;
 
   if (distanceToLens > 1.0) {
     fragColor = texture(uBackdrop, textureUv(fragment));
@@ -89,17 +116,11 @@ void main() {
   }
 
   vec2 normal = liquidNormal(fragment);
-  float bevel = max(halfSize.y * 0.44, 3.0);
-  float edgeProximity = 1.0 - smoothstep(
-      0.0,
-      bevel,
-      max(-distanceToLens, 0.0)
-  );
-  float inner = smoothstep(0.50, 0.88, edgeProximity);
-  float outer = 1.0 - smoothstep(0.88, 1.0, edgeProximity);
-  float refractBand = inner * outer;
-  float rim = smoothstep(0.68, 0.98, edgeProximity);
-  float centerProfile = 1.0 - smoothstep(0.40, 0.72, edgeProximity);
+  float q = clamp(state.q, 0.0, 1.0);
+  float refractBand = smoothstep(0.62, 0.84, q) *
+      (1.0 - smoothstep(0.88, 0.995, q));
+  float rim = smoothstep(0.82, 0.995, q);
+  float centerProfile = 1.0 - smoothstep(0.28, 0.68, q);
 
   // Magnification 只作用中央区域，Refraction/Chromatic 只作用边缘
   // 内侧的 ring，避免两套位移在整块 Lens 上叠成鱼眼。
@@ -124,8 +145,9 @@ void main() {
   float facingShade = max(dot(normal, -lightDirection), 0.0);
   float specular = pow(facingLight, 5.0) * rim;
   color += vec3(specular * uLightStrength);
-  color -= vec3(facingShade * rim * 0.045 * uLightStrength);
-  color += vec3(rim * uRimStrength);
+  color -= vec3(facingShade * rim * 0.035 * uLightStrength);
+  // Rim 只保留很轻的厚度提示，不用无方向白线冒充玻璃边缘。
+  color += vec3(rim * uRimStrength * 0.24);
 
   // 拖动状态略微提高边缘响应，静止时保持克制。
   color += vec3(refractBand * uDragState * 0.018);

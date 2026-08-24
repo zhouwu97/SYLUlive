@@ -110,12 +110,16 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('首尾 Lens 中心与固定 Tab 中心对齐且允许被 Dock 裁切', (tester) async {
+  testWidgets('首尾 Lens 中心与固定 Tab 中心对齐且不受 Dock 裁剪限制', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));
     final firstItem = find.byKey(const ValueKey('bottom-nav-item-0'));
     final lastItem = find.byKey(const ValueKey('bottom-nav-item-4'));
 
+    expect(
+      find.ancestor(of: lensFinder, matching: find.byType(ClipRRect)),
+      findsNothing,
+    );
     expect(
       tester.getCenter(lensFinder).dx,
       closeTo(tester.getCenter(firstItem).dx, 1),

@@ -122,7 +122,15 @@ void main() {
     final selectionWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-selection')))
         .width;
-    expect(selectionWidth / (dockWidth / 5), closeTo(1.28, 0.01));
+    expect(selectionWidth / (dockWidth / 5), closeTo(1.0, 0.01));
+    final dockRect = tester.getRect(
+      find.byKey(const ValueKey('bottom-nav-floating-dock')),
+    );
+    final selectionRect = tester.getRect(
+      find.byKey(const ValueKey('bottom-nav-selection')),
+    );
+    expect(selectionRect.left, greaterThanOrEqualTo(dockRect.left));
+    expect(selectionRect.right, lessThanOrEqualTo(dockRect.right));
   });
 
   testWidgets('V9 正式 Normal Row 始终 neutral/scale=1，Accent Copy 独立在窗口内',

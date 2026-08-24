@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -81,6 +82,7 @@ Future<_FreshnessPage> _pumpFeed(
   WidgetTester tester, {
   required int firstCount,
 }) async {
+  currentHomeTabIndex.value = 0;
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
@@ -142,8 +144,10 @@ void main() {
     await tester.dragFrom(const Offset(200, 600), const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    // 触发 60s 自动刷新 → 现在是探测语义。
-    await tester.pump(const Duration(seconds: 61));
+    // 模拟从其它 root tab 切回首页，触发可见页面 freshness probe。
+    currentHomeTabIndex.value = 1;
+    await tester.pump();
+    currentHomeTabIndex.value = 0;
     await tester.pumpAndSettle();
 
     // 阅读位置不被替换：旧帖仍在，新帖未出现。
@@ -175,7 +179,9 @@ void main() {
 
     expect(find.text('帖子 1'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 61));
+    currentHomeTabIndex.value = 1;
+    await tester.pump();
+    currentHomeTabIndex.value = 0;
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('feed-freshness-banner')), findsNothing);

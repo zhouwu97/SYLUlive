@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
+import '../services/async_action_guard.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
@@ -41,6 +42,7 @@ class MessageProvider extends ChangeNotifier {
   final Dio _dio;
   final bool _enableRealtime;
   final Random _random = Random.secure();
+  final AsyncActionGuard _sendActionGuard = AsyncActionGuard();
 
   List<Conversation> _conversations = [];
   List<Message> _messages = [];
@@ -890,6 +892,16 @@ class MessageProvider extends ChangeNotifier {
   Future<Message?> _sendPendingMessage(
     int targetUserId,
     String clientMessageId,
+  ) {
+    return _sendActionGuard.run<Message?>(
+      'message-send:$clientMessageId',
+      () => _sendPendingMessageOnce(targetUserId, clientMessageId),
+    );
+  }
+
+  Future<Message?> _sendPendingMessageOnce(
+    int targetUserId,
+    String clientMessageId,
   ) async {
     final sessionRequest = _captureSessionRequest();
     final pending = _messageByClientMessageID(clientMessageId);
@@ -922,6 +934,11 @@ class MessageProvider extends ChangeNotifier {
         options: Options(
           sendTimeout: _sendTimeout,
           receiveTimeout: _sendTimeout,
+          headers: <String, dynamic>{
+            // client_message_id 贯穿待发送、失败重试和服务端唯一约束，
+            // 同时作为跨请求的幂等键，避免响应丢失后重复创建私信。
+            'Idempotency-Key': 'message-$clientMessageId',
+          },
         ),
       );
       if (!_ownsSessionRequest(sessionRequest)) return null;

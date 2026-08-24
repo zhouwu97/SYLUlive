@@ -7,7 +7,9 @@ import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/topic.dart';
+import '../services/async_action_guard.dart';
 import '../services/post_cache_service.dart';
+import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
 
 /// 唯一描述一条 Feed 的状态、分页与缓存边界。
@@ -325,6 +327,8 @@ class PostProvider extends ChangeNotifier {
   final Map<String, Future<void>> _inflightRequests = {};
   final Map<int, Post> _canonicalPosts = {};
   final int _activeBoardId = 1;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
+  final Map<String, String> _idempotencyKeys = <String, String>{};
 
   PostProvider(this._dio, {bool enableCache = true})
       : _enableCache = enableCache;
@@ -449,8 +453,7 @@ class PostProvider extends ChangeNotifier {
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
   void invalidateFollowingFeed() {
-    final keys =
-        _boards.keys.where((key) => key.sort == 'following').toList();
+    final keys = _boards.keys.where((key) => key.sort == 'following').toList();
 
     for (final key in keys) {
       _boards[key]?.requestVersion++;
@@ -1095,6 +1098,12 @@ class PostProvider extends ChangeNotifier {
     DateTime? teamDeadline,
     List<TopicSelection>? topics,
   }) async {
+    final actionKey =
+        'post-create:$boardId:$content:$title:$postType:$waterTagId:$price:'
+        '$contactType:$contact:$fileIds:$marketTags:$teamNeededCount:'
+        '$teamRoles:$teamDeadline:$topics';
+    final idempotencyKey =
+        _idempotencyKeys[actionKey] ??= newIdempotencyKey('post-create');
     try {
       final formData = FormData.fromMap({
         'board_id': boardId,
@@ -1119,7 +1128,14 @@ class PostProvider extends ChangeNotifier {
               jsonEncode(topics.map((topic) => topic.toJson()).toList()),
       });
 
-      final response = await _dio.post('/posts', data: formData);
+      final response = await _actionGuard.run<Response<dynamic>>(
+        actionKey,
+        () => _dio.post(
+          '/posts',
+          data: formData,
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
       if (response.statusCode == 201) {
         final created = response.data is Map<String, dynamic>
             ? Post.fromJson(response.data as Map<String, dynamic>)
@@ -1127,6 +1143,7 @@ class PostProvider extends ChangeNotifier {
         if (created != null) {
           _upsertPostInBoards(created);
         }
+        _idempotencyKeys.remove(actionKey);
         return CreatePostResult(success: true, post: created);
       }
       return CreatePostResult(
@@ -1160,6 +1177,12 @@ class PostProvider extends ChangeNotifier {
     bool sendWaterTagField = false,
     List<TopicSelection>? topics,
   }) async {
+    final actionKey =
+        'post-update:$postId:$boardId:$content:$title:$postType:$waterTagId:'
+        '$price:$contactType:$contact:$fileIds:$marketTags:$teamNeededCount:'
+        '$teamRoles:$teamDeadline:$sendTeamFields:$sendWaterTagField:$topics';
+    final idempotencyKey =
+        _idempotencyKeys[actionKey] ??= newIdempotencyKey('post-update');
     try {
       final formData = FormData.fromMap({
         'board_id': boardId,
@@ -1184,11 +1207,19 @@ class PostProvider extends ChangeNotifier {
               jsonEncode(topics.map((topic) => topic.toJson()).toList()),
       });
 
-      final response = await _dio.put('/posts/$postId', data: formData);
+      final response = await _actionGuard.run<Response<dynamic>>(
+        actionKey,
+        () => _dio.put(
+          '/posts/$postId',
+          data: formData,
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
       if (response.statusCode == 200) {
         final updated = Post.fromJson(response.data as Map<String, dynamic>);
         _replacePostInBoards(updated);
         notifyListeners();
+        _idempotencyKeys.remove(actionKey);
         return CreatePostResult(success: true, post: updated);
       }
       return CreatePostResult(
@@ -1207,15 +1238,23 @@ class PostProvider extends ChangeNotifier {
     required int postId,
     required String status,
   }) async {
+    final actionKey = 'post-status:$postId:$status';
+    final idempotencyKey =
+        _idempotencyKeys[actionKey] ??= newIdempotencyKey('post-status');
     try {
-      final response = await _dio.patch(
-        '/posts/$postId/status',
-        data: {'status': status},
+      final response = await _actionGuard.run<Response<dynamic>>(
+        actionKey,
+        () => _dio.patch(
+          '/posts/$postId/status',
+          data: {'status': status},
+          options: _writeOptions(idempotencyKey),
+        ),
       );
       if (response.statusCode == 200 && response.data != null) {
         final updated = Post.fromJson(response.data as Map<String, dynamic>);
         _replacePostInBoards(updated);
         notifyListeners();
+        _idempotencyKeys.remove(actionKey);
         return updated;
       }
     } on DioException catch (e) {
@@ -1279,9 +1318,24 @@ class PostProvider extends ChangeNotifier {
     return 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
   }
 
+  Options _writeOptions(String idempotencyKey) {
+    return Options(headers: <String, dynamic>{
+      'Idempotency-Key': idempotencyKey,
+    });
+  }
+
   Future<DeletePostResult> deletePostDetailed(int postId) async {
+    final actionKey = 'post-delete:$postId';
+    final idempotencyKey =
+        _idempotencyKeys[actionKey] ??= newIdempotencyKey('post-delete');
     try {
-      final response = await _dio.delete('/posts/$postId');
+      final response = await _actionGuard.run<Response<dynamic>>(
+        actionKey,
+        () => _dio.delete(
+          '/posts/$postId',
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
       if (response.statusCode == 200) {
         bool changedAny = false;
         for (final board in _boards.values) {
@@ -1295,6 +1349,7 @@ class PostProvider extends ChangeNotifier {
         if (changedAny) {
           notifyListeners();
         }
+        _idempotencyKeys.remove(actionKey);
         return const DeletePostResult(success: true);
       }
       return DeletePostResult(
@@ -1316,9 +1371,19 @@ class PostProvider extends ChangeNotifier {
   }
 
   Future<DeletePostResult> deleteReplyDetailed(int replyId) async {
+    final actionKey = 'reply-delete:$replyId';
+    final idempotencyKey =
+        _idempotencyKeys[actionKey] ??= newIdempotencyKey('reply-delete');
     try {
-      final response = await _dio.delete('/replies/$replyId');
+      final response = await _actionGuard.run<Response<dynamic>>(
+        actionKey,
+        () => _dio.delete(
+          '/replies/$replyId',
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
       if (response.statusCode == 200) {
+        _idempotencyKeys.remove(actionKey);
         return const DeletePostResult(success: true);
       }
       return DeletePostResult(

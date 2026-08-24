@@ -44,6 +44,7 @@ type submitAIRunConsentRequest struct {
 type submitAIRunFeedbackRequest struct {
 	Signal        string `json:"signal"`
 	FailureReason string `json:"failure_reason"`
+	Note          string `json:"note"`
 }
 
 func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
@@ -275,14 +276,14 @@ func (h *AIRuntimeHandler) SubmitRunFeedback(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(request.Signal) != "" {
-		if err := h.runtime.RecordUserSignal(c.Request.Context(), userID, runID, signal); err != nil {
+		if err := h.runtime.RecordUserSignal(c.Request.Context(), userID, runID, signal, request.Note); err != nil {
 			writeAIRuntimeError(c, err)
 			return
 		}
 		result["signal"] = signal
 	}
 	if strings.TrimSpace(request.FailureReason) != "" {
-		candidate, err := h.runtime.ClassifyFailure(c.Request.Context(), userID, runID, reason)
+		candidate, err := h.runtime.ClassifyFailure(c.Request.Context(), userID, runID, reason, request.Note)
 		if err != nil {
 			writeAIRuntimeError(c, err)
 			return
@@ -303,6 +304,24 @@ func (h *AIRuntimeHandler) GetRunMetrics(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run_id": c.Param("id"), "metrics": metrics})
+}
+
+func (h *AIRuntimeHandler) DeleteRunObservability(c *gin.Context) {
+	result, err := h.runtime.DeleteRunObservability(c.Request.Context(), c.GetUint("user_id"), c.Param("id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": result})
+}
+
+func (h *AIRuntimeHandler) DeleteUserObservability(c *gin.Context) {
+	result, err := h.runtime.DeleteUserObservability(c.Request.Context(), c.GetUint("user_id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": result})
 }
 
 func (h *AIRuntimeHandler) Events(c *gin.Context) {

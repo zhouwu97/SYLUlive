@@ -14,6 +14,7 @@ import '../models/ai_quick_prompt.dart';
 import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
+import '../models/ai_run_feedback.dart';
 import '../models/ai_source.dart';
 import '../models/agent_context.dart';
 import '../models/user_calendar.dart';
@@ -102,6 +103,7 @@ class AiAssistantProvider extends ChangeNotifier {
   String? _conversationId;
   AiPendingSubmission? _lastFailedSubmission;
   int _lastEventSeq = 0;
+  final Set<String> _sentRunSignals = <String>{};
   bool _loading = false;
   bool _loadingConversations = false;
   bool _disposed = false;
@@ -511,6 +513,7 @@ class AiAssistantProvider extends ChangeNotifier {
 
   AiSubmitResult _startSubmission(AiPendingSubmission submission) {
     final sessionRequest = _captureSessionRequest();
+    _recordUserIntentSignals(submission.message);
     _error = null;
     _lastFailedSubmission = null;
     _streamedText = '';
@@ -620,6 +623,7 @@ class AiAssistantProvider extends ChangeNotifier {
       _connectionState = AiConnectionState.cancelled;
       _error = '已取消本次回答';
       _streamGeneration++;
+      unawaited(_recordRunSignalOnce(runId, 'run.abandoned'));
       _notify();
       unawaited(refreshCapabilities(silent: true));
     } on AiAssistantServiceException catch (exception) {
@@ -823,6 +827,9 @@ class AiAssistantProvider extends ChangeNotifier {
       _lastEventSeq = event.seq;
     }
     _currentRun = event;
+    if (_isVisibleAgentActivity(event.type)) {
+      unawaited(_recordRunSignalOnce(event.runId, 'run.first_activity'));
+    }
     if (_isAgentEvent(event.type)) {
       _agentEvent = event;
       _agentFlowCompleted = false;
@@ -838,6 +845,9 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.delta:
         _connectionState = AiConnectionState.streaming;
         _streamedText += event.text;
+        if (aiVisibleCharacterCount(_streamedText) >= 8) {
+          unawaited(_recordRunSignalOnce(event.runId, 'answer.first_useful'));
+        }
         _upsertAssistant(
           _streamedText,
           AiMessageStatus.streaming,
@@ -1265,6 +1275,112 @@ class AiAssistantProvider extends ChangeNotifier {
     _error = null;
   }
 
+  Future<void> submitFeedback(
+    AiChatMessage message,
+    AiRunFeedback feedback,
+  ) async {
+    final index = _messages.indexWhere((item) => item.id == message.id);
+    if (index < 0 || message.requestId.trim().isEmpty) return;
+    final current = _messages[index];
+    if (current.feedbackStatus == AiFeedbackStatus.submitting ||
+        current.feedbackStatus == AiFeedbackStatus.positive ||
+        current.feedbackStatus == AiFeedbackStatus.negative) {
+      return;
+    }
+    _messages[index] = current.copyWith(
+      feedbackStatus: AiFeedbackStatus.submitting,
+      feedbackError: '',
+    );
+    _notify();
+    try {
+      await _service.submitRunFeedback(
+        runId: message.requestId,
+        feedback: feedback,
+      );
+      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      if (updatedIndex >= 0) {
+        _messages[updatedIndex] = _messages[updatedIndex].copyWith(
+          feedbackStatus: feedback.rating == AiFeedbackRating.positive
+              ? AiFeedbackStatus.positive
+              : AiFeedbackStatus.negative,
+          feedbackReason: feedback.reason,
+          feedbackError: '',
+        );
+      }
+    } on AiAssistantServiceException catch (error) {
+      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      if (updatedIndex >= 0) {
+        _messages[updatedIndex] = _messages[updatedIndex].copyWith(
+          feedbackStatus: AiFeedbackStatus.failed,
+          feedbackError: error.message,
+        );
+      }
+    } catch (_) {
+      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      if (updatedIndex >= 0) {
+        _messages[updatedIndex] = _messages[updatedIndex].copyWith(
+          feedbackStatus: AiFeedbackStatus.failed,
+          feedbackError: '提交反馈失败，请重试',
+        );
+      }
+    }
+    _notify();
+  }
+
+  void _recordUserIntentSignals(String message) {
+    final previousAssistant = _messages.lastWhere(
+      (item) =>
+          item.role == AiMessageRole.assistant &&
+          item.requestId.trim().isNotEmpty &&
+          item.status == AiMessageStatus.completed,
+      orElse: () => const AiChatMessage(
+        id: '',
+        requestId: '',
+        role: AiMessageRole.user,
+        content: '',
+        status: AiMessageStatus.failed,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
+    );
+    if (previousAssistant.requestId.isEmpty) return;
+    final age = DateTime.now().difference(previousAssistant.createdAt);
+    if (age.isNegative || age > const Duration(minutes: 3)) return;
+    if (_looksLikeCorrection(message)) {
+      unawaited(_recordRunSignalOnce(
+          previousAssistant.requestId, 'possible_user_correction'));
+    }
+    if (_looksLikeRephrase(message, previousAssistant.content)) {
+      unawaited(_recordRunSignalOnce(
+          previousAssistant.requestId, 'run.rephrased'));
+    }
+  }
+
+  bool _looksLikeCorrection(String message) => RegExp(
+        r'(不是|理解错|我说的是|我指的是|不用查|别查|不该访问|你弄错)',
+      ).hasMatch(normalizeAiMessage(message));
+
+  bool _looksLikeRephrase(String message, String answer) {
+    final input = normalizeAiMessage(message);
+    if (input.characters.length < 8 || answer.trim().isEmpty) return false;
+    return !_looksLikeCorrection(input) &&
+        (input.contains('换个说法') ||
+            input.contains('重新') ||
+            input.contains('再说') ||
+            input.contains('具体一点'));
+  }
+
+  Future<void> _recordRunSignalOnce(String runId, String signal) async {
+    final normalizedRunId = runId.trim();
+    if (normalizedRunId.isEmpty) return;
+    final key = '$normalizedRunId:$signal';
+    if (!_sentRunSignals.add(key)) return;
+    try {
+      await _service.recordRunSignal(runId: normalizedRunId, signal: signal);
+    } catch (_) {
+      // 行为指标是 best effort；失败不影响回答、取消或重连。
+    }
+  }
+
   void clearError() {
     if (_error == null) return;
     _error = null;
@@ -1341,6 +1457,21 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.failed ||
         AiRunEventType.cancelled =>
           true,
+        _ => false,
+      };
+
+  bool _isVisibleAgentActivity(AiRunEventType type) => switch (type) {
+        AiRunEventType.toolRequested ||
+        AiRunEventType.toolExecuting ||
+        AiRunEventType.deviceWaiting ||
+        AiRunEventType.deviceClaimed ||
+        AiRunEventType.agentActivity ||
+        AiRunEventType.goalUpdated ||
+        AiRunEventType.contextResolved ||
+        AiRunEventType.planRevised ||
+        AiRunEventType.consentRequired ||
+        AiRunEventType.eduFetching ||
+        AiRunEventType.toolCompleted => true,
         _ => false,
       };
 

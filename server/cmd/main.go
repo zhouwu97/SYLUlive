@@ -1002,6 +1002,22 @@ func main() {
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}
+		go func() {
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case now := <-ticker.C:
+					if deleted, cleanupErr := aiRuntime.ReclaimObservabilityData(appCtx, now.UTC()); cleanupErr != nil {
+						log.Printf("[AI_OBSERVABILITY_CLEANUP_FAILED] %v", cleanupErr)
+					} else if deleted > 0 {
+						log.Printf("[AI_OBSERVABILITY_CLEANUP] events=%d", deleted)
+					}
+				}
+			}
+		}()
 		ingestionWorker := services.NewKnowledgeIngestionWorker(db, ragClient, cfg.RAGEmbeddingModelVersion)
 		go ingestionWorker.Start(appCtx)
 		go func() {
@@ -2191,6 +2207,7 @@ func main() {
 	adminAI := r.Group("/api/admin/ai")
 	adminAI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	adminAI.GET("/metrics", adminAIHandler.GetMetrics)
+	adminAI.GET("/gray-dashboard", adminAIHandler.GetGrayDashboard)
 
 	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
@@ -2209,9 +2226,11 @@ func main() {
 			middleware.AIAccessMiddleware(cfg.AIEnabled),
 		)
 		{
+			aiProtected.DELETE("/observability", aiRuntimeHandler.DeleteUserObservability)
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/metrics", aiRuntimeHandler.GetRunMetrics)
+			aiProtected.DELETE("/runs/:id/observability", aiRuntimeHandler.DeleteRunObservability)
 			aiProtected.GET("/runs/:id/sources", aiRuntimeHandler.GetRunSources)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)

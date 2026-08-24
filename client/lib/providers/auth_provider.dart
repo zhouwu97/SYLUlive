@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
@@ -21,6 +22,7 @@ import '../services/keep_alive_service.dart';
 import '../services/grade_reminder_service.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
+import '../services/forbidden_recovery_router.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../platform/app_platform.dart';
@@ -283,6 +285,7 @@ class AuthProvider extends ChangeNotifier {
   final bool _usesPlatformCredentialStore;
   final VoidCallback _onAuthenticated;
   final AccountSessionCleanupCoordinator _sessionCleanupCoordinator;
+  final void Function(ForbiddenRecoveryRoute route)? _onForbiddenRecovery;
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -294,6 +297,7 @@ class AuthProvider extends ChangeNotifier {
   int _accountSessionEpoch = 0;
   bool _applyingConsentRestriction = false;
   AuthState _authState = AuthState.unknown;
+  ForbiddenRecoveryRoute? _lastForbiddenRecovery;
 
   User? get user => _user;
   String? get token => _token;
@@ -301,6 +305,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _authState == AuthState.authenticated;
   bool get isInitialized => _initialized;
+  ForbiddenRecoveryRoute? get lastForbiddenRecovery => _lastForbiddenRecovery;
 
   void _setAuthState(AuthState state) {
     if (_authState != state) {
@@ -320,11 +325,13 @@ class AuthProvider extends ChangeNotifier {
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
     AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
+    void Function(ForbiddenRecoveryRoute route)? onForbiddenRecovery,
   })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
         _usesPlatformCredentialStore = credentialStore == null,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
-            AccountSessionCleanupCoordinator.instance {
+            AccountSessionCleanupCoordinator.instance,
+        _onForbiddenRecovery = onForbiddenRecovery {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -411,12 +418,10 @@ class AuthProvider extends ChangeNotifier {
             });
           }
           if (status == 403 &&
-              (errorCode == 'legal_consent_withdrawn' ||
-                  errorCode == 'legal_consent_required') &&
+              requestHadAuth &&
+              isCurrentSessionRequest &&
               _token != null) {
-            _applyLegalConsentRestriction(
-              required: errorCode == 'legal_consent_required',
-            );
+            _handleForbiddenRecovery(errorCode);
           }
           handler.next(error);
         },
@@ -482,6 +487,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _loadStoredAuth() async {
     final stopwatch = Stopwatch()..start();
+    var shouldClearCorruptedCredentials = false;
     _setAuthState(AuthState.loading);
     try {
       AppPreferencesStore? prefs;
@@ -501,6 +507,9 @@ class AuthProvider extends ChangeNotifier {
         final stored = await _credentialStore.read();
 
         if (stored.token != null && stored.userJson != null) {
+          // 从这里开始只要解析或校验失败，就说明两项凭据已形成损坏组合。
+          // 网络恢复失败（token-only）不走这条路径，避免误删可恢复会话。
+          shouldClearCorruptedCredentials = true;
           final decoded = jsonDecode(stored.userJson!);
           if (decoded is! Map) {
             throw const FormatException('本地用户信息不是对象');
@@ -584,6 +593,9 @@ class AuthProvider extends ChangeNotifier {
         result: 'failure',
         durationMs: stopwatch.elapsedMilliseconds,
       );
+      if (shouldClearCorruptedCredentials) {
+        await _clearCorruptedStoredAuth();
+      }
       _setAuthState(AuthState.guest);
     }
     _initialized = true;
@@ -652,6 +664,90 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _clearCorruptedStoredAuth() async {
+    try {
+      await _clearStoredAuth();
+      DiagnosticLogService.instance.record(
+        level: 'info',
+        source: '账号',
+        type: '认证缓存已清理',
+        summary: '已清除损坏的本地登录信息',
+        detail: '',
+        eventCode: 'auth_corrupted_cache_cleared',
+        category: 'auth',
+        operation: 'restore',
+        result: 'success',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('清除损坏认证缓存失败: $error');
+      DiagnosticLogService.instance.recordError(
+        source: '账号',
+        type: '认证缓存清理失败',
+        summary: '损坏的本地登录信息无法清除',
+        detail: '$error\n\n$stackTrace',
+        eventCode: 'auth_corrupted_cache_clear_failed',
+        category: 'auth',
+        operation: 'restore',
+        result: 'failure',
+      );
+      await _writeForceLoggedOutTombstone();
+    }
+  }
+
+  Future<void> _writeForceLoggedOutTombstone() async {
+    try {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setBool('auth_force_logged_out', true);
+    } catch (error) {
+      debugPrint('写入认证退出墓碑失败: $error');
+    }
+  }
+
+  void _handleForbiddenRecovery(Object? errorCode) {
+    final route = ForbiddenRecoveryRouter.resolve(errorCode);
+    if (route == null) return;
+
+    final previous = _lastForbiddenRecovery;
+    _lastForbiddenRecovery = route;
+    try {
+      _onForbiddenRecovery?.call(route);
+    } catch (error, stackTrace) {
+      debugPrint('执行 403 UI 恢复回调失败: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    if (route.requiresConsent) {
+      unawaited(
+        _applyLegalConsentRestriction(required: route.consentIsRequired),
+      );
+    } else if (previous?.code != route.code) {
+      // 管理员权限变化只通知 UI 收口，不把 403 错误升级为退出登录。
+      notifyListeners();
+    }
+
+    DiagnosticLogService.instance.record(
+      level: 'warning',
+      source: '权限',
+      type: '403 恢复路由',
+      summary: '服务端返回受限访问，已进入对应恢复流程',
+      detail: 'code=${route.code}',
+      eventCode: 'auth_forbidden_recovery',
+      category: 'auth',
+      operation: 'recover_forbidden',
+      result:
+          route.requiresConsent ? 'consent_required' : 'admin_ui_restricted',
+      httpStatus: 403,
+      metadata: <String, Object?>{'errorCode': route.code},
+    );
+  }
+
+  /// 页面完成对应恢复后调用，避免管理员旧状态一直被视为待处理。
+  void clearForbiddenRecovery() {
+    if (_lastForbiddenRecovery == null) return;
+    _lastForbiddenRecovery = null;
+    notifyListeners();
+  }
+
   /// 清理旧版本在本机保存的教务密码。教务凭据只允许由服务端加密保管。
   Future<void> _clearLegacyEduPasswords(
     AppPreferencesStore preferences,
@@ -698,6 +794,7 @@ class AuthProvider extends ChangeNotifier {
   void _commitAuthSession(_AuthSessionCandidate candidate) {
     _token = candidate.token;
     _user = candidate.user;
+    _lastForbiddenRecovery = null;
     _sessionGeneration++;
     _accountSessionEpoch++;
     _applyAuthHeader();
@@ -1008,6 +1105,7 @@ class AuthProvider extends ChangeNotifier {
     await _clearAccountNotificationState();
     _token = null;
     _user = null;
+    _lastForbiddenRecovery = null;
     if (_authState != AuthState.expired) {
       _setAuthState(AuthState.guest);
     }

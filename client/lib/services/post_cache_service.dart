@@ -250,6 +250,14 @@ class PostCacheService {
     return deletedCount;
   }
 
+  /// 清理帖子缓存，不触碰认证凭据和其它用户数据。
+  ///
+  /// 仅由启动恢复等明确的非敏感缓存恢复路径调用。
+  static Future<void> clearAllCache() async {
+    final box = await _openBox();
+    await box.clear();
+  }
+
   /// 清除指定板块缓存
   static Future<void> clearBoard(int boardId) async {
     final box = await _openBox();

@@ -17,6 +17,7 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_feedback.dart';
+import '../utils/app_navigator.dart' show currentHomeTabIndex;
 import '../utils/post_route.dart';
 import '../utils/search_focus_gate.dart';
 
@@ -34,6 +35,7 @@ import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
+import '../services/app_resume_coordinator.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
@@ -157,8 +159,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   static const double _freshnessNearTopThreshold = 160;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  Timer? _autoRefreshTimer;
   Timer? _announcementDelayTimer;
+  VoidCallback? _unregisterResumeRefresh;
+  bool _refreshVisibleStateInFlight = false;
   List<model.Announcement> _announcements = [];
   List<model.Announcement> _unreadAnnouncements = [];
   List<UnreadReplyNotification> _unreadReplyNotifications = [];
@@ -180,7 +183,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // FEED-3 桌面分屏：当前打开帖子的 open/dwell 归因上下文。
   _SplitOrigin? _splitOrigin;
 
-  static const _autoRefreshInterval = Duration(seconds: 60);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -253,6 +255,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ValueNotifier<double>(_currentModeIndex.toDouble());
 
     WidgetsBinding.instance.addObserver(this);
+    currentHomeTabIndex.addListener(_handleHomeTabVisibilityChanged);
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshVisibleState,
+      isVisible: () => currentHomeTabIndex.value == 0,
+    );
     ReplyNotificationState.instance
         .addListener(_handleReplyNotificationStateChanged);
     _feedSwitchController = AnimationController(
@@ -267,7 +275,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       if (initialSort != null && _canLoadFeedMode(_feedMode)) {
         postProvider.loadPosts(boardId: 1, sort: initialSort);
       }
-      _startAutoRefresh();
       _ensureCheckinStatusLoaded();
       unawaited(_loadUnreadReplyNotifications());
 
@@ -276,7 +283,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
       // 延迟加载其他非核心数据
       _announcementDelayTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted) {
+        if (mounted && currentHomeTabIndex.value == 0) {
           unawaited(_loadAnnouncements());
         }
       });
@@ -285,18 +292,37 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        unawaited(_probeFeedFreshness());
-      }
-      _loadAnnouncements();
-      unawaited(_loadUnreadReplyNotifications());
-      unawaited(_ensureCheckinStatusLoaded(force: true));
-      _startAutoRefresh();
-    } else if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       unawaited(_persistCommunityState());
       _feedEventService.flushNow(); // 应用进入后台时尝试清空事件队列
-      _stopAutoRefresh();
+    }
+  }
+
+  void _handleHomeTabVisibilityChanged() {
+    if (!mounted || currentHomeTabIndex.value != 0) return;
+    unawaited(_refreshVisibleState());
+  }
+
+  Future<void> _refreshVisibleState() async {
+    if (!mounted ||
+        currentHomeTabIndex.value != 0 ||
+        _refreshVisibleStateInFlight) {
+      return;
+    }
+    _refreshVisibleStateInFlight = true;
+    try {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
+        await _probeFeedFreshness();
+      }
+      if (!mounted || currentHomeTabIndex.value != 0) return;
+      await Future.wait([
+        _loadAnnouncements(),
+        _loadUnreadReplyNotifications(),
+        _ensureCheckinStatusLoaded(force: true),
+      ]);
+    } finally {
+      _refreshVisibleStateInFlight = false;
     }
   }
 
@@ -338,23 +364,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     });
   }
 
-  void _startAutoRefresh() {
-    _stopAutoRefresh();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
-      if (!mounted) return;
-      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        unawaited(_probeFeedFreshness());
-      }
-      _loadAnnouncements();
-      unawaited(_loadUnreadReplyNotifications());
-    });
-  }
-
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
-  }
-
   void _handleReplyNotificationStateChanged() {
     final change = ReplyNotificationState.instance.lastChange;
     if (change == null) return;
@@ -381,9 +390,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    currentHomeTabIndex.removeListener(_handleHomeTabVisibilityChanged);
+    _unregisterResumeRefresh?.call();
     ReplyNotificationState.instance
         .removeListener(_handleReplyNotificationStateChanged);
-    _stopAutoRefresh();
     _announcementDelayTimer?.cancel();
     _announcementDelayTimer = null;
     unawaited(_persistCommunityState());

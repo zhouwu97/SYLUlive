@@ -96,22 +96,47 @@ class PollService {
 
   Future<Post> getPoll(int pollId) => _post(() => dio.get('/polls/$pollId'));
 
-  Future<Post> createPoll(PollDraft draft) =>
-      _post(() => dio.post('/polls', data: draft.toJson()));
-
-  Future<Post> updatePoll(int pollId, PollDraft draft) =>
-      _post(() => dio.put('/polls/$pollId', data: draft.toJson()));
-
-  Future<Post> putBallot(int pollId, List<int> optionIds) => _post(
-        () => dio.put('/polls/$pollId/ballot', data: {'option_ids': optionIds}),
+  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) => _post(
+        () => dio.post(
+          '/polls',
+          data: draft.toJson(),
+          options: _writeOptions(idempotencyKey),
+        ),
       );
 
-  Future<Post> closePoll(int pollId) =>
-      _post(() => dio.post('/polls/$pollId/close'));
+  Future<Post> updatePoll(int pollId, PollDraft draft,
+          {String? idempotencyKey}) =>
+      _post(
+        () => dio.put(
+          '/polls/$pollId',
+          data: draft.toJson(),
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
 
-  Future<void> deletePoll(int pollId) async {
+  Future<Post> putBallot(int pollId, List<int> optionIds,
+          {String? idempotencyKey}) =>
+      _post(
+        () => dio.put(
+          '/polls/$pollId/ballot',
+          data: {'option_ids': optionIds},
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
+
+  Future<Post> closePoll(int pollId, {String? idempotencyKey}) => _post(
+        () => dio.post(
+          '/polls/$pollId/close',
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
+
+  Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {
     try {
-      await dio.delete('/polls/$pollId');
+      await dio.delete(
+        '/polls/$pollId',
+        options: _writeOptions(idempotencyKey),
+      );
     } on DioException catch (error) {
       throw _mapError(error);
     }
@@ -162,6 +187,12 @@ class PollService {
     } on DioException catch (error) {
       throw _mapError(error);
     }
+  }
+
+  Options? _writeOptions(String? idempotencyKey) {
+    final key = idempotencyKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
   }
 
   PollApiException _mapError(DioException error) {

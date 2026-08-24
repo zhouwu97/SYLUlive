@@ -24,6 +24,8 @@ import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../services/emoji_favorite_service.dart';
+import '../services/async_action_guard.dart';
+import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_clipboard.dart';
 import '../widgets/report_sheet.dart';
@@ -186,8 +188,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   bool _isLoading = true;
   String? _errorMessage;
   final _replyComposerController = PostReplyComposerController();
+  final AsyncActionGuard _replyActionGuard = AsyncActionGuard();
   late final Listenable _replyComposerActivity;
   bool _isSending = false;
+  String? _replyIdempotencyKey;
+  String? _replyIdempotencyFingerprint;
+  final Map<String, List<int>> _replyUploadedFileIds = <String, List<int>>{};
   bool _hasPendingFeaturedApp = false;
 
   int? _activeTargetReplyId;
@@ -513,23 +519,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     });
   }
 
-  Future<Reply?> _createReplyFromDraft(PostReplyDraft draft) async {
+  Future<Reply?> _createReplyFromDraft(PostReplyDraft draft) {
+    return _replyActionGuard.run<Reply?>(
+      _replyActionKey(draft),
+      () => _createReplyFromDraftOnce(draft),
+    );
+  }
+
+  Future<Reply?> _createReplyFromDraftOnce(PostReplyDraft draft) async {
     if (draft.isEmpty) return null;
     if (!context.read<AuthProvider>().isLoggedIn) {
       _openReplyLogin();
       return null;
     }
 
-    final fileIds = <int>[];
-    if (draft.localImage != null) {
-      fileIds.add(
-        await _uploadLocalImage(
-          draft.localImage!.path,
-          draft.localImage!.name,
-        ),
-      );
-    } else if (draft.favoriteImage != null) {
-      fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!));
+    final fingerprint = _replyActionKey(draft);
+    if (_replyIdempotencyFingerprint != fingerprint) {
+      _replyIdempotencyFingerprint = fingerprint;
+      _replyIdempotencyKey = newIdempotencyKey('reply');
+    }
+    final cachedFileIds = _replyUploadedFileIds[fingerprint];
+    final fileIds =
+        cachedFileIds == null ? <int>[] : List<int>.from(cachedFileIds);
+    if (cachedFileIds == null) {
+      if (draft.localImage != null) {
+        fileIds.add(
+          await _uploadLocalImage(
+            draft.localImage!.path,
+            draft.localImage!.name,
+          ),
+        );
+      } else if (draft.favoriteImage != null) {
+        fileIds.add(await _uploadFavoriteImage(draft.favoriteImage!));
+      }
+      _replyUploadedFileIds[fingerprint] = List<int>.from(fileIds);
     }
     return _submitReplyContent(
       content: draft.text,
@@ -539,6 +562,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       replyToUserId: draft.replyToUserId,
       // 底部输入区回复的是根评论本身；楼中楼 sheet 会传精确目标。
       replyToReplyId: draft.replyToReplyId ?? draft.parentReplyId,
+      idempotencyKey: _replyIdempotencyKey,
+      idempotencyFingerprint: fingerprint,
     );
   }
 
@@ -637,6 +662,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required int? parentReplyId,
     required int? replyToUserId,
     int? replyToReplyId,
+    String? idempotencyKey,
+    String? idempotencyFingerprint,
   }) async {
     int? tempReplyId;
 
@@ -691,8 +718,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         if (replyToReplyId != null)
           'reply_to_reply_id': replyToReplyId.toString(),
       });
-      final createResponse =
-          await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      final createResponse = await _dio.post(
+        '/posts/${widget.postId}/replies',
+        data: formData,
+        options: Options(headers: <String, dynamic>{
+          if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
+        }),
+      );
       final createdReply = createResponse.data is Map<String, dynamic>
           ? Reply.fromJson(createResponse.data as Map<String, dynamic>)
           : null;
@@ -701,6 +733,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       }
       // 静默刷新获取真实 ID（沿用当前排序，避免切回 hot 前的旧顺序残留）。
       await _loadReplies(sort: _replySort);
+      _replyIdempotencyKey = null;
+      _replyIdempotencyFingerprint = null;
+      if (idempotencyFingerprint != null) {
+        _replyUploadedFileIds.remove(idempotencyFingerprint);
+      }
       return createdReply;
     } on DioException catch (e) {
       if (mounted) {
@@ -719,6 +756,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       }
       return null;
     }
+  }
+
+  String _replyActionKey(PostReplyDraft draft) {
+    return 'post-reply:${widget.postId}:${draft.text}:${draft.parentReplyId}:'
+        '${draft.replyToUserId}:${draft.replyToReplyId}:'
+        '${draft.sticker?.id}:${draft.favoriteImage?.imageUrl}:'
+        '${draft.localImage?.path}';
   }
 
   ExpAward? _firstAwardWhere(

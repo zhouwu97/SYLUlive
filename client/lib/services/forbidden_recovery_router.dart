@@ -33,6 +33,25 @@ class ForbiddenRecoveryRoute {
 class ForbiddenRecoveryRouter {
   const ForbiddenRecoveryRouter._();
 
+  /// 403 恢复后是否允许业务层重新发起原请求。
+  ///
+  /// 读取请求可以安全重试；写请求即使用户已经确认权限，也不能隐式重放，
+  /// 只有调用方明确携带稳定 Idempotency-Key 时才允许由业务层决定重试。
+  static bool canReplay({
+    required String method,
+    required bool hasIdempotencyKey,
+  }) {
+    final normalizedMethod = method.trim().toUpperCase();
+    if (normalizedMethod == 'GET' || normalizedMethod == 'HEAD') return true;
+    if (normalizedMethod == 'POST' ||
+        normalizedMethod == 'PUT' ||
+        normalizedMethod == 'PATCH' ||
+        normalizedMethod == 'DELETE') {
+      return hasIdempotencyKey;
+    }
+    return false;
+  }
+
   static ForbiddenRecoveryRoute? resolve(Object? rawCode) {
     final code = rawCode?.toString().trim();
     if (code == null || code.isEmpty) return null;

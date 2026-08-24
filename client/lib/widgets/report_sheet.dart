@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/async_action_guard.dart';
+import '../services/idempotency_key.dart';
 import 'glass_container.dart';
 
 /// 举报原因选项
@@ -51,6 +53,9 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
   String? _selectedReason;
   final _reasonController = TextEditingController();
   bool _submitting = false;
+  String? _idempotencyKey;
+  String? _idempotencyFingerprint;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
 
   Future<void> _submit() async {
     if (_selectedReason == null) {
@@ -63,6 +68,19 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
       return;
     }
 
+    await _actionGuard.run<void>(
+      'report:${widget.targetType}:${widget.targetId}',
+      _submitOnce,
+    );
+  }
+
+  Future<void> _submitOnce() async {
+    final fingerprint =
+        '${widget.targetType}:${widget.targetId}:$_selectedReason:${_reasonController.text}';
+    if (_idempotencyFingerprint != fingerprint) {
+      _idempotencyFingerprint = fingerprint;
+      _idempotencyKey = null;
+    }
     if (mounted) setState(() => _submitting = true);
 
     try {
@@ -75,7 +93,11 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
           'reason': _selectedReason,
           'detail': _reasonController.text,
         },
+        options: Options(headers: <String, dynamic>{
+          'Idempotency-Key': _idempotencyKey ??= newIdempotencyKey('report'),
+        }),
       );
+      _idempotencyKey = null;
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

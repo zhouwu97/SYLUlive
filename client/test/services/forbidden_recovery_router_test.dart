@@ -24,4 +24,33 @@ void main() {
     );
     expect(ForbiddenRecoveryRouter.resolve('other_forbidden'), isNull);
   });
+
+  test('403 恢复只允许安全读取自动重试，写请求必须有幂等键', () {
+    expect(
+      ForbiddenRecoveryRouter.canReplay(
+          method: 'GET', hasIdempotencyKey: false),
+      isTrue,
+    );
+    expect(
+      ForbiddenRecoveryRouter.canReplay(
+          method: 'HEAD', hasIdempotencyKey: false),
+      isTrue,
+    );
+    for (final method in ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect(
+        ForbiddenRecoveryRouter.canReplay(
+          method: method,
+          hasIdempotencyKey: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ForbiddenRecoveryRouter.canReplay(
+          method: method,
+          hasIdempotencyKey: true,
+        ),
+        isTrue,
+      );
+    }
+  });
 }

@@ -37,11 +37,16 @@ func TestIdempotencySchemaUpgradeFromLegacyFixtures(t *testing.T) {
 			if err := db.Exec(string(source)).Error; err != nil {
 				t.Fatalf("执行旧库夹具失败: %v", err)
 			}
+			before := readMigrationFixtureCounts(t, db)
 			if err := EnsureIdempotencySchema(db); err != nil {
 				t.Fatalf("升级旧库失败: %v", err)
 			}
 			if err := EnsureIdempotencySchema(db); err != nil {
 				t.Fatalf("重复执行迁移失败: %v", err)
+			}
+			after := readMigrationFixtureCounts(t, db)
+			if before != after {
+				t.Fatalf("迁移破坏了旧业务数据: before=%+v after=%+v", before, after)
 			}
 
 			record := IdempotencyRecord{
@@ -60,6 +65,35 @@ func TestIdempotencySchemaUpgradeFromLegacyFixtures(t *testing.T) {
 			}
 		})
 	}
+}
+
+type migrationFixtureCounts struct {
+	users       int64
+	posts       int64
+	postTopics  int64
+	postContent string
+}
+
+func readMigrationFixtureCounts(t *testing.T, db *gorm.DB) migrationFixtureCounts {
+	t.Helper()
+	var counts migrationFixtureCounts
+	if err := db.Table("migration_fixture_users").Count(&counts.users).Error; err != nil {
+		t.Fatalf("统计旧用户数据失败: %v", err)
+	}
+	if err := db.Table("migration_fixture_posts").Count(&counts.posts).Error; err != nil {
+		t.Fatalf("统计旧帖子数据失败: %v", err)
+	}
+	if err := db.Table("migration_fixture_post_topics").Count(&counts.postTopics).Error; err != nil {
+		t.Fatalf("统计旧帖子关系失败: %v", err)
+	}
+	var post struct {
+		Content string
+	}
+	if err := db.Table("migration_fixture_posts").Select("content").Where("id = ?", 10).Scan(&post).Error; err != nil {
+		t.Fatalf("读取旧帖子内容失败: %v", err)
+	}
+	counts.postContent = post.Content
+	return counts
 }
 
 func openIdempotencyMigrationDB(t *testing.T, dsn string) (*gorm.DB, func()) {

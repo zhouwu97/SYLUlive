@@ -60,6 +60,7 @@ import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/user_calendar_service.dart';
 import 'services/post_cache_service.dart';
+import 'services/forbidden_recovery_router.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
@@ -70,7 +71,10 @@ import 'features/ai_device_bridge/device_tool_worker.dart';
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
+import 'widgets/app_crash_fallback.dart';
+import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -155,6 +159,7 @@ _FlutterErrorLogInfo _classifyFlutterError(FlutterErrorDetails details) {
 }
 
 final Map<String, int> _dedupTimes = {};
+VoidCallback? _appRecoveryRetry;
 
 void _safeRecord({
   required String level,
@@ -204,10 +209,56 @@ String _diagnosticCategoryFor(String source) => switch (source) {
       _ => 'app',
     };
 
+String _startupDiagnosticText(Object error, StackTrace stackTrace) {
+  return [
+    'SYLUlive 启动诊断',
+    '时间：${DateTime.now().toIso8601String()}',
+    '错误：$error',
+    '',
+    stackTrace.toString(),
+  ].join('\n');
+}
+
+Future<void> _clearNonSensitiveStartupCache() async {
+  Object? firstError;
+  StackTrace? firstStackTrace;
+
+  try {
+    await PostCacheService.clearAllCache();
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+
+  try {
+    final preferences = await AppPreferencesStore.getInstance();
+    await Future.wait([
+      preferences.remove(RootPageStateStore.communityFeedModeKey),
+      preferences.remove(RootPageStateStore.communityFeedScrollKey),
+      preferences.remove(RootPageStateStore.lastPageKey),
+    ]);
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+
+  if (firstError != null) {
+    Error.throwWithStackTrace(
+        firstError, firstStackTrace ?? StackTrace.current);
+  }
+}
+
+Future<void> _retryAppBootstrap() async {
+  await appBootstrap();
+}
+
 Future<void> appBootstrap() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      _appRecoveryRetry = null;
+      // 在任何本地数据库或平台服务初始化前先挂载最小壳，确保失败时有可见 UI。
+      runApp(const StartupRecoveryScreen());
       await _initializeNativeNotificationOpenBridge();
 
       FlutterError.onError = (FlutterErrorDetails details) {
@@ -274,6 +325,21 @@ Future<void> appBootstrap() async {
         return true;
       };
 
+      ErrorWidget.builder = (details) {
+        final diagnosticId = _hashError(
+          'error',
+          'Flutter',
+          details.exception.runtimeType.toString(),
+          details.exceptionAsString(),
+          details.toString(),
+        );
+        return AppCrashFallback(
+          details: details,
+          diagnosticId: diagnosticId,
+          onRetry: _appRecoveryRetry,
+        );
+      };
+
       // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setSystemUIOverlayStyle(
@@ -296,7 +362,19 @@ Future<void> appBootstrap() async {
           operation: 'initialize',
           result: 'failure',
         );
-        rethrow;
+        runApp(
+          StartupRecoveryScreen(
+            error: error,
+            stackTrace: stackTrace,
+            diagnosticText: _startupDiagnosticText(error, stackTrace),
+            onRetry: _retryAppBootstrap,
+            onClearNonSensitiveCache: () async {
+              await _clearNonSensitiveStartupCache();
+              await _retryAppBootstrap();
+            },
+          ),
+        );
+        return;
       }
 
       PushSettingsService.configureRemoteRegistration(setupPush);
@@ -322,6 +400,7 @@ Future<void> appBootstrap() async {
         );
       }
 
+      _appRecoveryRetry = () => runApp(const MyApp());
       runApp(const MyApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1265,7 +1344,12 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
-        ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(
+            dio,
+            onForbiddenRecovery: _handleForbiddenRecovery,
+          ),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {
             final service = EmojiFavoriteService(
@@ -1548,6 +1632,19 @@ String _safeDeepLinkRoute(Uri? uri) {
   if (uri == null) return '';
   final authority = uri.host.isEmpty ? '' : '//${uri.host}';
   return '${uri.scheme}:$authority${uri.path}';
+}
+
+void _handleForbiddenRecovery(ForbiddenRecoveryRoute route) {
+  if (!route.requiresAdminUiShutdown) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (appNavigatorKey.currentState != null) {
+      // 管理员权限撤回时退出当前管理操作，避免旧页面继续提交操作。
+      appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+    }
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('账号权限已更新，管理员操作已关闭')),
+    );
+  });
 }
 
 /// 抽离 MaterialApp 构建，避免 Consumer 嵌套层级过深

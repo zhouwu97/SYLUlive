@@ -118,7 +118,7 @@ class StartupNavigationGate extends StatelessWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
+    with TickerProviderStateMixin, RouteAware {
   late final TabTransitionLedger _mainTabLedger;
   PageRoute<dynamic>? _subscribedRoute;
   bool _publishOpening = false;
@@ -136,6 +136,8 @@ class _HomeScreenState extends State<HomeScreen>
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
+  bool _isRouteVisible = true;
+  bool _announcementPollingStarting = false;
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
@@ -248,10 +250,10 @@ class _HomeScreenState extends State<HomeScreen>
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
-    WidgetsBinding.instance.addObserver(this);
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       () => _checkUnreadAnnouncements(),
+      isVisible: () => _isRouteVisible,
     );
     // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
     // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
@@ -410,7 +412,6 @@ class _HomeScreenState extends State<HomeScreen>
     _announcementRetryTimer?.cancel();
     _initialUpdateFallbackTimer?.cancel();
     _unregisterResumeRefresh?.call();
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -435,10 +436,43 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   @override
+  void didPush() {
+    _setRouteVisibility(true);
+  }
+
+  @override
   void didPopNext() {
     // 从深层页面（私信/帖子/通知）返回：底层 root tab 重新可见，
     // 由它自己保存「上次退出页面」，替代私信里硬编码的课表 index。
+    _setRouteVisibility(true);
     _saveCurrentTabAsLastPage();
+    unawaited(_checkUnreadAnnouncements());
+  }
+
+  @override
+  void didPushNext() {
+    _setRouteVisibility(false);
+  }
+
+  @override
+  void didPop() {
+    _setRouteVisibility(false);
+  }
+
+  void _setRouteVisibility(bool visible) {
+    if (_isRouteVisible == visible) return;
+    _isRouteVisible = visible;
+    if (!visible) {
+      _announcementTimer?.cancel();
+      _announcementTimer = null;
+      _announcementRetryTimer?.cancel();
+      _announcementRetryTimer = null;
+      return;
+    }
+
+    if (_announcementAuthKey != null) {
+      unawaited(_initializeAnnouncementPolling());
+    }
   }
 
   /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。
@@ -460,13 +494,6 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (_) {
       // 忽略：不影响 Tab 切换。
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkUnreadAnnouncements();
     }
   }
 
@@ -493,14 +520,21 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _initializeAnnouncementPolling(
       {bool skipAdminTasks = false}) async {
-    await _loadSeenAnnouncements();
-    if (!mounted) return;
-    await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);
-    if (!mounted) return;
-    _announcementTimer = Timer.periodic(
-      _announcementPollInterval,
-      (_) => _checkUnreadAnnouncements(),
-    );
+    if (!mounted || !_isRouteVisible || _announcementPollingStarting) return;
+    if (_announcementTimer != null) return;
+    _announcementPollingStarting = true;
+    try {
+      await _loadSeenAnnouncements();
+      if (!mounted || !_isRouteVisible) return;
+      await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);
+      if (!mounted || !_isRouteVisible) return;
+      _announcementTimer = Timer.periodic(
+        _announcementPollInterval,
+        (_) => _checkUnreadAnnouncements(),
+      );
+    } finally {
+      _announcementPollingStarting = false;
+    }
   }
 
   Future<void> _loadSeenAnnouncements() async {
@@ -579,7 +613,10 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _checkUnreadAnnouncements({bool skipAdminTasks = false}) async {
-    if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) {
+    if (!mounted ||
+        !_isRouteVisible ||
+        _isCheckingAnnouncements ||
+        _announcementDialogOpen) {
       return;
     }
 

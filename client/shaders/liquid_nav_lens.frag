@@ -20,7 +20,7 @@ uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
 
-const float SUPERELLIPSE_EXPONENT = 2.5;
+const float SUPERELLIPSE_EXPONENT = 2.2;
 
 struct LiquidState {
   float q;
@@ -37,8 +37,8 @@ LiquidState liquidState(vec2 point) {
   float directionSign = uDirection < -0.01 ? -1.0 : 1.0;
   float canonicalX = local.x * directionSign;
   float halfHeight = max(uSize.y * 0.5, 0.001);
-  float tail = halfHeight * uVelocity * 0.50;
-  float bulge = halfHeight * uVelocity * 0.26;
+  float tail = halfHeight * uVelocity * 0.45;
+  float bulge = halfHeight * uVelocity * 0.28;
   float compression = halfHeight * uEdgeCompression * 0.16;
   float halfWidth = max(
       (uSize.x - tail - bulge + compression) * 0.5,
@@ -117,18 +117,28 @@ void main() {
 
   vec2 normal = liquidNormal(fragment);
   float q = clamp(state.q, 0.0, 1.0);
-  float refractBand = smoothstep(0.62, 0.84, q) *
-      (1.0 - smoothstep(0.88, 0.995, q));
-  float rim = smoothstep(0.82, 0.995, q);
-  float centerProfile = 1.0 - smoothstep(0.28, 0.68, q);
+  float thickness = pow(max(1.0 - q, 0.0), 0.55);
+  float refractBand = smoothstep(0.56, 0.84, q) *
+      (1.0 - smoothstep(0.90, 0.998, q));
+  float opticalStrength = refractBand * (0.84 + thickness * 0.32);
+  float outerRim = smoothstep(0.76, 0.94, q) *
+      (1.0 - smoothstep(0.965, 0.998, q));
+  float centerProfile = 1.0 - smoothstep(0.22, 0.70, q);
+  // 厚度不仅影响边缘折射，也给中心到边缘一个连续的光学衰减，
+  // 避免放大像一块生硬的贴图覆盖。
+  float zoomProfile = clamp(
+      centerProfile + thickness * 0.10 * (1.0 - centerProfile),
+      0.0,
+      1.0
+  );
 
   // Magnification 只作用中央区域，Refraction/Chromatic 只作用边缘
   // 内侧的 ring，避免两套位移在整块 Lens 上叠成鱼眼。
-  float zoom = mix(1.0, uMagnification, centerProfile);
+  float zoom = mix(1.0, uMagnification, zoomProfile);
   vec2 samplePixel = center + (fragment - center) / zoom;
-  samplePixel -= normal * refractBand * uRefraction;
+  samplePixel -= normal * opticalStrength * uRefraction;
 
-  vec2 chromaticOffset = normal * uChromatic * refractBand;
+  vec2 chromaticOffset = normal * uChromatic * opticalStrength;
   vec3 color = vec3(
     texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
     texture(uBackdrop, textureUv(samplePixel)).g,
@@ -137,19 +147,36 @@ void main() {
 
   color = mix(color, uTint.rgb, uTint.a);
 
-  // Fresnel：左上高光、右下暗边、最外沿细亮线。
+  // Lens 内部保留少量饱和度和对比度提升，让被放大的图标/文字更像
+  // 透过一块有厚度的玻璃，而不是简单的 scale 变换。QA 的 Identity /
+  // Refraction Only 会把这些光学参数置零，因此不会污染对照模式。
+  float finalSignal = clamp(
+      (uMagnification - 1.0) * 8.0 + uChromatic * 0.18 + uLightStrength * 0.5,
+      0.0,
+      1.0
+  );
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, 1.0 + 0.09 * finalSignal);
+  color = (color - 0.5) * (1.0 + 0.035 * finalSignal) + 0.5;
+
+  // Fresnel：左上高光、右下暗边，并把色散集中在最外沿，形成
+  // 参考图中可见的蓝/紫/暖黄边缘，而不是大面积白色填充。
   vec2 lightDirection = normalize(
     vec2(-0.72 + uDirection * uVelocity * 0.14, -0.70)
   );
   float facingLight = max(dot(normal, lightDirection), 0.0);
   float facingShade = max(dot(normal, -lightDirection), 0.0);
-  float specular = pow(facingLight, 5.0) * rim;
-  color += vec3(specular * uLightStrength);
-  color -= vec3(facingShade * rim * 0.035 * uLightStrength);
-  // Rim 只保留很轻的厚度提示，不用无方向白线冒充玻璃边缘。
-  color += vec3(rim * uRimStrength * 0.24);
+  float specular = pow(facingLight, 4.0) * outerRim;
+  color += vec3(specular * uLightStrength * 1.15);
+  color -= vec3(facingShade * outerRim * 0.065 * uLightStrength);
+  vec3 dispersionTint = mix(
+      vec3(0.54, 0.76, 1.0),
+      vec3(1.0, 0.70, 0.36),
+      clamp(normal.x * 0.5 + 0.5, 0.0, 1.0)
+  );
+  color += dispersionTint * outerRim * uRimStrength * 0.82;
 
   // 拖动状态略微提高边缘响应，静止时保持克制。
-  color += vec3(refractBand * uDragState * 0.018);
+  color += dispersionTint * refractBand * uDragState * 0.024;
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

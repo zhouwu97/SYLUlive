@@ -61,6 +61,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   double _downwardScroll = 0;
   List<Topic> _hotTopics = const [];
   bool? _optimisticIsFollowed;
+  bool _followPending = false;
+  int _myLevelRequestGeneration = 0;
+  int _hotTopicsRequestGeneration = 0;
 
   @override
   void initState() {
@@ -82,6 +85,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
   @override
   void dispose() {
+    _myLevelRequestGeneration++;
+    _hotTopicsRequestGeneration++;
     _scrollController.dispose();
     super.dispose();
   }
@@ -164,14 +169,27 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Future<void> _loadHotTopics() async {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final accountSessionEpoch = auth.accountSessionEpoch;
+    final sectionSlug = _activeSection.slug;
+    final requestGeneration = ++_hotTopicsRequestGeneration;
     try {
-      final dio = context.read<AuthProvider>().dio;
+      final dio = auth.dio;
       if (dio.options.baseUrl.trim().isEmpty) return;
-      final topics = await TopicService(dio)
-          .recommend(section: _activeSection.slug, limit: 8);
-      if (mounted) setState(() => _hotTopics = topics);
+      final topics =
+          await TopicService(dio).recommend(section: sectionSlug, limit: 8);
+      if (mounted &&
+          requestGeneration == _hotTopicsRequestGeneration &&
+          sectionSlug == _activeSection.slug &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
+        setState(() => _hotTopics = topics);
+      }
     } catch (error) {
-      debugPrint('加载版块热门话题失败: $error');
+      if (requestGeneration == _hotTopicsRequestGeneration &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
+        debugPrint('加载版块热门话题失败: $error');
+      }
     }
   }
 
@@ -201,18 +219,41 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Future<void> _loadMyLevel() async {
-    if (!context.read<AuthProvider>().isLoggedIn) {
+    final auth = context.read<AuthProvider>();
+    final requestGeneration = ++_myLevelRequestGeneration;
+    if (!auth.isLoggedIn) {
       if (_myLevel != null && mounted) setState(() => _myLevel = null);
       return;
     }
+    final accountId = auth.user?.id;
+    final accountSessionEpoch = auth.accountSessionEpoch;
+    final sectionSlug = _activeSection.slug;
+    if (accountId == null || accountId <= 0) return;
     final service = context.read<WaterSectionProvider>().service;
     if (service == null) return;
     try {
-      final level = await service.fetchMyLevel(_activeSection.slug);
-      if (mounted) setState(() => _myLevel = level);
+      final level = await service.fetchMyLevel(sectionSlug);
+      if (mounted &&
+          requestGeneration == _myLevelRequestGeneration &&
+          sectionSlug == _activeSection.slug &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
+        setState(() => _myLevel = level);
+      }
     } catch (error) {
-      debugPrint('加载我的版块等级失败: $error');
+      if (requestGeneration == _myLevelRequestGeneration &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
+        debugPrint('加载我的版块等级失败: $error');
+      }
     }
+  }
+
+  bool _sameAccountSession(
+    AuthProvider auth,
+    int? accountId,
+    int accountSessionEpoch,
+  ) {
+    return auth.user?.id == accountId &&
+        auth.accountSessionEpoch == accountSessionEpoch;
   }
 
   Future<void> _refresh() async {
@@ -296,6 +337,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Future<void> _toggleFollowSection() async {
+    if (_followPending) return;
     final section = _activeSection;
     final isFollowed = _optimisticIsFollowed ?? section.isFollowed;
     final auth = context.read<AuthProvider>();
@@ -306,25 +348,46 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
-    setState(() => _optimisticIsFollowed = !isFollowed);
+    final accountId = auth.user?.id;
+    final accountSessionEpoch = auth.accountSessionEpoch;
+    if (accountId == null || accountId <= 0) return;
+    setState(() {
+      _followPending = true;
+      _optimisticIsFollowed = !isFollowed;
+    });
     try {
-      await sectionProvider.toggleFollow(section.slug, !isFollowed);
+      final success =
+          await sectionProvider.toggleFollow(section.slug, !isFollowed);
+      if (!_sameAccountSession(auth, accountId, accountSessionEpoch)) return;
+      if (!success) {
+        throw StateError(sectionProvider.error ?? '操作失败，请稍后重试');
+      }
       postProvider.invalidateFollowingFeed();
       await _resolveSection();
-      if (mounted) {
+      if (mounted &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
         setState(() => _optimisticIsFollowed = null);
         await _refresh();
-        if (mounted) {
+        if (mounted &&
+            _sameAccountSession(auth, accountId, accountSessionEpoch)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),
           );
         }
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted &&
+          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
         setState(() => _optimisticIsFollowed = null);
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('操作失败：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _followPending = false;
+          _optimisticIsFollowed = null;
+        });
       }
     }
   }
@@ -744,7 +807,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               SizedBox(
                 height: 34,
                 child: FilledButton(
-                  onPressed: _toggleFollowSection,
+                  onPressed: _followPending ? null : _toggleFollowSection,
                   style: FilledButton.styleFrom(
                     backgroundColor: followed
                         ? accent.withValues(alpha: dark ? 0.18 : 0.12)
@@ -755,7 +818,18 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                       borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                   ),
-                  child: Text(followed ? '已关注' : '+ 关注'),
+                  child: _followPending
+                      ? Semantics(
+                          label: '关注状态更新中',
+                          child: const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : Text(followed ? '已关注' : '+ 关注'),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),

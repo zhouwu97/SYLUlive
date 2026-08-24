@@ -1,0 +1,214 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
+import 'package:shenliyuan/widgets/bottom_nav.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('悬浮液态底栏保留五个入口、选中语义与完整点击区域', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final semantics = tester.ensureSemantics();
+    try {
+      expect(find.byKey(const ValueKey('bottom-nav-floating-dock')),
+          findsOneWidget);
+      expect(
+          find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('bottom-nav-selection-fallback')),
+        findsNothing,
+      );
+
+      for (final label in const ['首页', '集市', '课表', '校园', '我']) {
+        expect(find.text(label), findsOneWidget);
+        expect(find.bySemanticsLabel(label), findsOneWidget);
+      }
+
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-item-3')));
+      await tester.pump();
+
+      expect(harness.selectedIndex.value, 3);
+      expect(harness.lastTappedIndex.value, 3);
+      expect(
+          tester
+              .getSize(find.byKey(const ValueKey('bottom-nav-item-3')))
+              .height,
+          greaterThanOrEqualTo(44));
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('移动透镜在跨 Tab 时横向拉伸并在落位后恢复', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));
+    final settledWidth = tester.getSize(lensFinder).width;
+
+    harness.selectedIndex.value = 4;
+    await tester.pump();
+    final stretchedWidth = tester.getSize(lensFinder).width;
+    expect(stretchedWidth, greaterThan(settledWidth));
+
+    harness.visualIndex.value = 4;
+    await tester.pump();
+    expect(tester.getSize(lensFinder).width, closeTo(settledWidth, 0.01));
+  });
+
+  testWidgets('Reduced Motion 直接让透镜落在当前 Tab', (tester) async {
+    await _pumpNav(
+      tester,
+      liquidGlass: true,
+      disableAnimations: true,
+      initialIndex: 3,
+      initialVisualIndex: 0.4,
+    );
+
+    final lens = tester.widget<Positioned>(
+      find.byKey(const ValueKey('bottom-nav-liquid-lens')),
+    );
+    expect(lens.left, greaterThan(150));
+  });
+
+  testWidgets('关闭液态玻璃时使用稳定的实色选中态', (tester) async {
+    await _pumpNav(tester, liquidGlass: false);
+
+    expect(find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-fallback')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('暗色与 1.3 倍字号下底栏不溢出', (tester) async {
+    await _pumpNav(
+      tester,
+      liquidGlass: true,
+      darkMode: true,
+      textScale: 1.3,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+        find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
+  });
+}
+
+Future<_NavHarness> _pumpNav(
+  WidgetTester tester, {
+  required bool liquidGlass,
+  bool darkMode = false,
+  bool disableAnimations = false,
+  double textScale = 1,
+  int initialIndex = 0,
+  double? initialVisualIndex,
+}) async {
+  tester.view.physicalSize = const Size(360, 800);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+
+  AppPreferencesStore.setMockInitialValues({
+    'floating_nav_bar': true,
+    'liquid_glass_v2': liquidGlass,
+  });
+  final themeProvider = ThemeProvider(loadOnStart: false);
+  await themeProvider.loadThemeForTesting();
+  final authProvider = AuthProvider(Dio(), loadStoredAuth: false);
+  final harness = _NavHarness(
+    themeProvider: themeProvider,
+    authProvider: authProvider,
+    selectedIndex: ValueNotifier(initialIndex),
+    visualIndex: ValueNotifier(initialVisualIndex ?? initialIndex.toDouble()),
+    darkMode: darkMode,
+    disableAnimations: disableAnimations,
+    textScale: textScale,
+  );
+  addTearDown(harness.dispose);
+
+  await tester.pumpWidget(harness);
+  await tester.pumpAndSettle();
+  return harness;
+}
+
+class _NavHarness extends StatelessWidget {
+  _NavHarness({
+    required this.themeProvider,
+    required this.authProvider,
+    required this.selectedIndex,
+    required this.visualIndex,
+    required this.darkMode,
+    required this.disableAnimations,
+    required this.textScale,
+  }) : lastTappedIndex = ValueNotifier(null);
+
+  final ThemeProvider themeProvider;
+  final AuthProvider authProvider;
+  final ValueNotifier<int> selectedIndex;
+  final ValueNotifier<double> visualIndex;
+  final bool darkMode;
+  final bool disableAnimations;
+  final double textScale;
+  final ValueNotifier<int?> lastTappedIndex;
+
+  void dispose() {
+    selectedIndex.dispose();
+    visualIndex.dispose();
+    lastTappedIndex.dispose();
+    themeProvider.dispose();
+    authProvider.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider<ThemeProvider>.value(
+      value: themeProvider,
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
+        home: Builder(
+          builder: (context) {
+            final mediaQuery = MediaQuery.of(context);
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                disableAnimations: disableAnimations,
+                textScaler: TextScaler.linear(textScale),
+              ),
+              child: ValueListenableBuilder<int>(
+                valueListenable: selectedIndex,
+                builder: (context, currentIndex, child) {
+                  return Scaffold(
+                    extendBody: true,
+                    body: const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFFFE5B2), Color(0xFF8EDFD3)],
+                        ),
+                      ),
+                      child: SizedBox.expand(),
+                    ),
+                    bottomNavigationBar: BottomNavWrapper(
+                      currentIndex: currentIndex,
+                      visualIndexListenable: visualIndex,
+                      onTap: (index) {
+                        lastTappedIndex.value = index;
+                        selectedIndex.value = index;
+                      },
+                      authProvider: authProvider,
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

@@ -248,40 +248,42 @@ class AiAssistantService {
   }
 
   /// 读取 SSE，并将 Last-Event-ID 交给服务端完成历史事件回放。
-  Stream<AiRunEvent> streamRunEvents(String runId,
-      {int lastEventId = 0}) async* {
-    final response = await _dio.get<ResponseBody>(
-      '/ai/runs/$runId/events',
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: {if (lastEventId > 0) 'Last-Event-ID': '$lastEventId'},
-      ),
-    );
-    if (response.statusCode != 200 || response.data == null) {
-      throw _exceptionFromResponse(response, fallback: '连接 AI 事件流失败');
-    }
+  Stream<AiRunEvent> streamRunEvents(String runId, {int lastEventId = 0}) {
+    final cancelToken = CancelToken();
+    StreamSubscription<String>? lineSubscription;
+    var cancelled = false;
     var eventName = '';
     var eventId = '';
     final dataLines = <String>[];
-    final lines = utf8.decoder
-        .bind(response.data!.stream)
-        .transform(const LineSplitter());
-    await for (final line in lines) {
+
+    late final StreamController<AiRunEvent> controller;
+
+    void closeController() {
+      if (!cancelled && !controller.isClosed) {
+        unawaited(controller.close());
+      }
+    }
+
+    void handleLine(String line) {
       if (line.isEmpty) {
         if (dataLines.isNotEmpty) {
           final data = dataLines.join('\n');
           try {
             final parsed = AiRunEvent.parseSse(data,
                 eventName: eventName.isEmpty ? null : eventName);
-            yield parsed.seq > 0 || eventId.isEmpty
-                ? parsed
-                : AiRunEvent.fromJson(
-                    {
-                      ...jsonDecode(data) as Map<String, dynamic>,
-                      'seq': int.tryParse(eventId) ?? 0
-                    },
-                    eventName: eventName.isEmpty ? null : eventName,
-                  );
+            if (!cancelled) {
+              controller.add(
+                parsed.seq > 0 || eventId.isEmpty
+                    ? parsed
+                    : AiRunEvent.fromJson(
+                        {
+                          ...jsonDecode(data) as Map<String, dynamic>,
+                          'seq': int.tryParse(eventId) ?? 0
+                        },
+                        eventName: eventName.isEmpty ? null : eventName,
+                      ),
+              );
+            }
           } on FormatException {
             // 心跳或代理插入的非 JSON 数据不应中断后续回放。
           }
@@ -289,9 +291,9 @@ class AiAssistantService {
         eventName = '';
         eventId = '';
         dataLines.clear();
-        continue;
+        return;
       }
-      if (line.startsWith(':')) continue;
+      if (line.startsWith(':')) return;
       final separator = line.indexOf(':');
       final field = separator < 0 ? line : line.substring(0, separator);
       var value = separator < 0 ? '' : line.substring(separator + 1);
@@ -308,6 +310,56 @@ class AiAssistantService {
           break;
       }
     }
+
+    Future<void> start() async {
+      try {
+        final response = await _dio.get<ResponseBody>(
+          '/ai/runs/$runId/events',
+          options: Options(
+            responseType: ResponseType.stream,
+            headers: {if (lastEventId > 0) 'Last-Event-ID': '$lastEventId'},
+          ),
+          cancelToken: cancelToken,
+        );
+        if (cancelled) return;
+        if (response.statusCode != 200 || response.data == null) {
+          throw _exceptionFromResponse(response, fallback: '连接 AI 事件流失败');
+        }
+
+        final lines = utf8.decoder
+            .bind(response.data!.stream)
+            .transform(const LineSplitter());
+        lineSubscription = lines.listen(
+          handleLine,
+          onError: (Object error, StackTrace stackTrace) {
+            if (!cancelled && !controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+            closeController();
+          },
+          onDone: closeController,
+          cancelOnError: false,
+        );
+        if (cancelled) await lineSubscription?.cancel();
+      } catch (error, stackTrace) {
+        if (!cancelled && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+          await controller.close();
+        }
+      }
+    }
+
+    controller = StreamController<AiRunEvent>(
+      onListen: () => unawaited(start()),
+      onPause: () => lineSubscription?.pause(),
+      onResume: () => lineSubscription?.resume(),
+      onCancel: () async {
+        cancelled = true;
+        if (!cancelToken.isCancelled) cancelToken.cancel('AI SSE 已取消');
+        await lineSubscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   void _expectStatus(Response<dynamic> response, int expected) {

@@ -1307,8 +1307,8 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<AuthProvider, MessageProvider>(
           create: (_) => MessageProvider(dio),
-          update: (_, auth, provider) =>
-              provider!..syncSessionUser(auth.user?.id),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
           create: (_) => EduProvider(dio),
@@ -1345,7 +1345,11 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
-        ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, WaterSectionProvider>(
+          create: (_) => WaterSectionProvider(dio),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
+        ),
         ChangeNotifierProvider(
           create: (_) =>
               CampusCalendarProvider(CampusCalendarService(dio))..load(),

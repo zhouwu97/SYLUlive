@@ -146,7 +146,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         selection: TextSelection.collapsed(offset: initialPrompt.length),
       );
     }
-    unawaited(_provider.initialize());
     unawaited(_loadAgentPermissionMode());
   }
 
@@ -164,6 +163,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _eduProvider = edu..addListener(_handleAccountContextChanged);
     }
     _synchronizePersonalAccount();
+    _synchronizeServerAccount();
   }
 
   @override
@@ -327,7 +327,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
+    _synchronizeServerAccount();
+  }
 
+  void _synchronizeServerAccount() {
     final auth = _authProvider;
     final authKey = auth == null
         ? null
@@ -336,7 +339,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     if (authKey == _lastBootstrapAuthKey) return;
     _lastBootstrapAuthKey = authKey;
 
-    unawaited(_provider.retryBootstrap());
+    _provider.resetForAccountChange(
+      accountId: auth?.isLoggedIn == true ? auth?.user?.id : null,
+      sessionGeneration: auth?.accountSessionEpoch ?? 0,
+    );
+    if (auth?.isLoggedIn == true && auth?.user?.id != null) {
+      unawaited(_provider.retryBootstrap());
+    }
   }
 
   void _synchronizePersonalAccount() {

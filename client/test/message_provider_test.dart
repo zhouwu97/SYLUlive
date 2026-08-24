@@ -652,7 +652,8 @@ void main() {
     expect(uploadRequests, 0);
   });
 
-  test('sendFavoriteImageMessage with invalid fileId sets messageError and returns null',
+  test(
+      'sendFavoriteImageMessage with invalid fileId sets messageError and returns null',
       () async {
     final dio = Dio();
     final provider = MessageProvider(dio);
@@ -1085,6 +1086,135 @@ void main() {
     provider.setActiveConversation(null);
     expect(provider.currentConversationId, 42);
     expect(provider.activeConversationId, isNull);
+  });
+
+  test('账号 A 的会话列表错误和 finally 不会污染账号 B 的加载状态', () async {
+    final dio = Dio();
+    final firstStarted = Completer<void>();
+    final secondStarted = Completer<void>();
+    final firstGate = Completer<void>();
+    final secondGate = Completer<void>();
+    var requestIndex = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method != 'GET' ||
+              options.path != '/messages/conversations') {
+            handler.reject(_unexpectedRequest(options));
+            return;
+          }
+          final index = ++requestIndex;
+          if (index == 1) {
+            firstStarted.complete();
+            firstGate.future.then((_) {
+              if (!handler.isCompleted) {
+                handler.reject(
+                  DioException(
+                    requestOptions: options,
+                    type: DioExceptionType.connectionError,
+                    message: 'account A offline',
+                  ),
+                );
+              }
+            });
+            return;
+          }
+          secondStarted.complete();
+          secondGate.future.then((_) {
+            if (!handler.isCompleted) {
+              handler.resolve(
+                Response<dynamic>(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const [
+                    {
+                      'id': 2,
+                      'user1_id': 2,
+                      'user2_id': 9,
+                      'last_message_at': '2026-08-24T00:00:00Z',
+                      'unread_count': 4,
+                    },
+                  ],
+                ),
+              );
+            }
+          });
+        },
+      ),
+    );
+    final provider = MessageProvider(dio, enableRealtime: false);
+    addTearDown(provider.dispose);
+
+    provider.syncSessionUser(1, 1);
+    final staleLoad = provider.loadConversations();
+    await firstStarted.future;
+
+    provider.syncSessionUser(2, 2);
+    final currentLoad = provider.loadConversations();
+    await secondStarted.future;
+    firstGate.complete();
+    await staleLoad;
+
+    expect(provider.conversationLoading, isTrue);
+    expect(provider.conversationError, isNull);
+    expect(provider.conversations, isEmpty);
+    expect(provider.hasLoadedConversations, isFalse);
+
+    secondGate.complete();
+    await currentLoad;
+
+    expect(provider.conversationLoading, isFalse);
+    expect(provider.conversationError, isNull);
+    expect(provider.conversations.single.id, 2);
+    expect(provider.unreadMessageCount, 4);
+  });
+
+  test('账号切换会取消在途发送且旧回包不会写入新会话', () async {
+    final dio = Dio();
+    final requestStarted = Completer<void>();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final data = Map<String, dynamic>.from(options.data as Map);
+            requestStarted.complete();
+            responseGate.future.then((_) {
+              if (!handler.isCompleted) {
+                handler.resolve(
+                  Response<dynamic>(
+                    requestOptions: options,
+                    statusCode: 201,
+                    data: _messageJson(
+                      id: 900,
+                      clientMessageId: data['client_message_id'] as String,
+                    ),
+                  ),
+                );
+              }
+            });
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio, enableRealtime: false);
+    addTearDown(provider.dispose);
+
+    provider.syncSessionUser(1, 1);
+    final send = provider.sendMessage(3, 'A 的消息', senderId: 1);
+    await requestStarted.future;
+    expect(provider.messages.single.isPending, isTrue);
+
+    provider.syncSessionUser(2, 2);
+    responseGate.complete();
+
+    expect(await send, isNull);
+    expect(provider.messages, isEmpty);
+    expect(provider.conversations, isEmpty);
+    expect(provider.currentConversationId, isNull);
+    expect(provider.messageError, isNull);
   });
 }
 

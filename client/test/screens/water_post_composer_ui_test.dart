@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
@@ -17,17 +19,33 @@ import 'package:image_picker/image_picker.dart';
 class FakeAuthProvider extends Fake
     with ChangeNotifier
     implements AuthProvider {
+  FakeAuthProvider({this.userId = 1, this.sessionEpoch = 1});
+
+  int? userId;
+  int sessionEpoch;
+
   @override
   Dio get dio => Dio();
 
   @override
-  User? get user => User(
-        id: 1,
-        studentId: '123456',
-        nickname: '测试用户',
-        avatar: '',
-        createdAt: DateTime(2026, 1, 1),
-      );
+  User? get user => userId == null
+      ? null
+      : User(
+          id: userId!,
+          studentId: '123456',
+          nickname: '测试用户',
+          avatar: '',
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+  @override
+  int get accountSessionEpoch => sessionEpoch;
+
+  void switchAccount(int? id) {
+    userId = id;
+    sessionEpoch++;
+    notifyListeners();
+  }
 }
 
 class FakePostProvider extends Fake
@@ -36,6 +54,7 @@ class FakePostProvider extends Fake
   int createPostCalls = 0;
   String? lastContent;
   String? lastTitle;
+  Completer<CreatePostResult>? createPostCompleter;
 
   @override
   Post? postFor(int postId) => null;
@@ -60,6 +79,8 @@ class FakePostProvider extends Fake
     createPostCalls++;
     lastContent = content;
     lastTitle = title;
+    final completer = createPostCompleter;
+    if (completer != null) return completer.future;
     return const CreatePostResult(success: true);
   }
 
@@ -69,11 +90,15 @@ class FakePostProvider extends Fake
       1;
 }
 
-Widget buildComposerTestApp(FakePostProvider postProvider) {
+Widget buildComposerTestApp(
+  FakePostProvider postProvider, {
+  FakeAuthProvider? authProvider,
+}) {
+  final auth = authProvider ?? FakeAuthProvider();
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthProvider>(
-        create: (_) => FakeAuthProvider(),
+        create: (_) => auth,
       ),
       ChangeNotifierProvider<PostProvider>.value(
         value: postProvider,
@@ -92,10 +117,14 @@ Widget buildComposerTestApp(FakePostProvider postProvider) {
   );
 }
 
-Widget buildComposerNavigationTestApp(FakePostProvider postProvider) {
+Widget buildComposerNavigationTestApp(
+  FakePostProvider postProvider, {
+  FakeAuthProvider? authProvider,
+}) {
+  final auth = authProvider ?? FakeAuthProvider();
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
+      ChangeNotifierProvider<AuthProvider>(create: (_) => auth),
       ChangeNotifierProvider<PostProvider>.value(value: postProvider),
       ChangeNotifierProvider<WaterSectionProvider>(
         create: (_) => WaterSectionProvider(null),
@@ -140,6 +169,35 @@ void main() {
 
     expect(find.byType(WaterPostComposer), findsNothing);
     expect(await PostDraftService().load(), isNull);
+  });
+
+  testWidgets('发布请求完成前切换账号不会执行旧账号成功回调', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final auth = FakeAuthProvider();
+    final postProvider = FakePostProvider();
+    final createCompleter = Completer<CreatePostResult>();
+    postProvider.createPostCompleter = createCompleter;
+
+    await tester.pumpWidget(
+      buildComposerNavigationTestApp(
+        postProvider,
+        authProvider: auth,
+      ),
+    );
+    await tester.tap(find.text('打开发布页'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).last, '账号 A 准备发布的内容');
+    await tester.tap(find.text('发布'));
+    await tester.pump();
+    expect(postProvider.createPostCalls, 1);
+
+    auth.switchAccount(2);
+    createCompleter.complete(const CreatePostResult(success: true));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(WaterPostComposer), findsOneWidget);
+    expect(find.text('登录状态已变化，本次发布已取消，请重新确认'), findsOneWidget);
   });
 
   testWidgets('未发布返回后仍恢复草稿', (WidgetTester tester) async {

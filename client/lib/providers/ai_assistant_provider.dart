@@ -65,6 +65,7 @@ class AiAssistantProvider extends ChangeNotifier {
   final Future<void> Function()? _deviceToolSync;
   final Random _random;
   final AgentLaunchContext? _launchContext;
+  final AiCapabilities? _initialCapabilities;
 
   AiAssistantProvider(
     this._service, {
@@ -74,6 +75,7 @@ class AiAssistantProvider extends ChangeNotifier {
     AgentLaunchContext? launchContext,
   })  : _capabilities = initialCapabilities,
         _quota = initialCapabilities?.quota,
+        _initialCapabilities = initialCapabilities,
         _deviceToolSync = deviceToolSync,
         _launchContext = launchContext,
         _random = random ?? Random() {
@@ -104,6 +106,16 @@ class AiAssistantProvider extends ChangeNotifier {
   bool _loadingConversations = false;
   bool _disposed = false;
   int _streamGeneration = 0;
+  StreamSubscription<AiRunEvent>? _eventSubscription;
+  Completer<void>? _eventStreamDone;
+  int? _sessionAccountId;
+  int _authSessionGeneration = 0;
+  int _accountRequestGeneration = 0;
+  int _capabilitiesRequestVersion = 0;
+  int _conversationListRequestVersion = 0;
+  int _conversationOpenRequestVersion = 0;
+  int _bootstrapRequestVersion = 0;
+  bool _hasSessionContext = false;
   List<AiQuickPrompt> _quickPrompts = const [];
   String _quickPromptPoolKey = '';
 
@@ -206,6 +218,49 @@ class AiAssistantProvider extends ChangeNotifier {
 
   List<AiQuickPrompt> get quickPrompts => List.unmodifiable(_quickPrompts);
 
+  /// 绑定服务器校园 Agent 的账号上下文。
+  ///
+  /// 账号或 Auth session epoch 变化时立即清理历史、当前 Run、
+  /// 授权卡和 SSE；所有已发出请求都通过 capture 丢弃迟到结果。
+  void resetForAccountChange({
+    required int? accountId,
+    required int sessionGeneration,
+  }) {
+    final normalizedAccountId =
+        accountId != null && accountId > 0 ? accountId : null;
+    if (_hasSessionContext &&
+        _sessionAccountId == normalizedAccountId &&
+        _authSessionGeneration == sessionGeneration) {
+      return;
+    }
+
+    final firstBinding = !_hasSessionContext;
+    _hasSessionContext = true;
+    _sessionAccountId = normalizedAccountId;
+    _authSessionGeneration = sessionGeneration;
+    _accountRequestGeneration++;
+    _capabilitiesRequestVersion++;
+    _conversationListRequestVersion++;
+    _conversationOpenRequestVersion++;
+    _bootstrapRequestVersion++;
+    _bootstrapFuture = null;
+    _streamGeneration++;
+    unawaited(_cancelActiveEventStream());
+
+    _capabilities = firstBinding && normalizedAccountId != null
+        ? _initialCapabilities
+        : null;
+    _quota = _capabilities?.quota;
+    _messages.clear();
+    _conversations.clear();
+    _conversationId = null;
+    _resetRunState();
+    _loading = false;
+    _loadingConversations = false;
+    _syncQuickPrompts();
+    _notify();
+  }
+
   /// 更新服务器校园 Agent 推送到消息中的日历草稿状态。
   /// 执行仍由 Action Draft API 完成，这里只同步当前消息卡片。
   void replaceCalendarActionDraft(UserCalendarActionDraft updated) {
@@ -233,22 +288,36 @@ class AiAssistantProvider extends ChangeNotifier {
   Future<void>? _bootstrapFuture;
 
   Future<void> retryBootstrap() {
-    return _bootstrapFuture ??= _retryBootstrapInternal().whenComplete(() {
-      _bootstrapFuture = null;
+    final running = _bootstrapFuture;
+    if (running != null) return running;
+    late final Future<void> next;
+    next = _retryBootstrapInternal().whenComplete(() {
+      if (identical(_bootstrapFuture, next)) _bootstrapFuture = null;
     });
+    _bootstrapFuture = next;
+    return next;
   }
 
   Future<void> _retryBootstrapInternal() async {
+    final sessionRequest = _captureSessionRequest();
+    final requestVersion = ++_bootstrapRequestVersion;
     _error = null;
     _loading = true;
     _notify();
 
     try {
       await refreshCapabilities(silent: true);
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _bootstrapRequestVersion) {
+        return;
+      }
       await loadConversations();
     } finally {
-      _loading = false;
-      _notify();
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _bootstrapRequestVersion) {
+        _loading = false;
+        _notify();
+      }
     }
   }
 
@@ -257,6 +326,8 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> refreshCapabilities({bool silent = false}) async {
+    final sessionRequest = _captureSessionRequest();
+    final requestVersion = ++_capabilitiesRequestVersion;
     if (!silent) {
       _loading = true;
       _error = null;
@@ -264,18 +335,32 @@ class AiAssistantProvider extends ChangeNotifier {
     }
     try {
       final result = await _service.getCapabilities();
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _capabilitiesRequestVersion) {
+        return;
+      }
       _capabilities = result;
       _quota = result.quota;
       _syncQuickPrompts();
     } catch (_) {
-      if (!silent) _error = '暂时无法读取 AI 服务状态';
+      if (!silent &&
+          _ownsSessionRequest(sessionRequest) &&
+          requestVersion == _capabilitiesRequestVersion) {
+        _error = '暂时无法读取 AI 服务状态';
+      }
     } finally {
-      _loading = false;
-      _notify();
+      if (!silent &&
+          _ownsSessionRequest(sessionRequest) &&
+          requestVersion == _capabilitiesRequestVersion) {
+        _loading = false;
+        _notify();
+      }
     }
   }
 
   Future<void> loadConversations() async {
+    final sessionRequest = _captureSessionRequest();
+    final requestVersion = ++_conversationListRequestVersion;
     if (_capabilities?.chatEnabled != true) {
       _conversations.clear();
       _loadingConversations = false;
@@ -286,22 +371,37 @@ class AiAssistantProvider extends ChangeNotifier {
     _notify();
     try {
       final result = await _service.listConversations();
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _conversationListRequestVersion) {
+        return;
+      }
       _conversations
         ..clear()
         ..addAll(result);
     } on AiAssistantServiceException catch (error) {
-      _error = error.message;
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationListRequestVersion) {
+        _error = error.message;
+      }
     } catch (_) {
-      _error = '读取历史会话失败，请稍后重试';
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationListRequestVersion) {
+        _error = '读取历史会话失败，请稍后重试';
+      }
     } finally {
-      _loadingConversations = false;
-      _notify();
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationListRequestVersion) {
+        _loadingConversations = false;
+        _notify();
+      }
     }
   }
 
   Future<void> startNewConversation() async {
     if (isRunning) return;
     _streamGeneration++;
+    _conversationOpenRequestVersion++;
+    await _cancelActiveEventStream();
     _conversationId = null;
     _messages.clear();
     _resetRunState();
@@ -311,40 +411,68 @@ class AiAssistantProvider extends ChangeNotifier {
 
   Future<void> openConversation(String id) async {
     if (isRunning || id == _conversationId) return;
+    final sessionRequest = _captureSessionRequest();
+    final requestVersion = ++_conversationOpenRequestVersion;
     _loading = true;
     _error = null;
     _notify();
     try {
       final details = await _service.getConversation(id);
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _conversationOpenRequestVersion) {
+        return;
+      }
       _streamGeneration++;
+      await _cancelActiveEventStream();
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _conversationOpenRequestVersion) {
+        return;
+      }
       _conversationId = id;
       _messages
         ..clear()
         ..addAll(details.messages.map(_fromHistory));
       _resetRunState();
       _moveConversationToFront(details.conversation);
-      await _restoreSources(details.messages);
+      await _restoreSources(
+        details.messages,
+        sessionRequest: sessionRequest,
+        conversationRequestVersion: requestVersion,
+      );
     } on AiAssistantServiceException catch (error) {
-      _error = error.message;
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationOpenRequestVersion) {
+        _error = error.message;
+      }
     } catch (_) {
-      _error = '会话加载失败，请稍后重试';
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationOpenRequestVersion) {
+        _error = '会话加载失败，请稍后重试';
+      }
     } finally {
-      _loading = false;
-      _notify();
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _conversationOpenRequestVersion) {
+        _loading = false;
+        _notify();
+      }
     }
   }
 
   Future<void> deleteConversation(String id) async {
+    final sessionRequest = _captureSessionRequest();
     try {
       await _service.deleteConversation(id);
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _conversations.removeWhere((item) => item.id == id);
       if (_conversationId == id) await startNewConversation();
       _notify();
     } on AiAssistantServiceException catch (error) {
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _error = error.message;
       _notify();
       rethrow;
     } catch (_) {
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _error = '删除会话失败，请稍后重试';
       _notify();
       rethrow;
@@ -382,6 +510,7 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   AiSubmitResult _startSubmission(AiPendingSubmission submission) {
+    final sessionRequest = _captureSessionRequest();
     _error = null;
     _lastFailedSubmission = null;
     _streamedText = '';
@@ -402,11 +531,14 @@ class AiAssistantProvider extends ChangeNotifier {
     ));
     _notify();
 
-    unawaited(_submitAsync(submission));
+    unawaited(_submitAsync(submission, sessionRequest));
     return AiSubmitResult.accepted;
   }
 
-  Future<void> _submitAsync(AiPendingSubmission submission) async {
+  Future<void> _submitAsync(
+    AiPendingSubmission submission,
+    _AiSessionRequest sessionRequest,
+  ) async {
     try {
       final creation = await _service.createRun(
         conversationId: submission.conversationId,
@@ -414,18 +546,26 @@ class AiAssistantProvider extends ChangeNotifier {
         message: submission.message,
         launchContext: _launchContext,
       );
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _run = creation.run;
       _conversationId = creation.run.conversationId;
       _replaceUserStatus(submission.requestId, AiMessageStatus.completed);
       unawaited(
           _consumeEvents(creation.run.id, generation: ++_streamGeneration));
     } on AiAssistantServiceException catch (exception) {
-      _handleSubmitFailure(submission, exception);
+      if (_ownsSessionRequest(sessionRequest)) {
+        _handleSubmitFailure(submission, exception);
+      }
     } catch (_) {
-      _handleSubmitFailure(
-        submission,
-        const AiAssistantServiceException('请求发送失败，请检查网络后重试', retryable: true),
-      );
+      if (_ownsSessionRequest(sessionRequest)) {
+        _handleSubmitFailure(
+          submission,
+          const AiAssistantServiceException(
+            '请求发送失败，请检查网络后重试',
+            retryable: true,
+          ),
+        );
+      }
     }
   }
 
@@ -471,25 +611,30 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> cancel() async {
+    final sessionRequest = _captureSessionRequest();
     final runId = _run?.id;
     if (runId == null || !isRunning) return;
     try {
       await _service.cancelRun(runId);
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _connectionState = AiConnectionState.cancelled;
       _error = '已取消本次回答';
       _streamGeneration++;
       _notify();
       unawaited(refreshCapabilities(silent: true));
     } on AiAssistantServiceException catch (exception) {
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _error = exception.message;
       _notify();
     } catch (_) {
+      if (!_ownsSessionRequest(sessionRequest)) return;
       _error = '取消回答失败，请稍后重试';
       _notify();
     }
   }
 
   Future<bool> submitConsent(bool granted) async {
+    final sessionRequest = _captureSessionRequest();
     final consent = _pendingConsent;
     final runId = consent?.runId.isNotEmpty == true ? consent!.runId : _run?.id;
     if (consent == null ||
@@ -506,17 +651,22 @@ class AiAssistantProvider extends ChangeNotifier {
         scope: consent.consentScope,
         granted: granted,
       );
+      if (!_ownsSessionRequest(sessionRequest)) return false;
       if (identical(_pendingConsent, consent)) _pendingConsent = null;
       return true;
     } on AiAssistantServiceException catch (exception) {
+      if (!_ownsSessionRequest(sessionRequest)) return false;
       _error = exception.message;
       return false;
     } catch (_) {
+      if (!_ownsSessionRequest(sessionRequest)) return false;
       _error = '提交本次授权失败，请稍后重试';
       return false;
     } finally {
-      _submittingConsent = false;
-      _notify();
+      if (_ownsSessionRequest(sessionRequest)) {
+        _submittingConsent = false;
+        _notify();
+      }
     }
   }
 
@@ -526,6 +676,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _error = null;
     _connectionState = AiConnectionState.connecting;
     _notify();
+    await _cancelActiveEventStream();
     await _consumeEvents(runId,
         generation: ++_streamGeneration, allowReconnect: false);
   }
@@ -536,11 +687,40 @@ class AiAssistantProvider extends ChangeNotifier {
     bool allowReconnect = true,
   }) async {
     try {
-      await for (final event
-          in _service.streamRunEvents(runId, lastEventId: _lastEventSeq)) {
-        if (_disposed || generation != _streamGeneration) return;
-        applyRunEvent(event);
-        if (_isTerminal(event.type)) break;
+      await _cancelActiveEventStream();
+      if (_disposed || generation != _streamGeneration) return;
+
+      final done = Completer<void>();
+      late final StreamSubscription<AiRunEvent> subscription;
+      void completeStream() {
+        if (!done.isCompleted) done.complete();
+      }
+
+      subscription =
+          _service.streamRunEvents(runId, lastEventId: _lastEventSeq).listen(
+        (event) {
+          if (_disposed || generation != _streamGeneration) {
+            unawaited(subscription.cancel());
+            completeStream();
+            return;
+          }
+          applyRunEvent(event);
+          if (_isTerminal(event.type)) {
+            unawaited(subscription.cancel());
+            completeStream();
+          }
+        },
+        onError: (Object _, StackTrace __) => completeStream(),
+        onDone: completeStream,
+        cancelOnError: false,
+      );
+      _eventSubscription = subscription;
+      _eventStreamDone = done;
+      await done.future;
+
+      if (identical(_eventSubscription, subscription)) {
+        _eventSubscription = null;
+        _eventStreamDone = null;
       }
       if (!_disposed && generation == _streamGeneration && isRunning) {
         await _recoverRun(runId, generation, allowReconnect: allowReconnect);
@@ -550,6 +730,15 @@ class AiAssistantProvider extends ChangeNotifier {
         await _recoverRun(runId, generation, allowReconnect: allowReconnect);
       }
     }
+  }
+
+  Future<void> _cancelActiveEventStream() async {
+    final subscription = _eventSubscription;
+    final done = _eventStreamDone;
+    _eventSubscription = null;
+    _eventStreamDone = null;
+    if (done != null && !done.isCompleted) done.complete();
+    await subscription?.cancel();
   }
 
   Future<void> _recoverRun(String runId, int generation,
@@ -577,6 +766,7 @@ class AiAssistantProvider extends ChangeNotifier {
               : AiSourceRecoveryState.loaded,
         );
         if (_sources.isEmpty) await _resolveSourcesForRun(runId);
+        if (_disposed || generation != _streamGeneration) return;
         await _finishRun();
       } else if (run.state == 'failed' || run.state == 'expired') {
         _connectionState = AiConnectionState.failed;
@@ -618,9 +808,11 @@ class AiAssistantProvider extends ChangeNotifier {
         _notify();
       }
     } catch (_) {
-      _connectionState = AiConnectionState.failed;
-      _error = '连接已中断，可点击重新连接继续回放';
-      _notify();
+      if (!_disposed && generation == _streamGeneration) {
+        _connectionState = AiConnectionState.failed;
+        _error = '连接已中断，可点击重新连接继续回放';
+        _notify();
+      }
     }
   }
 
@@ -789,16 +981,26 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> _finishRun() async {
+    final sessionRequest = _captureSessionRequest();
     await refreshCapabilities(silent: true);
+    if (!_ownsSessionRequest(sessionRequest)) return;
     await loadConversations();
   }
 
-  Future<void> _restoreSources(List<AiConversationMessage> history) async {
+  Future<void> _restoreSources(
+    List<AiConversationMessage> history, {
+    required _AiSessionRequest sessionRequest,
+    required int conversationRequestVersion,
+  }) async {
     // 新 DTO 已直接携带 sources；只有旧历史缺少来源时才逐 Run 请求兼容
     // endpoint，绝不再为每条历史消息 replay 一遍完整 SSE。
     for (final message in history.where(
       (item) => item.role == 'assistant' && item.runId != null,
     )) {
+      if (!_ownsSessionRequest(sessionRequest) ||
+          conversationRequestVersion != _conversationOpenRequestVersion) {
+        return;
+      }
       final index = _messages.indexWhere((item) => item.id == message.id);
       if (index < 0) continue;
       final inlineSources = deduplicateAiSources(message.sources);
@@ -814,11 +1016,13 @@ class AiAssistantProvider extends ChangeNotifier {
         messageId: message.id,
         runId: message.runId!,
         content: message.content,
+        sessionRequest: sessionRequest,
       );
     }
   }
 
   Future<void> retryMessageSources(AiChatMessage message) async {
+    final sessionRequest = _captureSessionRequest();
     final runId = message.requestId.trim();
     if (runId.isEmpty) return;
     await _resolveSourcesForMessage(
@@ -826,10 +1030,12 @@ class AiAssistantProvider extends ChangeNotifier {
       runId: runId,
       content: message.content,
       force: true,
+      sessionRequest: sessionRequest,
     );
   }
 
   Future<void> _resolveSourcesForRun(String runId) async {
+    final sessionRequest = _captureSessionRequest();
     final index = _messages.lastIndexWhere(
       (item) => item.role == AiMessageRole.assistant && item.requestId == runId,
     );
@@ -839,6 +1045,7 @@ class AiAssistantProvider extends ChangeNotifier {
       messageId: message.id,
       runId: runId,
       content: message.content,
+      sessionRequest: sessionRequest,
     );
   }
 
@@ -847,7 +1054,10 @@ class AiAssistantProvider extends ChangeNotifier {
     required String runId,
     required String content,
     bool force = false,
+    _AiSessionRequest? sessionRequest,
   }) async {
+    final request = sessionRequest ?? _captureSessionRequest();
+    if (!_ownsSessionRequest(request)) return;
     final index = _messages.indexWhere((item) => item.id == messageId);
     if (index < 0) return;
     final current = _messages[index];
@@ -869,6 +1079,7 @@ class AiAssistantProvider extends ChangeNotifier {
         List<AiPersonalDataEvidence>.from(current.personalDataEvidence);
     try {
       final runSources = await _service.getRunSources(runId);
+      if (!_ownsSessionRequest(request)) return;
       if (runSources.sources.isNotEmpty) {
         resolved = deduplicateAiSources([
           ...resolved,
@@ -881,8 +1092,9 @@ class AiAssistantProvider extends ChangeNotifier {
     }
 
     if (resolved.isEmpty && chunkIds.isNotEmpty) {
-      resolved = await _loadFallbackSources(chunkIds);
+      resolved = await _loadFallbackSources(chunkIds, request);
     }
+    if (!_ownsSessionRequest(request)) return;
     final resolvedChunkIds = resolved
         .expand(
           (source) => source.chunkIds.isNotEmpty
@@ -910,11 +1122,16 @@ class AiAssistantProvider extends ChangeNotifier {
     _notify();
   }
 
-  Future<List<AiSource>> _loadFallbackSources(List<int> chunkIds) async {
+  Future<List<AiSource>> _loadFallbackSources(
+    List<int> chunkIds,
+    _AiSessionRequest sessionRequest,
+  ) async {
     final result = <AiSource>[];
     for (final chunkId in chunkIds) {
+      if (!_ownsSessionRequest(sessionRequest)) return const <AiSource>[];
       try {
         final content = await _service.getSourceContent(chunkId);
+        if (!_ownsSessionRequest(sessionRequest)) return const <AiSource>[];
         result.add(
           AiSource(
             type: AiSourceType.policy,
@@ -1244,6 +1461,19 @@ class AiAssistantProvider extends ChangeNotifier {
     }
   }
 
+  _AiSessionRequest _captureSessionRequest() => _AiSessionRequest(
+        accountId: _sessionAccountId,
+        authSessionGeneration: _authSessionGeneration,
+        providerGeneration: _accountRequestGeneration,
+      );
+
+  bool _ownsSessionRequest(_AiSessionRequest request) {
+    return !_disposed &&
+        request.accountId == _sessionAccountId &&
+        request.authSessionGeneration == _authSessionGeneration &&
+        request.providerGeneration == _accountRequestGeneration;
+  }
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -1251,9 +1481,23 @@ class AiAssistantProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _accountRequestGeneration++;
     _streamGeneration++;
+    unawaited(_cancelActiveEventStream());
     super.dispose();
   }
+}
+
+class _AiSessionRequest {
+  const _AiSessionRequest({
+    required this.accountId,
+    required this.authSessionGeneration,
+    required this.providerGeneration,
+  });
+
+  final int? accountId;
+  final int authSessionGeneration;
+  final int providerGeneration;
 }
 
 const int _quickPromptDisplayCount = 4;

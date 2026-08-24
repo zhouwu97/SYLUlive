@@ -10,6 +10,81 @@ import '../models/topic.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
 
+/// 唯一描述一条 Feed 的状态、分页与缓存边界。
+///
+/// `type` 会统一归一为空值，避免过去字符串拼接时 `null`/空串语义不一致；
+/// Topic 也是一等维度，任何状态同步都不能再通过拆字符串丢失它。
+@immutable
+class FeedKey {
+  factory FeedKey({
+    required int boardId,
+    required String sort,
+    String? type,
+    int? tagId,
+    int? topicId,
+  }) {
+    final normalizedType = type?.trim();
+    return FeedKey._(
+      boardId: boardId,
+      sort: sort,
+      type: normalizedType == null || normalizedType.isEmpty
+          ? null
+          : normalizedType,
+      tagId: tagId,
+      topicId: topicId,
+    );
+  }
+
+  const FeedKey._({
+    required this.boardId,
+    required this.sort,
+    required this.type,
+    required this.tagId,
+    required this.topicId,
+  });
+
+  final int boardId;
+  final String sort;
+  final String? type;
+  final int? tagId;
+  final int? topicId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is FeedKey &&
+        other.boardId == boardId &&
+        other.sort == sort &&
+        other.type == type &&
+        other.tagId == tagId &&
+        other.topicId == topicId;
+  }
+
+  @override
+  int get hashCode => Object.hash(boardId, sort, type, tagId, topicId);
+
+  @override
+  String toString() {
+    return 'FeedKey(board=$boardId, sort=$sort, type=$type, '
+        'tag=$tagId, topic=$topicId)';
+  }
+}
+
+/// 判断服务端返回的最新帖子是否仍属于指定 Feed。
+@visibleForTesting
+bool matchesFeed(Post post, FeedKey key) {
+  if (post.boardId != key.boardId) return false;
+  if (key.type != null && post.postType != key.type) return false;
+  if (key.tagId != null && post.waterTagId != key.tagId) return false;
+  if (key.topicId != null &&
+      !post.topics.any((topic) => topic.id == key.topicId)) {
+    return false;
+  }
+  if (key.sort == 'featured') {
+    return key.type == null ? post.isFeatured : post.waterSectionFeatured;
+  }
+  return true;
+}
+
 /// 每个板块的帖子状态
 class _BoardState {
   List<Post> posts = [];
@@ -38,7 +113,7 @@ class _FeedRemovedEntry {
     required this.revisionAtMutation,
   });
 
-  final String boardKey;
+  final FeedKey boardKey;
   final Post post;
   final int originalIndex;
   // 记录变更提交后该 board 的 revision，用于撤销时的 revision 安全检查。
@@ -109,7 +184,13 @@ Map<String, dynamic> buildPostListParams({
     'sort': sort,
     'limit': limit,
   };
-  if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+  if (usesHomeFeedV2(
+    boardId: boardId,
+    sort: sort,
+    type: type,
+    tagId: tagId,
+    topicId: topicId,
+  )) {
     params['feed_version'] = 3;
   }
   params['capabilities'] = 'poll_v1';
@@ -240,7 +321,7 @@ class PostProvider extends ChangeNotifier {
   final Dio _dio;
   final bool _enableCache;
 
-  final Map<String, _BoardState> _boards = {};
+  final Map<FeedKey, _BoardState> _boards = {};
   final Map<String, Future<void>> _inflightRequests = {};
   final Map<int, Post> _canonicalPosts = {};
   final int _activeBoardId = 1;
@@ -248,14 +329,20 @@ class PostProvider extends ChangeNotifier {
   PostProvider(this._dio, {bool enableCache = true})
       : _enableCache = enableCache;
 
-  String _stateKey(
+  FeedKey _stateKey(
     int boardId,
     String sort,
     String? type, {
     int? tagId,
     int? topicId,
   }) {
-    return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}|${topicId ?? ''}';
+    return FeedKey(
+      boardId: boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
   }
 
   String _postsEndpoint(String sort, {String? type}) {
@@ -362,10 +449,8 @@ class PostProvider extends ChangeNotifier {
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
   void invalidateFollowingFeed() {
-    final keys = _boards.keys.where((key) {
-      final parts = key.split('|');
-      return parts.length >= 2 && parts[1] == 'following';
-    }).toList();
+    final keys =
+        _boards.keys.where((key) => key.sort == 'following').toList();
 
     for (final key in keys) {
       _boards[key]?.requestVersion++;
@@ -381,7 +466,7 @@ class PostProvider extends ChangeNotifier {
   /// 因此登录 / 退出 / 切换账号 / 隐藏或恢复作者后必须整体失效，避免账号 A 的
   /// 个性化缓存被账号 B 读到。同时 bump requestVersion，丢弃在途旧请求的写入。
   Future<void> invalidateHomeFeedCaches() async {
-    final keys = _boards.keys.where((key) => key.startsWith('1|')).toList();
+    final keys = _boards.keys.where((key) => key.boardId == 1).toList();
     for (final key in keys) {
       _boards[key]?.requestVersion++;
       _boards.remove(key);
@@ -433,42 +518,26 @@ class PostProvider extends ChangeNotifier {
   void _upsertPostInBoards(Post post) {
     var touched = false;
     for (final entry in _boards.entries) {
-      final keyParts = entry.key.split('|');
-      final boardId = int.tryParse(keyParts.first) ?? 0;
-      if (boardId != post.boardId) continue;
-
-      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
-      final type =
-          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
-      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
-          ? int.tryParse(keyParts[3])
-          : null;
-      final topicId = keyParts.length > 4 && keyParts[4].isNotEmpty
-          ? int.tryParse(keyParts[4])
-          : null;
-      if (type != null && type != post.postType) continue;
-      if (tagId != null && tagId != post.waterTagId) continue;
-      if (topicId != null && !post.topics.any((topic) => topic.id == topicId)) {
-        continue;
-      }
+      final feedKey = entry.key;
+      if (!matchesFeed(post, feedKey)) continue;
 
       final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == post.id);
       if (index >= 0) {
         board.posts[index] = post;
-      } else if (sort == 'time') {
+      } else if (feedKey.sort == 'time') {
         board.posts = [post, ...board.posts];
       } else {
         continue;
       }
       board.revision++;
       _savePostsToCache(
-        boardId,
-        sort,
+        feedKey.boardId,
+        feedKey.sort,
         board.posts,
-        type: type,
-        tagId: tagId,
-        topicId: topicId,
+        type: feedKey.type,
+        tagId: feedKey.tagId,
+        topicId: feedKey.topicId,
       );
       touched = true;
     }
@@ -1522,7 +1591,7 @@ class PostProvider extends ChangeNotifier {
   // 自动刷新只做“探测 + 暂存”，绝不直接覆写用户正在阅读的可见列表；
   // 是否应用由页面（顶部温和更新 / “内容有更新”浮条）决定。
 
-  final Map<String, FreshnessProbeResult> _pendingFreshSnapshots = {};
+  final Map<FeedKey, FreshnessProbeResult> _pendingFreshSnapshots = {};
   final Map<String, Future<FreshnessProbeResult?>> _probeInflight = {};
 
   /// 是否有尚未应用的探测快照（供页面显示“内容有更新”浮条）。
@@ -1686,14 +1755,7 @@ class PostProvider extends ChangeNotifier {
     _canonicalPosts.remove(postId);
     var changed = false;
     for (final entry in _boards.entries) {
-      final keyParts = entry.key.split('|');
-      final boardId = int.tryParse(keyParts.first) ?? 0;
-      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
-      final type =
-          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
-      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
-          ? int.tryParse(keyParts[3])
-          : null;
+      final feedKey = entry.key;
       final board = entry.value;
       final beforePosts = board.posts.length;
       final beforePinned = board.pinnedPosts.length;
@@ -1703,7 +1765,14 @@ class PostProvider extends ChangeNotifier {
           beforePinned != board.pinnedPosts.length) {
         board.revision++;
         changed = true;
-        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+        _savePostsToCache(
+          feedKey.boardId,
+          feedKey.sort,
+          board.posts,
+          type: feedKey.type,
+          tagId: feedKey.tagId,
+          topicId: feedKey.topicId,
+        );
       }
     }
     if (changed) notifyListeners();
@@ -1712,28 +1781,40 @@ class PostProvider extends ChangeNotifier {
   void _replacePostInBoards(Post updated) {
     _canonicalPosts[updated.id] = updated;
     for (final entry in _boards.entries) {
-      final keyParts = entry.key.split('|');
-      final boardId = int.tryParse(keyParts.first) ?? 0;
-      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
-      final type =
-          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
-      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
-          ? int.tryParse(keyParts[3])
-          : null;
+      final feedKey = entry.key;
       final board = entry.value;
+      final stillMatches = matchesFeed(updated, feedKey);
+      var changed = false;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
-        board.posts[index] = updated;
-        board.revision++;
-        // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
-        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+        if (stillMatches) {
+          board.posts[index] = updated;
+        } else {
+          board.posts.removeAt(index);
+        }
+        changed = true;
       }
       final pinnedIndex =
           board.pinnedPosts.indexWhere((p) => p.id == updated.id);
       if (pinnedIndex >= 0) {
-        board.pinnedPosts[pinnedIndex] = updated;
+        if (stillMatches && updated.isActivePinned) {
+          board.pinnedPosts[pinnedIndex] = updated;
+        } else {
+          board.pinnedPosts.removeAt(pinnedIndex);
+        }
+        changed = true;
+      }
+      if (changed) {
         board.revision++;
-        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+        // 同步持久化到本地缓存，防止杀后台后数据倒退；Topic Feed 明确不落盘。
+        _savePostsToCache(
+          feedKey.boardId,
+          feedKey.sort,
+          board.posts,
+          type: feedKey.type,
+          tagId: feedKey.tagId,
+          topicId: feedKey.topicId,
+        );
       }
     }
   }
@@ -1741,29 +1822,29 @@ class PostProvider extends ChangeNotifier {
   // ── FEED-3 乐观可见性 ─────────────────────────────────────────────
 
   /// 是否属于首页主 Tab（sort ∈ all/time/featured/following 且无版块 type）。
-  bool _isMainFeedBoard(String key) {
-    final parts = key.split('|');
-    if (parts.length < 3) return false;
-    final sort = parts[1];
-    final type = parts[2];
-    if (type.isNotEmpty) return false;
-    return sort == 'all' ||
-        sort == 'time' ||
-        sort == 'featured' ||
-        sort == 'following';
+  bool _isMainFeedBoard(FeedKey key) {
+    if (key.boardId != 1 ||
+        key.type != null ||
+        key.tagId != null ||
+        key.topicId != null) {
+      return false;
+    }
+    return key.sort == 'all' ||
+        key.sort == 'time' ||
+        key.sort == 'featured' ||
+        key.sort == 'following';
   }
 
-  void _syncBoardCacheAfterMutation(String key, _BoardState board) {
+  void _syncBoardCacheAfterMutation(FeedKey key, _BoardState board) {
     if (!_enableCache) return;
-    final keyParts = key.split('|');
-    final boardId = int.tryParse(keyParts.first) ?? 0;
-    final sort = keyParts.length > 1 ? keyParts[1] : 'time';
-    final type =
-        keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
-    final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
-        ? int.tryParse(keyParts[3])
-        : null;
-    _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+    _savePostsToCache(
+      key.boardId,
+      key.sort,
+      board.posts,
+      type: key.type,
+      tagId: key.tagId,
+      topicId: key.topicId,
+    );
   }
 
   void _restoreRemoved(List<_FeedRemovedEntry> removed) {
@@ -1785,7 +1866,7 @@ class PostProvider extends ChangeNotifier {
   }) async {
     final removed = <_FeedRemovedEntry>[];
     for (final entry in _boards.entries) {
-      if (!_isMainFeedBoard(entry.key) || entry.key.split('|')[1] != 'all') {
+      if (!_isMainFeedBoard(entry.key) || entry.key.sort != 'all') {
         continue;
       }
       final board = entry.value;

@@ -45,6 +45,7 @@ class BottomNavWrapper extends StatefulWidget {
   final ValueChanged<int>? onNavigationCommitted;
   final ValueChanged<double>? onVisualPositionChanged;
   final VoidCallback? onInteractionStart;
+  final LiquidGlassTuning tuning;
   final AuthProvider authProvider;
   final Map<int, bool> badges;
 
@@ -57,6 +58,7 @@ class BottomNavWrapper extends StatefulWidget {
     this.onNavigationCommitted,
     this.onVisualPositionChanged,
     this.onInteractionStart,
+    this.tuning = const LiquidGlassTuning(),
     this.badges = const {},
   });
 
@@ -122,7 +124,12 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     final themeProvider = context.watch<ThemeProvider>();
 
     if (themeProvider.floatingNavBar) {
-      return _buildFloatingNav(context, isDark, themeProvider.liquidGlass);
+      return _buildFloatingNav(
+        context,
+        isDark,
+        themeProvider.liquidGlass,
+        tuning: widget.tuning,
+      );
     }
     return _buildBlurNav(context, isDark);
   }
@@ -229,8 +236,9 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   Widget _buildFloatingNav(
     BuildContext context,
     bool isDark,
-    bool useLiquidGlass,
-  ) {
+    bool useLiquidGlass, {
+    required LiquidGlassTuning tuning,
+  }) {
     final mediaQuery = MediaQuery.of(context);
     final highContrast = mediaQuery.highContrast;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
@@ -286,6 +294,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                               isDark: isDark,
                               highContrast: highContrast,
                               useLiquidGlass: useLiquidGlass,
+                              tuning: tuning,
                             ),
                           ),
                           Positioned.fill(
@@ -328,6 +337,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                           isDark: isDark,
                                           highContrast: highContrast,
                                           reduceMotion: reduceMotion,
+                                          tuning: tuning,
                                         ),
                                     ],
                                   );
@@ -426,7 +436,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     final localX = renderObject is RenderBox
         ? renderObject.globalToLocal(event.position).dx
         : event.position.dx;
-    debugPrint('[LiquidGlassTest] pointer local=$localX center=${_controller.lensCenterX} item=$_itemWidth');
     _recordPointerDown(localX);
     _pointerId = event.pointer;
     _pointerDownTime = event.timeStamp;
@@ -470,7 +479,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   void _handleDragStart(DragStartDetails details, double itemWidth) {
-    debugPrint('[LiquidGlassTest] drag inside=$_pointerInsideLens down=$_pointerDownX');
     if (!_pointerInsideLens) return;
     _cancelSpring();
     final startPosition = _controller.position;
@@ -479,7 +487,11 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _lastPointerX = _pointerDownX ?? details.localPosition.dx;
     _lastPointerTime = _pointerDownTime ?? details.sourceTimeStamp;
     setState(() => _isDragging = true);
-    _setVisualPosition(startPosition);
+    _controller.updateDragFromCenter(
+      centerX: details.localPosition.dx - _grabOffsetX,
+      velocityPixelsPerSecond: _velocityPixelsPerSecond,
+    );
+    _setVisualPosition(_controller.position);
   }
 
   void _handleDragUpdate(DragUpdateDetails details, double itemWidth) {
@@ -775,14 +787,17 @@ class _FloatingDockSurface extends StatelessWidget {
     required this.isDark,
     required this.highContrast,
     required this.useLiquidGlass,
+    required this.tuning,
   });
 
   final bool isDark;
   final bool highContrast;
   final bool useLiquidGlass;
+  final LiquidGlassTuning tuning;
 
   @override
   Widget build(BuildContext context) {
+    final dockAlpha = tuning.dockAlpha.clamp(0.0, 1.0).toDouble();
     final fill = DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -792,18 +807,18 @@ class _FloatingDockSurface extends StatelessWidget {
               ? (isDark
                   ? [
                       const Color(0xFF202326).withValues(
-                        alpha: highContrast ? 0.32 : 0.25,
+                        alpha: (highContrast ? 0.32 : 0.25) * dockAlpha,
                       ),
                       const Color(0xFF111315).withValues(
-                        alpha: highContrast ? 0.27 : 0.18,
+                        alpha: (highContrast ? 0.27 : 0.18) * dockAlpha,
                       ),
                     ]
                   : [
                       Colors.white.withValues(
-                        alpha: highContrast ? 0.26 : 0.18,
+                        alpha: (highContrast ? 0.26 : 0.18) * dockAlpha,
                       ),
                       Colors.white.withValues(
-                        alpha: highContrast ? 0.18 : 0.10,
+                        alpha: (highContrast ? 0.18 : 0.10) * dockAlpha,
                       ),
                     ])
               : (isDark
@@ -820,7 +835,9 @@ class _FloatingDockSurface extends StatelessWidget {
           color: isDark
               ? Colors.white.withValues(alpha: highContrast ? 0.22 : 0.10)
               : (useLiquidGlass
-                  ? Colors.white.withValues(alpha: highContrast ? 0.46 : 0.26)
+                  ? Colors.white.withValues(
+                      alpha: (highContrast ? 0.46 : 0.26) * dockAlpha,
+                    )
                   : AppColors.borderNormalLight),
           width: highContrast ? 1.25 : 1,
         ),
@@ -830,8 +847,12 @@ class _FloatingDockSurface extends StatelessWidget {
     if (!useLiquidGlass) return fill;
     return BackdropFilter(
       filter: ui.ImageFilter.blur(
-        sigmaX: isDark ? 5.5 : 4.5,
-        sigmaY: isDark ? 5.5 : 4.5,
+        sigmaX: isDark
+            ? tuning.dockBlur.clamp(0.0, 20.0).toDouble() + 1
+            : tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+        sigmaY: isDark
+            ? tuning.dockBlur.clamp(0.0, 20.0).toDouble() + 1
+            : tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
       ),
       child: fill,
     );
@@ -1006,6 +1027,7 @@ class _LiquidSelectionLens extends StatefulWidget {
     required this.isDark,
     required this.highContrast,
     required this.reduceMotion,
+    required this.tuning,
   });
 
   final Size dockSize;
@@ -1017,6 +1039,7 @@ class _LiquidSelectionLens extends StatefulWidget {
   final bool isDark;
   final bool highContrast;
   final bool reduceMotion;
+  final LiquidGlassTuning tuning;
 
   @override
   State<_LiquidSelectionLens> createState() => _LiquidSelectionLensState();
@@ -1100,9 +1123,9 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
     if (canRefract) {
       shader
-        ..setFloat(2, 14.0)
-        ..setFloat(3, 1.055)
-        ..setFloat(4, 1.2)
+        ..setFloat(2, widget.tuning.refraction)
+        ..setFloat(3, widget.tuning.magnification)
+        ..setFloat(4, widget.tuning.chromatic)
         ..setFloat(5, speed)
         ..setFloat(6, direction)
         ..setFloat(7, widget.edgeCompression)
@@ -1111,13 +1134,22 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
         ..setFloat(10, 1.0)
         ..setFloat(11, 1.0)
         ..setFloat(12, widget.isDark ? 0.045 : 0.03)
-        ..setFloat(13, widget.highContrast ? 0.42 : 0.34)
-        ..setFloat(14, widget.highContrast ? 0.22 : 0.16);
+        ..setFloat(
+          13,
+          widget.tuning.lightStrength * (widget.highContrast ? 1.24 : 1.0),
+        )
+        ..setFloat(
+          14,
+          widget.tuning.rimStrength * (widget.highContrast ? 1.3 : 1.0),
+        );
     }
 
     final filter = canRefract
         ? ui.ImageFilter.shader(shader)
-        : ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4);
+        : ui.ImageFilter.blur(
+            sigmaX: widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+            sigmaY: widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+          );
 
     return Positioned(
       key: const ValueKey('bottom-nav-liquid-lens'),
@@ -1182,6 +1214,7 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                     motion: speed,
                     direction: direction,
                     edgeCompression: widget.edgeCompression,
+                    rimStrength: widget.tuning.rimStrength,
                   ),
                 ),
               ],
@@ -1200,6 +1233,7 @@ class _LiquidLensRimPainter extends CustomPainter {
     required this.motion,
     required this.direction,
     required this.edgeCompression,
+    required this.rimStrength,
   });
 
   final bool isDark;
@@ -1207,6 +1241,7 @@ class _LiquidLensRimPainter extends CustomPainter {
   final double motion;
   final double direction;
   final double edgeCompression;
+  final double rimStrength;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1228,7 +1263,8 @@ class _LiquidLensRimPainter extends CustomPainter {
         colors: [
           Colors.white.withValues(alpha: 0),
           Colors.white.withValues(
-            alpha: (highContrast ? 0.36 : 0.18) + motion * 0.08,
+            alpha: ((highContrast ? 0.36 : 0.18) + motion * 0.08) *
+                rimStrength.clamp(0.0, 2.0),
           ),
           Colors.white.withValues(alpha: 0),
         ],
@@ -1242,7 +1278,8 @@ class _LiquidLensRimPainter extends CustomPainter {
         oldDelegate.highContrast != highContrast ||
         oldDelegate.motion != motion ||
         oldDelegate.direction != direction ||
-        oldDelegate.edgeCompression != edgeCompression;
+        oldDelegate.edgeCompression != edgeCompression ||
+        oldDelegate.rimStrength != rimStrength;
   }
 }
 

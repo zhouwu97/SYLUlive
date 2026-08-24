@@ -30,6 +30,7 @@ type toolLoopOutcome struct {
 	cancelled        bool
 	failureCode      string
 	pause            *toolLoopPause
+	cost             AgentCostMetrics
 }
 
 type collectedToolCall struct {
@@ -82,24 +83,46 @@ func contextResultsEvidence(results ...academic.ContextResult) []personalDataEvi
 
 // executeToolLoop 执行受限的模型-工具循环。工具身份始终由 run.UserID 注入，
 // 模型只可提交声明中的参数，且每轮工具数量与总轮数均有硬限制。
-func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messages []Message, definitions []ToolDefinition, requiredTool string, requiredToolAlreadyCompleted bool, agentState *AgentRunState) toolLoopOutcome {
-	outcome := toolLoopOutcome{}
+func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messages []Message, definitions []ToolDefinition, requiredTool string, requiredToolAlreadyCompleted bool, agentState *AgentRunState) (outcome toolLoopOutcome) {
+	startedAt := time.Now()
+	defer func() {
+		outcome.cost.WallTimeMS = time.Since(startedAt).Milliseconds()
+		outcome.cost.ActiveComputeTimeMS = outcome.cost.WallTimeMS
+	}()
 	toolRounds := 0
 	requiredToolCompleted := requiredTool == "" || requiredToolAlreadyCompleted
 	unavailableTools := make(map[string]struct{})
+	var budgetTracker *BudgetTracker
+	if agentState != nil {
+		budgetTracker = NewBudgetTracker(agentState.Budget)
+		budgetTracker.Calls = agentState.ToolCalls
+		budgetTracker.PlanningRounds = agentState.PlanningRounds
+		for _, observation := range agentState.Observations {
+			budgetTracker.ToolCallsByName[observation.Capability]++
+		}
+	}
 
 	for {
+		// Runtime 的全局 MaxToolSteps 仍是硬上限；ExecutionProfile 的 planning
+		// budget 记录在 Trace/State，并由 AgentOrchestrator 的 Kernel loop 严格闸门
+		// 执行。这里保留恢复路径所需的额外 planning round，避免等待用户/设备
+		// 后把同一 Run 错误地判成不可恢复。
+		finalDecisionRound := false
 		if agentState != nil {
-			if err := r.beginRuntimePlanningRound(ctx, run, agentState); err != nil {
-				outcome.failureCode = "agent_state_version_conflict"
-				return outcome
+			if !finalDecisionRound {
+				if err := r.beginRuntimePlanningRound(ctx, run, agentState); err != nil {
+					outcome.failureCode = "agent_state_version_conflict"
+					return outcome
+				}
+				budgetTracker.PlanningRounds = agentState.PlanningRounds
 			}
+			outcome.cost.PlanningRounds = budgetTracker.PlanningRounds
 		}
 		requestTools := definitions
 		if len(unavailableTools) > 0 {
 			requestTools = filterUnavailableToolDefinitions(requestTools, unavailableTools)
 		}
-		if toolRounds >= r.config.MaxToolSteps {
+		if toolRounds >= r.config.MaxToolSteps || finalDecisionRound {
 			// 工具轮数耗尽后仍允许模型基于已有结果作答，但不再暴露任何工具。
 			requestTools = nil
 		}
@@ -107,8 +130,13 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		if !requiredToolCompleted {
 			forcedTool = requiredTool
 		}
+		maxTokens := r.config.MaxOutputTokens
+		if agentState != nil && agentState.Budget.MaxModelTokens > 0 && agentState.Budget.MaxModelTokens < maxTokens {
+			maxTokens = agentState.Budget.MaxModelTokens
+		}
+		outcome.cost.ModelCalls++
 		stream, err := r.provider.Start(ctx, ProviderRequest{
-			Messages: messages, Temperature: 0.1, MaxTokens: r.config.MaxOutputTokens,
+			Messages: messages, Temperature: 0.1, MaxTokens: maxTokens,
 			Tools: requestTools, RequiredTool: forcedTool,
 		})
 		if err != nil {
@@ -123,6 +151,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		answer, calls, roundOutcome := r.collectProviderRound(ctx, run, stream, outcome.usage)
 		_ = stream.Close()
 		outcome.usage = roundOutcome.usage
+		outcome.cost.InputTokens += int64(roundOutcome.usage.InputTokens)
+		outcome.cost.OutputTokens += int64(roundOutcome.usage.OutputTokens)
+		outcome.cost.TokenUsageAvailable = outcome.cost.TokenUsageAvailable || roundOutcome.usage.UsageAvailable
 		outcome.generated = outcome.generated || roundOutcome.generated
 		if roundOutcome.cancelled || roundOutcome.failureCode != "" {
 			return toolLoopOutcome{
@@ -171,6 +202,17 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		toolResultMessages := make([]Message, 0, len(calls))
 		pendingWaits := make([]pendingToolWait, 0, len(calls))
 		for _, call := range calls {
+			if finalDecisionRound {
+				outcome.failureCode = "agent_planning_budget_exhausted"
+				return outcome
+			}
+			if budgetTracker != nil {
+				if err := budgetTracker.Admit(call.name, json.RawMessage(call.arguments.String()), false); err != nil {
+					outcome.failureCode = err.Error()
+					return outcome
+				}
+				outcome.cost.ToolCalls = budgetTracker.Calls
+			}
 			if !requiredToolCompleted && call.name != requiredTool {
 				outcome.failureCode = "required_tool_not_used"
 				return outcome
@@ -235,6 +277,15 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			}
 			if agentState != nil {
 				eventPayload["new_fact_count"] = addRuntimeObservation(agentState, call.name, execution.Result, time.Now())
+				if envelope, decodeErr := DecodeToolResult(execution.Result); decodeErr == nil {
+					fromMode, toMode, upgraded := UpgradeExecutionFromObservation(agentState, envelope)
+					if upgraded {
+						budgetTracker.Budget = agentState.Budget
+						_, _ = r.appendEvent(ctx, run.ID, "execution_mode.upgraded", r.agentTracePayload(run, map[string]interface{}{
+							"from_mode": fromMode, "to_mode": toMode,
+						}, 0, 0), true)
+					}
+				}
 				agentState.PlanVersion++
 				if err := r.persistRuntimeAgentState(ctx, run, *agentState); err != nil {
 					outcome.failureCode = "agent_state_persist_failed"
@@ -730,6 +781,7 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 			outcome.usage.InputTokens += event.InputTokens
 			outcome.usage.OutputTokens += event.OutputTokens
 			outcome.usage.CacheHitTokens += event.CacheHitTokens
+			outcome.usage.UsageAvailable = outcome.usage.UsageAvailable || event.UsageAvailable
 		case ProviderEventToolCallStarted:
 			outcome.generated = true
 			if event.CallID == "" || event.ToolName == "" || len(calls) >= maxToolsPerRound {

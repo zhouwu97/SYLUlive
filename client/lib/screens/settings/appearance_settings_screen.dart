@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +13,7 @@ import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
+import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import 'widgets/background_picker_sheet.dart';
 
 /// 外观与显示二级设置页
@@ -126,8 +128,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
       final customBackgroundActive =
           themeProvider.isCustomBackgroundMode && bgPath.isNotEmpty;
 
-      if (customBackgroundActive &&
-          themeProvider.backgroundBlur > 0.01) {
+      if (customBackgroundActive && themeProvider.backgroundBlur > 0.01) {
         final previewBlur =
             (themeProvider.backgroundBlur * 0.3).clamp(0.0, 9.0);
 
@@ -314,8 +315,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     final customBackgroundActive =
-        themeProvider.isCustomBackgroundMode &&
-        themeProvider.hasAnyBackground;
+        themeProvider.isCustomBackgroundMode && themeProvider.hasAnyBackground;
 
     return SettingsPageScaffold(
       title: '外观与显示',
@@ -403,8 +403,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
               value: themeProvider.componentOpacity,
               min: 0.1,
               max: 1.0,
-              valueLabel:
-                  '${(themeProvider.componentOpacity * 100).toInt()}%',
+              valueLabel: '${(themeProvider.componentOpacity * 100).toInt()}%',
               enabled: customBackgroundActive,
               onChanged: (val) => themeProvider.setComponentOpacity(val),
             ),
@@ -434,6 +433,17 @@ class AppearanceSettingsScreen extends StatelessWidget {
                 onChanged: (val) => themeProvider.setFloatingNavBar(val),
               ),
             ),
+            if (kDebugMode)
+              SettingsTile(
+                icon: Icons.tune_rounded,
+                title: 'Liquid Glass QA',
+                subtitle: '开发专用纹理、轮廓与光学参数调试页',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LiquidGlassQaScreen(),
+                  ),
+                ),
+              ),
           ],
         ),
       ],

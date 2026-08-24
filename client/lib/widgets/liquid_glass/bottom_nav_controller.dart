@@ -1,5 +1,14 @@
 import 'dart:math' as math;
 
+/// 液态导航物体的交互阶段。
+enum LiquidNavPhase {
+  idle,
+  pressing,
+  dragging,
+  settling,
+  collapsing,
+}
+
 /// 液态底栏的连续位置状态。
 ///
 /// 页面提交状态仍由 HomeScreen 持有；这个控制器只描述 Dock 内的视觉

@@ -24,6 +24,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   var _currentIndex = 2;
   var _tuning = const LiquidGlassTuning();
   var _pattern = LiquidGlassQaPattern.checker;
+  var _qaPhase = LiquidNavPhase.idle;
+  var _qaActivation = 0.0;
 
   @override
   void initState() {
@@ -74,6 +76,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         },
         authProvider: authProvider,
         tuning: _tuning,
+        qaPhase: _qaPhase,
+        qaActivation: _qaActivation,
       ),
     );
   }
@@ -131,6 +135,71 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                     ),
                   )
                   .toList(),
+            ),
+            const SizedBox(height: 6),
+            const Text('Color preset', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: LiquidNavColorPreset.values
+                  .map(
+                    (preset) => _buildQaChip(
+                      _colorPresetLabel(preset),
+                      _tuning.colorPreset == preset,
+                      () => _setTuning(
+                        _tuning.copyWith(colorPreset: preset),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Interaction state',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                _buildQaChip(
+                  'Idle',
+                  _qaPhase == LiquidNavPhase.idle,
+                  () => _setQaPhase(LiquidNavPhase.idle, 0),
+                ),
+                _buildQaChip(
+                  'Pressed 25%',
+                  _qaPhase == LiquidNavPhase.pressing && _qaActivation == 0.25,
+                  () => _setQaPhase(LiquidNavPhase.pressing, 0.25),
+                ),
+                _buildQaChip(
+                  'Pressed 50%',
+                  _qaPhase == LiquidNavPhase.pressing && _qaActivation == 0.50,
+                  () => _setQaPhase(LiquidNavPhase.pressing, 0.50),
+                ),
+                _buildQaChip(
+                  'Pressed 100%',
+                  _qaPhase == LiquidNavPhase.pressing && _qaActivation == 1,
+                  () => _setQaPhase(LiquidNavPhase.pressing, 1),
+                ),
+                _buildQaChip(
+                  'Dragging',
+                  _qaPhase == LiquidNavPhase.dragging,
+                  () => _setQaPhase(LiquidNavPhase.dragging, 1),
+                ),
+                _buildQaChip(
+                  'Settling',
+                  _qaPhase == LiquidNavPhase.settling,
+                  () => _setQaPhase(LiquidNavPhase.settling, 1),
+                ),
+                _buildQaChip(
+                  'Collapsing',
+                  _qaPhase == LiquidNavPhase.collapsing,
+                  () => _setQaPhase(LiquidNavPhase.collapsing, 0.55),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             const Text('Pattern', style: TextStyle(color: Colors.white70)),
@@ -296,7 +365,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   bool _isPreset(LiquidGlassTuning preset) {
     return _tuning.magnification == preset.magnification &&
         _tuning.refraction == preset.refraction &&
-        _tuning.chromatic == preset.chromatic;
+        _tuning.chromatic == preset.chromatic &&
+        _tuning.colorPreset == preset.colorPreset;
   }
 
   void _setPreset(LiquidGlassTuning preset) {
@@ -310,6 +380,13 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
 
   void _setTuning(LiquidGlassTuning tuning) {
     setState(() => _tuning = tuning);
+  }
+
+  void _setQaPhase(LiquidNavPhase phase, double activation) {
+    setState(() {
+      _qaPhase = phase;
+      _qaActivation = activation;
+    });
   }
 
   String _modeLabel(LiquidGlassQaMode mode) {
@@ -341,6 +418,15 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         return 'Checker';
       case LiquidGlassQaPattern.text:
         return 'Text';
+    }
+  }
+
+  String _colorPresetLabel(LiquidNavColorPreset preset) {
+    switch (preset) {
+      case LiquidNavColorPreset.sylulive:
+        return 'SYLUlive';
+      case LiquidNavColorPreset.coolapkReference:
+        return 'Coolapk reference';
     }
   }
 }

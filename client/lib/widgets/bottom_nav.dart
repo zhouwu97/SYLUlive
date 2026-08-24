@@ -11,9 +11,11 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_text_styles.dart';
 import 'liquid_glass/bottom_nav_controller.dart';
+export 'liquid_glass/bottom_nav_controller.dart';
 import 'liquid_glass/liquid_lens_geometry.dart';
 export 'liquid_glass/liquid_lens_geometry.dart';
 import 'liquid_glass/liquid_glass_runtime.dart';
@@ -47,6 +49,10 @@ class BottomNavWrapper extends StatefulWidget {
   final ValueChanged<int>? onNavigationCommitted;
   final ValueChanged<double>? onVisualPositionChanged;
   final VoidCallback? onInteractionStart;
+  final ValueChanged<LiquidNavPhase>? onLiquidPhaseChanged;
+  final ValueChanged<double>? onLiquidActivationChanged;
+  final LiquidNavPhase? qaPhase;
+  final double? qaActivation;
   final LiquidGlassTuning tuning;
   final AuthProvider authProvider;
   final Map<int, bool> badges;
@@ -60,6 +66,10 @@ class BottomNavWrapper extends StatefulWidget {
     this.onNavigationCommitted,
     this.onVisualPositionChanged,
     this.onInteractionStart,
+    this.onLiquidPhaseChanged,
+    this.onLiquidActivationChanged,
+    this.qaPhase,
+    this.qaActivation,
     this.tuning = const LiquidGlassTuning(),
     this.badges = const {},
   });
@@ -69,9 +79,10 @@ class BottomNavWrapper extends StatefulWidget {
 }
 
 class _BottomNavWrapperState extends State<BottomNavWrapper>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final BottomNavController _controller;
   late final AnimationController _springController;
+  late final AnimationController _activationController;
   late final ValueNotifier<int> _motionFrame;
   late final Listenable _visualFrameListenable;
 
@@ -86,9 +97,14 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   double? _pointerUpVelocityPixelsPerSecond;
   double _grabOffsetX = 0;
   final GlobalKey _dockRenderKey = GlobalKey();
-  bool _pointerInsideLens = false;
+  bool _pointerInsideIdleSelection = false;
+  bool _pointerInsideActiveLens = false;
   bool _isDragging = false;
   int _settleSerial = 0;
+  LiquidNavPhase _phase = LiquidNavPhase.idle;
+  double _activation = 0;
+  int? _collapseTargetIndex;
+  bool _commitAfterSettle = false;
 
   @override
   void initState() {
@@ -109,12 +125,20 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
       vsync: this,
       value: initialPosition,
     )..addListener(_handleSpringTick);
+    _activationController = AnimationController(
+      vsync: this,
+      duration: AppMotion.tab,
+      reverseDuration: AppMotion.fast,
+    )..addListener(_handleActivationTick);
   }
 
   @override
   void dispose() {
     _springController
       ..removeListener(_handleSpringTick)
+      ..dispose();
+    _activationController
+      ..removeListener(_handleActivationTick)
       ..dispose();
     _motionFrame.dispose();
     super.dispose();
@@ -277,6 +301,27 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                     final effectiveVisualIndex = reduceMotion && !_isDragging
                         ? widget.currentIndex.toDouble()
                         : visualIndex;
+                    final phase = widget.qaPhase ?? _phase;
+                    final activation =
+                        (widget.qaActivation ?? _activation).clamp(0.0, 1.0);
+                    final liquidVisible =
+                        useLiquidGlass && phase != LiquidNavPhase.idle;
+                    // QA 的 Dragging 状态没有真实 pointer velocity，使用固定预览值
+                    // 让尾部、方向和边缘压缩仍然可被人工检查；生产路径继续读取真实速度。
+                    final qaPreviewDragging =
+                        widget.qaPhase == LiquidNavPhase.dragging;
+                    final previewVelocityPixelsPerSecond = qaPreviewDragging
+                        ? tuning.velocityNormalization * 0.72
+                        : _velocityPixelsPerSecond;
+                    final previewEdgeCompression = qaPreviewDragging
+                        ? 0.16
+                        : _controller.edgeCompression;
+                    final idleSelectionIndex = phase == LiquidNavPhase.idle
+                        ? effectiveVisualIndex
+                        : (phase == LiquidNavPhase.collapsing &&
+                                _collapseTargetIndex != null
+                            ? _collapseTargetIndex!.toDouble()
+                            : effectiveVisualIndex);
 
                     return Stack(
                       clipBehavior: Clip.none,
@@ -319,12 +364,15 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                       child: Stack(
                                         fit: StackFit.expand,
                                         children: [
-                                          if (!useLiquidGlass)
-                                            _FloatingSelectionFallback(
-                                              itemWidth: itemWidth,
-                                              visualIndex: effectiveVisualIndex,
-                                              isDark: isDark,
-                                            ),
+                                          _FloatingSelectionFallback(
+                                            itemWidth: itemWidth,
+                                            visualIndex: idleSelectionIndex,
+                                            isDark: isDark,
+                                            useLiquidGlass: useLiquidGlass,
+                                            opacity: useLiquidGlass
+                                                ? 1 - activation
+                                                : 1,
+                                          ),
                                           _buildGestureLayer(
                                             context: context,
                                             itemWidth: itemWidth,
@@ -361,16 +409,25 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                             ),
                           ),
                         ),
-                        if (useLiquidGlass)
+                        if (liquidVisible)
                           _LiquidSelectionLens(
                             dockSize: dockSize,
                             itemWidth: itemWidth,
                             visualIndex: effectiveVisualIndex,
                             velocityPixelsPerSecond:
-                                reduceMotion ? 0 : _velocityPixelsPerSecond,
+                                reduceMotion || phase != LiquidNavPhase.dragging
+                                    ? 0
+                                    : previewVelocityPixelsPerSecond,
                             edgeCompression:
-                                reduceMotion ? 0 : _controller.edgeCompression,
-                            isDragging: _isDragging,
+                                reduceMotion || phase != LiquidNavPhase.dragging
+                                    ? 0
+                                    : previewEdgeCompression,
+                            phase: phase,
+                            activation: activation.toDouble(),
+                            pressDepth: phase == LiquidNavPhase.pressing ||
+                                    phase == LiquidNavPhase.dragging
+                                ? 1
+                                : 0,
                             isDark: isDark,
                             highContrast: highContrast,
                             reduceMotion: reduceMotion,
@@ -383,8 +440,13 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                             child: _LiquidGlassDiagnosticsOverlay(
                               visualPosition: widget.visualIndexListenable,
                               motionFrame: _motionFrame,
-                              isDragging: _isDragging,
-                              velocityPixelsPerSecond: _velocityPixelsPerSecond,
+                              isDragging: phase == LiquidNavPhase.dragging,
+                              phase: phase,
+                              activation: activation.toDouble(),
+                              velocityPixelsPerSecond:
+                                  phase == LiquidNavPhase.dragging
+                                      ? previewVelocityPixelsPerSecond
+                                      : _velocityPixelsPerSecond,
                               itemWidth: itemWidth,
                               tuning: tuning,
                             ),
@@ -450,8 +512,30 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _velocityTracker = VelocityTracker.withKind(event.kind)
       ..addPosition(event.timeStamp, event.position);
     _pointerUpVelocityPixelsPerSecond = null;
-    _cancelSpring();
     widget.onInteractionStart?.call();
+
+    switch (_phase) {
+      case LiquidNavPhase.idle:
+        _cancelSpring();
+        if (_pointerInsideIdleSelection) {
+          _beginPress(localX);
+        }
+      case LiquidNavPhase.pressing:
+        break;
+      case LiquidNavPhase.dragging:
+        break;
+      case LiquidNavPhase.settling:
+        _cancelSpring();
+        if (_pointerInsideActiveLens) {
+          _beginDrag(localX, event.timeStamp, regrab: true);
+        } else {
+          _startCollapse(widget.currentIndex);
+        }
+      case LiquidNavPhase.collapsing:
+        if (_pointerInsideActiveLens) {
+          _beginDrag(localX, event.timeStamp, regrab: true);
+        }
+    }
   }
 
   void _handlePointerMoveEvent(PointerMoveEvent event) {
@@ -459,17 +543,19 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _velocityTracker?.addPosition(event.timeStamp, event.position);
     final localX = _localPointerX(event);
 
-    if (!_isDragging) {
+    if (_phase == LiquidNavPhase.pressing) {
       final downX = _pointerDownX;
-      if (_pointerInsideLens &&
+      if (_pointerInsideIdleSelection &&
           downX != null &&
-          (localX - downX).abs() >= kTouchSlop) {
+          (localX - downX).abs() >= 4) {
         _beginDrag(localX, event.timeStamp);
       }
       return;
     }
 
-    _updateDrag(localX, event.timeStamp);
+    if (_phase == LiquidNavPhase.dragging) {
+      _updateDrag(localX, event.timeStamp);
+    }
   }
 
   void _handlePointerUpEvent(PointerUpEvent event) {
@@ -478,31 +564,25 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _pointerUpVelocityPixelsPerSecond =
         _velocityTracker?.getVelocity().pixelsPerSecond.dx;
 
-    if (_isDragging) {
+    if (_phase == LiquidNavPhase.dragging) {
       _endDrag(
         _pointerUpVelocityPixelsPerSecond ?? _velocityPixelsPerSecond,
       );
     } else {
-      _pointerDownX = null;
-      _pointerDownTime = null;
-      _lastPointerTime = null;
-      _pointerInsideLens = false;
-      _pointerUpVelocityPixelsPerSecond = null;
-      _clearActivePointer();
+      final shouldCollapse = _phase == LiquidNavPhase.pressing;
+      _clearPointerState();
+      if (shouldCollapse) _startCollapse(widget.currentIndex);
     }
   }
 
   void _handlePointerCancelEvent(PointerCancelEvent event) {
     if (event.pointer != _pointerId) return;
-    if (_isDragging) {
+    if (_phase == LiquidNavPhase.dragging) {
       _handleDragCancel();
     } else {
-      _pointerDownX = null;
-      _pointerDownTime = null;
-      _lastPointerTime = null;
-      _pointerInsideLens = false;
-      _pointerUpVelocityPixelsPerSecond = null;
-      _clearActivePointer();
+      final shouldCollapse = _phase == LiquidNavPhase.pressing;
+      _clearPointerState();
+      if (shouldCollapse) _startCollapse(widget.currentIndex);
     }
   }
 
@@ -511,17 +591,25 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _pointerId = null;
   }
 
+  void _clearPointerState() {
+    _pointerDownX = null;
+    _pointerDownTime = null;
+    _lastPointerTime = null;
+    _pointerInsideIdleSelection = false;
+    _pointerInsideActiveLens = false;
+    _pointerUpVelocityPixelsPerSecond = null;
+    _clearActivePointer();
+  }
+
   void _recordPointerDown(double localX) {
     _pointerDownX = localX;
-    _pointerInsideLens = _isPointInsideLens(localX);
+    _pointerInsideIdleSelection = _isPointInsideIdleSelection(localX);
+    _pointerInsideActiveLens = _isPointInsideActiveLens(localX);
     _grabOffsetX = localX - _controller.lensCenterX;
   }
 
   void _handleTapUp(TapUpDetails details, double itemWidth) {
-    _pointerDownX = null;
-    _pointerDownTime = null;
-    _pointerInsideLens = false;
-    _clearActivePointer();
+    _clearPointerState();
     widget.onTap(_indexForX(details.localPosition.dx, itemWidth));
   }
 
@@ -532,15 +620,51 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
         : event.position.dx;
   }
 
-  void _beginDrag(double localX, Duration sourceTimeStamp) {
-    if (!_pointerInsideLens) return;
-    _cancelSpring();
+  void _beginPress(double localX) {
+    final currentIndex = widget.currentIndex.clamp(0, _navLabels.length - 1);
+    _cancelSpring(resetPosition: currentIndex.toDouble());
+    _grabOffsetX = localX - _controller.lensCenterX;
+    _velocityPixelsPerSecond = 0;
+    _collapseTargetIndex = null;
+    _commitAfterSettle = false;
+    _setVisualPosition(currentIndex.toDouble());
+    _setPhase(LiquidNavPhase.pressing);
+    unawaited(
+      _activationController
+          .animateTo(
+            1,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : AppMotion.tab,
+            curve: AppMotion.standard,
+          )
+          .catchError((Object _) {}),
+    );
+  }
+
+  void _beginDrag(
+    double localX,
+    Duration sourceTimeStamp, {
+    bool regrab = false,
+  }) {
+    if (!regrab && !_pointerInsideIdleSelection) return;
+    if (regrab && !_pointerInsideActiveLens) return;
     final startPosition = _controller.position;
     _controller.beginDrag(startPosition);
     _velocityPixelsPerSecond = _trackedVelocity() ?? 0;
     _lastPointerX = _pointerDownX ?? localX;
     _lastPointerTime = _pointerDownTime ?? sourceTimeStamp;
-    setState(() => _isDragging = true);
+    _setPhase(LiquidNavPhase.dragging);
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    unawaited(
+      _activationController
+          .animateTo(
+            1,
+            duration: reduced ? Duration.zero : AppMotion.tab,
+            curve: AppMotion.standard,
+          )
+          .catchError((Object _) {}),
+    );
     _controller.updateDragFromCenter(
       centerX: localX - _grabOffsetX,
       velocityPixelsPerSecond: _velocityPixelsPerSecond,
@@ -574,38 +698,40 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   void _endDrag(double velocity) {
-    if (!_isDragging) return;
+    if (_phase != LiquidNavPhase.dragging) return;
     final target = _controller.endDrag(
       velocityPixelsPerSecond: velocity,
       itemWidth: _itemWidth,
     );
-    _pointerDownX = null;
-    _pointerDownTime = null;
-    _lastPointerTime = null;
-    _pointerInsideLens = false;
-    _pointerUpVelocityPixelsPerSecond = null;
-    _clearActivePointer();
-    _settleTo(target, velocity / _itemWidth);
+    _clearPointerState();
+    _settleTo(
+      target,
+      velocity / _itemWidth,
+      commit: true,
+    );
   }
 
   void _handleDragCancel() {
-    if (!_isDragging) return;
-    _pointerDownX = null;
-    _pointerDownTime = null;
-    _pointerInsideLens = false;
-    _pointerUpVelocityPixelsPerSecond = null;
-    _clearActivePointer();
+    if (_phase != LiquidNavPhase.dragging) return;
+    _clearPointerState();
     _controller.cancelDrag(widget.currentIndex.toDouble());
-    _settleTo(widget.currentIndex, 0);
+    _settleTo(widget.currentIndex, 0, commit: false);
   }
 
-  void _settleTo(int target, double initialVelocity) {
+  void _settleTo(
+    int target,
+    double initialVelocity, {
+    required bool commit,
+  }) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final start = widget.visualIndexListenable.value
         .clamp(0.0, _navLabels.length - 1)
         .toDouble();
     final serial = ++_settleSerial;
     _springController.stop();
+    _commitAfterSettle = commit;
+    _collapseTargetIndex = target;
+    _setPhase(LiquidNavPhase.settling);
 
     if (reduceMotion || (start - target).abs() < 0.001) {
       _finishSettle(serial, target);
@@ -627,7 +753,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   void _handleSpringTick() {
-    if (!mounted || _isDragging) return;
+    if (!mounted || _phase == LiquidNavPhase.dragging) return;
     final rawPosition = _springController.value;
     final position = rawPosition.clamp(0.0, _navLabels.length - 1).toDouble();
     _controller.position = position;
@@ -643,20 +769,61 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _controller.settle(target.toDouble());
     _velocityPixelsPerSecond = 0;
     _setVisualPosition(target.toDouble());
-    if (_isDragging) {
-      setState(() => _isDragging = false);
-    }
-    widget.onNavigationCommitted?.call(target);
+    final commit = _commitAfterSettle;
+    _commitAfterSettle = false;
+    if (commit) widget.onNavigationCommitted?.call(target);
+    if (mounted) _startCollapse(target);
   }
 
-  void _cancelSpring() {
+  void _startCollapse(int target) {
+    _collapseTargetIndex = target;
+    _setPhase(LiquidNavPhase.collapsing);
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    if (reduced) {
+      _activationController.value = 0;
+      _finishCollapse(target);
+      return;
+    }
+    unawaited(
+      _activationController.reverse().then<void>((_) {
+        _finishCollapse(target);
+      }).catchError((Object _) {}),
+    );
+  }
+
+  void _finishCollapse(int target) {
+    if (!mounted || _phase != LiquidNavPhase.collapsing) return;
+    _activationController.value = 0;
+    _controller.settle(target.toDouble());
+    _setVisualPosition(target.toDouble());
+    _collapseTargetIndex = null;
+    _setPhase(LiquidNavPhase.idle);
+  }
+
+  void _cancelSpring({double? resetPosition}) {
     _settleSerial++;
     _springController.stop();
-    final currentPosition = widget.visualIndexListenable.value
-        .clamp(0.0, _navLabels.length - 1)
-        .toDouble();
+    final currentPosition =
+        (resetPosition ?? widget.visualIndexListenable.value)
+            .clamp(0.0, _navLabels.length - 1)
+            .toDouble();
     _controller.settle(currentPosition);
     _velocityPixelsPerSecond = 0;
+    if (resetPosition != null) _setVisualPosition(currentPosition);
+  }
+
+  void _handleActivationTick() {
+    _activation = _activationController.value.clamp(0.0, 1.0).toDouble();
+    widget.onLiquidActivationChanged?.call(_activation);
+    _motionFrame.value++;
+  }
+
+  void _setPhase(LiquidNavPhase phase) {
+    if (_phase == phase) return;
+    _phase = phase;
+    _isDragging = phase == LiquidNavPhase.dragging;
+    widget.onLiquidPhaseChanged?.call(phase);
+    if (mounted) setState(() {});
   }
 
   void _setVisualPosition(double position) {
@@ -685,19 +852,30 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     return velocity;
   }
 
-  bool _isPointInsideLens(double x) {
-    final speed = MediaQuery.disableAnimationsOf(context)
-        ? 0.0
-        : (_velocityPixelsPerSecond.abs() /
+  bool _isPointInsideIdleSelection(double x) {
+    final center =
+        _controller.centerForPosition(widget.currentIndex.toDouble());
+    return (x - center).abs() <= _itemWidth * 0.94 / 2;
+  }
+
+  bool _isPointInsideActiveLens(double x) {
+    return (x - _controller.lensCenterX).abs() <= _activeLensWidth() / 2;
+  }
+
+  double _activeLensWidth() {
+    final speed = _phase == LiquidNavPhase.dragging
+        ? (_velocityPixelsPerSecond.abs() /
                 math.max(widget.tuning.velocityNormalization, 1))
-            .clamp(0.0, 1.0);
-    final width = liquidLensWidthFor(
+            .clamp(0.0, 1.0)
+        : 0.0;
+    final liquidWidth = liquidLensWidthFor(
       itemWidth: _itemWidth,
       speed: speed,
       edgeCompression: _controller.edgeCompression,
       widthScale: widget.tuning.lensWidthScale,
     );
-    return (x - _controller.lensCenterX).abs() <= width / 2;
+    final activation = Curves.easeOutCubic.transform(_activation);
+    return ui.lerpDouble(_itemWidth * 0.94, liquidWidth, activation)!;
   }
 
   Widget _standardItem({
@@ -828,12 +1006,26 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     required double visualIndex,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
-    final softenedT = Curves.easeOutCubic.transform(activeT);
+    final phase = widget.qaPhase ?? _phase;
+    final activation =
+        (widget.qaActivation ?? _activation).clamp(0.0, 1.0).toDouble();
+    final focusWeight = liquidNavFocusWeight(
+      currentIndex: widget.currentIndex,
+      index: index,
+      visualPosition: visualIndex,
+      activation: activation,
+    );
     final inactiveColor =
         isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
+    final focusColor = widget.tuning.focusColorFor(isDark);
+    final pressedColor = widget.tuning.focusPressedColorFor(isDark);
+    final pressSignal =
+        phase == LiquidNavPhase.pressing || phase == LiquidNavPhase.dragging
+            ? activation * 0.55
+            : 0.0;
+    final activeColor = Color.lerp(focusColor, pressedColor, pressSignal)!;
     return _NavItemVisualState(
-      color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
+      color: Color.lerp(inactiveColor, activeColor, focusWeight)!,
       fontWeight: FontWeight.w600,
     );
   }
@@ -921,26 +1113,32 @@ class _FloatingSelectionFallback extends StatelessWidget {
     required this.itemWidth,
     required this.visualIndex,
     required this.isDark,
+    required this.useLiquidGlass,
+    required this.opacity,
   });
 
   final double itemWidth;
   final double visualIndex;
   final bool isDark;
+  final bool useLiquidGlass;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    const width = 56.0;
+    final width = useLiquidGlass ? itemWidth * 0.94 : 56.0;
     const height = 48.0;
     final left = itemWidth * (visualIndex + 0.5) - width / 2;
-    return Positioned(
-      key: const ValueKey('bottom-nav-selection-fallback'),
-      left: left,
-      top: (_dockHeight - height) / 2,
-      width: width,
-      height: height,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
+    final decoration = useLiquidGlass
+        ? BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.055),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.18),
+            ),
+          )
+        : BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -960,7 +1158,18 @@ class _FloatingSelectionFallback extends StatelessWidget {
                 alpha: isDark ? 0.30 : 0.14,
               ),
             ),
-          ),
+          );
+
+    return Positioned(
+      key: const ValueKey('bottom-nav-selection-fallback'),
+      left: left,
+      top: (_dockHeight - height) / 2,
+      width: width,
+      height: height,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: opacity.clamp(0.0, 1.0).toDouble(),
+          child: DecoratedBox(decoration: decoration),
         ),
       ),
     );
@@ -974,7 +1183,9 @@ class _LiquidSelectionLens extends StatefulWidget {
     required this.visualIndex,
     required this.velocityPixelsPerSecond,
     required this.edgeCompression,
-    required this.isDragging,
+    required this.phase,
+    required this.activation,
+    required this.pressDepth,
     required this.isDark,
     required this.highContrast,
     required this.reduceMotion,
@@ -986,7 +1197,9 @@ class _LiquidSelectionLens extends StatefulWidget {
   final double visualIndex;
   final double velocityPixelsPerSecond;
   final double edgeCompression;
-  final bool isDragging;
+  final LiquidNavPhase phase;
+  final double activation;
+  final double pressDepth;
   final bool isDark;
   final bool highContrast;
   final bool reduceMotion;
@@ -1054,7 +1267,7 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
   @override
   Widget build(BuildContext context) {
-    final speed = widget.reduceMotion
+    final speed = widget.reduceMotion || widget.phase != LiquidNavPhase.dragging
         ? 0.0
         : (widget.velocityPixelsPerSecond.abs() /
                 math.max(widget.tuning.velocityNormalization, 1))
@@ -1062,14 +1275,21 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
     final direction = widget.reduceMotion || speed < 0.01
         ? 0.0
         : widget.velocityPixelsPerSecond.sign;
-    final lensWidth = liquidLensWidthFor(
+    final liquidWidth = liquidLensWidthFor(
       itemWidth: widget.itemWidth,
       speed: speed,
       edgeCompression: widget.edgeCompression,
       widthScale: widget.tuning.lensWidthScale,
     );
+    final activationShape = Curves.easeOutCubic.transform(widget.activation);
+    final lensWidth = ui.lerpDouble(
+      widget.itemWidth * 0.94,
+      liquidWidth,
+      activationShape,
+    )!;
     // Y 轴是 Dock 的稳定基准；速度只改变水平形状和光学场。
-    final lensHeight = widget.tuning.lensHeight.clamp(48.0, 84.0).toDouble();
+    final liquidHeight = widget.tuning.lensHeight.clamp(48.0, 84.0).toDouble();
+    final lensHeight = ui.lerpDouble(48, liquidHeight, activationShape)!;
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
     // Lens 已移到 Dock 的 ClipRRect 外层，中心仍严格跟随固定 Tab 轨道，
     // 不能为了完整显示而向内推首尾入口。
@@ -1102,7 +1322,7 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
         direction: direction,
         edgeCompression: widget.edgeCompression,
         dragState: widget.tuning.mode == LiquidGlassQaMode.finalGlass &&
-                widget.isDragging
+                widget.phase == LiquidNavPhase.dragging
             ? 1.0
             : 0.0,
         lightStrength: widget.tuning.effectiveLightStrength *
@@ -1116,6 +1336,8 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
         magnificationRadius: widget.tuning.magnificationRadius,
         chromaticStart: widget.tuning.chromaticStart,
         flowStrength: widget.tuning.flowStrength,
+        activation: widget.activation,
+        pressDepth: widget.pressDepth,
       ).apply(shader);
     }
 
@@ -1167,8 +1389,12 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                     ),
                     child: ColoredBox(
                       color: widget.isDark
-                          ? Colors.white.withValues(alpha: 0.07)
-                          : Colors.white.withValues(alpha: 0.14),
+                          ? Colors.white.withValues(
+                              alpha: 0.07 * widget.activation,
+                            )
+                          : Colors.white.withValues(
+                              alpha: 0.14 * widget.activation,
+                            ),
                     ),
                   ),
                 ),
@@ -1182,7 +1408,8 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                 edgeCompression: widget.edgeCompression,
                 lensExponent: widget.tuning.lensExponent,
                 flowStrength: widget.tuning.flowStrength,
-                rimStrength: widget.tuning.effectiveRimStrength,
+                rimStrength:
+                    widget.tuning.effectiveRimStrength * widget.activation,
                 showShapeOutline:
                     widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
               ),
@@ -1364,6 +1591,8 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
     required this.visualPosition,
     required this.motionFrame,
     required this.isDragging,
+    required this.phase,
+    required this.activation,
     required this.velocityPixelsPerSecond,
     required this.itemWidth,
     required this.tuning,
@@ -1372,6 +1601,8 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
   final ValueNotifier<double> visualPosition;
   final ValueNotifier<int> motionFrame;
   final bool isDragging;
+  final LiquidNavPhase phase;
+  final double activation;
   final double velocityPixelsPerSecond;
   final double itemWidth;
   final LiquidGlassTuning tuning;
@@ -1387,17 +1618,28 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
         ]),
         builder: (context, child) {
           final status = liquidGlassRuntimeStatus.value;
-          final speed = (velocityPixelsPerSecond.abs() /
-                  math.max(tuning.velocityNormalization, 1))
-              .clamp(0.0, 1.0)
-              .toDouble();
-          final lensWidth = liquidLensWidthFor(
+          final speed = (phase == LiquidNavPhase.dragging
+                  ? velocityPixelsPerSecond.abs()
+                  : 0) /
+              math.max(tuning.velocityNormalization, 1);
+          final normalizedSpeed = speed.clamp(0.0, 1.0).toDouble();
+          final liquidWidth = liquidLensWidthFor(
             itemWidth: itemWidth,
-            speed: speed,
+            speed: normalizedSpeed,
             edgeCompression: 0,
             widthScale: tuning.lensWidthScale,
           );
-          final lensHeight = tuning.lensHeight.clamp(48.0, 84.0).toDouble();
+          final activationShape = Curves.easeOutCubic.transform(activation);
+          final lensWidth = ui.lerpDouble(
+            itemWidth * 0.94,
+            liquidWidth,
+            activationShape,
+          )!;
+          final lensHeight = ui.lerpDouble(
+            48,
+            tuning.lensHeight.clamp(48.0, 84.0).toDouble(),
+            activationShape,
+          )!;
           final overscanX = tuning.overscanXFor(lensWidth);
           final overscanY = tuning.overscanYFor(lensHeight);
           final maxOffsetX = tuning.maxSampleOffsetXFor(lensWidth);
@@ -1420,6 +1662,8 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
                 child: Text(
                   'Liquid Glass  Tier: ${status.tierLabel}  '
                   'Shader: ${status.shaderSupported}\n'
+                  'Phase: ${phase.name}  Activation: '
+                  '${activation.toStringAsFixed(2)}\n'
                   'Dragging: $isDragging  '
                   'Position: ${visualPosition.value.toStringAsFixed(3)}  '
                   'Velocity: ${velocityPixelsPerSecond.round()} px/s\n'

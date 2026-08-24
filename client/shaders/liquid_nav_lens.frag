@@ -25,6 +25,8 @@ uniform float uRefractionBandEnd;
 uniform float uMagnificationRadius;
 uniform float uChromaticStart;
 uniform float uFlowStrength;
+uniform float uActivation;
+uniform float uPressDepth;
 uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
@@ -116,13 +118,22 @@ void main() {
   vec2 fragment = FlutterFragCoord().xy;
   vec4 original = texture(uBackdrop, textureUv(fragment));
 
+  float activation = clamp(uActivation, 0.0, 1.0);
+  float pressDepth = clamp(uPressDepth, 0.0, 1.0);
+  float refraction = uRefraction * activation;
+  float magnification = 1.0 + (uMagnification - 1.0) * activation;
+  float chromatic = uChromatic * activation;
+  float lightStrength = uLightStrength * activation;
+  float rimStrength = uRimStrength * activation;
+
   // Identity 是显式闸门。除了便于 QA 对照，还能让无效果路径保持像素稳定，
   // 避免执行不必要的颜色计算。
-  if (uRefraction == 0.0 &&
-      uMagnification == 1.0 &&
-      uChromatic == 0.0 &&
-      uLightStrength == 0.0 &&
-      uRimStrength == 0.0) {
+  if (activation <= 0.0001 ||
+      (refraction == 0.0 &&
+       magnification == 1.0 &&
+       chromatic == 0.0 &&
+       lightStrength == 0.0 &&
+       rimStrength == 0.0)) {
     fragColor = original;
     return;
   }
@@ -166,14 +177,14 @@ void main() {
   );
   float zoom = mix(1.0, uMagnification, centerProfile * glassMask);
   vec2 samplePixel = uLensCenter + (fragment - uLensCenter) / zoom;
-  samplePixel -= opticalNormal * opticalStrength * uRefraction;
+  samplePixel -= opticalNormal * opticalStrength * refraction;
 
   float chromaticBand = smoothstep(
       uChromaticStart,
       min(uChromaticStart + 0.10, 0.995),
       q
   ) * (1.0 - smoothstep(0.975, 0.999, q));
-  vec2 chromaticOffset = opticalNormal * uChromatic * chromaticBand *
+  vec2 chromaticOffset = opticalNormal * chromatic * chromaticBand *
       mix(0.30, 1.0, sideWeight) * glassMask;
   vec3 color = vec3(
       texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
@@ -182,9 +193,9 @@ void main() {
   );
 
   float finalSignal = clamp(
-      (uMagnification - 1.0) * 8.0 +
-      uChromatic * 0.12 +
-      uLightStrength * 0.45,
+      (magnification - 1.0) * 8.0 +
+      chromatic * 0.12 +
+      lightStrength * 0.45,
       0.0,
       1.0
   ) * glassMask;
@@ -201,16 +212,20 @@ void main() {
   float facingLight = max(dot(opticalNormal, lightDirection), 0.0);
   float facingShade = max(dot(opticalNormal, -lightDirection), 0.0);
   float specular = pow(facingLight, 4.0) * outerRim;
-  color += vec3(specular * uLightStrength * 1.10);
-  color -= vec3(facingShade * outerRim * 0.055 * uLightStrength);
+  color += vec3(specular * lightStrength * 1.10);
+  color -= vec3(facingShade * outerRim * 0.055 * lightStrength);
 
   vec3 dispersionTint = mix(
       vec3(0.54, 0.76, 1.0),
       vec3(1.0, 0.70, 0.36),
       clamp(opticalNormal.x * 0.5 + 0.5, 0.0, 1.0)
   );
-  color += dispersionTint * outerRim * uRimStrength * 0.78;
-  color += dispersionTint * refractionBand * uDragState * 0.018 * glassMask;
+  color += dispersionTint * outerRim * rimStrength * 0.78;
+  color += dispersionTint * refractionBand * uDragState * 0.018 * glassMask *
+      activation;
+
+  // 按下反馈只在玻璃正在被抓住时轻微偏暖，避免用整块白色覆盖伪造材质。
+  color += vec3(0.035, 0.018, -0.004) * pressDepth * glassMask;
 
   fragColor = vec4(clamp(mix(original.rgb, color, glassMask), 0.0, 1.0), original.a);
 }

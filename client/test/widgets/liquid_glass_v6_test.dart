@@ -42,9 +42,11 @@ void main() {
       magnificationRadius: 0.66,
       chromaticStart: 0.84,
       flowStrength: 0.72,
+      activation: 1,
+      pressDepth: 0,
     );
 
-    expect(uniforms.values, hasLength(27));
+    expect(uniforms.values, hasLength(29));
     expect(uniforms.values[LiquidGlassShaderUniforms.sizeX], 160);
     expect(uniforms.values[LiquidGlassShaderUniforms.lensCenterX], 80);
     expect(
@@ -54,6 +56,10 @@ void main() {
     expect(
       uniforms.values[LiquidGlassShaderUniforms.flowStrengthIndex],
       0.72,
+    );
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.activationIndex],
+      1,
     );
   });
 
@@ -107,5 +113,44 @@ void main() {
     expect(right.computeMetrics().length,
         closeTo(left.computeMetrics().length, 0.01));
     expect(right.computeMetrics().length, greaterThan(0));
+  });
+
+  test('V7 color field migrates continuously across adjacent tabs', () {
+    expect(
+      liquidNavFocusWeight(
+        currentIndex: 0,
+        index: 0,
+        visualPosition: 0,
+        activation: 0,
+      ),
+      1,
+    );
+    expect(
+      liquidNavFocusWeight(
+        currentIndex: 0,
+        index: 1,
+        visualPosition: 0,
+        activation: 0,
+      ),
+      0,
+    );
+    expect(
+      liquidNavFocusWeight(
+        currentIndex: 0,
+        index: 0,
+        visualPosition: 0.5,
+        activation: 1,
+      ),
+      closeTo(0.5, 0.001),
+    );
+    expect(
+      liquidNavFocusWeight(
+        currentIndex: 0,
+        index: 1,
+        visualPosition: 0.5,
+        activation: 1,
+      ),
+      closeTo(0.5, 0.001),
+    );
   });
 }

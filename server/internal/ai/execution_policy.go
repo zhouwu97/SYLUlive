@@ -229,7 +229,7 @@ func UpgradeExecutionFromObservation(state *AgentRunState, result ToolResultEnve
 	}
 	from = state.ExecutionMode
 	target := ExecutionComplexityFromObservation(result)
-	if target == ExecutionDeep && state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled {
+	if target == ExecutionDeep && !state.FeatureFlags.IsZero() && !state.FeatureFlags.DeepModeEnabled {
 		target = ExecutionNormal
 	}
 	if !UpgradeExecutionProfile(&state.ExecutionProfile, target) {
@@ -245,7 +245,7 @@ func refreshExecutionProfile(state *AgentRunState) {
 		return
 	}
 	proposed := ExecutionProfileForGoal(state.Goal)
-	if state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled && proposed.Mode == ExecutionDeep {
+	if !state.FeatureFlags.IsZero() && !state.FeatureFlags.DeepModeEnabled && proposed.Mode == ExecutionDeep {
 		proposed.Mode = ExecutionNormal
 		proposed = applyExecutionBudget(proposed)
 	}
@@ -253,7 +253,7 @@ func refreshExecutionProfile(state *AgentRunState) {
 		state.ExecutionMode, state.ExecutionProfile = proposed.Mode, proposed
 	} else {
 		currentMode := state.ExecutionMode
-		if state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled && currentMode == ExecutionDeep {
+		if !state.FeatureFlags.IsZero() && !state.FeatureFlags.DeepModeEnabled && currentMode == ExecutionDeep {
 			currentMode = ExecutionNormal
 		}
 		if executionModeRank(proposed.Mode) > executionModeRank(currentMode) {

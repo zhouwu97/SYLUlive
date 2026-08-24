@@ -497,6 +497,9 @@ type AgentTraceMetrics struct {
 	Abandonments               int            `json:"abandonments"`
 	Rephrases                  int            `json:"rephrases"`
 	UsefulAnswers              int            `json:"useful_answers"`
+	FirstUsefulAnswers         int            `json:"first_useful_answers"`
+	PossibleUserCorrections    int            `json:"possible_user_corrections"`
+	TimeToFirstActivityMs      int64          `json:"time_to_first_activity_ms"`
 	TimeToUsefulAnswerMs       int64          `json:"time_to_useful_answer_ms"`
 	FailureTaxonomy            map[string]int `json:"failure_taxonomy,omitempty"`
 	ModelCalls                 int            `json:"model_calls"`
@@ -534,6 +537,7 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		ActiveComputeTimeMs   int64              `json:"active_compute_time_ms"`
 		UserWaitTimeMs        int64              `json:"user_wait_time_ms"`
 		TimeToUsefulAnswerMs  int64              `json:"time_to_useful_answer_ms"`
+		TimeToFirstActivityMs int64              `json:"time_to_first_activity_ms"`
 		TokenUsageAvailable   *bool              `json:"token_usage_available"`
 		FailureReason         AgentFailureReason `json:"failure_reason"`
 	}
@@ -590,12 +594,23 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		metrics.ActionVerificationFailures++
 	case "user.correction":
 		metrics.UserCorrections++
+	case "possible_user_correction":
+		metrics.PossibleUserCorrections++
 	case "clarification.unnecessary":
 		metrics.UnnecessaryClarifications++
 	case "run.abandoned":
 		metrics.Abandonments++
 	case "run.rephrased":
 		metrics.Rephrases++
+	case "run.first_activity":
+		if event.TimeToFirstActivityMs > 0 {
+			metrics.TimeToFirstActivityMs = event.TimeToFirstActivityMs
+		}
+	case "answer.first_useful":
+		metrics.FirstUsefulAnswers++
+		if event.TimeToUsefulAnswerMs > 0 {
+			metrics.TimeToUsefulAnswerMs = event.TimeToUsefulAnswerMs
+		}
 	case "answer.useful":
 		metrics.UsefulAnswers++
 		if event.TimeToUsefulAnswerMs > 0 {
@@ -624,25 +639,27 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 
 // AgentEvalTrend 是跨提交/模型版本的稳定聚合格式。
 type AgentEvalTrend struct {
-	RunCount                    int            `json:"run_count"`
-	SuccessRate                 float64        `json:"success_rate"`
-	AverageToolCalls            float64        `json:"average_tool_calls"`
-	P95ToolCalls                int            `json:"p95_tool_calls"`
-	ReplanRate                  float64        `json:"replan_rate"`
-	DiscardedLateResults        int            `json:"discarded_late_results"`
-	PermissionDenials           int            `json:"permission_denials"`
-	PersonalScopesAccessed      int            `json:"personal_scopes_accessed"`
-	ClarificationCount          int            `json:"clarification_count"`
-	AverageRunLatencyMs         float64        `json:"average_run_latency_ms"`
-	DegradedRuns                int            `json:"degraded_runs"`
-	ActionVerificationFailures  int            `json:"action_verification_failures"`
-	UserCorrections             int            `json:"user_corrections"`
-	UnnecessaryClarifications   int            `json:"unnecessary_clarifications"`
-	Abandonments                int            `json:"abandonments"`
-	Rephrases                   int            `json:"rephrases"`
-	UsefulAnswers               int            `json:"useful_answers"`
-	AverageTimeToUsefulAnswerMs float64        `json:"average_time_to_useful_answer_ms"`
-	FailureTaxonomy             map[string]int `json:"failure_taxonomy,omitempty"`
+	RunCount                     int            `json:"run_count"`
+	SuccessRate                  float64        `json:"success_rate"`
+	AverageToolCalls             float64        `json:"average_tool_calls"`
+	P95ToolCalls                 int            `json:"p95_tool_calls"`
+	ReplanRate                   float64        `json:"replan_rate"`
+	DiscardedLateResults         int            `json:"discarded_late_results"`
+	PermissionDenials            int            `json:"permission_denials"`
+	PersonalScopesAccessed       int            `json:"personal_scopes_accessed"`
+	ClarificationCount           int            `json:"clarification_count"`
+	AverageRunLatencyMs          float64        `json:"average_run_latency_ms"`
+	DegradedRuns                 int            `json:"degraded_runs"`
+	ActionVerificationFailures   int            `json:"action_verification_failures"`
+	UserCorrections              int            `json:"user_corrections"`
+	UnnecessaryClarifications    int            `json:"unnecessary_clarifications"`
+	Abandonments                 int            `json:"abandonments"`
+	Rephrases                    int            `json:"rephrases"`
+	UsefulAnswers                int            `json:"useful_answers"`
+	PossibleUserCorrections      int            `json:"possible_user_corrections"`
+	AverageTimeToFirstActivityMs float64        `json:"average_time_to_first_activity_ms"`
+	AverageTimeToUsefulAnswerMs  float64        `json:"average_time_to_useful_answer_ms"`
+	FailureTaxonomy              map[string]int `json:"failure_taxonomy,omitempty"`
 }
 
 func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
@@ -655,6 +672,8 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 	var toolCallTotal, latencyTotal int64
 	var usefulLatencyTotal int64
 	usefulLatencyCount := 0
+	var firstActivityTotal int64
+	firstActivityCount := 0
 	trend.FailureTaxonomy = make(map[string]int)
 	for _, sample := range samples {
 		if sample.RunSucceeded && !sample.RunFailed {
@@ -673,6 +692,7 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 		trend.DegradedRuns += sample.DegradedRuns
 		trend.ActionVerificationFailures += sample.ActionVerificationFailures
 		trend.UserCorrections += sample.UserCorrections
+		trend.PossibleUserCorrections += sample.PossibleUserCorrections
 		trend.UnnecessaryClarifications += sample.UnnecessaryClarifications
 		trend.Abandonments += sample.Abandonments
 		trend.Rephrases += sample.Rephrases
@@ -680,6 +700,10 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 		if sample.TimeToUsefulAnswerMs > 0 {
 			usefulLatencyTotal += sample.TimeToUsefulAnswerMs
 			usefulLatencyCount++
+		}
+		if sample.TimeToFirstActivityMs > 0 {
+			firstActivityTotal += sample.TimeToFirstActivityMs
+			firstActivityCount++
 		}
 		for reason, count := range sample.FailureTaxonomy {
 			trend.FailureTaxonomy[reason] += count
@@ -692,6 +716,9 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 	trend.AverageRunLatencyMs = float64(latencyTotal) / float64(len(samples))
 	if usefulLatencyCount > 0 {
 		trend.AverageTimeToUsefulAnswerMs = float64(usefulLatencyTotal) / float64(usefulLatencyCount)
+	}
+	if firstActivityCount > 0 {
+		trend.AverageTimeToFirstActivityMs = float64(firstActivityTotal) / float64(firstActivityCount)
 	}
 	return trend
 }

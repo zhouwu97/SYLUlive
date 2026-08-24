@@ -2,9 +2,12 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -28,9 +31,9 @@ func (r *Runtime) ownedRun(ctx context.Context, userID uint, runID string) (mode
 	return run, nil
 }
 
-// RecordUserSignal 记录真实用户反馈的结构化信号。输入不接受自由文本，
-// 因而不会把用户纠正内容复制到 Trace 或回归样本候选中。
-func (r *Runtime) RecordUserSignal(ctx context.Context, userID uint, runID string, signal AgentUserSignal) error {
+// RecordUserSignal 记录真实用户反馈的结构化信号。可选说明只保留摘要，
+// 不会把用户正文复制到 Trace 或回归样本候选中。
+func (r *Runtime) RecordUserSignal(ctx context.Context, userID uint, runID string, signal AgentUserSignal, details ...string) error {
 	run, err := r.ownedRun(ctx, userID, runID)
 	if err != nil {
 		return err
@@ -42,7 +45,11 @@ func (r *Runtime) RecordUserSignal(ctx context.Context, userID uint, runID strin
 		"trace_id": string(run.ID),
 		"signal":   signal,
 	}
-	if signal == UserSignalUsefulAnswer {
+	if detail := sanitizedDetail(details); detail != "" {
+		payload["detail_hash"] = detailHash(detail)
+		payload["detail_length"] = utf8.RuneCountInString(detail)
+	}
+	if signal == UserSignalFirstActivity || signal == UserSignalFirstUsefulAnswer {
 		startedAt := run.StartedAt
 		if startedAt == nil {
 			startedAt = &run.CreatedAt
@@ -51,7 +58,11 @@ func (r *Runtime) RecordUserSignal(ctx context.Context, userID uint, runID strin
 		if elapsed < 0 {
 			elapsed = 0
 		}
-		payload["time_to_useful_answer_ms"] = elapsed
+		if signal == UserSignalFirstActivity {
+			payload["time_to_first_activity_ms"] = elapsed
+		} else {
+			payload["time_to_useful_answer_ms"] = elapsed
+		}
 	}
 	_, err = r.appendEvent(ctx, run.ID, string(signal), payload, true)
 	return err
@@ -59,7 +70,7 @@ func (r *Runtime) RecordUserSignal(ctx context.Context, userID uint, runID strin
 
 // ClassifyFailure 将已发生的线上故障转成脱敏回归候选。
 // case_id 稳定绑定 trace 与失败类别，离线导出时再由人工补齐可复现输入。
-func (r *Runtime) ClassifyFailure(ctx context.Context, userID uint, runID string, reason AgentFailureReason) (RegressionScenarioCandidate, error) {
+func (r *Runtime) ClassifyFailure(ctx context.Context, userID uint, runID string, reason AgentFailureReason, details ...string) (RegressionScenarioCandidate, error) {
 	run, err := r.ownedRun(ctx, userID, runID)
 	if err != nil {
 		return RegressionScenarioCandidate{}, err
@@ -74,15 +85,34 @@ func (r *Runtime) ClassifyFailure(ctx context.Context, userID uint, runID string
 		Candidate:     true,
 		Deterministic: false,
 	}
-	if _, err := r.appendEvent(ctx, run.ID, "run.failure_classified", map[string]interface{}{
-		"trace_id": run.ID, "failure_reason": reason,
-	}, true); err != nil {
+	payload := map[string]interface{}{"trace_id": run.ID, "failure_reason": reason}
+	if detail := sanitizedDetail(details); detail != "" {
+		payload["detail_hash"] = detailHash(detail)
+		payload["detail_length"] = utf8.RuneCountInString(detail)
+	}
+	if _, err := r.appendEvent(ctx, run.ID, "run.failure_classified", payload, true); err != nil {
 		return RegressionScenarioCandidate{}, err
 	}
 	if _, err := r.appendEvent(ctx, run.ID, "regression.scenario_candidate", candidate.Payload(), true); err != nil {
 		return RegressionScenarioCandidate{}, err
 	}
 	return candidate, nil
+}
+
+func sanitizedDetail(details []string) string {
+	if len(details) == 0 {
+		return ""
+	}
+	value := strings.TrimSpace(details[0])
+	if utf8.RuneCountInString(value) > 200 {
+		value = string([]rune(value)[:200])
+	}
+	return value
+}
+
+func detailHash(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
 }
 
 // TraceMetrics 从已持久化的脱敏事件派生真实用户指标，不读取会话正文。

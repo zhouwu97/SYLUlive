@@ -569,6 +569,7 @@ func mergeProviderUsage(left, right ProviderEvent) ProviderEvent {
 	left.InputTokens += right.InputTokens
 	left.OutputTokens += right.OutputTokens
 	left.CacheHitTokens += right.CacheHitTokens
+	left.UsageAvailable = left.UsageAvailable || right.UsageAvailable
 	return left
 }
 

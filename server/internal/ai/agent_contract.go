@@ -89,7 +89,7 @@ func ParseGoalSpec(message string, pageContext *AgentContextEnvelope) GoalSpec {
 		goal.HardConstraints = append(goal.HardConstraints, GoalConstraint{Text: "避开用户明确排除的时间", Source: "explicit", Hard: true})
 		goal.RequiresPersonalContext = true
 	}
-	if containsAnyContract(message, "我的", "我适合", "适合我", "我参加", "我当前", "本学期", "我的成绩", "我的课表") {
+	if containsAnyContract(message, "我的", "我适合", "适合我", "我参加", "我当前", "我", "本学期", "我的成绩", "我的课表") {
 		goal.RequiresPersonalContext = true
 	}
 	if goal.ActionIntent == "recommend" {
@@ -422,6 +422,8 @@ type AgentDecision struct {
 type AgentRunState struct {
 	RunID                   string                `json:"run_id"`
 	Goal                    GoalSpec              `json:"goal"`
+	ExecutionMode           ExecutionMode         `json:"execution_mode,omitempty"`
+	ExecutionProfile        ExecutionProfile      `json:"execution_profile,omitempty"`
 	KnownFacts              []string              `json:"known_facts,omitempty"`
 	Observations            []AgentObservation    `json:"observations,omitempty"`
 	CompletedSteps          []string              `json:"completed_steps,omitempty"`
@@ -433,6 +435,7 @@ type AgentRunState struct {
 	Budget                  AgentBudget           `json:"budget"`
 	ConstraintVersion       int                   `json:"constraint_version"`
 	PlanVersion             int                   `json:"plan_version"`
+	Cost                    AgentCostMetrics      `json:"cost"`
 }
 
 type AgentObservation struct {
@@ -446,29 +449,59 @@ type AgentObservation struct {
 
 // AgentTraceFields 是审计事件中的运行元数据，不包含 CoT、提示词或工具原始结果。
 type AgentTraceFields struct {
-	RunID             string `json:"run_id,omitempty"`
-	PlanningRound     int    `json:"planning_round,omitempty"`
-	ConstraintVersion int    `json:"constraint_version,omitempty"`
-	PlanVersion       int    `json:"plan_version,omitempty"`
-	DurationMs        int64  `json:"duration_ms,omitempty"`
-	NewFactCount      int    `json:"new_fact_count,omitempty"`
+	RunID             string        `json:"run_id,omitempty"`
+	PlanningRound     int           `json:"planning_round,omitempty"`
+	ConstraintVersion int           `json:"constraint_version,omitempty"`
+	PlanVersion       int           `json:"plan_version,omitempty"`
+	DurationMs        int64         `json:"duration_ms,omitempty"`
+	NewFactCount      int           `json:"new_fact_count,omitempty"`
+	ExecutionMode     ExecutionMode `json:"execution_mode,omitempty"`
+}
+
+// AgentCostMetrics 是 Runtime 和 Regression Suite 共用的脱敏计量格式。
+// TokenUsageAvailable=false 时，零值只表示 Provider 没有提供 usage，不能解释为免费。
+type AgentCostMetrics struct {
+	ModelCalls          int   `json:"model_calls"`
+	InputTokens         int64 `json:"input_tokens"`
+	OutputTokens        int64 `json:"output_tokens"`
+	ToolCalls           int   `json:"tool_calls"`
+	ExternalCalls       int   `json:"external_calls"`
+	PlanningRounds      int   `json:"planning_rounds"`
+	ReplanCount         int   `json:"replan_count"`
+	WallTimeMS          int64 `json:"wall_time_ms"`
+	ActiveComputeTimeMS int64 `json:"active_compute_time_ms"`
+	UserWaitTimeMS      int64 `json:"user_wait_time_ms"`
+	TokenUsageAvailable bool  `json:"token_usage_available"`
 }
 
 // AgentTraceMetrics 是从脱敏 Trace 派生的可长期比较指标，不包含问题正文、
 // 工具原文或个人事实。它既可用于单 Run 汇总，也可交给离线 Eval 聚合。
 type AgentTraceMetrics struct {
-	ToolCalls                  int     `json:"tool_calls"`
-	ReplanCount                int     `json:"replan_count"`
-	DiscardedLateResults       int     `json:"discarded_late_results"`
-	PermissionDenials          int     `json:"permission_denials"`
-	PersonalScopesAccessed     int     `json:"personal_scopes_accessed"`
-	ClarificationCount         int     `json:"clarification_count"`
-	TotalLatencyMs             int64   `json:"total_latency_ms"`
-	DegradedRuns               int     `json:"degraded_runs"`
-	ActionVerificationFailures int     `json:"action_verification_failures"`
-	RunSucceeded               bool    `json:"run_succeeded"`
-	RunFailed                  bool    `json:"run_failed"`
-	ToolLatencyMs              []int64 `json:"-"`
+	ToolCalls                  int           `json:"tool_calls"`
+	ReplanCount                int           `json:"replan_count"`
+	DiscardedLateResults       int           `json:"discarded_late_results"`
+	PermissionDenials          int           `json:"permission_denials"`
+	PersonalScopesAccessed     int           `json:"personal_scopes_accessed"`
+	ClarificationCount         int           `json:"clarification_count"`
+	TotalLatencyMs             int64         `json:"total_latency_ms"`
+	DegradedRuns               int           `json:"degraded_runs"`
+	ActionVerificationFailures int           `json:"action_verification_failures"`
+	ExecutionMode              ExecutionMode `json:"execution_mode,omitempty"`
+	ModeUpgrades               int           `json:"mode_upgrades"`
+	FastEscalations            int           `json:"fast_escalations"`
+	NormalEscalations          int           `json:"normal_escalations"`
+	BudgetExhaustions          int           `json:"budget_exhaustions"`
+	ModelCalls                 int           `json:"model_calls"`
+	InputTokens                int64         `json:"input_tokens"`
+	OutputTokens               int64         `json:"output_tokens"`
+	ExternalCalls              int           `json:"external_calls"`
+	PlanningRounds             int           `json:"planning_rounds"`
+	ActiveComputeTimeMs        int64         `json:"active_compute_time_ms"`
+	UserWaitTimeMs             int64         `json:"user_wait_time_ms"`
+	TokenUsageAvailable        bool          `json:"token_usage_available"`
+	RunSucceeded               bool          `json:"run_succeeded"`
+	RunFailed                  bool          `json:"run_failed"`
+	ToolLatencyMs              []int64       `json:"-"`
 }
 
 // Observe 从一个已脱敏的 Agent 事件中提取长期指标。
@@ -477,12 +510,40 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		return
 	}
 	var event struct {
-		DurationMs            int64  `json:"duration_ms"`
-		ErrorCode             string `json:"error_code"`
-		CapabilityStatus      string `json:"capability_status"`
-		PostconditionVerified *bool  `json:"postcondition_verified"`
+		DurationMs            int64         `json:"duration_ms"`
+		ErrorCode             string        `json:"error_code"`
+		CapabilityStatus      string        `json:"capability_status"`
+		PostconditionVerified *bool         `json:"postcondition_verified"`
+		ExecutionMode         ExecutionMode `json:"execution_mode"`
+		FromMode              ExecutionMode `json:"from_mode"`
+		ToMode                ExecutionMode `json:"to_mode"`
+		BudgetExhausted       bool          `json:"budget_exhausted"`
+		ModelCalls            int           `json:"model_calls"`
+		InputTokens           int64         `json:"input_tokens"`
+		OutputTokens          int64         `json:"output_tokens"`
+		ExternalCalls         int           `json:"external_calls"`
+		PlanningRounds        int           `json:"planning_rounds"`
+		ActiveComputeTimeMs   int64         `json:"active_compute_time_ms"`
+		UserWaitTimeMs        int64         `json:"user_wait_time_ms"`
+		TokenUsageAvailable   *bool         `json:"token_usage_available"`
 	}
 	_ = json.Unmarshal(payload, &event)
+	if event.ExecutionMode != "" {
+		metrics.ExecutionMode = event.ExecutionMode
+	}
+	metrics.ModelCalls += event.ModelCalls
+	metrics.InputTokens += event.InputTokens
+	metrics.OutputTokens += event.OutputTokens
+	metrics.ExternalCalls += event.ExternalCalls
+	metrics.PlanningRounds += event.PlanningRounds
+	metrics.ActiveComputeTimeMs += event.ActiveComputeTimeMs
+	metrics.UserWaitTimeMs += event.UserWaitTimeMs
+	if event.TokenUsageAvailable != nil {
+		metrics.TokenUsageAvailable = metrics.TokenUsageAvailable || *event.TokenUsageAvailable
+	}
+	if event.BudgetExhausted {
+		metrics.BudgetExhaustions++
+	}
 	switch eventType {
 	case "tool.requested":
 		metrics.ToolCalls++
@@ -501,6 +562,14 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		}
 	case "plan.revised":
 		metrics.ReplanCount++
+	case "execution_mode.upgraded":
+		metrics.ModeUpgrades++
+		if event.FromMode == ExecutionFast && event.ToMode == ExecutionNormal {
+			metrics.FastEscalations++
+		}
+		if event.FromMode == ExecutionNormal && event.ToMode == ExecutionDeep {
+			metrics.NormalEscalations++
+		}
 	case "tool.discarded":
 		metrics.DiscardedLateResults++
 	case "personal_data.evidence":
@@ -579,17 +648,21 @@ func percentile95Ints(values []int) int {
 }
 
 type AgentActivityEvent struct {
-	Type              string    `json:"type"`
-	ActivityCode      string    `json:"activity_code,omitempty"`
-	Text              string    `json:"text,omitempty"`
-	ToolName          string    `json:"tool_name,omitempty"`
-	RunID             string    `json:"run_id,omitempty"`
-	PlanningRound     int       `json:"planning_round,omitempty"`
-	ConstraintVersion int       `json:"constraint_version,omitempty"`
-	PlanVersion       int       `json:"plan_version,omitempty"`
-	DurationMs        int64     `json:"duration_ms,omitempty"`
-	NewFactCount      int       `json:"new_fact_count,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	Type              string            `json:"type"`
+	ActivityCode      string            `json:"activity_code,omitempty"`
+	Text              string            `json:"text,omitempty"`
+	ToolName          string            `json:"tool_name,omitempty"`
+	RunID             string            `json:"run_id,omitempty"`
+	PlanningRound     int               `json:"planning_round,omitempty"`
+	ConstraintVersion int               `json:"constraint_version,omitempty"`
+	PlanVersion       int               `json:"plan_version,omitempty"`
+	DurationMs        int64             `json:"duration_ms,omitempty"`
+	NewFactCount      int               `json:"new_fact_count,omitempty"`
+	ExecutionMode     ExecutionMode     `json:"execution_mode,omitempty"`
+	FromMode          ExecutionMode     `json:"from_mode,omitempty"`
+	ToMode            ExecutionMode     `json:"to_mode,omitempty"`
+	Budget            *ExecutionProfile `json:"budget,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
 }
 
 func ValidateAgentDecision(decision AgentDecision, allowed map[string]AgentCapability) error {

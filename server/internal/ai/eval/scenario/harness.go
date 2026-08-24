@@ -247,17 +247,29 @@ func (h *scenarioHarness) run(ctx context.Context, message string, page *ai.Agen
 }
 
 func (h *scenarioHarness) metrics(result ai.AgentRunResult) ScenarioResult {
-	metrics := ScenarioResult{ToolCalls: len(result.ToolResults), PersonalScopes: make([]string, 0, len(h.personalScopes)), PermissionDenials: h.permissionDenials, ClarificationCount: h.clarifications}
+	metrics := ScenarioResult{
+		ToolCalls: len(result.ToolResults), PersonalScopes: make([]string, 0, len(h.personalScopes)),
+		PermissionDenials: h.permissionDenials, ClarificationCount: h.clarifications,
+		ObservedMode: result.State.ExecutionMode,
+	}
 	for scope := range h.personalScopes {
 		metrics.PersonalScopes = append(metrics.PersonalScopes, scope)
 	}
-	metrics.PlanningRounds = 1
+	metrics.PlanningRounds = result.State.PlanningRounds
+	if metrics.PlanningRounds == 0 {
+		metrics.PlanningRounds = 1
+	}
 	for _, activity := range result.Activities {
 		if activity.Type == "plan.revised" {
 			metrics.ReplanCount++
 		}
+		if activity.Type == "execution_mode.upgraded" {
+			metrics.ModeUpgrades++
+		}
+		if activity.Type == "budget.exhausted" {
+			metrics.BudgetExhaustions++
+		}
 	}
-	metrics.PlanningRounds += metrics.ReplanCount
 	metrics.Degraded = len(result.State.UnavailableCapabilities) > 0
 	return metrics
 }

@@ -76,6 +76,7 @@ type ProviderEvent struct {
 	InputTokens    int
 	OutputTokens   int
 	CacheHitTokens int
+	UsageAvailable bool
 	FinishReason   string
 }
 
@@ -151,7 +152,8 @@ func (m *MockProvider) Start(ctx context.Context, request ProviderRequest) (Prov
 		events = append(events, ProviderEvent{Type: ProviderEventTextDelta, Text: response.Content})
 	}
 	events = append(events,
-		ProviderEvent{Type: ProviderEventUsage, InputTokens: response.InputTokens, OutputTokens: response.OutputTokens, CacheHitTokens: response.CacheHitTokens},
+		ProviderEvent{Type: ProviderEventUsage, InputTokens: response.InputTokens, OutputTokens: response.OutputTokens, CacheHitTokens: response.CacheHitTokens,
+			UsageAvailable: response.InputTokens > 0 || response.OutputTokens > 0 || response.CacheHitTokens > 0},
 		ProviderEvent{Type: ProviderEventCompleted},
 	)
 	return &sliceProviderStream{events: events}, nil

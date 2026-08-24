@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"shenliyuan/internal/ai"
 )
 
 // ScenarioSpec 是一个可控 Provider 驱动的端到端场景。
@@ -21,6 +23,7 @@ type ScenarioSpec struct {
 	Category      string
 	Description   string
 	Deterministic bool
+	ExpectedMode  ai.ExecutionMode
 	Run           func(context.Context) ScenarioResult
 }
 
@@ -28,6 +31,11 @@ type ScenarioSpec struct {
 type ScenarioResult struct {
 	CaseID  string `json:"case_id"`
 	Success bool   `json:"success"`
+
+	ExpectedMode      ai.ExecutionMode `json:"expected_mode,omitempty"`
+	ObservedMode      ai.ExecutionMode `json:"observed_mode,omitempty"`
+	ModeUpgrades      int              `json:"mode_upgrades"`
+	BudgetExhaustions int              `json:"budget_exhaustions"`
 
 	ToolCalls          int `json:"tool_calls"`
 	ExternalCalls      int `json:"external_calls"`
@@ -67,31 +75,49 @@ type ScenarioSummary struct {
 	Passed      int     `json:"passed"`
 	SuccessRate float64 `json:"success_rate"`
 
-	AverageToolCalls      float64 `json:"average_tool_calls"`
-	ToolCalls             int     `json:"tool_calls"`
-	ExternalCalls         int     `json:"external_calls"`
-	P95ToolCalls          int     `json:"p95_tool_calls"`
-	AveragePlanningRounds float64 `json:"average_planning_rounds"`
-	P95PlanningRounds     int     `json:"p95_planning_rounds"`
-	ReplanCount           int     `json:"replan_count"`
-	Clarifications        int     `json:"clarifications"`
-	PermissionDenials     int     `json:"permission_denials"`
-	PermissionBypasses    int     `json:"permission_bypasses"`
-	CrossUserLeakage      int     `json:"cross_user_leakage"`
-	PersonalScopeReads    int     `json:"personal_scope_reads"`
-	DegradedRuns          int     `json:"degraded_runs"`
-	LateResultsDropped    int     `json:"late_results_dropped"`
-	ActionProposals       int     `json:"action_proposals"`
-	ActionCommits         int     `json:"action_commits"`
-	VerifiedCommits       int     `json:"verified_commits"`
-	DuplicateSideEffects  int     `json:"duplicate_side_effects"`
-	FalseSuccesses        int     `json:"false_successes"`
-	AverageLatencyMS      float64 `json:"average_latency_ms"`
-	P95LatencyMS          int64   `json:"p95_latency_ms"`
+	AverageToolCalls      float64                         `json:"average_tool_calls"`
+	ToolCalls             int                             `json:"tool_calls"`
+	ExternalCalls         int                             `json:"external_calls"`
+	P95ToolCalls          int                             `json:"p95_tool_calls"`
+	AveragePlanningRounds float64                         `json:"average_planning_rounds"`
+	P95PlanningRounds     int                             `json:"p95_planning_rounds"`
+	ReplanCount           int                             `json:"replan_count"`
+	Clarifications        int                             `json:"clarifications"`
+	PermissionDenials     int                             `json:"permission_denials"`
+	PermissionBypasses    int                             `json:"permission_bypasses"`
+	CrossUserLeakage      int                             `json:"cross_user_leakage"`
+	PersonalScopeReads    int                             `json:"personal_scope_reads"`
+	DegradedRuns          int                             `json:"degraded_runs"`
+	LateResultsDropped    int                             `json:"late_results_dropped"`
+	ActionProposals       int                             `json:"action_proposals"`
+	ActionCommits         int                             `json:"action_commits"`
+	VerifiedCommits       int                             `json:"verified_commits"`
+	DuplicateSideEffects  int                             `json:"duplicate_side_effects"`
+	FalseSuccesses        int                             `json:"false_successes"`
+	AverageLatencyMS      float64                         `json:"average_latency_ms"`
+	P95LatencyMS          int64                           `json:"p95_latency_ms"`
+	ModeAccuracy          float64                         `json:"mode_accuracy"`
+	ModeUpgrades          int                             `json:"mode_upgrades"`
+	BudgetExhaustions     int                             `json:"budget_exhaustions"`
+	ExecutionModes        map[string]ExecutionModeSummary `json:"execution_modes,omitempty"`
 
 	Categories map[string]int       `json:"categories"`
 	Failures   []ScenarioCaseResult `json:"failures,omitempty"`
 	Results    []ScenarioCaseResult `json:"results,omitempty"`
+}
+
+// ExecutionModeSummary 输出各档位独立的效率基线，避免不同任务复杂度混成一个平均值。
+type ExecutionModeSummary struct {
+	Cases                 int     `json:"cases"`
+	Passed                int     `json:"passed"`
+	AverageToolCalls      float64 `json:"average_tool_calls"`
+	P95ToolCalls          int     `json:"p95_tool_calls"`
+	AveragePlanningRounds float64 `json:"average_planning_rounds"`
+	P95PlanningRounds     int     `json:"p95_planning_rounds"`
+	AverageLatencyMS      float64 `json:"average_latency_ms"`
+	P95LatencyMS          int64   `json:"p95_latency_ms"`
+	ModeUpgrades          int     `json:"mode_upgrades"`
+	BudgetExhaustions     int     `json:"budget_exhaustions"`
 }
 
 // Baseline 保存人工确认过的 scenario 指标，不允许测试自动覆盖。
@@ -123,7 +149,11 @@ func RunSuite(ctx context.Context, cases []ScenarioSpec) (ScenarioSummary, error
 	if err := ValidateCatalog(cases); err != nil {
 		return ScenarioSummary{}, err
 	}
-	summary := ScenarioSummary{Name: "Agent Regression Scenario Suite", Categories: make(map[string]int), Results: make([]ScenarioCaseResult, 0, len(cases))}
+	summary := ScenarioSummary{
+		Name: "Agent Regression Scenario Suite", Categories: make(map[string]int),
+		ExecutionModes: make(map[string]ExecutionModeSummary), Results: make([]ScenarioCaseResult, 0, len(cases)),
+	}
+	modeResults := make(map[string][]ScenarioCaseResult)
 	for _, testCase := range cases {
 		started := time.Now()
 		result := ScenarioResult{CaseID: testCase.ID}
@@ -143,6 +173,13 @@ func RunSuite(ctx context.Context, cases []ScenarioSpec) (ScenarioSummary, error
 		}
 		caseResult := ScenarioCaseResult{CaseID: testCase.ID, Category: testCase.Category, Description: testCase.Description, Result: result}
 		summary.Results = append(summary.Results, caseResult)
+		modeKey := string(result.ExpectedMode)
+		if modeKey == "" {
+			modeKey = string(result.ObservedMode)
+		}
+		if modeKey != "" {
+			modeResults[modeKey] = append(modeResults[modeKey], caseResult)
+		}
 		summary.Cases++
 		summary.Categories[testCase.Category]++
 		if result.Success {
@@ -164,6 +201,8 @@ func RunSuite(ctx context.Context, cases []ScenarioSpec) (ScenarioSummary, error
 		summary.VerifiedCommits += result.VerifiedCommits
 		summary.DuplicateSideEffects += result.DuplicateSideEffects
 		summary.FalseSuccesses += result.FalseSuccesses
+		summary.ModeUpgrades += result.ModeUpgrades
+		summary.BudgetExhaustions += result.BudgetExhaustions
 		summary.AverageLatencyMS += float64(result.DurationMS)
 		if result.Degraded {
 			summary.DegradedRuns++
@@ -177,6 +216,43 @@ func RunSuite(ctx context.Context, cases []ScenarioSpec) (ScenarioSummary, error
 		summary.P95ToolCalls = percentileInt(summary.Results, func(result ScenarioResult) int { return result.ToolCalls })
 		summary.P95PlanningRounds = percentileInt(summary.Results, func(result ScenarioResult) int { return result.PlanningRounds })
 		summary.P95LatencyMS = int64(percentileInt64(summary.Results, func(result ScenarioResult) int64 { return result.DurationMS }))
+		modeMatched := 0
+		modeCases := 0
+		for _, caseResult := range summary.Results {
+			if caseResult.Result.ExpectedMode == "" {
+				continue
+			}
+			modeCases++
+			if caseResult.Result.ExpectedMode == caseResult.Result.ObservedMode {
+				modeMatched++
+			}
+		}
+		if modeCases > 0 {
+			summary.ModeAccuracy = float64(modeMatched) / float64(modeCases)
+		}
+	}
+	for mode, results := range modeResults {
+		stats := ExecutionModeSummary{Cases: len(results)}
+		for _, caseResult := range results {
+			result := caseResult.Result
+			if result.Success {
+				stats.Passed++
+			}
+			stats.AverageToolCalls += float64(result.ToolCalls)
+			stats.AveragePlanningRounds += float64(result.PlanningRounds)
+			stats.AverageLatencyMS += float64(result.DurationMS)
+			stats.ModeUpgrades += result.ModeUpgrades
+			stats.BudgetExhaustions += result.BudgetExhaustions
+		}
+		if stats.Cases > 0 {
+			stats.AverageToolCalls /= float64(stats.Cases)
+			stats.AveragePlanningRounds /= float64(stats.Cases)
+			stats.AverageLatencyMS /= float64(stats.Cases)
+			stats.P95ToolCalls = percentileInt(results, func(result ScenarioResult) int { return result.ToolCalls })
+			stats.P95PlanningRounds = percentileInt(results, func(result ScenarioResult) int { return result.PlanningRounds })
+			stats.P95LatencyMS = int64(percentileInt64(results, func(result ScenarioResult) int64 { return result.DurationMS }))
+		}
+		summary.ExecutionModes[mode] = stats
 	}
 	return summary, nil
 }
@@ -275,6 +351,9 @@ func FormatSummary(summary ScenarioSummary) string {
 		fmt.Sprintf("Verified Commits      %d", summary.VerifiedCommits),
 		fmt.Sprintf("Duplicate Side Effects %d", summary.DuplicateSideEffects),
 		fmt.Sprintf("False Successes       %d", summary.FalseSuccesses),
+		fmt.Sprintf("Mode Accuracy         %.1f%%", summary.ModeAccuracy*100),
+		fmt.Sprintf("Mode Upgrades         %d", summary.ModeUpgrades),
+		fmt.Sprintf("Budget Exhaustions    %d", summary.BudgetExhaustions),
 		fmt.Sprintf("Avg Latency           %.2fms", summary.AverageLatencyMS),
 		fmt.Sprintf("P95 Latency           %dms", summary.P95LatencyMS),
 		fmt.Sprintf("External Calls        %d", summary.ExternalCalls),
@@ -288,6 +367,18 @@ func FormatSummary(summary ScenarioSummary) string {
 	sort.Strings(categories)
 	for _, category := range categories {
 		lines = append(lines, fmt.Sprintf("%-22s %d", category, summary.Categories[category]))
+	}
+	lines = append(lines, "", "Execution Mode Baselines")
+	for _, mode := range []string{string(ai.ExecutionFast), string(ai.ExecutionNormal), string(ai.ExecutionDeep)} {
+		stats, ok := summary.ExecutionModes[mode]
+		if !ok {
+			continue
+		}
+		lines = append(lines,
+			fmt.Sprintf("%-22s cases=%d avg_tools=%.2f p95_tools=%d avg_rounds=%.2f p95_rounds=%d avg_active_ms=%.2f upgrades=%d budget_exhaustions=%d",
+				mode, stats.Cases, stats.AverageToolCalls, stats.P95ToolCalls, stats.AveragePlanningRounds,
+				stats.P95PlanningRounds, stats.AverageLatencyMS, stats.ModeUpgrades, stats.BudgetExhaustions),
+		)
 	}
 	return strings.Join(lines, "\n")
 }

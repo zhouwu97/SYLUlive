@@ -378,6 +378,7 @@ func policyRAGUsageEvent(usage *PolicyRAGUsage) ProviderEvent {
 	return ProviderEvent{
 		Type: ProviderEventUsage, InputTokens: *usage.InputTokens,
 		OutputTokens: *usage.OutputTokens, CacheHitTokens: *usage.CacheHitTokens,
+		UsageAvailable: true,
 	}
 }
 

@@ -77,6 +77,39 @@ void main() {
     expect(tester.getSize(lensFinder).width, closeTo(settledWidth, 0.01));
   });
 
+  testWidgets('多指触控锁定首个 pointer，不让第二个 pointer 接管 Lens', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final first = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+      pointer: 1,
+    );
+
+    await first.moveTo(
+      Offset(layerTopLeft.dx + itemWidth * 1.5, layerTopLeft.dy + 30),
+    );
+    await tester.pump();
+    expect(harness.visualIndex.value, closeTo(1, 0.02));
+
+    final second = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 2.5, layerTopLeft.dy + 30),
+      pointer: 2,
+    );
+    await second.moveTo(
+      Offset(layerTopLeft.dx + itemWidth * 4.5, layerTopLeft.dy + 30),
+    );
+    await tester.pump();
+
+    expect(harness.visualIndex.value, closeTo(1, 0.02));
+    await second.cancel();
+    await first.up();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('首尾 Lens 中心与固定 Tab 中心对齐且允许被 Dock 裁切', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));

@@ -17,6 +17,7 @@ import '../utils/app_feedback.dart';
 import '../utils/post_clipboard.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
+import 'post_content_link_text.dart';
 import 'post_media/post_media_view.dart';
 import 'topic_chips.dart';
 import 'feed/feed_post_action_menu.dart';
@@ -317,8 +318,8 @@ class _PostCardState extends State<PostCard>
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onLongPress: _copyPostContent,
-              child: Text(
-                post.content,
+              child: PostContentLinkText(
+                text: post.content,
                 maxLines: contentMaxLines,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -455,8 +456,8 @@ class _PostCardState extends State<PostCard>
                 ],
                 if (post.content.trim().isNotEmpty) ...[
                   SizedBox(height: post.title.isEmpty ? 0 : 6),
-                  Text(
-                    post.content,
+                  PostContentLinkText(
+                    text: post.content,
                     maxLines: contentMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.feedBody.copyWith(

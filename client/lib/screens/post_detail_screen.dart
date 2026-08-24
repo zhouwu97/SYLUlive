@@ -30,6 +30,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
+import '../widgets/post_content_link_text.dart';
 import '../widgets/topic_chips.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply_composer.dart';
@@ -2274,8 +2275,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             const SizedBox(height: 16),
                           ],
                           SelectionArea(
-                            child: Text(
-                              p.content,
+                            child: PostContentLinkText(
+                              text: p.content,
                               style: TextStyle(
                                 fontSize: 16,
                                 height: 1.6,
@@ -2424,8 +2425,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             const SizedBox(height: 16),
                           ],
                           SelectionArea(
-                            child: Text(
-                              p.content,
+                            child: PostContentLinkText(
+                              text: p.content,
                               style: TextStyle(
                                 fontSize: 16,
                                 height: 1.6,
@@ -2733,8 +2734,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     const SizedBox(height: 6),
                   ],
                   if (p.content.isNotEmpty)
-                    Text(
-                      p.content,
+                    PostContentLinkText(
+                      text: p.content,
                       style: TextStyle(
                         fontSize: 14.5,
                         height: 1.55,

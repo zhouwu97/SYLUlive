@@ -228,7 +228,14 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			planContext := AgentTraceFields{RunID: run.ID, PlanningRound: run.PlanningRound, ConstraintVersion: run.ConstraintVersion, PlanVersion: run.PlanVersion}
 			toolCtx := withAgentPlanContext(ctx, planContext)
 			startedAt := time.Now()
-			execution, cached, executeErr := r.tools.Execute(toolCtx, call.id, run.ID, run.UserID, call.name, json.RawMessage(arguments))
+			var execution ToolExecutionResult
+			var cached bool
+			var executeErr error
+			if gateErr := r.agentToolAllowed(run, call.name); gateErr != nil {
+				executeErr = gateErr
+			} else {
+				execution, cached, executeErr = r.tools.Execute(toolCtx, call.id, run.ID, run.UserID, call.name, json.RawMessage(arguments))
+			}
 			success := executeErr == nil
 			if executeErr != nil {
 				execution.Result = toolExecutionFailure(executeErr)
@@ -834,7 +841,8 @@ func toolExecutionFailure(err error) json.RawMessage {
 	code := "tool_execution_failed"
 	status := "failed"
 	switch err.Error() {
-	case "tool_not_allowed", "invalid_tool_call", "tool_call_idempotency_conflict", "tool_call_in_progress", "tool_state_conflict", "tool_result_invalid":
+	case "tool_not_allowed", "invalid_tool_call", "tool_call_idempotency_conflict", "tool_call_in_progress", "tool_state_conflict", "tool_result_invalid",
+		"agent_actions_disabled", "agent_personal_data_disabled", "agent_capability_not_in_rollout", "agent_feature_state_invalid":
 		code = err.Error()
 	}
 	if isCapabilityUnavailableError(err) {

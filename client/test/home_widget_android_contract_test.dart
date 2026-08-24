@@ -34,6 +34,17 @@ void main() {
     expect(registry, contains('R.layout.widget_course_item_detailed'));
   });
 
+  test('课表标题和日期的 RelativeLayout 约束不能形成双向依赖', () {
+    for (final path in const [
+      'android/app/src/main/res/layout/widget_course_2x2.xml',
+      'android/app/src/main/res/layout/widget_course_4x2.xml',
+    ]) {
+      final layout = source(path);
+      expect(layout, contains('android:layout_toStartOf="@id/tv_widget_date"'));
+      expect(layout, isNot(contains('android:layout_toEndOf="@id/tv_widget_title"')));
+    }
+  });
+
   test('空状态颜色由主题 mutedTextColor 统一控制', () {
     final renderer = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRenderer.kt',

@@ -13,13 +13,13 @@ enum LiquidGlassQaMode { finalGlass, identity, refractionOnly, shapeOnly }
 /// 改变正常页面的参数来源。
 class LiquidGlassTuning {
   const LiquidGlassTuning({
-    this.refraction = 9.0,
-    this.magnification = 1.035,
-    this.chromatic = 0.6,
-    this.rimStrength = 0.08,
-    this.lightStrength = 0.18,
-    this.dockAlpha = 1.0,
-    this.dockBlur = 4.5,
+    this.refraction = 14.0,
+    this.magnification = 1.08,
+    this.chromatic = 0.85,
+    this.rimStrength = 0.09,
+    this.lightStrength = 0.15,
+    this.dockAlpha = 0.70,
+    this.dockBlur = 3.2,
     this.mode = LiquidGlassQaMode.finalGlass,
   });
 

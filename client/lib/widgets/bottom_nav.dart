@@ -1157,6 +1157,11 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
     if (canRefract) {
       shader
+        // uSize 占用 FragmentShader 的第 0、1 个 float。它必须使用
+        // Lens 自身的局部尺寸；缺失时 shader 会以零尺寸计算 SDF/UV，
+        // 产生跨页面的异常线条而不是液态玻璃。
+        ..setFloat(0, lensWidth)
+        ..setFloat(1, lensHeight)
         ..setFloat(2, widget.tuning.effectiveRefraction)
         ..setFloat(3, widget.tuning.effectiveMagnification)
         ..setFloat(4, widget.tuning.effectiveChromatic)

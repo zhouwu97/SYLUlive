@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -129,4 +130,50 @@ func (r *Runtime) TraceMetrics(ctx context.Context, userID uint, runID string) (
 		metrics.Observe(event.Type, event.Payload)
 	}
 	return metrics, nil
+}
+
+// ReviewRegressionCandidate 记录人工审核结果；审核事件同样不携带问题正文或工具原文。
+func (r *Runtime) ReviewRegressionCandidate(ctx context.Context, reviewerID uint, runID, caseID, decision string) error {
+	if reviewerID == 0 {
+		return &RuntimeError{Code: "authentication_required", Message: "需要登录"}
+	}
+	if _, err := uuid.Parse(strings.TrimSpace(runID)); err != nil {
+		return &RuntimeError{Code: "invalid_run_id", Message: "Run ID 无效"}
+	}
+	decision = strings.TrimSpace(decision)
+	if decision != "approved" && decision != "rejected" {
+		return &RuntimeError{Code: "invalid_regression_review", Message: "审核结果无效"}
+	}
+	caseID = strings.TrimSpace(caseID)
+	if caseID == "" || len(caseID) > 160 {
+		return &RuntimeError{Code: "invalid_regression_case", Message: "回归候选 ID 无效"}
+	}
+	var run models.AIRun
+	if err := r.db.WithContext(ctx).Where("id = ?", runID).First(&run).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &RuntimeError{Code: "ai_run_not_found", Message: "Run 不存在"}
+		}
+		return err
+	}
+	var candidates []models.AIEvent
+	if err := r.db.WithContext(ctx).Where("run_id = ? AND type = ?", run.ID, "regression.scenario_candidate").Find(&candidates).Error; err != nil {
+		return err
+	}
+	found := false
+	for _, event := range candidates {
+		var payload struct {
+			CaseID string `json:"case_id"`
+		}
+		if json.Unmarshal(event.Payload, &payload) == nil && payload.CaseID == caseID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return &RuntimeError{Code: "regression_candidate_not_found", Message: "回归候选不存在"}
+	}
+	_, err := r.appendEvent(ctx, run.ID, "regression.scenario_reviewed", map[string]interface{}{
+		"case_id": caseID, "decision": decision, "reviewer_id": reviewerID,
+	}, true)
+	return err
 }

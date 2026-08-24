@@ -1794,7 +1794,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget _buildFollowingDashboard(
       bool isDark, List<Post> posts, bool isFeedLoading) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xs,
+        AppSpacing.lg,
+        AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1824,7 +1829,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.sm),
           if (posts.isEmpty && !isFeedLoading)
             Container(
               height: 100,
@@ -1858,7 +1863,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               final post = entry.value;
               final position = entry.key;
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                 child: CommunityPostCard(
                   post: post,
                   postVariant: PostCardVariant.homeFeed,

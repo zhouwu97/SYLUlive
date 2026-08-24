@@ -436,11 +436,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
             if (kDebugMode)
               SettingsTile(
                 icon: Icons.tune_rounded,
-                title: 'Liquid Glass QA',
-                subtitle: '开发专用纹理、轮廓与光学参数调试页',
+                title: 'Liquid Glass Reference QA',
+                subtitle: '开发专用参考参数、纹理与光学对照页',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const LiquidGlassQaScreen(),
+                    builder: (_) => const LiquidGlassReferenceParityScreen(),
                   ),
                 ),
               ),

@@ -30,7 +30,8 @@ const _navIcons = <IconData>[
 const _navLabels = <String>['首页', '集市', '课表', '校园', '我'];
 const _dockHeight = 64.0;
 const _selectionHeight = 56.0;
-const _selectionIdleWidthScale = 1.28;
+// 普通选中态严格占一格，首尾位置不会越出 Dock；进入液态后再连续扩张。
+const _selectionIdleWidthScale = 1.0;
 const _tabContentPressedScale = 1.20;
 const _pressSpring = SpringDescription(
   mass: 1,

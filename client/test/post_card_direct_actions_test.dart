@@ -271,4 +271,48 @@ void main() {
     expect(find.text('帖子正文已复制'), findsOneWidget);
     expect(onTapCount, 0);
   });
+
+  testWidgets('信息流正文网址点击先确认且不触发卡片点击', (tester) async {
+    var onTapCount = 0;
+    final dio = Dio();
+    final auth = _CardAuthProvider(client: dio, loggedIn: true);
+    final postProvider = PostProvider(dio, enableCache: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+          ChangeNotifierProvider<ThemeProvider>.value(
+            value: ThemeProvider(loadOnStart: false),
+          ),
+          ChangeNotifierProvider<WaterSectionProvider>.value(
+            value: WaterSectionProvider(null),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: PostCard(
+              post: _post().copyWith(content: '访问 https://example.com'),
+              onTap: () => onTapCount++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final linkText = find.byWidgetPredicate(
+      (widget) =>
+          widget is RichText &&
+          widget.text.toPlainText().contains('https://example.com'),
+    );
+    expect(linkText, findsOneWidget);
+    await tester.tap(linkText);
+    await tester.pumpAndSettle();
+
+    expect(find.text('打开网页？'), findsOneWidget);
+    expect(onTapCount, 0);
+    await tester.tap(find.text('取消'));
+  });
 }

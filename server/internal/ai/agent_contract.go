@@ -422,6 +422,7 @@ type AgentDecision struct {
 type AgentRunState struct {
 	RunID                   string                `json:"run_id"`
 	Goal                    GoalSpec              `json:"goal"`
+	FeatureFlags            FeatureFlagSnapshot   `json:"feature_flags,omitempty"`
 	ExecutionMode           ExecutionMode         `json:"execution_mode,omitempty"`
 	ExecutionProfile        ExecutionProfile      `json:"execution_profile,omitempty"`
 	KnownFacts              []string              `json:"known_facts,omitempty"`
@@ -477,31 +478,38 @@ type AgentCostMetrics struct {
 // AgentTraceMetrics 是从脱敏 Trace 派生的可长期比较指标，不包含问题正文、
 // 工具原文或个人事实。它既可用于单 Run 汇总，也可交给离线 Eval 聚合。
 type AgentTraceMetrics struct {
-	ToolCalls                  int           `json:"tool_calls"`
-	ReplanCount                int           `json:"replan_count"`
-	DiscardedLateResults       int           `json:"discarded_late_results"`
-	PermissionDenials          int           `json:"permission_denials"`
-	PersonalScopesAccessed     int           `json:"personal_scopes_accessed"`
-	ClarificationCount         int           `json:"clarification_count"`
-	TotalLatencyMs             int64         `json:"total_latency_ms"`
-	DegradedRuns               int           `json:"degraded_runs"`
-	ActionVerificationFailures int           `json:"action_verification_failures"`
-	ExecutionMode              ExecutionMode `json:"execution_mode,omitempty"`
-	ModeUpgrades               int           `json:"mode_upgrades"`
-	FastEscalations            int           `json:"fast_escalations"`
-	NormalEscalations          int           `json:"normal_escalations"`
-	BudgetExhaustions          int           `json:"budget_exhaustions"`
-	ModelCalls                 int           `json:"model_calls"`
-	InputTokens                int64         `json:"input_tokens"`
-	OutputTokens               int64         `json:"output_tokens"`
-	ExternalCalls              int           `json:"external_calls"`
-	PlanningRounds             int           `json:"planning_rounds"`
-	ActiveComputeTimeMs        int64         `json:"active_compute_time_ms"`
-	UserWaitTimeMs             int64         `json:"user_wait_time_ms"`
-	TokenUsageAvailable        bool          `json:"token_usage_available"`
-	RunSucceeded               bool          `json:"run_succeeded"`
-	RunFailed                  bool          `json:"run_failed"`
-	ToolLatencyMs              []int64       `json:"-"`
+	ToolCalls                  int            `json:"tool_calls"`
+	ReplanCount                int            `json:"replan_count"`
+	DiscardedLateResults       int            `json:"discarded_late_results"`
+	PermissionDenials          int            `json:"permission_denials"`
+	PersonalScopesAccessed     int            `json:"personal_scopes_accessed"`
+	ClarificationCount         int            `json:"clarification_count"`
+	TotalLatencyMs             int64          `json:"total_latency_ms"`
+	DegradedRuns               int            `json:"degraded_runs"`
+	ActionVerificationFailures int            `json:"action_verification_failures"`
+	ExecutionMode              ExecutionMode  `json:"execution_mode,omitempty"`
+	ModeUpgrades               int            `json:"mode_upgrades"`
+	FastEscalations            int            `json:"fast_escalations"`
+	NormalEscalations          int            `json:"normal_escalations"`
+	BudgetExhaustions          int            `json:"budget_exhaustions"`
+	UserCorrections            int            `json:"user_corrections"`
+	UnnecessaryClarifications  int            `json:"unnecessary_clarifications"`
+	Abandonments               int            `json:"abandonments"`
+	Rephrases                  int            `json:"rephrases"`
+	UsefulAnswers              int            `json:"useful_answers"`
+	TimeToUsefulAnswerMs       int64          `json:"time_to_useful_answer_ms"`
+	FailureTaxonomy            map[string]int `json:"failure_taxonomy,omitempty"`
+	ModelCalls                 int            `json:"model_calls"`
+	InputTokens                int64          `json:"input_tokens"`
+	OutputTokens               int64          `json:"output_tokens"`
+	ExternalCalls              int            `json:"external_calls"`
+	PlanningRounds             int            `json:"planning_rounds"`
+	ActiveComputeTimeMs        int64          `json:"active_compute_time_ms"`
+	UserWaitTimeMs             int64          `json:"user_wait_time_ms"`
+	TokenUsageAvailable        bool           `json:"token_usage_available"`
+	RunSucceeded               bool           `json:"run_succeeded"`
+	RunFailed                  bool           `json:"run_failed"`
+	ToolLatencyMs              []int64        `json:"-"`
 }
 
 // Observe 从一个已脱敏的 Agent 事件中提取长期指标。
@@ -510,22 +518,24 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		return
 	}
 	var event struct {
-		DurationMs            int64         `json:"duration_ms"`
-		ErrorCode             string        `json:"error_code"`
-		CapabilityStatus      string        `json:"capability_status"`
-		PostconditionVerified *bool         `json:"postcondition_verified"`
-		ExecutionMode         ExecutionMode `json:"execution_mode"`
-		FromMode              ExecutionMode `json:"from_mode"`
-		ToMode                ExecutionMode `json:"to_mode"`
-		BudgetExhausted       bool          `json:"budget_exhausted"`
-		ModelCalls            int           `json:"model_calls"`
-		InputTokens           int64         `json:"input_tokens"`
-		OutputTokens          int64         `json:"output_tokens"`
-		ExternalCalls         int           `json:"external_calls"`
-		PlanningRounds        int           `json:"planning_rounds"`
-		ActiveComputeTimeMs   int64         `json:"active_compute_time_ms"`
-		UserWaitTimeMs        int64         `json:"user_wait_time_ms"`
-		TokenUsageAvailable   *bool         `json:"token_usage_available"`
+		DurationMs            int64              `json:"duration_ms"`
+		ErrorCode             string             `json:"error_code"`
+		CapabilityStatus      string             `json:"capability_status"`
+		PostconditionVerified *bool              `json:"postcondition_verified"`
+		ExecutionMode         ExecutionMode      `json:"execution_mode"`
+		FromMode              ExecutionMode      `json:"from_mode"`
+		ToMode                ExecutionMode      `json:"to_mode"`
+		BudgetExhausted       bool               `json:"budget_exhausted"`
+		ModelCalls            int                `json:"model_calls"`
+		InputTokens           int64              `json:"input_tokens"`
+		OutputTokens          int64              `json:"output_tokens"`
+		ExternalCalls         int                `json:"external_calls"`
+		PlanningRounds        int                `json:"planning_rounds"`
+		ActiveComputeTimeMs   int64              `json:"active_compute_time_ms"`
+		UserWaitTimeMs        int64              `json:"user_wait_time_ms"`
+		TimeToUsefulAnswerMs  int64              `json:"time_to_useful_answer_ms"`
+		TokenUsageAvailable   *bool              `json:"token_usage_available"`
+		FailureReason         AgentFailureReason `json:"failure_reason"`
 	}
 	_ = json.Unmarshal(payload, &event)
 	if event.ExecutionMode != "" {
@@ -578,27 +588,61 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		metrics.ClarificationCount++
 	case "action.verification_failed":
 		metrics.ActionVerificationFailures++
+	case "user.correction":
+		metrics.UserCorrections++
+	case "clarification.unnecessary":
+		metrics.UnnecessaryClarifications++
+	case "run.abandoned":
+		metrics.Abandonments++
+	case "run.rephrased":
+		metrics.Rephrases++
+	case "answer.useful":
+		metrics.UsefulAnswers++
+		if event.TimeToUsefulAnswerMs > 0 {
+			metrics.TimeToUsefulAnswerMs = event.TimeToUsefulAnswerMs
+		}
+	case "run.failure_classified":
+		if event.FailureReason.Valid() {
+			if metrics.FailureTaxonomy == nil {
+				metrics.FailureTaxonomy = make(map[string]int)
+			}
+			metrics.FailureTaxonomy[string(event.FailureReason)]++
+		}
+	case "run.failed":
+		if event.FailureReason.Valid() {
+			if metrics.FailureTaxonomy == nil {
+				metrics.FailureTaxonomy = make(map[string]int)
+			}
+			metrics.FailureTaxonomy[string(event.FailureReason)]++
+		}
 	case "run.completed":
 		metrics.RunSucceeded = true
-	case "run.failed", "run.cancelled", "run.expired":
+	case "run.cancelled", "run.expired":
 		metrics.RunFailed = true
 	}
 }
 
 // AgentEvalTrend 是跨提交/模型版本的稳定聚合格式。
 type AgentEvalTrend struct {
-	RunCount                   int     `json:"run_count"`
-	SuccessRate                float64 `json:"success_rate"`
-	AverageToolCalls           float64 `json:"average_tool_calls"`
-	P95ToolCalls               int     `json:"p95_tool_calls"`
-	ReplanRate                 float64 `json:"replan_rate"`
-	DiscardedLateResults       int     `json:"discarded_late_results"`
-	PermissionDenials          int     `json:"permission_denials"`
-	PersonalScopesAccessed     int     `json:"personal_scopes_accessed"`
-	ClarificationCount         int     `json:"clarification_count"`
-	AverageRunLatencyMs        float64 `json:"average_run_latency_ms"`
-	DegradedRuns               int     `json:"degraded_runs"`
-	ActionVerificationFailures int     `json:"action_verification_failures"`
+	RunCount                    int            `json:"run_count"`
+	SuccessRate                 float64        `json:"success_rate"`
+	AverageToolCalls            float64        `json:"average_tool_calls"`
+	P95ToolCalls                int            `json:"p95_tool_calls"`
+	ReplanRate                  float64        `json:"replan_rate"`
+	DiscardedLateResults        int            `json:"discarded_late_results"`
+	PermissionDenials           int            `json:"permission_denials"`
+	PersonalScopesAccessed      int            `json:"personal_scopes_accessed"`
+	ClarificationCount          int            `json:"clarification_count"`
+	AverageRunLatencyMs         float64        `json:"average_run_latency_ms"`
+	DegradedRuns                int            `json:"degraded_runs"`
+	ActionVerificationFailures  int            `json:"action_verification_failures"`
+	UserCorrections             int            `json:"user_corrections"`
+	UnnecessaryClarifications   int            `json:"unnecessary_clarifications"`
+	Abandonments                int            `json:"abandonments"`
+	Rephrases                   int            `json:"rephrases"`
+	UsefulAnswers               int            `json:"useful_answers"`
+	AverageTimeToUsefulAnswerMs float64        `json:"average_time_to_useful_answer_ms"`
+	FailureTaxonomy             map[string]int `json:"failure_taxonomy,omitempty"`
 }
 
 func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
@@ -609,6 +653,9 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 	toolCalls := make([]int, 0, len(samples))
 	completed, replanned := 0, 0
 	var toolCallTotal, latencyTotal int64
+	var usefulLatencyTotal int64
+	usefulLatencyCount := 0
+	trend.FailureTaxonomy = make(map[string]int)
 	for _, sample := range samples {
 		if sample.RunSucceeded && !sample.RunFailed {
 			completed++
@@ -625,12 +672,27 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 		trend.ClarificationCount += sample.ClarificationCount
 		trend.DegradedRuns += sample.DegradedRuns
 		trend.ActionVerificationFailures += sample.ActionVerificationFailures
+		trend.UserCorrections += sample.UserCorrections
+		trend.UnnecessaryClarifications += sample.UnnecessaryClarifications
+		trend.Abandonments += sample.Abandonments
+		trend.Rephrases += sample.Rephrases
+		trend.UsefulAnswers += sample.UsefulAnswers
+		if sample.TimeToUsefulAnswerMs > 0 {
+			usefulLatencyTotal += sample.TimeToUsefulAnswerMs
+			usefulLatencyCount++
+		}
+		for reason, count := range sample.FailureTaxonomy {
+			trend.FailureTaxonomy[reason] += count
+		}
 	}
 	trend.SuccessRate = float64(completed) / float64(len(samples))
 	trend.AverageToolCalls = float64(toolCallTotal) / float64(len(samples))
 	trend.P95ToolCalls = percentile95Ints(toolCalls)
 	trend.ReplanRate = float64(replanned) / float64(len(samples))
 	trend.AverageRunLatencyMs = float64(latencyTotal) / float64(len(samples))
+	if usefulLatencyCount > 0 {
+		trend.AverageTimeToUsefulAnswerMs = float64(usefulLatencyTotal) / float64(usefulLatencyCount)
+	}
 	return trend
 }
 

@@ -169,9 +169,16 @@ func (r *Runtime) agentContextPreflight(ctx context.Context, run *models.AIRun) 
 			"call_id": callID, "tool_name": call.name, "preflight": true,
 		}, true)
 
-		execution, cached, executeErr := r.tools.Execute(
-			ctx, callID, run.ID, run.UserID, call.name, call.arguments,
-		)
+		var execution ToolExecutionResult
+		var cached bool
+		var executeErr error
+		if gateErr := r.agentToolAllowed(run, call.name); gateErr != nil {
+			executeErr = gateErr
+		} else {
+			execution, cached, executeErr = r.tools.Execute(
+				ctx, callID, run.ID, run.UserID, call.name, call.arguments,
+			)
+		}
 		success := executeErr == nil && execution.Wait == nil
 		if executeErr != nil {
 			execution.Result = toolExecutionFailure(executeErr)

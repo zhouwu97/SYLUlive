@@ -14,6 +14,7 @@ import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/post_clipboard.dart';
 import '../cached_avatar.dart';
+import '../post_content_link_text.dart';
 import '../post_media/post_media_view.dart';
 import '../topic_chips.dart';
 
@@ -94,8 +95,8 @@ class SectionPostCard extends StatelessWidget {
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onLongPress: () => _copyPostContent(context),
-                    child: Text(
-                      post.content,
+                    child: PostContentLinkText(
+                      text: post.content,
                       maxLines: validImages.isEmpty ? 3 : 2,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.feedBody.copyWith(

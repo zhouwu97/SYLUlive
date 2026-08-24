@@ -32,6 +32,7 @@ type createAIRunRequest struct {
 	ConversationID  string                   `json:"conversation_id"`
 	ClientRequestID string                   `json:"client_request_id"`
 	Message         string                   `json:"message"`
+	AppVersion      string                   `json:"app_version"`
 	AgentContext    *ai.AgentContextEnvelope `json:"context"`
 }
 
@@ -40,14 +41,23 @@ type submitAIRunConsentRequest struct {
 	Granted *bool                        `json:"granted"`
 }
 
+type submitAIRunFeedbackRequest struct {
+	Signal        string `json:"signal"`
+	FailureReason string `json:"failure_reason"`
+}
+
 func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	var request createAIRunRequest
 	if err := decodeStrictJSON(c, &request, 16<<10); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "请求格式错误"})
 		return
 	}
+	if strings.TrimSpace(request.AppVersion) == "" {
+		request.AppVersion = strings.TrimSpace(c.GetHeader("X-App-Version"))
+	}
 	run, duplicate, err := h.runtime.CreateRun(c.Request.Context(), c.GetUint("user_id"), ai.CreateRunRequest{
 		ConversationID: request.ConversationID, ClientRequestID: request.ClientRequestID, Message: request.Message,
+		AppVersion:   request.AppVersion,
 		AgentContext: request.AgentContext,
 	})
 	if err != nil {
@@ -243,6 +253,56 @@ func (h *AIRuntimeHandler) CancelRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
+}
+
+// SubmitRunFeedback 接收有限枚举的用户信号和失败归因，不接受纠正正文或诊断备注。
+func (h *AIRuntimeHandler) SubmitRunFeedback(c *gin.Context) {
+	var request submitAIRunFeedbackRequest
+	if err := decodeStrictJSON(c, &request, 2<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "请求格式错误"})
+		return
+	}
+	userID, runID := c.GetUint("user_id"), c.Param("id")
+	result := gin.H{"run_id": runID}
+	signal := ai.AgentUserSignal(strings.TrimSpace(request.Signal))
+	reason := ai.AgentFailureReason(strings.TrimSpace(request.FailureReason))
+	if request.Signal != "" && !signal.Valid() {
+		writeAIRuntimeError(c, &ai.RuntimeError{Code: "invalid_agent_user_signal", Message: "反馈信号无效"})
+		return
+	}
+	if request.FailureReason != "" && !reason.Valid() {
+		writeAIRuntimeError(c, &ai.RuntimeError{Code: "invalid_agent_failure_reason", Message: "失败分类无效"})
+		return
+	}
+	if strings.TrimSpace(request.Signal) != "" {
+		if err := h.runtime.RecordUserSignal(c.Request.Context(), userID, runID, signal); err != nil {
+			writeAIRuntimeError(c, err)
+			return
+		}
+		result["signal"] = signal
+	}
+	if strings.TrimSpace(request.FailureReason) != "" {
+		candidate, err := h.runtime.ClassifyFailure(c.Request.Context(), userID, runID, reason)
+		if err != nil {
+			writeAIRuntimeError(c, err)
+			return
+		}
+		result["scenario_candidate"] = candidate
+	}
+	if len(result) == 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_agent_feedback", "message": "至少提供一个有效反馈信号或失败分类"})
+		return
+	}
+	c.JSON(http.StatusAccepted, result)
+}
+
+func (h *AIRuntimeHandler) GetRunMetrics(c *gin.Context) {
+	metrics, err := h.runtime.TraceMetrics(c.Request.Context(), c.GetUint("user_id"), c.Param("id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"run_id": c.Param("id"), "metrics": metrics})
 }
 
 func (h *AIRuntimeHandler) Events(c *gin.Context) {
@@ -521,6 +581,8 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":
 			status = http.StatusConflict
 		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
+			status = http.StatusBadRequest
+		case "invalid_agent_user_signal", "invalid_agent_failure_reason", "invalid_agent_feedback":
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"code": runtimeErr.Code, "message": runtimeErr.Message, "retryable": runtimeErr.Retryable})

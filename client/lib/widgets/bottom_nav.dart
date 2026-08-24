@@ -357,7 +357,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                     colors: [
                                       Colors.white.withValues(alpha: 0),
                                       Colors.white.withValues(
-                                        alpha: highContrast ? 0.72 : 0.42,
+                                        alpha: highContrast ? 0.28 : 0.14,
                                       ),
                                       Colors.white.withValues(alpha: 0),
                                     ],
@@ -398,15 +398,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     return GestureDetector(
       key: const ValueKey('bottom-nav-gesture-layer'),
       behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        _recordPointerDown(details.localPosition.dx);
-      },
       onTapUp: (details) => _handleTapUp(details, itemWidth),
-      onHorizontalDragStart: (details) => _handleDragStart(details, itemWidth),
-      onHorizontalDragUpdate: (details) =>
-          _handleDragUpdate(details, itemWidth),
-      onHorizontalDragEnd: (details) => _handleDragEnd(details, itemWidth),
-      onHorizontalDragCancel: _handleDragCancel,
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: _handlePointerDownEvent,
@@ -432,6 +424,9 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   void _handlePointerDownEvent(PointerDownEvent event) {
+    // Android Emulator 的 Ctrl 多点模式会生成第二个对称触点；它不能
+    // 接管当前 Lens，否则 VelocityTracker 和 grab offset 会被覆盖。
+    if (_pointerId != null) return;
     final renderObject = _dockRenderKey.currentContext?.findRenderObject();
     final localX = renderObject is RenderBox
         ? renderObject.globalToLocal(event.position).dx
@@ -439,6 +434,8 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _recordPointerDown(localX);
     _pointerId = event.pointer;
     _pointerDownTime = event.timeStamp;
+    _lastPointerX = localX;
+    _lastPointerTime = event.timeStamp;
     _velocityTracker = VelocityTracker.withKind(event.kind)
       ..addPosition(event.timeStamp, event.position);
     _pointerUpVelocityPixelsPerSecond = null;
@@ -449,6 +446,19 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   void _handlePointerMoveEvent(PointerMoveEvent event) {
     if (event.pointer != _pointerId) return;
     _velocityTracker?.addPosition(event.timeStamp, event.position);
+    final localX = _localPointerX(event);
+
+    if (!_isDragging) {
+      final downX = _pointerDownX;
+      if (_pointerInsideLens &&
+          downX != null &&
+          (localX - downX).abs() >= kTouchSlop) {
+        _beginDrag(localX, event.timeStamp);
+      }
+      return;
+    }
+
+    _updateDrag(localX, event.timeStamp);
   }
 
   void _handlePointerUpEvent(PointerUpEvent event) {
@@ -456,13 +466,38 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _velocityTracker?.addPosition(event.timeStamp, event.position);
     _pointerUpVelocityPixelsPerSecond =
         _velocityTracker?.getVelocity().pixelsPerSecond.dx;
+
+    if (_isDragging) {
+      _endDrag(
+        _pointerUpVelocityPixelsPerSecond ?? _velocityPixelsPerSecond,
+      );
+    } else {
+      _pointerDownX = null;
+      _pointerDownTime = null;
+      _lastPointerTime = null;
+      _pointerInsideLens = false;
+      _pointerUpVelocityPixelsPerSecond = null;
+      _clearActivePointer();
+    }
   }
 
   void _handlePointerCancelEvent(PointerCancelEvent event) {
     if (event.pointer != _pointerId) return;
+    if (_isDragging) {
+      _handleDragCancel();
+    } else {
+      _pointerDownX = null;
+      _pointerDownTime = null;
+      _lastPointerTime = null;
+      _pointerInsideLens = false;
+      _pointerUpVelocityPixelsPerSecond = null;
+      _clearActivePointer();
+    }
+  }
+
+  void _clearActivePointer() {
     _velocityTracker = null;
     _pointerId = null;
-    _pointerUpVelocityPixelsPerSecond = null;
   }
 
   void _recordPointerDown(double localX) {
@@ -475,38 +510,44 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _pointerDownX = null;
     _pointerDownTime = null;
     _pointerInsideLens = false;
+    _clearActivePointer();
     widget.onTap(_indexForX(details.localPosition.dx, itemWidth));
   }
 
-  void _handleDragStart(DragStartDetails details, double itemWidth) {
+  double _localPointerX(PointerEvent event) {
+    final renderObject = _dockRenderKey.currentContext?.findRenderObject();
+    return renderObject is RenderBox
+        ? renderObject.globalToLocal(event.position).dx
+        : event.position.dx;
+  }
+
+  void _beginDrag(double localX, Duration sourceTimeStamp) {
     if (!_pointerInsideLens) return;
     _cancelSpring();
     final startPosition = _controller.position;
     _controller.beginDrag(startPosition);
     _velocityPixelsPerSecond = _trackedVelocity() ?? 0;
-    _lastPointerX = _pointerDownX ?? details.localPosition.dx;
-    _lastPointerTime = _pointerDownTime ?? details.sourceTimeStamp;
+    _lastPointerX = _pointerDownX ?? localX;
+    _lastPointerTime = _pointerDownTime ?? sourceTimeStamp;
     setState(() => _isDragging = true);
     _controller.updateDragFromCenter(
-      centerX: details.localPosition.dx - _grabOffsetX,
+      centerX: localX - _grabOffsetX,
       velocityPixelsPerSecond: _velocityPixelsPerSecond,
     );
     _setVisualPosition(_controller.position);
   }
 
-  void _handleDragUpdate(DragUpdateDetails details, double itemWidth) {
+  void _updateDrag(double x, Duration sourceTime) {
     if (!_isDragging) return;
-    final x = details.localPosition.dx;
-    final sourceTime = details.sourceTimeStamp;
     final previousTime = _lastPointerTime;
-    final elapsedSeconds = sourceTime != null && previousTime != null
+    final elapsedSeconds = previousTime != null
         ? math.max(
             (sourceTime - previousTime).inMicroseconds /
                 Duration.microsecondsPerSecond,
             1 / 120,
           )
         : 1 / 60;
-    final delta = details.primaryDelta ?? (x - _lastPointerX);
+    final delta = x - _lastPointerX;
     final instantaneousVelocity = delta / elapsedSeconds;
     final trackedVelocity = _trackedVelocity() ?? instantaneousVelocity;
     _velocityPixelsPerSecond =
@@ -521,21 +562,19 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _setVisualPosition(_controller.position);
   }
 
-  void _handleDragEnd(DragEndDetails details, double itemWidth) {
+  void _endDrag(double velocity) {
     if (!_isDragging) return;
-    final velocity = _pointerUpVelocityPixelsPerSecond ??
-        details.primaryVelocity ??
-        _velocityPixelsPerSecond;
     final target = _controller.endDrag(
       velocityPixelsPerSecond: velocity,
-      itemWidth: itemWidth,
+      itemWidth: _itemWidth,
     );
     _pointerDownX = null;
     _pointerDownTime = null;
     _lastPointerTime = null;
     _pointerInsideLens = false;
     _pointerUpVelocityPixelsPerSecond = null;
-    _settleTo(target, velocity / itemWidth);
+    _clearActivePointer();
+    _settleTo(target, velocity / _itemWidth);
   }
 
   void _handleDragCancel() {
@@ -544,6 +583,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _pointerDownTime = null;
     _pointerInsideLens = false;
     _pointerUpVelocityPixelsPerSecond = null;
+    _clearActivePointer();
     _controller.cancelDrag(widget.currentIndex.toDouble());
     _settleTo(widget.currentIndex, 0);
   }
@@ -924,67 +964,60 @@ class LiquidLensShape {
     final width = size.width;
     final height = size.height;
     final motion = speed.clamp(0.0, 1.0).toDouble();
-    final sign = direction.sign;
+    final sign = direction < -0.01
+        ? -1.0
+        : direction > 0.01
+            ? 1.0
+            : 0.0;
     final edge = edgeCompression.clamp(0.0, 1.0).toDouble();
-    final tail = width * motion * 0.085;
-    final bulge = width * motion * 0.065;
-    final verticalLift = height * motion * 0.055;
-    final leftInset = sign < 0 ? width * edge * 0.09 : 0.0;
-    final rightInset = sign > 0 ? width * edge * 0.09 : 0.0;
-    final left = leftInset;
-    final right = width - rightInset;
-    final top = height * (0.10 - motion * 0.018);
-    final bottom = height - top;
+    final halfHeight = height * 0.5;
+    final halfWidth = width * 0.5;
+    final straightHalf = math.max(halfWidth - halfHeight, 0.0);
+    final tail = halfHeight * motion * 0.28;
+    final bulge = halfHeight * motion * 0.18;
+    final compression = halfHeight * edge * 0.16;
 
-    final path = Path()..moveTo(width * 0.22 - sign * tail, top);
-    path.cubicTo(
-      width * 0.38 - sign * tail * 0.72,
-      top - verticalLift,
-      width * 0.64 + sign * bulge * 0.42,
-      top - verticalLift * 0.55,
-      width * 0.80 + sign * bulge * 0.58,
-      top,
-    );
-    path.cubicTo(
-      right + sign * bulge,
-      height * 0.19,
-      right + sign * bulge * 0.82,
-      height * 0.37,
-      right,
-      height * 0.50,
-    );
-    path.cubicTo(
-      right + sign * bulge * 0.82,
-      height * 0.63,
-      right + sign * bulge,
-      height * 0.81,
-      width * 0.80 + sign * bulge * 0.58,
-      bottom,
-    );
-    path.cubicTo(
-      width * 0.62 + sign * bulge * 0.42,
-      bottom + verticalLift * 0.55,
-      width * 0.38 - sign * tail * 0.72,
-      bottom + verticalLift,
-      width * 0.22 - sign * tail,
-      bottom,
-    );
-    path.cubicTo(
-      left - sign * tail,
-      height * 0.81,
-      left - sign * tail * 0.72,
-      height * 0.63,
-      left,
-      height * 0.50,
-    );
-    path.cubicTo(
-      left - sign * tail * 0.72,
-      height * 0.37,
-      left - sign * tail,
-      height * 0.19,
-      width * 0.22 - sign * tail,
-      top,
-    );
+    double sideProfile(double y) {
+      final normalizedY =
+          (y.abs() / math.max(halfHeight, 0.001)).clamp(0.0, 1.0).toDouble();
+      final t = normalizedY * normalizedY * (3 - 2 * normalizedY);
+      return 1 - t;
+    }
+
+    (double, double) sidesForY(double y) {
+      final cap = math.sqrt(
+        math.max(halfHeight * halfHeight - y * y, 0.0),
+      );
+      final profile = sideProfile(y) * (sign == 0 ? 0 : 1);
+      var left = halfWidth - straightHalf - cap;
+      var right = halfWidth + straightHalf + cap;
+      if (sign > 0) {
+        left -= tail * profile;
+        right += bulge * profile - compression * profile;
+      } else if (sign < 0) {
+        left -= bulge * profile - compression * profile;
+        right += tail * profile;
+      }
+      return (left, right);
+    }
+
+    const steps = 48;
+    final path = Path();
+    for (var index = 0; index <= steps; index++) {
+      final y = -halfHeight + height * index / steps;
+      final (left, _) = sidesForY(y);
+      final point = Offset(left, y + halfHeight);
+      if (index == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    for (var index = steps; index >= 0; index--) {
+      final y = -halfHeight + height * index / steps;
+      final (_, right) = sidesForY(y);
+      path.lineTo(right, y + halfHeight);
+    }
     return path..close();
   }
 }
@@ -1112,7 +1145,8 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
     final baseWidth = math.max(84.0, widget.itemWidth * 1.35);
     final lensWidth = baseWidth *
         (1 + speed * 0.12 - widget.edgeCompression.clamp(0.0, 1.0) * 0.08);
-    final lensHeight = 56.0 * (1 + speed * 0.025);
+    // Y 轴是 Dock 的稳定基准；速度只改变水平形状和光学场。
+    const lensHeight = 56.0;
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
     // Lens 可以被 Dock 的 ClipRRect 裁掉外缘，但中心永远跟随固定 Tab
     // 轨道，不能为了完整显示而向内推首尾入口。
@@ -1123,24 +1157,37 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
 
     if (canRefract) {
       shader
-        ..setFloat(2, widget.tuning.refraction)
-        ..setFloat(3, widget.tuning.magnification)
-        ..setFloat(4, widget.tuning.chromatic)
+        ..setFloat(2, widget.tuning.effectiveRefraction)
+        ..setFloat(3, widget.tuning.effectiveMagnification)
+        ..setFloat(4, widget.tuning.effectiveChromatic)
         ..setFloat(5, speed)
         ..setFloat(6, direction)
         ..setFloat(7, widget.edgeCompression)
-        ..setFloat(8, widget.isDragging ? 1.0 : 0.0)
+        ..setFloat(
+          8,
+          widget.tuning.mode == LiquidGlassQaMode.finalGlass &&
+                  widget.isDragging
+              ? 1.0
+              : 0.0,
+        )
         ..setFloat(9, 1.0)
         ..setFloat(10, 1.0)
         ..setFloat(11, 1.0)
-        ..setFloat(12, widget.isDark ? 0.045 : 0.03)
+        ..setFloat(
+          12,
+          widget.tuning.mode == LiquidGlassQaMode.finalGlass
+              ? (widget.isDark ? 0.015 : 0.01)
+              : 0.0,
+        )
         ..setFloat(
           13,
-          widget.tuning.lightStrength * (widget.highContrast ? 1.24 : 1.0),
+          widget.tuning.effectiveLightStrength *
+              (widget.highContrast ? 1.24 : 1.0),
         )
         ..setFloat(
           14,
-          widget.tuning.rimStrength * (widget.highContrast ? 1.3 : 1.0),
+          widget.tuning.effectiveRimStrength *
+              (widget.highContrast ? 1.3 : 1.0),
         );
     }
 
@@ -1164,10 +1211,10 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(
-                  alpha: widget.isDark ? 0.20 : 0.08,
+                  alpha: widget.isDark ? 0.05 : 0.035,
                 ),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -1197,11 +1244,11 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                       end: Alignment.bottomRight,
                       colors: [
                         Colors.white.withValues(
-                          alpha: widget.isDark ? 0.07 : 0.045,
+                          alpha: widget.isDark ? 0.01 : 0.015,
                         ),
                         Colors.transparent,
                         Colors.black.withValues(
-                          alpha: widget.isDark ? 0.045 : 0.018,
+                          alpha: widget.isDark ? 0.004 : 0.006,
                         ),
                       ],
                     ),
@@ -1215,6 +1262,8 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
                     direction: direction,
                     edgeCompression: widget.edgeCompression,
                     rimStrength: widget.tuning.rimStrength,
+                    showShapeOutline:
+                        widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
                   ),
                 ),
               ],
@@ -1234,6 +1283,7 @@ class _LiquidLensRimPainter extends CustomPainter {
     required this.direction,
     required this.edgeCompression,
     required this.rimStrength,
+    required this.showShapeOutline,
   });
 
   final bool isDark;
@@ -1242,34 +1292,30 @@ class _LiquidLensRimPainter extends CustomPainter {
   final double direction;
   final double edgeCompression;
   final double rimStrength;
+  final bool showShapeOutline;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final highlight = Path()
-      ..moveTo(size.width * 0.20 - direction * motion * size.width * 0.04,
-          size.height * 0.105)
-      ..cubicTo(
-        size.width * 0.36,
-        size.height * (0.045 - motion * 0.015),
-        size.width * 0.64 + direction * motion * size.width * 0.05,
-        size.height * (0.045 - motion * 0.015),
-        size.width * 0.80 + direction * motion * size.width * 0.04,
-        size.height * 0.105,
+    if (showShapeOutline) {
+      final outline = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Colors.cyanAccent.withValues(alpha: 0.76);
+      canvas.drawPath(
+        LiquidLensShape.pathForSize(
+          size,
+          speed: motion,
+          direction: direction,
+          edgeCompression: edgeCompression,
+        ),
+        outline,
       );
-    final highlightPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 0.85 : 0.55
-      ..shader = LinearGradient(
-        colors: [
-          Colors.white.withValues(alpha: 0),
-          Colors.white.withValues(
-            alpha: ((highContrast ? 0.36 : 0.18) + motion * 0.08) *
-                rimStrength.clamp(0.0, 2.0),
-          ),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawPath(highlight, highlightPaint);
+      return;
+    }
+
+    // Final 模式暂时关闭 Flutter 额外 glint，只验证 Shader 自己的 Fresnel。
+    // 光学稳定后再考虑恢复极弱高光。
+    return;
   }
 
   @override
@@ -1279,7 +1325,8 @@ class _LiquidLensRimPainter extends CustomPainter {
         oldDelegate.motion != motion ||
         oldDelegate.direction != direction ||
         oldDelegate.edgeCompression != edgeCompression ||
-        oldDelegate.rimStrength != rimStrength;
+        oldDelegate.rimStrength != rimStrength ||
+        oldDelegate.showShapeOutline != showShapeOutline;
   }
 }
 

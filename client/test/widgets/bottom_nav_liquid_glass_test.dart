@@ -85,7 +85,7 @@ void main() {
     expect(harness.commitCount.value, 1);
   });
 
-  testWidgets('V7 按住当前选中块才激活玻璃，短按会完整收回', (tester) async {
+  testWidgets('V8 按住当前选中块激活连续 Capsule，短按会完整收回', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -108,7 +108,13 @@ void main() {
         find.byKey(const ValueKey('bottom-nav-liquid-lens')), findsOneWidget);
 
     await tester.pumpFrames(harness, const Duration(milliseconds: 70));
-    expect(harness.activation.value, closeTo(1, 0.01));
+    // V8 使用可中断 spring，不把 progress 人为截成 tween 的终点；
+    // 此时应已进入完整玻璃态的接近区间，但仍允许物理收敛。
+    expect(harness.activation.value, greaterThan(0.90));
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-fallback')),
+      findsOneWidget,
+    );
 
     // Hold 不应因为没有移动而超时收回；这是 Press-to-Liquid 与普通长按的
     // 关键区别，完整 Lens 要一直保持到 pointer up。
@@ -128,8 +134,7 @@ void main() {
     expect(harness.commitCount.value, 0);
   });
 
-  testWidgets('V7 快速点击只短暂触发 Pressed，不提交也不残留 Lens',
-      (tester) async {
+  testWidgets('V8 快速点击只短暂触发 Pressed，不提交也不残留 Lens', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -156,7 +161,7 @@ void main() {
     );
   });
 
-  testWidgets('V7 拖动经历 dragging → settling → collapsing 并只提交一次',
+  testWidgets('V8 拖动经历 dragging → settling → collapsing 并只提交一次',
       (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(

@@ -29,16 +29,72 @@ const _navIcons = <IconData>[
 ];
 
 const _navLabels = <String>['首页', '集市', '课表', '校园', '我'];
-const _dockHeight = 66.0;
+const _dockHeight = 64.0;
+const _selectionHeight = 56.0;
+const _tabContentPressedScale = 1.20;
+const _pressSpring = SpringDescription(
+  mass: 1,
+  stiffness: 1000,
+  damping: 63.2455532,
+);
 
 class _NavItemVisualState {
   const _NavItemVisualState({
     required this.color,
     required this.fontWeight,
+    required this.scale,
   });
 
   final Color color;
   final FontWeight fontWeight;
+  final double scale;
+}
+
+double _selectionPressProgress(double activation) {
+  return Curves.easeOutCubic.transform(activation.clamp(0.0, 1.0).toDouble());
+}
+
+double _selectionVelocityFactor({
+  required double velocityPixelsPerSecond,
+  required double normalization,
+}) {
+  return (velocityPixelsPerSecond / math.max(normalization, 1.0))
+      .clamp(-0.20, 0.20)
+      .toDouble();
+}
+
+double _selectionScaleX({
+  required double activation,
+  required double velocityPixelsPerSecond,
+  required LiquidGlassTuning tuning,
+}) {
+  final pressScale = ui.lerpDouble(
+    1.0,
+    tuning.pressedScale,
+    _selectionPressProgress(activation),
+  )!;
+  final velocity = _selectionVelocityFactor(
+    velocityPixelsPerSecond: velocityPixelsPerSecond,
+    normalization: tuning.velocityNormalization,
+  );
+  return pressScale / math.max(0.70, 1.0 - velocity * 0.75);
+}
+
+double _selectionScaleY({
+  required double activation,
+  required double velocityPixelsPerSecond,
+  required LiquidGlassTuning tuning,
+}) {
+  final pressScale = ui.lerpDouble(
+    1.0,
+    tuning.pressedScale,
+    _selectionPressProgress(activation),
+  )!;
+  final velocity = _selectionVelocityFactor(
+    velocityPixelsPerSecond: velocityPixelsPerSecond,
+    normalization: tuning.velocityNormalization,
+  );
+  return pressScale * (1.0 - velocity * 0.25);
 }
 
 /// 页面只提交离散 Tab；底栏自己管理连续视觉位置和可中断弹簧。
@@ -313,15 +369,23 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                     final previewVelocityPixelsPerSecond = qaPreviewDragging
                         ? tuning.velocityNormalization * 0.72
                         : _velocityPixelsPerSecond;
-                    final previewEdgeCompression = qaPreviewDragging
-                        ? 0.16
-                        : _controller.edgeCompression;
+                    final previewEdgeCompression =
+                        qaPreviewDragging ? 0.16 : _controller.edgeCompression;
                     final idleSelectionIndex = phase == LiquidNavPhase.idle
                         ? effectiveVisualIndex
                         : (phase == LiquidNavPhase.collapsing &&
                                 _collapseTargetIndex != null
                             ? _collapseTargetIndex!.toDouble()
                             : effectiveVisualIndex);
+
+                    final selectionVelocity =
+                        reduceMotion || phase != LiquidNavPhase.dragging
+                            ? 0.0
+                            : previewVelocityPixelsPerSecond;
+                    final selectionEdgeCompression =
+                        reduceMotion || phase != LiquidNavPhase.dragging
+                            ? 0.0
+                            : previewEdgeCompression;
 
                     return Stack(
                       clipBehavior: Clip.none,
@@ -359,29 +423,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                       tuning: tuning,
                                     ),
                                   ),
-                                  Positioned.fill(
-                                    child: RepaintBoundary(
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          _FloatingSelectionFallback(
-                                            itemWidth: itemWidth,
-                                            visualIndex: idleSelectionIndex,
-                                            isDark: isDark,
-                                            useLiquidGlass: useLiquidGlass,
-                                            opacity: useLiquidGlass
-                                                ? 1 - activation
-                                                : 1,
-                                          ),
-                                          _buildGestureLayer(
-                                            context: context,
-                                            itemWidth: itemWidth,
-                                            visualIndex: effectiveVisualIndex,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
                                   Positioned(
                                     top: 0,
                                     left: _dockHeight * 0.55,
@@ -409,25 +450,68 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                             ),
                           ),
                         ),
+                        _FloatingSelectionFallback(
+                          itemWidth: itemWidth,
+                          visualIndex: idleSelectionIndex,
+                          isDark: isDark,
+                          useLiquidGlass: useLiquidGlass,
+                          surfaceAlpha: useLiquidGlass
+                              ? ui.lerpDouble(0.10, 0.03, activation)!
+                              : 1,
+                          scaleX: useLiquidGlass
+                              ? _selectionScaleX(
+                                  activation: activation.toDouble(),
+                                  velocityPixelsPerSecond: selectionVelocity,
+                                  tuning: tuning,
+                                )
+                              : 1,
+                          scaleY: useLiquidGlass
+                              ? _selectionScaleY(
+                                  activation: activation.toDouble(),
+                                  velocityPixelsPerSecond: selectionVelocity,
+                                  tuning: tuning,
+                                )
+                              : 1,
+                        ),
+                        Positioned.fill(
+                          child: RepaintBoundary(
+                            child: _buildGestureLayer(
+                              context: context,
+                              itemWidth: itemWidth,
+                              visualIndex: effectiveVisualIndex,
+                            ),
+                          ),
+                        ),
+                        if (liquidVisible)
+                          _FloatingAccentTabsLayer(
+                            dockSize: dockSize,
+                            itemWidth: itemWidth,
+                            visualIndex: effectiveVisualIndex,
+                            currentIndex: widget.currentIndex,
+                            activation: activation.toDouble(),
+                            scaleX: _selectionScaleX(
+                              activation: activation.toDouble(),
+                              velocityPixelsPerSecond: selectionVelocity,
+                              tuning: tuning,
+                            ),
+                            scaleY: _selectionScaleY(
+                              activation: activation.toDouble(),
+                              velocityPixelsPerSecond: selectionVelocity,
+                              tuning: tuning,
+                            ),
+                            accentColor: tuning.focusColorFor(isDark),
+                            badges: widget.badges,
+                          ),
                         if (liquidVisible)
                           _LiquidSelectionLens(
                             dockSize: dockSize,
                             itemWidth: itemWidth,
                             visualIndex: effectiveVisualIndex,
-                            velocityPixelsPerSecond:
-                                reduceMotion || phase != LiquidNavPhase.dragging
-                                    ? 0
-                                    : previewVelocityPixelsPerSecond,
-                            edgeCompression:
-                                reduceMotion || phase != LiquidNavPhase.dragging
-                                    ? 0
-                                    : previewEdgeCompression,
+                            velocityPixelsPerSecond: selectionVelocity,
+                            edgeCompression: selectionEdgeCompression,
                             phase: phase,
                             activation: activation.toDouble(),
-                            pressDepth: phase == LiquidNavPhase.pressing ||
-                                    phase == LiquidNavPhase.dragging
-                                ? 1
-                                : 0,
+                            pressDepth: phase == LiquidNavPhase.idle ? 0 : 1,
                             isDark: isDark,
                             highContrast: highContrast,
                             reduceMotion: reduceMotion,
@@ -629,17 +713,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _commitAfterSettle = false;
     _setVisualPosition(currentIndex.toDouble());
     _setPhase(LiquidNavPhase.pressing);
-    unawaited(
-      _activationController
-          .animateTo(
-            1,
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : AppMotion.tab,
-            curve: AppMotion.standard,
-          )
-          .catchError((Object _) {}),
-    );
+    _animateActivationTo(1);
   }
 
   void _beginDrag(
@@ -655,16 +729,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _lastPointerX = _pointerDownX ?? localX;
     _lastPointerTime = _pointerDownTime ?? sourceTimeStamp;
     _setPhase(LiquidNavPhase.dragging);
-    final reduced = MediaQuery.disableAnimationsOf(context);
-    unawaited(
-      _activationController
-          .animateTo(
-            1,
-            duration: reduced ? Duration.zero : AppMotion.tab,
-            curve: AppMotion.standard,
-          )
-          .catchError((Object _) {}),
-    );
+    _animateActivationTo(1);
     _controller.updateDragFromCenter(
       centerX: localX - _grabOffsetX,
       velocityPixelsPerSecond: _velocityPixelsPerSecond,
@@ -784,11 +849,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
       _finishCollapse(target);
       return;
     }
-    unawaited(
-      _activationController.reverse().then<void>((_) {
-        _finishCollapse(target);
-      }).catchError((Object _) {}),
-    );
+    _animateActivationTo(0, onComplete: () => _finishCollapse(target));
   }
 
   void _finishCollapse(int target) {
@@ -816,6 +877,33 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _activation = _activationController.value.clamp(0.0, 1.0).toDouble();
     widget.onLiquidActivationChanged?.call(_activation);
     _motionFrame.value++;
+  }
+
+  /// Press progress 使用可中断 spring，Pointer Up / re-grab 都从当前值继续，
+  /// 不把选中态拆成“普通 indicator → 另一颗 Lens”。
+  void _animateActivationTo(
+    double target, {
+    VoidCallback? onComplete,
+  }) {
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    _activationController.stop();
+    if (reduced) {
+      _activationController.value = target;
+      onComplete?.call();
+      return;
+    }
+
+    final simulation = SpringSimulation(
+      _pressSpring,
+      _activationController.value,
+      target,
+      0,
+    );
+    unawaited(
+      _activationController.animateWith(simulation).then<void>((_) {
+        onComplete?.call();
+      }).catchError((Object _) {}),
+    );
   }
 
   void _setPhase(LiquidNavPhase phase) {
@@ -863,19 +951,13 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   double _activeLensWidth() {
-    final speed = _phase == LiquidNavPhase.dragging
-        ? (_velocityPixelsPerSecond.abs() /
-                math.max(widget.tuning.velocityNormalization, 1))
-            .clamp(0.0, 1.0)
-        : 0.0;
-    final liquidWidth = liquidLensWidthFor(
-      itemWidth: _itemWidth,
-      speed: speed,
-      edgeCompression: _controller.edgeCompression,
-      widthScale: widget.tuning.lensWidthScale,
-    );
-    final activation = Curves.easeOutCubic.transform(_activation);
-    return ui.lerpDouble(_itemWidth * 0.94, liquidWidth, activation)!;
+    return _itemWidth *
+        _selectionScaleX(
+          activation: _activation,
+          velocityPixelsPerSecond:
+              _phase == LiquidNavPhase.dragging ? _velocityPixelsPerSecond : 0,
+          tuning: widget.tuning,
+        );
   }
 
   Widget _standardItem({
@@ -961,39 +1043,44 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
         child: SizedBox(
           width: width,
           height: double.infinity,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(icon, color: visualState.color, size: 24),
-                  if (showBadge)
-                    Positioned(
-                      top: -1,
-                      right: -3,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.danger,
-                          shape: BoxShape.circle,
+          child: Transform.scale(
+            // AndroidLiquidGlass 放大真实 Tab layer，而不是让 shader 把
+            // 中央内容做 magnification；拖动时 focusWeight 连续迁移。
+            scale: visualState.scale,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, color: visualState.color, size: 24),
+                    if (showBadge)
+                      Positioned(
+                        top: -1,
+                        right: -3,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: AppColors.danger,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.visible,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: visualState.color,
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: visualState.color,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1027,6 +1114,11 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     return _NavItemVisualState(
       color: Color.lerp(inactiveColor, activeColor, focusWeight)!,
       fontWeight: FontWeight.w600,
+      scale: ui.lerpDouble(
+        1.0,
+        _tabContentPressedScale,
+        focusWeight * activation,
+      )!,
     );
   }
 }
@@ -1047,38 +1139,17 @@ class _FloatingDockSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dockAlpha = tuning.dockAlpha.clamp(0.0, 1.0).toDouble();
+    final surfaceColor = useLiquidGlass
+        ? (isDark ? const Color(0xFF121212) : const Color(0xFFFAFAFA))
+        : (isDark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight);
+    final surfaceAlpha =
+        highContrast ? math.min(1.0, dockAlpha + 0.12) : dockAlpha;
     final fill = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: useLiquidGlass
-              ? (isDark
-                  ? [
-                      const Color(0xFF202326).withValues(
-                        alpha: (highContrast ? 0.32 : 0.25) * dockAlpha,
-                      ),
-                      const Color(0xFF111315).withValues(
-                        alpha: (highContrast ? 0.27 : 0.18) * dockAlpha,
-                      ),
-                    ]
-                  : [
-                      Colors.white.withValues(
-                        alpha: (highContrast ? 0.26 : 0.18) * dockAlpha,
-                      ),
-                      Colors.white.withValues(
-                        alpha: (highContrast ? 0.18 : 0.10) * dockAlpha,
-                      ),
-                    ])
-              : (isDark
-                  ? [
-                      AppColors.surfaceSecondaryDark,
-                      AppColors.surfaceSecondaryDark,
-                    ]
-                  : [
-                      AppColors.surfaceSecondaryLight,
-                      AppColors.surfaceSecondaryLight,
-                    ]),
+        color: surfaceColor.withValues(
+          alpha: useLiquidGlass ? surfaceAlpha : 1.0,
         ),
         border: Border.all(
           color: isDark
@@ -1114,25 +1185,29 @@ class _FloatingSelectionFallback extends StatelessWidget {
     required this.visualIndex,
     required this.isDark,
     required this.useLiquidGlass,
-    required this.opacity,
+    required this.surfaceAlpha,
+    required this.scaleX,
+    required this.scaleY,
   });
 
   final double itemWidth;
   final double visualIndex;
   final bool isDark;
   final bool useLiquidGlass;
-  final double opacity;
+  final double surfaceAlpha;
+  final double scaleX;
+  final double scaleY;
 
   @override
   Widget build(BuildContext context) {
-    final width = useLiquidGlass ? itemWidth * 0.94 : 56.0;
-    const height = 48.0;
+    final width = useLiquidGlass ? itemWidth : 56.0;
+    final height = useLiquidGlass ? _selectionHeight : 48.0;
     final left = itemWidth * (visualIndex + 0.5) - width / 2;
     final decoration = useLiquidGlass
         ? BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.black.withValues(alpha: 0.055),
+            color: (isDark ? Colors.white : Colors.black).withValues(
+              alpha: surfaceAlpha.clamp(0.0, 1.0).toDouble(),
+            ),
             borderRadius: BorderRadius.circular(AppRadius.pill),
             border: Border.all(
               color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.18),
@@ -1167,9 +1242,167 @@ class _FloatingSelectionFallback extends StatelessWidget {
       width: width,
       height: height,
       child: IgnorePointer(
-        child: Opacity(
-          opacity: opacity.clamp(0.0, 1.0).toDouble(),
+        child: Transform.scale(
+          alignment: Alignment.center,
+          scaleX: scaleX,
+          scaleY: scaleY,
           child: DecoratedBox(decoration: decoration),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lens 专用的 accent 内容副本。
+///
+/// Flutter 没有 Compose `layerBackdrop` 的同名 API，因此这里把副本限制在
+/// 当前 Capsule 的窗口内，再让后面的 shader 一起采样。Lens 外部不会出现一层
+/// 常驻的彩色 Tab，拖动时颜色只会随着玻璃窗口移动。
+class _FloatingAccentTabsLayer extends StatelessWidget {
+  const _FloatingAccentTabsLayer({
+    required this.dockSize,
+    required this.itemWidth,
+    required this.visualIndex,
+    required this.currentIndex,
+    required this.activation,
+    required this.scaleX,
+    required this.scaleY,
+    required this.accentColor,
+    required this.badges,
+  });
+
+  final Size dockSize;
+  final double itemWidth;
+  final double visualIndex;
+  final int currentIndex;
+  final double activation;
+  final double scaleX;
+  final double scaleY;
+  final Color accentColor;
+  final Map<int, bool> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = itemWidth * scaleX;
+    final height = _selectionHeight * scaleY;
+    final left = itemWidth * (visualIndex + 0.5) - width / 2;
+    final top = (_dockHeight - height) / 2;
+
+    return Positioned(
+      key: const ValueKey('bottom-nav-accent-tabs'),
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: activation.clamp(0.0, 1.0).toDouble(),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(math.min(width, height) / 2),
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: dockSize.width,
+              maxWidth: dockSize.width,
+              minHeight: dockSize.height,
+              maxHeight: dockSize.height,
+              child: Transform.translate(
+                offset: Offset(-left, -top),
+                child: SizedBox(
+                  width: dockSize.width,
+                  height: dockSize.height,
+                  child: _AccentTabsContent(
+                    itemWidth: itemWidth,
+                    visualIndex: visualIndex,
+                    currentIndex: currentIndex,
+                    activation: activation,
+                    color: accentColor,
+                    badges: badges,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccentTabsContent extends StatelessWidget {
+  const _AccentTabsContent({
+    required this.itemWidth,
+    required this.visualIndex,
+    required this.currentIndex,
+    required this.activation,
+    required this.color,
+    required this.badges,
+  });
+
+  final double itemWidth;
+  final double visualIndex;
+  final int currentIndex;
+  final double activation;
+  final Color color;
+  final Map<int, bool> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Row(
+        children: List.generate(
+          _navLabels.length,
+          (index) {
+            final focusWeight = liquidNavFocusWeight(
+              currentIndex: currentIndex,
+              index: index,
+              visualPosition: visualIndex,
+              activation: activation,
+            );
+            final contentScale = ui.lerpDouble(
+              1.0,
+              _tabContentPressedScale,
+              focusWeight * activation,
+            )!;
+            return SizedBox(
+              width: itemWidth,
+              height: _dockHeight,
+              child: Transform.scale(
+                scale: contentScale,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(_navIcons[index], color: color, size: 24),
+                        if (badges[index] == true)
+                          Positioned(
+                            top: -1,
+                            right: -3,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: AppColors.danger,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _navLabels[index],
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                      style: AppTextStyles.labelMedium.copyWith(color: color),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1275,21 +1508,20 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
     final direction = widget.reduceMotion || speed < 0.01
         ? 0.0
         : widget.velocityPixelsPerSecond.sign;
-    final liquidWidth = liquidLensWidthFor(
-      itemWidth: widget.itemWidth,
-      speed: speed,
-      edgeCompression: widget.edgeCompression,
-      widthScale: widget.tuning.lensWidthScale,
-    );
-    final activationShape = Curves.easeOutCubic.transform(widget.activation);
-    final lensWidth = ui.lerpDouble(
-      widget.itemWidth * 0.94,
-      liquidWidth,
-      activationShape,
-    )!;
-    // Y 轴是 Dock 的稳定基准；速度只改变水平形状和光学场。
-    final liquidHeight = widget.tuning.lensHeight.clamp(48.0, 84.0).toDouble();
-    final lensHeight = ui.lerpDouble(48, liquidHeight, activationShape)!;
+    // Capsule 基准是“一格 × 56dp”；按压放大与拖动速度形变只作用于
+    // 真实 Lens layer，几何轮廓始终是普通圆角矩形。
+    final lensWidth = widget.itemWidth *
+        _selectionScaleX(
+          activation: widget.activation,
+          velocityPixelsPerSecond: widget.velocityPixelsPerSecond,
+          tuning: widget.tuning,
+        );
+    final lensHeight = _selectionHeight *
+        _selectionScaleY(
+          activation: widget.activation,
+          velocityPixelsPerSecond: widget.velocityPixelsPerSecond,
+          tuning: widget.tuning,
+        );
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
     // Lens 已移到 Dock 的 ClipRRect 外层，中心仍严格跟随固定 Tab 轨道，
     // 不能为了完整显示而向内推首尾入口。
@@ -1341,6 +1573,13 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
       ).apply(shader);
     }
 
+    final bodyAlpha = ui.lerpDouble(0.10, 0.03, widget.activation)!;
+    final bodyColor = (widget.isDark ? Colors.white : Colors.black).withValues(
+      alpha: bodyAlpha,
+    );
+    final lensRadius =
+        BorderRadius.circular(math.min(lensWidth, lensHeight) / 2);
+
     return Positioned(
       key: const ValueKey('bottom-nav-liquid-lens'),
       left: left,
@@ -1348,91 +1587,94 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
       width: lensWidth,
       height: lensHeight,
       child: IgnorePointer(
-        child: Stack(
-          clipBehavior: Clip.none,
-          fit: StackFit.expand,
-          children: [
-            if (canRefract)
-              Positioned(
-                left: -overscanX,
-                top: -overscanY,
-                width: captureSize.width,
-                height: captureSize.height,
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.shader(shader),
-                  // filter 自身负责绘制捕获到的背景；透明 child 不会污染 Identity 模式。
-                  child: const SizedBox.expand(),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: lensRadius,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: (widget.isDark ? 0.18 : 0.10) * widget.activation,
                 ),
-              )
-            else
-              Positioned(
-                left: -overscanX,
-                top: -overscanY,
-                width: captureSize.width,
-                height: captureSize.height,
-                child: ClipPath(
-                  clipper: LiquidLensCaptureClipper(
-                    visibleOffset: Offset(overscanX, overscanY),
-                    visibleSize: visibleSize,
-                    speed: speed,
-                    direction: direction,
-                    edgeCompression: widget.edgeCompression,
-                    lensExponent: widget.tuning.lensExponent,
-                    flowStrength: widget.tuning.flowStrength,
-                  ),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(
-                      sigmaX:
-                          widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
-                      sigmaY:
-                          widget.tuning.dockBlur.clamp(0.0, 20.0).toDouble(),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
+                borderRadius: lensRadius,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  fit: StackFit.expand,
+                  children: [
+                    if (canRefract)
+                      Positioned(
+                        left: -overscanX,
+                        top: -overscanY,
+                        width: captureSize.width,
+                        height: captureSize.height,
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.shader(shader),
+                          // shader 只在边缘改采样；中央会返回原图。
+                          child: const SizedBox.expand(),
+                        ),
+                      )
+                    else
+                      Positioned.fill(
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(
+                            sigmaX: widget.tuning.dockBlur
+                                .clamp(0.0, 20.0)
+                                .toDouble(),
+                            sigmaY: widget.tuning.dockBlur
+                                .clamp(0.0, 20.0)
+                                .toDouble(),
+                          ),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    Positioned.fill(child: ColoredBox(color: bodyColor)),
+                    CustomPaint(
+                      painter: _LiquidLensRimPainter(
+                        isDark: widget.isDark,
+                        highContrast: widget.highContrast,
+                        motion: speed,
+                        direction: direction,
+                        edgeCompression: widget.edgeCompression,
+                        lensExponent: widget.tuning.lensExponent,
+                        flowStrength: widget.tuning.flowStrength,
+                        rimStrength: widget.tuning.effectiveRimStrength *
+                            widget.activation,
+                        showShapeOutline:
+                            widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
+                      ),
                     ),
-                    child: ColoredBox(
-                      color: widget.isDark
-                          ? Colors.white.withValues(
-                              alpha: 0.07 * widget.activation,
-                            )
-                          : Colors.white.withValues(
-                              alpha: 0.14 * widget.activation,
-                            ),
+                  ],
+                ),
+              ),
+              if (widget.tuning.showCaptureBounds)
+                Positioned(
+                  left: -overscanX,
+                  top: -overscanY,
+                  width: captureSize.width,
+                  height: captureSize.height,
+                  child: CustomPaint(
+                    painter: _LiquidLensBoundsPainter(
+                      visibleOffset: Offset(overscanX, overscanY),
+                      visibleSize: visibleSize,
+                      speed: speed,
+                      direction: direction,
+                      edgeCompression: widget.edgeCompression,
+                      lensExponent: widget.tuning.lensExponent,
+                      flowStrength: widget.tuning.flowStrength,
                     ),
                   ),
                 ),
-              ),
-            CustomPaint(
-              painter: _LiquidLensRimPainter(
-                isDark: widget.isDark,
-                highContrast: widget.highContrast,
-                motion: speed,
-                direction: direction,
-                edgeCompression: widget.edgeCompression,
-                lensExponent: widget.tuning.lensExponent,
-                flowStrength: widget.tuning.flowStrength,
-                rimStrength:
-                    widget.tuning.effectiveRimStrength * widget.activation,
-                showShapeOutline:
-                    widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
-              ),
-            ),
-            if (widget.tuning.showCaptureBounds)
-              Positioned(
-                left: -overscanX,
-                top: -overscanY,
-                width: captureSize.width,
-                height: captureSize.height,
-                child: CustomPaint(
-                  painter: _LiquidLensBoundsPainter(
-                    visibleOffset: Offset(overscanX, overscanY),
-                    visibleSize: visibleSize,
-                    speed: speed,
-                    direction: direction,
-                    edgeCompression: widget.edgeCompression,
-                    lensExponent: widget.tuning.lensExponent,
-                    flowStrength: widget.tuning.flowStrength,
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1464,42 +1706,24 @@ class _LiquidLensRimPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(math.min(size.width, size.height) / 2),
+    );
     if (showShapeOutline) {
       final outline = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1
         ..color = Colors.cyanAccent.withValues(alpha: 0.76);
-      canvas.drawPath(
-        LiquidLensShape.pathForSize(
-          size,
-          speed: motion,
-          direction: direction,
-          edgeCompression: edgeCompression,
-          lensExponent: lensExponent,
-          flowStrength: flowStrength,
-        ),
-        outline,
-      );
+      canvas.drawRRect(rrect, outline);
       return;
     }
 
     if (rimStrength <= 0) return;
 
-    final metrics = LiquidLensShape.pathForSize(
-      size,
-      speed: motion,
-      direction: direction,
-      edgeCompression: edgeCompression,
-      lensExponent: lensExponent,
-      flowStrength: flowStrength,
-    ).computeMetrics().toList();
-    if (metrics.isEmpty) return;
-
-    // 只画左上 25% 左右的局部高光，给边界一个可感知的厚度信号，
-    // 不再用整圈白描边把 Lens 画成药丸。
-    final metric = metrics.first;
-    final glint = metric.extractPath(0, metric.length * 0.27);
-    final paint = Paint()
+    final strength = (rimStrength / 0.12).clamp(0.4, 1.4).toDouble();
+    final highlight = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = highContrast ? 0.8 : 0.7
       ..strokeCap = StrokeCap.round
@@ -1509,10 +1733,41 @@ class _LiquidLensRimPainter extends CustomPainter {
         0.32,
       )!
           .withValues(
-        alpha:
-            (highContrast ? 0.24 : 0.20) * (rimStrength / 0.12).clamp(0.7, 1.4),
+        alpha: (highContrast ? 0.24 : 0.20) * strength,
       );
-    canvas.drawPath(glint, paint);
+    // Capsule 顶部一段高光；避免用完整白描边把主体画成硬塑料。
+    canvas.drawArc(
+      rect.deflate(highlight.strokeWidth / 2),
+      math.pi * 1.05,
+      math.pi * 0.62,
+      false,
+      highlight,
+    );
+
+    final innerShadow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 1.35 : 1.0
+      ..color = Colors.black.withValues(
+        alpha: (highContrast ? 0.14 : 0.08) * strength,
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawRRect(rrect.deflate(0.8), innerShadow);
+
+    // 轻微的冷/暖侧缘与运动方向绑定，真正的色散仍由 shader 完成。
+    final dispersion = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.55
+      ..strokeCap = StrokeCap.round
+      ..color =
+          (direction < 0 ? const Color(0xFFB8DFFF) : const Color(0xFFFFD99A))
+              .withValues(alpha: 0.12 * strength);
+    canvas.drawArc(
+      rect.deflate(1.0),
+      direction < 0 ? math.pi * 0.42 : math.pi * 1.58,
+      math.pi * 0.22,
+      false,
+      dispersion,
+    );
   }
 
   @override
@@ -1618,28 +1873,22 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
         ]),
         builder: (context, child) {
           final status = liquidGlassRuntimeStatus.value;
-          final speed = (phase == LiquidNavPhase.dragging
-                  ? velocityPixelsPerSecond.abs()
-                  : 0) /
-              math.max(tuning.velocityNormalization, 1);
-          final normalizedSpeed = speed.clamp(0.0, 1.0).toDouble();
-          final liquidWidth = liquidLensWidthFor(
-            itemWidth: itemWidth,
-            speed: normalizedSpeed,
-            edgeCompression: 0,
-            widthScale: tuning.lensWidthScale,
-          );
-          final activationShape = Curves.easeOutCubic.transform(activation);
-          final lensWidth = ui.lerpDouble(
-            itemWidth * 0.94,
-            liquidWidth,
-            activationShape,
-          )!;
-          final lensHeight = ui.lerpDouble(
-            48,
-            tuning.lensHeight.clamp(48.0, 84.0).toDouble(),
-            activationShape,
-          )!;
+          final lensWidth = itemWidth *
+              _selectionScaleX(
+                activation: activation,
+                velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
+                    ? velocityPixelsPerSecond
+                    : 0,
+                tuning: tuning,
+              );
+          final lensHeight = _selectionHeight *
+              _selectionScaleY(
+                activation: activation,
+                velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
+                    ? velocityPixelsPerSecond
+                    : 0,
+                tuning: tuning,
+              );
           final overscanX = tuning.overscanXFor(lensWidth);
           final overscanY = tuning.overscanYFor(lensHeight);
           final maxOffsetX = tuning.maxSampleOffsetXFor(lensWidth);

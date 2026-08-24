@@ -30,26 +30,30 @@ enum LiquidNavColorPreset {
 /// 和 QA 页面不会悄悄演变成三套不同的光学模型。
 class LiquidGlassTuning {
   const LiquidGlassTuning({
-    this.lensExponent = 2.15,
-    this.lensWidthScale = 1.55,
-    this.lensHeight = 62.0,
-    this.overscanX = 24.0,
+    // V8 对齐 AndroidLiquidGlass：选中态始终是 Capsule，按压只改变
+    // 尺度、边缘光学和内容缩放，不再切换成另一套自由曲面。
+    this.lensExponent = 2.0,
+    this.lensWidthScale = 1.0,
+    this.lensHeight = 56.0,
+    this.pressedScale = 78.0 / 56.0,
+    this.overscanX = 18.0,
     this.overscanY = 16.0,
-    this.refraction = 18.0,
-    this.verticalRefractionScale = 0.32,
+    this.refraction = 14.0,
+    this.verticalRefractionScale = 1.0,
     this.refractionBandStart = 0.60,
     this.refractionBandPeak = 0.80,
     this.refractionBandEnd = 0.92,
-    this.magnification = 1.14,
+    // 保留字段以兼容 QA 配置文件；V8 shader 不再使用中心放大。
+    this.magnification = 1.0,
     this.magnificationRadius = 0.66,
-    this.chromatic = 1.05,
+    this.chromatic = 1.0,
     this.chromaticStart = 0.84,
     this.rimStrength = 0.12,
     this.lightStrength = 0.20,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
-    this.dockAlpha = 0.68,
-    this.dockBlur = 3.2,
+    this.dockAlpha = 0.40,
+    this.dockBlur = 8.0,
     this.mode = LiquidGlassQaMode.finalGlass,
     this.colorPreset = LiquidNavColorPreset.sylulive,
     this.showCaptureBounds = false,
@@ -57,9 +61,8 @@ class LiquidGlassTuning {
 
   /// 克制的材质预设，用于在弱光学畸变下对比几何轮廓。
   static const natural = LiquidGlassTuning(
-    magnification: 1.08,
-    refraction: 12.0,
-    chromatic: 0.60,
+    refraction: 10.0,
+    chromatic: 0.70,
   );
 
   /// 按用户提供的酷安截图调出的默认参考预设。
@@ -69,14 +72,14 @@ class LiquidGlassTuning {
 
   /// 有意增强的 QA 预设，生产环境不使用。
   static const strong = LiquidGlassTuning(
-    magnification: 1.18,
-    refraction: 22.0,
-    chromatic: 1.40,
+    refraction: 18.0,
+    chromatic: 1.35,
   );
 
   final double lensExponent;
   final double lensWidthScale;
   final double lensHeight;
+  final double pressedScale;
   final double overscanX;
   final double overscanY;
 
@@ -137,17 +140,8 @@ class LiquidGlassTuning {
   }
 
   double get effectiveMagnification {
-    switch (mode) {
-      case LiquidGlassQaMode.finalGlass:
-      case LiquidGlassQaMode.coreOnly:
-        return magnification;
-      case LiquidGlassQaMode.identity:
-      case LiquidGlassQaMode.refractionOnly:
-      case LiquidGlassQaMode.chromaticOnly:
-      case LiquidGlassQaMode.fresnelOnly:
-      case LiquidGlassQaMode.shapeOnly:
-        return 1;
-    }
+    // 中央区域直接采样原图；图标放大由真实 UI layer 完成。
+    return 1;
   }
 
   double get effectiveChromatic {
@@ -195,51 +189,37 @@ class LiquidGlassTuning {
   bool get isIdentityLike =>
       mode == LiquidGlassQaMode.identity || mode == LiquidGlassQaMode.shapeOnly;
 
-  /// 根据可见 Lens 宽度计算实际需要的横向 overscan。
+  /// 根据边缘折射与色散计算实际需要的横向 overscan。
   ///
-  /// 配置值作为下限保留；当 QA 滑块提高放大或折射强度时，光学预算会自动增大。
-  /// 这样默认路径本身就安全，不需要依赖最终的纹理边界 clamp 来掩盖捕获区域不足。
+  /// V8 没有中心 magnification，因此 capture 预算只由 edge optical band 决定。
   double overscanXFor(double visibleWidth) {
-    final magnificationOffset =
-        visibleWidth * 0.5 * (1 - 1 / effectiveMagnification);
-    final opticalBudget = effectiveRefraction.abs() +
-        effectiveChromatic.abs() +
-        magnificationOffset +
-        4;
+    final opticalBudget =
+        effectiveRefraction.abs() + effectiveChromatic.abs() + 4;
     return math.max(overscanX, opticalBudget);
   }
 
   double overscanYFor(double visibleHeight) {
-    final magnificationOffset =
-        visibleHeight * 0.5 * (1 - 1 / effectiveMagnification);
     final opticalBudget =
         effectiveRefraction.abs() * math.max(verticalRefractionScale, 0.40) +
             effectiveChromatic.abs() +
-            magnificationOffset +
             4;
     return math.max(overscanY, opticalBudget);
   }
 
   double maxSampleOffsetXFor(double visibleWidth) {
-    final magnificationOffset =
-        visibleWidth * 0.5 * (1 - 1 / effectiveMagnification);
-    return effectiveRefraction.abs() +
-        effectiveChromatic.abs() +
-        magnificationOffset;
+    return effectiveRefraction.abs() + effectiveChromatic.abs();
   }
 
   double maxSampleOffsetYFor(double visibleHeight) {
-    final magnificationOffset =
-        visibleHeight * 0.5 * (1 - 1 / effectiveMagnification);
     return effectiveRefraction.abs() * math.max(verticalRefractionScale, 0.40) +
-        effectiveChromatic.abs() +
-        magnificationOffset;
+        effectiveChromatic.abs();
   }
 
   LiquidGlassTuning copyWith({
     double? lensExponent,
     double? lensWidthScale,
     double? lensHeight,
+    double? pressedScale,
     double? overscanX,
     double? overscanY,
     double? refraction,
@@ -265,6 +245,7 @@ class LiquidGlassTuning {
       lensExponent: lensExponent ?? this.lensExponent,
       lensWidthScale: lensWidthScale ?? this.lensWidthScale,
       lensHeight: lensHeight ?? this.lensHeight,
+      pressedScale: pressedScale ?? this.pressedScale,
       overscanX: overscanX ?? this.overscanX,
       overscanY: overscanY ?? this.overscanY,
       refraction: refraction ?? this.refraction,

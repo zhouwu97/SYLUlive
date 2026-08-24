@@ -5,7 +5,7 @@ import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
-  test('V6 tuning keeps optical samples inside the overscan budget', () {
+  test('V8 tuning keeps optical samples inside the overscan budget', () {
     const tuning = LiquidGlassTuning();
     const lensWidth = 104.0;
     const lensHeight = 62.0;
@@ -20,14 +20,14 @@ void main() {
     );
   });
 
-  test('V6 shader uniform layout is stable and named', () {
+  test('V8 shader uniform layout is stable and named', () {
     const uniforms = LiquidGlassShaderUniforms(
       captureSize: Size(160, 94),
       lensCenter: Offset(80, 47),
       lensSize: Size(104, 62),
       lensExponent: 2.15,
       refraction: 16,
-      magnification: 1.12,
+      magnification: 1.0,
       chromatic: 0.95,
       velocity: 0,
       direction: 0,
@@ -63,11 +63,11 @@ void main() {
     );
   });
 
-  test('V6 QA modes isolate core, refraction, chromatic and Fresnel', () {
+  test('V8 QA modes isolate edge refraction, chromatic and Fresnel', () {
     const core = LiquidGlassTuning(
       mode: LiquidGlassQaMode.coreOnly,
     );
-    expect(core.effectiveMagnification, greaterThan(1));
+    expect(core.effectiveMagnification, 1);
     expect(core.effectiveRefraction, 0);
 
     const refraction = LiquidGlassTuning(
@@ -90,8 +90,7 @@ void main() {
     expect(fresnel.effectiveRimStrength, greaterThan(0));
   });
 
-  test('V6 CPU curve stays bounded, mirrored and free of line-only corners',
-      () {
+  test('V8 Capsule geometry stays bounded and mirrored', () {
     const size = Size(108, 62);
     final right = LiquidLensShape.pathForSize(
       size,
@@ -115,7 +114,7 @@ void main() {
     expect(right.computeMetrics().length, greaterThan(0));
   });
 
-  test('V7 color field migrates continuously across adjacent tabs', () {
+  test('V8 color field migrates continuously across adjacent tabs', () {
     expect(
       liquidNavFocusWeight(
         currentIndex: 0,
@@ -152,5 +151,17 @@ void main() {
       ),
       closeTo(0.5, 0.001),
     );
+  });
+
+  test('V8 reference parameters keep mass, edge refraction and dock haze', () {
+    const tuning = LiquidGlassTuning();
+
+    expect(tuning.lensHeight, 56);
+    expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
+    expect(tuning.refraction, 14);
+    expect(tuning.chromatic, 1);
+    expect(tuning.effectiveMagnification, 1);
+    expect(tuning.dockAlpha, 0.40);
+    expect(tuning.dockBlur, 8.0);
   });
 }

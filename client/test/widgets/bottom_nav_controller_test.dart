@@ -44,7 +44,7 @@ void main() {
     );
   });
 
-  test('QA optical modes isolate identity, refraction and shape', () {
+  test('V8 QA modes isolate identity, edge refraction and Capsule shape', () {
     const identity = LiquidGlassTuning(mode: LiquidGlassQaMode.identity);
     expect(identity.effectiveRefraction, 0);
     expect(identity.effectiveMagnification, 1);
@@ -62,7 +62,7 @@ void main() {
     expect(shape.isIdentityLike, isTrue);
   });
 
-  test('dynamic canonical Lens shape mirrors on X and never breathes on Y', () {
+  test('Capsule geometry mirrors on X and keeps stable bounds', () {
     const size = Size(108, 56);
     final right = LiquidLensShape.pathForSize(
       size,

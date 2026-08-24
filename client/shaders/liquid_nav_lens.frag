@@ -2,18 +2,20 @@
 
 #include <flutter/runtime_effect.glsl>
 
-// Flutter 会自动写入输入纹理尺寸和第一张采样纹理。
+// ImageFilter.shader 提供的是 Lens 自己这块局部纹理，所有坐标都在
+// local pixel space 内计算。不要把屏幕坐标传进来，否则首尾 Tab 会产生
+// 不对称折射，横竖屏也会错位。
 uniform vec2 uSize;
-
-// 其余参数由底部栏按屏幕归一化坐标传入。
-uniform vec2 uCenter;
-uniform vec2 uHalfSize;
 uniform float uRefraction;
-uniform float uZoom;
+uniform float uMagnification;
 uniform float uChromatic;
-uniform float uMotion;
+uniform float uVelocity;
 uniform float uDirection;
+uniform float uEdgeCompression;
+uniform float uDragState;
 uniform vec4 uTint;
+uniform float uLightStrength;
+uniform float uRimStrength;
 uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
@@ -42,11 +44,10 @@ vec2 textureUv(vec2 pixel) {
 
 void main() {
   vec2 fragment = FlutterFragCoord().xy;
-  vec2 center = uCenter * uSize;
-  vec2 halfSize = uHalfSize * uSize;
+  vec2 center = uSize * 0.5;
+  vec2 halfSize = uSize * 0.5;
   float distanceToLens = capsuleDistance(fragment, center, halfSize);
 
-  // ClipRRect 之外通常不会执行；这里仍显式透传，避免边缘采样异常。
   if (distanceToLens > 1.0) {
     fragColor = texture(uBackdrop, textureUv(fragment));
     return;
@@ -55,35 +56,39 @@ void main() {
   vec2 normal = capsuleNormal(fragment, center, halfSize);
   float bevel = max(halfSize.y * 0.44, 3.0);
   float rim = smoothstep(-bevel, 0.0, distanceToLens);
+  float rimSquared = rim * rim;
 
-  // 中心区域做轻微放大，边缘按法线向内聚拢，形成真实可见的折射带。
-  float zoom = 1.0 + uZoom * (1.0 - rim * 0.35);
+  // 中心只做轻微放大；折射和 RGB 分离集中在外沿，避免整块 Lens
+  // 看起来像彩色故障滤镜。
+  float zoom = mix(uMagnification, 1.0, rim * 0.35);
   vec2 samplePixel = center + (fragment - center) / zoom;
-  float refractionPixels = uRefraction * uSize.x;
-  samplePixel -= normal * rim * rim * refractionPixels;
+  samplePixel -= normal * rimSquared * uRefraction;
 
-  // 移动时让光场略微朝运动方向偏移，但不移动实际内容布局。
-  samplePixel.x -= uDirection * uMotion * (1.0 - rim) * 0.8;
+  // 真实速度只改变光学场的偏移，不改变 pointer 与 Lens 的位置关系。
+  samplePixel.x -= uDirection * uVelocity * (1.0 - rim) * 2.5;
+  samplePixel.x -= uDirection * uEdgeCompression * (1.0 - rim) * 4.0;
 
-  vec2 chromaticOffset = normal * uChromatic;
+  vec2 chromaticOffset = normal * uChromatic * rimSquared;
   vec3 color = vec3(
     texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
     texture(uBackdrop, textureUv(samplePixel)).g,
     texture(uBackdrop, textureUv(samplePixel + chromaticOffset)).b
   );
 
-  float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  color = mix(vec3(luminance), color, 1.10 + uMotion * 0.05);
   color = mix(color, uTint.rgb, uTint.a);
 
-  // 左上主高光、右下弱阴影与整圈内反射共同建立玻璃厚度。
-  vec2 lightDirection = normalize(vec2(-0.72 + uDirection * uMotion * 0.12, -0.70));
+  // Fresnel：左上高光、右下暗边、最外沿细亮线。
+  vec2 lightDirection = normalize(
+    vec2(-0.72 + uDirection * uVelocity * 0.14, -0.70)
+  );
   float facingLight = max(dot(normal, lightDirection), 0.0);
   float facingShade = max(dot(normal, -lightDirection), 0.0);
   float specular = pow(facingLight, 5.0) * rim;
-  color += vec3(specular * (0.22 + uMotion * 0.08));
+  color += vec3(specular * uLightStrength);
   color -= vec3(facingShade * rim * 0.045);
-  color += vec3(rim * 0.025);
+  color += vec3(rim * uRimStrength);
 
+  // 拖动状态略微提高边缘响应，静止时保持克制。
+  color += vec3(rimSquared * uDragState * 0.018);
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

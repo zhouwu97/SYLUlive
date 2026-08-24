@@ -44,19 +44,56 @@ void main() {
     }
   });
 
-  testWidgets('移动透镜在跨 Tab 时横向拉伸并在落位后恢复', (tester) async {
+  testWidgets('拖动透镜保持连续位置，松手后才吸附并恢复', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));
     final settledWidth = tester.getSize(lensFinder).width;
 
-    harness.selectedIndex.value = 4;
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+    await gesture.moveTo(
+      Offset(layerTopLeft.dx + itemWidth * 2.0, layerTopLeft.dy + 30),
+    );
+    await tester.pump(const Duration(milliseconds: 80));
     await tester.pump();
-    final stretchedWidth = tester.getSize(lensFinder).width;
-    expect(stretchedWidth, greaterThan(settledWidth));
 
-    harness.visualIndex.value = 4;
-    await tester.pump();
+    expect(harness.visualIndex.value, closeTo(1.5, 0.02));
+    expect(harness.selectedIndex.value, 0);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(harness.visualIndex.value, closeTo(2, 0.01));
+    expect(harness.selectedIndex.value, 0);
     expect(tester.getSize(lensFinder).width, closeTo(settledWidth, 0.01));
+  });
+
+  testWidgets('连续位置不会在跨过 Tab 中点时提前吸附', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final gesture = await tester.startGesture(
+      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
+    );
+    await gesture.moveTo(
+      Offset(layerTopLeft.dx + itemWidth * 1.25, layerTopLeft.dy + 30),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
+
+    expect(harness.visualIndex.value, closeTo(0.75, 0.02));
+    expect(harness.selectedIndex.value, 0);
+    await gesture.cancel();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Reduced Motion 直接让透镜落在当前 Tab', (tester) async {

@@ -38,16 +38,26 @@ type FeatureFlagInput struct {
 
 // FeatureFlagSnapshot 写入 AgentStateJSON，保证运行中配置热变更不会改变本次 Run 的语义。
 type FeatureFlagSnapshot struct {
-	AgentEnabled        bool   `json:"agent_enabled"`
-	RolloutMatched      bool   `json:"rollout_matched"`
-	ShadowEnabled       bool   `json:"shadow_enabled"`
-	ActionsEnabled      bool   `json:"actions_enabled"`
-	PersonalDataEnabled bool   `json:"personal_data_enabled"`
-	DeepModeEnabled     bool   `json:"deep_mode_enabled"`
-	AppVersion          string `json:"app_version,omitempty"`
-	RolloutPercent      int    `json:"rollout_percent"`
-	ShadowPercent       int    `json:"shadow_percent"`
-	DecisionKey         string `json:"decision_key,omitempty"`
+	AgentEnabled        bool     `json:"agent_enabled"`
+	RolloutMatched      bool     `json:"rollout_matched"`
+	ShadowEnabled       bool     `json:"shadow_enabled"`
+	ActionsEnabled      bool     `json:"actions_enabled"`
+	PersonalDataEnabled bool     `json:"personal_data_enabled"`
+	DeepModeEnabled     bool     `json:"deep_mode_enabled"`
+	AppVersion          string   `json:"app_version,omitempty"`
+	RolloutPercent      int      `json:"rollout_percent"`
+	ShadowPercent       int      `json:"shadow_percent"`
+	DecisionKey         string   `json:"decision_key,omitempty"`
+	RolloutReasons      []string `json:"rollout_reasons,omitempty"`
+}
+
+func (snapshot FeatureFlagSnapshot) IsZero() bool {
+	return !snapshot.AgentEnabled && !snapshot.RolloutMatched &&
+		!snapshot.ShadowEnabled && !snapshot.ActionsEnabled &&
+		!snapshot.PersonalDataEnabled && !snapshot.DeepModeEnabled &&
+		snapshot.AppVersion == "" && snapshot.RolloutPercent == 0 &&
+		snapshot.ShadowPercent == 0 && snapshot.DecisionKey == "" &&
+		len(snapshot.RolloutReasons) == 0
 }
 
 func (f AgentFeatureFlags) Validate() error {
@@ -171,7 +181,43 @@ func (f AgentFeatureFlags) Snapshot(input FeatureFlagInput) FeatureFlagSnapshot 
 		RolloutPercent:      f.RolloutPercent,
 		ShadowPercent:       f.ShadowPercent,
 		DecisionKey:         hex.EncodeToString(decisionDigest[:]),
+		RolloutReasons:      f.rolloutReasons(input, agentAllowed),
 	}
+}
+
+// rolloutReasons 只输出可审计的决策标签，不输出名单、能力配置或用户标识。
+func (f AgentFeatureFlags) rolloutReasons(input FeatureFlagInput, matched bool) []string {
+	reasons := make([]string, 0, 5)
+	if !f.Enabled {
+		return []string{"agent_disabled"}
+	}
+	if f.isUserAllowed(input.UserID) {
+		reasons = append(reasons, "user_allowlist")
+	}
+	if len(f.AppVersionAllowlist) > 0 && allowlistMatch(f.AppVersionAllowlist, input.AppVersion) {
+		reasons = append(reasons, "app_version_allowlist")
+	}
+	if len(f.ModeAllowlist) > 0 && modeAllowlistMatch(f.ModeAllowlist, input.Mode) {
+		reasons = append(reasons, "mode_allowlist")
+	}
+	if !f.matchesFilters(input) {
+		return append(reasons, "filter_miss")
+	}
+	if matched {
+		reasons = append(reasons, "percentage_match")
+	} else {
+		reasons = append(reasons, "percentage_miss")
+	}
+	if !f.ActionsEnabled {
+		reasons = append(reasons, "actions_kill_switch")
+	}
+	if !f.PersonalDataEnabled {
+		reasons = append(reasons, "personal_data_kill_switch")
+	}
+	if !f.DeepModeEnabled {
+		reasons = append(reasons, "deep_mode_kill_switch")
+	}
+	return reasons
 }
 
 // ShadowExecution 是不执行能力的观察记录。它没有 Executor 字段，避免把
@@ -264,12 +310,17 @@ const (
 	UserSignalAbandoned                AgentUserSignal = "run.abandoned"
 	UserSignalRephrased                AgentUserSignal = "run.rephrased"
 	UserSignalUsefulAnswer             AgentUserSignal = "answer.useful"
+	UserSignalFirstActivity            AgentUserSignal = "run.first_activity"
+	UserSignalFirstUsefulAnswer        AgentUserSignal = "answer.first_useful"
+	UserSignalPossibleCorrection       AgentUserSignal = "possible_user_correction"
 )
 
 func (signal AgentUserSignal) Valid() bool {
 	switch signal {
 	case UserSignalCorrection, UserSignalUnnecessaryClarification,
-		UserSignalAbandoned, UserSignalRephrased, UserSignalUsefulAnswer:
+		UserSignalAbandoned, UserSignalRephrased, UserSignalUsefulAnswer,
+		UserSignalFirstActivity, UserSignalFirstUsefulAnswer,
+		UserSignalPossibleCorrection:
 		return true
 	default:
 		return false

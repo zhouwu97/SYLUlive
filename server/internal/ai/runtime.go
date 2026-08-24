@@ -46,6 +46,8 @@ type RuntimeConfig struct {
 	// FeatureFlags 是 Agent Shadow/灰度验证的服务端快照配置。
 	FeatureFlags           AgentFeatureFlags
 	FeatureFlagsConfigured bool
+	ShadowTraceRetention   time.Duration
+	FailureTraceRetention  time.Duration
 }
 
 type RuntimeError struct {

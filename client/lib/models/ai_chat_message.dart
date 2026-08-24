@@ -2,6 +2,7 @@ import 'ai_source.dart';
 import 'competition_action_draft.dart';
 import 'user_calendar.dart';
 import 'ai_personal_data_evidence.dart';
+import 'ai_run_feedback.dart';
 
 enum AiMessageRole { user, assistant }
 
@@ -20,6 +21,9 @@ class AiChatMessage {
   final List<AiPersonalDataEvidence> personalDataEvidence;
   final List<CompetitionPlanActionDraft> actionDrafts;
   final List<UserCalendarActionDraft> calendarActionDrafts;
+  final AiFeedbackStatus feedbackStatus;
+  final AiFeedbackReason? feedbackReason;
+  final String feedbackError;
   final DateTime createdAt;
 
   const AiChatMessage({
@@ -34,6 +38,9 @@ class AiChatMessage {
     this.personalDataEvidence = const [],
     this.actionDrafts = const [],
     this.calendarActionDrafts = const [],
+    this.feedbackStatus = AiFeedbackStatus.none,
+    this.feedbackReason,
+    this.feedbackError = '',
   });
 
   AiChatMessage copyWith({
@@ -44,6 +51,9 @@ class AiChatMessage {
     List<AiPersonalDataEvidence>? personalDataEvidence,
     List<CompetitionPlanActionDraft>? actionDrafts,
     List<UserCalendarActionDraft>? calendarActionDrafts,
+    AiFeedbackStatus? feedbackStatus,
+    AiFeedbackReason? feedbackReason,
+    String? feedbackError,
   }) {
     return AiChatMessage(
       id: id,
@@ -57,6 +67,9 @@ class AiChatMessage {
       personalDataEvidence: personalDataEvidence ?? this.personalDataEvidence,
       actionDrafts: actionDrafts ?? this.actionDrafts,
       calendarActionDrafts: calendarActionDrafts ?? this.calendarActionDrafts,
+      feedbackStatus: feedbackStatus ?? this.feedbackStatus,
+      feedbackReason: feedbackReason ?? this.feedbackReason,
+      feedbackError: feedbackError ?? this.feedbackError,
     );
   }
 }

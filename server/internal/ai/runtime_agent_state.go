@@ -27,7 +27,7 @@ func (r *Runtime) loadRuntimeAgentState(ctx context.Context, run *models.AIRun, 
 			return AgentRunState{}, errors.New("agent_state_run_mismatch")
 		}
 		state.RunID = run.ID
-		if r.config.FeatureFlagsConfigured && state.FeatureFlags == (FeatureFlagSnapshot{}) {
+		if r.config.FeatureFlagsConfigured && state.FeatureFlags.IsZero() {
 			state.FeatureFlags = r.config.FeatureFlags.Snapshot(FeatureFlagInput{
 				UserID: run.UserID, RunID: run.ID, Mode: state.ExecutionMode,
 			})

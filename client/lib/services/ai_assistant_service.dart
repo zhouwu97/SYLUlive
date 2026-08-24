@@ -10,6 +10,7 @@ import '../models/agent_context.dart';
 import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
+import '../models/ai_run_feedback.dart';
 import '../models/ai_source.dart';
 
 const int _maxCreateRunAttempts = 2;
@@ -245,6 +246,46 @@ class AiAssistantService {
       throw _exceptionFromDio(error, fallback: '提交本次授权失败');
     }
     _expectStatus(response, 202);
+  }
+
+  /// 只上传结构化反馈与受限说明；服务端只保留说明的摘要，不保存原文。
+  Future<void> submitRunFeedback({
+    required String runId,
+    required AiRunFeedback feedback,
+  }) async {
+    final data = <String, dynamic>{
+      'signal': feedback.rating == AiFeedbackRating.positive
+          ? 'answer.useful'
+          : null,
+      'failure_reason': feedback.rating == AiFeedbackRating.negative
+          ? (feedback.reason ?? AiFeedbackReason.other).wireValue
+          : null,
+      if (feedback.reason != null) 'reason': feedback.reason!.wireValue,
+      if (feedback.note.trim().isNotEmpty) 'note': feedback.note.trim(),
+    }..removeWhere((_, value) => value == null);
+    late Response<dynamic> response;
+    try {
+      response = await _dio.post('/ai/runs/$runId/feedback', data: data);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error, fallback: '提交反馈失败');
+    }
+    _expectStatus(response, 202);
+  }
+
+  /// 用户行为信号是 best effort，不应阻断回答或重连流程。
+  Future<void> recordRunSignal({
+    required String runId,
+    required String signal,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/ai/runs/$runId/feedback',
+        data: <String, dynamic>{'signal': signal},
+      );
+      _expectStatus(response, 202);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error, fallback: '记录 AI 行为信号失败');
+    }
   }
 
   /// 读取 SSE，并将 Last-Event-ID 交给服务端完成历史事件回放。

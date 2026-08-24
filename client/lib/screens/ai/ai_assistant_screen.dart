@@ -1382,6 +1382,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                       onRetrySources: () => unawaited(
                                         _provider.retryMessageSources(message),
                                       ),
+                                      onFeedback: (feedback) =>
+                                          _provider.submitFeedback(message, feedback),
                                     ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==

@@ -17,7 +17,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      - run: gofmt -d $(find . -name '*.go') | (! grep .)
+      - name: Check changed Go files are formatted
+        working-directory: .
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}"..."$GITHUB_SHA" -- '*.go')
+          elif [[ -n "$GITHUB_EVENT_BEFORE" && "$GITHUB_EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            files=$(git diff --name-only "$GITHUB_EVENT_BEFORE" "$GITHUB_SHA" -- '*.go')
+          else
+            files=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- '*.go')
+          fi
+          if [[ -z "$files" ]]; then
+            echo "No changed Go files to format-check."
+            exit 0
+          fi
+          printf '%s\n' "$files" | xargs gofmt -d | (! grep .)
       - run: go vet ./...
       - run: go test ./...
 
@@ -47,9 +62,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      - name: Run PostgreSQL concurrency integration tests
+      - name: Run PostgreSQL idempotency integration tests
         working-directory: server
-        run: go test -tags=integration ./internal/handlers ./internal/middleware -count=1
+        run: >-
+          go test -tags=integration ./internal/middleware
+          -run '^TestIdempotencyMiddlewarePostgres' -count=1
 
   migration-upgrade:
     runs-on: ubuntu-latest

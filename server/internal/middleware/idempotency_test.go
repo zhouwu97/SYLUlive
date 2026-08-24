@@ -147,6 +147,103 @@ func TestIdempotencyMiddlewareRejectsChangedPayloadAndKeepsDifferentKeysIndepend
 	}
 }
 
+func TestIdempotencyMiddlewareCanonicalizesJSONObjectKeyOrder(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	var calls atomic.Int32
+	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+		calls.Add(1)
+		c.JSON(http.StatusCreated, gin.H{"id": 42})
+	})
+
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, requestWithKey(http.MethodPost, "/write", "canonical-json", `{"b":2,"a":1}`))
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, requestWithKey(http.MethodPost, "/write", "canonical-json", "{\n  \"a\": 1, \"b\": 2\n}"))
+
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+		t.Fatalf("statuses=%d,%d, want 201,201; second body=%s", first.Code, second.Code, second.Body.String())
+	}
+	if first.Body.String() != second.Body.String() || calls.Load() != 1 {
+		t.Fatalf("canonical replay mismatch: first=%q second=%q calls=%d", first.Body.String(), second.Body.String(), calls.Load())
+	}
+}
+
+func TestIdempotencyMiddlewareScopesSameKeyByUser(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	var calls atomic.Int32
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user_id", c.GetHeader("X-Test-User"))
+		c.Next()
+	})
+	router.Use(IdempotencyMiddleware(db))
+	router.POST("/write", func(c *gin.Context) {
+		id := calls.Add(1)
+		c.JSON(http.StatusCreated, gin.H{"call": id})
+	})
+
+	request := func(user string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := requestWithKey(http.MethodPost, "/write", "same-key-different-user", `{"value":1}`)
+		req.Header.Set("X-Test-User", user)
+		router.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	first := request("user-a")
+	second := request("user-b")
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+		t.Fatalf("statuses=%d,%d, want 201,201", first.Code, second.Code)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("same key crossed user scope: handler calls=%d, want 2", calls.Load())
+	}
+}
+
+func TestIdempotencyMiddlewareWithJWTKeepsUserScopeAcrossTokenRotation(t *testing.T) {
+	clearTokenVersionCacheForTest()
+	db := openIdempotencyTestDB(t)
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate auth state: %v", err)
+	}
+	user := models.User{StudentID: "idempotency-user", PasswordHash: "hash", Role: models.RoleUser}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	tokenOne, err := GenerateToken(user.ID, string(user.Role), user.TokenVersion, "idempotency-secret")
+	if err != nil {
+		t.Fatalf("generate first token: %v", err)
+	}
+	tokenTwo, err := GenerateToken(user.ID, string(user.Role), user.TokenVersion, "idempotency-secret")
+	if err != nil {
+		t.Fatalf("generate rotated token: %v", err)
+	}
+
+	var calls atomic.Int32
+	router := gin.New()
+	router.Use(IdempotencyMiddlewareWithJWT(db, "idempotency-secret"))
+	router.POST("/write", func(c *gin.Context) {
+		calls.Add(1)
+		c.JSON(http.StatusCreated, gin.H{"created": true})
+	})
+	requestWithToken := func(token string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		request := requestWithKey(http.MethodPost, "/write", "jwt-same-key", `{"value":1}`)
+		request.Header.Set("Authorization", "Bearer "+token)
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	first := requestWithToken(tokenOne)
+	retry := requestWithToken(tokenTwo)
+	if first.Code != http.StatusCreated || retry.Code != http.StatusCreated {
+		t.Fatalf("statuses=%d,%d, want 201,201", first.Code, retry.Code)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("token rotation changed user scope and duplicated action: calls=%d", calls.Load())
+	}
+}
+
 func TestIdempotencyMiddlewareDoesNotRecordReads(t *testing.T) {
 	db := openIdempotencyTestDB(t)
 	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) { c.Status(http.StatusNoContent) })

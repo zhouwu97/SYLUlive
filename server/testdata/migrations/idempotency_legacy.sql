@@ -15,3 +15,21 @@ INSERT INTO idempotency_records
     (scope, idempotency_key, method, path, request_hash, state)
 VALUES
     ('credential:legacy', 'legacy-key', 'POST', '/api/legacy', repeat('a', 64), 'processing');
+
+CREATE TABLE migration_fixture_users (
+    id bigint PRIMARY KEY,
+    nickname text NOT NULL
+);
+CREATE TABLE migration_fixture_posts (
+    id bigint PRIMARY KEY,
+    author_id bigint NOT NULL,
+    content text NOT NULL
+);
+CREATE TABLE migration_fixture_post_topics (
+    post_id bigint NOT NULL,
+    topic_id bigint NOT NULL,
+    PRIMARY KEY (post_id, topic_id)
+);
+INSERT INTO migration_fixture_users (id, nickname) VALUES (1, 'legacy-user'), (2, 'legacy-admin');
+INSERT INTO migration_fixture_posts (id, author_id, content) VALUES (10, 1, 'legacy-post');
+INSERT INTO migration_fixture_post_topics (post_id, topic_id) VALUES (10, 99);

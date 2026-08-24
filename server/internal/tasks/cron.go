@@ -24,6 +24,8 @@ const (
 	eduCredentialCleanupJobBatchSize    = 50
 	eduBindingRecoveryInterval          = time.Minute
 	eduBindingRecoveryBatchSize         = 50
+	idempotencyCleanupInterval          = 6 * time.Hour
+	idempotencyCleanupBatchSize         = 500
 )
 
 type examPaperStorageJobProcessor interface {
@@ -57,6 +59,11 @@ type EduBindingRecoveryCron struct {
 	wg sync.WaitGroup
 }
 
+// IdempotencyCleanupCron 负责幂等响应缓存的有限批量回收。
+type IdempotencyCleanupCron struct {
+	wg sync.WaitGroup
+}
+
 // Wait 等待教务凭证清理任务在 context 取消后退出。
 func (c *EduCredentialCleanupCron) Wait() {
 	if c != nil {
@@ -76,6 +83,47 @@ func (c *ExamPaperStorageCron) Wait() {
 	if c != nil {
 		c.wg.Wait()
 	}
+}
+
+// Wait 等待幂等记录清理任务退出。
+func (c *IdempotencyCleanupCron) Wait() {
+	if c != nil {
+		c.wg.Wait()
+	}
+}
+
+// StartIdempotencyCleanupCron 启动幂等记录清理，并在启动时先执行一次。
+func StartIdempotencyCleanupCron(ctx context.Context, db *gorm.DB) *IdempotencyCleanupCron {
+	cron := &IdempotencyCleanupCron{}
+	if db == nil {
+		return cron
+	}
+	cron.wg.Add(1)
+	go func() {
+		defer cron.wg.Done()
+		cleanup := func() {
+			deleted, err := models.CleanupExpiredIdempotencyRecords(db, time.Now().UTC(), idempotencyCleanupBatchSize)
+			if err != nil {
+				log.Printf("清理幂等记录失败: %v", err)
+			} else if deleted > 0 {
+				log.Printf("幂等记录清理完成: deleted=%d", deleted)
+			}
+		}
+		cleanup()
+
+		ticker := time.NewTicker(idempotencyCleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanup()
+			}
+		}
+	}()
+	log.Println("幂等记录清理后台任务已启动")
+	return cron
 }
 
 // StartExamPaperStorageCron 启动远端文件 outbox 消费与每日完整性维护。

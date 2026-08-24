@@ -583,7 +583,7 @@ func main() {
 		cfg.AllowMissingVersionHeaders,
 	))
 	// 只有显式携带 Idempotency-Key 的写请求才会建立记录；无键旧客户端保持兼容。
-	r.Use(middleware.IdempotencyMiddleware(db))
+	r.Use(middleware.IdempotencyMiddlewareWithJWT(db, cfg.JWTSecret))
 
 	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -1069,6 +1069,7 @@ func main() {
 	}
 	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
 	eduBindingRecoveryCron := tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
+	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -2310,6 +2311,7 @@ func main() {
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
 	eduBindingRecoveryCron.Wait()
+	idempotencyCleanupCron.Wait()
 	feedMetricsCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)

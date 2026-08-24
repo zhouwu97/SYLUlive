@@ -54,24 +54,35 @@ type Config struct {
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
 	AIOutputPriceMicroYuanPerMillionTokens int64
-	AIPolicyRAGEnabled                     bool   // 政策知识库能力独立开关
-	AILangChainRAGEnabled                  bool   // 政策请求改由 Python LCEL 完整编排
-	AILangChainRAGRolloutPercent           int    // 稳定分配给 LangChain 的账号比例
-	AILegacyRAGEnabled                     bool   // 旧 Go 检索与生成路径独立回滚开关
-	RAGServiceURL                          string // 独立 Embedding/分词服务地址
-	RAGServiceToken                        string // 内部服务鉴权令牌
-	RAGEmbeddingModelVersion               string // 当前写入和查询使用的模型版本
-	AIExternalMCPEnabled                   bool   // 是否启用独立 Hy3 MCP 包装工具
-	AIExternalMCPTransport                 string // local_stdio 或 ssh_stdio
-	AIExternalMCPCommand                   string // 本机 MCP 固定启动包装器的绝对路径
-	AIExternalMCPToolTimeoutSeconds        int    // 单次 MCP 调用硬超时
-	AIExternalMCPMaxCallsPerRun            int    // 每个 AI Run 允许的外部 MCP 调用数
-	AIExternalMCPSshHost                   string // 受限 MCP SSH 主机
-	AIExternalMCPSshPort                   int    // 受限 MCP SSH 端口
-	AIExternalMCPSshUser                   string // 受限 MCP SSH 用户
-	AIExternalMCPSshKeyPath                string // Go 服务读取的专用 SSH 私钥绝对路径
-	AIExternalMCPKnownHostsPath            string // 专用 known_hosts 绝对路径
-	AIUnifiedMCPURL                        string // Agent Contract v5 纯能力 MCP Streamable HTTP 地址
+	AIPolicyRAGEnabled                     bool     // 政策知识库能力独立开关
+	AILangChainRAGEnabled                  bool     // 政策请求改由 Python LCEL 完整编排
+	AILangChainRAGRolloutPercent           int      // 稳定分配给 LangChain 的账号比例
+	AILegacyRAGEnabled                     bool     // 旧 Go 检索与生成路径独立回滚开关
+	AIAgentEnabled                         bool     // Agent Kernel v5 总开关
+	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
+	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
+	AIAgentAppVersionAllowlist             []string // Agent v5 客户端版本白名单
+	AIAgentCapabilityAllowlist             []string // Agent v5 能力白名单
+	AIAgentModeAllowlist                   []string // Agent v5 执行模式白名单
+	AIAgentShadowEnabled                   bool     // Shadow 观察开关
+	AIAgentShadowPercent                   int      // Shadow 观察比例
+	AIAgentActionsEnabled                  bool     // Agent Action 提案开关
+	AIAgentPersonalDataEnabled             bool     // Agent 个人数据能力开关
+	AIAgentDeepModeEnabled                 bool     // Agent deep 模式开关
+	RAGServiceURL                          string   // 独立 Embedding/分词服务地址
+	RAGServiceToken                        string   // 内部服务鉴权令牌
+	RAGEmbeddingModelVersion               string   // 当前写入和查询使用的模型版本
+	AIExternalMCPEnabled                   bool     // 是否启用独立 Hy3 MCP 包装工具
+	AIExternalMCPTransport                 string   // local_stdio 或 ssh_stdio
+	AIExternalMCPCommand                   string   // 本机 MCP 固定启动包装器的绝对路径
+	AIExternalMCPToolTimeoutSeconds        int      // 单次 MCP 调用硬超时
+	AIExternalMCPMaxCallsPerRun            int      // 每个 AI Run 允许的外部 MCP 调用数
+	AIExternalMCPSshHost                   string   // 受限 MCP SSH 主机
+	AIExternalMCPSshPort                   int      // 受限 MCP SSH 端口
+	AIExternalMCPSshUser                   string   // 受限 MCP SSH 用户
+	AIExternalMCPSshKeyPath                string   // Go 服务读取的专用 SSH 私钥绝对路径
+	AIExternalMCPKnownHostsPath            string   // 专用 known_hosts 绝对路径
+	AIUnifiedMCPURL                        string   // Agent Contract v5 纯能力 MCP Streamable HTTP 地址
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
@@ -325,6 +336,21 @@ func Load() *Config {
 	aiLangChainRAGRolloutPercent := envIntInRange(
 		"AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", rolloutDefault, 0, 100,
 	)
+	aiAgentEnabled := envBool("AI_AGENT_ENABLED", aiEnabled)
+	aiAgentRolloutDefault := 0
+	if aiAgentEnabled {
+		aiAgentRolloutDefault = 100
+	}
+	aiAgentRolloutPercent := envIntInRange("AI_AGENT_ROLLOUT_PERCENT", aiAgentRolloutDefault, 0, 100)
+	aiAgentRolloutUserIDs := envPositiveUintList("AI_AGENT_ROLLOUT_USER_IDS")
+	aiAgentAppVersionAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_APP_VERSIONS"))
+	aiAgentCapabilityAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_CAPABILITIES"))
+	aiAgentModeAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_MODES"))
+	aiAgentShadowEnabled := envBool("AI_AGENT_SHADOW_ENABLED", false)
+	aiAgentShadowPercent := envIntInRange("AI_AGENT_SHADOW_PERCENT", 0, 0, 100)
+	aiAgentActionsEnabled := envBool("AI_AGENT_ACTIONS_ENABLED", true)
+	aiAgentPersonalDataEnabled := envBool("AI_AGENT_PERSONAL_DATA_ENABLED", true)
+	aiAgentDeepModeEnabled := envBool("AI_AGENT_DEEP_MODE_ENABLED", true)
 	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
 	if ragServiceURL == "" {
 		ragServiceURL = "http://127.0.0.1:18001"
@@ -415,6 +441,17 @@ func Load() *Config {
 		AILangChainRAGEnabled:                  aiLangChainRAGEnabled,
 		AILangChainRAGRolloutPercent:           aiLangChainRAGRolloutPercent,
 		AILegacyRAGEnabled:                     aiLegacyRAGEnabled,
+		AIAgentEnabled:                         aiAgentEnabled,
+		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
+		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,
+		AIAgentAppVersionAllowlist:             aiAgentAppVersionAllowlist,
+		AIAgentCapabilityAllowlist:             aiAgentCapabilityAllowlist,
+		AIAgentModeAllowlist:                   aiAgentModeAllowlist,
+		AIAgentShadowEnabled:                   aiAgentShadowEnabled,
+		AIAgentShadowPercent:                   aiAgentShadowPercent,
+		AIAgentActionsEnabled:                  aiAgentActionsEnabled,
+		AIAgentPersonalDataEnabled:             aiAgentPersonalDataEnabled,
+		AIAgentDeepModeEnabled:                 aiAgentDeepModeEnabled,
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,

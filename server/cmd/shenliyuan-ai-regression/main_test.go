@@ -30,7 +30,8 @@ func TestRunScenarioSuite(t *testing.T) {
 	code := run([]string{"-suite", "scenario", "-baseline", filepath.Join("..", "..", "internal", "ai", "eval", "scenario", "baseline_scenario.json")}, &stdout, &stderr)
 	require.Zero(t, code, stderr.String())
 	require.Contains(t, stdout.String(), "Agent Regression Scenario Suite")
-	require.Contains(t, stdout.String(), "Cases                 21")
+	require.Contains(t, stdout.String(), "Cases                 33")
+	require.Contains(t, stdout.String(), "Mode Accuracy         100.0%")
 	require.Contains(t, stdout.String(), "Action Commits        4")
 	require.Contains(t, stdout.String(), "Verified Commits      3")
 }

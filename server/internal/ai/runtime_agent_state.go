@@ -27,6 +27,16 @@ func (r *Runtime) loadRuntimeAgentState(ctx context.Context, run *models.AIRun, 
 			return AgentRunState{}, errors.New("agent_state_run_mismatch")
 		}
 		state.RunID = run.ID
+		if r.config.FeatureFlagsConfigured && state.FeatureFlags == (FeatureFlagSnapshot{}) {
+			state.FeatureFlags = r.config.FeatureFlags.Snapshot(FeatureFlagInput{
+				UserID: run.UserID, RunID: run.ID, Mode: state.ExecutionMode,
+			})
+		}
+		if r.config.FeatureFlagsConfigured && !state.FeatureFlags.DeepModeEnabled && state.ExecutionMode == ExecutionDeep {
+			state.ExecutionMode = ExecutionNormal
+			state.ExecutionProfile = DefaultExecutionProfile(ExecutionNormal)
+			state.Budget = BudgetForExecutionProfile(state.ExecutionProfile)
+		}
 		if state.ExecutionMode == "" || state.ExecutionProfile.MaxToolCalls <= 0 {
 			refreshExecutionProfile(&state)
 		} else if state.Budget.MaxToolCalls <= 0 {
@@ -48,9 +58,15 @@ func (r *Runtime) loadRuntimeAgentState(ctx context.Context, run *models.AIRun, 
 	profile := ExecutionProfileForGoal(goal)
 	state = AgentRunState{
 		RunID: run.ID, Goal: goal, ExecutionMode: profile.Mode, ExecutionProfile: profile,
+		FeatureFlags:      r.config.FeatureFlags.Snapshot(FeatureFlagInput{UserID: run.UserID, RunID: run.ID, Mode: profile.Mode}),
 		Budget:            BudgetForExecutionProfile(profile),
 		ConstraintVersion: maxInt(run.ConstraintVersion, 1), PlanVersion: maxInt(run.PlanVersion, 1),
 		PlanningRounds: run.PlanningRound,
+	}
+	if r.config.FeatureFlagsConfigured && !state.FeatureFlags.DeepModeEnabled && state.ExecutionMode == ExecutionDeep {
+		state.ExecutionMode = ExecutionNormal
+		state.ExecutionProfile = DefaultExecutionProfile(ExecutionNormal)
+		state.Budget = BudgetForExecutionProfile(state.ExecutionProfile)
 	}
 	return state, nil
 }

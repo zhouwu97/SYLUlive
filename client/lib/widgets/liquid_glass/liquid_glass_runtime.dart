@@ -7,17 +7,20 @@ import 'package:flutter/foundation.dart';
 /// 成任何一个真实渲染等级。
 enum LiquidGlassTier { unknown, a, b, c }
 
+enum LiquidGlassQaMode { finalGlass, identity, refractionOnly, shapeOnly }
+
 /// QA 页面可调整的光学参数。默认值就是线上底栏的基线，避免调试入口
 /// 改变正常页面的参数来源。
 class LiquidGlassTuning {
   const LiquidGlassTuning({
-    this.refraction = 14.0,
-    this.magnification = 1.055,
-    this.chromatic = 1.2,
-    this.rimStrength = 0.16,
-    this.lightStrength = 0.34,
+    this.refraction = 9.0,
+    this.magnification = 1.035,
+    this.chromatic = 0.6,
+    this.rimStrength = 0.08,
+    this.lightStrength = 0.18,
     this.dockAlpha = 1.0,
     this.dockBlur = 4.5,
+    this.mode = LiquidGlassQaMode.finalGlass,
   });
 
   final double refraction;
@@ -27,6 +30,33 @@ class LiquidGlassTuning {
   final double lightStrength;
   final double dockAlpha;
   final double dockBlur;
+  final LiquidGlassQaMode mode;
+
+  double get effectiveRefraction {
+    return mode == LiquidGlassQaMode.finalGlass ||
+            mode == LiquidGlassQaMode.refractionOnly
+        ? refraction
+        : 0;
+  }
+
+  double get effectiveMagnification {
+    return mode == LiquidGlassQaMode.finalGlass ? magnification : 1;
+  }
+
+  double get effectiveChromatic {
+    return mode == LiquidGlassQaMode.finalGlass ? chromatic : 0;
+  }
+
+  double get effectiveRimStrength {
+    return mode == LiquidGlassQaMode.finalGlass ? rimStrength : 0;
+  }
+
+  double get effectiveLightStrength {
+    return mode == LiquidGlassQaMode.finalGlass ? lightStrength : 0;
+  }
+
+  bool get isIdentityLike =>
+      mode == LiquidGlassQaMode.identity || mode == LiquidGlassQaMode.shapeOnly;
 
   LiquidGlassTuning copyWith({
     double? refraction,
@@ -36,6 +66,7 @@ class LiquidGlassTuning {
     double? lightStrength,
     double? dockAlpha,
     double? dockBlur,
+    LiquidGlassQaMode? mode,
   }) {
     return LiquidGlassTuning(
       refraction: refraction ?? this.refraction,
@@ -45,6 +76,7 @@ class LiquidGlassTuning {
       lightStrength: lightStrength ?? this.lightStrength,
       dockAlpha: dockAlpha ?? this.dockAlpha,
       dockBlur: dockBlur ?? this.dockBlur,
+      mode: mode ?? this.mode,
     );
   }
 }

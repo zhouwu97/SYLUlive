@@ -88,6 +88,24 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               style: TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 8),
+            const Text('Mode', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: LiquidGlassQaMode.values
+                  .map(
+                    (mode) => ChoiceChip(
+                      label: Text(_modeLabel(mode)),
+                      selected: _tuning.mode == mode,
+                      onSelected: (_) => _setTuning(
+                        _tuning.copyWith(mode: mode),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 6),
             _buildSlider(
               label: 'Refraction',
               value: _tuning.refraction,
@@ -187,6 +205,19 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
 
   void _setTuning(LiquidGlassTuning tuning) {
     setState(() => _tuning = tuning);
+  }
+
+  String _modeLabel(LiquidGlassQaMode mode) {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+        return 'Final';
+      case LiquidGlassQaMode.identity:
+        return 'Identity';
+      case LiquidGlassQaMode.refractionOnly:
+        return 'Refraction Only';
+      case LiquidGlassQaMode.shapeOnly:
+        return 'Shape Only';
+    }
   }
 }
 

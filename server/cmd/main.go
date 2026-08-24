@@ -976,7 +976,21 @@ func main() {
 				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
 				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
 				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
-				UnifiedAgentEnabled:            true,
+				UnifiedAgentEnabled:            cfg.AIAgentEnabled,
+				FeatureFlagsConfigured:         true,
+				FeatureFlags: ai.AgentFeatureFlags{
+					Enabled:             cfg.AIAgentEnabled,
+					RolloutPercent:      cfg.AIAgentRolloutPercent,
+					RolloutUserIDs:      cfg.AIAgentRolloutUserIDs,
+					AppVersionAllowlist: cfg.AIAgentAppVersionAllowlist,
+					CapabilityAllowlist: cfg.AIAgentCapabilityAllowlist,
+					ModeAllowlist:       cfg.AIAgentModeAllowlist,
+					ShadowEnabled:       cfg.AIAgentShadowEnabled,
+					ShadowPercent:       cfg.AIAgentShadowPercent,
+					ActionsEnabled:      cfg.AIAgentActionsEnabled,
+					PersonalDataEnabled: cfg.AIAgentPersonalDataEnabled,
+					DeepModeEnabled:     cfg.AIAgentDeepModeEnabled,
+				},
 			},
 			runtimeOptions...,
 		)
@@ -2197,10 +2211,12 @@ func main() {
 		{
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
+			aiProtected.GET("/runs/:id/metrics", aiRuntimeHandler.GetRunMetrics)
 			aiProtected.GET("/runs/:id/sources", aiRuntimeHandler.GetRunSources)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
 			aiProtected.POST("/runs/:id/consent", aiRuntimeHandler.SubmitRunConsent)
+			aiProtected.POST("/runs/:id/feedback", aiRuntimeHandler.SubmitRunFeedback)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)

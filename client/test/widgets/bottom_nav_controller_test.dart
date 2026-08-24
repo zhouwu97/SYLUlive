@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/widgets/liquid_glass/bottom_nav_controller.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
   test('拖动状态保留连续位置并记录边界压缩', () {
@@ -38,6 +41,49 @@ void main() {
     expect(
       controller.endDrag(velocityPixelsPerSecond: 900, itemWidth: 67),
       2,
+    );
+  });
+
+  test('QA optical modes isolate identity, refraction and shape', () {
+    const identity = LiquidGlassTuning(mode: LiquidGlassQaMode.identity);
+    expect(identity.effectiveRefraction, 0);
+    expect(identity.effectiveMagnification, 1);
+    expect(identity.effectiveChromatic, 0);
+    expect(identity.effectiveLightStrength, 0);
+    expect(identity.effectiveRimStrength, 0);
+
+    const refraction =
+        LiquidGlassTuning(mode: LiquidGlassQaMode.refractionOnly);
+    expect(refraction.effectiveRefraction, greaterThan(0));
+    expect(refraction.effectiveMagnification, 1);
+    expect(refraction.effectiveChromatic, 0);
+
+    const shape = LiquidGlassTuning(mode: LiquidGlassQaMode.shapeOnly);
+    expect(shape.isIdentityLike, isTrue);
+  });
+
+  test('dynamic canonical Lens shape mirrors on X and never breathes on Y', () {
+    const size = Size(108, 56);
+    final right = LiquidLensShape.pathForSize(
+      size,
+      speed: 0.85,
+      direction: 1,
+      edgeCompression: 0.2,
+    );
+    final left = LiquidLensShape.pathForSize(
+      size,
+      speed: 0.85,
+      direction: -1,
+      edgeCompression: 0.2,
+    );
+
+    expect(right.getBounds().top, 0);
+    expect(right.getBounds().bottom, 56);
+    expect(left.getBounds().top, 0);
+    expect(left.getBounds().bottom, 56);
+    expect(
+      right.computeMetrics().length,
+      closeTo(left.computeMetrics().length, 0.001),
     );
   });
 }

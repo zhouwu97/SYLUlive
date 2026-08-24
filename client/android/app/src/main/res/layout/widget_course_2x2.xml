@@ -33,7 +33,6 @@
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
             android:layout_marginStart="4dp"
-            android:layout_toEndOf="@id/tv_widget_title"
             android:ellipsize="end"
             android:gravity="end"
             android:maxLines="1"

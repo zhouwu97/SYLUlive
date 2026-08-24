@@ -27,14 +27,14 @@ type ExecutionProfile struct {
 	RequiresAction       bool `json:"requires_action"`
 	AmbiguityLevel       int  `json:"ambiguity_level"`
 
-	MaxToolCalls       int   `json:"max_tool_calls"`
-	MaxPlanningRounds  int   `json:"max_planning_rounds"`
-	MaxExternalCalls   int   `json:"max_external_calls"`
-	TargetLatencyMS    int64 `json:"target_latency_ms"`
-	MaxSameToolCalls   int   `json:"max_same_tool_calls"`
-	MaxModelTokens     int   `json:"max_model_tokens"`
-	MaxDurationMS      int64 `json:"max_duration_ms"`
-	MaxConsecutiveGain int   `json:"max_consecutive_no_gain"`
+	MaxToolCalls         int   `json:"max_tool_calls"`
+	MaxPlanningRounds    int   `json:"max_planning_rounds"`
+	MaxExternalCalls     int   `json:"max_external_calls"`
+	TargetLatencyMS      int64 `json:"target_latency_ms"`
+	MaxSameToolCalls     int   `json:"max_same_tool_calls"`
+	MaxModelTokens       int   `json:"max_model_tokens"`
+	MaxDurationMS        int64 `json:"max_duration_ms"`
+	MaxConsecutiveNoGain int   `json:"max_consecutive_no_gain"`
 }
 
 // ExecutionProfileForGoal 根据任务结构计算执行档位。
@@ -50,7 +50,7 @@ func ExecutionProfileForGoal(goal GoalSpec) ExecutionProfile {
 		RequiresAction:       goal.ActionIntent == "plan" || goal.ActionIntent == "change",
 		AmbiguityLevel:       len(goal.Unknowns),
 		MaxSameToolCalls:     1,
-		MaxConsecutiveGain:   2,
+		MaxConsecutiveNoGain: 2,
 	}
 
 	// 个人上下文、比较/推荐和副作用分别代表独立的执行约束域。
@@ -103,7 +103,7 @@ func applyExecutionBudget(profile ExecutionProfile) ExecutionProfile {
 		profile.MaxSameToolCalls = 3
 		profile.MaxModelTokens = 12000
 		profile.MaxDurationMS = 90000
-		profile.MaxConsecutiveGain = 2
+		profile.MaxConsecutiveNoGain = 2
 	case ExecutionNormal:
 		profile.MaxToolCalls = 5
 		profile.MaxPlanningRounds = 3
@@ -112,7 +112,7 @@ func applyExecutionBudget(profile ExecutionProfile) ExecutionProfile {
 		profile.MaxSameToolCalls = 2
 		profile.MaxModelTokens = 8192
 		profile.MaxDurationMS = 60000
-		profile.MaxConsecutiveGain = 2
+		profile.MaxConsecutiveNoGain = 2
 	default:
 		profile.Mode = ExecutionFast
 		profile.MaxToolCalls = 2
@@ -122,7 +122,7 @@ func applyExecutionBudget(profile ExecutionProfile) ExecutionProfile {
 		profile.MaxSameToolCalls = 1
 		profile.MaxModelTokens = 4096
 		profile.MaxDurationMS = 30000
-		profile.MaxConsecutiveGain = 2
+		profile.MaxConsecutiveNoGain = 2
 	}
 	return profile
 }
@@ -164,7 +164,7 @@ func budgetForExecutionProfile(profile ExecutionProfile) AgentBudget {
 		MaxDurationMs:        profile.MaxDurationMS,
 		MaxModelTokens:       profile.MaxModelTokens,
 		MaxExternalCalls:     profile.MaxExternalCalls,
-		MaxConsecutiveNoGain: profile.MaxConsecutiveGain,
+		MaxConsecutiveNoGain: profile.MaxConsecutiveNoGain,
 		MaxDuration:          durationFromMilliseconds(profile.MaxDurationMS),
 	}
 }
@@ -229,6 +229,9 @@ func UpgradeExecutionFromObservation(state *AgentRunState, result ToolResultEnve
 	}
 	from = state.ExecutionMode
 	target := ExecutionComplexityFromObservation(result)
+	if target == ExecutionDeep && state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled {
+		target = ExecutionNormal
+	}
 	if !UpgradeExecutionProfile(&state.ExecutionProfile, target) {
 		return from, state.ExecutionMode, false
 	}
@@ -242,10 +245,17 @@ func refreshExecutionProfile(state *AgentRunState) {
 		return
 	}
 	proposed := ExecutionProfileForGoal(state.Goal)
+	if state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled && proposed.Mode == ExecutionDeep {
+		proposed.Mode = ExecutionNormal
+		proposed = applyExecutionBudget(proposed)
+	}
 	if state.ExecutionMode == "" {
 		state.ExecutionMode, state.ExecutionProfile = proposed.Mode, proposed
 	} else {
 		currentMode := state.ExecutionMode
+		if state.FeatureFlags != (FeatureFlagSnapshot{}) && !state.FeatureFlags.DeepModeEnabled && currentMode == ExecutionDeep {
+			currentMode = ExecutionNormal
+		}
 		if executionModeRank(proposed.Mode) > executionModeRank(currentMode) {
 			currentMode = proposed.Mode
 		}

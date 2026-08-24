@@ -23,20 +23,41 @@ out vec4 fragColor;
 float liquidDistance(vec2 point) {
   vec2 center = uSize * 0.5;
   vec2 halfSize = uSize * 0.5;
-  vec2 normalized = (point - center) / max(halfSize, vec2(0.001));
+  vec2 local = point - center;
+  float y = clamp(local.y, -halfSize.y, halfSize.y);
+  float cap = sqrt(max(halfSize.y * halfSize.y - y * y, 0.0));
+  float straightHalf = max(halfSize.x - halfSize.y, 0.0);
+  float profile = 1.0 - smoothstep(
+      0.0,
+      1.0,
+      abs(y) / max(halfSize.y, 0.001)
+  );
+  float tail = halfSize.y * uVelocity * 0.28;
+  float bulge = halfSize.y * uVelocity * 0.18;
+  float compression = halfSize.y * uEdgeCompression * 0.16;
+  float left = -straightHalf - cap;
+  float right = straightHalf + cap;
 
-  // Superellipse 让静止态保持柔和的胶囊感；运动时通过方向项让
-  // 迎风侧鼓起、尾侧拉长。Flutter ClipPath 会提供最终的可见边界，
-  // 这里保持同一组速度/方向参数，使折射边缘与外轮廓一致。
-  normalized.x -= uDirection * uVelocity * 0.055;
-  float exponent = mix(4.6, 3.0, uVelocity);
-  float body = pow(
-      pow(abs(normalized.x), exponent) +
-          pow(abs(normalized.y), exponent),
-      1.0 / exponent) - 1.0;
-  float rearCompression = max(-uDirection * normalized.x, 0.0) *
-      uEdgeCompression * 0.16;
-  return (body + rearCompression) * min(halfSize.x, halfSize.y);
+  // 这组左右边界与 Flutter 的 LiquidLensShape 逐项相同：只画向右
+  // canonical 形状，向左交换 tail/bulge 的左右位置，保证严格镜像。
+  if (uDirection > 0.01) {
+    left -= tail * profile;
+    right += bulge * profile - compression * profile;
+  } else if (uDirection < -0.01) {
+    left -= bulge * profile - compression * profile;
+    right += tail * profile;
+  }
+
+  float sideDistance = min(local.x - left, right - local.x);
+  float verticalDistance = halfSize.y - abs(local.y);
+  float insideDistance = min(sideDistance, verticalDistance);
+  if (insideDistance >= 0.0) return -insideDistance;
+
+  vec2 outside = vec2(
+      max(-sideDistance, 0.0),
+      max(-verticalDistance, 0.0)
+  );
+  return length(outside);
 }
 
 vec2 liquidNormal(vec2 point) {
@@ -69,20 +90,24 @@ void main() {
 
   vec2 normal = liquidNormal(fragment);
   float bevel = max(halfSize.y * 0.44, 3.0);
-  float rim = smoothstep(-bevel, 0.0, distanceToLens);
-  float rimSquared = rim * rim;
+  float edgeProximity = 1.0 - smoothstep(
+      0.0,
+      bevel,
+      max(-distanceToLens, 0.0)
+  );
+  float inner = smoothstep(0.50, 0.88, edgeProximity);
+  float outer = 1.0 - smoothstep(0.88, 1.0, edgeProximity);
+  float refractBand = inner * outer;
+  float rim = smoothstep(0.68, 0.98, edgeProximity);
+  float centerProfile = 1.0 - smoothstep(0.40, 0.72, edgeProximity);
 
-  // 中心只做轻微放大；折射和 RGB 分离集中在外沿，避免整块 Lens
-  // 看起来像彩色故障滤镜。
-  float zoom = mix(uMagnification, 1.0, rim * 0.35);
+  // Magnification 只作用中央区域，Refraction/Chromatic 只作用边缘
+  // 内侧的 ring，避免两套位移在整块 Lens 上叠成鱼眼。
+  float zoom = mix(1.0, uMagnification, centerProfile);
   vec2 samplePixel = center + (fragment - center) / zoom;
-  samplePixel -= normal * rimSquared * uRefraction;
+  samplePixel -= normal * refractBand * uRefraction;
 
-  // 真实速度只改变光学场的偏移，不改变 pointer 与 Lens 的位置关系。
-  samplePixel.x -= uDirection * uVelocity * (1.0 - rim) * 2.5;
-  samplePixel.x -= uDirection * uEdgeCompression * (1.0 - rim) * 4.0;
-
-  vec2 chromaticOffset = normal * uChromatic * rimSquared;
+  vec2 chromaticOffset = normal * uChromatic * refractBand;
   vec3 color = vec3(
     texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
     texture(uBackdrop, textureUv(samplePixel)).g,
@@ -99,10 +124,10 @@ void main() {
   float facingShade = max(dot(normal, -lightDirection), 0.0);
   float specular = pow(facingLight, 5.0) * rim;
   color += vec3(specular * uLightStrength);
-  color -= vec3(facingShade * rim * 0.045);
+  color -= vec3(facingShade * rim * 0.045 * uLightStrength);
   color += vec3(rim * uRimStrength);
 
   // 拖动状态略微提高边缘响应，静止时保持克制。
-  color += vec3(rimSquared * uDragState * 0.018);
+  color += vec3(refractBand * uDragState * 0.018);
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

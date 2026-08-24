@@ -4,6 +4,8 @@ import '../models/topic.dart';
 import '../screens/search_results_screen.dart';
 import '../theme/app_colors.dart';
 
+const _ignoredTopicNames = {'其他', '其它', '默认', '未分类', '综合'};
+
 /// 帖子正文后的话题展示。空列表不占位，首页默认只展示前三个。
 class PostTopicChips extends StatelessWidget {
   final List<Topic> topics;
@@ -18,7 +20,11 @@ class PostTopicChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (topics.isEmpty) return const SizedBox.shrink();
-    final visible = topics.take(maxTopics).toList(growable: false);
+    final visible = topics
+        .where((topic) => !_ignoredTopicNames.contains(topic.name.trim()))
+        .take(maxTopics)
+        .toList(growable: false);
+    if (visible.isEmpty) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = isDark ? AppColors.textSecondaryDark : AppColors.brandPrimary;
     return Wrap(

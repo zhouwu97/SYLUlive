@@ -23,6 +23,12 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
+
+bool _isMeaningfulLegacyTopicLabel(String label) =>
+    label.trim().isNotEmpty &&
+    !_ignoredLegacyTopicLabels.contains(label.trim());
+
 enum PostCardVariant { standard, homeFeed }
 
 class PostCard extends StatefulWidget {
@@ -366,7 +372,7 @@ class _PostCardState extends State<PostCard>
     final secondary =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final contentMaxLines = validImageCount == 0 ? 3 : 2;
-    final hasUsefulTag = labels.tagLabel.isNotEmpty && labels.tagLabel != '其他';
+    final hasUsefulTag = _isMeaningfulLegacyTopicLabel(labels.tagLabel);
 
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
@@ -702,7 +708,10 @@ class _PostCardState extends State<PostCard>
 
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {
     final labels = _waterLabels(context, post);
-    final legacyTag = post.topics.isEmpty ? labels.tagLabel : '';
+    final legacyTag =
+        post.topics.isEmpty && _isMeaningfulLegacyTopicLabel(labels.tagLabel)
+            ? labels.tagLabel
+            : '';
     final text = labels.sectionLabel.isNotEmpty && legacyTag.isNotEmpty
         ? '${labels.sectionLabel} · $legacyTag'
         : labels.sectionLabel;
@@ -733,7 +742,9 @@ class _PostCardState extends State<PostCard>
   Widget _buildWaterInlineTag(BuildContext context, bool isDark, Post post) {
     if (post.topics.isNotEmpty) return const SizedBox.shrink();
     final tagLabel = _waterLabels(context, post).tagLabel;
-    if (tagLabel.isEmpty) return const SizedBox.shrink();
+    if (!_isMeaningfulLegacyTopicLabel(tagLabel)) {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(

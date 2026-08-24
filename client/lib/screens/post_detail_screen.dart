@@ -40,6 +40,8 @@ import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
 
+const _ignoredLegacyWaterTagNames = {'其他', '其它', '默认', '未分类', '综合'};
+
 class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
@@ -2751,7 +2753,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   WaterSectionTag? _findWaterTag(WaterSection? section, int? tagId) {
     if (section == null || tagId == null || tagId <= 0) return null;
     for (final tag in section.tags) {
-      if (tag.id == tagId) return tag;
+      if (tag.id == tagId &&
+          !_ignoredLegacyWaterTagNames.contains(tag.name.trim())) {
+        return tag;
+      }
     }
     return null;
   }

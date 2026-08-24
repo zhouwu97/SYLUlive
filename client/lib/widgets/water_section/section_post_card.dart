@@ -16,6 +16,8 @@ import '../cached_avatar.dart';
 import '../post_media/post_media_view.dart';
 import '../topic_chips.dart';
 
+const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
+
 /// 版块 Feed 帖子卡片。
 ///
 /// 展示层级、图片、Topic 和互动栏与首页 Feed 保持一致，只额外保留本版等级信息。
@@ -49,7 +51,10 @@ class SectionPostCard extends StatelessWidget {
     final validImages = post.images
         .where((image) => image.resolvedOriginUrl.trim().isNotEmpty)
         .toList(growable: false);
-    final legacyTag = _findTagName(post.waterTagId);
+    final rawLegacyTag = _findTagName(post.waterTagId);
+    final legacyTag = _ignoredLegacyTopicLabels.contains(rawLegacyTag.trim())
+        ? ''
+        : rawLegacyTag;
     final secondary =
         dark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final surface =

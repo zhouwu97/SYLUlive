@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +19,19 @@ AiCapabilities _p0Capabilities() {
     chatEnabled: false,
     phase: 'p0',
     features: AiFeatures(policyRag: false, scheduleWindows: false),
+    quota: AiQuota(limit: 3, remaining: 3, windowSeconds: 3600),
+    maxMessageChars: 20,
+  );
+}
+
+AiCapabilities _availableCapabilities() {
+  return const AiCapabilities(
+    enabled: true,
+    accessAllowed: true,
+    internalTestOnly: false,
+    chatEnabled: true,
+    phase: 'p2',
+    features: AiFeatures(policyRag: true, scheduleWindows: false),
     quota: AiQuota(limit: 3, remaining: 3, windowSeconds: 3600),
     maxMessageChars: 20,
   );
@@ -153,6 +168,216 @@ void main() {
       const ['/ai/capabilities', '/ai/conversations'],
     );
     expect(provider.error, isNull);
+  });
+
+  test('账号 A 的会话列表迟到时不覆盖账号 B 的状态', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final firstListStarted = Completer<void>();
+    final secondListStarted = Completer<void>();
+    final firstListGate = Completer<void>();
+    final secondListGate = Completer<void>();
+    var listIndex = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/ai/capabilities') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'enabled': true,
+                  'access_allowed': true,
+                  'chat_enabled': true,
+                  'phase': 'p2',
+                  'features': {'policy_rag': true},
+                  'quota': {
+                    'limit': 3,
+                    'remaining': 3,
+                    'window_seconds': 3600,
+                  },
+                  'max_message_chars': 20,
+                },
+              ),
+            );
+            return;
+          }
+          if (options.path != '/ai/conversations') {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                message: 'unexpected ${options.path}',
+              ),
+            );
+            return;
+          }
+          final index = ++listIndex;
+          final gate = index == 1 ? firstListGate : secondListGate;
+          if (index == 1) {
+            firstListStarted.complete();
+          } else {
+            secondListStarted.complete();
+          }
+          gate.future.then((_) {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'conversations': [
+                    {
+                      'id': index == 1 ? 'account-a' : 'account-b',
+                      'title': index == 1 ? 'A 的会话' : 'B 的会话',
+                    },
+                  ],
+                },
+              ),
+            );
+          });
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    final staleBootstrap = provider.retryBootstrap();
+    await firstListStarted.future;
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    final currentBootstrap = provider.retryBootstrap();
+    await secondListStarted.future;
+    firstListGate.complete();
+    await staleBootstrap;
+
+    expect(provider.loading, isTrue);
+    expect(provider.loadingConversations, isTrue);
+    expect(provider.conversations, isEmpty);
+    expect(provider.error, isNull);
+
+    secondListGate.complete();
+    await currentBootstrap;
+
+    expect(provider.loading, isFalse);
+    expect(provider.loadingConversations, isFalse);
+    expect(provider.conversations.single.id, 'account-b');
+    expect(provider.error, isNull);
+  });
+
+  test('账号 A 的会话详情错误不会写入账号 B', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final requestStarted = Completer<void>();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestStarted.complete();
+          responseGate.future.then((_) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: 'account A offline',
+              ),
+            );
+          });
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    final staleOpen = provider.openConversation('account-a-conversation');
+    await requestStarted.future;
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    responseGate.complete();
+    await staleOpen;
+
+    expect(provider.loading, isFalse);
+    expect(provider.conversationId, isNull);
+    expect(provider.messages, isEmpty);
+    expect(provider.conversations, isEmpty);
+    expect(provider.error, isNull);
+  });
+
+  test('账号切换会主动取消服务器 Agent SSE 并清空 Run', () async {
+    final events = StreamController<Uint8List>();
+    addTearDown(events.close);
+    final eventRequestStarted = Completer<void>();
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/ai/runs') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 202,
+                data: const {
+                  'run': {
+                    'id': 'run-a',
+                    'conversation_id': 'conversation-a',
+                    'state': 'created',
+                  },
+                  'duplicate': false,
+                },
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/ai/runs/run-a/events') {
+            eventRequestStarted.complete();
+            handler.resolve(
+              Response<ResponseBody>(
+                requestOptions: options,
+                statusCode: 200,
+                data: ResponseBody(events.stream, 200),
+              ),
+            );
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'unexpected ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    expect(provider.submit('奖学金'), AiSubmitResult.accepted);
+    await eventRequestStarted.future;
+    for (var index = 0; index < 10 && !events.hasListener; index++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(events.hasListener, isTrue);
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    for (var index = 0; index < 100 && events.hasListener; index++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(events.hasListener, isFalse);
+    expect(provider.messages, isEmpty);
+    expect(provider.conversationId, isNull);
+    expect(provider.currentRun, isNull);
+    expect(provider.connectionState, AiConnectionState.idle);
   });
 
   test('换行归一为空格并按 grapheme cluster 计数', () {

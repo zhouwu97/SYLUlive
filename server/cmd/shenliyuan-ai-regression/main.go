@@ -79,12 +79,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if *jsonOutput {
+			deterministicCases := deterministicSummary.Cases
+			scenarioCases := scenarioSummary.Cases
+			gate := map[string]int{
+				"deterministic_cases":  deterministicCases,
+				"deterministic_passed": deterministicSummary.Passed,
+				"scenario_cases":       scenarioCases,
+				"scenario_passed":      scenarioSummary.Passed,
+				"total_cases":          deterministicCases + scenarioCases,
+				"total_passed":         deterministicSummary.Passed + scenarioSummary.Passed,
+			}
 			payload := struct {
-				Deterministic interface{} `json:"deterministic"`
-				Scenario      interface{} `json:"scenario"`
+				Deterministic interface{}    `json:"deterministic"`
+				Scenario      interface{}    `json:"scenario"`
+				Gate          map[string]int `json:"gate"`
 			}{
 				Deterministic: map[string]interface{}{"summary": deterministicSummary, "baseline": deterministicBaseline, "violations": deterministicViolations},
 				Scenario:      map[string]interface{}{"summary": scenarioSummary, "baseline": scenarioBaseline, "violations": scenarioViolations},
+				Gate:          gate,
 			}
 			encoder := json.NewEncoder(stdout)
 			encoder.SetEscapeHTML(false)
@@ -97,6 +109,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, eval.FormatSummary(deterministicSummary))
 			fmt.Fprint(stdout, "\n--- Scenario ---\n\n")
 			fmt.Fprintln(stdout, scenario.FormatSummary(scenarioSummary))
+			fmt.Fprintf(stdout, "\nRegression Gate: deterministic=%d/%d scenario=%d/%d total=%d/%d\n",
+				deterministicSummary.Passed, deterministicSummary.Cases,
+				scenarioSummary.Passed, scenarioSummary.Cases,
+				deterministicSummary.Passed+scenarioSummary.Passed,
+				deterministicSummary.Cases+scenarioSummary.Cases)
 		}
 		return boolExit(len(deterministicSummary.Failures) == 0 && len(deterministicViolations) == 0 && len(scenarioSummary.Failures) == 0 && len(scenarioViolations) == 0)
 	default:

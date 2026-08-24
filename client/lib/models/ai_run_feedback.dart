@@ -32,6 +32,16 @@ extension AiFeedbackReasonWire on AiFeedbackReason {
         AiFeedbackReason.privacyBoundary => '不该访问这些信息',
         AiFeedbackReason.other => '其他',
       };
+
+  String get failureReasonValue => switch (this) {
+        AiFeedbackReason.irrelevant => 'answer_wrong',
+        AiFeedbackReason.misunderstood => 'clarification_wrong',
+        AiFeedbackReason.wrongData => 'capability_wrong',
+        AiFeedbackReason.tooSlow => 'latency_too_high',
+        AiFeedbackReason.actionFailed => 'action_wrong',
+        AiFeedbackReason.privacyBoundary => 'privacy_boundary',
+        AiFeedbackReason.other => 'other',
+      };
 }
 
 class AiRunFeedback {

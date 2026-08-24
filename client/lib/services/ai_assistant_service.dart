@@ -258,9 +258,8 @@ class AiAssistantService {
           ? 'answer.useful'
           : null,
       'failure_reason': feedback.rating == AiFeedbackRating.negative
-          ? (feedback.reason ?? AiFeedbackReason.other).wireValue
+          ? (feedback.reason ?? AiFeedbackReason.other).failureReasonValue
           : null,
-      if (feedback.reason != null) 'reason': feedback.reason!.wireValue,
       if (feedback.note.trim().isNotEmpty) 'note': feedback.note.trim(),
     }..removeWhere((_, value) => value == null);
     late Response<dynamic> response;

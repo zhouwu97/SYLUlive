@@ -978,6 +978,8 @@ func main() {
 				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
 				UnifiedAgentEnabled:            cfg.AIAgentEnabled,
 				FeatureFlagsConfigured:         true,
+				ShadowTraceRetention:           time.Duration(cfg.AIShadowTraceRetentionDays) * 24 * time.Hour,
+				FailureTraceRetention:          time.Duration(cfg.AIFailureTraceRetentionDays) * 24 * time.Hour,
 				FeatureFlags: ai.AgentFeatureFlags{
 					Enabled:             cfg.AIAgentEnabled,
 					RolloutPercent:      cfg.AIAgentRolloutPercent,
@@ -2208,6 +2210,15 @@ func main() {
 	adminAI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	adminAI.GET("/metrics", adminAIHandler.GetMetrics)
 	adminAI.GET("/gray-dashboard", adminAIHandler.GetGrayDashboard)
+	adminAI.GET("/regression-candidates", adminAIHandler.ListRegressionCandidates)
+	adminAI.POST("/regression-candidates/:run_id/review", func(c *gin.Context) {
+		if aiRuntime == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "ai_runtime_unavailable"})
+			return
+		}
+		c.Set("ai_runtime", aiRuntime)
+		adminAIHandler.ReviewRegressionCandidate(c)
+	})
 
 	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")

@@ -2,72 +2,61 @@
 
 #include <flutter/runtime_effect.glsl>
 
-// V8 shader port of AndroidLiquidGlass BottomTabs.
-//
-// 光学模型刻意保持克制：Capsule 中央直接返回原图，只有靠近边缘的一圈
-// 使用 Rounded-Rect SDF 法线做折射；色散沿同一折射方向错开采样。
+// Reference-Parity port of Kyant0/AndroidLiquidGlass RoundedRectRefraction.
+// refractionHeight and refractionAmount are supplied in logical pixels; the
+// center of the Capsule remains untouched.
 uniform vec2 uSize;
 uniform vec2 uLensCenter;
 uniform vec2 uLensHalfSize;
-uniform float uLensExponent; // 旧 uniform，保留布局兼容；V8 不再使用。
+uniform float uLensExponent; // legacy slot; Capsule geometry is fixed.
 uniform float uRefraction;
-uniform float uMagnification; // 旧 uniform；中心 magnification 已移除。
+uniform float uMagnification; // legacy slot; center magnification is removed.
 uniform float uChromatic;
-uniform float uVelocity;
-uniform float uDirection;
-uniform float uEdgeCompression;
-uniform float uDragState;
-uniform vec4 uTint;
-uniform float uLightStrength;
-uniform float uRimStrength;
-uniform float uVerticalRefractionScale;
-uniform float uRefractionBandStart;
-uniform float uRefractionBandPeak;
-uniform float uRefractionBandEnd;
-uniform float uMagnificationRadius;
-uniform float uChromaticStart;
-uniform float uFlowStrength;
+uniform float uVelocity; // legacy slot; velocity shape is applied by Flutter.
+uniform float uDirection; // legacy slot; velocity shape is applied by Flutter.
+uniform float uEdgeCompression; // legacy slot; geometry remains Capsule.
+uniform float uDragState; // legacy slot; no decorative color overlay.
+uniform vec4 uTint; // legacy slot; no tint overlay.
+uniform float uLightStrength; // legacy slot; highlight is a separate layer.
+uniform float uRimStrength; // legacy slot; highlight is a separate layer.
+uniform float uVerticalRefractionScale; // legacy slot; gradient stays isotropic.
+uniform float uRefractionBandStart; // legacy slot.
+uniform float uRefractionBandPeak; // explicit refractionHeight in pixels.
+uniform float uRefractionBandEnd; // legacy slot.
+uniform float uMagnificationRadius; // legacy slot.
+uniform float uChromaticStart; // legacy slot.
+uniform float uFlowStrength; // legacy slot; no flow/tail geometry.
 uniform float uActivation;
-uniform float uPressDepth;
+uniform float uPressDepth; // legacy slot; depthEffect is zero for parity.
 uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
 
-struct CapsuleState {
-  float signedDistance;
-  vec2 normal;
-};
-
-// iq rounded-box SDF。Capsule 是 radius = halfHeight 的特例。
-float roundedRectSdf(vec2 point, vec2 halfSize, float radius) {
-  vec2 q = abs(point) - (halfSize - vec2(radius));
-  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+float sdRoundedRect(vec2 coord, vec2 halfSize, float radius) {
+  vec2 cornerCoord = abs(coord) - (halfSize - vec2(radius));
+  float outside = length(max(cornerCoord, 0.0)) - radius;
+  float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);
+  return outside + inside;
 }
 
-vec2 roundedRectNormal(vec2 point, vec2 halfSize, float radius) {
-  vec2 q = abs(point) - (halfSize - vec2(radius));
-  vec2 outside = max(q, 0.0);
-  float outsideLength = length(outside);
-  vec2 signPoint = vec2(
-      point.x < 0.0 ? -1.0 : 1.0,
-      point.y < 0.0 ? -1.0 : 1.0
-  );
-
-  if (outsideLength > 0.0001) {
-    return normalize(outside) * signPoint;
+vec2 gradSdRoundedRect(vec2 coord, vec2 halfSize, float radius) {
+  vec2 cornerCoord = abs(coord) - (halfSize - vec2(radius));
+  vec2 signCoord = sign(coord);
+  if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
+    vec2 outside = max(cornerCoord, 0.0);
+    float outsideLength = length(outside);
+    if (outsideLength > 0.0001) {
+      return signCoord * (outside / outsideLength);
+    }
   }
 
-  // Capsule 中心段的法线只在 edge band 内才会被使用；选最近侧即可。
-  if (q.x > q.y) return vec2(signPoint.x, 0.0);
-  return vec2(0.0, signPoint.y);
+  float gradX = step(cornerCoord.y, cornerCoord.x);
+  return signCoord * vec2(gradX, 1.0 - gradX);
 }
 
-CapsuleState capsuleState(vec2 fragment) {
-  vec2 local = fragment - uLensCenter;
-  float radius = min(uLensHalfSize.y, uLensHalfSize.x);
-  float signedDistance = roundedRectSdf(local, uLensHalfSize, radius);
-  vec2 normal = roundedRectNormal(local, uLensHalfSize, radius);
-  return CapsuleState(signedDistance, normal);
+float circleMap(float x) {
+  float clamped = clamp(x, 0.0, 1.0);
+  return 1.0 - sqrt(max(0.0, 1.0 - clamped * clamped));
 }
 
 vec2 textureUv(vec2 pixel) {
@@ -79,68 +68,89 @@ vec2 textureUv(vec2 pixel) {
 }
 
 void main() {
-  vec2 fragment = FlutterFragCoord().xy;
-  vec4 original = texture(uBackdrop, textureUv(fragment));
+  vec2 coord = FlutterFragCoord().xy;
+  vec4 original = texture(uBackdrop, textureUv(coord));
   float activation = clamp(uActivation, 0.0, 1.0);
+  float refractionHeight = max(uRefractionBandPeak, 0.0001);
 
-  if (activation <= 0.0001) {
+  if (activation <= 0.0001 || refractionHeight <= 0.0001) {
     fragColor = original;
     return;
   }
 
-  CapsuleState state = capsuleState(fragment);
-  float aa = max(fwidth(state.signedDistance), 0.0005);
-  float capsuleMask = 1.0 - smoothstep(
-      0.0,
-      aa,
-      state.signedDistance
+  vec2 halfSize = uLensHalfSize;
+  vec2 centeredCoord = coord - uLensCenter;
+  float radius = min(halfSize.x, halfSize.y);
+  float sd = sdRoundedRect(centeredCoord, halfSize, radius);
+
+  // Match the reference band contract: deeper than the explicit height
+  // returns the untouched backdrop.
+  if (-sd >= refractionHeight) {
+    fragColor = original;
+    return;
+  }
+
+  sd = min(sd, 0.0);
+  float d = circleMap(1.0 - (-sd / refractionHeight)) * uRefraction;
+  float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+  vec2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius));
+  vec2 refractedCoord = coord + d * grad;
+
+  // Kyant's seven-channel chromatic aberration. With chromatic == 0 all
+  // seven coordinates collapse to the same sample, preserving base color.
+  float dispersionIntensity = uChromatic * (
+      (centeredCoord.x * centeredCoord.y) /
+      max(halfSize.x * halfSize.y, 0.0001)
   );
+  vec2 dispersedCoord = d * grad * dispersionIntensity;
+  vec4 color = vec4(0.0);
 
-  // 10dp 左右的 edge band 随 pressProgress 生长；中心区域不做采样位移。
-  float edgeBand = max(
-      0.5,
-      uLensHalfSize.y * uRefractionBandPeak * 0.45 * activation
+  vec4 red = texture(uBackdrop, textureUv(refractedCoord + dispersedCoord));
+  color.r += red.r / 3.5;
+  color.a += red.a / 7.0;
+
+  vec4 orange = texture(
+      uBackdrop,
+      textureUv(refractedCoord + dispersedCoord * (2.0 / 3.0))
   );
-  float edgeMask = (1.0 - smoothstep(
-      0.0,
-      edgeBand,
-      max(-state.signedDistance, 0.0)
-  )) * capsuleMask;
+  color.r += orange.r / 3.5;
+  color.g += orange.g / 7.0;
+  color.a += orange.a / 7.0;
 
-  vec2 opticalNormal = normalize(vec2(
-      state.normal.x,
-      state.normal.y * max(uVerticalRefractionScale, 0.08)
-  ));
-  float refraction = uRefraction * activation;
-  float chromatic = uChromatic * activation;
-  vec2 samplePixel = fragment - opticalNormal * refraction * edgeMask;
-  vec2 chromaticOffset = opticalNormal * chromatic * edgeMask;
-
-  // 色散是同一折射方向上的多通道错位，不额外绘制彩虹边框。
-  vec3 refracted = vec3(
-      texture(uBackdrop, textureUv(samplePixel - chromaticOffset)).r,
-      texture(uBackdrop, textureUv(samplePixel)).g,
-      texture(uBackdrop, textureUv(samplePixel + chromaticOffset)).b
+  vec4 yellow = texture(
+      uBackdrop,
+      textureUv(refractedCoord + dispersedCoord * (1.0 / 3.0))
   );
-  vec3 color = mix(original.rgb, refracted, edgeMask);
+  color.r += yellow.r / 3.5;
+  color.g += yellow.g / 3.5;
+  color.a += yellow.a / 7.0;
 
-  float lightStrength = uLightStrength * activation;
-  float rimStrength = uRimStrength * activation;
-  float facing = max(dot(opticalNormal, normalize(vec2(-0.72, -0.70))), 0.0);
-  float specular = pow(facing, 4.0) * edgeMask;
-  color += vec3(specular * lightStrength * 1.10);
+  vec4 green = texture(uBackdrop, textureUv(refractedCoord));
+  color.g += green.g / 3.5;
+  color.a += green.a / 7.0;
 
-  vec3 dispersionTint = mix(
-      vec3(0.54, 0.76, 1.0),
-      vec3(1.0, 0.70, 0.36),
-      clamp(opticalNormal.x * 0.5 + 0.5, 0.0, 1.0)
+  vec4 cyan = texture(
+      uBackdrop,
+      textureUv(refractedCoord - dispersedCoord * (1.0 / 3.0))
   );
-  color += dispersionTint * rimStrength * edgeMask * 0.78;
-  color += dispersionTint * uDragState * 0.018 * edgeMask * activation;
+  color.g += cyan.g / 3.5;
+  color.b += cyan.b / 3.0;
+  color.a += cyan.a / 7.0;
 
-  // 保留很轻的按压质量感，不用白色覆盖伪造玻璃。
-  color += vec3(0.035, 0.018, -0.004) * uPressDepth * edgeMask;
-  color = mix(color, uTint.rgb, uTint.a * edgeMask);
+  vec4 blue = texture(
+      uBackdrop,
+      textureUv(refractedCoord - dispersedCoord * (2.0 / 3.0))
+  );
+  color.b += blue.b / 3.0;
+  color.a += blue.a / 7.0;
 
-  fragColor = vec4(clamp(color, 0.0, 1.0), original.a);
+  vec4 purple = texture(
+      uBackdrop,
+      textureUv(refractedCoord - dispersedCoord)
+  );
+  color.r += purple.r / 7.0;
+  color.b += purple.b / 3.0;
+  color.a += purple.a / 7.0;
+
+  fragColor = color;
 }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -5,7 +6,7 @@ import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
-  test('V8 tuning keeps optical samples inside the overscan budget', () {
+  test('V9 tuning keeps optical samples inside the overscan budget', () {
     const tuning = LiquidGlassTuning();
     const lensWidth = 104.0;
     const lensHeight = 62.0;
@@ -20,7 +21,7 @@ void main() {
     );
   });
 
-  test('V8 shader uniform layout is stable and named', () {
+  test('V9 shader uniform layout is stable and named', () {
     const uniforms = LiquidGlassShaderUniforms(
       captureSize: Size(160, 94),
       lensCenter: Offset(80, 47),
@@ -37,7 +38,7 @@ void main() {
       rimStrength: 0.1,
       verticalRefractionScale: 0.32,
       refractionBandStart: 0.6,
-      refractionBandPeak: 0.8,
+      refractionBandPeak: 10.0,
       refractionBandEnd: 0.92,
       magnificationRadius: 0.66,
       chromaticStart: 0.84,
@@ -63,7 +64,28 @@ void main() {
     );
   });
 
-  test('V8 QA modes isolate edge refraction, chromatic and Fresnel', () {
+  test('V9 shader keeps the reference edge model and seven samples', () {
+    final source = File('shaders/liquid_nav_lens.frag').readAsStringSync();
+
+    expect(source, contains('float circleMap(float x)'));
+    expect(source, contains('float gradRadius = min(radius * 1.5'));
+    expect(source, contains('uRefractionBandPeak'));
+    for (final channel in const [
+      'vec4 red',
+      'vec4 orange',
+      'vec4 yellow',
+      'vec4 green',
+      'vec4 cyan',
+      'vec4 blue',
+      'vec4 purple',
+    ]) {
+      expect(source, contains(channel));
+    }
+    expect(source, isNot(contains('smoothstep')));
+    expect(source, isNot(contains('dispersionTint')));
+  });
+
+  test('V9 QA modes isolate edge refraction, chromatic and Fresnel', () {
     const core = LiquidGlassTuning(
       mode: LiquidGlassQaMode.coreOnly,
     );
@@ -90,7 +112,7 @@ void main() {
     expect(fresnel.effectiveRimStrength, greaterThan(0));
   });
 
-  test('V8 Capsule geometry stays bounded and mirrored', () {
+  test('V9 Capsule geometry stays bounded and mirrored', () {
     const size = Size(108, 62);
     final right = LiquidLensShape.pathForSize(
       size,
@@ -114,7 +136,8 @@ void main() {
     expect(right.computeMetrics().length, greaterThan(0));
   });
 
-  test('V8 color field migrates continuously across adjacent tabs', () {
+  test('V9 selection window helper remains continuous across adjacent tabs',
+      () {
     expect(
       liquidNavFocusWeight(
         currentIndex: 0,
@@ -153,15 +176,18 @@ void main() {
     );
   });
 
-  test('V8 reference parameters keep mass, edge refraction and dock haze', () {
+  test('V9 reference parameters keep explicit edge and Dock glass values', () {
     const tuning = LiquidGlassTuning();
 
     expect(tuning.lensHeight, 56);
     expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
+    expect(tuning.refractionHeight, 10);
     expect(tuning.refraction, 14);
     expect(tuning.chromatic, 1);
     expect(tuning.effectiveMagnification, 1);
     expect(tuning.dockAlpha, 0.40);
     expect(tuning.dockBlur, 8.0);
+    expect(tuning.dockLensHeight, 24.0);
+    expect(tuning.dockLensAmount, 24.0);
   });
 }

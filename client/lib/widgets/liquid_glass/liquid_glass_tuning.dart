@@ -38,6 +38,7 @@ class LiquidGlassTuning {
     this.pressedScale = 78.0 / 56.0,
     this.overscanX = 18.0,
     this.overscanY = 16.0,
+    this.refractionHeight = 10.0,
     this.refraction = 14.0,
     this.verticalRefractionScale = 1.0,
     this.refractionBandStart = 0.60,
@@ -54,6 +55,8 @@ class LiquidGlassTuning {
     this.flowStrength = 0.72,
     this.dockAlpha = 0.40,
     this.dockBlur = 8.0,
+    this.dockLensHeight = 24.0,
+    this.dockLensAmount = 24.0,
     this.mode = LiquidGlassQaMode.finalGlass,
     this.colorPreset = LiquidNavColorPreset.sylulive,
     this.showCaptureBounds = false,
@@ -83,6 +86,8 @@ class LiquidGlassTuning {
   final double overscanX;
   final double overscanY;
 
+  /// Explicit AGSL `refractionHeight`; it is not derived from Capsule height.
+  final double refractionHeight;
   final double refraction;
   final double verticalRefractionScale;
   final double refractionBandStart;
@@ -102,6 +107,8 @@ class LiquidGlassTuning {
 
   final double dockAlpha;
   final double dockBlur;
+  final double dockLensHeight;
+  final double dockLensAmount;
   final LiquidGlassQaMode mode;
   final LiquidNavColorPreset colorPreset;
   final bool showCaptureBounds;
@@ -130,6 +137,20 @@ class LiquidGlassTuning {
       case LiquidGlassQaMode.finalGlass:
       case LiquidGlassQaMode.refractionOnly:
         return refraction;
+      case LiquidGlassQaMode.identity:
+      case LiquidGlassQaMode.coreOnly:
+      case LiquidGlassQaMode.chromaticOnly:
+      case LiquidGlassQaMode.fresnelOnly:
+      case LiquidGlassQaMode.shapeOnly:
+        return 0;
+    }
+  }
+
+  double get effectiveRefractionHeight {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+      case LiquidGlassQaMode.refractionOnly:
+        return refractionHeight;
       case LiquidGlassQaMode.identity:
       case LiquidGlassQaMode.coreOnly:
       case LiquidGlassQaMode.chromaticOnly:
@@ -222,6 +243,7 @@ class LiquidGlassTuning {
     double? pressedScale,
     double? overscanX,
     double? overscanY,
+    double? refractionHeight,
     double? refraction,
     double? verticalRefractionScale,
     double? refractionBandStart,
@@ -237,6 +259,8 @@ class LiquidGlassTuning {
     double? flowStrength,
     double? dockAlpha,
     double? dockBlur,
+    double? dockLensHeight,
+    double? dockLensAmount,
     LiquidGlassQaMode? mode,
     LiquidNavColorPreset? colorPreset,
     bool? showCaptureBounds,
@@ -248,6 +272,7 @@ class LiquidGlassTuning {
       pressedScale: pressedScale ?? this.pressedScale,
       overscanX: overscanX ?? this.overscanX,
       overscanY: overscanY ?? this.overscanY,
+      refractionHeight: refractionHeight ?? this.refractionHeight,
       refraction: refraction ?? this.refraction,
       verticalRefractionScale:
           verticalRefractionScale ?? this.verticalRefractionScale,
@@ -265,6 +290,8 @@ class LiquidGlassTuning {
       flowStrength: flowStrength ?? this.flowStrength,
       dockAlpha: dockAlpha ?? this.dockAlpha,
       dockBlur: dockBlur ?? this.dockBlur,
+      dockLensHeight: dockLensHeight ?? this.dockLensHeight,
+      dockLensAmount: dockLensAmount ?? this.dockLensAmount,
       mode: mode ?? this.mode,
       colorPreset: colorPreset ?? this.colorPreset,
       showCaptureBounds: showCaptureBounds ?? this.showCaptureBounds,

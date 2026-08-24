@@ -8,12 +8,25 @@ import 'liquid_glass_runtime.dart';
 
 enum LiquidGlassQaPattern { horizontal, vertical, checker, text }
 
+/// Gate 1–8 的固定对照入口。它复用同一套 QA 状态机，但把参考基线、
+/// SYLUlive 当前参数和 optical debug 放在同一屏，避免直接拿业务 Feed 猜材质。
+class LiquidGlassReferenceParityScreen extends StatelessWidget {
+  const LiquidGlassReferenceParityScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const LiquidGlassQaScreen(referenceParity: true);
+  }
+}
+
 /// 仅 Debug/Profile 开发包使用的 Liquid Glass 视觉 QA 页面。
 ///
 /// 页面不改变业务导航，只把纹理背景和光学参数暴露出来，便于在真实
 /// 模拟器/设备上先记录 Tier，再比较轮廓、折射和 Dock haze。
 class LiquidGlassQaScreen extends StatefulWidget {
-  const LiquidGlassQaScreen({super.key});
+  const LiquidGlassQaScreen({super.key, this.referenceParity = false});
+
+  final bool referenceParity;
 
   @override
   State<LiquidGlassQaScreen> createState() => _LiquidGlassQaScreenState();
@@ -49,7 +62,13 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
 
     final authProvider = context.read<AuthProvider>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Liquid Glass QA')),
+      appBar: AppBar(
+        title: Text(
+          widget.referenceParity
+              ? 'Liquid Glass Reference Parity'
+              : 'Liquid Glass QA',
+        ),
+      ),
       extendBody: true,
       body: Stack(
         fit: StackFit.expand,
@@ -90,6 +109,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.referenceParity) _buildReferenceContract(),
             const Text(
               '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是 Capsule 可见曲面。',
               style: TextStyle(color: Colors.white),
@@ -119,7 +139,10 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            const Text('Mode', style: TextStyle(color: Colors.white70)),
+            const Text(
+              'C. Optical Debug / Mode',
+              style: TextStyle(color: Colors.white70),
+            ),
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
@@ -240,6 +263,15 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
+              label: 'Refraction height',
+              value: _tuning.refractionHeight,
+              min: 0,
+              max: 24,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(refractionHeight: value),
+              ),
+            ),
+            _buildSlider(
               label: 'Pressed scale',
               value: _tuning.pressedScale,
               min: 1,
@@ -354,6 +386,41 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
     );
   }
 
+  Widget _buildReferenceContract() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'A. Kyant Params（冻结基线）',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+          const Text(
+            'Dock 64 / blur 8 / lens 24×24 / surface .40\n'
+            'Selection 56 / idle .10 → pressed .03 / scale 78÷56\n'
+            'Tab content 1.20× / selection lens 10×14 / chromatic on / inner 8',
+            style: TextStyle(color: Colors.white70, height: 1.35),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'B. SYLUlive Params',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            'accent ${_tuning.focusColorFor(false).toARGB32().toRadixString(16)} · '
+            'selection ${_tuning.refractionHeight.toStringAsFixed(0)}×'
+            '${_tuning.refraction.toStringAsFixed(0)} · '
+            'Dock ${_tuning.dockLensHeight.toStringAsFixed(0)}×'
+            '${_tuning.dockLensAmount.toStringAsFixed(0)}',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
   Widget _buildQaChip(String label, bool selected, VoidCallback onTap) {
     return ChoiceChip(
       label: Text(label),
@@ -364,6 +431,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
 
   bool _isPreset(LiquidGlassTuning preset) {
     return _tuning.pressedScale == preset.pressedScale &&
+        _tuning.refractionHeight == preset.refractionHeight &&
         _tuning.refraction == preset.refraction &&
         _tuning.chromatic == preset.chromatic &&
         _tuning.colorPreset == preset.colorPreset;

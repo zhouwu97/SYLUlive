@@ -402,7 +402,12 @@ class _PostCardState extends State<PostCard>
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(AppRadius.md),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, AppSpacing.xs),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              0,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -416,7 +421,7 @@ class _PostCardState extends State<PostCard>
                   secondary: secondary,
                 ),
                 if (post.title.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.xs),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -455,7 +460,9 @@ class _PostCardState extends State<PostCard>
                   ),
                 ],
                 if (post.content.trim().isNotEmpty) ...[
-                  SizedBox(height: post.title.isEmpty ? 0 : 6),
+                  SizedBox(
+                    height: post.title.isEmpty ? 0 : AppSpacing.xs,
+                  ),
                   PostContentLinkText(
                     text: post.content,
                     maxLines: contentMaxLines,
@@ -483,14 +490,14 @@ class _PostCardState extends State<PostCard>
                   PostTopicChips(topics: post.topics),
                 ],
                 if (validImageCount > 0) ...[
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.xs),
                   PostMediaView(
                     images: post.images,
                     variant: PostMediaVariant.homeFeed,
                     onTap: widget.onTap,
                   ),
                 ],
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.xs),
                 _buildHomeBottomMeta(context, post: post, secondary: secondary),
               ],
             ),

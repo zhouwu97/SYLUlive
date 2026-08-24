@@ -45,3 +45,46 @@ func EnsureIdempotencySchema(db *gorm.DB) error {
 	}
 	return db.AutoMigrate(&IdempotencyRecord{})
 }
+
+// CleanupExpiredIdempotencyRecords 回收已过期的响应缓存，并把已超时的占位记录
+// 标记为 failed。processing 记录不会直接删除，避免业务请求仍在执行时释放唯一键，
+// 让重试重新进入业务副作用。
+func CleanupExpiredIdempotencyRecords(db *gorm.DB, now time.Time, batchSize int) (int64, error) {
+	if db == nil {
+		return 0, errors.New("idempotency cleanup requires database")
+	}
+	if batchSize <= 0 {
+		batchSize = 500
+	}
+
+	var expiredProcessingIDs []uint
+	if err := db.Model(&IdempotencyRecord{}).
+		Where("state = ? AND expires_at <= ?", IdempotencyStateProcessing, now).
+		Pluck("id", &expiredProcessingIDs).Error; err != nil {
+		return 0, err
+	}
+	if len(expiredProcessingIDs) > 0 {
+		if err := db.Model(&IdempotencyRecord{}).
+			Where("id IN ? AND state = ?", expiredProcessingIDs, IdempotencyStateProcessing).
+			Update("state", IdempotencyStateFailed).Error; err != nil {
+			return 0, err
+		}
+	}
+
+	query := db.Model(&IdempotencyRecord{}).
+		Where("state <> ? AND expires_at <= ?", IdempotencyStateProcessing, now).
+		Order("id ASC").
+		Limit(batchSize)
+	if len(expiredProcessingIDs) > 0 {
+		query = query.Where("id NOT IN ?", expiredProcessingIDs)
+	}
+	var ids []uint
+	if err := query.Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.Where("id IN ?", ids).Delete(&IdempotencyRecord{})
+	return result.RowsAffected, result.Error
+}

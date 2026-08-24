@@ -258,7 +258,9 @@ Future<void> appBootstrap() async {
       WidgetsFlutterBinding.ensureInitialized();
       _appRecoveryRetry = null;
       // 在任何本地数据库或平台服务初始化前先挂载最小壳，确保失败时有可见 UI。
-      runApp(const StartupRecoveryScreen());
+      runApp(
+        const StartupRecoveryApp(child: StartupRecoveryScreen()),
+      );
       await _initializeNativeNotificationOpenBridge();
 
       FlutterError.onError = (FlutterErrorDetails details) {
@@ -363,15 +365,17 @@ Future<void> appBootstrap() async {
           result: 'failure',
         );
         runApp(
-          StartupRecoveryScreen(
-            error: error,
-            stackTrace: stackTrace,
-            diagnosticText: _startupDiagnosticText(error, stackTrace),
-            onRetry: _retryAppBootstrap,
-            onClearNonSensitiveCache: () async {
-              await _clearNonSensitiveStartupCache();
-              await _retryAppBootstrap();
-            },
+          StartupRecoveryApp(
+            child: StartupRecoveryScreen(
+              error: error,
+              stackTrace: stackTrace,
+              diagnosticText: _startupDiagnosticText(error, stackTrace),
+              onRetry: _retryAppBootstrap,
+              onClearNonSensitiveCache: () async {
+                await _clearNonSensitiveStartupCache();
+                await _retryAppBootstrap();
+              },
+            ),
           ),
         );
         return;

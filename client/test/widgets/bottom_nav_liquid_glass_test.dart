@@ -65,13 +65,36 @@ void main() {
 
     expect(harness.visualIndex.value, closeTo(1.5, 0.02));
     expect(harness.selectedIndex.value, 0);
+    expect(harness.commitCount.value, 0);
 
     await gesture.up();
     await tester.pumpAndSettle();
 
     expect(harness.visualIndex.value, closeTo(2, 0.01));
-    expect(harness.selectedIndex.value, 0);
+    expect(harness.selectedIndex.value, 2);
+    expect(harness.lastCommittedIndex.value, 2);
+    expect(harness.commitCount.value, 1);
     expect(tester.getSize(lensFinder).width, closeTo(settledWidth, 0.01));
+  });
+
+  testWidgets('首尾 Lens 中心与固定 Tab 中心对齐且允许被 Dock 裁切', (tester) async {
+    final harness = await _pumpNav(tester, liquidGlass: true);
+    final lensFinder = find.byKey(const ValueKey('bottom-nav-liquid-lens'));
+    final firstItem = find.byKey(const ValueKey('bottom-nav-item-0'));
+    final lastItem = find.byKey(const ValueKey('bottom-nav-item-4'));
+
+    expect(
+      tester.getCenter(lensFinder).dx,
+      closeTo(tester.getCenter(firstItem).dx, 1),
+    );
+
+    harness.visualIndex.value = 4;
+    await tester.pump();
+
+    expect(
+      tester.getCenter(lensFinder).dx,
+      closeTo(tester.getCenter(lastItem).dx, 1),
+    );
   });
 
   testWidgets('连续位置不会在跨过 Tab 中点时提前吸附', (tester) async {
@@ -180,7 +203,9 @@ class _NavHarness extends StatelessWidget {
     required this.darkMode,
     required this.disableAnimations,
     required this.textScale,
-  }) : lastTappedIndex = ValueNotifier(null);
+  })  : lastTappedIndex = ValueNotifier(null),
+        lastCommittedIndex = ValueNotifier(null),
+        commitCount = ValueNotifier(0);
 
   final ThemeProvider themeProvider;
   final AuthProvider authProvider;
@@ -190,11 +215,15 @@ class _NavHarness extends StatelessWidget {
   final bool disableAnimations;
   final double textScale;
   final ValueNotifier<int?> lastTappedIndex;
+  final ValueNotifier<int?> lastCommittedIndex;
+  final ValueNotifier<int> commitCount;
 
   void dispose() {
     selectedIndex.dispose();
     visualIndex.dispose();
     lastTappedIndex.dispose();
+    lastCommittedIndex.dispose();
+    commitCount.dispose();
     themeProvider.dispose();
     authProvider.dispose();
   }
@@ -235,6 +264,11 @@ class _NavHarness extends StatelessWidget {
                       visualIndexListenable: visualIndex,
                       onTap: (index) {
                         lastTappedIndex.value = index;
+                        selectedIndex.value = index;
+                      },
+                      onNavigationCommitted: (index) {
+                        lastCommittedIndex.value = index;
+                        commitCount.value++;
                         selectedIndex.value = index;
                       },
                       authProvider: authProvider,

@@ -3,6 +3,7 @@ package com.example.shenliyuan
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
@@ -25,6 +26,7 @@ class CourseRemoteViewsFactory(
 ) : RemoteViewsService.RemoteViewsFactory {
     private val courses = mutableListOf<WidgetCourseData.Course>()
     private lateinit var theme: HomeWidgetThemeConfig
+    private lateinit var typography: HomeWidgetTypography
 
     override fun onCreate() = Unit
 
@@ -34,6 +36,7 @@ class CourseRemoteViewsFactory(
         courses.addAll(data.courses.take(variant.maxItems))
         val appearance = HomeWidgetAppearanceStore.read(context, NativeHomeWidgetKind.COURSE)
         theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
+        typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
     }
 
     override fun onDestroy() = courses.clear()
@@ -48,6 +51,26 @@ class CourseRemoteViewsFactory(
         views.setTextViewText(R.id.tv_course_time, course.time)
         views.setTextViewText(R.id.tv_course_location, course.location)
         views.setTextViewText(R.id.tv_course_teacher, course.teacher)
+        views.setTextViewTextSize(
+            R.id.tv_course_name,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.primarySp,
+        )
+        views.setTextViewTextSize(
+            R.id.tv_course_time,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.secondarySp,
+        )
+        views.setTextViewTextSize(
+            R.id.tv_course_location,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.secondarySp,
+        )
+        views.setTextViewTextSize(
+            R.id.tv_course_teacher,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.tertiarySp,
+        )
         views.setViewVisibility(
             R.id.tv_course_location,
             if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && course.location.isNotBlank()) {

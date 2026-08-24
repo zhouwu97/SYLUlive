@@ -24,3 +24,13 @@ func TestRunRegressionSuiteJSON(t *testing.T) {
 	require.Contains(t, stdout.String(), `"summary"`)
 	require.Contains(t, stdout.String(), `"violations": []`)
 }
+
+func TestRunScenarioSuite(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-suite", "scenario", "-baseline", filepath.Join("..", "..", "internal", "ai", "eval", "scenario", "baseline_scenario.json")}, &stdout, &stderr)
+	require.Zero(t, code, stderr.String())
+	require.Contains(t, stdout.String(), "Agent Regression Scenario Suite")
+	require.Contains(t, stdout.String(), "Cases                 21")
+	require.Contains(t, stdout.String(), "Action Commits        4")
+	require.Contains(t, stdout.String(), "Verified Commits      3")
+}

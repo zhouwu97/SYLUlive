@@ -20,18 +20,32 @@ uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
 
-float capsuleDistance(vec2 point, vec2 center, vec2 halfSize) {
-  vec2 local = point - center;
-  float straightHalf = max(halfSize.x - halfSize.y, 0.0);
-  local.x -= clamp(local.x, -straightHalf, straightHalf);
-  return length(local) - halfSize.y;
+float liquidDistance(vec2 point) {
+  vec2 center = uSize * 0.5;
+  vec2 halfSize = uSize * 0.5;
+  vec2 normalized = (point - center) / max(halfSize, vec2(0.001));
+
+  // Superellipse 让静止态保持柔和的胶囊感；运动时通过方向项让
+  // 迎风侧鼓起、尾侧拉长。Flutter ClipPath 会提供最终的可见边界，
+  // 这里保持同一组速度/方向参数，使折射边缘与外轮廓一致。
+  normalized.x -= uDirection * uVelocity * 0.055;
+  float exponent = mix(4.6, 3.0, uVelocity);
+  float body = pow(
+      pow(abs(normalized.x), exponent) +
+          pow(abs(normalized.y), exponent),
+      1.0 / exponent) - 1.0;
+  float rearCompression = max(-uDirection * normalized.x, 0.0) *
+      uEdgeCompression * 0.16;
+  return (body + rearCompression) * min(halfSize.x, halfSize.y);
 }
 
-vec2 capsuleNormal(vec2 point, vec2 center, vec2 halfSize) {
-  vec2 local = point - center;
-  float straightHalf = max(halfSize.x - halfSize.y, 0.0);
-  local.x -= clamp(local.x, -straightHalf, straightHalf);
-  return normalize(local + vec2(0.0001));
+vec2 liquidNormal(vec2 point) {
+  const float epsilon = 0.45;
+  float dx = liquidDistance(point + vec2(epsilon, 0.0)) -
+      liquidDistance(point - vec2(epsilon, 0.0));
+  float dy = liquidDistance(point + vec2(0.0, epsilon)) -
+      liquidDistance(point - vec2(0.0, epsilon));
+  return normalize(vec2(dx, dy) + vec2(0.0001));
 }
 
 vec2 textureUv(vec2 pixel) {
@@ -46,14 +60,14 @@ void main() {
   vec2 fragment = FlutterFragCoord().xy;
   vec2 center = uSize * 0.5;
   vec2 halfSize = uSize * 0.5;
-  float distanceToLens = capsuleDistance(fragment, center, halfSize);
+  float distanceToLens = liquidDistance(fragment);
 
   if (distanceToLens > 1.0) {
     fragColor = texture(uBackdrop, textureUv(fragment));
     return;
   }
 
-  vec2 normal = capsuleNormal(fragment, center, halfSize);
+  vec2 normal = liquidNormal(fragment);
   float bevel = max(halfSize.y * 0.44, 3.0);
   float rim = smoothstep(-bevel, 0.0, distanceToLens);
   float rimSquared = rim * rim;

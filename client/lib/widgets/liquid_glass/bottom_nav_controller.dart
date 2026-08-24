@@ -16,10 +16,38 @@ class BottomNavController {
   final int itemCount;
 
   double position;
+  double lensCenterX = 0;
+  double trackLeft = 0;
+  double trackRight = 0;
+  double itemWidth = 1;
   double velocity = 0;
   double edgeCompression = 0;
   bool isDragging = false;
   int? targetIndex;
+
+  /// 以首个 Tab 的中心为轨道起点，统一维护 px 与 item position 的映射。
+  double get visualPosition => position;
+
+  void configureTrack({
+    required double itemWidth,
+    required double trackLeft,
+    required double trackRight,
+  }) {
+    this.itemWidth = itemWidth;
+    this.trackLeft = trackLeft;
+    this.trackRight = trackRight;
+    lensCenterX = centerForPosition(position);
+  }
+
+  double centerForPosition(double value) {
+    if (itemWidth <= 0) return trackLeft;
+    return trackLeft + value * itemWidth;
+  }
+
+  double positionForCenter(double centerX) {
+    if (itemWidth <= 0) return position;
+    return (centerX - trackLeft) / itemWidth;
+  }
 
   double get direction {
     if (velocity.abs() < 0.01) return 0;
@@ -32,6 +60,7 @@ class BottomNavController {
     velocity = 0;
     edgeCompression = 0;
     position = _clampPosition(startPosition);
+    lensCenterX = centerForPosition(position);
   }
 
   /// 直接接收 pointer 映射后的位置，不做插值和量化。
@@ -41,8 +70,24 @@ class BottomNavController {
   }) {
     assert(isDragging);
     position = _clampPosition(rawPosition);
+    lensCenterX = centerForPosition(position);
     edgeCompression = (rawPosition - position).abs().clamp(0.0, 0.72) / 0.72;
     velocity = velocityPixelsPerSecond;
+  }
+
+  /// 根据 Lens 的物理中心更新连续位置。中心可以短暂越过轨道边界，
+  /// position 仍由控制器负责 clamp，而 edgeCompression 保留越界程度。
+  void updateDragFromCenter({
+    required double centerX,
+    required double velocityPixelsPerSecond,
+  }) {
+    assert(isDragging);
+    final rawPosition = positionForCenter(centerX);
+    updateDrag(
+      rawPosition: rawPosition,
+      velocityPixelsPerSecond: velocityPixelsPerSecond,
+    );
+    lensCenterX = centerForPosition(position);
   }
 
   int endDrag({
@@ -54,9 +99,20 @@ class BottomNavController {
     velocity = velocityPixelsPerSecond;
 
     final nearest = position.round();
-    final isFlick = velocityPixelsPerSecond.abs() >= 450;
-    final flickTarget = nearest + velocityPixelsPerSecond.sign.toInt();
-    final target = isFlick ? flickTarget : nearest;
+    final velocityInItemsPerSecond =
+        itemWidth <= 0 ? 0.0 : velocityPixelsPerSecond / itemWidth;
+    final projectedPosition = position + velocityInItemsPerSecond * 0.10;
+    final projectedTarget = projectedPosition.round();
+    final target = velocityPixelsPerSecond.abs() >= 450
+        ? projectedTarget.clamp(
+            velocityPixelsPerSecond > 0
+                ? position.floor()
+                : position.ceil() - 1,
+            velocityPixelsPerSecond > 0
+                ? position.floor() + 1
+                : position.ceil(),
+          )
+        : nearest;
     targetIndex = target.clamp(0, itemCount - 1);
 
     // SpringSimulation 的速度单位是“位置单位/秒”，而控制器对外暴露
@@ -67,6 +123,7 @@ class BottomNavController {
 
   void settle(double settledPosition) {
     position = _clampPosition(settledPosition);
+    lensCenterX = centerForPosition(position);
     velocity = 0;
     edgeCompression = 0;
     isDragging = false;

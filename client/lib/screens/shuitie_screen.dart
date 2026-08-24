@@ -1796,9 +1796,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
-        AppSpacing.xs,
+        0,
         AppSpacing.lg,
-        AppSpacing.md,
+        AppSpacing.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1829,7 +1829,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           if (posts.isEmpty && !isFeedLoading)
             Container(
               height: 100,
@@ -1863,7 +1863,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               final post = entry.value;
               final position = entry.key;
               return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                padding: EdgeInsets.zero,
                 child: CommunityPostCard(
                   post: post,
                   postVariant: PostCardVariant.homeFeed,
@@ -2273,7 +2273,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     delegate: _SliverSearchBarDelegate(
                       vsync: this,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
                         child: _buildSearchBar(isDark),
                       ),
                     ),
@@ -2284,9 +2284,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(
                           AppSpacing.md,
-                          AppSpacing.sm,
-                          AppSpacing.md,
                           AppSpacing.xs,
+                          AppSpacing.md,
+                          0,
                         ),
                         child: ReplyNotificationReminder(
                           items: _unreadReplyNotifications,
@@ -2726,10 +2726,10 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
       : _vsync = vsync;
 
   @override
-  double get maxExtent => 54;
+  double get maxExtent => 50;
 
   @override
-  double get minExtent => 54;
+  double get minExtent => 50;
 
   @override
   FloatingHeaderSnapConfiguration get snapConfiguration =>

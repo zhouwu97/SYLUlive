@@ -38,8 +38,8 @@ class LiquidGlassTuning {
     this.pressedScale = 78.0 / 56.0,
     this.overscanX = 18.0,
     this.overscanY = 16.0,
-    this.refractionHeight = 10.0,
-    this.refraction = 14.0,
+    this.refractionHeight = 8.0,
+    this.refraction = 8.0,
     this.verticalRefractionScale = 1.0,
     this.refractionBandStart = 0.60,
     this.refractionBandPeak = 0.80,
@@ -47,14 +47,14 @@ class LiquidGlassTuning {
     // 保留字段以兼容 QA 配置文件；V8 shader 不再使用中心放大。
     this.magnification = 1.0,
     this.magnificationRadius = 0.66,
-    this.chromatic = 1.0,
+    this.chromatic = 0.32,
     this.chromaticStart = 0.84,
     this.rimStrength = 0.12,
     this.lightStrength = 0.20,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
-    this.dockAlpha = 0.40,
-    this.dockBlur = 8.0,
+    this.dockAlpha = 0.62,
+    this.dockBlur = 16.0,
     this.dockLensHeight = 24.0,
     this.dockLensAmount = 24.0,
     this.mode = LiquidGlassQaMode.finalGlass,
@@ -322,8 +322,9 @@ double liquidNavFocusWeight({
 
 /// `liquid_nav_lens.frag` 的具名 uniform 布局。
 ///
-/// Flutter 的 runtime effect API 只提供按位置写入 float。将布局集中在一处，便于
-/// review shader 变更，也避免新增 uniform 后无意中移动后续所有值。
+/// ImageFilter.shader 会由引擎写入前两个 float（输入纹理宽高）。应用从 index 2
+/// 开始写入逻辑坐标契约，shader 再根据真实纹理尺寸统一换算 DPR，避免部分参数是
+/// logical px、部分参数是 texture px 所造成的折射错位和彩色条带。
 class LiquidGlassShaderUniforms {
   const LiquidGlassShaderUniforms({
     required this.captureSize,
@@ -351,35 +352,39 @@ class LiquidGlassShaderUniforms {
     this.tint = const Color(0x00FFFFFF),
   });
 
-  static const sizeX = 0;
-  static const sizeY = 1;
-  static const lensCenterX = 2;
-  static const lensCenterY = 3;
-  static const lensHalfWidth = 4;
-  static const lensHalfHeight = 5;
-  static const lensExponentIndex = 6;
-  static const refractionIndex = 7;
-  static const magnificationIndex = 8;
-  static const chromaticIndex = 9;
-  static const velocityIndex = 10;
-  static const directionIndex = 11;
-  static const edgeCompressionIndex = 12;
-  static const dragStateIndex = 13;
-  static const tintR = 14;
-  static const tintG = 15;
-  static const tintB = 16;
-  static const tintA = 17;
-  static const lightStrengthIndex = 18;
-  static const rimStrengthIndex = 19;
-  static const verticalRefractionScaleIndex = 20;
-  static const refractionBandStartIndex = 21;
-  static const refractionBandPeakIndex = 22;
-  static const refractionBandEndIndex = 23;
-  static const magnificationRadiusIndex = 24;
-  static const chromaticStartIndex = 25;
-  static const flowStrengthIndex = 26;
-  static const activationIndex = 27;
-  static const pressDepthIndex = 28;
+  static const engineOwnedValueCount = 2;
+  static const engineInputWidth = 0;
+  static const engineInputHeight = 1;
+  static const customUniformStart = engineOwnedValueCount;
+  static const logicalSizeX = 2;
+  static const logicalSizeY = 3;
+  static const lensCenterX = 4;
+  static const lensCenterY = 5;
+  static const lensHalfWidth = 6;
+  static const lensHalfHeight = 7;
+  static const lensExponentIndex = 8;
+  static const refractionIndex = 9;
+  static const magnificationIndex = 10;
+  static const chromaticIndex = 11;
+  static const velocityIndex = 12;
+  static const directionIndex = 13;
+  static const edgeCompressionIndex = 14;
+  static const dragStateIndex = 15;
+  static const tintR = 16;
+  static const tintG = 17;
+  static const tintB = 18;
+  static const tintA = 19;
+  static const lightStrengthIndex = 20;
+  static const rimStrengthIndex = 21;
+  static const verticalRefractionScaleIndex = 22;
+  static const refractionBandStartIndex = 23;
+  static const refractionBandPeakIndex = 24;
+  static const refractionBandEndIndex = 25;
+  static const magnificationRadiusIndex = 26;
+  static const chromaticStartIndex = 27;
+  static const flowStrengthIndex = 28;
+  static const activationIndex = 29;
+  static const pressDepthIndex = 30;
 
   final Size captureSize;
   final Offset lensCenter;
@@ -405,8 +410,10 @@ class LiquidGlassShaderUniforms {
   final double pressDepth;
   final Color tint;
 
-  /// Fragment shader 期望收到的精确 float 序列。
+  /// 完整 uniform 布局。前两项是引擎拥有的占位符，应用不得写入。
   List<double> get values => [
+        double.nan,
+        double.nan,
         captureSize.width,
         captureSize.height,
         lensCenter.dx,
@@ -440,7 +447,7 @@ class LiquidGlassShaderUniforms {
 
   void apply(ui.FragmentShader shader) {
     final floats = values;
-    for (var index = 0; index < floats.length; index++) {
+    for (var index = customUniformStart; index < floats.length; index++) {
       shader.setFloat(index, floats[index]);
     }
   }

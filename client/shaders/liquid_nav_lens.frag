@@ -2,10 +2,13 @@
 
 #include <flutter/runtime_effect.glsl>
 
-// Reference-Parity port of Kyant0/AndroidLiquidGlass RoundedRectRefraction.
-// refractionHeight and refractionAmount are supplied in logical pixels; the
-// center of the Capsule remains untouched.
-uniform vec2 uSize;
+// The rounded-rect refraction and seven-channel dispersion equations are based
+// on Kyant0/AndroidLiquidGlass (Copyright 2025 Kyant, Apache License 2.0).
+// Flutter owns uInputSize/uBackdrop for ImageFilter.shader. All app-controlled
+// geometry remains in logical pixels and is normalized against uLogicalSize,
+// so the result is stable across device pixel ratios.
+uniform vec2 uInputSize;
+uniform vec2 uLogicalSize;
 uniform vec2 uLensCenter;
 uniform vec2 uLensHalfSize;
 uniform float uLensExponent; // legacy slot; Capsule geometry is fixed.
@@ -59,8 +62,17 @@ float circleMap(float x) {
   return 1.0 - sqrt(max(0.0, 1.0 - clamped * clamped));
 }
 
-vec2 textureUv(vec2 pixel) {
-  vec2 uv = clamp(pixel / max(uSize, vec2(0.001)), vec2(0.0), vec2(1.0));
+vec2 logicalFragCoord() {
+  return FlutterFragCoord().xy *
+      (uLogicalSize / max(uInputSize, vec2(0.001)));
+}
+
+vec2 textureUv(vec2 logicalPixel) {
+  vec2 uv = clamp(
+      logicalPixel / max(uLogicalSize, vec2(0.001)),
+      vec2(0.0),
+      vec2(1.0)
+  );
 #ifdef IMPELLER_TARGET_OPENGLES
   uv.y = 1.0 - uv.y;
 #endif
@@ -68,7 +80,7 @@ vec2 textureUv(vec2 pixel) {
 }
 
 void main() {
-  vec2 coord = FlutterFragCoord().xy;
+  vec2 coord = logicalFragCoord();
   vec4 original = texture(uBackdrop, textureUv(coord));
   float activation = clamp(uActivation, 0.0, 1.0);
   float refractionHeight = max(uRefractionBandPeak, 0.0001);

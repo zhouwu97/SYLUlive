@@ -73,7 +73,13 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          CustomPaint(painter: _LiquidGlassQaPatternPainter(_pattern)),
+          if (widget.referenceParity)
+            const ColoredBox(
+              key: ValueKey('liquid-glass-reference-background'),
+              color: Colors.white,
+            )
+          else
+            CustomPaint(painter: _LiquidGlassQaPatternPainter(_pattern)),
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -97,6 +103,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         tuning: _tuning,
         qaPhase: _qaPhase,
         qaActivation: _qaActivation,
+        showDiagnostics: true,
       ),
     );
   }
@@ -114,6 +121,13 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是 Capsule 可见曲面。',
               style: TextStyle(color: Colors.white),
             ),
+            if (widget.referenceParity) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Color Composite：Normal Row 全部 neutral；品牌色只来自 Capsule 内的 Accent Copy，窗口外不应出现 tint。',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
             const SizedBox(height: 8),
             const Text('Preset', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
@@ -411,8 +425,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             'accent ${_tuning.focusColorFor(false).toARGB32().toRadixString(16)} · '
             'selection ${_tuning.refractionHeight.toStringAsFixed(0)}×'
             '${_tuning.refraction.toStringAsFixed(0)} · '
-            'Dock ${_tuning.dockLensHeight.toStringAsFixed(0)}×'
-            '${_tuning.dockLensAmount.toStringAsFixed(0)}',
+            'Dock blur ${_tuning.dockBlur.toStringAsFixed(0)} / '
+            'surface ${_tuning.dockAlpha.toStringAsFixed(2)} / full-width lens off',
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 8),

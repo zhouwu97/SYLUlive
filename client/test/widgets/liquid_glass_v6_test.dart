@@ -47,8 +47,17 @@ void main() {
       pressDepth: 0,
     );
 
-    expect(uniforms.values, hasLength(29));
-    expect(uniforms.values[LiquidGlassShaderUniforms.sizeX], 160);
+    expect(uniforms.values, hasLength(31));
+    expect(LiquidGlassShaderUniforms.customUniformStart, 2);
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.engineInputWidth].isNaN,
+      isTrue,
+    );
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.engineInputHeight].isNaN,
+      isTrue,
+    );
+    expect(uniforms.values[LiquidGlassShaderUniforms.logicalSizeX], 160);
     expect(uniforms.values[LiquidGlassShaderUniforms.lensCenterX], 80);
     expect(
       uniforms.values[LiquidGlassShaderUniforms.lensHalfWidth],
@@ -68,6 +77,9 @@ void main() {
     final source = File('shaders/liquid_nav_lens.frag').readAsStringSync();
 
     expect(source, contains('float circleMap(float x)'));
+    expect(source, contains('uniform vec2 uInputSize'));
+    expect(source, contains('uniform vec2 uLogicalSize'));
+    expect(source, contains('vec2 logicalFragCoord()'));
     expect(source, contains('float gradRadius = min(radius * 1.5'));
     expect(source, contains('uRefractionBandPeak'));
     for (final channel in const [
@@ -181,13 +193,22 @@ void main() {
 
     expect(tuning.lensHeight, 56);
     expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
-    expect(tuning.refractionHeight, 10);
-    expect(tuning.refraction, 14);
-    expect(tuning.chromatic, 1);
+    expect(tuning.refractionHeight, 8);
+    expect(tuning.refraction, 8);
+    expect(tuning.chromatic, 0.32);
     expect(tuning.effectiveMagnification, 1);
-    expect(tuning.dockAlpha, 0.40);
-    expect(tuning.dockBlur, 8.0);
+    expect(tuning.dockAlpha, 0.62);
+    expect(tuning.dockBlur, 16.0);
     expect(tuning.dockLensHeight, 24.0);
     expect(tuning.dockLensAmount, 24.0);
+  });
+
+  test('V9 Reference QA exposes a white Color Composite contract', () {
+    final source = File(
+      'lib/widgets/liquid_glass/liquid_glass_qa_screen.dart',
+    ).readAsStringSync();
+    expect(source, contains('liquid-glass-reference-background'));
+    expect(source, contains('color: Colors.white'));
+    expect(source, contains('Normal Row 全部 neutral'));
   });
 }

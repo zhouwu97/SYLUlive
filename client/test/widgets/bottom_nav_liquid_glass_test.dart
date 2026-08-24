@@ -23,6 +23,10 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('bottom-nav-liquid-diagnostics')),
+        findsNothing,
+      );
+      expect(
         find.byKey(const ValueKey('bottom-nav-selection')),
         findsOneWidget,
       );
@@ -47,6 +51,62 @@ void main() {
     }
   });
 
+  testWidgets('液态胶囊将背景折射、Normal Row 挖空和 Accent 前景分层', (tester) async {
+    await _pumpNav(tester, liquidGlass: true);
+
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-base-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-normal-exclusion')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-dock-exclusion')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('bottom-nav-selection-foreground')),
+      findsOneWidget,
+    );
+    final material = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('bottom-nav-selection-material')),
+    );
+    final decoration = material.decoration as BoxDecoration;
+    expect(decoration.boxShadow, isNull);
+    expect(decoration.border, isNull);
+    final backdrop = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
+    );
+    final backdropDecoration = backdrop.decoration as BoxDecoration;
+    expect(backdropDecoration.boxShadow, isNull);
+    final surface = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('bottom-nav-selection-base-surface'),
+        ),
+        matching: find.byType(ColoredBox),
+      ),
+    );
+    expect(surface.color.a, closeTo(0.08, 0.001));
+    final dockWidth = tester
+        .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
+        .width;
+    final selectionWidth = tester
+        .getSize(find.byKey(const ValueKey('bottom-nav-selection')))
+        .width;
+    expect(selectionWidth / (dockWidth / 5), closeTo(1.28, 0.01));
+  });
+
   testWidgets('V9 正式 Normal Row 始终 neutral/scale=1，Accent Copy 独立在窗口内',
       (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
@@ -61,6 +121,28 @@ void main() {
           .color,
       AppColors.iconMutedLight,
     );
+    expect(
+      tester
+          .widget<Transform>(
+            find.byKey(
+              const ValueKey('bottom-nav-accent-content-scale-0'),
+            ),
+          )
+          .transform
+          .storage[0],
+      closeTo(1, 0.0001),
+    );
+    final accentIcons = find.descendant(
+      of: find.byKey(const ValueKey('bottom-nav-accent-tabs')),
+      matching: find.byType(Icon),
+    );
+    expect(accentIcons, findsNWidgets(5));
+    for (var index = 0; index < 5; index++) {
+      expect(
+        tester.widget<Icon>(accentIcons.at(index)).color,
+        AppColors.brandPrimary,
+      );
+    }
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('bottom-nav-accent-tabs')), findsOneWidget);
@@ -70,12 +152,50 @@ void main() {
     );
     final topLeft = tester.getTopLeft(gestureLayer);
     final itemWidth = tester.getSize(gestureLayer).width / 5;
+
+    for (final position in const [0.0, 0.5, 1.0, 2.5]) {
+      harness.visualIndex.value = position;
+      await tester.pump();
+      for (var index = 0; index < 5; index++) {
+        final transform = tester.widget<Transform>(
+          find.byKey(ValueKey('bottom-nav-normal-content-$index')),
+        );
+        expect(transform.transform.storage[0], closeTo(1, 0.0001));
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(ValueKey('bottom-nav-item-$index')),
+            matching: find.byType(Icon),
+          ),
+        );
+        expect(icon.color, AppColors.iconMutedLight);
+        final label = tester.widget<Text>(
+          find.descendant(
+            of: find.byKey(ValueKey('bottom-nav-item-$index')),
+            matching: find.byType(Text),
+          ),
+        );
+        expect(label.style?.color, AppColors.iconMutedLight);
+      }
+    }
+
     final gesture = await tester.startGesture(
       Offset(topLeft.dx + itemWidth * 0.5, topLeft.dy + 30),
     );
     await tester.pumpFrames(harness, const Duration(milliseconds: 120));
     await gesture.moveTo(Offset(topLeft.dx + itemWidth * 2, topLeft.dy + 30));
     await tester.pump();
+
+    expect(
+      tester
+          .widget<Transform>(
+            find.byKey(
+              const ValueKey('bottom-nav-accent-content-scale-0'),
+            ),
+          )
+          .transform
+          .storage[0],
+      greaterThan(1.0),
+    );
 
     for (var index = 0; index < 5; index++) {
       final transform = tester.widget<Transform>(
@@ -89,6 +209,13 @@ void main() {
         ),
       );
       expect(icon.color, AppColors.iconMutedLight);
+      final label = tester.widget<Text>(
+        find.descendant(
+          of: find.byKey(ValueKey('bottom-nav-item-$index')),
+          matching: find.byType(Text),
+        ),
+      );
+      expect(label.style?.color, AppColors.iconMutedLight);
     }
     expect(
         find.byKey(const ValueKey('bottom-nav-accent-tabs')), findsOneWidget);
@@ -371,6 +498,15 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
   });
+
+  testWidgets('渲染诊断仅在显式 QA 开关开启时出现', (tester) async {
+    await _pumpNav(tester, liquidGlass: true, showDiagnostics: true);
+
+    expect(
+      find.byKey(const ValueKey('bottom-nav-liquid-diagnostics')),
+      findsOneWidget,
+    );
+  });
 }
 
 Future<_NavHarness> _pumpNav(
@@ -381,6 +517,7 @@ Future<_NavHarness> _pumpNav(
   double textScale = 1,
   int initialIndex = 0,
   double? initialVisualIndex,
+  bool showDiagnostics = false,
 }) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
@@ -401,6 +538,7 @@ Future<_NavHarness> _pumpNav(
     darkMode: darkMode,
     disableAnimations: disableAnimations,
     textScale: textScale,
+    showDiagnostics: showDiagnostics,
   );
   addTearDown(harness.dispose);
 
@@ -418,6 +556,7 @@ class _NavHarness extends StatelessWidget {
     required this.darkMode,
     required this.disableAnimations,
     required this.textScale,
+    required this.showDiagnostics,
   })  : lastTappedIndex = ValueNotifier(null),
         lastCommittedIndex = ValueNotifier(null),
         commitCount = ValueNotifier(0),
@@ -431,6 +570,7 @@ class _NavHarness extends StatelessWidget {
   final bool darkMode;
   final bool disableAnimations;
   final double textScale;
+  final bool showDiagnostics;
   final ValueNotifier<int?> lastTappedIndex;
   final ValueNotifier<int?> lastCommittedIndex;
   final ValueNotifier<int> commitCount;
@@ -496,6 +636,7 @@ class _NavHarness extends StatelessWidget {
                       onLiquidActivationChanged: (value) =>
                           activation.value = value,
                       authProvider: authProvider,
+                      showDiagnostics: showDiagnostics,
                     ),
                   );
                 },

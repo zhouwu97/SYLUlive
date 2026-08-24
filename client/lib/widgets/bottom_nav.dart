@@ -26,8 +26,20 @@ const _navIcons = <IconData>[
 
 const _navLabels = <String>['首页', '集市', '课表', '校园', '我'];
 const _dockHeight = 66.0;
-const _lensHeight = 60.0;
-const _lensSpeedNormalization = 1000.0;
+const _lensHeight = 62.0;
+const _lensSpeedNormalization = 900.0;
+
+double _lensWidthFor({
+  required double itemWidth,
+  required double speed,
+  required double edgeCompression,
+}) {
+  final baseWidth = math.max(84.0, itemWidth * 1.55);
+  final normalizedSpeed = speed.clamp(0.0, 1.0).toDouble();
+  final stretch = math.min(1.18, 1.0 + normalizedSpeed * 0.14);
+  final edge = edgeCompression.clamp(0.0, 1.0).toDouble();
+  return baseWidth * stretch * (1.0 - edge * 0.04);
+}
 
 class _NavItemVisualState {
   const _NavItemVisualState({
@@ -688,8 +700,11 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
         ? 0.0
         : (_velocityPixelsPerSecond.abs() / _lensSpeedNormalization)
             .clamp(0.0, 1.0);
-    final width = math.max(84.0, _itemWidth * 1.40) *
-        (1 + speed * 0.06 - _controller.edgeCompression * 0.04);
+    final width = _lensWidthFor(
+      itemWidth: _itemWidth,
+      speed: speed,
+      edgeCompression: _controller.edgeCompression,
+    );
     return (x - _controller.lensCenterX).abs() <= width / 2;
   }
 
@@ -968,7 +983,7 @@ class _FloatingSelectionFallback extends StatelessWidget {
 class LiquidLensShape {
   const LiquidLensShape._();
 
-  static const exponent = 2.5;
+  static const exponent = 2.2;
 
   static Path pathForSize(
     Size size, {
@@ -982,8 +997,8 @@ class LiquidLensShape {
     final sign = direction < -0.01 ? -1.0 : 1.0;
     final edge = edgeCompression.clamp(0.0, 1.0).toDouble();
     final halfHeight = height * 0.5;
-    final tail = halfHeight * motion * 0.50;
-    final bulge = halfHeight * motion * 0.26;
+    final tail = halfHeight * motion * 0.45;
+    final bulge = halfHeight * motion * 0.28;
     final compression = halfHeight * edge * 0.16;
     // 动态尾部从 Lens 的宽度预算中分配，不把 Path 画到自己的 render
     // bounds 之外；这样外层 Stack 负责 Dock 溢出，Lens 自身不会截尾。
@@ -1163,9 +1178,11 @@ class _LiquidSelectionLensState extends State<_LiquidSelectionLens> {
     final direction = widget.reduceMotion || speed < 0.01
         ? 0.0
         : widget.velocityPixelsPerSecond.sign;
-    final baseWidth = math.max(84.0, widget.itemWidth * 1.40);
-    final lensWidth = baseWidth *
-        (1 + speed * 0.06 - widget.edgeCompression.clamp(0.0, 1.0) * 0.04);
+    final lensWidth = _lensWidthFor(
+      itemWidth: widget.itemWidth,
+      speed: speed,
+      edgeCompression: widget.edgeCompression,
+    );
     // Y 轴是 Dock 的稳定基准；速度只改变水平形状和光学场。
     const lensHeight = _lensHeight;
     final requestedCenter = widget.itemWidth * (widget.visualIndex + 0.5);
@@ -1325,9 +1342,34 @@ class _LiquidLensRimPainter extends CustomPainter {
       return;
     }
 
-    // Final 模式暂时关闭 Flutter 额外 glint，只验证 Shader 自己的 Fresnel。
-    // 光学稳定后再考虑恢复极弱高光。
-    return;
+    if (rimStrength <= 0) return;
+
+    final metrics = LiquidLensShape.pathForSize(
+      size,
+      speed: motion,
+      direction: direction,
+      edgeCompression: edgeCompression,
+    ).computeMetrics().toList();
+    if (metrics.isEmpty) return;
+
+    // 只画左上 25% 左右的局部高光，给边界一个可感知的厚度信号，
+    // 不再用整圈白描边把 Lens 画成药丸。
+    final metric = metrics.first;
+    final glint = metric.extractPath(0, metric.length * 0.27);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 0.8 : 0.7
+      ..strokeCap = StrokeCap.round
+      ..color = Color.lerp(
+        Colors.white,
+        const Color(0xFFD9F5FF),
+        0.32,
+      )!
+          .withValues(
+        alpha:
+            (highContrast ? 0.24 : 0.20) * (rimStrength / 0.12).clamp(0.7, 1.4),
+      );
+    canvas.drawPath(glint, paint);
   }
 
   @override

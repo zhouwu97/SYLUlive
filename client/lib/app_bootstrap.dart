@@ -1811,6 +1811,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
   StartupNavigationPlan? _startupPlan;
   int? _planUserId;
+  bool _startupPlanReady = false;
   int? _resolvingUserId;
   int _startupResolveGeneration = 0;
 
@@ -1946,9 +1947,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         }
 
         final userId = authProvider.user?.id;
-        // lastPage 模式需要先异步解析启动计划，期间显示加载门禁，
-        // 避免 HomeScreen 先以错误的 root tab 构建、再闪成目标页面。
-        if (tp.startupDestination == StartupDestinationMode.lastPage &&
+        if (_startupPlanReady && _planUserId != userId) {
+          // 账号变化才允许重新计算启动计划；同一账号修改“启动页面”只
+          // 影响下一次启动，不能重建当前会话已经展示的根页面。
+          _startupPlanReady = false;
+          _startupPlan = null;
+          _planUserId = null;
+          _startupResolveGeneration++;
+          _homeInitialTabResolver.reset();
+        }
+
+        // 启动计划只在当前 AuthWrapper 会话解析一次。尤其是 lastPage 的
+        // 异步读取完成后，ThemeProvider 再次通知也不能触发当前页面跳转。
+        if (!_startupPlanReady &&
+            tp.startupDestination == StartupDestinationMode.lastPage &&
             userId != null &&
             userId > 0) {
           if (_startupPlan == null || _planUserId != userId) {
@@ -1957,22 +1969,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return HomeScreen(
-            initialTab: _startupPlan!.rootTabIndex,
-            initialDeepPage: _startupPlan!.deepPage,
-          );
         }
 
-        // home / timetable（或 lastPage 但无有效用户）：同步可解，不设门禁。
-        // 同时丢弃已解析的 lastPage 计划，避免日后切回 lastPage 时复活旧深层页。
-        _startupPlan = null;
-        _planUserId = null;
-        final resolvedPlan = StartupNavigationPlan(
-          rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
-        );
+        if (!_startupPlanReady) {
+          // home / timetable（或 lastPage 但无有效用户）同步可解，不设门禁。
+          _startupPlan = StartupNavigationPlan(
+            rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
+          );
+          _planUserId = userId;
+          _startupPlanReady = true;
+        }
+
         return HomeScreen(
-          initialTab: resolvedPlan.rootTabIndex,
-          initialDeepPage: resolvedPlan.deepPage,
+          initialTab: _startupPlan!.rootTabIndex,
+          initialDeepPage: _startupPlan!.deepPage,
         );
       },
     );
@@ -2031,6 +2041,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               ? null
               : state,
         );
+        _startupPlanReady = true;
       });
     } finally {
       if (_resolvingUserId == userId) {

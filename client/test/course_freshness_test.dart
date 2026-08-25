@@ -169,6 +169,8 @@ Future<_CourseTestPage> _pumpCourse(
   required CourseScheduleProvider scheduleProvider,
   ThemeMode themeMode = ThemeMode.light,
   double textScale = 1,
+  Duration initialPump = const Duration(milliseconds: 50),
+  bool settle = true,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -227,8 +229,8 @@ Future<_CourseTestPage> _pumpCourse(
       ),
     ),
   );
-  await tester.pump(const Duration(milliseconds: 50));
-  await tester.pumpAndSettle();
+  await tester.pump(initialPump);
+  if (settle) await tester.pumpAndSettle();
 
   return _CourseTestPage(
     auth: auth,
@@ -411,6 +413,45 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('设置开学第一周'), findsOneWidget);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('初始化首帧保留课表框架而不是透明空屏', (tester) async {
+    final provider = _newProvider(_MemorySnapshotStore());
+    final page = await _pumpCourse(
+      tester,
+      scheduleProvider: provider,
+      initialPump: Duration.zero,
+      settle: false,
+    );
+
+    expect(find.byType(Scaffold), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('一'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('初始化优先恢复缓存课表，不显示整页 loading', (tester) async {
+    final store = _MemorySnapshotStore();
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    await _seedVault(store, fetchedAt: now, semesterStart: monday);
+    final provider = _newProvider(store);
+    expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
+    await provider.loadSemesterStart();
+    final page = await _pumpCourse(
+      tester,
+      scheduleProvider: provider,
+      initialPump: Duration.zero,
+      settle: false,
+    );
+
+    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
 
     await _disposeCourse(tester, page);
   });

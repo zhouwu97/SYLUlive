@@ -53,6 +53,7 @@ import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
+import 'services/request_id.dart';
 import 'services/root_page_state_service.dart';
 import 'services/retry_interceptor.dart';
 import 'services/app_resume_coordinator.dart';
@@ -1303,6 +1304,11 @@ Dio getSharedDio() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final requestId = options.headers['X-Request-ID']?.toString().trim();
+          options.headers['X-Request-ID'] =
+              requestId == null || requestId.isEmpty
+                  ? RequestId.newId()
+                  : requestId;
           if (options.extra['skip_app_version_interceptor'] == true) {
             handler.next(options);
             return;

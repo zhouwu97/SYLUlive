@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"shenliyuan/internal/middleware"
 )
 
 const (
@@ -337,6 +339,11 @@ func (c *JWCPythonClient) doRequest(ctx context.Context, apiURL string, body []b
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	requestID := middleware.RequestIDFromContext(ctx)
+	if requestID == "" {
+		requestID = middleware.NewRequestID()
+	}
+	httpReq.Header.Set("X-Request-ID", requestID)
 
 	client := &http.Client{
 		Timeout: jwcPythonTimeout,

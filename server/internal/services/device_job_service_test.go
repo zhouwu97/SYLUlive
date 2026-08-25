@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/datatypes"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -22,6 +22,9 @@ func newDeviceJobFixture(t *testing.T, now time.Time) (*gorm.DB, *DeviceJobServi
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.UserDevice{}, &models.DeviceToolJob{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.User{PasswordHash: "test"}).Error; err != nil {

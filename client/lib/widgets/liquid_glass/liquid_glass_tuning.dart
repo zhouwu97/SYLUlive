@@ -38,49 +38,37 @@ class LiquidGlassTuning {
     this.pressedScale = 78.0 / 56.0,
     this.overscanX = 18.0,
     this.overscanY = 16.0,
-    this.refractionHeight = 8.0,
-    this.refraction = 7.2,
+    this.refractionHeight = 12.0,
+    this.refraction = 14.0,
     this.verticalRefractionScale = 1.0,
-    this.refractionBandStart = 0.60,
-    this.refractionBandPeak = 0.80,
-    this.refractionBandEnd = 0.92,
     // 保留字段以兼容 QA 配置文件；V8 shader 不再使用中心放大。
     this.magnification = 1.0,
     this.magnificationRadius = 0.66,
-    this.chromatic = 0.14,
-    this.chromaticStart = 0.86,
-    this.rimStrength = 0.12,
-    this.lightStrength = 0.20,
+    this.chromatic = 1.0,
+    this.rimStrength = 0.16,
+    this.lightStrength = 0.30,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
     // Dock 降低白色覆盖，保留背景层次给 shader 折射；这不是减少动效，
     // 而是把“玻璃”从厚重磨砂恢复成有透光和重量的材质。
-    this.dockAlpha = 0.20,
+    this.dockAlpha = 0.16,
     this.dockBlur = 8.0,
     this.dockLensHeight = 24.0,
     this.dockLensAmount = 24.0,
-    // 常态只显示 Dock / Selection 的毛玻璃；只有 press、drag、settling
-    // 或 collapsing 阶段才打开液态折射。QA 仍可手动调高此值预览 idle optical。
+    // Dock 对齐 Kyant：整块 Dock 静止时就有 blur(8) + lens(24, 24)。
     this.idleOpticalActivation = 0.0,
-    this.idleRefractionScale = 0.0,
-    this.pressedRefractionScale = 1.08,
-    this.dragRefractionScale = 1.36,
-    this.idleChromaticScale = 0.0,
-    this.pressedChromaticScale = 0.55,
-    this.dragChromaticScale = 0.65,
-    this.dockRefraction = 7.0,
+    this.dockRefraction = 24.0,
     this.dockChromatic = 0.0,
-    this.dockRefractionHeight = 10.0,
+    this.dockRefractionHeight = 24.0,
     this.dockSaturation = 1.04,
     this.dockContrast = 1.01,
-    this.dockSpecularStrength = 0.46,
+    this.dockSpecularStrength = 1.0,
     this.dockRecoilDistance = 3.5,
     this.dockRecoilStrength = 0.82,
-    this.lensSurfaceAlpha = 0.18,
-    this.lensPressedSurfaceAlpha = 0.06,
-    this.highlightStrength = 0.90,
-    // 中心高光保持局部；四周 edge halo 才是液态玻璃的主高光层。
-    this.highlightRadius = 0.82,
+    this.lensSurfaceAlpha = 0.12,
+    this.lensPressedSurfaceAlpha = 0.05,
+    this.highlightStrength = 1.0,
+    this.highlightRadius = 1.5,
     this.mode = LiquidGlassQaMode.finalGlass,
     this.colorPreset = LiquidNavColorPreset.sylulive,
     this.showCaptureBounds = false,
@@ -88,8 +76,9 @@ class LiquidGlassTuning {
 
   /// 克制的材质预设，用于在弱光学畸变下对比几何轮廓。
   static const natural = LiquidGlassTuning(
-    refraction: 7.5,
-    chromatic: 0.16,
+    refractionHeight: 12.0,
+    refraction: 14.0,
+    chromatic: 1.0,
   );
 
   /// 按用户提供的酷安截图调出的默认参考预设。
@@ -114,15 +103,11 @@ class LiquidGlassTuning {
   final double refractionHeight;
   final double refraction;
   final double verticalRefractionScale;
-  final double refractionBandStart;
-  final double refractionBandPeak;
-  final double refractionBandEnd;
 
   final double magnification;
   final double magnificationRadius;
 
   final double chromatic;
-  final double chromaticStart;
 
   final double rimStrength;
   final double lightStrength;
@@ -137,12 +122,6 @@ class LiquidGlassTuning {
   /// Idle 默认关闭光学激活，保持 frosted blur；按压、拖拽与切换阶段逐段
   /// 提升折射与色散，而不是在 phase 之间切换成另一颗静态 indicator。
   final double idleOpticalActivation;
-  final double idleRefractionScale;
-  final double pressedRefractionScale;
-  final double dragRefractionScale;
-  final double idleChromaticScale;
-  final double pressedChromaticScale;
-  final double dragChromaticScale;
 
   /// Dock 的独立光学参数。Selection 与 Dock 共用 shader 思路，但不共用
   /// 强度，避免整块底栏变成放大的鱼眼滤镜。
@@ -296,13 +275,9 @@ class LiquidGlassTuning {
     double? refractionHeight,
     double? refraction,
     double? verticalRefractionScale,
-    double? refractionBandStart,
-    double? refractionBandPeak,
-    double? refractionBandEnd,
     double? magnification,
     double? magnificationRadius,
     double? chromatic,
-    double? chromaticStart,
     double? rimStrength,
     double? lightStrength,
     double? velocityNormalization,
@@ -312,12 +287,6 @@ class LiquidGlassTuning {
     double? dockLensHeight,
     double? dockLensAmount,
     double? idleOpticalActivation,
-    double? idleRefractionScale,
-    double? pressedRefractionScale,
-    double? dragRefractionScale,
-    double? idleChromaticScale,
-    double? pressedChromaticScale,
-    double? dragChromaticScale,
     double? dockRefraction,
     double? dockChromatic,
     double? dockRefractionHeight,
@@ -345,13 +314,9 @@ class LiquidGlassTuning {
       refraction: refraction ?? this.refraction,
       verticalRefractionScale:
           verticalRefractionScale ?? this.verticalRefractionScale,
-      refractionBandStart: refractionBandStart ?? this.refractionBandStart,
-      refractionBandPeak: refractionBandPeak ?? this.refractionBandPeak,
-      refractionBandEnd: refractionBandEnd ?? this.refractionBandEnd,
       magnification: magnification ?? this.magnification,
       magnificationRadius: magnificationRadius ?? this.magnificationRadius,
       chromatic: chromatic ?? this.chromatic,
-      chromaticStart: chromaticStart ?? this.chromaticStart,
       rimStrength: rimStrength ?? this.rimStrength,
       lightStrength: lightStrength ?? this.lightStrength,
       velocityNormalization:
@@ -363,14 +328,6 @@ class LiquidGlassTuning {
       dockLensAmount: dockLensAmount ?? this.dockLensAmount,
       idleOpticalActivation:
           idleOpticalActivation ?? this.idleOpticalActivation,
-      idleRefractionScale: idleRefractionScale ?? this.idleRefractionScale,
-      pressedRefractionScale:
-          pressedRefractionScale ?? this.pressedRefractionScale,
-      dragRefractionScale: dragRefractionScale ?? this.dragRefractionScale,
-      idleChromaticScale: idleChromaticScale ?? this.idleChromaticScale,
-      pressedChromaticScale:
-          pressedChromaticScale ?? this.pressedChromaticScale,
-      dragChromaticScale: dragChromaticScale ?? this.dragChromaticScale,
       dockRefraction: dockRefraction ?? this.dockRefraction,
       dockChromatic: dockChromatic ?? this.dockChromatic,
       dockRefractionHeight: dockRefractionHeight ?? this.dockRefractionHeight,
@@ -422,26 +379,10 @@ class LiquidGlassShaderUniforms {
     required this.captureSize,
     required this.lensCenter,
     required this.lensSize,
-    required this.lensExponent,
+    required this.refractionHeight,
     required this.refraction,
-    required this.magnification,
     required this.chromatic,
-    required this.velocity,
-    required this.direction,
-    required this.edgeCompression,
-    required this.dragState,
-    required this.lightStrength,
-    required this.rimStrength,
-    required this.verticalRefractionScale,
-    required this.refractionBandStart,
-    required this.refractionBandPeak,
-    required this.refractionBandEnd,
-    required this.magnificationRadius,
-    required this.chromaticStart,
-    required this.flowStrength,
     required this.activation,
-    required this.pressDepth,
-    this.tint = const Color(0x00FFFFFF),
   });
 
   static const engineOwnedValueCount = 2;
@@ -454,53 +395,18 @@ class LiquidGlassShaderUniforms {
   static const lensCenterY = 5;
   static const lensHalfWidth = 6;
   static const lensHalfHeight = 7;
-  static const lensExponentIndex = 8;
+  static const refractionHeightIndex = 8;
   static const refractionIndex = 9;
-  static const magnificationIndex = 10;
-  static const chromaticIndex = 11;
-  static const velocityIndex = 12;
-  static const directionIndex = 13;
-  static const edgeCompressionIndex = 14;
-  static const dragStateIndex = 15;
-  static const tintR = 16;
-  static const tintG = 17;
-  static const tintB = 18;
-  static const tintA = 19;
-  static const lightStrengthIndex = 20;
-  static const rimStrengthIndex = 21;
-  static const verticalRefractionScaleIndex = 22;
-  static const refractionBandStartIndex = 23;
-  static const refractionBandPeakIndex = 24;
-  static const refractionBandEndIndex = 25;
-  static const magnificationRadiusIndex = 26;
-  static const chromaticStartIndex = 27;
-  static const flowStrengthIndex = 28;
-  static const activationIndex = 29;
-  static const pressDepthIndex = 30;
+  static const chromaticIndex = 10;
+  static const activationIndex = 11;
 
   final Size captureSize;
   final Offset lensCenter;
   final Size lensSize;
-  final double lensExponent;
+  final double refractionHeight;
   final double refraction;
-  final double magnification;
   final double chromatic;
-  final double velocity;
-  final double direction;
-  final double edgeCompression;
-  final double dragState;
-  final double lightStrength;
-  final double rimStrength;
-  final double verticalRefractionScale;
-  final double refractionBandStart;
-  final double refractionBandPeak;
-  final double refractionBandEnd;
-  final double magnificationRadius;
-  final double chromaticStart;
-  final double flowStrength;
   final double activation;
-  final double pressDepth;
-  final Color tint;
 
   /// 完整 uniform 布局。前两项是引擎拥有的占位符，应用不得写入。
   List<double> get values => [
@@ -512,29 +418,10 @@ class LiquidGlassShaderUniforms {
         lensCenter.dy,
         lensSize.width * 0.5,
         lensSize.height * 0.5,
-        lensExponent,
-        refraction,
-        magnification,
+        refractionHeight,
+        -refraction,
         chromatic,
-        velocity,
-        direction,
-        edgeCompression,
-        dragState,
-        tint.r,
-        tint.g,
-        tint.b,
-        tint.a,
-        lightStrength,
-        rimStrength,
-        verticalRefractionScale,
-        refractionBandStart,
-        refractionBandPeak,
-        refractionBandEnd,
-        magnificationRadius,
-        chromaticStart,
-        flowStrength,
         activation,
-        pressDepth,
       ];
 
   void apply(ui.FragmentShader shader) {
@@ -581,7 +468,7 @@ class LiquidGlassDockShaderUniforms {
         logicalSize.height,
         dockSize.width,
         dockSize.height,
-        refraction,
+        -refraction,
         chromatic,
         refractionHeight,
         activation,

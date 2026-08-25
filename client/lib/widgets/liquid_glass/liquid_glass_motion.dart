@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'bottom_nav_controller.dart';
 import 'liquid_glass_tuning.dart';
@@ -12,10 +11,12 @@ class LiquidGlassMotionState {
   const LiquidGlassMotionState({
     required this.interactionProgress,
     required this.opticalActivation,
+    required this.highlightProgress,
     required this.refraction,
     required this.chromatic,
     required this.speed,
     required this.direction,
+    required this.dockOpticalActivation,
     required this.dockRefraction,
     required this.dockChromatic,
     required this.dockRecoilX,
@@ -23,10 +24,12 @@ class LiquidGlassMotionState {
 
   final double interactionProgress;
   final double opticalActivation;
+  final double highlightProgress;
   final double refraction;
   final double chromatic;
   final double speed;
   final double direction;
+  final double dockOpticalActivation;
   final double dockRefraction;
   final double dockChromatic;
   final double dockRecoilX;
@@ -85,6 +88,7 @@ LiquidGlassMotionState liquidGlassMotionFor({
   required double edgeCompression,
   required bool reduceMotion,
   required LiquidGlassTuning tuning,
+  bool useLiquidGlass = true,
 }) {
   final interactionProgress = _clamp01(activation);
   final speed = reduceMotion
@@ -94,87 +98,37 @@ LiquidGlassMotionState liquidGlassMotionFor({
           .clamp(0.0, 1.0)
           .toDouble();
   final direction = speed < 0.01 ? 0.0 : velocityPixelsPerSecond.sign;
-  // 默认 idle 是 frosted glass；idleOpticalActivation 仅作为 QA/实验开关，
-  // 让生产默认不会在没有交互时持续渲染液态折射。
+  // Selection 只在 press / drag / settle 阶段打开 Lens；Dock 另有独立的
+  // 常驻光学激活，不再把整块 Dock 绑定在这个值上。
   final idleActivation =
       tuning.idleOpticalActivation.clamp(0.0, 1.0).toDouble();
 
   final opticalActivation = switch (phase) {
     LiquidNavPhase.idle => idleActivation,
-    LiquidNavPhase.pressing => ui.lerpDouble(
-        idleActivation,
-        1.0,
-        0.72 + interactionProgress * 0.28,
-      )!,
+    LiquidNavPhase.pressing => interactionProgress,
     LiquidNavPhase.dragging => 1.0,
-    LiquidNavPhase.settling => ui.lerpDouble(
-        idleActivation,
-        1.0,
-        interactionProgress,
-      )!,
-    LiquidNavPhase.collapsing => ui.lerpDouble(
-        idleActivation,
-        1.0,
-        interactionProgress,
-      )!,
+    LiquidNavPhase.settling => interactionProgress,
+    LiquidNavPhase.collapsing => interactionProgress,
   };
 
-  final refractionScale = switch (phase) {
-    LiquidNavPhase.idle => tuning.idleRefractionScale,
-    LiquidNavPhase.pressing => ui.lerpDouble(
-        tuning.idleRefractionScale,
-        tuning.pressedRefractionScale,
-        interactionProgress,
-      )!,
-    LiquidNavPhase.dragging => ui.lerpDouble(
-        tuning.pressedRefractionScale,
-        tuning.dragRefractionScale,
-        speed,
-      )!,
-    LiquidNavPhase.settling => tuning.pressedRefractionScale,
-    LiquidNavPhase.collapsing => ui.lerpDouble(
-        tuning.pressedRefractionScale,
-        tuning.idleRefractionScale,
-        1.0 - interactionProgress,
-      )!,
-  };
-
-  final chromaticScale = switch (phase) {
-    LiquidNavPhase.idle => tuning.idleChromaticScale,
-    LiquidNavPhase.pressing => ui.lerpDouble(
-        tuning.idleChromaticScale,
-        tuning.pressedChromaticScale,
-        interactionProgress,
-      )!,
-    LiquidNavPhase.dragging => ui.lerpDouble(
-        tuning.pressedChromaticScale,
-        tuning.dragChromaticScale,
-        speed,
-      )!,
-    LiquidNavPhase.settling => tuning.pressedChromaticScale,
-    LiquidNavPhase.collapsing => ui.lerpDouble(
-        tuning.pressedChromaticScale,
-        tuning.idleChromaticScale,
-        1.0 - interactionProgress,
-      )!,
-  };
+  // Kyant 的 lens 参数由 pressProgress 直接控制；不再为每个阶段另造一
+  // 套强度曲线。速度只作为轻微的光学跟随，主动力学交给独立 X/Y spring。
+  final highlightProgress = opticalActivation;
 
   // 速度主要改变几何；光学增益只留很小的上限，避免拖拽时变成彩色
   // 闪烁。参考实现的重量来自独立的 scaleX/scaleY 与 lens，而不是把所有
   // uniform 都乘上速度。
   final velocityRefractionBoost = 1.0 + speed * 0.08;
-  final velocityChromaticBoost = 1.0 + speed * 0.02;
+  final velocityChromaticBoost = 1.0 + speed * 0.04;
   final refraction = tuning.effectiveRefraction *
-      refractionScale.clamp(0.0, 3.0) *
+      opticalActivation *
       velocityRefractionBoost;
   final chromatic = tuning.effectiveChromatic *
-      chromaticScale.clamp(0.0, 3.0) *
+      opticalActivation *
       velocityChromaticBoost;
 
-  final dockActivation = opticalActivation.clamp(0.0, 1.0).toDouble();
-  final dockRefraction = tuning.dockRefraction *
-      ui.lerpDouble(0.82, 1.0, dockActivation)! *
-      (1.0 + speed * 0.04);
+  final dockActivation = useLiquidGlass ? 1.0 : 0.0;
+  final dockRefraction = tuning.dockRefraction * (1.0 + speed * 0.04);
   final dockChromatic = tuning.dockChromatic;
 
   final positionSignal =
@@ -201,10 +155,12 @@ LiquidGlassMotionState liquidGlassMotionFor({
   return LiquidGlassMotionState(
     interactionProgress: interactionProgress,
     opticalActivation: opticalActivation.clamp(0.0, 1.0).toDouble(),
+    highlightProgress: highlightProgress.clamp(0.0, 1.0).toDouble(),
     refraction: refraction,
     chromatic: chromatic,
     speed: speed,
     direction: direction,
+    dockOpticalActivation: dockActivation,
     dockRefraction: dockRefraction,
     dockChromatic: dockChromatic,
     dockRecoilX: dockRecoilX,

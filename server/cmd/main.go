@@ -379,6 +379,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
+		log.Fatal("设备 Agent 任务索引迁移失败:", err)
+	}
 	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
 		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
 	}
@@ -1010,6 +1013,27 @@ func main() {
 		}
 		deviceJobHandler.SetRunResumer(aiRuntime)
 		eduHandler.SetUserConsentRunResumer(aiRuntime)
+		go func() {
+			reconcile := func() {
+				count, err := aiRuntime.ReconcileWaitingDeviceJobs(appCtx, 50)
+				if err != nil {
+					log.Printf("[AI_DEVICE_RECONCILE_FAILED] %v", err)
+				} else if count > 0 {
+					log.Printf("[AI_DEVICE_RECONCILE] resumed=%d", count)
+				}
+			}
+			reconcile()
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case <-ticker.C:
+					reconcile()
+				}
+			}
+		}()
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}

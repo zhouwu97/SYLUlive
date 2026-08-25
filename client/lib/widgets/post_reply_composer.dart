@@ -65,10 +65,12 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     final ownsInput = controller.focusNode.hasFocus ||
         controller.showEmojiPanel ||
         controller.inputHandoffActive ||
-        controller.isOpen;
+        controller.isOpen ||
+        controller.keyboardInset > 0;
     if (!ownsInput) return;
 
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final view = View.of(context);
+    final keyboardInset = view.viewInsets.bottom / view.devicePixelRatio;
     controller.updateKeyboardMetrics(keyboardInset);
   }
 
@@ -136,11 +138,10 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             sendKey: const ValueKey('post-reply-send-button'),
             textController: controller.textController,
             focusNode: controller.focusNode,
+            inputFormatters: controller.inputFormatters,
             hintText: !widget.enabled
                 ? '登录后参与讨论'
-                : (controller.parentReplyId == null
-                    ? '写下你的想法...'
-                    : '写下回复...'),
+                : (controller.parentReplyId == null ? '写下你的想法...' : '写下回复...'),
             leadingTooltip: controller.localImage == null ? '添加图片' : '更换图片',
             onLeadingPressed:
                 widget.sending || _pickingImage ? null : _pickImage,
@@ -148,9 +149,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             emojiPanelVisible: isEmoji,
             onEmojiPressed: widget.sending ? null : _toggleEmojiPanel,
             canSend: (_) =>
-                widget.enabled &&
-                !widget.sending &&
-                !controller.draft.isEmpty,
+                widget.enabled && !widget.sending && !controller.draft.isEmpty,
             onSend: _submit,
             sendTooltip: '发送评论',
             onInputTap: _activateInput,
@@ -171,9 +170,8 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                 : (isDark
                     ? AppColors.textSecondaryDark
                     : AppColors.textSecondaryLight),
-            hintColor: isDark
-                ? AppColors.iconMutedDark
-                : AppColors.iconMutedLight,
+            hintColor:
+                isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight,
             enabledSendColor: AppColors.brandPrimary,
             decorate: false,
           ),
@@ -197,9 +195,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                     onStickerSelected: controller.selectSticker,
                     onFavoriteImageSelected: controller.selectFavoriteImage,
                     favoriteImageHeaders: _favoriteImageHeaders(context),
-                    onBackspace: () => deletePreviousCharacter(
-                      controller.textController,
-                    ),
+                    onBackspace: controller.deleteBackward,
                     enabled: widget.enabled && !widget.sending,
                   ),
                 ),
@@ -249,7 +245,8 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       widget.onNeedLogin();
       return;
     }
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final view = View.of(context);
+    final keyboardInset = view.viewInsets.bottom / view.devicePixelRatio;
     controller.toggleEmojiPanel(keyboardInset: keyboardInset);
   }
 

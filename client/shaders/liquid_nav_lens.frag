@@ -110,7 +110,16 @@ void main() {
 
   // Kyant's seven-channel chromatic aberration. With chromatic == 0 all
   // seven coordinates collapse to the same sample, preserving base color.
-  float dispersionIntensity = uChromatic * (
+  // 色散只存在于靠近边界的最后一段，中心 65~75% 保持原色。以
+  // chromaticStart=0.86 为例，只有约 14% 的内侧深度参与七通道采样。
+  float interiorRatio = clamp((-sd) / refractionHeight, 0.0, 1.0);
+  float chromaticBandWidth = clamp(1.0 - uChromaticStart, 0.05, 0.35);
+  float chromaticEdge = 1.0 - smoothstep(
+      0.0,
+      chromaticBandWidth,
+      interiorRatio
+  );
+  float dispersionIntensity = uChromatic * chromaticEdge * (
       (centeredCoord.x * centeredCoord.y) /
       max(halfSize.x * halfSize.y, 0.0001)
   );

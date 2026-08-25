@@ -1223,8 +1223,9 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if mcp.deviceJobs == nil {
 		return nil
 	}
+	waitDatasets := deviceWaitDatasets(request)
 	needsDevice := false
-	for _, dataset := range request.Datasets {
+	for _, dataset := range waitDatasets {
 		result := results[dataset]
 		if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 			needsDevice = true
@@ -1236,7 +1237,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
 	if err != nil {
-		for _, dataset := range request.Datasets {
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
@@ -1245,7 +1246,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	if denied {
-		for _, dataset := range request.Datasets {
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
@@ -1267,7 +1268,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			request.Reason,
 		)
 		if refreshErr != nil {
-			for _, dataset := range request.Datasets {
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
@@ -1276,7 +1277,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return nil
 		}
 		if refreshDenied {
-			for _, dataset := range request.Datasets {
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
@@ -1288,7 +1289,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return refreshWait
 		}
 	}
-	for _, dataset := range request.Datasets {
+	for _, dataset := range waitDatasets {
 		result := results[dataset]
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
 			continue
@@ -1311,6 +1312,16 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		}
 	}
 	return nil
+}
+
+// academic_risk_analysis 的成绩是完成用户目标的必要输入；学分要求、学业情况
+// 和二课只在已有快照可用时补充，缺失时保留 partial 结果，避免一个综合问题
+// 串行创建多个手机任务并让同一个 Tool Call 永久等待。
+func deviceWaitDatasets(request academic.ResolveContextRequest) []academic.DatasetType {
+	if request.Reason == "academic_risk_analysis" {
+		return []academic.DatasetType{academic.DatasetGrades}
+	}
+	return request.Datasets
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {

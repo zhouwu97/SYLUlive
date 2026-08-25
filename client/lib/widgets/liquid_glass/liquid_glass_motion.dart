@@ -58,12 +58,12 @@ LiquidGlassDragDeformation liquidGlassDragDeformationFor({
 }) {
   final velocityIntensity =
       (velocityPixelsPerSecond.abs() / math.max(normalization, 1.0))
-          .clamp(0.0, 0.20)
+          .clamp(0.0, 0.08)
           .toDouble();
   // 边界继续拖拽时 position 已被 clamp，额外保留一段弹性形变，保证首尾
   // Tab 向左、向右都能给出明确反馈，而不是像“拖不动”一样没有动效。
-  final edgeIntensity = edgeCompression.clamp(0.0, 1.0).toDouble() * 0.14;
-  final intensity = (velocityIntensity + edgeIntensity).clamp(0.0, 0.34);
+  final edgeIntensity = edgeCompression.clamp(0.0, 1.0).toDouble() * 0.04;
+  final intensity = (velocityIntensity + edgeIntensity).clamp(0.0, 0.12);
 
   return LiquidGlassDragDeformation(
     intensity: intensity,
@@ -71,8 +71,8 @@ LiquidGlassDragDeformation liquidGlassDragDeformationFor({
         ? 0.0
         : velocityPixelsPerSecond.sign,
     // 横向拉伸、纵向压扁是一组互补参数，左右方向共享同一力度。
-    horizontalScale: 1.0 / math.max(0.70, 1.0 - intensity * 0.75),
-    verticalScale: 1.0 - intensity * 0.25,
+    horizontalScale: 1.0 + intensity * 0.58,
+    verticalScale: 1.0 - intensity * 0.22,
   );
 }
 
@@ -159,8 +159,11 @@ LiquidGlassMotionState liquidGlassMotionFor({
       )!,
   };
 
-  final velocityRefractionBoost = 1.0 + speed * 0.35;
-  final velocityChromaticBoost = 1.0 + speed * 0.18;
+  // 速度主要改变几何；光学增益只留很小的上限，避免拖拽时变成彩色
+  // 闪烁。参考实现的重量来自独立的 scaleX/scaleY 与 lens，而不是把所有
+  // uniform 都乘上速度。
+  final velocityRefractionBoost = 1.0 + speed * 0.08;
+  final velocityChromaticBoost = 1.0 + speed * 0.02;
   final refraction = tuning.effectiveRefraction *
       refractionScale.clamp(0.0, 3.0) *
       velocityRefractionBoost;
@@ -170,11 +173,9 @@ LiquidGlassMotionState liquidGlassMotionFor({
 
   final dockActivation = opticalActivation.clamp(0.0, 1.0).toDouble();
   final dockRefraction = tuning.dockRefraction *
-      ui.lerpDouble(0.78, 1.0, dockActivation)! *
-      (1.0 + speed * 0.18);
-  final dockChromatic = tuning.dockChromatic *
-      ui.lerpDouble(0.72, 1.0, dockActivation)! *
-      (1.0 + speed * 0.16);
+      ui.lerpDouble(0.82, 1.0, dockActivation)! *
+      (1.0 + speed * 0.04);
+  final dockChromatic = tuning.dockChromatic;
 
   final positionSignal =
       (visualPosition - currentIndex).clamp(-1.0, 1.0).toDouble();

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -117,6 +118,31 @@ func TestDeviceJobClaimAndCompleteRequireFreshStateVersion(t *testing.T) {
 	if completed.Status != models.DeviceToolJobCompleted || completed.StateVersion != 2 || completed.ResultHash == "" {
 		t.Fatalf("unexpected completed job: status=%s version=%d hash=%q", completed.Status, completed.StateVersion, completed.ResultHash)
 	}
+}
+
+func TestDeviceJobCreateAllowsNewAttemptAfterTerminalJob(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "installation-1")
+	first := createTestDeviceJob(t, service, 1, now)
+	require.NoError(t, db.Model(&models.DeviceToolJob{}).
+		Where("id = ?", first.ID).
+		Updates(map[string]interface{}{
+			"status":       models.DeviceToolJobCompleted,
+			"result_json":  datatypes.JSON(deviceToolTestResult()),
+			"completed_at": now,
+		}).Error)
+
+	second, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-1", ToolCallID: "call-1", ToolName: "device.academic.get_cached_overview",
+		Arguments: json.RawMessage(`{}`), RequiredDataTypes: []string{"academic"}, ExpiresAt: now.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, first.ID, second.ID, "completed device job must not be reused for a new wait cycle")
+
+	var jobs []models.DeviceToolJob
+	require.NoError(t, db.Where("run_id = ? AND tool_call_id = ?", "run-1", "call-1").Find(&jobs).Error)
+	require.Len(t, jobs, 2)
 }
 
 func TestDeviceJobCreateSelectsOnlyDeviceThatSupportsTool(t *testing.T) {

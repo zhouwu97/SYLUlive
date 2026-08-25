@@ -31,6 +31,9 @@ type Canteen struct {
 
 	RatingCount int     `gorm:"-" json:"rating_count"`
 	AverageStar float64 `gorm:"-" json:"average_star"`
+
+	// 管理端待审核列表返回的提交人昵称（非数据库字段）
+	CreatorName string `gorm:"-" json:"creator_name,omitempty"`
 }
 
 // NormalizeOperatingStatus 为历史数据库补齐状态，并计算只读 JSON 字段。

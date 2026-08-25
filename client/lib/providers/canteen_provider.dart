@@ -725,6 +725,59 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  /// 管理员待审核食堂提交列表。返回 null 表示请求失败；
+  /// 成功但无数据时返回空列表。
+  Future<List<Map<String, dynamic>>?> adminListPendingCanteens() async {
+    try {
+      final response = await _dio.get('/canteens/pending');
+      if (response.statusCode == 200) {
+        final items = (response.data as Map<String, dynamic>)['items'];
+        if (items is List) {
+          return items.cast<Map<String, dynamic>>();
+        }
+        return const [];
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error listing pending canteens: $e');
+    }
+    return null;
+  }
+
+  /// 审核通过待审食堂，使其进入公开列表。
+  Future<String?> adminApproveCanteen(int canteenId) async {
+    errorCode = null;
+    try {
+      final response =
+          await _dio.post('/canteens/$canteenId/approve');
+      if (response.statusCode == 200) {
+        return '审核已通过';
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      debugPrint('Error approving canteen: $e');
+    }
+    return null;
+  }
+
+  /// 驳回待审食堂（提交将被删除）。reason 可为空。
+  Future<bool> adminRejectCanteen(int canteenId, {String reason = ''}) async {
+    try {
+      final response = await _dio.delete(
+        '/canteens/$canteenId/pending',
+        data: {'reason': reason},
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error rejecting canteen: $e');
+      return false;
+    }
+  }
+
   /// 将管理端识别出的疑似重复菜品合并到指定实体。
   Future<bool> adminMergeDish(int dishId, int targetDishId) async {
     try {

@@ -242,18 +242,20 @@ func TestCampusMCPAcademicRiskAnalysisKeepsObservedRiskAndCoverageBoundary(t *te
 	require.Equal(t, 3, data["available_dataset_count"])
 }
 
-func TestCampusMCPRiskAnalysisOnlyWaitsForRequiredGrades(t *testing.T) {
+func TestCampusMCPRiskAnalysisSchedulesOneAcademicBundle(t *testing.T) {
 	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
 		academic.DatasetGrades: {
 			Data:   json.RawMessage(`{"grades":[{"course_name":"大学物理B2","credits":3,"fraction":45}]}`),
 			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
 		},
 	}}
+	var scheduled DeviceJobRequest
 	deviceJobs := 0
 	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
 		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
-		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(_ context.Context, request DeviceJobRequest) (DeviceJobReference, error) {
 			deviceJobs++
+			scheduled = request
 			return DeviceJobReference{ID: "device-job"}, nil
 		})),
 	)
@@ -264,10 +266,14 @@ func TestCampusMCPRiskAnalysisOnlyWaitsForRequiredGrades(t *testing.T) {
 		json.RawMessage(`{}`),
 	)
 	require.NoError(t, err)
-	envelope := value.(CampusToolResult)
-	data := envelope.Data.(map[string]interface{})
-	require.Equal(t, "incomplete", data["risk_level"])
-	require.Zero(t, deviceJobs, "optional risk datasets must not create another serial device wait")
+	wait, ok := value.(ToolWait)
+	require.True(t, ok)
+	require.Equal(t, models.AIRunStateWaitingDevice, wait.State)
+	require.Equal(t, "device-job", wait.ResumeKey)
+	require.Equal(t, []string{"grades", "academic_situation", "credit_requirements"}, scheduled.RequiredDataTypes)
+	require.Equal(t, "device.academic.ensure_fresh_bundle", scheduled.ToolName)
+	require.JSONEq(t, `{"max_age_seconds":{"grades":300,"academic_situation":21600,"credit_requirements":86400}}`, string(scheduled.Arguments))
+	require.Equal(t, 1, deviceJobs, "risk analysis must create one bundle wait")
 }
 
 type countingAcademicSnapshotReader struct {

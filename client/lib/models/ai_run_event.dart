@@ -173,6 +173,15 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.deviceClaimed;
     case 'agent.activity':
       return AiRunEventType.agentActivity;
+    case 'ai.device.job.completed':
+    case 'ai.device.resume.claimed':
+    case 'ai.device.result.consumed':
+    case 'ai.tool.retry.waiting_again':
+    case 'ai.tool.retry.completed':
+    case 'ai.provider.started':
+    case 'ai.provider.completed':
+    case 'ai.provider.failed':
+      return AiRunEventType.agentActivity;
     case 'goal.updated':
       return AiRunEventType.goalUpdated;
     case 'context.resolved':
@@ -215,6 +224,22 @@ String _activityCodeForType(String type) {
     case 'action.committed':
     case 'action.failed':
       return type;
+    case 'ai.device.job.completed':
+      return 'device_job_completed';
+    case 'ai.device.resume.claimed':
+      return 'device_resume_claimed';
+    case 'ai.device.result.consumed':
+      return 'device_result_consumed';
+    case 'ai.tool.retry.waiting_again':
+      return 'tool_retry_waiting';
+    case 'ai.tool.retry.completed':
+      return 'tool_retry_completed';
+    case 'ai.provider.started':
+      return 'provider_started';
+    case 'ai.provider.completed':
+      return 'provider_completed';
+    case 'ai.provider.failed':
+      return 'provider_failed';
     default:
       return '';
   }

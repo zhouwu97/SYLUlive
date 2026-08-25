@@ -130,6 +130,8 @@ class AiAssistantProvider extends ChangeNotifier {
   List<AiAgentActivity> get agentActivities =>
       AiAgentActivityReducer.reduce(_agentActivityEvents,
           completed: _agentFlowCompleted);
+  List<AiRunEvent> get agentRawEvents =>
+      List.unmodifiable(_agentActivityEvents);
   String? get activeSubmissionRequestId => _activeSubmissionRequestId;
   bool get agentFlowCompleted => _agentFlowCompleted;
   AiRunEvent? get pendingConsent => _pendingConsent;

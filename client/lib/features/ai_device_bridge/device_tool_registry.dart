@@ -29,6 +29,7 @@ class DeviceToolRegistry {
     'device.academic.ensure_fresh_overview',
     'device.academic.ensure_fresh_grade_summary',
     'device.academic.ensure_fresh_risk_context',
+    'device.academic.ensure_fresh_bundle',
     'device.schedule.ensure_fresh_week',
     'device.academic.ensure_fresh_credit_summary',
     'device.erke.ensure_fresh_overview',
@@ -59,6 +60,11 @@ class DeviceToolRegistry {
           automationGateway: automationGateway,
         ),
       'device.academic.ensure_fresh_risk_context' => _riskContext(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.academic.ensure_fresh_bundle' => _academicBundle(
           job,
           gateway,
           automationGateway: automationGateway,
@@ -292,6 +298,164 @@ class DeviceToolRegistry {
     );
   }
 
+  Future<DeviceToolExecutionResult> _academicBundle(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final automation = automationGateway;
+    if (automation == null) {
+      throw const DeviceToolExecutionException('device_automation_unavailable');
+    }
+    _requireExactRequest(
+      job,
+      const <String>['grades', 'academic_situation', 'credit_requirements'],
+      const <String>{'max_age_seconds'},
+    );
+    final rawAges = job.arguments['max_age_seconds'];
+    if (rawAges is! Map ||
+        rawAges.length != 3 ||
+        !const <String>{
+          'grades',
+          'academic_situation',
+          'credit_requirements',
+        }.every(rawAges.containsKey)) {
+      throw const DeviceToolExecutionException('invalid_tool_arguments');
+    }
+    final maxAges = <String, Duration>{};
+    for (final key in const <String>[
+      'grades',
+      'academic_situation',
+      'credit_requirements',
+    ]) {
+      final value = rawAges[key];
+      if (value is! num || value % 1 != 0 || value <= 0) {
+        throw const DeviceToolExecutionException('invalid_tool_arguments');
+      }
+      maxAges[key] = Duration(seconds: value.toInt());
+    }
+    final ensured = await automation.ensureFreshAcademicBundle(
+      maxAges: maxAges,
+    );
+
+    final gradesResult = await _read(
+      gateway,
+      automation,
+      (reader) => reader.getAcademicRecords(),
+    );
+    final records = _requiredData(gradesResult);
+    final credits = _academicEngine.calculateCredits(records.courses);
+    final gpa = _academicEngine.calculateGpa(records.courses);
+    final failures = _academicEngine.calculateFailures(records.courses);
+    final failedCourses = failures.failedCourses.take(500).map((course) {
+      final score =
+          course.score ?? double.tryParse(course.gradeText ?? '') ?? 0;
+      return <String, dynamic>{
+        'course_name': course.courseName,
+        'grade': score,
+        'credits': course.credit,
+      };
+    }).toList(growable: false);
+    final gradesEnvelope = _envelope(
+      gradesResult,
+      data: <String, dynamic>{
+        'course_count': records.courses.length,
+        'earned_credits': credits.passedCredits,
+        'weighted_gpa': gpa.gpa ?? 0,
+        'failed_courses': failedCourses,
+      },
+      freshness: ensured.items['grades'],
+    );
+
+    final situationResult = await automation.readAcademicDataset(
+      'academic_situation',
+    );
+    final creditResult = await automation.readAcademicDataset(
+      'credit_requirements',
+    );
+    final situationData = _requiredData(situationResult);
+    final creditData = _requiredData(creditResult);
+    return DeviceToolExecutionResult(
+      _bundleEnvelope(
+        data: <String, dynamic>{
+          'grades': gradesEnvelope,
+          'academic_situation': _envelope(
+            situationResult,
+            data: situationData,
+            freshness: ensured.items['academic_situation'],
+          ),
+          'credit_requirements': _envelope(
+            creditResult,
+            data: creditData,
+            freshness: ensured.items['credit_requirements'],
+          ),
+        },
+        ensured: ensured,
+        maxAges: maxAges,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _bundleEnvelope({
+    required Map<String, dynamic> data,
+    required AcademicBundleEnsureResult ensured,
+    required Map<String, Duration> maxAges,
+  }) {
+    final entries = ensured.items.values.toList(growable: false);
+    final refreshed = entries.any((item) => item.refreshPerformed);
+    final beforeStale = maxAges.entries.any((entry) {
+      final item = ensured.items[entry.key];
+      return item == null ||
+          !item.before.isFreshAt(DateTime.now(), entry.value);
+    });
+    DateTime? fetchedAt;
+    DateTime? expiresAt;
+    for (final item in entries) {
+      final fetched = item.after.fetchedAt;
+      if (fetched != null &&
+          (fetchedAt == null || fetched.isAfter(fetchedAt))) {
+        fetchedAt = fetched;
+      }
+      final expires = item.after.expiresAt;
+      if (expires != null &&
+          (expiresAt == null || expires.isBefore(expiresAt))) {
+        expiresAt = expires;
+      }
+    }
+    return <String, dynamic>{
+      'data': data,
+      'source': refreshed
+          ? PersonalDataSource.remoteEduFetch.wireValue
+          : PersonalDataSource.localEncryptedVault.wireValue,
+      'fetched_at': fetchedAt?.toUtc().toIso8601String(),
+      'expires_at': expiresAt?.toUtc().toIso8601String(),
+      'is_stale': false,
+      'is_partial': false,
+      'warnings': ensured.items.values
+          .map((item) => item.warning)
+          .whereType<String>()
+          .where((item) => item.trim().isNotEmpty)
+          .toList(growable: false),
+      'evidence': entries
+          .map(
+            (item) => <String, dynamic>{
+              'source': item.refreshPerformed
+                  ? PersonalDataSource.remoteEduFetch.wireValue
+                  : PersonalDataSource.localEncryptedVault.wireValue,
+              'fetched_at': item.after.fetchedAt?.toUtc().toIso8601String(),
+              'expires_at': item.after.expiresAt?.toUtc().toIso8601String(),
+              'is_stale': false,
+            },
+          )
+          .toList(growable: false),
+      'freshness': <String, dynamic>{
+        'before': beforeStale ? 'stale' : 'fresh',
+        'after': 'fresh',
+      },
+      'refresh_performed': refreshed,
+    };
+  }
+
   Future<DeviceToolExecutionResult> _erkeOverview(
     DeviceToolJob job,
     PersonalDataGateway? gateway, {
@@ -366,6 +530,8 @@ class DeviceToolRegistry {
     // 设备最终限制不能被模型传入的 max_age_seconds 绕过。
     final ceiling = switch (type) {
       PersonalDataType.academic => 5 * 60,
+      PersonalDataType.academicSituation => 6 * 60 * 60,
+      PersonalDataType.creditRequirements => 24 * 60 * 60,
       PersonalDataType.schedule => 10 * 60,
       PersonalDataType.erke => 30 * 60,
     };

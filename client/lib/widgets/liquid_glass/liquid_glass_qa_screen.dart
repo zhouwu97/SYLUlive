@@ -136,6 +136,16 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               runSpacing: 4,
               children: [
                 _buildQaChip(
+                  'Current · HEAD',
+                  _isPreset(LiquidGlassTuning.current),
+                  () => _setPreset(LiquidGlassTuning.current),
+                ),
+                _buildQaChip(
+                  'Old v1 · 57ca812',
+                  _isPreset(LiquidGlassTuning.oldV1),
+                  () => _setPreset(LiquidGlassTuning.oldV1),
+                ),
+                _buildQaChip(
                   'Natural',
                   _isPreset(LiquidGlassTuning.natural),
                   () => _setPreset(LiquidGlassTuning.natural),
@@ -151,6 +161,11 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                   () => _setPreset(LiquidGlassTuning.strong),
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'A/B：Current 使用 MCP HEAD；Old v1 复现 57ca812（2026-08-24 09:13），只切换视觉档案，不切换导航状态机。',
+              style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -482,7 +497,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   }
 
   bool _isPreset(LiquidGlassTuning preset) {
-    return _tuning.pressedScale == preset.pressedScale &&
+    return _tuning.visualProfile == preset.visualProfile &&
+        _tuning.pressedScale == preset.pressedScale &&
         _tuning.refractionHeight == preset.refractionHeight &&
         _tuning.refraction == preset.refraction &&
         _tuning.chromatic == preset.chromatic &&

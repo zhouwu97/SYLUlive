@@ -603,7 +603,7 @@ class _HomeScreenState extends State<HomeScreen>
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
-          (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
+          e.response!.data['code'] == 'announcement_id_invalid';
       if (isBadUnreadRoute) {
         debugPrint('未读公告接口异常，降级到 ${ApiConstants.noticesPath}');
         return _fetchAnnouncementsFallback(auth);

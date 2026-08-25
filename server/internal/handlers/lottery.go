@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/tasks"
@@ -27,7 +29,7 @@ func (h *LotteryHandler) GetCurrent(c *gin.Context) {
 	// 优先找进行中的，如果没有找最近已开奖的
 	err := h.db.Order("status ASC, created_at DESC").Preload("Winner").First(&event).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "暂无抽奖活动"})
+		middleware.WriteAPIError(c, http.StatusNotFound, "lottery_not_found", "暂无抽奖活动", nil)
 		return
 	}
 
@@ -60,16 +62,16 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 
 	var event models.LotteryEvent
 	if err := h.db.First(&event, eventID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+		middleware.WriteAPIError(c, http.StatusNotFound, "lottery_not_found", "抽奖活动不存在", nil)
 		return
 	}
 
 	if event.Status != 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该活动已结束或已开奖"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_already_drawn", "该抽奖已经完成", nil)
 		return
 	}
 	if !event.DrawTime.After(time.Now()) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该活动已到开奖时间，已停止参与"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_join_closed", "该抽奖已停止参与", nil)
 		return
 	}
 
@@ -92,7 +94,7 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 	// 尝试插入，依赖联合唯一索引防并发多刷
 	if err := h.db.Create(&participant).Error; err != nil {
 		// 违反唯一约束
-		c.JSON(http.StatusConflict, gin.H{"error": "您已经参与过该抽奖活动了"})
+		middleware.WriteAPIError(c, http.StatusConflict, "lottery_already_joined", "你已经参与过该抽奖活动了", nil)
 		return
 	}
 
@@ -107,23 +109,27 @@ func (h *LotteryHandler) Draw(c *gin.Context) {
 	eventIDStr := c.Param("id")
 	eventID, err := strconv.ParseUint(eventIDStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的活动ID"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_id_invalid", "抽奖活动 ID 无效", nil)
 		return
 	}
 
 	var event models.LotteryEvent
 	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+		middleware.WriteAPIError(c, http.StatusNotFound, "lottery_not_found", "抽奖活动不存在", nil)
 		return
 	}
 	if event.DrawTime.After(time.Now()) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "还未到开奖时间"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_not_ready", "还未到开奖时间", nil)
 		return
 	}
 
 	err = tasks.ExecuteDraw(h.db, uint(eventID))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if errors.Is(err, tasks.ErrLotteryAlreadyDrawn) {
+			middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_already_drawn", "该抽奖已经完成", nil)
+			return
+		}
+		middleware.WriteAPIError(c, http.StatusBadRequest, "lottery_draw_failed", "抽奖开奖失败", nil)
 		return
 	}
 

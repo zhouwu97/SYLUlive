@@ -239,7 +239,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            const Text('Pattern', style: TextStyle(color: Colors.white70)),
+            const Text('背景图案', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
@@ -258,7 +258,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: const Text(
-                'Show capture bounds',
+                '显示采样范围',
                 style: TextStyle(color: Colors.white),
               ),
               value: _tuning.showCaptureBounds,
@@ -268,7 +268,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             ),
             const SizedBox(height: 6),
             _buildSlider(
-              label: 'Refraction',
+              label: '折射力度',
               value: _tuning.refraction,
               min: 0,
               max: 28,
@@ -277,7 +277,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Refraction height',
+              label: '折射深度',
               value: _tuning.refractionHeight,
               min: 0,
               max: 24,
@@ -286,7 +286,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Pressed scale',
+              label: '按压缩放',
               value: _tuning.pressedScale,
               min: 1,
               max: 1.45,
@@ -295,7 +295,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Vertical scale',
+              label: '纵向折射比例',
               value: _tuning.verticalRefractionScale,
               min: 0.08,
               max: 0.70,
@@ -304,7 +304,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Overscan X',
+              label: '横向采样余量',
               value: _tuning.overscanX,
               min: 12,
               max: 40,
@@ -313,7 +313,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Overscan Y',
+              label: '纵向采样余量',
               value: _tuning.overscanY,
               min: 8,
               max: 32,
@@ -322,7 +322,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Chromatic',
+              label: '色散',
               value: _tuning.chromatic,
               min: 0,
               max: 3,
@@ -331,7 +331,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Rim',
+              label: '旧版边缘参数',
               value: _tuning.rimStrength,
               min: 0,
               max: 2,
@@ -340,7 +340,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Light',
+              label: '旧版光照参数',
               value: _tuning.lightStrength,
               min: 0,
               max: 0.8,
@@ -349,7 +349,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Dock alpha',
+              label: 'Dock 透明度',
               value: _tuning.dockAlpha,
               min: 0,
               max: 1,
@@ -358,7 +358,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Dock blur',
+              label: 'Dock 模糊',
               value: _tuning.dockBlur,
               min: 0,
               max: 14,
@@ -367,7 +367,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Idle optical (QA)',
+              label: 'Selection 静止折射（QA）',
               value: _tuning.idleOpticalActivation,
               min: 0,
               max: 0.6,
@@ -376,7 +376,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Dock refract',
+              label: 'Dock 折射力度',
               value: _tuning.dockRefraction,
               min: 0,
               max: 24,
@@ -385,7 +385,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Dock chroma',
+              label: 'Dock 色散',
               value: _tuning.dockChromatic,
               min: 0,
               max: 0.5,
@@ -394,7 +394,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: 'Highlight',
+              label: '高光强度',
               value: _tuning.highlightStrength,
               min: 0,
               max: 1.5,
@@ -443,26 +443,28 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'A. Kyant Params（冻结基线）',
+            'A. Kyant 参数（冻结基线）',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           const Text(
-            'Dock 64 / blur 10 / surface .20 / Dock refraction 10\n'
-            'Selection 56 / idle optical .20 / refraction 4.8 → drag 14.8\n'
-            'Tab content 1.20× / pointer highlight / Dock recoil 3.5dp',
+            'Dock 64 / 模糊 8 / 常驻 Lens 24×24\n'
+            'Selection 56 / idle Lens 0 / press、drag Lens 12×14\n'
+            'Tab 内容 1.20× / pointer 高光 0.08+0.15 / Dock 回弹 3.5dp',
             style: TextStyle(color: Colors.white70, height: 1.35),
           ),
           const SizedBox(height: 6),
           const Text(
-            'B. SYLUlive Params',
+            'B. SYLUlive 参数',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           Text(
             'accent ${_tuning.focusColorFor(false).toARGB32().toRadixString(16)} · '
             'selection ${_tuning.refractionHeight.toStringAsFixed(0)}×'
             '${_tuning.refraction.toStringAsFixed(0)} · '
-            'Dock blur ${_tuning.dockBlur.toStringAsFixed(0)} / '
-            'surface ${_tuning.dockAlpha.toStringAsFixed(2)} / full-width lens off',
+            'Dock 模糊 ${_tuning.dockBlur.toStringAsFixed(0)} / '
+            'Dock Lens ${_tuning.dockRefractionHeight.toStringAsFixed(0)}×'
+            '${_tuning.dockRefraction.toStringAsFixed(0)} / '
+            '生产态 Halo/Rim 已关闭',
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 8),

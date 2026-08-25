@@ -86,6 +86,17 @@ void main() {
         File('shaders/liquid_nav_highlight.frag').readAsStringSync();
     expect(highlightSource, contains('dot(grad, normal)'));
     expect(highlightSource, contains('uFalloff'));
+    final bottomNavSource =
+        File('lib/widgets/bottom_nav.dart').readAsStringSync();
+    expect(bottomNavSource, contains('const _scaleXSpring'));
+    expect(bottomNavSource, contains('const _scaleYSpring'));
+    expect(bottomNavSource, isNot(contains('liquidGlassSurfacePositionFor')));
+    final pointerSource =
+        File('lib/widgets/liquid_glass/interactive_highlight.dart')
+            .readAsStringSync();
+    expect(pointerSource, contains('0.08'));
+    expect(pointerSource, contains('0.15'));
+    expect(pointerSource, contains('BlendMode.plus'));
     expect(source, isNot(contains('dispersionTint')));
   });
 

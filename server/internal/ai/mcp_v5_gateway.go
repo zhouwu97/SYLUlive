@@ -100,6 +100,7 @@ func (t bearerRoundTripper) RoundTrip(request *http.Request) (*http.Response, er
 	}
 	cloned := request.Clone(request.Context())
 	cloned.Header.Set("Authorization", "Bearer "+strings.TrimSpace(t.grant))
+	cloned.Header.Set("X-Request-ID", requestIDForContext(request.Context()))
 	return base.RoundTrip(cloned)
 }
 

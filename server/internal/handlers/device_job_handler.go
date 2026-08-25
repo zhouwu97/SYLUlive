@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/services"
 )
 
@@ -109,7 +110,10 @@ func (h *DeviceJobHandler) Progress(c *gin.Context) {
 		_ = h.progressReporter.PublishDeviceJobProgress(c.Request.Context(), job.ID, request.Stage)
 	}
 	if job.Status == "failed" && h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		go func(jobID string, ctx context.Context) { _ = h.resumer.ResumeDeviceJob(ctx, jobID) }(
+			job.ID,
+			middleware.DetachedRequestContext(c.Request.Context()),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -145,7 +149,10 @@ func (h *DeviceJobHandler) Complete(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		go func(jobID string, ctx context.Context) { _ = h.resumer.ResumeDeviceJob(ctx, jobID) }(
+			job.ID,
+			middleware.DetachedRequestContext(c.Request.Context()),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -167,7 +174,10 @@ func (h *DeviceJobHandler) Fail(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		go func(jobID string, ctx context.Context) { _ = h.resumer.ResumeDeviceJob(ctx, jobID) }(
+			job.ID,
+			middleware.DetachedRequestContext(c.Request.Context()),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -184,7 +194,10 @@ func (h *DeviceJobHandler) Cancel(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		go func(jobID string, ctx context.Context) { _ = h.resumer.ResumeDeviceJob(ctx, jobID) }(
+			job.ID,
+			middleware.DetachedRequestContext(c.Request.Context()),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }

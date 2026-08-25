@@ -67,6 +67,7 @@ func (p *OpenAICompatibleProvider) Chat(ctx context.Context, request ChatRequest
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := p.httpClient.Do(httpRequest)
 	if err != nil {
 		return ChatResponse{}, err
@@ -151,6 +152,7 @@ func (p *OpenAICompatibleProvider) Start(ctx context.Context, request ProviderRe
 	httpRequest.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Accept", "text/event-stream")
+	httpRequest.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := p.httpClient.Do(httpRequest)
 	if err != nil {
 		return nil, classifyProviderTransportError(ctx, err)

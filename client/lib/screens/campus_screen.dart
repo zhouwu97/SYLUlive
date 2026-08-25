@@ -450,6 +450,8 @@ class _CampusScreenState extends State<CampusScreen>
                       ),
                     ],
                     const SizedBox(height: 12),
+                    // 仅保留校园服务区域的 Root Tab Reveal；服务项自身不再
+                    // 叠加 stagger、透明度和位移动画。
                     HomeTabRevealItem(
                       index: _aiCapabilities == null
                           ? (todayShown ? 3 : 2)

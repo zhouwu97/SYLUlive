@@ -134,6 +134,72 @@ void main() {
     expect(staleCount, 1);
   });
 
+  testWidgets('完成后显示摘要，并可查看未合并的完整审计过程', (tester) async {
+    final summary = AiAgentActivity(
+      id: 'summary',
+      runId: 'run-audit',
+      code: 'tool.completed',
+      dataset: 'academic',
+      status: AiAgentActivityStatus.success,
+      title: '已读取学业数据',
+      detail: '',
+      timestamp: DateTime.utc(2026, 8, 25),
+    );
+    const rawEvents = [
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 1,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_job_completed',
+      ),
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 2,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_resume_claimed',
+      ),
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 3,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_result_consumed',
+      ),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            activities: [summary],
+            rawEvents: rawEvents,
+            running: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            activities: [summary],
+            rawEvents: rawEvents,
+            completed: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已完成分析'), findsOneWidget);
+    expect(find.text('查看完整过程'), findsOneWidget);
+    expect(find.text('设备任务已完成'), findsNothing);
+
+    await tester.tap(find.text('查看完整过程'));
+    await tester.pumpAndSettle();
+    expect(find.text('设备任务已完成'), findsOneWidget);
+    expect(find.text('已接收设备结果'), findsOneWidget);
+    expect(find.text('已读取设备更新结果'), findsOneWidget);
+  });
+
   testWidgets('单次授权独立于 Process Card 且不出现长期授权文案', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

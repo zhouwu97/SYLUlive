@@ -24,6 +24,15 @@ enum LiquidNavColorPreset {
   coolapkReference,
 }
 
+/// Liquid Glass 的视觉实现档案。
+///
+/// `current` 是 MCP HEAD 的生产路径；`oldV1` 只供 QA 页面复现
+/// 57ca812 的首版液态底栏，不改变生产默认值或交互状态机。
+enum LiquidGlassVisualProfile {
+  current,
+  oldV1,
+}
+
 /// 液态导航 Lens 的全部影响参数。
 ///
 /// 可见 Lens 与 shader 捕获区域都由这个对象派生。参数集中后，Widget、shader
@@ -71,8 +80,12 @@ class LiquidGlassTuning {
     this.highlightRadius = 1.5,
     this.mode = LiquidGlassQaMode.finalGlass,
     this.colorPreset = LiquidNavColorPreset.sylulive,
+    this.visualProfile = LiquidGlassVisualProfile.current,
     this.showCaptureBounds = false,
   });
+
+  /// MCP HEAD 的当前视觉档案，显式命名以便 QA 做 A/B 对照。
+  static const current = LiquidGlassTuning();
 
   /// 克制的材质预设，用于在弱光学畸变下对比几何轮廓。
   static const natural = LiquidGlassTuning(
@@ -90,6 +103,42 @@ class LiquidGlassTuning {
   static const strong = LiquidGlassTuning(
     refraction: 18.0,
     chromatic: 1.35,
+  );
+
+  /// 57ca812（2026-08-24 09:13）的首版液态玻璃视觉档案。
+  ///
+  /// 旧版使用较宽的稳定 Capsule、Dock 16px blur、白色/青白渐变 surface，
+  /// 并由独立 shader 负责中心 zoom、边缘折射、轻色散和左上高光。
+  /// 它只在 Liquid Glass QA 页面用于 A/B，不作为默认生产 preset。
+  static const oldV1 = LiquidGlassTuning(
+    lensHeight: 58.0,
+    pressedScale: 1.0,
+    overscanX: 0.0,
+    overscanY: 0.0,
+    refractionHeight: 1.0,
+    refraction: 8.0,
+    verticalRefractionScale: 1.0,
+    magnification: 0.85,
+    magnificationRadius: 0.66,
+    chromatic: 0.075,
+    dockAlpha: 0.62,
+    dockBlur: 16.0,
+    dockLensHeight: 0.0,
+    dockLensAmount: 0.0,
+    idleOpticalActivation: 1.0,
+    dockRefraction: 0.0,
+    dockChromatic: 0.0,
+    dockRefractionHeight: 0.0,
+    dockSaturation: 1.0,
+    dockContrast: 1.0,
+    dockSpecularStrength: 0.0,
+    dockRecoilDistance: 0.0,
+    dockRecoilStrength: 0.0,
+    lensSurfaceAlpha: 0.0,
+    lensPressedSurfaceAlpha: 0.0,
+    highlightStrength: 1.0,
+    highlightRadius: 1.0,
+    visualProfile: LiquidGlassVisualProfile.oldV1,
   );
 
   final double lensExponent;
@@ -140,7 +189,10 @@ class LiquidGlassTuning {
   final double highlightRadius;
   final LiquidGlassQaMode mode;
   final LiquidNavColorPreset colorPreset;
+  final LiquidGlassVisualProfile visualProfile;
   final bool showCaptureBounds;
+
+  bool get isOldV1 => visualProfile == LiquidGlassVisualProfile.oldV1;
 
   Color focusColorFor(bool isDark) {
     switch (colorPreset) {
@@ -301,6 +353,7 @@ class LiquidGlassTuning {
     double? highlightRadius,
     LiquidGlassQaMode? mode,
     LiquidNavColorPreset? colorPreset,
+    LiquidGlassVisualProfile? visualProfile,
     bool? showCaptureBounds,
   }) {
     return LiquidGlassTuning(
@@ -343,6 +396,7 @@ class LiquidGlassTuning {
       highlightRadius: highlightRadius ?? this.highlightRadius,
       mode: mode ?? this.mode,
       colorPreset: colorPreset ?? this.colorPreset,
+      visualProfile: visualProfile ?? this.visualProfile,
       showCaptureBounds: showCaptureBounds ?? this.showCaptureBounds,
     );
   }
@@ -422,6 +476,73 @@ class LiquidGlassShaderUniforms {
         -refraction,
         chromatic,
         activation,
+      ];
+
+  void apply(ui.FragmentShader shader) {
+    final floats = values;
+    for (var index = customUniformStart; index < floats.length; index++) {
+      shader.setFloat(index, floats[index]);
+    }
+  }
+}
+
+/// `liquid_nav_lens_v1.frag` 的具名 uniform 布局。
+///
+/// 57ca812 的 shader 使用屏幕归一化的 Capsule 中心/半尺寸，并保留了
+/// `uTint`、`uZoom`、`uMotion` 与 `uDirection` 这组首版光学参数。
+class LiquidGlassOldV1ShaderUniforms {
+  const LiquidGlassOldV1ShaderUniforms({
+    required this.center,
+    required this.halfSize,
+    required this.refraction,
+    required this.zoom,
+    required this.chromatic,
+    required this.motion,
+    required this.direction,
+    required this.tint,
+  });
+
+  static const engineOwnedValueCount = 2;
+  static const customUniformStart = engineOwnedValueCount;
+  static const centerX = 2;
+  static const centerY = 3;
+  static const halfWidth = 4;
+  static const halfHeight = 5;
+  static const refractionIndex = 6;
+  static const zoomIndex = 8;
+  static const chromaticIndex = 7;
+  static const motionIndex = 9;
+  static const directionIndex = 10;
+  static const tintR = 11;
+  static const tintG = 12;
+  static const tintB = 13;
+  static const tintA = 14;
+
+  final Offset center;
+  final Size halfSize;
+  final double refraction;
+  final double zoom;
+  final double chromatic;
+  final double motion;
+  final double direction;
+  final Color tint;
+
+  List<double> get values => [
+        double.nan,
+        double.nan,
+        center.dx,
+        center.dy,
+        halfSize.width,
+        halfSize.height,
+        refraction,
+        chromatic,
+        zoom,
+        motion,
+        direction,
+        tint.r,
+        tint.g,
+        tint.b,
+        tint.a,
       ];
 
   void apply(ui.FragmentShader shader) {

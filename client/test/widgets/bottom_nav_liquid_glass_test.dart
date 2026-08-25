@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -609,6 +610,29 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('Old v1 preset 使用 57ca812 的宽 Capsule 且不启用当前挖空层', (tester) async {
+    await _pumpNav(
+      tester,
+      liquidGlass: true,
+      tuning: LiquidGlassTuning.oldV1,
+    );
+
+    final dockWidth = tester
+        .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
+        .width;
+    final selectionWidth = tester
+        .getSize(find.byKey(const ValueKey('bottom-nav-selection')))
+        .width;
+
+    expect(selectionWidth, greaterThan(dockWidth / 5));
+    expect(
+      find.byKey(const ValueKey('bottom-nav-normal-exclusion')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<_NavHarness> _pumpNav(
@@ -620,6 +644,7 @@ Future<_NavHarness> _pumpNav(
   int initialIndex = 0,
   double? initialVisualIndex,
   bool showDiagnostics = false,
+  LiquidGlassTuning tuning = LiquidGlassTuning.current,
 }) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
@@ -641,6 +666,7 @@ Future<_NavHarness> _pumpNav(
     disableAnimations: disableAnimations,
     textScale: textScale,
     showDiagnostics: showDiagnostics,
+    tuning: tuning,
   );
   addTearDown(harness.dispose);
 
@@ -659,6 +685,7 @@ class _NavHarness extends StatelessWidget {
     required this.disableAnimations,
     required this.textScale,
     required this.showDiagnostics,
+    required this.tuning,
   })  : lastTappedIndex = ValueNotifier(null),
         lastCommittedIndex = ValueNotifier(null),
         commitCount = ValueNotifier(0),
@@ -673,6 +700,7 @@ class _NavHarness extends StatelessWidget {
   final bool disableAnimations;
   final double textScale;
   final bool showDiagnostics;
+  final LiquidGlassTuning tuning;
   final ValueNotifier<int?> lastTappedIndex;
   final ValueNotifier<int?> lastCommittedIndex;
   final ValueNotifier<int> commitCount;
@@ -738,6 +766,7 @@ class _NavHarness extends StatelessWidget {
                       onLiquidActivationChanged: (value) =>
                           activation.value = value,
                       authProvider: authProvider,
+                      tuning: tuning,
                       showDiagnostics: showDiagnostics,
                     ),
                   );

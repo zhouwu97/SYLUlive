@@ -209,6 +209,49 @@ void main() {
     expect(tuning.dockLensAmount, 24.0);
   });
 
+  test('Old v1 preset freezes the 57ca812 visual contract', () {
+    const tuning = LiquidGlassTuning.oldV1;
+
+    expect(tuning.isOldV1, isTrue);
+    expect(tuning.lensHeight, 58.0);
+    expect(tuning.pressedScale, 1.0);
+    expect(tuning.magnification, 0.85);
+    expect(tuning.chromatic, 0.075);
+    expect(tuning.dockBlur, 16.0);
+    expect(tuning.idleOpticalActivation, 1.0);
+
+    const uniforms = LiquidGlassOldV1ShaderUniforms(
+      center: Offset(0.5, 0.75),
+      halfSize: Size(0.12, 0.04),
+      refraction: 0.02,
+      zoom: 0.85,
+      chromatic: 0.075,
+      motion: 0.5,
+      direction: -1,
+      tint: Color(0x33147C72),
+    );
+    expect(uniforms.values, hasLength(15));
+    expect(uniforms.values[LiquidGlassOldV1ShaderUniforms.zoomIndex], 0.85);
+    expect(
+      uniforms.values[LiquidGlassOldV1ShaderUniforms.directionIndex],
+      -1,
+    );
+  });
+
+  test('Old v1 shader and QA A/B controls are registered', () {
+    final shaderSource =
+        File('shaders/liquid_nav_lens_v1.frag').readAsStringSync();
+    final qaSource = File(
+      'lib/widgets/liquid_glass/liquid_glass_qa_screen.dart',
+    ).readAsStringSync();
+
+    expect(shaderSource, contains('float capsuleDistance'));
+    expect(shaderSource, contains('uZoom'));
+    expect(shaderSource, contains('uChromatic'));
+    expect(qaSource, contains('Old v1 · 57ca812'));
+    expect(qaSource, contains('Current · HEAD'));
+  });
+
   test('V9 Reference QA exposes a white Color Composite contract', () {
     final source = File(
       'lib/widgets/liquid_glass/liquid_glass_qa_screen.dart',

@@ -142,6 +142,110 @@ void main() {
     expect(result.value['data'], isA<Map<String, dynamic>>());
   });
 
+  test('学业 bundle 按三个数据集读取并返回嵌套审计信封', () async {
+    final now = DateTime.now().toUtc();
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(now),
+      academicRecords: GatewayResult(
+        status: GatewayStatus.available,
+        source: PersonalDataSource.deviceEncryptedCache,
+        fetchedAt: now,
+        expiresAt: now.add(const Duration(minutes: 5)),
+        data: AcademicRecords(
+          courses: [
+            CourseGradeRecord(
+              courseId: 'course-1',
+              courseName: '大学物理',
+              credit: 3,
+              nature: CourseNature.requiredCourse,
+              attemptType: CourseAttemptType.normal,
+              semesterId: '2025-1',
+              score: 45,
+            ),
+          ],
+        ),
+      ),
+    );
+    final ensured = EnsureFreshResult(
+      before: FreshnessState(
+        fetchedAt: now.subtract(const Duration(days: 2)),
+        expiresAt: now.subtract(const Duration(hours: 1)),
+        isStale: true,
+      ),
+      after: FreshnessState(
+        fetchedAt: now,
+        expiresAt: now.add(const Duration(days: 1)),
+        isStale: false,
+      ),
+      refreshPerformed: true,
+    );
+    final automation = _FakeAutomationGateway(
+      gateway,
+      ensured: ensured,
+      academicDatasets: {
+        'academic_situation': {
+          'total_courses': 10,
+          'passed_courses': 8,
+          'failed_courses': 1,
+          'in_progress_courses': 1,
+          'degree_total_courses': 40,
+          'degree_passed_courses': 30,
+          'degree_failed_courses': 1,
+          'degree_in_progress_courses': 9,
+          'all_gpa': 3.2,
+        },
+        'credit_requirements': {
+          'required_credits': 160.0,
+          'earned_credits': 120.0,
+          'completed_credits': 120.0,
+          'remaining_credits': 40.0,
+          'credit_gap': 40.0,
+          'module_count': 4,
+        },
+      },
+    );
+
+    final result = await DeviceToolRegistry().execute(
+      DeviceToolJob(
+        id: 'job-bundle',
+        toolName: 'device.academic.ensure_fresh_bundle',
+        arguments: const {
+          'max_age_seconds': {
+            'grades': 300,
+            'academic_situation': 21600,
+            'credit_requirements': 86400,
+          },
+        },
+        requiredDataTypes: const [
+          'grades',
+          'academic_situation',
+          'credit_requirements',
+        ],
+        status: 'pending',
+        stateVersion: 0,
+        expiresAt: now.add(const Duration(minutes: 1)),
+      ),
+      null,
+      automationGateway: automation,
+    );
+
+    expect(result.value['source'], 'remote_edu_fetch');
+    final data = result.value['data'] as Map<String, dynamic>;
+    expect(data.keys, {
+      'grades',
+      'academic_situation',
+      'credit_requirements',
+    });
+    expect(
+      (data['academic_situation'] as Map<String, dynamic>)['data'],
+      containsPair('all_gpa', 3.2),
+    );
+    expect(
+      (data['credit_requirements'] as Map<String, dynamic>)['data'],
+      containsPair('credit_gap', 40.0),
+    );
+  });
+
   test('同步期间再次触发会在当前批次结束后继续补拉', () async {
     final first = _job(now);
     final second = _jobWithId(
@@ -400,7 +504,8 @@ class _RacingDeviceJobApi implements DeviceJobApi {
     String jobId,
     int stateVersion,
     String errorCode,
-  ) => throw UnimplementedError();
+  ) =>
+      throw UnimplementedError();
 
   @override
   Future<DeviceToolJob> get(String installationId, String jobId) =>
@@ -419,10 +524,12 @@ class _RacingDeviceJobApi implements DeviceJobApi {
 class _FakeGateway implements PersonalDataGateway {
   _FakeGateway({
     required this.academicOverview,
+    this.academicRecords,
     this.onAcademicRead,
   });
 
   final GatewayResult<AcademicOverview> academicOverview;
+  final GatewayResult<AcademicRecords>? academicRecords;
   final void Function()? onAcademicRead;
   int academicReadCount = 0;
   bool closed = false;
@@ -438,8 +545,11 @@ class _FakeGateway implements PersonalDataGateway {
   }
 
   @override
-  Future<GatewayResult<AcademicRecords>> getAcademicRecords() =>
-      throw UnimplementedError();
+  Future<GatewayResult<AcademicRecords>> getAcademicRecords() {
+    final result = academicRecords;
+    if (result == null) throw UnimplementedError();
+    return Future.value(result);
+  }
 
   @override
   Future<GatewayResult<ErkeOverview>> getErkeOverview() =>
@@ -458,16 +568,41 @@ class _FakeGateway implements PersonalDataGateway {
 }
 
 class _FakeAutomationGateway implements DeviceAutomationGateway {
-  _FakeAutomationGateway(this.gateway, {required this.ensured});
+  _FakeAutomationGateway(
+    this.gateway, {
+    required this.ensured,
+    this.academicDatasets = const {},
+  });
 
   final PersonalDataGateway gateway;
   final EnsureFreshResult ensured;
+  final Map<String, Map<String, dynamic>> academicDatasets;
 
   @override
   Future<FreshnessState> inspect(PersonalDataType type) async => ensured.after;
 
   @override
+  Future<GatewayResult<Map<String, dynamic>>> readAcademicDataset(
+    String dataset,
+  ) async =>
+      GatewayResult<Map<String, dynamic>>(
+        status: GatewayStatus.available,
+        source: PersonalDataSource.deviceEncryptedCache,
+        data: academicDatasets[dataset] ?? <String, dynamic>{},
+        fetchedAt: ensured.after.fetchedAt,
+        expiresAt: ensured.after.expiresAt,
+      );
+
+  @override
   Future<RefreshResult> refreshAcademic() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<RefreshResult> refreshAcademicSituation() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<RefreshResult> refreshCreditRequirements() async =>
       const RefreshResult(performed: true);
 
   @override
@@ -484,6 +619,16 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
     required Duration maxAge,
   }) async =>
       ensured;
+
+  @override
+  Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
+    required Map<String, Duration> maxAges,
+  }) async =>
+      AcademicBundleEnsureResult(
+        items: <String, EnsureFreshResult>{
+          for (final key in maxAges.keys) key: ensured,
+        },
+      );
 
   @override
   Future<GatewayResult<T>> read<T>(DeviceDataQuery<T> query) => query(gateway);

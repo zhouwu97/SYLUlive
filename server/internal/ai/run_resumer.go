@@ -114,7 +114,7 @@ func (r *Runtime) ResumeDeviceJob(ctx context.Context, jobID string) error {
 	}
 	r.appendDeviceResumeTrace(ctx, job.RunID, "ai.device.job.completed", map[string]interface{}{
 		"job_id": job.ID, "tool_call_id": job.ToolCallID, "tool_name": job.ToolName,
-		"dataset": deviceDatasetForTool(job.ToolName), "status": job.Status,
+		"datasets": deviceDatasetsForTool(job.ToolName), "status": job.Status,
 		"result_bytes": len(job.ResultJSON), "result_hash": job.ResultHash,
 	})
 
@@ -176,7 +176,7 @@ func (r *Runtime) ResumeDeviceJob(ctx context.Context, jobID string) error {
 	}
 	r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.device.resume.claimed", map[string]interface{}{
 		"job_id": job.ID, "resume_id": resume.ID, "tool_call_id": job.ToolCallID,
-		"tool_name": job.ToolName, "dataset": deviceDatasetForTool(job.ToolName),
+		"tool_name": job.ToolName, "datasets": deviceDatasetsForTool(job.ToolName),
 		"status": "resuming", "waiting_state": resume.WaitingState,
 	})
 	go r.executeResumedRun(resume.ID)
@@ -403,7 +403,7 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				}
 				r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.device.result.consumed", map[string]interface{}{
 					"job_id": deviceJob.ID, "tool_call_id": item.CallID, "tool_name": deviceJob.ToolName,
-					"dataset": deviceDatasetForTool(deviceJob.ToolName), "status": deviceJob.Status,
+					"datasets": deviceDatasetsForTool(deviceJob.ToolName), "status": deviceJob.Status,
 					"result_bytes": len(deviceJob.ResultJSON), "result_hash": deviceJob.ResultHash,
 				})
 				retryContext = withDeviceJobResumeContext(ctx, deviceJobResumeContext{

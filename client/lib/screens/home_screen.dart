@@ -186,12 +186,20 @@ class _HomeScreenState extends State<HomeScreen>
         .toList();
     if (lists.any((data) => data is! List)) return;
 
+    final canteenRes = await safeGet('/canteens/pending');
+    if (canteenRes == null) return;
+    final canteenItems = canteenRes.data is Map
+        ? (canteenRes.data as Map)['items']
+        : null;
+    if (canteenItems is! List) return;
+
     try {
       int count = 0;
       count += (lists[0] as List).length;
       count += (lists[1] as List).length;
       count += (lists[2] as List).where((i) => i['my_vote'] != true).length;
       count += (lists[3] as List).where((r) => r['can_vote'] == true).length;
+      count += canteenItems.length;
 
       if (auth.user?.isSuperAdmin == true) {
         final superRes = await safeGet('/super/invitations/pending');

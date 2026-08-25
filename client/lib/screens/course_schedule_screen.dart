@@ -128,6 +128,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _initializing = true;
   bool _hasCache = false;
   bool _settingsLoaded = false;
+  Future<bool>? _cachePrimeFuture;
   String? _preparedUserId;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
@@ -224,10 +225,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中。
     final hasCache = sc.courses.isNotEmpty ||
-        await sc.loadCachedCoursesIfAvailable().timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => false,
-            );
+        await _primeCachedCourses(sc).timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => false,
+        );
 
     await _syncCourseReminders(sc);
     if (mounted) {
@@ -320,6 +321,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final uid = user.id.toString();
     if (_preparedUserId == uid) return;
     _preparedUserId = uid;
+    _cachePrimeFuture = null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -327,7 +329,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final sc = context.read<CourseScheduleProvider>();
       edu.setUserId(uid);
       sc.setUserId(uid);
+      unawaited(_primeCachedCourses(sc));
     });
+  }
+
+  Future<bool> _primeCachedCourses(CourseScheduleProvider sc) {
+    return _cachePrimeFuture ??= _loadCachedCoursesForFirstFrame(sc);
+  }
+
+  Future<bool> _loadCachedCoursesForFirstFrame(
+    CourseScheduleProvider sc,
+  ) async {
+    try {
+      return await sc.loadCachedCoursesIfAvailable();
+    } catch (error) {
+      // 首帧不能因为缓存读取异常退化成透明空屏；正式初始化路径会保持正式空框架。
+      debugPrint('课表首帧缓存预热失败: ${error.runtimeType}');
+      return false;
+    }
   }
 
   int _pageForWeekStart(CourseScheduleProvider sc, DateTime weekStart) {
@@ -397,10 +416,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
 
     if (!_settingsLoaded) {
-      return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: overlayStyle,
-        child: const Scaffold(backgroundColor: Colors.transparent),
-      );
+      return _buildStableScheduleShell(overlayStyle, isDark);
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -439,10 +455,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     }
                   }
 
-                  // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
+                  // 正在初始化或等待数据时也保持正式课表框架；课程数据到位后
+                  // 由 Consumer 局部更新课程网格，不经过整页 spinner / fade。
                   if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
                       sc.courses.isEmpty) {
-                    return _buildLoadingOverlay(sc);
+                    return _buildStableEmptySchedule(sc, isDark);
                   }
 
                   if (!edu.isBound) {
@@ -507,6 +524,96 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ),
     );
+  }
+
+  /// 设置读取期间也保持正式课表的空间结构，避免 GlobalBackgroundWrapper
+  /// 下面出现透明空 Scaffold。已有内存/缓存课程直接复用正式网格；没有数据时
+  /// 复用正式空状态，不引入第二套 Skeleton 或整页过渡。
+  Widget _buildStableScheduleShell(
+    SystemUiOverlayStyle overlayStyle,
+    bool isDark,
+  ) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          bottom: false,
+          child: Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              if (!auth.isLoggedIn) {
+                return _buildLoginPrompt(context, isDark);
+              }
+              return Consumer2<EduProvider, CourseScheduleProvider>(
+                builder: (context, edu, sc, _) {
+                  if (sc.courses.isNotEmpty && sc.semesterStart != null) {
+                    return _buildStableCourseSurface(sc, isDark);
+                  }
+                  if (edu.isStatusLoaded && !edu.isBound) {
+                    return _buildBindView(context, edu, sc, isDark);
+                  }
+                  if (sc.courses.isNotEmpty && sc.semesterStart == null) {
+                    return _buildStableSemesterStartState(context, sc, isDark);
+                  }
+                  return _buildStableEmptySchedule(sc, isDark);
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStableEmptySchedule(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(child: _buildNoScheduleState(context, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildStableSemesterStartState(
+    BuildContext context,
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(
+          child: _buildSemesterStartRequiredState(context, sc, isDark),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStableCourseSurface(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    final mainContent = Column(
+      children: [
+        _buildDateHeader(sc),
+        Expanded(child: _buildCourseGrid(sc)),
+      ],
+    );
+    if (ResponsiveUtil.isDesktop(context)) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTodayOverview(sc, isDark),
+          Expanded(child: mainContent),
+        ],
+      );
+    }
+    return mainContent;
   }
 
   Widget _buildTodayOverview(CourseScheduleProvider sc, bool isDark) {
@@ -707,35 +814,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  // ====== 加载覆盖层 ======
-  Widget _buildLoadingOverlay(CourseScheduleProvider sc) {
-    return Column(
-      children: [
-        _buildDateHeader(sc),
-        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-        const Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(strokeWidth: 3),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  '正在加载课表…',
-                  style: TextStyle(fontSize: 13, color: Colors.white54),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 

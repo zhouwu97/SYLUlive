@@ -188,7 +188,7 @@ void main() {
     );
   });
 
-  testWidgets('键盘弹出后评论输入框保持在键盘上方', (tester) async {
+  testWidgets('从评论回复入口打开键盘时，输入框逐帧保持在键盘上方', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -204,18 +204,40 @@ void main() {
       likeCount: 12,
     );
 
-    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        replies: [
+          {
+            'id': 7,
+            'post_id': 100,
+            'author_id': 2,
+            'author': {
+              'id': 2,
+              'student_id': '2',
+              'nickname': '评论用户',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '用于打开回复输入的评论',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
     final input = find.byKey(const ValueKey('post-reply-input'));
-    await tester.tap(input);
+    await tester.tap(find.text('用于打开回复输入的评论'));
     await tester.pump();
 
-    tester.view.viewInsets = const FakeViewPadding(bottom: 350);
-    await tester.pump();
+    for (final inset in [40.0, 160.0, 350.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
 
-    final inputRect = tester.getRect(input);
-    expect(inputRect.bottom, lessThanOrEqualTo(450.5));
+      final inputRect = tester.getRect(input);
+      expect(inputRect.bottom, lessThanOrEqualTo(800 - inset + 0.5));
+    }
   });
 
   testWidgets('focusReplyComposer=true 时评论输入框展开并获得焦点', (tester) async {

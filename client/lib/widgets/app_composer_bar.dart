@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_colors.dart';
 
@@ -27,6 +28,7 @@ class AppComposerBar extends StatelessWidget {
     this.sendTooltip = '发送',
     this.onInputTap,
     this.onKeyEvent,
+    this.inputFormatters = const <TextInputFormatter>[],
     this.fieldEnabled = true,
     this.readOnly = false,
     this.leadingLoading = false,
@@ -57,6 +59,7 @@ class AppComposerBar extends StatelessWidget {
   final String sendTooltip;
   final VoidCallback? onInputTap;
   final KeyEventResult Function(FocusNode node, KeyEvent event)? onKeyEvent;
+  final List<TextInputFormatter> inputFormatters;
   final bool fieldEnabled;
   final bool readOnly;
   final bool leadingLoading;
@@ -85,9 +88,13 @@ class AppComposerBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final effectiveShellColor = shellColor ??
-        (isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight);
+        (isDark
+            ? AppColors.composerSurfaceDark
+            : AppColors.composerSurfaceLight);
     final effectiveDividerColor = dividerColor ??
-        (isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight);
+        (isDark
+            ? AppColors.composerDividerDark
+            : AppColors.composerDividerLight);
     final effectiveInputFillColor = inputFillColor ??
         (isDark ? AppColors.composerInputDark : AppColors.composerInputLight);
     final effectiveInputTextColor = inputTextColor ??
@@ -97,12 +104,18 @@ class AppComposerBar extends StatelessWidget {
     final effectiveIconColor = iconColor ??
         (isDark ? AppColors.iconNeutralDark : AppColors.iconNeutralLight);
     final effectiveEnabledSendColor = enabledSendColor ??
-        (isDark ? AppColors.messageOutgoingDark : AppColors.messageOutgoingLight);
+        (isDark
+            ? AppColors.messageOutgoingDark
+            : AppColors.messageOutgoingLight);
     final effectiveEnabledSendIconColor = enabledSendIconColor ?? Colors.white;
     final effectiveDisabledSendColor = disabledSendColor ??
-        (isDark ? AppColors.disabledControlDark : AppColors.disabledControlLight);
+        (isDark
+            ? AppColors.disabledControlDark
+            : AppColors.disabledControlLight);
     final effectiveDisabledSendIconColor = disabledSendIconColor ??
-        (isDark ? AppColors.disabledControlTextDark : AppColors.disabledControlTextLight);
+        (isDark
+            ? AppColors.disabledControlTextDark
+            : AppColors.disabledControlTextLight);
 
     return Container(
       key: composerKey,
@@ -163,6 +176,7 @@ class AppComposerBar extends StatelessWidget {
                   controller: textController,
                   focusNode: focusNode,
                   onTap: onInputTap,
+                  inputFormatters: inputFormatters,
                   enabled: fieldEnabled,
                   readOnly: readOnly,
                   style: TextStyle(color: effectiveInputTextColor),

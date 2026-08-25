@@ -307,7 +307,7 @@ func SuperAdminMiddleware() gin.HandlerFunc {
 }
 
 func writeAPIError(c *gin.Context, status int, code, message string) {
-	c.JSON(status, gin.H{"error": message, "code": code})
+	WriteAPIError(c, status, code, message, nil)
 }
 
 // GenerateToken 生成JWT令牌

@@ -867,10 +867,26 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂名称长度需在 2 到 100 个字符之间"})
 		return
 	}
+	image := strings.TrimSpace(input.Image)
+	// 校验门面图片是真实的上传文件（/uploads 且已在 files 表登记），
+	// 防止空值/假路径导致管理员审核时看不到提交图片。
+	fileIDs, err := services.FileIDsByPublicPaths(h.db, image)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "图片校验失败"})
+		return
+	}
+	if len(fileIDs) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先上传商家门面图片"})
+		return
+	}
+	if muted, err := services.IsCanteenMuted(h.db, userID.(uint)); err == nil && muted {
+		c.JSON(http.StatusForbidden, gin.H{"code": "canteen_submission_muted", "error": "因已确认的食堂内容违规，暂时不能提交食堂评价或菜品投稿"})
+		return
+	}
 	canteen := models.Canteen{
 		Name:            name,
 		NormalizedName:  normalizeCanteenName(name),
-		Image:           input.Image,
+		Image:           image,
 		Verified:        false,
 		OperatingStatus: models.CanteenOperatingActive,
 		CreatedBy:       userID.(uint),
@@ -886,6 +902,8 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return
 	}
+
+	CreateCanteenPendingNotification(h.db, canteen.ID, canteen.Name, canteen.CreatedBy)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "已提交审核",
@@ -1327,7 +1345,39 @@ func (h *CanteenHandler) AdminListPending(c *gin.Context) {
 	if canteens == nil {
 		canteens = []models.Canteen{}
 	}
+	attachCanteenCreatorNames(h.db, canteens)
 	c.JSON(http.StatusOK, gin.H{"items": canteens})
+}
+
+// attachCanteenCreatorNames 为待审核列表补充提交人昵称，供管理端展示。
+func attachCanteenCreatorNames(db *gorm.DB, canteens []models.Canteen) {
+	if len(canteens) == 0 {
+		return
+	}
+	ids := make(map[uint]struct{}, len(canteens))
+	for _, canteen := range canteens {
+		if canteen.CreatedBy != 0 {
+			ids[canteen.CreatedBy] = struct{}{}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	keys := make([]uint, 0, len(ids))
+	for id := range ids {
+		keys = append(keys, id)
+	}
+	var users []models.User
+	if err := db.Select("id", "nickname").Where("id IN ?", keys).Find(&users).Error; err != nil {
+		return
+	}
+	names := make(map[uint]string, len(users))
+	for _, user := range users {
+		names[user.ID] = user.Nickname
+	}
+	for i := range canteens {
+		canteens[i].CreatorName = names[canteens[i].CreatedBy]
+	}
 }
 
 // ApproveCanteen 审核通过食堂，使其出现在公开列表并允许用户评价。
@@ -1356,10 +1406,14 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: admin.Nickname, Action: "通过食堂审核", Target: canteen.Name,
 			Detail: fmt.Sprintf("通过食堂提交（ID: %d），创建者 %d", canteen.ID, canteen.CreatedBy),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, true, "")
+		return nil
 	}); err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
@@ -1384,6 +1438,13 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
 	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
 	adminID := c.GetUint("user_id")
 	var canteen models.Canteen
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -1403,10 +1464,14 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: admin.Nickname, Action: "驳回食堂审核", Target: canteen.Name,
-			Detail: fmt.Sprintf("驳回食堂提交（ID: %d），创建者 %d", canteen.ID, canteen.CreatedBy),
-		}).Error
+			Detail: fmt.Sprintf("驳回食堂提交（ID: %d），创建者 %d，原因：%s", canteen.ID, canteen.CreatedBy, strings.TrimSpace(input.Reason)),
+		}).Error; err != nil {
+			return err
+		}
+		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, false, input.Reason)
+		return nil
 	}); err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):

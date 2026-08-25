@@ -187,6 +187,10 @@ FEED-H1 加固：
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
+| `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知 |
+| `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称） |
+| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者 |
+| `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
 
 ### 食堂评价投票
 

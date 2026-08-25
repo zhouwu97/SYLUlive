@@ -9,6 +9,7 @@ import 'dart:io' show File;
 import 'admin_reports_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
+import 'admin_canteen_review_screen.dart';
 import 'admin_featured_applications_screen.dart';
 import 'admin_logs_screen.dart';
 import 'admin_announcements_screen.dart';
@@ -32,7 +33,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   // Pending counts
   int? _reportsCount;
   int? _featuredCount;
-  int? _reviewTasksCount; // Teachers + Majors
+  int? _reviewTasksCount; // Teachers + Majors + Canteens
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   bool _hasLoadError = false;
@@ -67,6 +68,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/admin/invitations/pending')),
       safeGet(dio.get('/admin/removals/pending')),
       safeGet(dio.get('/admin/exam-papers/pending-count')),
+      safeGet(dio.get('/canteens/pending')),
     ]);
 
     if (!mounted) return;
@@ -84,18 +86,21 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return null;
     }
 
-    int? sumCounts(Response<dynamic>? first, Response<dynamic>? second) {
-      final firstCount = getCount(first);
-      final secondCount = getCount(second);
-      if (firstCount == null || secondCount == null) return null;
-      return firstCount + secondCount;
+    int? sumCounts(List<Response<dynamic>?> responses) {
+      var total = 0;
+      for (final response in responses) {
+        final count = getCount(response);
+        if (count == null) return null;
+        total += count;
+      }
+      return total;
     }
 
     setState(() {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
-      _reviewTasksCount = sumCounts(responses[2], responses[3]);
-      _adminTasksCount = sumCounts(responses[4], responses[5]);
+      _reviewTasksCount = sumCounts([responses[2], responses[3], responses[7]]);
+      _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _hasLoadError = responses.any((response) => response == null);
       _isLoading = false;
@@ -276,6 +281,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   MaterialPageRoute(
                                       builder: (_) =>
                                           const AdminReviewTasksScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.storefront_outlined,
+                          iconColor: Colors.teal,
+                          title: '食堂审核',
+                          subtitle: '待审核商家提交',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminCanteenReviewScreen()))
                               .then((_) => _loadCounts()),
                         ),
                       ],

@@ -45,8 +45,9 @@ void main() {
       expect(harness.activation.value, greaterThan(0));
       expect(harness.visualIndex.value, greaterThan(0));
       expect(harness.visualIndex.value, lessThan(3));
-      expect(harness.selectedIndex.value, 0);
-      expect(harness.commitCount.value, 0);
+      // 页面提交不再等待 Lens spring 完成；此时视觉位置仍在追随目标。
+      expect(harness.selectedIndex.value, 3);
+      expect(harness.commitCount.value, 1);
 
       await tester.pumpAndSettle();
 
@@ -65,7 +66,8 @@ void main() {
     }
   });
 
-  testWidgets('液态胶囊将背景折射、Normal Row 挖空和 Accent 前景分层', (tester) async {
+  testWidgets('frosted idle 保留背景 blur、Normal Row 挖空和 Accent 前景分层',
+      (tester) async {
     await _pumpNav(tester, liquidGlass: true);
 
     expect(
@@ -74,7 +76,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-surface')),
@@ -92,6 +94,7 @@ void main() {
       find.byKey(const ValueKey('bottom-nav-selection-foreground')),
       findsOneWidget,
     );
+    // 常态只显示独立毛玻璃；彩色边缘折射等交互激活后才出现。
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
       findsNothing,
@@ -101,6 +104,7 @@ void main() {
     );
     final decoration = material.decoration as BoxDecoration;
     expect(decoration.boxShadow, isNull);
+    // Idle 由 frosted blur + 轻轮廓组成，不启动 Liquid Lens halo。
     expect(decoration.border, isNotNull);
     final backdrop = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
@@ -115,7 +119,7 @@ void main() {
         matching: find.byType(ColoredBox),
       ),
     );
-    expect(surface.color.a, closeTo(1.0, 0.001));
+    expect(surface.color.a, closeTo(0.18, 0.001));
     final dockWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
         .width;
@@ -275,6 +279,10 @@ void main() {
     expect(harness.commitCount.value, 0);
 
     await gesture.up();
+    expect(harness.phase.value, LiquidNavPhase.settling);
+    expect(harness.selectedIndex.value, 2);
+    expect(harness.lastCommittedIndex.value, 2);
+    expect(harness.commitCount.value, 1);
     await tester.pumpAndSettle();
 
     expect(lensFinder, findsOneWidget);
@@ -288,7 +296,45 @@ void main() {
     expect(harness.commitCount.value, 1);
   });
 
-  testWidgets('V9 按住当前选中块激活连续 Capsule，短按会完整收回', (tester) async {
+  testWidgets('拖拽形变左右镜像，边界压缩不会丢失反馈', (tester) async {
+    final harness = await _pumpNav(
+      tester,
+      liquidGlass: true,
+      initialIndex: 2,
+    );
+    final gestureLayer = find.byKey(
+      const ValueKey('bottom-nav-gesture-layer'),
+    );
+    final layerTopLeft = tester.getTopLeft(gestureLayer);
+    final itemWidth = tester.getSize(gestureLayer).width / 5;
+    final lensFinder = find.byKey(const ValueKey('bottom-nav-selection'));
+    final idleWidth = tester.getSize(lensFinder).width;
+
+    Future<double> dragAndMeasure(double targetCenter) async {
+      final gesture = await tester.startGesture(
+        Offset(layerTopLeft.dx + itemWidth * 2.5, layerTopLeft.dy + 30),
+      );
+      await tester.pumpFrames(harness, const Duration(milliseconds: 120));
+      await gesture.moveTo(
+        Offset(
+            layerTopLeft.dx + itemWidth * targetCenter, layerTopLeft.dy + 30),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      final width = tester.getSize(lensFinder).width;
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      return width;
+    }
+
+    final leftWidth = await dragAndMeasure(1.5);
+    final rightWidth = await dragAndMeasure(3.5);
+
+    expect(leftWidth, greaterThan(idleWidth));
+    expect(rightWidth, greaterThan(idleWidth));
+    expect(leftWidth, closeTo(rightWidth, 1.0));
+  });
+
+  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到 frosted idle', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -307,6 +353,12 @@ void main() {
     expect(harness.phase.value, LiquidNavPhase.pressing);
     expect(harness.activation.value, greaterThan(0));
     expect(harness.activation.value, lessThan(1));
+    expect(
+      find.byKey(
+        const ValueKey('bottom-nav-selection-interactive-highlight'),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
       findsOneWidget,
@@ -342,10 +394,16 @@ void main() {
     expect(harness.phase.value, LiquidNavPhase.idle);
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('bottom-nav-selection-interactive-highlight'),
+      ),
       findsNothing,
     );
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
@@ -401,7 +459,9 @@ void main() {
 
     await gesture.up();
     expect(harness.phase.value, LiquidNavPhase.settling);
-    expect(harness.commitCount.value, 0);
+    // Drag release 立即提交业务 Tab，settling 仅负责 Lens 的视觉收尾。
+    expect(harness.selectedIndex.value, 2);
+    expect(harness.commitCount.value, 1);
     await tester.pumpAndSettle();
 
     expect(harness.phase.value, LiquidNavPhase.idle);

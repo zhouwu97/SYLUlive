@@ -53,10 +53,34 @@ class LiquidGlassTuning {
     this.lightStrength = 0.20,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
-    this.dockAlpha = 0.62,
-    this.dockBlur = 16.0,
+    // Dock 降低白色覆盖，保留背景层次给 shader 折射；这不是减少动效，
+    // 而是把“玻璃”从厚重磨砂恢复成有透光和重量的材质。
+    this.dockAlpha = 0.20,
+    this.dockBlur = 10.0,
     this.dockLensHeight = 24.0,
     this.dockLensAmount = 24.0,
+    // 常态只显示 Dock / Selection 的毛玻璃；只有 press、drag、settling
+    // 或 collapsing 阶段才打开液态折射。QA 仍可手动调高此值预览 idle optical。
+    this.idleOpticalActivation = 0.0,
+    this.idleRefractionScale = 0.0,
+    this.pressedRefractionScale = 1.20,
+    this.dragRefractionScale = 1.85,
+    this.idleChromaticScale = 0.0,
+    this.pressedChromaticScale = 0.85,
+    this.dragChromaticScale = 1.15,
+    this.dockRefraction = 10.0,
+    this.dockChromatic = 0.12,
+    this.dockRefractionHeight = 12.0,
+    this.dockSaturation = 1.12,
+    this.dockContrast = 1.04,
+    this.dockSpecularStrength = 0.80,
+    this.dockRecoilDistance = 3.5,
+    this.dockRecoilStrength = 0.82,
+    this.lensSurfaceAlpha = 0.18,
+    this.lensPressedSurfaceAlpha = 0.06,
+    this.highlightStrength = 0.90,
+    // 中心高光保持局部；四周 edge halo 才是液态玻璃的主高光层。
+    this.highlightRadius = 0.82,
     this.mode = LiquidGlassQaMode.finalGlass,
     this.colorPreset = LiquidNavColorPreset.sylulive,
     this.showCaptureBounds = false,
@@ -109,6 +133,32 @@ class LiquidGlassTuning {
   final double dockBlur;
   final double dockLensHeight;
   final double dockLensAmount;
+
+  /// Idle 默认关闭光学激活，保持 frosted blur；按压、拖拽与切换阶段逐段
+  /// 提升折射与色散，而不是在 phase 之间切换成另一颗静态 indicator。
+  final double idleOpticalActivation;
+  final double idleRefractionScale;
+  final double pressedRefractionScale;
+  final double dragRefractionScale;
+  final double idleChromaticScale;
+  final double pressedChromaticScale;
+  final double dragChromaticScale;
+
+  /// Dock 的独立光学参数。Selection 与 Dock 共用 shader 思路，但不共用
+  /// 强度，避免整块底栏变成放大的鱼眼滤镜。
+  final double dockRefraction;
+  final double dockChromatic;
+  final double dockRefractionHeight;
+  final double dockSaturation;
+  final double dockContrast;
+  final double dockSpecularStrength;
+  final double dockRecoilDistance;
+  final double dockRecoilStrength;
+
+  final double lensSurfaceAlpha;
+  final double lensPressedSurfaceAlpha;
+  final double highlightStrength;
+  final double highlightRadius;
   final LiquidGlassQaMode mode;
   final LiquidNavColorPreset colorPreset;
   final bool showCaptureBounds;
@@ -261,6 +311,25 @@ class LiquidGlassTuning {
     double? dockBlur,
     double? dockLensHeight,
     double? dockLensAmount,
+    double? idleOpticalActivation,
+    double? idleRefractionScale,
+    double? pressedRefractionScale,
+    double? dragRefractionScale,
+    double? idleChromaticScale,
+    double? pressedChromaticScale,
+    double? dragChromaticScale,
+    double? dockRefraction,
+    double? dockChromatic,
+    double? dockRefractionHeight,
+    double? dockSaturation,
+    double? dockContrast,
+    double? dockSpecularStrength,
+    double? dockRecoilDistance,
+    double? dockRecoilStrength,
+    double? lensSurfaceAlpha,
+    double? lensPressedSurfaceAlpha,
+    double? highlightStrength,
+    double? highlightRadius,
     LiquidGlassQaMode? mode,
     LiquidNavColorPreset? colorPreset,
     bool? showCaptureBounds,
@@ -292,6 +361,29 @@ class LiquidGlassTuning {
       dockBlur: dockBlur ?? this.dockBlur,
       dockLensHeight: dockLensHeight ?? this.dockLensHeight,
       dockLensAmount: dockLensAmount ?? this.dockLensAmount,
+      idleOpticalActivation:
+          idleOpticalActivation ?? this.idleOpticalActivation,
+      idleRefractionScale: idleRefractionScale ?? this.idleRefractionScale,
+      pressedRefractionScale:
+          pressedRefractionScale ?? this.pressedRefractionScale,
+      dragRefractionScale: dragRefractionScale ?? this.dragRefractionScale,
+      idleChromaticScale: idleChromaticScale ?? this.idleChromaticScale,
+      pressedChromaticScale:
+          pressedChromaticScale ?? this.pressedChromaticScale,
+      dragChromaticScale: dragChromaticScale ?? this.dragChromaticScale,
+      dockRefraction: dockRefraction ?? this.dockRefraction,
+      dockChromatic: dockChromatic ?? this.dockChromatic,
+      dockRefractionHeight: dockRefractionHeight ?? this.dockRefractionHeight,
+      dockSaturation: dockSaturation ?? this.dockSaturation,
+      dockContrast: dockContrast ?? this.dockContrast,
+      dockSpecularStrength: dockSpecularStrength ?? this.dockSpecularStrength,
+      dockRecoilDistance: dockRecoilDistance ?? this.dockRecoilDistance,
+      dockRecoilStrength: dockRecoilStrength ?? this.dockRecoilStrength,
+      lensSurfaceAlpha: lensSurfaceAlpha ?? this.lensSurfaceAlpha,
+      lensPressedSurfaceAlpha:
+          lensPressedSurfaceAlpha ?? this.lensPressedSurfaceAlpha,
+      highlightStrength: highlightStrength ?? this.highlightStrength,
+      highlightRadius: highlightRadius ?? this.highlightRadius,
       mode: mode ?? this.mode,
       colorPreset: colorPreset ?? this.colorPreset,
       showCaptureBounds: showCaptureBounds ?? this.showCaptureBounds,
@@ -443,6 +535,56 @@ class LiquidGlassShaderUniforms {
         flowStrength,
         activation,
         pressDepth,
+      ];
+
+  void apply(ui.FragmentShader shader) {
+    final floats = values;
+    for (var index = customUniformStart; index < floats.length; index++) {
+      shader.setFloat(index, floats[index]);
+    }
+  }
+}
+
+/// `liquid_nav_dock.frag` 的轻量三通道 uniform 布局。
+class LiquidGlassDockShaderUniforms {
+  const LiquidGlassDockShaderUniforms({
+    required this.logicalSize,
+    required this.dockSize,
+    required this.refraction,
+    required this.chromatic,
+    required this.refractionHeight,
+    required this.activation,
+  });
+
+  static const engineOwnedValueCount = 2;
+  static const customUniformStart = engineOwnedValueCount;
+  static const logicalSizeX = 2;
+  static const logicalSizeY = 3;
+  static const dockSizeX = 4;
+  static const dockSizeY = 5;
+  static const refractionIndex = 6;
+  static const chromaticIndex = 7;
+  static const refractionHeightIndex = 8;
+  static const activationIndex = 9;
+
+  final Size logicalSize;
+  final Size dockSize;
+  final double refraction;
+  final double chromatic;
+  final double refractionHeight;
+  final double activation;
+
+  List<double> get values => [
+        double.nan,
+        double.nan,
+        logicalSize.width,
+        logicalSize.height,
+        dockSize.width,
+        dockSize.height,
+        refraction,
+        chromatic,
+        refractionHeight,
+        activation,
       ];
 
   void apply(ui.FragmentShader shader) {

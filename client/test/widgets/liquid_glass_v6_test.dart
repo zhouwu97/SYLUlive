@@ -197,8 +197,8 @@ void main() {
     expect(tuning.refraction, 8);
     expect(tuning.chromatic, 0.32);
     expect(tuning.effectiveMagnification, 1);
-    expect(tuning.dockAlpha, 0.62);
-    expect(tuning.dockBlur, 16.0);
+    expect(tuning.dockAlpha, 0.20);
+    expect(tuning.dockBlur, 10.0);
     expect(tuning.dockLensHeight, 24.0);
     expect(tuning.dockLensAmount, 24.0);
   });

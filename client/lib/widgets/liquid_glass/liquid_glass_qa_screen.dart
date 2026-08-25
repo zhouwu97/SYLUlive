@@ -118,7 +118,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
           children: [
             if (widget.referenceParity) _buildReferenceContract(),
             const Text(
-              '拖动底栏 Lens，先看 Identity，再逐项打开光学效果。红框是 capture rect，青框是 Capsule 可见曲面。',
+              '常态是 frosted blur；长按或切换 Tab 时再观察 Lens 折射、色散与边缘连接。红框是 capture rect，青框是 Capsule 可见曲面。',
               style: TextStyle(color: Colors.white),
             ),
             if (widget.referenceParity) ...[
@@ -366,6 +366,42 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                 _tuning.copyWith(dockBlur: value),
               ),
             ),
+            _buildSlider(
+              label: 'Idle optical (QA)',
+              value: _tuning.idleOpticalActivation,
+              min: 0,
+              max: 0.6,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(idleOpticalActivation: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Dock refract',
+              value: _tuning.dockRefraction,
+              min: 0,
+              max: 24,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(dockRefraction: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Dock chroma',
+              value: _tuning.dockChromatic,
+              min: 0,
+              max: 0.5,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(dockChromatic: value),
+              ),
+            ),
+            _buildSlider(
+              label: 'Highlight',
+              value: _tuning.highlightStrength,
+              min: 0,
+              max: 1.5,
+              onChanged: (value) => _setTuning(
+                _tuning.copyWith(highlightStrength: value),
+              ),
+            ),
           ],
         ),
       ),
@@ -411,9 +447,9 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           const Text(
-            'Dock 64 / blur 8 / lens 24×24 / surface .40\n'
-            'Selection 56 / idle .10 → pressed .03 / scale 78÷56\n'
-            'Tab content 1.20× / selection lens 10×14 / chromatic on / inner 8',
+            'Dock 64 / blur 10 / surface .20 / Dock refraction 10\n'
+            'Selection 56 / idle optical .20 / refraction 4.8 → drag 14.8\n'
+            'Tab content 1.20× / pointer highlight / Dock recoil 3.5dp',
             style: TextStyle(color: Colors.white70, height: 1.35),
           ),
           const SizedBox(height: 6),

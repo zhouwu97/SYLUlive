@@ -730,6 +730,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             value: _currentSemester,
+            // AppBar 右侧同时放置多个操作按钮时，必须让下拉框在剩余宽度内收缩，
+            // 否则窄屏会触发 RenderFlex overflow，并在界面上显示调试溢出条。
+            isExpanded: true,
             dropdownColor: isDark ? const Color(0xFF1E2235) : Colors.white,
             icon: Icon(
               Icons.arrow_drop_down,
@@ -764,6 +767,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                 return Center(
                   child: Text(
                     item,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isDark ? Colors.white : Colors.black87,
                       fontSize: 18,

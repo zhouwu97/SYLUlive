@@ -93,7 +93,8 @@ void main() {
     ]) {
       expect(source, contains(channel));
     }
-    expect(source, isNot(contains('smoothstep')));
+    expect(source, contains('smoothstep'));
+    expect(source, contains('chromaticBandWidth'));
     expect(source, isNot(contains('dispersionTint')));
   });
 
@@ -194,11 +195,11 @@ void main() {
     expect(tuning.lensHeight, 56);
     expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
     expect(tuning.refractionHeight, 8);
-    expect(tuning.refraction, 8);
-    expect(tuning.chromatic, 0.32);
+    expect(tuning.refraction, 7.2);
+    expect(tuning.chromatic, 0.14);
     expect(tuning.effectiveMagnification, 1);
     expect(tuning.dockAlpha, 0.20);
-    expect(tuning.dockBlur, 10.0);
+    expect(tuning.dockBlur, 8.0);
     expect(tuning.dockLensHeight, 24.0);
     expect(tuning.dockLensAmount, 24.0);
   });

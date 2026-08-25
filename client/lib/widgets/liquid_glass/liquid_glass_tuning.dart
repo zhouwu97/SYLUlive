@@ -39,7 +39,7 @@ class LiquidGlassTuning {
     this.overscanX = 18.0,
     this.overscanY = 16.0,
     this.refractionHeight = 8.0,
-    this.refraction = 8.0,
+    this.refraction = 7.2,
     this.verticalRefractionScale = 1.0,
     this.refractionBandStart = 0.60,
     this.refractionBandPeak = 0.80,
@@ -47,8 +47,8 @@ class LiquidGlassTuning {
     // 保留字段以兼容 QA 配置文件；V8 shader 不再使用中心放大。
     this.magnification = 1.0,
     this.magnificationRadius = 0.66,
-    this.chromatic = 0.32,
-    this.chromaticStart = 0.84,
+    this.chromatic = 0.14,
+    this.chromaticStart = 0.86,
     this.rimStrength = 0.12,
     this.lightStrength = 0.20,
     this.velocityNormalization = 1000.0,
@@ -56,24 +56,24 @@ class LiquidGlassTuning {
     // Dock 降低白色覆盖，保留背景层次给 shader 折射；这不是减少动效，
     // 而是把“玻璃”从厚重磨砂恢复成有透光和重量的材质。
     this.dockAlpha = 0.20,
-    this.dockBlur = 10.0,
+    this.dockBlur = 8.0,
     this.dockLensHeight = 24.0,
     this.dockLensAmount = 24.0,
     // 常态只显示 Dock / Selection 的毛玻璃；只有 press、drag、settling
     // 或 collapsing 阶段才打开液态折射。QA 仍可手动调高此值预览 idle optical。
     this.idleOpticalActivation = 0.0,
     this.idleRefractionScale = 0.0,
-    this.pressedRefractionScale = 1.20,
-    this.dragRefractionScale = 1.85,
+    this.pressedRefractionScale = 1.08,
+    this.dragRefractionScale = 1.36,
     this.idleChromaticScale = 0.0,
-    this.pressedChromaticScale = 0.85,
-    this.dragChromaticScale = 1.15,
-    this.dockRefraction = 10.0,
-    this.dockChromatic = 0.12,
-    this.dockRefractionHeight = 12.0,
-    this.dockSaturation = 1.12,
-    this.dockContrast = 1.04,
-    this.dockSpecularStrength = 0.80,
+    this.pressedChromaticScale = 0.55,
+    this.dragChromaticScale = 0.65,
+    this.dockRefraction = 7.0,
+    this.dockChromatic = 0.0,
+    this.dockRefractionHeight = 10.0,
+    this.dockSaturation = 1.04,
+    this.dockContrast = 1.01,
+    this.dockSpecularStrength = 0.46,
     this.dockRecoilDistance = 3.5,
     this.dockRecoilStrength = 0.82,
     this.lensSurfaceAlpha = 0.18,
@@ -88,8 +88,8 @@ class LiquidGlassTuning {
 
   /// 克制的材质预设，用于在弱光学畸变下对比几何轮廓。
   static const natural = LiquidGlassTuning(
-    refraction: 10.0,
-    chromatic: 0.70,
+    refraction: 7.5,
+    chromatic: 0.16,
   );
 
   /// 按用户提供的酷安截图调出的默认参考预设。

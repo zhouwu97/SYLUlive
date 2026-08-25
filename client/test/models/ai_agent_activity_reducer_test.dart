@@ -57,6 +57,47 @@ void main() {
     expect(activities.single.title, '没能获取最新成绩');
   });
 
+  test('同一个 call 和 job 的设备阶段折叠为一行，并优先使用显式数据集', () {
+    final activities = AiAgentActivityReducer.reduce([
+      const AiRunEvent(
+        runId: 'run-1',
+        seq: 1,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'checking_freshness',
+        dataset: 'credit_requirements',
+        toolName: 'academic_get_risk_analysis',
+        callId: 'call-1',
+        jobId: 'job-1',
+        status: 'running',
+      ),
+      const AiRunEvent(
+        runId: 'run-1',
+        seq: 2,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'refresh_started',
+        dataset: 'credit_requirements',
+        toolName: 'academic_get_risk_analysis',
+        callId: 'call-1',
+        jobId: 'job-1',
+        status: 'running',
+      ),
+      const AiRunEvent(
+        runId: 'run-1',
+        seq: 3,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'refresh_completed',
+        dataset: 'credit_requirements',
+        toolName: 'academic_get_risk_analysis',
+        callId: 'call-1',
+        jobId: 'job-1',
+        success: true,
+      ),
+    ]);
+
+    expect(activities, hasLength(1));
+    expect(activities.single.title, '已获取学分要求');
+  });
+
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
     final activities = AiAgentActivityReducer.reduce([
       AiRunEvent.fromJson({

@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
+import 'package:shenliyuan/widgets/course/course_empty_state_card.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 
@@ -115,6 +116,36 @@ class _BoundEduProvider extends EduProvider {
 
   @override
   void setUserId(String userId) {}
+
+  @override
+  Future<void> ensureStatusLoaded() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// 模拟 EduProvider 先恢复“已绑定”状态、稍后才恢复来源学号的竞态。
+class _DelayedSourceEduProvider extends EduProvider {
+  _DelayedSourceEduProvider() : super(Dio());
+
+  String _sourceAccountId = '';
+
+  @override
+  bool get isBound => true;
+
+  @override
+  bool get isStatusLoaded => true;
+
+  @override
+  String get studentId => _sourceAccountId;
+
+  @override
+  void setUserId(String userId) {}
+
+  void restoreSourceAccount(String sourceAccountId) {
+    _sourceAccountId = sourceAccountId;
+    notifyListeners();
+  }
 
   @override
   Future<void> ensureStatusLoaded() async {}
@@ -454,6 +485,77 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await _disposeCourse(tester, page);
+  });
+
+  testWidgets('来源学号延迟恢复时不显示误导的课表拉取空状态', (tester) async {
+    final store = _MemorySnapshotStore();
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    await _seedVault(
+      store,
+      fetchedAt: now,
+      semesterStart: monday,
+    );
+
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    const reminderChannel = MethodChannel('shenliyuan/course_reminders');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(reminderChannel, (call) async => null);
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(reminderChannel, null);
+    });
+
+    final auth = _CourseAuthProvider(client: Dio());
+    final edu = _DelayedSourceEduProvider();
+    final themeProvider = ThemeProvider(loadOnStart: false);
+    final scheduleProvider = CourseScheduleProvider(Dio(), (_) => store);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<EduProvider>.value(value: edu),
+          ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
+              CourseScheduleProvider>(
+            create: (_) => scheduleProvider,
+            update: (_, auth, edu, schedule) => schedule!
+              ..syncSessionContext(auth.user?.id.toString(), edu.studentId),
+          ),
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ],
+        child: MaterialApp(
+          theme: ThemeData.light(),
+          home: const CourseScheduleScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('schedule-session-restoring')),
+      findsOneWidget,
+    );
+    expect(find.byType(CourseEmptyStateCard), findsNothing);
+    expect(find.text('课表拉取'), findsNothing);
+
+    edu.restoreSourceAccount('edu-1');
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.byType(CourseEmptyStateCard), findsNothing);
+    expect(find.text('课表拉取'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 100));
+    auth.dispose();
+    edu.dispose();
+    themeProvider.dispose();
   });
 }
 

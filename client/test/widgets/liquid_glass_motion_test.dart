@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/widgets/liquid_glass/bottom_nav_controller.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_motion.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_visual_inertia.dart';
 
 void main() {
   test('idle 保持 frosted，press/drag 才按阶段提升折射与色散', () {
@@ -116,5 +117,45 @@ void main() {
     expect(source, contains('vec4 green'));
     expect(source, contains('vec4 blue'));
     expect(source, contains('smoothstep'));
+  });
+
+  test('视觉表面在拖拽时只滞后几像素，逻辑位置不受影响', () {
+    final surface = liquidGlassSurfacePositionFor(
+      logicalPosition: 2.0,
+      previousPosition: 1.96,
+      velocityPixelsPerSecond: 900,
+      itemWidth: 72,
+      dragging: true,
+      reduceMotion: false,
+    );
+    final lagPixels = liquidGlassSurfaceLagPixels(
+      logicalPosition: 2.0,
+      surfacePosition: surface,
+      itemWidth: 72,
+    );
+
+    expect(lagPixels, lessThan(0));
+    expect(lagPixels.abs(), lessThanOrEqualTo(6));
+    expect(
+      liquidGlassSurfaceTargetPosition(
+        logicalPosition: 2,
+        velocityPixelsPerSecond: 1800,
+        itemWidth: 72,
+        dragging: true,
+        reduceMotion: false,
+      ),
+      closeTo(2 - 6 / 72, 0.0001),
+    );
+    expect(
+      liquidGlassSurfacePositionFor(
+        logicalPosition: 2,
+        previousPosition: 0,
+        velocityPixelsPerSecond: 900,
+        itemWidth: 72,
+        dragging: true,
+        reduceMotion: true,
+      ),
+      2,
+    );
   });
 }

@@ -95,31 +95,38 @@ class LiquidGlassDockSpecularPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final rect = Offset.zero & size;
     final radius = math.min(size.width, size.height) / 2;
     final opticalProgress = progress.clamp(0.0, 1.0).toDouble();
     if (opticalProgress <= 0.0001) return;
-    final alpha = (highContrast ? 0.48 : 0.22) *
+    final alpha = (highContrast ? 0.28 : 0.15) *
         strength.clamp(0.0, 1.0) *
         (0.28 + opticalProgress * 0.72);
+    // Dock 只保留左上方的白色入射高光。色散由 selection Lens 的边缘
+    // shader 负责，Dock 不再沿圆周铺一圈彩虹。
+    final specularRect = Rect.fromLTWH(
+      size.width * 0.08,
+      size.height * 0.08,
+      size.width * 0.62,
+      math.max(2.0, size.height * 0.36),
+    );
     final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 1.35 : 1.0
-      ..shader = SweepGradient(
-        startAngle: -math.pi / 2,
-        endAngle: math.pi * 3 / 2,
+      ..blendMode = BlendMode.screen
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
         colors: [
-          const Color(0xFF75E7FF).withValues(alpha: alpha * 1.10),
-          const Color(0xFF9EA2FF).withValues(alpha: alpha * 0.86),
-          const Color(0xFFFF8FCB).withValues(alpha: alpha * 0.80),
-          const Color(0xFFFFD17F).withValues(alpha: alpha * 0.76),
-          const Color(0xFF7CFFD5).withValues(alpha: alpha * 0.94),
-          const Color(0xFF75E7FF).withValues(alpha: alpha * 1.10),
+          Colors.white.withValues(alpha: alpha * 1.15),
+          Colors.white.withValues(alpha: alpha * 0.34),
+          Colors.transparent,
         ],
-        stops: const [0, 0.20, 0.38, 0.58, 0.80, 1],
-      ).createShader(rect);
+        stops: const [0.0, 0.32, 1.0],
+      ).createShader(specularRect)
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        highContrast ? 1.4 : 2.2,
+      );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(rect.deflate(0.5), Radius.circular(radius)),
+      RRect.fromRectAndRadius(specularRect, Radius.circular(radius * 0.24)),
       paint,
     );
   }

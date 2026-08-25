@@ -160,7 +160,7 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 			return &existing, nil
 		}
 	}
-	if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+	if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 		return nil, lookupErr
 	}
 	now := s.clock().UTC()

@@ -95,7 +95,7 @@ void main() {
     ]);
 
     expect(activities, hasLength(1));
-    expect(activities.single.title, '已获取学分要求');
+    expect(activities.single.title, '已获取最新学分要求');
   });
 
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {

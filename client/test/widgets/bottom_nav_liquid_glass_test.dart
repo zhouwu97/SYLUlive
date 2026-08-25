@@ -94,9 +94,9 @@ void main() {
       find.byKey(const ValueKey('bottom-nav-selection-foreground')),
       findsOneWidget,
     );
-    // 常态只显示独立毛玻璃；彩色边缘折射等交互激活后才出现。
+    // Dock 常态保留 Lens；Selection 的曲面高光只随 pressProgress 出现。
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
       findsNothing,
     );
     final material = tester.widget<DecoratedBox>(
@@ -104,7 +104,7 @@ void main() {
     );
     final decoration = material.decoration as BoxDecoration;
     expect(decoration.boxShadow, isNull);
-    // Idle 由 frosted blur + 轻轮廓组成，不启动 Liquid Lens halo。
+    // Idle Selection 没有生产态 Halo/Rim，保留轻量 fallback 边框。
     expect(decoration.border, isNotNull);
     final backdrop = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
@@ -119,7 +119,7 @@ void main() {
         matching: find.byType(ColoredBox),
       ),
     );
-    expect(surface.color.a, closeTo(0.18, 0.001));
+    expect(surface.color.a, closeTo(0.12, 0.001));
     final dockWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
         .width;
@@ -364,7 +364,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
@@ -397,7 +397,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
       findsNothing,
     );
     expect(

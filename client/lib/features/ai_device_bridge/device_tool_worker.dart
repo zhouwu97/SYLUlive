@@ -51,16 +51,27 @@ class DeviceToolWorker {
   final DeviceToolRegistry _registry;
 
   Future<void>? _syncing;
+  bool _syncAgain = false;
 
   Future<void> syncPending() {
     final active = _syncing;
-    if (active != null) return active;
-    final future = _syncAll();
+    if (active != null) {
+      _syncAgain = true;
+      return active;
+    }
+    final future = _drainPending();
     _syncing = future;
     future.whenComplete(() {
       if (identical(_syncing, future)) _syncing = null;
     });
     return future;
+  }
+
+  Future<void> _drainPending() async {
+    do {
+      _syncAgain = false;
+      await _syncAll();
+    } while (_syncAgain);
   }
 
   /// 推送正文只允许传入任务 ID；实际参数仍通过 JWT 拉取。

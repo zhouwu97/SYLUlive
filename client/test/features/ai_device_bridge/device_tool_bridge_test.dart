@@ -147,7 +147,7 @@ void main() {
     final second = _jobWithId(
       now,
       id: 'job-2',
-      toolName: 'device.academic.get_cached_grade_summary',
+      toolName: 'device.academic.get_cached_overview',
     );
     final api = _RacingDeviceJobApi(first: first, second: second);
     final gateway = _FakeGateway(

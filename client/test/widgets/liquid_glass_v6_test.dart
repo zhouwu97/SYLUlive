@@ -26,28 +26,13 @@ void main() {
       captureSize: Size(160, 94),
       lensCenter: Offset(80, 47),
       lensSize: Size(104, 62),
-      lensExponent: 2.15,
+      refractionHeight: 12.0,
       refraction: 16,
-      magnification: 1.0,
-      chromatic: 0.95,
-      velocity: 0,
-      direction: 0,
-      edgeCompression: 0,
-      dragState: 0,
-      lightStrength: 0.18,
-      rimStrength: 0.1,
-      verticalRefractionScale: 0.32,
-      refractionBandStart: 0.6,
-      refractionBandPeak: 10.0,
-      refractionBandEnd: 0.92,
-      magnificationRadius: 0.66,
-      chromaticStart: 0.84,
-      flowStrength: 0.72,
+      chromatic: 1.0,
       activation: 1,
-      pressDepth: 0,
     );
 
-    expect(uniforms.values, hasLength(31));
+    expect(uniforms.values, hasLength(12));
     expect(LiquidGlassShaderUniforms.customUniformStart, 2);
     expect(
       uniforms.values[LiquidGlassShaderUniforms.engineInputWidth].isNaN,
@@ -63,13 +48,14 @@ void main() {
       uniforms.values[LiquidGlassShaderUniforms.lensHalfWidth],
       52,
     );
-    expect(
-      uniforms.values[LiquidGlassShaderUniforms.flowStrengthIndex],
-      0.72,
-    );
+    expect(uniforms.values[LiquidGlassShaderUniforms.refractionIndex], -16);
     expect(
       uniforms.values[LiquidGlassShaderUniforms.activationIndex],
       1,
+    );
+    expect(
+      uniforms.values[LiquidGlassShaderUniforms.refractionHeightIndex],
+      12.0,
     );
   });
 
@@ -81,7 +67,7 @@ void main() {
     expect(source, contains('uniform vec2 uLogicalSize'));
     expect(source, contains('vec2 logicalFragCoord()'));
     expect(source, contains('float gradRadius = min(radius * 1.5'));
-    expect(source, contains('uRefractionBandPeak'));
+    expect(source, contains('if (-sd >= refractionHeight)'));
     for (final channel in const [
       'vec4 red',
       'vec4 orange',
@@ -93,8 +79,13 @@ void main() {
     ]) {
       expect(source, contains(channel));
     }
-    expect(source, contains('smoothstep'));
-    expect(source, contains('chromaticBandWidth'));
+    expect(source, contains('uRefractionHeight'));
+    expect(source, contains('dispersionIntensity = uChromatic'));
+    expect(source, isNot(contains('chromaticStart')));
+    final highlightSource =
+        File('shaders/liquid_nav_highlight.frag').readAsStringSync();
+    expect(highlightSource, contains('dot(grad, normal)'));
+    expect(highlightSource, contains('uFalloff'));
     expect(source, isNot(contains('dispersionTint')));
   });
 
@@ -194,12 +185,15 @@ void main() {
 
     expect(tuning.lensHeight, 56);
     expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
-    expect(tuning.refractionHeight, 8);
-    expect(tuning.refraction, 7.2);
-    expect(tuning.chromatic, 0.14);
+    expect(tuning.refractionHeight, 12);
+    expect(tuning.refraction, 14.0);
+    expect(tuning.chromatic, 1.0);
     expect(tuning.effectiveMagnification, 1);
-    expect(tuning.dockAlpha, 0.20);
+    expect(tuning.dockAlpha, 0.16);
     expect(tuning.dockBlur, 8.0);
+    expect(tuning.dockRefraction, 24.0);
+    expect(tuning.dockChromatic, 0.0);
+    expect(tuning.dockRefractionHeight, 24.0);
     expect(tuning.dockLensHeight, 24.0);
     expect(tuning.dockLensAmount, 24.0);
   });

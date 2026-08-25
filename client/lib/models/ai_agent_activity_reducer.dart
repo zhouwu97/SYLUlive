@@ -10,10 +10,31 @@ class AiAgentActivityReducer {
     bool completed = false,
   }) {
     final result = <AiAgentActivity>[];
+    final identityIndexes = <String, int>{};
+    final callIndexes = <String, int>{};
     for (final event in events) {
       final activity = _fromEvent(event);
       if (activity == null) continue;
-      result.add(activity);
+      final callKey = _callKey(activity);
+      final identityKey = _identityKey(activity);
+      int? index = identityKey == null ? null : identityIndexes[identityKey];
+      if (index == null && activity.jobId.isNotEmpty && callKey != null) {
+        final callIndex = callIndexes[callKey];
+        if (callIndex != null && result[callIndex].jobId.isEmpty) {
+          index = callIndex;
+        }
+      }
+      if (index == null && activity.jobId.isEmpty && callKey != null) {
+        index = callIndexes[callKey];
+      }
+      if (index == null) {
+        index = result.length;
+        result.add(activity);
+      } else {
+        result[index] = _merge(result[index], activity);
+      }
+      if (identityKey != null) identityIndexes[identityKey] = index;
+      if (callKey != null) callIndexes[callKey] = index;
     }
     if (completed && result.isNotEmpty && result.last.code != 'run.completed') {
       final last = result.last;
@@ -36,6 +57,42 @@ class AiAgentActivityReducer {
     return List.unmodifiable(result);
   }
 
+  static String? _callKey(AiAgentActivity activity) {
+    if (activity.callId.isEmpty) return null;
+    return '${activity.runId}:${activity.callId}';
+  }
+
+  static String? _identityKey(AiAgentActivity activity) {
+    if (activity.callId.isEmpty && activity.jobId.isEmpty) return null;
+    return '${activity.runId}:${activity.callId}:${activity.jobId}';
+  }
+
+  static AiAgentActivity _merge(
+    AiAgentActivity previous,
+    AiAgentActivity latest,
+  ) {
+    return AiAgentActivity(
+      id: previous.id,
+      runId: latest.runId,
+      code: latest.code,
+      dataset: latest.dataset.isEmpty ? previous.dataset : latest.dataset,
+      status: latest.status,
+      title: latest.title,
+      detail: latest.detail,
+      timestamp: latest.timestamp,
+      toolName: latest.toolName.isEmpty ? previous.toolName : latest.toolName,
+      callId: latest.callId.isEmpty ? previous.callId : latest.callId,
+      jobId: latest.jobId.isEmpty ? previous.jobId : latest.jobId,
+      freshnessBefore: latest.freshnessBefore.isEmpty
+          ? previous.freshnessBefore
+          : latest.freshnessBefore,
+      freshnessAfter: latest.freshnessAfter.isEmpty
+          ? previous.freshnessAfter
+          : latest.freshnessAfter,
+      success: latest.success,
+    );
+  }
+
   static AiAgentActivity? _fromEvent(AiRunEvent event) {
     final code = event.type == AiRunEventType.agentActivity
         ? event.activityCode
@@ -51,6 +108,8 @@ class AiAgentActivityReducer {
         ? AiAgentActivityStatus.failed
         : event.type == AiRunEventType.approvalRequired
             ? AiAgentActivityStatus.pending
+            : event.type == AiRunEventType.deviceWaiting
+                ? AiAgentActivityStatus.pending
             : event.type == AiRunEventType.agentActivity &&
                     (event.status == 'running' ||
                         event.activityCode == 'refresh_started')
@@ -149,17 +208,26 @@ class AiAgentActivityReducer {
   }
 
   static String _datasetLabel(String dataset, String toolName) {
-    if (dataset == 'grades' ||
-        toolName.contains('grade') ||
-        toolName.contains('academic')) {
-      return '成绩';
+    switch (dataset) {
+      case 'grades':
+        return '成绩';
+      case 'credit_requirements':
+      case 'credit_summary':
+        return '学分要求';
+      case 'academic_situation':
+        return '学业情况';
+      case 'academic':
+        return '学业数据';
+      case 'schedule':
+        return '课表';
+      case 'erke':
+        return '二课';
     }
-    if (dataset == 'schedule' || toolName.contains('schedule')) {
-      return '课表';
-    }
-    if (dataset == 'erke' || toolName.contains('erke')) {
-      return '二课';
-    }
+    if (dataset.isNotEmpty) return '校园数据';
+    if (toolName.contains('grade')) return '成绩';
+    if (toolName.contains('schedule')) return '课表';
+    if (toolName.contains('erke')) return '二课';
+    if (toolName.contains('academic')) return '学业数据';
     return '校园数据';
   }
 }

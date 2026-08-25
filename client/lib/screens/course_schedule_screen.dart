@@ -128,8 +128,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _initializing = true;
   bool _hasCache = false;
   bool _settingsLoaded = false;
+  String? _loadedSessionKey;
+  int? _primedGeneration;
   Future<bool>? _cachePrimeFuture;
-  String? _preparedUserId;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
   bool _courseReminderEnabled = false;
@@ -186,20 +187,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _refreshAfterResume,
       isVisible: () => currentHomeTabIndex.value == 2,
     );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final auth = context.read<AuthProvider>();
-      if (auth.user == null) return;
-      final uid = auth.user!.id.toString();
-      context.read<EduProvider>().setUserId(uid);
-      context.read<CourseScheduleProvider>().setUserId(uid);
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _prepareProviders();
   }
 
   @override
@@ -210,20 +197,42 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
+    _resetLoadStateIfSessionChanged(sc);
     if (_isFetchingCourses || _isImportingCourses) return;
-    if (_didLoad) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     if (!edu.isStatusLoaded) return;
+    if (_didLoad &&
+        _loadedSessionKey == sc.sessionKey &&
+        _primedGeneration == sc.contextGeneration) {
+      return;
+    }
     if (!edu.isBound) {
       _didLoad = true;
+      _loadedSessionKey = sc.sessionKey;
+      _primedGeneration = sc.contextGeneration;
       if (mounted) setState(() => _initializing = false);
       return;
     }
+    // 教务状态已绑定不代表来源学号已经同步到课表会话。此时不能把空缓存
+    // 判定为“暂无课表”，应等待 Provider 完成正确 namespace 的恢复。
+    if (!sc.isSessionReady) {
+      if (mounted && !_initializing) {
+        setState(() => _initializing = true);
+      }
+      return;
+    }
     if (sc.isLoading) return;
-    _didLoad = true;
 
-    // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中。
+    final sessionKey = sc.sessionKey;
+    final generation = sc.contextGeneration;
+    _didLoad = true;
+    _loadedSessionKey = sessionKey;
+    _primedGeneration = generation;
+
+    // Provider 是 session 的唯一所有者；页面只在 ready 阶段补一次幂等缓存读，
+    // 用于覆盖“缓存刚写入、Provider 的首次 restore 已经结束”的正常路径。
+    // Future 与 generation 成对失效，不能跨账号或来源账号复用。
     final hasCache = sc.courses.isNotEmpty ||
         await _primeCachedCourses(sc).timeout(
           const Duration(seconds: 2),
@@ -231,6 +240,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
 
     await _syncCourseReminders(sc);
+    if (sessionKey != sc.sessionKey || generation != sc.contextGeneration) {
+      return;
+    }
     if (mounted) {
       setState(() {
         _hasCache = hasCache || sc.courses.isNotEmpty;
@@ -266,8 +278,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     // 恢复前台只做本地状态同步，不自动访问教务系统。教务课表是低频数据，
     // 用户需要新数据时仍通过“从教务刷新”主动拉取，避免短暂切后台造成重复请求。
-    schedule.setUserId(user.id.toString());
-
     if (mounted) {
       final anchor = _pageAnchorDate(schedule);
       if (!_weekStart.isAtSameMomentAs(anchor)) {
@@ -314,37 +324,38 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  Future<void> _prepareProviders() async {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (user == null) return;
-    final uid = user.id.toString();
-    if (_preparedUserId == uid) return;
-    _preparedUserId = uid;
+  void _resetLoadStateIfSessionChanged(CourseScheduleProvider sc) {
+    if (_loadedSessionKey == sc.sessionKey &&
+        _primedGeneration == sc.contextGeneration) {
+      return;
+    }
+    _loadedSessionKey = null;
+    _primedGeneration = null;
+    _didLoad = false;
+    _hasCache = false;
     _cachePrimeFuture = null;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final edu = context.read<EduProvider>();
-      final sc = context.read<CourseScheduleProvider>();
-      edu.setUserId(uid);
-      sc.setUserId(uid);
-      unawaited(_primeCachedCourses(sc));
-    });
+    _initializing = true;
   }
 
   Future<bool> _primeCachedCourses(CourseScheduleProvider sc) {
-    return _cachePrimeFuture ??= _loadCachedCoursesForFirstFrame(sc);
+    final generation = sc.contextGeneration;
+    if (_primedGeneration == generation && _cachePrimeFuture != null) {
+      return _cachePrimeFuture!;
+    }
+    _primedGeneration = generation;
+    return _cachePrimeFuture = _loadCachedCoursesForSession(sc, generation);
   }
 
-  Future<bool> _loadCachedCoursesForFirstFrame(
+  Future<bool> _loadCachedCoursesForSession(
     CourseScheduleProvider sc,
+    int generation,
   ) async {
     try {
-      return await sc.loadCachedCoursesIfAvailable();
+      final loaded = await sc.loadCachedCoursesIfAvailable();
+      if (generation != sc.contextGeneration) return false;
+      return loaded;
     } catch (error) {
-      // 首帧不能因为缓存读取异常退化成透明空屏；正式初始化路径会保持正式空框架。
-      debugPrint('课表首帧缓存预热失败: ${error.runtimeType}');
+      debugPrint('课表会话缓存恢复失败: ${error.runtimeType}');
       return false;
     }
   }
@@ -457,6 +468,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
                   // 正在初始化或等待数据时也保持正式课表框架；课程数据到位后
                   // 由 Consumer 局部更新课程网格，不经过整页 spinner / fade。
+                  if (edu.isBound && sc.courses.isEmpty && !sc.isSessionReady) {
+                    return _buildScheduleSessionRestoringState(sc, isDark);
+                  }
+
                   if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
                       sc.courses.isEmpty) {
                     return _buildStableEmptySchedule(sc, isDark);
@@ -555,6 +570,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   if (sc.courses.isNotEmpty && sc.semesterStart == null) {
                     return _buildStableSemesterStartState(context, sc, isDark);
                   }
+                  if (edu.isBound && !sc.isSessionReady) {
+                    return _buildScheduleSessionRestoringState(sc, isDark);
+                  }
                   return _buildStableEmptySchedule(sc, isDark);
                 },
               );
@@ -574,6 +592,58 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _buildDateHeader(sc),
         _buildWeekdayHeader(_weekStart, withTimeGutter: true),
         Expanded(child: _buildNoScheduleState(context, isDark)),
+      ],
+    );
+  }
+
+  /// 认证用户已绑定教务，但来源账号或本地快照仍在恢复时的正式框架。
+  ///
+  /// 这里不放“课表拉取”CTA：在 session ready 之前，空列表只是中间态，
+  /// 不能向用户暗示当前学期确实没有课表。
+  Widget _buildScheduleSessionRestoringState(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      key: const ValueKey('schedule-session-restoring'),
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sync_rounded,
+                    size: 32,
+                    color: isDark ? Colors.white54 : CampusTheme.subText,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '正在恢复本机课表状态',
+                    style: TextStyle(
+                      color: isDark ? Colors.white : CampusTheme.text,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '正在确认当前教务账号并读取本机课表',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isDark ? Colors.white60 : CampusTheme.subText,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

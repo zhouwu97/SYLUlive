@@ -11,6 +11,130 @@ enum AppBackgroundMode {
   custom,
 }
 
+/// 底部导航栏的三种材质层级。
+///
+/// 液态玻璃是悬浮底栏的增强态，而不是另一套完全独立的导航组件。
+enum BottomNavStyle {
+  normal,
+  floating,
+  liquidGlass,
+}
+
+extension BottomNavStyleStorage on BottomNavStyle {
+  String get storageValue {
+    switch (this) {
+      case BottomNavStyle.normal:
+        return 'normal';
+      case BottomNavStyle.floating:
+        return 'floating';
+      case BottomNavStyle.liquidGlass:
+        return 'liquid_glass';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case BottomNavStyle.normal:
+        return '标准底栏';
+      case BottomNavStyle.floating:
+        return '悬浮底栏';
+      case BottomNavStyle.liquidGlass:
+        return '液态玻璃底栏';
+    }
+  }
+
+  static BottomNavStyle? fromStorage(String? value) {
+    switch (value) {
+      case 'normal':
+        return BottomNavStyle.normal;
+      case 'floating':
+        return BottomNavStyle.floating;
+      case 'liquid_glass':
+      case 'liquidGlass':
+        return BottomNavStyle.liquidGlass;
+      default:
+        return null;
+    }
+  }
+}
+
+enum BottomNavPerformanceMode {
+  auto,
+  highPerformance,
+  highQuality,
+}
+
+extension BottomNavPerformanceModeStorage on BottomNavPerformanceMode {
+  String get storageValue {
+    switch (this) {
+      case BottomNavPerformanceMode.auto:
+        return 'auto';
+      case BottomNavPerformanceMode.highPerformance:
+        return 'high_performance';
+      case BottomNavPerformanceMode.highQuality:
+        return 'high_quality';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case BottomNavPerformanceMode.auto:
+        return '自动';
+      case BottomNavPerformanceMode.highPerformance:
+        return '高性能';
+      case BottomNavPerformanceMode.highQuality:
+        return '高画质';
+    }
+  }
+
+  static BottomNavPerformanceMode fromStorage(String? value) {
+    switch (value) {
+      case 'high_performance':
+        return BottomNavPerformanceMode.highPerformance;
+      case 'high_quality':
+        return BottomNavPerformanceMode.highQuality;
+      default:
+        return BottomNavPerformanceMode.auto;
+    }
+  }
+}
+
+enum DevicePerformanceLevel {
+  low,
+  medium,
+  high,
+}
+
+/// 轻量级设备分级：不读取机型数据库，也不把 shader 当作所有设备默认能力。
+///
+/// 机型识别不可用时使用 CPU 核数作为保守启发式；最终仍由渲染器探测负责
+/// shader fallback。该类保持纯函数入口，便于在测试中验证边界。
+abstract final class DevicePerformanceDetector {
+  static DevicePerformanceLevel get current => fromProcessorCount(
+        Platform.numberOfProcessors,
+        isMobile: Platform.isAndroid || Platform.isIOS,
+      );
+
+  static DevicePerformanceLevel fromProcessorCount(
+    int processorCount, {
+    bool isMobile = false,
+  }) {
+    if (processorCount <= (isMobile ? 4 : 2)) {
+      return DevicePerformanceLevel.low;
+    }
+    if (processorCount >= (isMobile ? 8 : 6)) {
+      return DevicePerformanceLevel.high;
+    }
+    return DevicePerformanceLevel.medium;
+  }
+
+  static BottomNavStyle defaultStyleFor(DevicePerformanceLevel level) {
+    return level == DevicePerformanceLevel.low
+        ? BottomNavStyle.normal
+        : BottomNavStyle.floating;
+  }
+}
+
 /// 简洁模式（clean mode）下的暖色底色规范。
 ///
 /// 亮色：页面底用暖白，卡片保持纯白，卡片边框用青灰。
@@ -33,6 +157,16 @@ class ThemeProvider extends ChangeNotifier {
       'background_transparency'; // 保持 key 兼容
   static const String _liquidGlassKey = 'liquid_glass_v2';
   static const String _floatingNavBarKey = 'floating_nav_bar';
+  // 新导航配置的稳定 key；旧 key 仍同步写入，保证升级不丢设置。
+  static const String _bottomNavStyleKey = 'bottom_nav_style';
+  static const String _bottomNavPerformanceModeKey =
+      'bottom_nav_performance_mode';
+  static const String _bottomNavAnimationIntensityKey =
+      'bottom_nav_animation_intensity';
+  static const String _bottomNavFloatingKey = 'floating_nav';
+  static const String _bottomNavLiquidGlassKey = 'liquid_glass';
+  static const String _bottomNavLiquidGlassConfirmedKey =
+      'bottom_nav_liquid_glass_confirmed';
   static const String _predictiveBackKey = 'predictive_back_enabled';
   static const String _startOnTimetableKey = 'start_on_timetable';
   static const String _marketIsListViewKey = 'market_is_list_view';
@@ -52,7 +186,13 @@ class ThemeProvider extends ChangeNotifier {
   double _backgroundBlur = 10;
   double _componentOpacity = 0.7;
   bool _liquidGlass = false;
-  bool _floatingNavBar = false;
+  bool _floatingNavBar = true;
+  BottomNavStyle _bottomNavStyle = BottomNavStyle.floating;
+  BottomNavPerformanceMode _bottomNavPerformanceMode =
+      BottomNavPerformanceMode.auto;
+  double _bottomNavAnimationIntensity = 0.65;
+  bool _bottomNavLiquidGlassConfirmed = false;
+  final DevicePerformanceLevel? _performanceLevelOverride;
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
@@ -61,8 +201,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get isLoaded => _isLoaded;
   bool get isDarkMode => _isDarkMode;
   AppBackgroundMode get backgroundMode => _backgroundMode;
-  bool get isCleanBackgroundMode =>
-      _backgroundMode == AppBackgroundMode.clean;
+  bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
   bool get isCustomBackgroundMode =>
       _backgroundMode == AppBackgroundMode.custom;
   String? get backgroundImage => _backgroundImage;
@@ -74,6 +213,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
+
   /// 旧字段，保留一个版本供外部代码过渡。不再作为导航决策数据源。
   bool get startOnTimetable => _startOnTimetable;
 
@@ -156,7 +296,10 @@ class ThemeProvider extends ChangeNotifier {
         : _landscapeBackgroundFillScreen;
   }
 
-  ThemeProvider({bool loadOnStart = true}) {
+  ThemeProvider({
+    bool loadOnStart = true,
+    DevicePerformanceLevel? performanceLevel,
+  }) : _performanceLevelOverride = performanceLevel {
     if (loadOnStart) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
     }
@@ -164,6 +307,28 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> loadThemeForTesting() {
     return _loadTheme();
+  }
+
+  BottomNavStyle get bottomNavStyle => _bottomNavStyle;
+  BottomNavPerformanceMode get bottomNavPerformanceMode =>
+      _bottomNavPerformanceMode;
+  double get bottomNavAnimationIntensity => _bottomNavAnimationIntensity;
+  DevicePerformanceLevel get devicePerformanceLevel =>
+      _performanceLevelOverride ?? DevicePerformanceDetector.current;
+  bool get bottomNavLiquidGlassConfirmed => _bottomNavLiquidGlassConfirmed;
+
+  /// 自动模式只让高性能设备尝试 shader；中端设备保留 blur，低端设备的
+  /// 默认样式由 [DevicePerformanceDetector.defaultStyleFor] 降为普通底栏。
+  bool get bottomNavShaderEnabled {
+    if (_bottomNavStyle != BottomNavStyle.liquidGlass) return false;
+    switch (_bottomNavPerformanceMode) {
+      case BottomNavPerformanceMode.auto:
+        return devicePerformanceLevel == DevicePerformanceLevel.high;
+      case BottomNavPerformanceMode.highPerformance:
+        return false;
+      case BottomNavPerformanceMode.highQuality:
+        return true;
+    }
   }
 
   Future<void> _loadTheme() async {
@@ -177,8 +342,35 @@ class ThemeProvider extends ChangeNotifier {
           prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
       _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
       _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
-      _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
-      _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
+      final storedStyle = BottomNavStyleStorage.fromStorage(
+        prefs.getString(_bottomNavStyleKey),
+      );
+      final legacyFloating = prefs.getBool(_bottomNavFloatingKey) ??
+          prefs.getBool(_floatingNavBarKey);
+      final legacyLiquid = prefs.getBool(_bottomNavLiquidGlassKey) ??
+          prefs.getBool(_liquidGlassKey) ??
+          false;
+      _bottomNavStyle = storedStyle ??
+          (legacyLiquid
+              ? BottomNavStyle.liquidGlass
+              : legacyFloating == false
+                  ? BottomNavStyle.normal
+                  : legacyFloating == true
+                      ? BottomNavStyle.floating
+                      : DevicePerformanceDetector.defaultStyleFor(
+                          devicePerformanceLevel,
+                        ));
+      _liquidGlass = _bottomNavStyle == BottomNavStyle.liquidGlass;
+      _floatingNavBar = _bottomNavStyle != BottomNavStyle.normal;
+      _bottomNavPerformanceMode = BottomNavPerformanceModeStorage.fromStorage(
+        prefs.getString(_bottomNavPerformanceModeKey),
+      );
+      _bottomNavAnimationIntensity =
+          (prefs.getDouble(_bottomNavAnimationIntensityKey) ?? 0.65)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      _bottomNavLiquidGlassConfirmed =
+          prefs.getBool(_bottomNavLiquidGlassConfirmedKey) ?? false;
       _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
       _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
       _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
@@ -310,18 +502,65 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setLiquidGlass(bool value) async {
-    _liquidGlass = value;
+  Future<void> setBottomNavStyle(BottomNavStyle style) async {
+    _bottomNavStyle = style;
+    _liquidGlass = style == BottomNavStyle.liquidGlass;
+    _floatingNavBar = style != BottomNavStyle.normal;
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_liquidGlassKey, value);
+    await _persistBottomNavPreferences(prefs);
     notifyListeners();
   }
 
-  Future<void> setFloatingNavBar(bool value) async {
-    _floatingNavBar = value;
+  Future<void> setBottomNavPerformanceMode(
+    BottomNavPerformanceMode mode,
+  ) async {
+    _bottomNavPerformanceMode = mode;
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_floatingNavBarKey, value);
+    await prefs.setString(_bottomNavPerformanceModeKey, mode.storageValue);
     notifyListeners();
+  }
+
+  Future<void> setBottomNavAnimationIntensity(double value) async {
+    _bottomNavAnimationIntensity = value.clamp(0.0, 1.0).toDouble();
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setDouble(
+      _bottomNavAnimationIntensityKey,
+      _bottomNavAnimationIntensity,
+    );
+    notifyListeners();
+  }
+
+  Future<void> setBottomNavLiquidGlassConfirmed(bool value) async {
+    _bottomNavLiquidGlassConfirmed = value;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool(_bottomNavLiquidGlassConfirmedKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setLiquidGlass(bool value) async {
+    await setBottomNavStyle(
+      value
+          ? BottomNavStyle.liquidGlass
+          : (_floatingNavBar ? BottomNavStyle.floating : BottomNavStyle.normal),
+    );
+  }
+
+  Future<void> setFloatingNavBar(bool value) async {
+    await setBottomNavStyle(
+      value
+          ? (_liquidGlass
+              ? BottomNavStyle.liquidGlass
+              : BottomNavStyle.floating)
+          : BottomNavStyle.normal,
+    );
+  }
+
+  Future<void> _persistBottomNavPreferences(AppPreferencesStore prefs) async {
+    await prefs.setString(_bottomNavStyleKey, _bottomNavStyle.storageValue);
+    await prefs.setBool(_bottomNavFloatingKey, _floatingNavBar);
+    await prefs.setBool(_bottomNavLiquidGlassKey, _liquidGlass);
+    await prefs.setBool(_floatingNavBarKey, _floatingNavBar);
+    await prefs.setBool(_liquidGlassKey, _liquidGlass);
   }
 
   Future<void> setPredictiveBack(bool value) async {
@@ -362,9 +601,8 @@ class ThemeProvider extends ChangeNotifier {
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_startOnTimetableKey, v);
     // 同步新 key，保持一致。
-    final mode = v
-        ? StartupDestinationMode.timetable
-        : StartupDestinationMode.home;
+    final mode =
+        v ? StartupDestinationMode.timetable : StartupDestinationMode.home;
     _startupDestination = mode;
     await StartupDestinationStore.write(prefs, mode);
     notifyListeners();

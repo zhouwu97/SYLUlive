@@ -15,6 +15,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import 'widgets/background_picker_sheet.dart';
+import 'bottom_navigation_settings_screen.dart';
 
 /// 外观与显示二级设置页
 class AppearanceSettingsScreen extends StatelessWidget {
@@ -444,6 +445,24 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   ),
                 ),
               ),
+          ],
+        ),
+
+        // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
+        SettingsSection(
+          title: '底部导航栏',
+          children: [
+            SettingsTile(
+              icon: Icons.navigation_outlined,
+              title: '底部导航栏',
+              subtitle:
+                  '${themeProvider.bottomNavStyle.label} · 动画 ${(themeProvider.bottomNavAnimationIntensity * 100).round()}%',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const BottomNavigationSettingsScreen(),
+                ),
+              ),
+            ),
           ],
         ),
       ],

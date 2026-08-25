@@ -154,7 +154,11 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 		Where("user_id = ? AND run_id = ? AND tool_call_id = ?", request.UserID, strings.TrimSpace(request.RunID), strings.TrimSpace(request.ToolCallID)).
 		First(&existing).Error
 	if lookupErr == nil {
-		return &existing, nil
+		// 同一等待周期内保持幂等；但外层工具恢复后再次发现缺失数据时，
+		// 必须创建新的设备任务，不能把已完成的旧结果当成下一次等待。
+		if isActiveDeviceJobState(existing.Status) {
+			return &existing, nil
+		}
 	}
 	if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 		return nil, lookupErr

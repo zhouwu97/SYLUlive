@@ -242,6 +242,34 @@ func TestCampusMCPAcademicRiskAnalysisKeepsObservedRiskAndCoverageBoundary(t *te
 	require.Equal(t, 3, data["available_dataset_count"])
 }
 
+func TestCampusMCPRiskAnalysisOnlyWaitsForRequiredGrades(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data:   json.RawMessage(`{"grades":[{"course_name":"大学物理B2","credits":3,"fraction":45}]}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "device-job"}, nil
+		})),
+	)
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
+		withToolCallContext(context.Background(), "run-risk", "call-risk", 7, "academic.get_risk_analysis"),
+		7,
+		json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	envelope := value.(CampusToolResult)
+	data := envelope.Data.(map[string]interface{})
+	require.Equal(t, "incomplete", data["risk_level"])
+	require.Zero(t, deviceJobs, "optional risk datasets must not create another serial device wait")
+}
+
 type countingAcademicSnapshotReader struct {
 	generationCalls int
 	lookupCalls     int

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -140,6 +141,35 @@ void main() {
     expect(result.value['freshness'], {'before': 'stale', 'after': 'fresh'});
     expect(result.value['data'], isA<Map<String, dynamic>>());
   });
+
+  test('同步期间再次触发会在当前批次结束后继续补拉', () async {
+    final first = _job(now);
+    final second = _jobWithId(
+      now,
+      id: 'job-2',
+      toolName: 'device.academic.get_cached_grade_summary',
+    );
+    final api = _RacingDeviceJobApi(first: first, second: second);
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(now),
+    );
+    final worker = DeviceToolWorker(
+      client: api,
+      installationIdProvider: () async => 'installation-1',
+      contextResolver: () async => _context(gateway),
+      permissionResolver: (_) async => DeviceToolPermissionDecision.allow,
+    );
+
+    final firstSync = worker.syncPending();
+    await api.firstPendingStarted.future;
+    final secondSync = worker.syncPending();
+    api.releaseFirstPending.complete();
+    await Future.wait([firstSync, secondSync]);
+
+    expect(api.pendingCalls, 2);
+    expect(api.claimedJobIDs, ['job-1', 'job-2']);
+    expect(api.completedJobIDs, ['job-1', 'job-2']);
+  });
 }
 
 DeviceToolJob _job(
@@ -148,6 +178,22 @@ DeviceToolJob _job(
 }) {
   return DeviceToolJob(
     id: 'job-1',
+    toolName: toolName,
+    arguments: const <String, dynamic>{},
+    requiredDataTypes: const ['academic'],
+    status: 'pending',
+    stateVersion: 0,
+    expiresAt: now.add(const Duration(minutes: 1)),
+  );
+}
+
+DeviceToolJob _jobWithId(
+  DateTime now, {
+  required String id,
+  required String toolName,
+}) {
+  return DeviceToolJob(
+    id: id,
     toolName: toolName,
     arguments: const <String, dynamic>{},
     requiredDataTypes: const ['academic'],
@@ -266,6 +312,99 @@ class _FakeDeviceJobApi implements DeviceJobApi {
   @override
   Future<List<DeviceToolJob>> pending(String installationId) async =>
       pendingJobs;
+
+  @override
+  Future<void> register({
+    required String installationId,
+    required List<String> toolNames,
+    required int bridgeProtocolVersion,
+    required String clientVersion,
+    String pushToken = '',
+  }) async {}
+}
+
+class _RacingDeviceJobApi implements DeviceJobApi {
+  _RacingDeviceJobApi({required this.first, required this.second});
+
+  final DeviceToolJob first;
+  final DeviceToolJob second;
+  final Completer<void> firstPendingStarted = Completer<void>();
+  final Completer<void> releaseFirstPending = Completer<void>();
+  final List<String> claimedJobIDs = [];
+  final List<String> completedJobIDs = [];
+  int pendingCalls = 0;
+
+  @override
+  Future<List<DeviceToolJob>> pending(String installationId) async {
+    pendingCalls += 1;
+    if (pendingCalls == 1) {
+      firstPendingStarted.complete();
+      await releaseFirstPending.future;
+      return [first];
+    }
+    return [second];
+  }
+
+  @override
+  Future<DeviceToolJob> claim(
+    String installationId,
+    String jobId,
+    int stateVersion,
+  ) async {
+    claimedJobIDs.add(jobId);
+    final source = jobId == first.id ? first : second;
+    return DeviceToolJob(
+      id: source.id,
+      toolName: source.toolName,
+      arguments: source.arguments,
+      requiredDataTypes: source.requiredDataTypes,
+      status: 'claimed',
+      stateVersion: stateVersion + 1,
+      expiresAt: source.expiresAt,
+    );
+  }
+
+  @override
+  Future<DeviceToolJob> progress(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    String stage,
+  ) async {
+    final source = jobId == first.id ? first : second;
+    return DeviceToolJob(
+      id: source.id,
+      toolName: source.toolName,
+      arguments: source.arguments,
+      requiredDataTypes: source.requiredDataTypes,
+      status: 'claimed',
+      stateVersion: stateVersion + 1,
+      expiresAt: source.expiresAt,
+    );
+  }
+
+  @override
+  Future<DeviceToolJob> complete(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    Map<String, dynamic> result,
+  ) async {
+    completedJobIDs.add(jobId);
+    return jobId == first.id ? first : second;
+  }
+
+  @override
+  Future<DeviceToolJob> fail(
+    String installationId,
+    String jobId,
+    int stateVersion,
+    String errorCode,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<DeviceToolJob> get(String installationId, String jobId) =>
+      throw UnimplementedError();
 
   @override
   Future<void> register({

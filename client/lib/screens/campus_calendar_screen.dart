@@ -360,12 +360,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     }
   }
 
-  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) =>
-      AnimatedContainer(
-        duration: _isMonthPagerScrolling
-            ? Duration.zero
-            : const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
+  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) => SizedBox(
         height: _monthPagerViewportHeight(calendar),
         child: NotificationListener<ScrollNotification>(
           onNotification: _handleMonthPagerScrollNotification,
@@ -403,8 +398,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     return false;
   }
 
-  // 滚动通知可能在 PageView 的布局阶段发出。若此处直接 setState，
-  // 会让外层 AnimatedSize 在自身 performLayout 中再次请求布局。
+  // 滚动通知可能在 PageView 的布局阶段发出，因此统一延迟到下一帧更新
+  // 视口保护状态；月历高度直接采用最终值，不叠加大网格布局动画。
   void _scheduleMonthPagerScrolling(bool value) {
     _pendingMonthPagerScrolling = value;
     if (_monthPagerScrollUpdateScheduled) return;

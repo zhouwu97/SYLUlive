@@ -39,7 +39,7 @@ func registerTestDevice(t *testing.T, service *DeviceJobService, userID uint, in
 	t.Helper()
 	device, err := service.RegisterDevice(context.Background(), userID, DeviceRegistration{
 		InstallationID:        installationID,
-		ToolNames:             []string{"device.academic.get_cached_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
+		ToolNames:             []string{"device.academic.get_cached_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_bundle", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
 		BridgeProtocolVersion: 2,
 	})
 	if err != nil {
@@ -94,6 +94,25 @@ func TestDeviceJobProgressAcceptsOnlyOrderedStages(t *testing.T) {
 	var deviceErr *DeviceJobError
 	require.ErrorAs(t, err, &deviceErr)
 	require.Equal(t, "invalid_progress_stage", deviceErr.Code)
+}
+
+func TestDeviceJobBundleAcceptsFreshAcademicDatasets(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "bundle-installation")
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-bundle", ToolCallID: "call-bundle",
+		ToolName:          "device.academic.ensure_fresh_bundle",
+		Arguments:         json.RawMessage(`{"max_age_seconds":{"grades":300,"academic_situation":21600,"credit_requirements":86400}}`),
+		RequiredDataTypes: []string{"grades", "academic_situation", "credit_requirements"},
+		ExpiresAt:         now.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	claimed, err := service.ClaimJob(context.Background(), 1, "bundle-installation", job.ID, 0)
+	require.NoError(t, err)
+	completed, err := service.CompleteJob(context.Background(), 1, "bundle-installation", job.ID, claimed.StateVersion, bundleDeviceToolTestResult())
+	require.NoError(t, err)
+	require.Equal(t, models.DeviceToolJobCompleted, completed.Status)
 }
 
 func TestDeviceJobClaimAndCompleteRequireFreshStateVersion(t *testing.T) {
@@ -194,6 +213,19 @@ func deviceToolTestResult() json.RawMessage {
 		"is_partial":false,
 		"warnings":[],
 		"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-26T09:00:00Z","is_stale":false}]
+	}`)
+}
+
+func bundleDeviceToolTestResult() json.RawMessage {
+	return json.RawMessage(`{
+		"data":{
+			"grades":{"data":{"course_count":1,"earned_credits":3,"weighted_gpa":1.5,"failed_courses":[{"course_name":"大学物理","grade":45,"credits":3}]},"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-26T09:00:00Z","is_stale":false,"is_partial":false,"warnings":[],"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-26T09:00:00Z","is_stale":false}],"freshness":{"before":"stale","after":"fresh"},"refresh_performed":false},
+			"academic_situation":{"data":{"total_courses":10,"passed_courses":8,"failed_courses":1,"in_progress_courses":1,"degree_total_courses":40,"degree_passed_courses":30,"degree_failed_courses":1,"degree_in_progress_courses":9,"all_gpa":3.2},"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-01T09:00:00Z","is_stale":false,"is_partial":false,"warnings":[],"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-01T09:00:00Z","is_stale":false}],"freshness":{"before":"fresh","after":"fresh"},"refresh_performed":false},
+			"credit_requirements":{"data":{"required_credits":160,"earned_credits":120,"completed_credits":120,"remaining_credits":40,"credit_gap":40,"module_count":4},"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-25T09:00:00Z","is_stale":false,"is_partial":false,"warnings":[],"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-25T09:00:00Z","is_stale":false}],"freshness":{"before":"fresh","after":"fresh"},"refresh_performed":false}
+		},
+		"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-26T09:00:00Z","is_stale":false,"is_partial":false,"warnings":[],
+		"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-26T09:00:00Z","is_stale":false},{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-01T09:00:00Z","is_stale":false},{"source":"device_encrypted_cache","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-08-25T09:00:00Z","is_stale":false}],
+		"freshness":{"before":"stale","after":"fresh"},"refresh_performed":false
 	}`)
 }
 

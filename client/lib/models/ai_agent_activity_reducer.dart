@@ -5,6 +5,19 @@ import 'ai_run_event.dart';
 class AiAgentActivityReducer {
   const AiAgentActivityReducer._();
 
+  /// 保留每一条服务端审计事件，供展开态展示完整过程。
+  ///
+  /// 这里不能按 call/job 合并；同一个设备任务的等待、完成、消费是三条
+  /// 不同的事实，合并后用户无法核对真实执行顺序。
+  static List<AiAgentActivity> reduceRaw(Iterable<AiRunEvent> events) {
+    final result = <AiAgentActivity>[];
+    for (final event in events) {
+      final activity = _fromEvent(event);
+      if (activity != null) result.add(activity);
+    }
+    return List.unmodifiable(result);
+  }
+
   static List<AiAgentActivity> reduce(
     Iterable<AiRunEvent> events, {
     bool completed = false,
@@ -98,11 +111,18 @@ class AiAgentActivityReducer {
         ? event.activityCode
         : _eventCode(event.type);
     if (code.isEmpty) return null;
-    final dataset = event.dataset.isNotEmpty
-        ? event.dataset
-        : (event.datasets.isNotEmpty ? event.datasets.first : '');
+    final isAcademicBundle = event.datasets.length > 1 &&
+        event.datasets.contains('grades') &&
+        event.datasets.contains('academic_situation') &&
+        event.datasets.contains('credit_requirements');
+    final dataset = isAcademicBundle
+        ? 'academic'
+        : event.dataset.isNotEmpty
+            ? event.dataset
+            : (event.datasets.isNotEmpty ? event.datasets.first : '');
     final isFailure = event.type == AiRunEventType.failed ||
         event.activityCode == 'refresh_failed' ||
+        event.activityCode == 'provider_failed' ||
         event.status == 'failed';
     final status = isFailure
         ? AiAgentActivityStatus.failed
@@ -110,15 +130,15 @@ class AiAgentActivityReducer {
             ? AiAgentActivityStatus.pending
             : event.type == AiRunEventType.deviceWaiting
                 ? AiAgentActivityStatus.pending
-            : event.type == AiRunEventType.agentActivity &&
-                    (event.status == 'running' ||
-                        event.activityCode == 'refresh_started')
-                ? AiAgentActivityStatus.running
-                : (event.type == AiRunEventType.toolExecuting ||
-                        event.type == AiRunEventType.eduFetching ||
-                        event.activityCode == 'checking_freshness')
+                : event.type == AiRunEventType.agentActivity &&
+                        (event.status == 'running' ||
+                            event.activityCode == 'refresh_started')
                     ? AiAgentActivityStatus.running
-                    : AiAgentActivityStatus.success;
+                    : (event.type == AiRunEventType.toolExecuting ||
+                            event.type == AiRunEventType.eduFetching ||
+                            event.activityCode == 'checking_freshness')
+                        ? AiAgentActivityStatus.running
+                        : AiAgentActivityStatus.success;
     final title = _title(code, dataset, event);
     final detail = event.text.trim().isNotEmpty
         ? event.text.trim()
@@ -174,6 +194,14 @@ class AiAgentActivityReducer {
       'tool.requested' => _toolTitle(event.toolName, label),
       'tool.executing' => _toolTitle(event.toolName, label),
       'tool.completed' => '已读取$label数据',
+      'device_job_completed' => '设备任务已完成',
+      'device_resume_claimed' => '已接收设备结果',
+      'device_result_consumed' => '已读取设备更新结果',
+      'tool_retry_waiting' => '正在等待下一项数据',
+      'tool_retry_completed' => '已完成数据读取',
+      'provider_started' => '开始综合分析',
+      'provider_completed' => '已生成分析结果',
+      'provider_failed' => '分析未完成',
       'goal.updated' => '已理解你的目标和限制',
       'context.resolved' => '已核对当前页面和授权上下文',
       'plan.revised' => '正在根据最新结果调整计划',
@@ -208,6 +236,7 @@ class AiAgentActivityReducer {
   }
 
   static String _datasetLabel(String dataset, String toolName) {
+    if (toolName.contains('ensure_fresh_bundle')) return '学业';
     switch (dataset) {
       case 'grades':
         return '成绩';
@@ -217,7 +246,7 @@ class AiAgentActivityReducer {
       case 'academic_situation':
         return '学业情况';
       case 'academic':
-        return '学业数据';
+        return '学业';
       case 'schedule':
         return '课表';
       case 'erke':
@@ -227,7 +256,7 @@ class AiAgentActivityReducer {
     if (toolName.contains('grade')) return '成绩';
     if (toolName.contains('schedule')) return '课表';
     if (toolName.contains('erke')) return '二课';
-    if (toolName.contains('academic')) return '学业数据';
+    if (toolName.contains('academic')) return '学业';
     return '校园数据';
   }
 }

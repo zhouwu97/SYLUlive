@@ -7,11 +7,12 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 
-/// 只展示 SSE 真实产生的 Agent activity，默认收敛到最近三条。
+/// 展示 SSE 真实产生的 Agent activity；收起态是摘要，展开态保留完整审计过程。
 class AiAgentExecutionCard extends StatefulWidget {
   const AiAgentExecutionCard({
     super.key,
     this.activities = const <AiAgentActivity>[],
+    this.rawEvents = const <AiRunEvent>[],
     this.event,
     this.running = false,
     this.completed = false,
@@ -24,6 +25,7 @@ class AiAgentExecutionCard extends StatefulWidget {
   });
 
   final List<AiAgentActivity> activities;
+  final List<AiRunEvent> rawEvents;
   // 兼容旧调用面；新页面应传 activities。
   final AiRunEvent? event;
   final bool running;
@@ -50,6 +52,13 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         completed: widget.completed);
   }
 
+  List<AiAgentActivity> get _rawActivities {
+    if (widget.rawEvents.isNotEmpty) {
+      return AiAgentActivityReducer.reduceRaw(widget.rawEvents);
+    }
+    return _activities;
+  }
+
   @override
   void didUpdateWidget(covariant AiAgentExecutionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -68,6 +77,7 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
   @override
   Widget build(BuildContext context) {
     final activities = _activities;
+    final rawActivities = _rawActivities;
     if (!widget.running && !widget.completed && activities.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -80,9 +90,11 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     final isError = latest?.status == AiAgentActivityStatus.failed;
     final refreshFailed =
         activities.any((item) => item.code == 'refresh_failed');
-    final visible = _expanded || activities.length <= 3
+    final compactActivities = activities.length <= 3
         ? activities
         : activities.sublist(activities.length - 3);
+    final showFullProcessButton =
+        !_expanded && widget.rawEvents.isNotEmpty && rawActivities.isNotEmpty;
 
     return AnimatedSize(
       duration: AppMotion.duration(context, AppMotion.fast),
@@ -107,7 +119,11 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
             Semantics(
               button: true,
               label: '$title。$detail',
-              hint: _expanded ? '点击收起 Agent 过程' : '点击展开 Agent 过程',
+              hint: _expanded
+                  ? '点击收起 Agent 过程'
+                  : showFullProcessButton
+                      ? '点击查看完整过程'
+                      : '点击展开 Agent 过程',
               child: InkWell(
                 onTap: () => setState(() => _expanded = !_expanded),
                 child: Padding(
@@ -149,17 +165,19 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                 ),
               ),
             ),
-            if (_expanded || activities.length <= 3)
+            if (activities.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: _ActivityList(activities: visible),
+                child: _ActivityList(
+                  activities: _expanded ? rawActivities : compactActivities,
+                ),
               ),
-            if (!_expanded && activities.length > 3)
+            if (showFullProcessButton || (!_expanded && activities.length > 3))
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => setState(() => _expanded = true),
-                  child: const Text('展开全部过程'),
+                  child: const Text('查看完整过程'),
                 ),
               ),
             if (refreshFailed &&

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ var deviceToolRequirements = map[string][]string{
 	"device.academic.ensure_fresh_overview":       {"academic"},
 	"device.academic.ensure_fresh_grade_summary":  {"grades"},
 	"device.academic.ensure_fresh_risk_context":   {"grades"},
+	"device.academic.ensure_fresh_bundle":         {"grades", "academic_situation", "credit_requirements"},
 	"device.schedule.ensure_fresh_week":           {"schedule"},
 	"device.academic.ensure_fresh_credit_summary": {"academic"},
 	"device.erke.ensure_fresh_overview":           {"erke"},
@@ -372,8 +374,9 @@ func validDeviceToolResult(job models.DeviceToolJob, value json.RawMessage) bool
 		return false
 	}
 	ensureFresh := strings.Contains(job.ToolName, ".ensure_fresh_")
-	if (!jsonStringEquals(envelope["source"], "device_encrypted_cache") &&
-		(!ensureFresh || !jsonStringEquals(envelope["source"], "remote_edu_fetch"))) ||
+	sourceIsDevice := jsonStringEquals(envelope["source"], "device_encrypted_cache")
+	sourceIsRemote := jsonStringEquals(envelope["source"], "remote_edu_fetch")
+	if (!sourceIsDevice && !sourceIsRemote) || (sourceIsRemote && !ensureFresh) ||
 		!validOptionalRFC3339(envelope["fetched_at"]) || !validOptionalRFC3339(envelope["expires_at"]) ||
 		!validJSONBool(envelope["is_stale"]) || !validJSONBool(envelope["is_partial"]) ||
 		!validLimitedStringArray(envelope["warnings"], 16, 240) || !validDeviceEvidence(envelope["evidence"], ensureFresh) {
@@ -419,6 +422,12 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 	case "device.academic.get_cached_grade_summary", "device.academic.ensure_fresh_grade_summary",
 		"device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
 		return validAcademicGradeSummary(data)
+	case "device.academic.ensure_fresh_situation":
+		return validAcademicSituationSummary(data)
+	case "device.academic.ensure_fresh_credit_requirements":
+		return validCreditRequirementsSummary(data)
+	case "device.academic.ensure_fresh_bundle":
+		return validAcademicBundleData(job, data)
 	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
 		if !hasExactJSONKeys(data, []string{"week_start", "week_end", "courses"}) ||
 			!validDateString(data["week_start"]) || !validDateString(data["week_end"]) {
@@ -653,6 +662,8 @@ func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
 			validDateString(arguments["week_containing"]) && validMaxAgeSeconds(arguments["max_age_seconds"])
 	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview":
 		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validMaxAgeSeconds(arguments["max_age_seconds"])
+	case "device.academic.ensure_fresh_bundle":
+		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validBundleMaxAgeSeconds(arguments["max_age_seconds"])
 	default:
 		return false
 	}
@@ -688,6 +699,78 @@ func validMaxAgeSeconds(value json.RawMessage) bool {
 	return seconds > 0 && seconds <= 24*60*60
 }
 
+func validBundleMaxAgeSeconds(value json.RawMessage) bool {
+	var values map[string]json.RawMessage
+	if json.Unmarshal(value, &values) != nil || len(values) != 3 {
+		return false
+	}
+	for _, dataset := range []string{"grades", "academic_situation", "credit_requirements"} {
+		age, ok := values[dataset]
+		if !ok || !validMaxAgeSeconds(age) {
+			return false
+		}
+	}
+	return true
+}
+
+func validAcademicBundleData(job models.DeviceToolJob, data map[string]json.RawMessage) bool {
+	if len(data) != 3 {
+		return false
+	}
+	for dataset, toolName := range map[string]string{
+		"grades":              "device.academic.ensure_fresh_grade_summary",
+		"academic_situation":  "device.academic.ensure_fresh_situation",
+		"credit_requirements": "device.academic.ensure_fresh_credit_requirements",
+	} {
+		payload, ok := data[dataset]
+		if !ok {
+			return false
+		}
+		subJob := job
+		subJob.ToolName = toolName
+		subJob.RequiredDataTypes = datatypes.JSON([]byte("[\"" + dataset + "\"]"))
+		if dataset == "academic_situation" {
+			subJob.RequiredDataTypes = datatypes.JSON([]byte("[\"academic_situation\"]"))
+		}
+		if dataset == "credit_requirements" {
+			subJob.RequiredDataTypes = datatypes.JSON([]byte("[\"credit_requirements\"]"))
+		}
+		if !validDeviceToolResult(subJob, payload) {
+			return false
+		}
+	}
+	return true
+}
+
+func validAcademicSituationSummary(data map[string]json.RawMessage) bool {
+	if !hasExactJSONKeys(data, []string{
+		"total_courses", "passed_courses", "failed_courses", "in_progress_courses",
+		"degree_total_courses", "degree_passed_courses", "degree_failed_courses", "degree_in_progress_courses", "all_gpa",
+	}) {
+		return false
+	}
+	for _, key := range []string{"total_courses", "passed_courses", "failed_courses", "in_progress_courses", "degree_total_courses", "degree_passed_courses", "degree_failed_courses", "degree_in_progress_courses"} {
+		if !validIntegerRange(data[key], 0, 500) {
+			return false
+		}
+	}
+	return validNumberRange(data["all_gpa"], 0, 4)
+}
+
+func validCreditRequirementsSummary(data map[string]json.RawMessage) bool {
+	if !hasExactJSONKeys(data, []string{
+		"required_credits", "earned_credits", "completed_credits", "remaining_credits", "credit_gap", "module_count",
+	}) {
+		return false
+	}
+	for _, key := range []string{"required_credits", "earned_credits", "completed_credits", "remaining_credits", "credit_gap"} {
+		if !validNumberRange(data[key], 0, 10000) {
+			return false
+		}
+	}
+	return validIntegerRange(data["module_count"], 0, 128)
+}
+
 // clampDeviceFreshnessArguments 把模型的意图收窄到服务端策略边界；设备仍会在
 // 最终执行前依据本地 fetched_at / expires_at 再判断一次。
 func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.RawMessage {
@@ -697,6 +780,30 @@ func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.
 	var arguments map[string]json.RawMessage
 	if json.Unmarshal(value, &arguments) != nil {
 		return value
+	}
+	if toolName == "device.academic.ensure_fresh_bundle" {
+		var requested map[string]json.RawMessage
+		if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {
+			return value
+		}
+		for dataset, minimum := range map[string]float64{
+			"grades": 300, "academic_situation": 6 * 60 * 60, "credit_requirements": 24 * 60 * 60,
+		} {
+			var seconds float64
+			if json.Unmarshal(requested[dataset], &seconds) != nil {
+				return value
+			}
+			if seconds < minimum {
+				seconds = minimum
+			}
+			requested[dataset] = json.RawMessage(strconv.FormatInt(int64(seconds), 10))
+		}
+		arguments["max_age_seconds"], _ = json.Marshal(requested)
+		result, err := json.Marshal(arguments)
+		if err != nil {
+			return value
+		}
+		return result
 	}
 	var requested float64
 	if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {

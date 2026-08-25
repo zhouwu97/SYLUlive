@@ -65,6 +65,7 @@ flutter:
   uses-material-design: true
   shaders:
     - shaders/liquid_nav_lens.frag
+    - shaders/liquid_nav_lens_v1.frag
     - shaders/liquid_nav_dock.frag
     - shaders/liquid_nav_highlight.frag
   assets:

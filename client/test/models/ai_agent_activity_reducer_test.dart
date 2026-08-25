@@ -98,6 +98,56 @@ void main() {
     expect(activities.single.title, '已获取最新学分要求');
   });
 
+  test('原始审计层保留同一任务的每个真实事件，摘要层才负责合并', () {
+    final events = [
+      AiRunEvent.fromJson({
+        'run_id': 'run-audit',
+        'seq': 1,
+        'type': 'ai.device.job.completed',
+        'payload': {
+          'call_id': 'call-1',
+          'job_id': 'job-1',
+          'tool_name': 'device.academic.ensure_fresh_bundle',
+          'datasets': ['grades', 'academic_situation', 'credit_requirements'],
+          'status': 'completed',
+        },
+      }),
+      AiRunEvent.fromJson({
+        'run_id': 'run-audit',
+        'seq': 2,
+        'type': 'ai.device.resume.claimed',
+        'payload': {
+          'call_id': 'call-1',
+          'job_id': 'job-1',
+          'tool_name': 'device.academic.ensure_fresh_bundle',
+          'datasets': ['grades', 'academic_situation', 'credit_requirements'],
+        },
+      }),
+      AiRunEvent.fromJson({
+        'run_id': 'run-audit',
+        'seq': 3,
+        'type': 'ai.device.result.consumed',
+        'payload': {
+          'call_id': 'call-1',
+          'job_id': 'job-1',
+          'tool_name': 'device.academic.ensure_fresh_bundle',
+          'datasets': ['grades', 'academic_situation', 'credit_requirements'],
+        },
+      }),
+    ];
+
+    final raw = AiAgentActivityReducer.reduceRaw(events);
+    final summary = AiAgentActivityReducer.reduce(events);
+
+    expect(raw, hasLength(3));
+    expect(raw.map((item) => item.title), [
+      '设备任务已完成',
+      '已接收设备结果',
+      '已读取设备更新结果',
+    ]);
+    expect(summary, hasLength(1));
+  });
+
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
     final activities = AiAgentActivityReducer.reduce([
       AiRunEvent.fromJson({

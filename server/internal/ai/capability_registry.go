@@ -217,7 +217,7 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 		{
 			ID: "academic.personal_refresh", Version: "1", Lane: "device", Kind: "refresh",
 			Description: "在授权后从设备侧刷新教务数据", Available: toolAvailable("academic.get_grade_summary", "academic.get_credit_summary"),
-			ToolNames:        []string{"device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.schedule.ensure_fresh_week", "device.academic.ensure_fresh_credit_summary"},
+			ToolNames:        []string{"device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_bundle", "device.schedule.ensure_fresh_week", "device.academic.ensure_fresh_credit_summary"},
 			PermissionScopes: []string{"ai_personal_data_access", "ai_device_cache_access", "ai_remote_edu_refresh"},
 		},
 		{

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
 import 'campus_service_item.dart';
 
-class CampusServiceGrid extends StatefulWidget {
+class CampusServiceGrid extends StatelessWidget {
   final bool isDark;
   final VoidCallback onEduTap;
   final VoidCallback onCanteenTap;
@@ -25,92 +24,45 @@ class CampusServiceGrid extends StatefulWidget {
   });
 
   @override
-  State<CampusServiceGrid> createState() => _CampusServiceGridState();
-}
-
-class _CampusServiceGridState extends State<CampusServiceGrid>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _entryController;
-  bool _reduceMotion = false;
-  bool _motionPreferenceSet = false;
-  bool _entryScheduled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _entryController = AnimationController(
-      vsync: this,
-      duration: AppMotion.page,
-    );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    if (_motionPreferenceSet && _reduceMotion == reduceMotion) return;
-    _motionPreferenceSet = true;
-    _reduceMotion = reduceMotion;
-    if (reduceMotion) {
-      _entryController.value = 1;
-      return;
-    }
-    if (_entryScheduled) return;
-    _entryScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _reduceMotion) return;
-      _entryController.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _entryController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final services = [
       CampusServiceItem(
         title: '教务中心',
         icon: Icons.school_rounded,
         color: CampusTheme.blue,
-        onTap: widget.onEduTap,
+        onTap: onEduTap,
       ),
       CampusServiceItem(
         title: '食堂',
         icon: Icons.restaurant_rounded,
         color: CampusTheme.dining,
-        onTap: widget.onCanteenTap,
+        onTap: onCanteenTap,
       ),
       CampusServiceItem(
         title: '校园榜单',
         icon: Icons.leaderboard_rounded,
         color: CampusTheme.orange,
-        onTap: widget.onRateTap,
+        onTap: onRateTap,
       ),
       CampusServiceItem(
         title: '组队',
         icon: Icons.groups_2_rounded,
         color: CampusTheme.primary,
-        onTap: widget.onTeamTap,
+        onTap: onTeamTap,
       ),
       CampusServiceItem(
         title: '校园地图',
         icon: Icons.map_rounded,
         color: CampusTheme.cyan,
-        onTap: widget.onMapTap,
+        onTap: onMapTap,
       ),
       CampusServiceItem(
         title: '校历',
         icon: Icons.calendar_month_rounded,
         color: CampusTheme.green,
-        onTap: widget.onCalendarTap,
+        onTap: onCalendarTap,
       ),
     ];
-    final isDark = widget.isDark;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -172,13 +124,12 @@ class _CampusServiceGridState extends State<CampusServiceGrid>
                   spacing: gap,
                   runSpacing: gap,
                   children: [
-                    for (var index = 0; index < services.length; index++)
+                    for (final service in services)
                       SizedBox(
                         width: itemWidth,
-                        child: _buildAnimatedService(
-                          services[index],
-                          index,
-                          isDark,
+                        child: CampusServiceCard(
+                          service: service,
+                          isDark: isDark,
                         ),
                       ),
                   ],
@@ -188,37 +139,6 @@ class _CampusServiceGridState extends State<CampusServiceGrid>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildAnimatedService(
-    CampusServiceItem service,
-    int index,
-    bool isDark,
-  ) {
-    final child = CampusServiceCard(service: service, isDark: isDark);
-    if (_reduceMotion) return child;
-
-    final begin = (index * 0.08).clamp(0.0, 0.35).toDouble();
-    final end = (begin + 0.55).clamp(0.0, 1.0).toDouble();
-    final animation = CurvedAnimation(
-      parent: _entryController,
-      curve: Interval(begin, end, curve: AppMotion.standard),
-    );
-
-    return AnimatedBuilder(
-      animation: animation,
-      child: child,
-      builder: (context, child) {
-        final t = animation.value;
-        return Opacity(
-          opacity: 0.84 + (0.16 * t),
-          child: Transform.translate(
-            offset: Offset(0, 8 * (1 - t)),
-            child: child,
-          ),
-        );
-      },
     );
   }
 }

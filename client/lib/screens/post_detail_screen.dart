@@ -1698,9 +1698,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       animation: _replyComposerActivity,
       child: child,
       builder: (context, child) {
-        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-        final bottomInset =
-            _replyComposerController.showEmojiPanel ? 0.0 : keyboardInset;
+        final bottomInset = _replyComposerController.showEmojiPanel
+            ? 0.0
+            : _replyComposerController.keyboardInset;
         return Padding(
           padding: EdgeInsets.only(bottom: bottomInset),
           child: child,
@@ -4411,13 +4411,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               builder: (animContext, _) {
                 final isEmoji = threadComposerController.bottomPanel ==
                     PostReplyBottomPanel.emoji;
-                final keyboardInset =
-                    MediaQuery.viewInsetsOf(sheetContentContext).bottom;
-                final bottomPadding = isEmoji ? 0.0 : keyboardInset;
+                final bottomPadding =
+                    isEmoji ? 0.0 : threadComposerController.keyboardInset;
 
-                return AnimatedPadding(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
+                return Padding(
                   padding: EdgeInsets.only(bottom: bottomPadding),
                   child: DraggableScrollableSheet(
                     initialChildSize: 0.72,

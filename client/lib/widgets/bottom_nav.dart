@@ -115,7 +115,6 @@ Rect _selectionRectFor({
   required Size dockSize,
   required double itemWidth,
   required double visualIndex,
-  required double activation,
   required double velocityPixelsPerSecond,
   required double edgeCompression,
   required bool useLiquidGlass,
@@ -523,7 +522,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                       dockSize: dockSize,
                       itemWidth: itemWidth,
                       visualIndex: idleSelectionIndex,
-                      activation: activation.toDouble(),
                       velocityPixelsPerSecond: selectionVelocity,
                       edgeCompression: selectionEdgeCompression,
                       useLiquidGlass: useLiquidGlass,
@@ -1059,9 +1057,8 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   void _syncSelectionScaleWithPhase() {
     if (!mounted) return;
     final phase = widget.qaPhase ?? _phase;
-    final activation = (widget.qaActivation ?? _activation)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final activation =
+        (widget.qaActivation ?? _activation).clamp(0.0, 1.0).toDouble();
     final active = switch (phase) {
       LiquidNavPhase.idle => activation > 0.0001,
       LiquidNavPhase.pressing => true,
@@ -1329,13 +1326,13 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   double _activeLensWidth() {
     return _itemWidth *
         _selectionScaleX(
-          activation: _activation,
           velocityPixelsPerSecond:
               _phase == LiquidNavPhase.dragging ? _velocityPixelsPerSecond : 0,
           edgeCompression: _phase == LiquidNavPhase.dragging
               ? _controller.edgeCompression
               : 0,
           tuning: widget.tuning,
+          springScale: _scaleXController.value,
         );
   }
 
@@ -2000,6 +1997,18 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
   }
 
   @override
+  void didUpdateWidget(covariant _FloatingLiquidSelection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.useShader && !oldWidget.useShader) {
+      if (widget.layer == _LiquidSelectionLayer.backdrop) {
+        _loadShader();
+      } else {
+        _loadHighlightShader();
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _shader?.dispose();
     _highlightShader?.dispose();
@@ -2022,7 +2031,6 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
       dockSize: widget.dockSize,
       itemWidth: widget.itemWidth,
       visualIndex: widget.visualIndex,
-      activation: progress,
       velocityPixelsPerSecond: widget.velocityPixelsPerSecond,
       edgeCompression: widget.edgeCompression,
       useLiquidGlass: widget.useLiquidGlass,
@@ -2364,23 +2372,31 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
           final status = liquidGlassRuntimeStatus.value;
           final lensWidth = itemWidth *
               _selectionScaleX(
-                activation: activation,
                 velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
                     ? velocityPixelsPerSecond
                     : 0,
                 edgeCompression:
                     phase == LiquidNavPhase.dragging ? edgeCompression : 0,
                 tuning: tuning,
+                springScale: ui.lerpDouble(
+                  1.0,
+                  tuning.pressedScale,
+                  activation,
+                )!,
               );
           final lensHeight = _selectionHeight *
               _selectionScaleY(
-                activation: activation,
                 velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
                     ? velocityPixelsPerSecond
                     : 0,
                 edgeCompression:
                     phase == LiquidNavPhase.dragging ? edgeCompression : 0,
                 tuning: tuning,
+                springScale: ui.lerpDouble(
+                  1.0,
+                  tuning.pressedScale,
+                  activation,
+                )!,
               );
           final overscanX = tuning.overscanXFor(lensWidth);
           final overscanY = tuning.overscanYFor(lensHeight);

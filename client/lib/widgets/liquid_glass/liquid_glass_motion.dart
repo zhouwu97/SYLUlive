@@ -120,12 +120,10 @@ LiquidGlassMotionState liquidGlassMotionFor({
   // uniform 都乘上速度。
   final velocityRefractionBoost = 1.0 + speed * 0.08;
   final velocityChromaticBoost = 1.0 + speed * 0.04;
-  final refraction = tuning.effectiveRefraction *
-      opticalActivation *
-      velocityRefractionBoost;
-  final chromatic = tuning.effectiveChromatic *
-      opticalActivation *
-      velocityChromaticBoost;
+  final refraction =
+      tuning.effectiveRefraction * opticalActivation * velocityRefractionBoost;
+  final chromatic =
+      tuning.effectiveChromatic * opticalActivation * velocityChromaticBoost;
 
   final dockActivation = useLiquidGlass ? 1.0 : 0.0;
   final dockRefraction = tuning.dockRefraction * (1.0 + speed * 0.04);

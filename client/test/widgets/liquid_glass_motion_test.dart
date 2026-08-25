@@ -123,5 +123,4 @@ void main() {
     expect(source, contains('vec4 blue'));
     expect(source, contains('smoothstep'));
   });
-
 }

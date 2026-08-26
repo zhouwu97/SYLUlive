@@ -379,6 +379,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
+		log.Fatal("AI 用户权限数据库约束未就绪，请先执行 server/sql/20260726_ai_external_model_permission.sql:", err)
+	}
 	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
 		log.Fatal("设备 Agent 任务索引迁移失败:", err)
 	}

@@ -76,6 +76,7 @@ class _BlockingPreferencesStore extends MemoryPreferencesStore {
 Widget _buildEditorTestApp({
   required Dio dio,
   required CanteenReviewDraftRepository draftRepository,
+  User? user,
   int canteenId = 1,
   String canteenName = '我家有面(一楼)',
   double averageStar = 5.0,
@@ -84,14 +85,15 @@ Widget _buildEditorTestApp({
   int dishPhotoCount = 18,
   Map<String, dynamic>? existingRating,
 }) {
-  final user = User(
-    id: 101,
-    studentId: '2023001',
-    studentVerified: true,
-    nickname: '测试小周',
-    createdAt: DateTime.now(),
-  );
-  final authProvider = _FakeAuthProvider(user, dio);
+  final currentUser = user ??
+      User(
+        id: 101,
+        studentId: '2023001',
+        studentVerified: true,
+        nickname: '测试小周',
+        createdAt: DateTime.now(),
+      );
+  final authProvider = _FakeAuthProvider(currentUser, dio);
 
   return MultiProvider(
     providers: [
@@ -642,5 +644,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('冲突测试中的独家评价'), findsOneWidget);
+  });
+
+  testWidgets('诚信度与权重根据当前登录用户信息动态展示', (tester) async {
+    final dio = Dio();
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      return _json('{}', 200);
+    });
+    final draftRepository = CanteenReviewDraftRepository(
+      storeOverride: MemoryPreferencesStore(),
+    );
+
+    final user = User(
+      id: 101,
+      studentId: '2023001',
+      studentVerified: true,
+      nickname: '测试小周',
+      creditScore: 100,
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+        user: user,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('你的诚信度 100 · 权重约 1.0'), findsOneWidget);
   });
 }

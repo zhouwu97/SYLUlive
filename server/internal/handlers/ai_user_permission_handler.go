@@ -1,11 +1,18 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -68,16 +75,58 @@ func (handler *AIUserPermissionHandler) SetMode(c *gin.Context) {
 		return
 	}
 	if err := handler.service.SetMode(c.Request.Context(), c.GetUint("user_id"), request.Mode); err != nil {
+		logAIUserPermissionModeFailure(c, request.Mode, err)
 		writeAIUserPermissionError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"mode": request.Mode})
 }
 
+func logAIUserPermissionModeFailure(c *gin.Context, mode string, err error) {
+	normalizedMode := strings.TrimSpace(mode)
+	if normalizedMode != services.AIUserPermissionModeAsk && normalizedMode != services.AIUserPermissionModeTrusted {
+		normalizedMode = "invalid"
+	}
+	slog.Default().Error("ai_permission_mode_update_failed",
+		"request_id", middleware.EnsureRequestID(c),
+		"route", "/api/ai/permissions/mode",
+		"method", http.MethodPut,
+		"user_hash", hashAIUserPermissionUserID(c.GetUint("user_id")),
+		"mode", normalizedMode,
+		"error_class", classifyAIUserPermissionError(err),
+	)
+}
+
+func hashAIUserPermissionUserID(userID uint) string {
+	if userID == 0 {
+		return "-"
+	}
+	digest := sha256.Sum256([]byte("ai-permission-user:" + strconv.FormatUint(uint64(userID), 10)))
+	return hex.EncodeToString(digest[:8])
+}
+
+func classifyAIUserPermissionError(err error) string {
+	if errors.Is(err, services.ErrInvalidAIUserPermission) {
+		return "validation"
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23514":
+			return "db_check_constraint"
+		case "23502", "23503", "23505":
+			return "db_constraint"
+		default:
+			return "db_postgres"
+		}
+	}
+	return "database"
+}
+
 func writeAIUserPermissionError(c *gin.Context, err error) {
 	if errors.Is(err, services.ErrInvalidAIUserPermission) {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_ai_personal_data_permission", "message": "个人数据权限参数无效"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "invalid_ai_personal_data_permission", "个人数据权限参数无效", nil)
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"code": "ai_personal_data_permission_unavailable", "message": "个人数据权限服务暂时不可用"})
+	middleware.WriteAPIError(c, http.StatusInternalServerError, "ai_personal_data_permission_unavailable", "个人数据权限服务暂时不可用", nil)
 }

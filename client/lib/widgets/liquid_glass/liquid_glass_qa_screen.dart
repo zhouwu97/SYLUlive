@@ -6,7 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../bottom_nav.dart';
 import 'liquid_glass_runtime.dart';
 
-enum LiquidGlassQaPattern { optical, horizontal, vertical, checker, text }
+enum LiquidGlassQaPattern { horizontal, vertical, checker, text }
 
 /// Gate 1–8 的固定对照入口。它复用同一套 QA 状态机，但把参考基线、
 /// SYLUlive 当前参数和 optical debug 放在同一屏，避免直接拿业务 Feed 猜材质。
@@ -36,7 +36,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   late final ValueNotifier<double> _visualPosition;
   var _currentIndex = 2;
   var _tuning = const LiquidGlassTuning();
-  var _pattern = LiquidGlassQaPattern.optical;
+  var _pattern = LiquidGlassQaPattern.checker;
   var _qaPhase = LiquidNavPhase.idle;
   var _qaActivation = 0.0;
 
@@ -56,7 +56,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   Widget build(BuildContext context) {
     if (kReleaseMode) {
       return const Scaffold(
-        body: Center(child: Text('液态玻璃 QA 仅在开发包可用')),
+        body: Center(child: Text('Liquid Glass QA 仅在开发包可用')),
       );
     }
 
@@ -64,7 +64,9 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.referenceParity ? '液态玻璃参考对照' : '液态玻璃 QA',
+          widget.referenceParity
+              ? 'Liquid Glass Reference Parity'
+              : 'Liquid Glass QA',
         ),
       ),
       extendBody: true,
@@ -116,45 +118,35 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
           children: [
             if (widget.referenceParity) _buildReferenceContract(),
             const Text(
-              '常态保留模糊与基础透镜；长按或切换标签页时再观察折射、色散与边缘连接。红框是采样范围，青框是胶囊可见曲面。',
+              '常态是 frosted blur；长按或切换 Tab 时再观察 Lens 折射、色散与边缘连接。红框是 capture rect，青框是 Capsule 可见曲面。',
               style: TextStyle(color: Colors.white),
             ),
             if (widget.referenceParity) ...[
               const SizedBox(height: 6),
               const Text(
-                '颜色合成：普通导航行全部保持中性；品牌色只来自胶囊内的强调副本，窗口外不应出现色调。',
+                'Color Composite：Normal Row 全部 neutral；品牌色只来自 Capsule 内的 Accent Copy，窗口外不应出现 tint。',
                 style: TextStyle(color: Colors.white),
               ),
             ],
             const SizedBox(height: 8),
-            const Text('预设', style: TextStyle(color: Colors.white70)),
+            const Text('Preset', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
               runSpacing: 4,
               children: [
                 _buildQaChip(
-                  '当前 · HEAD',
-                  _isPreset(LiquidGlassTuning.current),
-                  () => _setPreset(LiquidGlassTuning.current),
-                ),
-                _buildQaChip(
-                  '旧版 v1 · 57ca812',
-                  _isPreset(LiquidGlassTuning.oldV1),
-                  () => _setPreset(LiquidGlassTuning.oldV1),
-                ),
-                _buildQaChip(
-                  '自然',
+                  'Natural',
                   _isPreset(LiquidGlassTuning.natural),
                   () => _setPreset(LiquidGlassTuning.natural),
                 ),
                 _buildQaChip(
-                  '酷安参考',
+                  'Coolapk',
                   _isPreset(LiquidGlassTuning.coolapk),
                   () => _setPreset(LiquidGlassTuning.coolapk),
                 ),
                 _buildQaChip(
-                  '增强',
+                  'Strong',
                   _isPreset(LiquidGlassTuning.strong),
                   () => _setPreset(LiquidGlassTuning.strong),
                 ),
@@ -162,12 +154,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'A/B：当前使用 MCP HEAD；旧版 v1 复现 57ca812（2026-08-24 09:13），只切换视觉档案，不切换导航状态机。',
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'C. 光学调试 / 模式',
+              'C. Optical Debug / Mode',
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 4),
@@ -187,7 +174,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
                   .toList(),
             ),
             const SizedBox(height: 6),
-            const Text('颜色预设', style: TextStyle(color: Colors.white70)),
+            const Text('Color preset', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
@@ -206,7 +193,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              '交互状态',
+              'Interaction state',
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 4),
@@ -215,44 +202,44 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               runSpacing: 4,
               children: [
                 _buildQaChip(
-                  '静止',
+                  'Idle',
                   _qaPhase == LiquidNavPhase.idle,
                   () => _setQaPhase(LiquidNavPhase.idle, 0),
                 ),
                 _buildQaChip(
-                  '按压 25%',
+                  'Pressed 25%',
                   _qaPhase == LiquidNavPhase.pressing && _qaActivation == 0.25,
                   () => _setQaPhase(LiquidNavPhase.pressing, 0.25),
                 ),
                 _buildQaChip(
-                  '按压 50%',
+                  'Pressed 50%',
                   _qaPhase == LiquidNavPhase.pressing && _qaActivation == 0.50,
                   () => _setQaPhase(LiquidNavPhase.pressing, 0.50),
                 ),
                 _buildQaChip(
-                  '按压 100%',
+                  'Pressed 100%',
                   _qaPhase == LiquidNavPhase.pressing && _qaActivation == 1,
                   () => _setQaPhase(LiquidNavPhase.pressing, 1),
                 ),
                 _buildQaChip(
-                  '拖拽中',
+                  'Dragging',
                   _qaPhase == LiquidNavPhase.dragging,
                   () => _setQaPhase(LiquidNavPhase.dragging, 1),
                 ),
                 _buildQaChip(
-                  '吸附中',
+                  'Settling',
                   _qaPhase == LiquidNavPhase.settling,
                   () => _setQaPhase(LiquidNavPhase.settling, 1),
                 ),
                 _buildQaChip(
-                  '收拢中',
+                  'Collapsing',
                   _qaPhase == LiquidNavPhase.collapsing,
                   () => _setQaPhase(LiquidNavPhase.collapsing, 0.55),
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            const Text('背景图案', style: TextStyle(color: Colors.white70)),
+            const Text('Pattern', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
@@ -271,7 +258,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: const Text(
-                '显示采样范围',
+                'Show capture bounds',
                 style: TextStyle(color: Colors.white),
               ),
               value: _tuning.showCaptureBounds,
@@ -281,7 +268,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
             ),
             const SizedBox(height: 6),
             _buildSlider(
-              label: '折射力度',
+              label: 'Refraction',
               value: _tuning.refraction,
               min: 0,
               max: 28,
@@ -290,7 +277,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '折射深度',
+              label: 'Refraction height',
               value: _tuning.refractionHeight,
               min: 0,
               max: 24,
@@ -299,7 +286,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '按压缩放',
+              label: 'Pressed scale',
               value: _tuning.pressedScale,
               min: 1,
               max: 1.45,
@@ -308,7 +295,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '纵向折射比例',
+              label: 'Vertical scale',
               value: _tuning.verticalRefractionScale,
               min: 0.08,
               max: 0.70,
@@ -317,7 +304,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '横向采样余量',
+              label: 'Overscan X',
               value: _tuning.overscanX,
               min: 12,
               max: 40,
@@ -326,7 +313,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '纵向采样余量',
+              label: 'Overscan Y',
               value: _tuning.overscanY,
               min: 8,
               max: 32,
@@ -335,7 +322,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '色散',
+              label: 'Chromatic',
               value: _tuning.chromatic,
               min: 0,
               max: 3,
@@ -344,7 +331,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '旧版边缘参数',
+              label: 'Rim',
               value: _tuning.rimStrength,
               min: 0,
               max: 2,
@@ -353,7 +340,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '旧版光照参数',
+              label: 'Light',
               value: _tuning.lightStrength,
               min: 0,
               max: 0.8,
@@ -362,7 +349,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '底栏透明度',
+              label: 'Dock alpha',
               value: _tuning.dockAlpha,
               min: 0,
               max: 1,
@@ -371,7 +358,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '底栏模糊',
+              label: 'Dock blur',
               value: _tuning.dockBlur,
               min: 0,
               max: 14,
@@ -380,7 +367,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '选中态静止折射（QA）',
+              label: 'Idle optical (QA)',
               value: _tuning.idleOpticalActivation,
               min: 0,
               max: 0.6,
@@ -389,16 +376,16 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '底栏折射力度',
+              label: 'Dock refract',
               value: _tuning.dockRefraction,
               min: 0,
-              max: 40,
+              max: 24,
               onChanged: (value) => _setTuning(
                 _tuning.copyWith(dockRefraction: value),
               ),
             ),
             _buildSlider(
-              label: '底栏色散',
+              label: 'Dock chroma',
               value: _tuning.dockChromatic,
               min: 0,
               max: 0.5,
@@ -407,7 +394,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ),
             ),
             _buildSlider(
-              label: '高光强度',
+              label: 'Highlight',
               value: _tuning.highlightStrength,
               min: 0,
               max: 1.5,
@@ -456,28 +443,26 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'A. Kyant 参数（冻结基线）',
+            'A. Kyant Params（冻结基线）',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           const Text(
-            '底栏 64 / 模糊 8 / 常驻透镜 24×24\n'
-            '选中态 56 / 静止透镜 16×22 / 按压、拖拽透镜 16×22\n'
-            '标签页内容 1.20× / 指针高光 0.08+0.15 / 底栏回弹 3.5dp',
+            'Dock 64 / blur 10 / surface .20 / Dock refraction 10\n'
+            'Selection 56 / idle optical .20 / refraction 4.8 → drag 14.8\n'
+            'Tab content 1.20× / pointer highlight / Dock recoil 3.5dp',
             style: TextStyle(color: Colors.white70, height: 1.35),
           ),
           const SizedBox(height: 6),
           const Text(
-            'B. SYLUlive 参数',
+            'B. SYLUlive Params',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           Text(
-            '强调色 ${_tuning.focusColorFor(false).toARGB32().toRadixString(16)} · '
-            '选中态 ${_tuning.refractionHeight.toStringAsFixed(0)}×'
+            'accent ${_tuning.focusColorFor(false).toARGB32().toRadixString(16)} · '
+            'selection ${_tuning.refractionHeight.toStringAsFixed(0)}×'
             '${_tuning.refraction.toStringAsFixed(0)} · '
-            '底栏模糊 ${_tuning.dockBlur.toStringAsFixed(0)} / '
-            '底栏透镜 ${_tuning.dockRefractionHeight.toStringAsFixed(0)}×'
-            '${_tuning.dockRefraction.toStringAsFixed(0)} / '
-            '生产态保留曲面高光，不叠加 Halo/Rim',
+            'Dock blur ${_tuning.dockBlur.toStringAsFixed(0)} / '
+            'surface ${_tuning.dockAlpha.toStringAsFixed(2)} / full-width lens off',
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 8),
@@ -495,8 +480,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   }
 
   bool _isPreset(LiquidGlassTuning preset) {
-    return _tuning.visualProfile == preset.visualProfile &&
-        _tuning.pressedScale == preset.pressedScale &&
+    return _tuning.pressedScale == preset.pressedScale &&
         _tuning.refractionHeight == preset.refractionHeight &&
         _tuning.refraction == preset.refraction &&
         _tuning.chromatic == preset.chromatic &&
@@ -526,34 +510,32 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
   String _modeLabel(LiquidGlassQaMode mode) {
     switch (mode) {
       case LiquidGlassQaMode.finalGlass:
-        return '最终玻璃';
+        return 'Final';
       case LiquidGlassQaMode.identity:
-        return '原样';
+        return 'Identity';
       case LiquidGlassQaMode.coreOnly:
-        return '仅模糊';
+        return 'Core Only';
       case LiquidGlassQaMode.refractionOnly:
-        return '仅折射';
+        return 'Refraction Only';
       case LiquidGlassQaMode.chromaticOnly:
-        return '仅色散';
+        return 'Chromatic Only';
       case LiquidGlassQaMode.fresnelOnly:
-        return '仅高光';
+        return 'Fresnel Only';
       case LiquidGlassQaMode.shapeOnly:
-        return '仅形状';
+        return 'Shape Only';
     }
   }
 
   String _patternLabel(LiquidGlassQaPattern pattern) {
     switch (pattern) {
-      case LiquidGlassQaPattern.optical:
-        return '光学测试';
       case LiquidGlassQaPattern.horizontal:
-        return '横向';
+        return 'Horizontal';
       case LiquidGlassQaPattern.vertical:
-        return '纵向';
+        return 'Vertical';
       case LiquidGlassQaPattern.checker:
-        return '棋盘';
+        return 'Checker';
       case LiquidGlassQaPattern.text:
-        return '文字';
+        return 'Text';
     }
   }
 
@@ -562,7 +544,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
       case LiquidNavColorPreset.sylulive:
         return 'SYLUlive';
       case LiquidNavColorPreset.coolapkReference:
-        return '酷安参考';
+        return 'Coolapk reference';
     }
   }
 }
@@ -574,11 +556,6 @@ class _LiquidGlassQaPatternPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (pattern == LiquidGlassQaPattern.optical) {
-      _paintOpticalBackdrop(canvas, size);
-      return;
-    }
-
     final background = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
@@ -592,8 +569,6 @@ class _LiquidGlassQaPatternPainter extends CustomPainter {
       ..strokeWidth = 1
       ..color = Colors.white.withValues(alpha: 0.25);
     switch (pattern) {
-      case LiquidGlassQaPattern.optical:
-        break;
       case LiquidGlassQaPattern.horizontal:
         for (var y = 40.0; y < size.height; y += 34) {
           canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
@@ -622,104 +597,6 @@ class _LiquidGlassQaPatternPainter extends CustomPainter {
     canvas.drawCircle(
         Offset(size.width * 0.80, size.height * 0.46), 112, blobs);
     canvas.drawCircle(Offset(size.width * 0.48, size.height * 0.78), 58, blobs);
-  }
-
-  void _paintOpticalBackdrop(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFF7FAF8),
-    );
-
-    // 高对比色块把“背景采样坐标被移动”放大出来，避免在白色 Feed 上
-    // 把真实折射误判成普通 BackdropFilter。
-    final blocks = <({Rect rect, Color color})>[
-      (
-        rect: Rect.fromLTWH(-18, 76, size.width * 0.42, size.height * 0.26),
-        color: const Color(0xFFF28C28),
-      ),
-      (
-        rect: Rect.fromLTWH(
-          size.width * 0.23,
-          118,
-          size.width * 0.52,
-          size.height * 0.28,
-        ),
-        color: const Color(0xFF21A366),
-      ),
-      (
-        rect: Rect.fromLTWH(
-          size.width * 0.68,
-          66,
-          size.width * 0.40,
-          size.height * 0.38,
-        ),
-        color: const Color(0xFF1976D2),
-      ),
-      (
-        rect: Rect.fromLTWH(
-          size.width * 0.04,
-          size.height * 0.45,
-          size.width * 0.31,
-          size.height * 0.22,
-        ),
-        color: const Color(0xFFE54848),
-      ),
-    ];
-    for (final block in blocks) {
-      canvas.drawRect(block.rect, Paint()..color = block.color);
-    }
-
-    final grid = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = Colors.black.withValues(alpha: 0.72);
-    for (var y = size.height * 0.24; y < size.height; y += 32) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-    for (var x = 12.0; x < size.width; x += 28) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-
-    const checkerSize = 18.0;
-    final checkerOrigin = Offset(12, size.height * 0.58);
-    for (var row = 0; row < 4; row++) {
-      for (var column = 0; column < 9; column++) {
-        final isBlack = (row + column).isEven;
-        final rect = Rect.fromLTWH(
-          checkerOrigin.dx + column * checkerSize,
-          checkerOrigin.dy + row * checkerSize,
-          checkerSize,
-          checkerSize,
-        );
-        canvas.drawRect(
-          rect,
-          Paint()..color = isBlack ? Colors.black : Colors.white,
-        );
-      }
-    }
-
-    final outline = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.black.withValues(alpha: 0.82);
-    canvas.drawCircle(
-        Offset(size.width * 0.17, size.height * 0.76), 42, outline);
-    canvas.drawCircle(
-        Offset(size.width * 0.78, size.height * 0.72), 58, outline);
-
-    final painter = TextPainter(
-      text: const TextSpan(
-        text: 'SYLUlive  LIQUID LENS\n橙 绿 蓝 · 1px grid · 123456789',
-        style: TextStyle(
-          color: Colors.black,
-          fontSize: 20,
-          height: 1.45,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: size.width - 32);
-    painter.paint(canvas, Offset(16, size.height * 0.30));
   }
 
   @override

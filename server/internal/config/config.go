@@ -338,7 +338,8 @@ func Load() *Config {
 	aiLangChainRAGRolloutPercent := envIntInRange(
 		"AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", rolloutDefault, 0, 100,
 	)
-	aiAgentEnabled := envBool("AI_AGENT_ENABLED", aiEnabled)
+	// Agent 灰测必须显式开启，避免仅启用普通校园 AI 时意外进入全量 Agent 路径。
+	aiAgentEnabled := envBool("AI_AGENT_ENABLED", false)
 	aiAgentRolloutDefault := 0
 	if aiAgentEnabled {
 		aiAgentRolloutDefault = 100

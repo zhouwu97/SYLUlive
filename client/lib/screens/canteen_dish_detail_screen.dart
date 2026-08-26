@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
+import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
@@ -45,8 +46,12 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   Future<void> _load() async {
     final provider = context.read<CanteenProvider>();
-    final data = await provider.loadDishDetail(widget.canteenId, widget.dishId);
-    final reviews = await provider.loadDishReviews(widget.dishId);
+    final results = await Future.wait<dynamic>([
+      provider.loadDishDetail(widget.canteenId, widget.dishId),
+      provider.loadDishReviews(widget.dishId),
+    ]);
+    final data = results[0] as Map<String, dynamic>?;
+    final reviews = results[1] as List<Map<String, dynamic>>?;
     if (mounted) {
       setState(() {
         _data = data;
@@ -573,6 +578,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
   int? _fileId;
   UploadedImage? _selectedImage;
   bool _submitting = false;
+  String? _submitIdempotencyKey;
   late final TextEditingController _dishNameCtrl;
 
   /// 支持两种提交模式：
@@ -715,6 +721,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                             setState(() {
                               _fileId = images.first.fileId;
                               _selectedImage = images.first;
+                              _submitIdempotencyKey = null;
                             });
                           }
                         },
@@ -787,6 +794,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
               onTap: () => setState(() {
                 _fileId = null;
                 _selectedImage = null;
+                _submitIdempotencyKey = null;
               }),
               // 48dp 最小触控目标（Material 无障碍基线）。
               child: SizedBox(
@@ -842,6 +850,8 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
       dishName:
           widget.dishId != null ? widget.dishName : _dishNameCtrl.text.trim(),
       fileId: _fileId!,
+      idempotencyKey: _submitIdempotencyKey ??=
+          newIdempotencyKey('canteen-dish-photo'),
     );
     if (!mounted) return;
     setState(() => _submitting = false);

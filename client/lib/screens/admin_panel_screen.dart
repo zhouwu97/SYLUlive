@@ -34,7 +34,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   // Pending counts
   int? _reportsCount;
   int? _featuredCount;
-  int? _reviewTasksCount; // Teachers + Majors + Canteens + 菜品审核
+  int? _reviewTasksCount; // Teachers + Majors + Canteens
+  int? _dishModerationCount; // 菜品候选 + 实拍
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   bool _hasLoadError = false;
@@ -101,8 +102,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
-      _reviewTasksCount =
-          sumCounts([responses[2], responses[3], responses[7], responses[8]]);
+      _reviewTasksCount = sumCounts([responses[2], responses[3], responses[7]]);
+      _dishModerationCount = getCount(responses[8]);
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _hasLoadError = responses.any((response) => response == null);
@@ -468,6 +469,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AdminReviewTasksScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '菜品',
+              count: _dishModerationCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CanteenDishPhotoReviewScreen()))
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(

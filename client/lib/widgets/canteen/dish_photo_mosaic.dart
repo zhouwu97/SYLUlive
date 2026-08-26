@@ -28,23 +28,23 @@ class DishPhotoMosaic extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: switch (urls.length) {
-        1 => _buildLarge(urls[0], context, 0),
+        1 => _buildLarge(urls, context, 0),
         2 => Row(
             children: [
-              Expanded(child: _buildTile(urls[0], context, 220, 0)),
+              Expanded(child: _buildTile(urls, context, 220, 0)),
               const SizedBox(width: 4),
-              Expanded(child: _buildTile(urls[1], context, 220, 1)),
+              Expanded(child: _buildTile(urls, context, 220, 1)),
             ],
           ),
         _ => Column(
             children: [
-              _buildLarge(urls[0], context, 0),
+              _buildLarge(urls, context, 0),
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Expanded(child: _buildTile(urls[1], context, 160, 1)),
+                  Expanded(child: _buildTile(urls, context, 160, 1)),
                   const SizedBox(width: 4),
-                  Expanded(child: _buildTile(urls[2], context, 160, 2)),
+                  Expanded(child: _buildTile(urls, context, 160, 2)),
                 ],
               ),
             ],
@@ -53,20 +53,21 @@ class DishPhotoMosaic extends StatelessWidget {
     );
   }
 
-  Widget _buildLarge(String url, BuildContext context, int index) {
-    return _buildTile(url, context, 240, index);
+  Widget _buildLarge(List<String> urls, BuildContext context, int index) {
+    return _buildTile(urls, context, 240, index);
   }
 
   Widget _buildTile(
-      String url, BuildContext context, double height, int index) {
+      List<String> urls, BuildContext context, double height, int index) {
+    final url = urls[index];
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ImageViewerScreen(
-              imageUrls: [url],
-              initialIndex: 0,
+              imageUrls: urls,
+              initialIndex: index,
             ),
           ),
         );

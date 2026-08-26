@@ -36,6 +36,13 @@ vec2 gradSdRoundedRect(vec2 coord, vec2 halfSize, float radius) {
   return signCoord * vec2(gradX, 1.0 - gradX);
 }
 
+// 与 selection Lens 共用的圆弧截面映射。相比线性的 smoothstep，边缘带
+// 会更像凸透镜：靠近表面时位移快速建立，向中心收拢时自然归零。
+float circleMap(float x) {
+  float clamped = clamp(x, 0.0, 1.0);
+  return 1.0 - sqrt(max(0.0, 1.0 - clamped * clamped));
+}
+
 vec2 logicalFragCoord() {
   return FlutterFragCoord().xy *
       (uLogicalSize / max(uInputSize, vec2(0.001)));
@@ -74,17 +81,21 @@ void main() {
     fragColor = original;
     return;
   }
-  float edgeFactor = 1.0 - smoothstep(0.0, edgeHeight, edgeDepth);
+  float edgePosition = 1.0 - clamp(edgeDepth / edgeHeight, 0.0, 1.0);
+  float edgeProfile = circleMap(edgePosition);
   vec2 normal = normalize(gradSdRoundedRect(centeredCoord, halfSize, radius));
-  float displacement = edgeFactor * uRefraction;
+  float displacement = edgeProfile * uRefraction;
   vec2 refractedCoord = coord + normal * displacement;
 
   // 色散只留在 Dock 的折射带，中心保持原色，避免大面积彩虹噪声。
-  vec2 dispersion = normal * displacement * uChromatic * edgeFactor;
+  // 当 QA 切到 chromatic-only 时，uRefraction 为 0；保留半个边缘高度
+  // 作为色散基准距离，确保该模式仍能独立观察 RGB 分离。
+  float chromaticBase = max(abs(displacement), edgeHeight * 0.5);
+  vec2 dispersion = normal * chromaticBase * uChromatic * edgeProfile;
   vec4 red = texture(uBackdrop, textureUv(refractedCoord + dispersion));
   vec4 green = texture(uBackdrop, textureUv(refractedCoord));
   vec4 blue = texture(uBackdrop, textureUv(refractedCoord - dispersion));
   vec3 refracted = vec3(red.r, green.g, blue.b);
-  vec3 color = mix(original.rgb, refracted, activation * edgeFactor);
+  vec3 color = mix(original.rgb, refracted, activation * edgeProfile);
   fragColor = vec4(color, original.a);
 }

@@ -119,6 +119,9 @@ void main() {
     );
     expect(chromatic.effectiveChromatic, greaterThan(0));
     expect(chromatic.effectiveRefraction, 0);
+    expect(chromatic.effectiveRefractionHeight, greaterThan(0));
+    expect(chromatic.effectiveDockRefraction, 0);
+    expect(chromatic.effectiveDockChromatic, greaterThan(0));
 
     const fresnel = LiquidGlassTuning(
       mode: LiquidGlassQaMode.fresnelOnly,
@@ -196,17 +199,24 @@ void main() {
 
     expect(tuning.lensHeight, 56);
     expect(tuning.pressedScale, closeTo(78 / 56, 0.0001));
-    expect(tuning.refractionHeight, 12);
-    expect(tuning.refraction, 14.0);
-    expect(tuning.chromatic, 1.0);
+    expect(tuning.refractionHeight, 16);
+    expect(tuning.refraction, 22.0);
+    expect(tuning.chromatic, 1.15);
+    expect(tuning.rimStrength, 0.20);
+    expect(tuning.lightStrength, 0.36);
     expect(tuning.effectiveMagnification, 1);
-    expect(tuning.dockAlpha, 0.16);
+    expect(tuning.dockAlpha, 0.12);
     expect(tuning.dockBlur, 8.0);
-    expect(tuning.dockRefraction, 24.0);
-    expect(tuning.dockChromatic, 0.0);
-    expect(tuning.dockRefractionHeight, 24.0);
+    expect(tuning.idleOpticalActivation, 0.38);
+    expect(tuning.dockRefraction, 28.0);
+    expect(tuning.dockChromatic, 0.16);
+    expect(tuning.dockRefractionHeight, 26.0);
+    expect(tuning.dockSaturation, 1.06);
+    expect(tuning.dockContrast, 1.02);
     expect(tuning.dockLensHeight, 24.0);
     expect(tuning.dockLensAmount, 24.0);
+    expect(tuning.lensSurfaceAlpha, 0.08);
+    expect(tuning.lensPressedSurfaceAlpha, 0.035);
   });
 
   test('Old v1 preset freezes the 57ca812 visual contract', () {
@@ -248,8 +258,8 @@ void main() {
     expect(shaderSource, contains('float capsuleDistance'));
     expect(shaderSource, contains('uZoom'));
     expect(shaderSource, contains('uChromatic'));
-    expect(qaSource, contains('Old v1 · 57ca812'));
-    expect(qaSource, contains('Current · HEAD'));
+    expect(qaSource, contains('旧版 v1 · 57ca812'));
+    expect(qaSource, contains('当前 · HEAD'));
   });
 
   test('V9 Reference QA exposes a white Color Composite contract', () {
@@ -258,6 +268,22 @@ void main() {
     ).readAsStringSync();
     expect(source, contains('liquid-glass-reference-background'));
     expect(source, contains('color: Colors.white'));
-    expect(source, contains('Normal Row 全部 neutral'));
+    expect(source, contains('普通导航行全部保持中性'));
+  });
+
+  test(
+      'Optical QA uses high-contrast probes and exposes isolated material modes',
+      () {
+    final source = File(
+      'lib/widgets/liquid_glass/liquid_glass_qa_screen.dart',
+    ).readAsStringSync();
+    expect(source, contains('LiquidGlassQaPattern.optical'));
+    expect(source, contains('Color(0xFFF28C28)'));
+    expect(source, contains('Color(0xFF21A366)'));
+    expect(source, contains('Color(0xFF1976D2)'));
+    expect(source, contains('仅模糊'));
+    expect(source, contains('仅色散'));
+    expect(source, contains('仅高光'));
+    expect(source, contains('最终玻璃'));
   });
 }

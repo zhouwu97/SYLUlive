@@ -47,35 +47,36 @@ class LiquidGlassTuning {
     this.pressedScale = 78.0 / 56.0,
     this.overscanX = 18.0,
     this.overscanY = 16.0,
-    this.refractionHeight = 12.0,
-    this.refraction = 14.0,
+    this.refractionHeight = 16.0,
+    this.refraction = 22.0,
     this.verticalRefractionScale = 1.0,
     // 保留字段以兼容 QA 配置文件；V8 shader 不再使用中心放大。
     this.magnification = 1.0,
     this.magnificationRadius = 0.66,
-    this.chromatic = 1.0,
-    this.rimStrength = 0.16,
-    this.lightStrength = 0.30,
+    this.chromatic = 1.15,
+    this.rimStrength = 0.20,
+    this.lightStrength = 0.36,
     this.velocityNormalization = 1000.0,
     this.flowStrength = 0.72,
     // Dock 降低白色覆盖，保留背景层次给 shader 折射；这不是减少动效，
     // 而是把“玻璃”从厚重磨砂恢复成有透光和重量的材质。
-    this.dockAlpha = 0.16,
+    this.dockAlpha = 0.12,
     this.dockBlur = 8.0,
     this.dockLensHeight = 24.0,
     this.dockLensAmount = 24.0,
-    // Dock 对齐 Kyant：整块 Dock 静止时就有 blur(8) + lens(24, 24)。
-    this.idleOpticalActivation = 0.0,
-    this.dockRefraction = 24.0,
-    this.dockChromatic = 0.0,
-    this.dockRefractionHeight = 24.0,
-    this.dockSaturation = 1.04,
-    this.dockContrast = 1.01,
+    // Dock 对齐 Kyant：整块 Dock 静止时就有 blur + lens；色散刻意保持
+    // 轻量，避免整块底栏变成彩虹滤镜。
+    this.idleOpticalActivation = 0.38,
+    this.dockRefraction = 28.0,
+    this.dockChromatic = 0.16,
+    this.dockRefractionHeight = 26.0,
+    this.dockSaturation = 1.06,
+    this.dockContrast = 1.02,
     this.dockSpecularStrength = 1.0,
     this.dockRecoilDistance = 3.5,
     this.dockRecoilStrength = 0.82,
-    this.lensSurfaceAlpha = 0.12,
-    this.lensPressedSurfaceAlpha = 0.05,
+    this.lensSurfaceAlpha = 0.08,
+    this.lensPressedSurfaceAlpha = 0.035,
     this.highlightStrength = 1.0,
     this.highlightRadius = 1.5,
     this.mode = LiquidGlassQaMode.finalGlass,
@@ -168,8 +169,8 @@ class LiquidGlassTuning {
   final double dockLensHeight;
   final double dockLensAmount;
 
-  /// Idle 默认关闭光学激活，保持 frosted blur；按压、拖拽与切换阶段逐段
-  /// 提升折射与色散，而不是在 phase 之间切换成另一颗静态 indicator。
+  /// Idle 保留一层可见但克制的 Lens；按压、拖拽与切换阶段从这个基线
+  /// 连续提升到 1，而不是在 phase 之间切换成另一颗静态 indicator。
   final double idleOpticalActivation;
 
   /// Dock 的独立光学参数。Selection 与 Dock 共用 shader 思路，但不共用
@@ -231,10 +232,10 @@ class LiquidGlassTuning {
     switch (mode) {
       case LiquidGlassQaMode.finalGlass:
       case LiquidGlassQaMode.refractionOnly:
+      case LiquidGlassQaMode.chromaticOnly:
         return refractionHeight;
       case LiquidGlassQaMode.identity:
       case LiquidGlassQaMode.coreOnly:
-      case LiquidGlassQaMode.chromaticOnly:
       case LiquidGlassQaMode.fresnelOnly:
       case LiquidGlassQaMode.shapeOnly:
         return 0;
@@ -255,6 +256,64 @@ class LiquidGlassTuning {
       case LiquidGlassQaMode.coreOnly:
       case LiquidGlassQaMode.refractionOnly:
       case LiquidGlassQaMode.fresnelOnly:
+      case LiquidGlassQaMode.shapeOnly:
+        return 0;
+    }
+  }
+
+  /// Dock 的色散在 QA 的 chromatic-only 模式下仍需要一条边缘带，
+  /// 但不应同时打开 Dock 的几何折射。
+  double get effectiveDockRefraction {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+      case LiquidGlassQaMode.refractionOnly:
+        return dockRefraction;
+      case LiquidGlassQaMode.identity:
+      case LiquidGlassQaMode.coreOnly:
+      case LiquidGlassQaMode.chromaticOnly:
+      case LiquidGlassQaMode.fresnelOnly:
+      case LiquidGlassQaMode.shapeOnly:
+        return 0;
+    }
+  }
+
+  double get effectiveDockChromatic {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+      case LiquidGlassQaMode.chromaticOnly:
+        return dockChromatic;
+      case LiquidGlassQaMode.identity:
+      case LiquidGlassQaMode.coreOnly:
+      case LiquidGlassQaMode.refractionOnly:
+      case LiquidGlassQaMode.fresnelOnly:
+      case LiquidGlassQaMode.shapeOnly:
+        return 0;
+    }
+  }
+
+  double get effectiveHighlightStrength {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+      case LiquidGlassQaMode.fresnelOnly:
+        return highlightStrength;
+      case LiquidGlassQaMode.identity:
+      case LiquidGlassQaMode.coreOnly:
+      case LiquidGlassQaMode.refractionOnly:
+      case LiquidGlassQaMode.chromaticOnly:
+      case LiquidGlassQaMode.shapeOnly:
+        return 0;
+    }
+  }
+
+  double get effectiveDockSpecularStrength {
+    switch (mode) {
+      case LiquidGlassQaMode.finalGlass:
+      case LiquidGlassQaMode.fresnelOnly:
+        return dockSpecularStrength;
+      case LiquidGlassQaMode.identity:
+      case LiquidGlassQaMode.coreOnly:
+      case LiquidGlassQaMode.refractionOnly:
+      case LiquidGlassQaMode.chromaticOnly:
       case LiquidGlassQaMode.shapeOnly:
         return 0;
     }

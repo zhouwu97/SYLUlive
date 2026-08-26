@@ -114,17 +114,39 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 				if dish.Status == models.DishStatusHidden {
 					return errDishNameHiddenConflict
 				}
+				if dish.Status == models.DishStatusRejected || dish.Status == models.DishStatusArchived {
+					if err := tx.Model(&dish).Updates(map[string]interface{}{
+						"status": models.DishStatusPending, "reject_reason": "", "reviewed_by": nil, "reviewed_at": nil,
+					}).Error; err != nil {
+						return err
+					}
+				}
 			}
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dish.ID).Error; err != nil {
 			return err
 		}
 		var galleryCount int64
-		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status IN ?", dish.ID, []string{models.DishPhotoStatusApproved, models.DishPhotoStatusPending}).Count(&galleryCount).Error; err != nil {
+		// 新版评价/投稿链路只按 approved 计算公共图库容量；旧 /dish-photos
+		// 路径保留严格兼容语义，避免旧客户端在迁移期间无限累积 pending。
+		galleryStatuses := []string{models.DishPhotoStatusApproved}
+		if legacy, exists := c.Get("legacy_dish_photo_submission"); exists && legacy == true {
+			galleryStatuses = []string{models.DishPhotoStatusApproved, models.DishPhotoStatusPending}
+		}
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status IN ?", dish.ID, galleryStatuses).Count(&galleryCount).Error; err != nil {
 			return err
 		}
 		if galleryCount >= 3 {
 			return errDishGalleryFull
+		}
+		var userPendingCount int64
+		if err := tx.Model(&models.CanteenDishPhoto{}).
+			Where("dish_id = ? AND user_id = ? AND status = ?", dish.ID, uid, models.DishPhotoStatusPending).
+			Count(&userPendingCount).Error; err != nil {
+			return err
+		}
+		if userPendingCount >= 3 {
+			return errDishPendingLimit
 		}
 		if _, err := services.ValidateImageFileIDs(tx, []uint{input.FileID}, 1, uid); err != nil {
 			return err
@@ -140,6 +162,8 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "菜名不能为空"})
 		case errors.Is(err, errDishGalleryFull):
 			c.JSON(http.StatusConflict, gin.H{"code": "dish_gallery_full", "error": "该菜品已有3张公开实拍"})
+		case errors.Is(err, errDishPendingLimit):
+			c.JSON(http.StatusConflict, gin.H{"code": "dish_pending_limit", "error": "你对该菜品的待审核实拍已达到上限"})
 		case errors.Is(err, errDishNameHiddenConflict):
 			c.JSON(http.StatusConflict, gin.H{"code": "dish_name_hidden_conflict", "error": "同名菜品曾被下架，请联系管理员恢复或合并后再投稿"})
 		case errors.Is(err, errCanteenOffline):
@@ -158,3 +182,5 @@ func (h *CanteenDishPhotoHandler) SubmitDishPhotoV2(c *gin.Context) {
 }
 
 var errDishNameHiddenConflict = errors.New("dish name conflicts with hidden dish")
+
+var errDishPendingLimit = errors.New("dish pending limit reached")

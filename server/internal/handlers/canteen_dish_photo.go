@@ -31,7 +31,8 @@ func NewCanteenDishPhotoHandler(db *gorm.DB) *CanteenDishPhotoHandler {
 // 学生都可以绕过菜品审核。统一转入 V2 pending 流程，保证旧客户端也不能绕过审核。
 // POST /api/canteens/:canteenId/dish-photos
 func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
-	// 统一走 pending 实现，旧 URL 只承担协议兼容，不承担权限兼容。
+	// 旧 URL 只承担协议兼容；新评价/投稿 API 使用 approved-only 容量语义。
+	c.Set("legacy_dish_photo_submission", true)
 	h.SubmitDishPhotoV2(c)
 }
 

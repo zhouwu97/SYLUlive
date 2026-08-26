@@ -20,7 +20,7 @@ func NewCanteenDishHandler(db *gorm.DB) *CanteenDishHandler {
 	return &CanteenDishHandler{db: db}
 }
 
-// ListDishes 公开菜品列表：仅返回 status=active 且 approved 实拍 > 0 的菜。
+// ListDishes 公开菜品列表：所有 status=active 的菜都返回，是否有实拍由 photo_count 单独表达。
 // 使用独立聚合子查询，避免 LEFT JOIN 膨胀污染 COUNT。
 // GET /api/canteens/:id/dishes
 func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
@@ -55,7 +55,6 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 	}
 	var dishes []dishRow
 	// 每个菜独立聚合 approved 统计，无跨表笛卡尔积。
-	// EXISTS 过滤无 approved 实拍的菜，photo_count 仅作为选择列。
 	err = h.db.Table("canteen_dishes AS d").
 		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ?", true).
 		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name, c.operating_status AS canteen_operating_status,
@@ -68,8 +67,7 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 			(SELECT MAX(p.created_at) FROM canteen_dish_photos p
 			 WHERE p.dish_id = d.id AND p.status = ?) AS last_photo_at`,
 			models.DishPhotoStatusApproved, models.DishPhotoStatusApproved, models.DishPhotoStatusApproved).
-		Where("d.canteen_id = ? AND d.status = ? AND EXISTS (SELECT 1 FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?)",
-			canteenID, models.DishStatusActive, models.DishPhotoStatusApproved).
+		Where("d.canteen_id = ? AND d.status = ?", canteenID, models.DishStatusActive).
 		Order("photo_count DESC, d.created_at DESC").
 		Scan(&dishes).Error
 	if err != nil {

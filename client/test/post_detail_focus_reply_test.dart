@@ -167,7 +167,9 @@ void main() {
         of: scrollView,
         matching: find.byType(Scrollable),
       );
-      return tester.state<ScrollableState>(scrollable).position.pixels;
+      // SelectableText 内部也有用于 selection overlay 的 Scrollable；详情
+      // 页真正可滚动的容器位于匹配结果首位。
+      return tester.state<ScrollableState>(scrollable.first).position.pixels;
     }
 
     final before = scrollOffset();

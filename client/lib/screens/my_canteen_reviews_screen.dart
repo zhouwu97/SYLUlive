@@ -14,6 +14,7 @@ import 'canteen_detail_screen.dart';
 import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import 'canteen_screen.dart';
+import 'my_canteen_contributions_screen.dart';
 
 class MyCanteenReviewsScreen extends StatefulWidget {
   const MyCanteenReviewsScreen({super.key});
@@ -150,6 +151,13 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   Future<void> _edit(CanteenReviewEvent item) async {
     final canteen = item.canteen;
     if (!item.canEdit || canteen == null) return;
+    final contextData =
+        await context.read<CanteenProvider>().loadReviewEditContext(item.id);
+    if (!mounted) return;
+    if (contextData == null) {
+      AppFeedback.error('评价编辑内容加载失败，请刷新后重试', context: context);
+      return;
+    }
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CanteenReviewEditorScreen(
@@ -157,21 +165,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
           canteenName: canteen.name,
           canteenImage: canteen.image,
           mode: CanteenReviewEditorMode.edit,
-          existingReview: {
-            'review_event_id': item.id,
-            'score_version': item.scoreVersion,
-            'taste_score': item.dimensions.taste,
-            'value_score': item.dimensions.value,
-            'queue_score': item.dimensions.queue,
-            'hygiene_score': item.dimensions.hygiene,
-            'service_score': item.dimensions.service,
-            'overall_score': item.overallScore,
-            'comment': item.comment,
-            'images': item.images,
-            'tags': item.tags,
-            'recommended_dishes': item.recommendedDishes,
-            'updated_at': item.updatedAt?.toIso8601String(),
-          },
+          existingReview: contextData,
         ),
       ),
     );
@@ -215,7 +209,20 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
-      appBar: const AppPageAppBar(title: Text('我的商家评价')),
+      appBar: AppPageAppBar(
+        title: const Text('我的商家评价'),
+        actions: [
+          IconButton(
+            tooltip: '我的食堂贡献',
+            icon: const Icon(Icons.inventory_2_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const MyCanteenContributionsScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: _buildBody(isDark),

@@ -13,6 +13,7 @@ class Canteen {
   final double averageStar;
   final Map<String, double> dimensionScores;
   final int dishCount;
+  final int dishWithPhotoCount;
   final int dishPhotoCount;
   final double rankingScore;
 
@@ -29,6 +30,7 @@ class Canteen {
     required this.averageStar,
     this.dimensionScores = const {},
     this.dishCount = 0,
+    this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.rankingScore = 0,
   });
@@ -54,6 +56,7 @@ class Canteen {
             )
           : const {},
       dishCount: json['dish_count'] ?? 0,
+      dishWithPhotoCount: json['dish_with_photo_count'] ?? 0,
       dishPhotoCount: json['dish_photo_count'] ?? 0,
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
     );

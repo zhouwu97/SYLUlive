@@ -30,6 +30,7 @@ class CanteenReviewSection extends StatelessWidget {
   final Future<void> Function(int reviewId, String source)? onReport;
   final Future<bool> Function(int reviewId, String source)? onDelete;
   final VoidCallback? onOpenHistory;
+  final void Function(int dishId, String dishName)? onOpenDish;
 
   const CanteenReviewSection({
     super.key,
@@ -50,6 +51,7 @@ class CanteenReviewSection extends StatelessWidget {
     this.onReport,
     this.onDelete,
     this.onOpenHistory,
+    this.onOpenDish,
   });
 
   @override
@@ -175,6 +177,7 @@ class CanteenReviewSection extends StatelessWidget {
                           onReport: onReport,
                           onDelete: onDelete,
                           onOpenHistory: onOpenHistory,
+                          onOpenDish: onOpenDish,
                           isLatestV2: latestReviewId != null &&
                               (reviews[i]['review_source']?.toString() ??
                                       (reviews[i]['is_v2'] == true
@@ -301,6 +304,7 @@ class _ReviewItem extends StatefulWidget {
   final Future<void> Function(int reviewId, String source)? onReport;
   final Future<bool> Function(int reviewId, String source)? onDelete;
   final VoidCallback? onOpenHistory;
+  final void Function(int dishId, String dishName)? onOpenDish;
 
   const _ReviewItem({
     required this.review,
@@ -313,6 +317,7 @@ class _ReviewItem extends StatefulWidget {
     this.onReport,
     this.onDelete,
     this.onOpenHistory,
+    this.onOpenDish,
   });
 
   @override
@@ -351,6 +356,7 @@ class _ReviewItemState extends State<_ReviewItem> {
           onReport: widget.onReport,
           onDelete: widget.onDelete == null ? null : _delete,
           onOpenHistory: widget.onOpenHistory,
+          onOpenDish: widget.onOpenDish,
         ),
       ),
     );
@@ -368,6 +374,7 @@ class _ReviewItemContent extends StatelessWidget {
   final Future<void> Function(int reviewId, String source)? onReport;
   final Future<bool> Function(int reviewId, String source)? onDelete;
   final VoidCallback? onOpenHistory;
+  final void Function(int dishId, String dishName)? onOpenDish;
 
   const _ReviewItemContent({
     required this.review,
@@ -380,6 +387,7 @@ class _ReviewItemContent extends StatelessWidget {
     this.onReport,
     this.onDelete,
     this.onOpenHistory,
+    this.onOpenDish,
   });
 
   @override
@@ -396,7 +404,7 @@ class _ReviewItemContent extends StatelessWidget {
     final myVote = review['my_vote']?.toString();
     final imgList = _parseImageList(review['images']);
     final tagLabels = _parseTagLabels(review['tags']);
-    final dishNames = _parseRecommendedDishNames(review);
+    final dishDetails = _parseRecommendedDishDetails(review);
     final dimensionScores = review['dimension_scores'] is Map
         ? Map<String, dynamic>.from(review['dimension_scores'] as Map)
         : const <String, dynamic>{};
@@ -506,30 +514,9 @@ class _ReviewItemContent extends StatelessWidget {
               ],
             ),
           ],
-          if (dishNames.isNotEmpty) ...[
+          if (dishDetails.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  Icons.thumb_up_alt_rounded,
-                  size: 13,
-                  color: CanteenTheme.accentStrongColor(isDark),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '推荐：${dishNames.join(' · ')}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: CanteenTheme.accentStrongColor(isDark),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _buildDishRecommendations(isDark, dishDetails),
           ],
           if (imgList.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -770,6 +757,76 @@ class _ReviewItemContent extends StatelessWidget {
     );
   }
 
+  Widget _buildDishRecommendations(
+    bool isDark,
+    List<Map<String, dynamic>> dishes,
+  ) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 5,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.thumb_up_alt_rounded,
+              size: 13,
+              color: CanteenTheme.accentStrongColor(isDark),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '推荐：',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: CanteenTheme.accentStrongColor(isDark),
+              ),
+            ),
+          ],
+        ),
+        ...dishes.map((dish) {
+          final name = dish['name']?.toString().trim() ?? '';
+          final dishId = (dish['dish_id'] as num?)?.toInt() ?? 0;
+          final status = dish['status']?.toString() ?? '';
+          final isActive = status == 'active' && dishId > 0;
+          final canOpen = isActive && onOpenDish != null;
+          final label = isActive ? name : '$name · 待收录';
+          final chip = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? CanteenTheme.accentSoftColor(isDark)
+                  : CanteenTheme.surfaceMutedBg(isDark),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isActive
+                    ? CanteenTheme.accentColor(isDark).withValues(alpha: 0.35)
+                    : CanteenTheme.borderColor(isDark),
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isActive
+                    ? CanteenTheme.accentStrongColor(isDark)
+                    : CanteenTheme.textTertiaryColor(isDark),
+              ),
+            ),
+          );
+          if (!canOpen) return chip;
+          return InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => onOpenDish!(dishId, name),
+            child: chip,
+          );
+        }),
+      ],
+    );
+  }
+
   List<String> _parseImageList(dynamic rawImages) {
     if (rawImages == null || rawImages.toString().isEmpty) return [];
     try {
@@ -831,6 +888,26 @@ class _ReviewItemContent extends StatelessWidget {
           .toList();
     }
     return [];
+  }
+
+  List<Map<String, dynamic>> _parseRecommendedDishDetails(
+    Map<String, dynamic> review,
+  ) {
+    final rawDetails = review['recommended_dish_details'];
+    if (rawDetails is List) {
+      final details = rawDetails
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .where((item) => (item['name']?.toString().trim() ?? '').isNotEmpty)
+          .toList(growable: false);
+      if (details.isNotEmpty) return details;
+    }
+
+    // 兼容旧服务端：只有菜名时仍展示为不可点击的普通文字，避免把未知状态
+    // 误当作已公开菜品。
+    return _parseRecommendedDishNames(review)
+        .map((name) => <String, dynamic>{'name': name})
+        .toList(growable: false);
   }
 
   String _reviewAuthorText(String nickname, dynamic createdAt) {

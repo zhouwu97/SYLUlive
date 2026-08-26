@@ -16,6 +16,7 @@ import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
 import 'admin_water_icon_review_screen.dart';
 import 'admin_canteen_operations_screen.dart';
+import 'admin/canteen_dish_photo_review_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
@@ -33,7 +34,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   // Pending counts
   int? _reportsCount;
   int? _featuredCount;
-  int? _reviewTasksCount; // Teachers + Majors + Canteens
+  int? _reviewTasksCount; // Teachers + Majors + Canteens + 菜品审核
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   bool _hasLoadError = false;
@@ -69,6 +70,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/admin/removals/pending')),
       safeGet(dio.get('/admin/exam-papers/pending-count')),
       safeGet(dio.get('/canteens/pending')),
+      safeGet(dio.get('/canteens/dish-moderation/pending-count')),
     ]);
 
     if (!mounted) return;
@@ -99,7 +101,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
-      _reviewTasksCount = sumCounts([responses[2], responses[3], responses[7]]);
+      _reviewTasksCount =
+          sumCounts([responses[2], responses[3], responses[7], responses[8]]);
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _hasLoadError = responses.any((response) => response == null);
@@ -295,6 +298,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                       builder: (_) =>
                                           const AdminCanteenReviewScreen()))
                               .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.restaurant_menu_outlined,
+                          iconColor: Colors.deepPurple,
+                          title: '菜品与实拍审核',
+                          subtitle: '菜品候选、实拍通过/驳回/合并',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const CanteenDishPhotoReviewScreen(),
+                            ),
+                          ).then((_) => _loadCounts()),
                         ),
                       ],
                     ),

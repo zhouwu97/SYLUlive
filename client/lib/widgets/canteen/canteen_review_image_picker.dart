@@ -29,6 +29,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
   final CanteenReviewDraftRepository draftRepository;
   final ValueChanged<List<CanteenReviewDraftImage>> onImagesChanged;
   final bool enabled;
+  final int? defaultDishId;
+  final String? defaultDishName;
 
   const CanteenReviewImagePicker({
     super.key,
@@ -41,6 +43,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
     required this.draftRepository,
     required this.onImagesChanged,
     this.enabled = true,
+    this.defaultDishId,
+    this.defaultDishName,
   });
 
   @override
@@ -99,6 +103,8 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
           CanteenReviewDraftImage(
             type: ReviewDraftImageType.localPending,
             localPath: draftPath,
+            dishId: widget.defaultDishId,
+            dishName: widget.defaultDishName,
           ),
         );
 

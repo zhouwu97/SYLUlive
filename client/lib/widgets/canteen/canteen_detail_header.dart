@@ -9,6 +9,7 @@ class CanteenDetailHeader extends StatelessWidget {
   final double rating;
   final int ratingCount;
   final int dishCount;
+  final int dishWithPhotoCount;
   final int dishPhotoCount;
   final bool offline;
 
@@ -18,6 +19,7 @@ class CanteenDetailHeader extends StatelessWidget {
     required this.rating,
     required this.ratingCount,
     this.dishCount = 0,
+    this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.offline = false,
   });
@@ -105,7 +107,7 @@ class CanteenDetailHeader extends StatelessWidget {
           if (dishCount > 0) ...[
             const SizedBox(height: 6),
             Text(
-              '$dishCount 道菜 · $dishPhotoCount 张同学实拍',
+              '$dishCount 道菜 · $dishWithPhotoCount 道有实拍 · $dishPhotoCount 张同学实拍',
               style: TextStyle(
                 fontSize: 13,
                 color: CanteenTheme.textTertiaryColor(isDark),

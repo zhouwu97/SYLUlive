@@ -304,10 +304,9 @@ void main() {
     await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
     await tester.pumpAndSettle();
 
-    // 未收录的自由输入不会被静默写入评价，而是引导先提交菜品实拍审核。
-    expect(find.text('上传菜品实拍'), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+    // 未收录的自由输入保留在本次评价中，作为待收录菜品随评价一次提交。
+    expect(find.text('自创麻辣烫'), findsWidgets);
+    expect(find.text('待收录'), findsOneWidget);
 
     // 3. 点击快捷推荐中的“牛肉面”
     final beefNoodleFinder = find.text('牛肉面').first;
@@ -316,18 +315,24 @@ void main() {
     await tester.tap(beefNoodleFinder);
     await tester.pumpAndSettle();
 
-    // 验证已收录菜品可以建立推荐关系
-    expect(find.text('1 / 3'), findsOneWidget);
+    // 验证已收录菜品可以与待收录菜品一起建立推荐关系
+    expect(find.text('2 / 3'), findsOneWidget);
 
-    // 4. 删除已选择的推荐菜品
-    final closeIcons = find.byIcon(Icons.close_rounded);
-    expect(closeIcons, findsOneWidget);
-    await tester.ensureVisible(closeIcons.first);
+    // 4. 删除已选择的推荐菜品：先删已有菜，再删待收录菜
+    var closeIcons = find.byIcon(Icons.close_rounded);
+    expect(closeIcons, findsNWidgets(2));
+    await tester.ensureVisible(closeIcons.last);
     await tester.pumpAndSettle();
+    await tester.tap(closeIcons.last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 3'), findsOneWidget);
+    closeIcons = find.byIcon(Icons.close_rounded);
+    expect(closeIcons, findsOneWidget);
     await tester.tap(closeIcons.first);
     await tester.pumpAndSettle();
 
-    // 验证删除后恢复为空
+    // 验证删除后恢复为空，快捷推荐仍可再次选择已有菜品
     expect(find.text('0 / 3'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
   });

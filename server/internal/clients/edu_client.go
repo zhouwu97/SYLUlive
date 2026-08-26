@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"shenliyuan/internal/academic"
+	"shenliyuan/internal/middleware"
 )
 
 const maxEduResponseBytes = 1024 * 1024
@@ -130,7 +129,10 @@ func (client *EduClient) FetchContextBundle(ctx context.Context, userID uint, da
 	if err != nil {
 		return EduContextBundle{}, fmt.Errorf("编码教务聚合请求失败: %w", err)
 	}
-	requestID := uuid.NewString()
+	requestID := middleware.RequestIDFromContext(ctx)
+	if requestID == "" {
+		requestID = middleware.NewRequestID()
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/edu/context-bundle", bytes.NewReader(payload))
 	if err != nil {
 		return EduContextBundle{}, fmt.Errorf("创建教务聚合请求失败: %w", err)
@@ -164,11 +166,15 @@ func (client *EduClient) FetchContextBundle(ctx context.Context, userID uint, da
 
 func newEduServiceError(statusCode int, body []byte, requestID string) *EduServiceError {
 	parsed := struct {
-		Code   string          `json:"code"`
-		Error  string          `json:"error"`
-		Detail json.RawMessage `json:"detail"`
+		Code    string          `json:"code"`
+		Message string          `json:"message"`
+		Error   string          `json:"error"`
+		Detail  json.RawMessage `json:"detail"`
 	}{}
 	_ = json.Unmarshal(body, &parsed)
+	if parsed.Message == "" {
+		parsed.Message = parsed.Error
+	}
 	if len(parsed.Detail) > 0 {
 		var detail struct {
 			Code    string `json:"code"`
@@ -178,16 +184,16 @@ func newEduServiceError(statusCode int, body []byte, requestID string) *EduServi
 			if parsed.Code == "" {
 				parsed.Code = detail.Code
 			}
-			if parsed.Error == "" {
-				parsed.Error = detail.Message
+			if parsed.Message == "" {
+				parsed.Message = detail.Message
 			}
 		}
 	}
 	if parsed.Code == "" {
 		parsed.Code = fmt.Sprintf("edu_http_%d", statusCode)
 	}
-	if parsed.Error == "" {
-		parsed.Error = "教务服务请求失败"
+	if parsed.Message == "" {
+		parsed.Message = "教务服务请求失败"
 	}
-	return &EduServiceError{StatusCode: statusCode, Code: parsed.Code, Message: parsed.Error, RequestID: requestID}
+	return &EduServiceError{StatusCode: statusCode, Code: parsed.Code, Message: parsed.Message, RequestID: requestID}
 }

@@ -1038,7 +1038,10 @@ class EduProvider extends ChangeNotifier {
           );
           if (store != null) {
             try {
-              await store.writeCreditRequirements(data: raw);
+              await store.writeCreditRequirements(
+                data: raw,
+                fetchedAt: overview.capturedAt ?? DateTime.now(),
+              );
             } catch (error) {
               debugPrint('保存加密学分要求失败: ${error.runtimeType}');
             }

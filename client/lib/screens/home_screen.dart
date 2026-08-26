@@ -611,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen>
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
-          (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
+          e.response!.data['code'] == 'announcement_id_invalid';
       if (isBadUnreadRoute) {
         debugPrint('未读公告接口异常，降级到 ${ApiConstants.noticesPath}');
         return _fetchAnnouncementsFallback(auth);
@@ -1692,7 +1692,7 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // Lens 已经在 BottomNav 内完成弹簧吸附；这里仅提交页面和首次
+    // BottomNav 已在指针释放时提交离散 Tab；这里启动页面和首次
     // reveal，避免把页面生命周期绑定到拖动中的连续位置。
     unawaited(_settleMainTab(
       targetIndex: index,

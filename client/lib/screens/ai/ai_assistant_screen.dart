@@ -1390,6 +1390,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                             provider.activeSubmissionRequestId)
                                       AiAgentExecutionCard(
                                         activities: provider.agentActivities,
+                                        rawEvents: provider.agentRawEvents,
                                         event: provider.agentEvent,
                                         running: provider.isRunning,
                                         completed: provider.agentFlowCompleted,

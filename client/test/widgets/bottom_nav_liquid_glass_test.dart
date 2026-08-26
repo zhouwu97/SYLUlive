@@ -95,18 +95,18 @@ void main() {
       find.byKey(const ValueKey('bottom-nav-selection-foreground')),
       findsOneWidget,
     );
-    // Dock 常态保留 Lens；Selection 的曲面高光只随 pressProgress 出现。
+    // Dock 常态保留 Lens；Selection Idle 也保留基础曲面高光。
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
-      findsNothing,
+      findsOneWidget,
     );
     final material = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-material')),
     );
     final decoration = material.decoration as BoxDecoration;
     expect(decoration.boxShadow, isNull);
-    // Idle Selection 没有生产态 Halo/Rim，保留轻量 fallback 边框。
-    expect(decoration.border, isNotNull);
+    // Shader 配置开启时，Idle 不再退回白色描边，而是使用真实光学材质。
+    expect(decoration.border, isNull);
     final backdrop = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
     );
@@ -120,7 +120,7 @@ void main() {
         matching: find.byType(ColoredBox),
       ),
     );
-    expect(surface.color.a, closeTo(0.12, 0.001));
+    expect(surface.color.a, closeTo(0.08, 0.001));
     final dockWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
         .width;
@@ -335,7 +335,7 @@ void main() {
     expect(leftWidth, closeTo(rightWidth, 1.0));
   });
 
-  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到 frosted idle', (tester) async {
+  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到基础 Lens idle', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -399,7 +399,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(
@@ -653,6 +653,7 @@ Future<_NavHarness> _pumpNav(
   AppPreferencesStore.setMockInitialValues({
     'floating_nav_bar': true,
     'liquid_glass_v2': liquidGlass,
+    'bottom_nav_performance_mode': liquidGlass ? 'high_quality' : 'auto',
   });
   final themeProvider = ThemeProvider(loadOnStart: false);
   await themeProvider.loadThemeForTesting();

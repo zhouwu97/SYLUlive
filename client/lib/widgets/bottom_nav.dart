@@ -335,12 +335,26 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     );
 
     final style = themeProvider.bottomNavStyle;
+    final useShader = themeProvider.bottomNavShaderEnabled;
+    final runtimeStatus = liquidGlassRuntimeStatus.value;
+    if (style == BottomNavStyle.liquidGlass &&
+        (runtimeStatus.tier == LiquidGlassTier.unknown ||
+            runtimeStatus.shaderEnabled != useShader)) {
+      updateLiquidGlassRuntimeStatus(
+        tier: LiquidGlassTier.unknown,
+        shaderSupported: ui.ImageFilter.isShaderFilterSupported,
+        shaderEnabled: useShader,
+        detail: useShader
+            ? 'shader probe pending'
+            : 'shader disabled by bottom-nav performance mode',
+      );
+    }
     if (style != BottomNavStyle.normal) {
       return _buildFloatingNav(
         context,
         isDark,
         style == BottomNavStyle.liquidGlass,
-        useShader: themeProvider.bottomNavShaderEnabled,
+        useShader: useShader,
         tuning: tuning,
       );
     }
@@ -1707,12 +1721,27 @@ Future<ui.FragmentProgram?>? _liquidGlassDockProgramFuture;
 
 Future<ui.FragmentProgram?> _loadLiquidGlassDockProgram() {
   return _liquidGlassDockProgramFuture ??= () async {
-    if (!ui.ImageFilter.isShaderFilterSupported) return null;
+    if (!ui.ImageFilter.isShaderFilterSupported) {
+      updateLiquidGlassRuntimeStatus(
+        tier: LiquidGlassTier.c,
+        shaderSupported: false,
+        detail: 'Dock ImageFilter.shader unsupported',
+      );
+      debugPrint('[LiquidGlass] renderer=fallback tier=C shader=false dock');
+      return null;
+    }
     try {
-      return await ui.FragmentProgram.fromAsset(
+      final program = await ui.FragmentProgram.fromAsset(
         'shaders/liquid_nav_dock.frag',
       );
+      debugPrint('[LiquidGlass] dock shader ready shader=true');
+      return program;
     } catch (error) {
+      updateLiquidGlassRuntimeStatus(
+        tier: LiquidGlassTier.c,
+        shaderSupported: true,
+        detail: 'Dock shader compile/load failed',
+      );
       debugPrint('[LiquidGlass] dock shader load failed: $error');
       return null;
     }
@@ -1893,7 +1922,9 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
         final canRefract = widget.useShader &&
             shader != null &&
             ui.ImageFilter.isShaderFilterSupported &&
-            widget.motion.dockOpticalActivation > 0.0001;
+            widget.motion.dockOpticalActivation > 0.0001 &&
+            (widget.motion.dockRefraction.abs() > 0.0001 ||
+                widget.motion.dockChromatic.abs() > 0.0001);
         if (canRefract) {
           LiquidGlassDockShaderUniforms(
             logicalSize: constraints.biggest,
@@ -1940,7 +1971,7 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
                   painter: LiquidGlassDefaultHighlightPainter(
                     shader: _highlightShader,
                     progress: 1.0,
-                    strength: widget.tuning.dockSpecularStrength,
+                    strength: widget.tuning.effectiveDockSpecularStrength,
                     highContrast: widget.highContrast,
                     cornerRadius: _dockHeight / 2,
                   ),
@@ -2220,12 +2251,13 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
   @override
   Widget build(BuildContext context) {
     final progress = widget.activation.clamp(0.0, 1.0).toDouble();
-    // Dock 自己常驻 Lens；Selection 只在 press/drag/settle 阶段打开。
+    // Selection Idle 也保留基础 Lens；按压、拖拽与吸附只连续提升激活度。
     final opticalProgress = widget.motion.opticalActivation;
     final hasOpticalMaterial = widget.useLiquidGlass &&
         widget.useShader &&
         opticalProgress > 0.0001 &&
-        widget.tuning.effectiveRefractionHeight > 0;
+        (widget.tuning.effectiveRefractionHeight > 0 ||
+            widget.tuning.effectiveHighlightStrength > 0);
     final speed = widget.motion.speed;
     final direction = widget.motion.direction;
     // 背景光学层、Normal Row 挖空与 Accent 前景必须共享同一几何。
@@ -2256,7 +2288,10 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
     final canRefract = widget.useShader &&
         hasOpticalMaterial &&
         shader != null &&
-        ui.ImageFilter.isShaderFilterSupported;
+        ui.ImageFilter.isShaderFilterSupported &&
+        widget.tuning.effectiveRefractionHeight > 0 &&
+        (widget.motion.refraction.abs() > 0.0001 ||
+            widget.motion.chromatic.abs() > 0.0001);
 
     if (canRefract) {
       if (widget.tuning.isOldV1) {
@@ -2332,7 +2367,7 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                   painter: LiquidGlassDefaultHighlightPainter(
                     shader: _highlightShader,
                     progress: widget.motion.highlightProgress,
-                    strength: widget.tuning.highlightStrength,
+                    strength: widget.tuning.effectiveHighlightStrength,
                     highContrast: widget.highContrast,
                     cornerRadius: lensHeight / 2,
                   ),
@@ -2392,7 +2427,8 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                               ),
                               progress: widget.highlightOpacity,
                               radiusScale: widget.tuning.highlightRadius,
-                              strength: widget.tuning.highlightStrength,
+                              strength:
+                                  widget.tuning.effectiveHighlightStrength,
                               highContrast: widget.highContrast,
                             ),
                           ),
@@ -2748,6 +2784,21 @@ class _LiquidLensBoundsPainter extends CustomPainter {
   }
 }
 
+String _liquidNavPhaseLabel(LiquidNavPhase phase) {
+  switch (phase) {
+    case LiquidNavPhase.idle:
+      return '静止';
+    case LiquidNavPhase.pressing:
+      return '按压';
+    case LiquidNavPhase.dragging:
+      return '拖拽';
+    case LiquidNavPhase.settling:
+      return '吸附';
+    case LiquidNavPhase.collapsing:
+      return '收拢';
+  }
+}
+
 /// 仅由显式 QA 入口开启的渲染诊断。它故意放在 Dock 外部，避免把诊断文字
 /// 混进 Lens 的采样纹理，也不会拦截手势。
 class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
@@ -2833,19 +2884,20 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
                   fontFeatures: [ui.FontFeature.tabularFigures()],
                 ),
                 child: Text(
-                  'Liquid Glass  Tier: ${status.tierLabel}  '
-                  'Shader: ${status.shaderSupported}\n'
-                  'Phase: ${phase.name}  Activation: '
+                  '液态玻璃  等级: ${status.tierLabel}  '
+                  '能力: ${status.shaderSupported ? '支持' : '不支持'}  '
+                  '配置: ${status.shaderEnabled ? '开启' : '关闭'}\n'
+                  '阶段: ${_liquidNavPhaseLabel(phase)}  激活度: '
                   '${activation.toStringAsFixed(2)}\n'
-                  'Dragging: $isDragging  '
-                  'Position: ${visualPosition.value.toStringAsFixed(3)}  '
-                  'Velocity: ${velocityPixelsPerSecond.round()} px/s\n'
-                  'Visible: ${lensWidth.round()}×${lensHeight.round()}  '
-                  'Capture: ${(lensWidth + overscanX * 2).round()}×'
+                  '拖拽: ${isDragging ? '是' : '否'}  '
+                  '位置: ${visualPosition.value.toStringAsFixed(3)}  '
+                  '速度: ${velocityPixelsPerSecond.round()} 像素/秒\n'
+                  '可见: ${lensWidth.round()}×${lensHeight.round()}  '
+                  '采样: ${(lensWidth + overscanX * 2).round()}×'
                   '${(lensHeight + overscanY * 2).round()}  '
-                  'Overscan: ${overscanX.round()}×${overscanY.round()}\n'
-                  'Max sample: ${maxOffsetX.toStringAsFixed(1)}×'
-                  '${maxOffsetY.toStringAsFixed(1)} px',
+                  '余量: ${overscanX.round()}×${overscanY.round()}\n'
+                  '最大采样偏移: ${maxOffsetX.toStringAsFixed(1)}×'
+                  '${maxOffsetY.toStringAsFixed(1)} 像素',
                 ),
               ),
             ),

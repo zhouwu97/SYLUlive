@@ -98,17 +98,20 @@ LiquidGlassMotionState liquidGlassMotionFor({
           .clamp(0.0, 1.0)
           .toDouble();
   final direction = speed < 0.01 ? 0.0 : velocityPixelsPerSecond.sign;
-  // Selection 只在 press / drag / settle 阶段打开 Lens；Dock 另有独立的
-  // 常驻光学激活，不再把整块 Dock 绑定在这个值上。
+  // Selection 在 Idle 也保留一层基础 Lens。其它 phase 从这个基线连续
+  // 过渡到完整光学强度，避免 phase 切换时出现 0 → 1 的闪断。
   final idleActivation =
       tuning.idleOpticalActivation.clamp(0.0, 1.0).toDouble();
+  double opticalProgressFromIdle(double progress) {
+    return idleActivation + (1.0 - idleActivation) * progress;
+  }
 
   final opticalActivation = switch (phase) {
     LiquidNavPhase.idle => idleActivation,
-    LiquidNavPhase.pressing => interactionProgress,
+    LiquidNavPhase.pressing => opticalProgressFromIdle(interactionProgress),
     LiquidNavPhase.dragging => 1.0,
-    LiquidNavPhase.settling => interactionProgress,
-    LiquidNavPhase.collapsing => interactionProgress,
+    LiquidNavPhase.settling => opticalProgressFromIdle(interactionProgress),
+    LiquidNavPhase.collapsing => opticalProgressFromIdle(interactionProgress),
   };
 
   // Kyant 的 lens 参数由 pressProgress 直接控制；不再为每个阶段另造一
@@ -125,9 +128,11 @@ LiquidGlassMotionState liquidGlassMotionFor({
   final chromatic =
       tuning.effectiveChromatic * opticalActivation * velocityChromaticBoost;
 
-  final dockActivation = useLiquidGlass ? 1.0 : 0.0;
-  final dockRefraction = tuning.dockRefraction * (1.0 + speed * 0.04);
-  final dockChromatic = tuning.dockChromatic;
+  final hasDockOpticalSamples = tuning.effectiveDockRefraction.abs() > 0.0001 ||
+      tuning.effectiveDockChromatic.abs() > 0.0001;
+  final dockActivation = useLiquidGlass && hasDockOpticalSamples ? 1.0 : 0.0;
+  final dockRefraction = tuning.effectiveDockRefraction * (1.0 + speed * 0.04);
+  final dockChromatic = tuning.effectiveDockChromatic;
 
   final positionSignal =
       (visualPosition - currentIndex).clamp(-1.0, 1.0).toDouble();

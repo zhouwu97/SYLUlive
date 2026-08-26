@@ -342,6 +342,32 @@ void main() {
     });
   });
 
+  group('isSafeCampusUri', () {
+    test('正文流程允许外部 HTTPS，但默认仍只允许官方域名', () {
+      final externalUri = Uri.parse('https://example.com/article');
+
+      expect(isSafeCampusUri(externalUri), false);
+      expect(isSafeCampusUri(externalUri, allowExternalHost: true), true);
+    });
+
+    test('外部 HTTPS 同样拒绝凭据和非标准端口', () {
+      expect(
+        isSafeCampusUri(
+          Uri.parse('https://user:pass@example.com/article'),
+          allowExternalHost: true,
+        ),
+        false,
+      );
+      expect(
+        isSafeCampusUri(
+          Uri.parse('https://example.com:8443/article'),
+          allowExternalHost: true,
+        ),
+        false,
+      );
+    });
+  });
+
   group('allowedCampusArticleHosts', () {
     test('包含 jwc 域名', () {
       expect(allowedCampusArticleHosts, contains('jwc.sylu.edu.cn'));

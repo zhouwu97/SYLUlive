@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' show parseFragment;
 
+import '../../models/campus_article.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
@@ -679,9 +680,7 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
     final uri = Uri.tryParse(raw);
     if (uri == null) return null;
     final resolved = uri.hasScheme || base == null ? uri : base.resolveUri(uri);
-    if (resolved.scheme.toLowerCase() != 'https' ||
-        resolved.host.isEmpty ||
-        resolved.userInfo.isNotEmpty) {
+    if (!isSafeCampusUri(resolved, allowExternalHost: true)) {
       return null;
     }
     return resolved;

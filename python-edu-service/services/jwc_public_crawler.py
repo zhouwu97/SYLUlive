@@ -34,7 +34,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from services.html_sanitizer import sanitize_html
+from services.html_sanitizer import extract_semantic_text, sanitize_html
 
 # ── 常量 ─────────────────────────────────────────────────────────
 
@@ -52,6 +52,9 @@ REQUEST_GAP_SEC_MIN = 0.5
 REQUEST_GAP_SEC_MAX = 0.8
 TIMEOUT_SEC = 15.0
 MAX_RETRIES = 3
+
+# JWC 与比赛通知共享同一套语义纯文本规则；版本独立维护，便于分源回填。
+PARSER_VERSION = "jwc-v2"
 
 CATEGORY_CONFIG: dict[str, dict[str, str]] = {
     "jwtz": {
@@ -170,24 +173,28 @@ def _compute_content_hash(
     author_department: str,
     content_html: str,
     attachments: list[dict[str, str]],
+    content_text: str = "",
 ) -> str:
     """生成 content_hash (SHA-256)。
 
-    输入项: title + publish_date + author_department + 规范化 content_html
-    + 排序后的 attachment_names + 排序后的 attachment_urls
+    输入项: parser_version + title + publish_date + author_department
+    + 规范化 content_html + 规范化 content_text + 排序后的附件字段。
     """
     # 规范化 content_html：去除空白差异
     normalized_html = re.sub(r"\s+", " ", content_html.strip())
+    normalized_text = re.sub(r"\s+", " ", content_text.strip())
 
     # 排序附件名和 URL
     att_names = sorted(a.get("name", "") for a in attachments)
     att_urls = sorted(a.get("url", "") for a in attachments)
 
     parts = [
+        PARSER_VERSION,
         title.strip(),
         publish_date.strip(),
         author_department.strip(),
         normalized_html,
+        normalized_text,
         "\n".join(att_names),
         "\n".join(att_urls),
     ]
@@ -384,7 +391,7 @@ def parse_article_detail(
     if content_el:
         raw_html = str(content_el)
         content_html = sanitize_html(raw_html, JWC_BASE_URL)
-        content_text = content_el.get_text("\n", strip=True)
+        content_text = extract_semantic_text(content_html)
 
     # 附件: a[href*="download.jsp"]
     attachments: list[dict[str, str]] = []
@@ -405,7 +412,12 @@ def parse_article_detail(
 
     # content_hash
     content_hash = _compute_content_hash(
-        title, publish_date, author_department, content_html, attachments
+        title,
+        publish_date,
+        author_department,
+        content_html,
+        attachments,
+        content_text,
     )
 
     return ArticleDetail(

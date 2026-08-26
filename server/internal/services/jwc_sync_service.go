@@ -20,6 +20,9 @@ import (
 type CrawlSourceSpec struct {
 	Source     string
 	Categories []string
+	// ParserVersion 在来源解析结果的持久化语义变化时升级。版本不一致时，
+	// 本次同步会暂时关闭 URL 去重，让已有文章重新抓取，避免错误跳过。
+	ParserVersion string
 	// CrawlFunc calls the Python crawler endpoint for this source.
 	// knownURLs is keyed by category slug; the function may flatten as needed.
 	CrawlFunc func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error)
@@ -78,6 +81,13 @@ func (s *CampusSyncService) Sync(ctx context.Context, reconcile bool, maxPages i
 
 	// ── 2. Query known source URLs ─────────────────────
 	knownURLs := s.queryKnownURLs()
+	if s.parserVersionChanged() {
+		log.Printf("[CAMPUS_SYNC:%s] parser version changed (%q -> %q), forcing article rebuild",
+			src, s.currentParserVersion(), s.spec.ParserVersion)
+		// 保持为空对象而不是 nil；Python 请求模型要求 JWC 收到 map，
+		// 比赛通知在 Go 层展平后再转换为空列表。
+		knownURLs = map[string][]string{}
+	}
 
 	// ── 3. Call Python crawler via spec's CrawlFunc ────
 	resp, err := s.spec.CrawlFunc(ctx, knownURLs, maxPages, reconcile)
@@ -289,6 +299,11 @@ func (s *CampusSyncService) updateSyncState(
 				state.LastReconcileAt = &now
 			}
 		}
+		// 只在抓取和入库都完整成功时标记迁移完成；否则下一次同步仍需
+		// 保持强制重抓，避免坏数据或校验失败让旧版本永久残留。
+		if !partialFailure && result.Invalid == 0 && s.spec.ParserVersion != "" {
+			state.ParserVersion = s.spec.ParserVersion
+		}
 	} else {
 		state.ConsecutiveFailures++
 		msg := result.Error.Error()
@@ -299,6 +314,23 @@ func (s *CampusSyncService) updateSyncState(
 	}
 
 	_ = s.db.Save(&state).Error
+}
+
+// currentParserVersion 返回该来源持久化的解析器版本。这里从同步状态读取，
+// 不从文章 hash 反推，因为 URL 去重发生在抓取详情之前。
+func (s *CampusSyncService) currentParserVersion() string {
+	var state models.JWCSyncState
+	if err := s.db.Where("source = ?", s.spec.Source).First(&state).Error; err != nil {
+		return ""
+	}
+	return state.ParserVersion
+}
+
+func (s *CampusSyncService) parserVersionChanged() bool {
+	if s.spec.ParserVersion == "" {
+		return false
+	}
+	return s.currentParserVersion() != s.spec.ParserVersion
 }
 
 // formatPartialError builds a structured error summary for partial failures.

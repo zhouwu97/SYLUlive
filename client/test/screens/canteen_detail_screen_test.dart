@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_detail_screen.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_detail_skeleton.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_status_image.dart';
 
 class FakeAdapter implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions options) _handler;
@@ -55,6 +57,9 @@ Widget _buildApp(
   Dio dio, {
   Brightness brightness = Brightness.light,
   TextScaler textScaler = TextScaler.noScaling,
+  String initialImage = '',
+  bool initialOffline = false,
+  String? heroTag,
 }) {
   return MultiProvider(
     providers: [
@@ -70,11 +75,14 @@ Widget _buildApp(
         builder: (context) {
           return MediaQuery(
             data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-            child: const CanteenDetailScreen(
+            child: CanteenDetailScreen(
               canteenId: 1,
               canteenName: '我家有面',
               dishCount: 2,
               dishPhotoCount: 5,
+              initialImage: initialImage,
+              initialOffline: initialOffline,
+              heroTag: heroTag,
             ),
           );
         },
@@ -95,6 +103,45 @@ Dio _dioWith(String detailBody) {
 }
 
 void main() {
+  testWidgets('首屏加载保留入口封面 Hero 目标', (tester) async {
+    final pending = Completer<ResponseBody>();
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        return pending.future;
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(
+      _buildApp(
+        dio,
+        initialImage: '/uploads/ranking-cover.jpg',
+        initialOffline: true,
+        heroTag: 'canteen-1',
+      ),
+    );
+    await tester.pump();
+
+    final hero = find.byWidgetPredicate(
+      (widget) => widget is Hero && widget.tag == 'canteen-1',
+    );
+    expect(hero, findsOneWidget);
+    expect(find.byType(CanteenDetailSkeleton), findsOneWidget);
+    expect(find.byType(CanteenStatusImage), findsOneWidget);
+    expect(
+      tester
+          .widget<CanteenStatusImage>(find.byType(CanteenStatusImage))
+          .offline,
+      isTrue,
+    );
+
+    pending.complete(_json(_detailJson(), 200));
+    await tester.pumpAndSettle();
+    expect(hero, findsOneWidget);
+    expect(find.byType(CanteenDetailSkeleton), findsNothing);
+  });
+
   testWidgets('首次进入显示骨架而非中央 spinner', (tester) async {
     final dio = _dioWith(_detailJson());
     await tester.pumpWidget(_buildApp(dio));

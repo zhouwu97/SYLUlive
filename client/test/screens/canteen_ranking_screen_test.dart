@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -8,6 +9,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_ranking_screen.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_detail_skeleton.dart';
 
 const _rankingsBody =
     '{"items":['
@@ -17,6 +19,11 @@ const _rankingsBody =
     '{"rank":2,"id":2,"name":"二食堂","image":"","average_star":5.0,"rating_count":1,'
     '"ranking_score":83.0,"confidence":"low","dish_count":0,"dish_photo_count":0,"summary_tags":[]}'
     '],"meta":{"sort":"composite","algorithm":"bayesian","prior_weight":5,"total":2}}';
+
+const _detailBody =
+    '{"canteen":{"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg",'
+    '"verified":true,"created_by":1},"ratings":[],"rating_count":0,'
+    '"average_star":0.0,"my_rating":null}';
 
 class _FakeAdapter implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions) _handler;
@@ -94,5 +101,52 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sorts.contains('rating'), isTrue);
+  });
+
+  testWidgets('点击排行项时详情 loading 立即保留入口封面 Hero', (tester) async {
+    final detailPending = Completer<ResponseBody>();
+    var detailRequested = false;
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = _FakeAdapter((options) async {
+      if (options.path == '/canteens/rankings') {
+        return _json(_rankingsBody);
+      }
+      if (options.path == '/canteens/1') {
+        detailRequested = true;
+        return detailPending.future;
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('一食堂二楼'));
+    for (var i = 0; i < 50 && !detailRequested; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    // 等待路由 Hero flight 落地，确认目标页自身仍保留入口图片。
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(detailRequested, isTrue);
+    expect(find.byType(CanteenDetailSkeleton), findsOneWidget);
+    final skeleton = tester.widget<CanteenDetailSkeleton>(
+      find.byType(CanteenDetailSkeleton),
+    );
+    expect(skeleton.imageUrl, '/uploads/a.jpg');
+    expect(skeleton.offline, isFalse);
+    expect(
+      find.descendant(
+        of: find.byType(CanteenDetailSkeleton),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Hero && widget.tag == 'canteen-1',
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    detailPending.complete(ResponseBody.fromString(_detailBody, 200,
+        headers: {Headers.contentTypeHeader: [Headers.jsonContentType]}));
+    await tester.pumpAndSettle();
   });
 }

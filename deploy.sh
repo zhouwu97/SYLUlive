@@ -512,6 +512,11 @@ setup_env() {
   upsert_env_key "$temp_env" "SUPER_ADMIN_ID" "$admin_id"
   upsert_env_key "$temp_env" "SUPER_ADMIN_PASSWORD" "$admin_pass"
   upsert_env_key "$temp_env" "GIN_MODE" "release"
+  # Agent 灰测默认关闭；恢复时必须显式配置并经过发布审批。
+  upsert_env_key "$temp_env" "AI_AGENT_ENABLED" "false"
+  upsert_env_key "$temp_env" "AI_AGENT_ROLLOUT_PERCENT" "0"
+  upsert_env_key "$temp_env" "AI_AGENT_SHADOW_ENABLED" "false"
+  upsert_env_key "$temp_env" "AI_AGENT_SHADOW_PERCENT" "0"
 
   chmod 0600 "$temp_env"
   mv "$temp_env" "$env_file"

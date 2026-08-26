@@ -16,12 +16,16 @@ class CanteenReviewDraftImage {
   final String? localPath;
   final int? fileId;
   final String? url;
+  final int? dishId;
+  final String? dishName;
 
   const CanteenReviewDraftImage({
     required this.type,
     this.localPath,
     this.fileId,
     this.url,
+    this.dishId,
+    this.dishName,
   });
 
   CanteenReviewDraftImage copyWith({
@@ -29,12 +33,16 @@ class CanteenReviewDraftImage {
     String? localPath,
     int? fileId,
     String? url,
+    int? dishId,
+    String? dishName,
   }) {
     return CanteenReviewDraftImage(
       type: type ?? this.type,
       localPath: localPath ?? this.localPath,
       fileId: fileId ?? this.fileId,
       url: url ?? this.url,
+      dishId: dishId ?? this.dishId,
+      dishName: dishName ?? this.dishName,
     );
   }
 
@@ -43,6 +51,8 @@ class CanteenReviewDraftImage {
         'local_path': localPath,
         'file_id': fileId,
         'url': url,
+        'dish_id': dishId,
+        'dish_name': dishName,
       };
 
   factory CanteenReviewDraftImage.fromJson(Map<String, dynamic> json) {
@@ -56,6 +66,8 @@ class CanteenReviewDraftImage {
       localPath: json['local_path']?.toString(),
       fileId: (json['file_id'] as num?)?.toInt(),
       url: json['url']?.toString(),
+      dishId: (json['dish_id'] as num?)?.toInt(),
+      dishName: json['dish_name']?.toString(),
     );
   }
 }
@@ -103,7 +115,7 @@ class CanteenReviewDraftDishReview {
 
 /// 食堂评价草稿
 class CanteenReviewDraft {
-  static const int currentSchemaVersion = 5;
+  static const int currentSchemaVersion = 6;
 
   final int schemaVersion;
   final int userId;
@@ -130,6 +142,9 @@ class CanteenReviewDraft {
   /// 用户开始修改时，服务端对应已发布评价的更新时间（用于检测是否在其他设备被覆盖更新）
   final DateTime? baseRatingUpdatedAt;
 
+  /// 一次评价提交的幂等键。上传成功但请求超时后重试时必须复用同一键。
+  final String? submitIdempotencyKey;
+
   const CanteenReviewDraft({
     this.schemaVersion = currentSchemaVersion,
     required this.userId,
@@ -149,6 +164,7 @@ class CanteenReviewDraft {
     this.images = const [],
     required this.updatedAt,
     this.baseRatingUpdatedAt,
+    this.submitIdempotencyKey,
   });
 
   /// 是否为没有任何有效内容的空草稿
@@ -184,6 +200,7 @@ class CanteenReviewDraft {
     List<CanteenReviewDraftImage>? images,
     DateTime? updatedAt,
     DateTime? baseRatingUpdatedAt,
+    String? submitIdempotencyKey,
   }) {
     return CanteenReviewDraft(
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -204,6 +221,7 @@ class CanteenReviewDraft {
       images: images ?? this.images,
       updatedAt: updatedAt ?? this.updatedAt,
       baseRatingUpdatedAt: baseRatingUpdatedAt ?? this.baseRatingUpdatedAt,
+      submitIdempotencyKey: submitIdempotencyKey ?? this.submitIdempotencyKey,
     );
   }
 
@@ -227,6 +245,7 @@ class CanteenReviewDraft {
         'updated_at': updatedAt.toUtc().toIso8601String(),
         'base_rating_updated_at':
             baseRatingUpdatedAt?.toUtc().toIso8601String(),
+        'submit_idempotency_key': submitIdempotencyKey,
       };
 
   factory CanteenReviewDraft.fromJson(Map<String, dynamic> json) {
@@ -256,7 +275,6 @@ class CanteenReviewDraft {
       dishReviews: (json['dish_reviews'] as List?)
               ?.filterMapJson((m) => CanteenReviewDraftDishReview.fromJson(
                   Map<String, dynamic>.from(m as Map)))
-              .where((item) => item.dishId > 0)
               .toList() ??
           const [],
       images: (json['images'] as List?)
@@ -268,6 +286,7 @@ class CanteenReviewDraft {
           DateTime.now(),
       baseRatingUpdatedAt:
           DateTime.tryParse(json['base_rating_updated_at']?.toString() ?? ''),
+      submitIdempotencyKey: json['submit_idempotency_key']?.toString(),
     );
   }
 }

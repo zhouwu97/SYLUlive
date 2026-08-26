@@ -19,6 +19,7 @@ class CanteenDishPhotoReviewScreen extends StatefulWidget {
 class _CanteenDishPhotoReviewScreenState
     extends State<CanteenDishPhotoReviewScreen> {
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _pendingDishes = [];
   bool _isLoading = true;
   bool _loadFailed = false;
 
@@ -33,19 +34,70 @@ class _CanteenDishPhotoReviewScreenState
       _isLoading = true;
       _loadFailed = false;
     });
-    final items =
-        await context.read<CanteenProvider>().adminListPendingDishPhotos();
+    final provider = context.read<CanteenProvider>();
+    final results = await Future.wait([
+      provider.adminListPendingDishPhotos(),
+      provider.adminListPendingDishes(),
+    ]);
+    final items = results[0];
+    final dishes = results[1];
     if (mounted) {
       setState(() {
-        if (items == null) {
+        if (items == null && dishes == null) {
           // 请求失败：不得展示"暂无待审核"假空态。
           _loadFailed = true;
           _items = [];
         } else {
-          _items = items;
+          _items = items ?? const [];
+          _pendingDishes = dishes ?? const [];
         }
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _approveDish(Map<String, dynamic> item) async {
+    final dishId = (item['id'] as num?)?.toInt() ?? 0;
+    final success =
+        await context.read<CanteenProvider>().adminApproveDish(dishId);
+    if (!mounted) return;
+    if (success) {
+      setState(
+          () => _pendingDishes.removeWhere((dish) => dish['id'] == dishId));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('菜品已通过')));
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('通过菜品失败，请刷新后重试')));
+    }
+  }
+
+  Future<void> _rejectDish(Map<String, dynamic> item) async {
+    final dishId = (item['id'] as num?)?.toInt() ?? 0;
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('驳回菜品原因'),
+        children: const [
+          _ReasonOption('unrelated', '与食堂菜品无关'),
+          _ReasonOption('duplicate', '与已有菜品重复'),
+          _ReasonOption('inappropriate', '不适宜内容'),
+          _ReasonOption('other', '其他'),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+    final success =
+        await context.read<CanteenProvider>().adminRejectDish(dishId, reason);
+    if (!mounted) return;
+    if (success) {
+      setState(
+          () => _pendingDishes.removeWhere((dish) => dish['id'] == dishId));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('菜品已驳回')));
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('驳回菜品失败，请刷新后重试')));
     }
   }
 
@@ -103,7 +155,9 @@ class _CanteenDishPhotoReviewScreenState
   }
 
   Future<void> _merge(Map<String, dynamic> item) async {
-    final sourceDishId = (item['dish_id'] as num?)?.toInt() ?? 0;
+    final sourceDishId = (item['dish_id'] as num?)?.toInt() ??
+        (item['id'] as num?)?.toInt() ??
+        0;
     final rawMatches = item['possible_matches'];
     if (sourceDishId == 0 || rawMatches is! List || rawMatches.isEmpty) return;
     final matches = rawMatches.whereType<Map>().toList();
@@ -135,7 +189,12 @@ class _CanteenDishPhotoReviewScreenState
         .adminMergeDish(sourceDishId, targetDishId);
     if (!mounted) return;
     if (success) {
-      setState(() => _items.removeWhere((i) => i['dish_id'] == sourceDishId));
+      setState(() {
+        _items.removeWhere((i) => i['dish_id'] == sourceDishId);
+        _pendingDishes.removeWhere((i) =>
+            (i['id'] as num?)?.toInt() == sourceDishId ||
+            (i['dish_id'] as num?)?.toInt() == sourceDishId);
+      });
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('已合并到目标菜品')));
     } else {
@@ -154,7 +213,7 @@ class _CanteenDishPhotoReviewScreenState
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
-          '菜品实拍审核',
+          '菜品与实拍审核',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -214,7 +273,7 @@ class _CanteenDishPhotoReviewScreenState
         ],
       );
     }
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _pendingDishes.isEmpty) {
       return ListView(
         children: [
           const SizedBox(height: 120),
@@ -240,11 +299,23 @@ class _CanteenDishPhotoReviewScreenState
         ],
       );
     }
+    final total = _items.length + _pendingDishes.length;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-      itemCount: _items.length,
+      itemCount: total,
       itemBuilder: (context, index) {
-        final item = _items[index];
+        if (index < _pendingDishes.length) {
+          final dish = _pendingDishes[index];
+          return _PendingDishCard(
+            item: dish,
+            isDark: isDark,
+            accent: accent,
+            onApprove: () => _approveDish(dish),
+            onReject: () => _rejectDish(dish),
+            onMerge: () => _merge(dish),
+          );
+        }
+        final item = _items[index - _pendingDishes.length];
         return _ReviewCard(
           item: item,
           isDark: isDark,
@@ -254,6 +325,106 @@ class _CanteenDishPhotoReviewScreenState
           onMerge: () => _merge(item),
         );
       },
+    );
+  }
+}
+
+class _PendingDishCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final bool isDark;
+  final Color accent;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  final VoidCallback onMerge;
+
+  const _PendingDishCard({
+    required this.item,
+    required this.isDark,
+    required this.accent,
+    required this.onApprove,
+    required this.onReject,
+    required this.onMerge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: RankingTokens.cardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.restaurant_outlined, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item['name']?.toString() ?? '未命名菜品',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: RankingTokens.titleColor(isDark),
+                  ),
+                ),
+              ),
+              Text(
+                '待收录',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${item['canteen_name'] ?? ''} · 待审核实拍 ${(item['pending_photo_count'] as num?)?.toInt() ?? 0} 张',
+            style: TextStyle(
+              fontSize: 13,
+              color: RankingTokens.subColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (item['possible_matches'] is List &&
+              (item['possible_matches'] as List).isNotEmpty) ...[
+            OutlinedButton.icon(
+              onPressed: onMerge,
+              icon: const Icon(Icons.merge_type_rounded, size: 18),
+              label: const Text('可能重复：选择合并目标'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(40),
+                foregroundColor: accent,
+                side: BorderSide(color: accent.withValues(alpha: 0.45)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReject,
+                  child: const Text('驳回'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: onApprove,
+                  style: FilledButton.styleFrom(backgroundColor: accent),
+                  child: const Text('通过'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -85,6 +85,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           canteenId: item.id,
           canteenName: item.name,
           dishCount: item.dishCount,
+          dishWithPhotoCount: item.dishWithPhotoCount,
           dishPhotoCount: item.dishPhotoCount,
           initialImage: item.image,
           initialOffline: item.isOffline,
@@ -191,7 +192,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         if (provider.rankingLoading && items.isEmpty) {
           return _buildSkeleton(isDark);
         }
-        if (!provider.rankingLoading && items.isEmpty && provider.rankingError != null) {
+        if (!provider.rankingLoading &&
+            items.isEmpty &&
+            provider.rankingError != null) {
           return CanteenEmptyState(
             title: '加载失败',
             subtitle: provider.rankingError,

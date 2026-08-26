@@ -17,7 +17,7 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/dish_gallery_section.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
-import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
+import 'canteen_dish_detail_screen.dart';
 import 'canteen_dish_list_screen.dart';
 import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
@@ -37,6 +37,7 @@ class CanteenDetailScreen extends StatefulWidget {
 
   /// 列表页传入的统计（详情接口不返回这两项，避免新造字段）。
   final int dishCount;
+  final int dishWithPhotoCount;
   final int dishPhotoCount;
 
   /// 入口列表已经展示的封面快照。详情请求完成前先用它维持 Hero 目标。
@@ -51,6 +52,7 @@ class CanteenDetailScreen extends StatefulWidget {
     required this.canteenId,
     required this.canteenName,
     this.dishCount = 0,
+    this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.initialImage = '',
     this.initialOffline = false,
@@ -81,6 +83,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   // 菜品/实拍统计：初值来自列表页入口快照，随后由图鉴区真实数据刷新
   late int _dishCount;
+  late int _dishWithPhotoCount;
   late int _dishPhotoCount;
 
   bool get _isOffline {
@@ -116,6 +119,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   void initState() {
     super.initState();
     _dishCount = widget.dishCount;
+    _dishWithPhotoCount = widget.dishWithPhotoCount;
     _dishPhotoCount = widget.dishPhotoCount;
     _loadInitial();
   }
@@ -307,6 +311,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                             0,
                     ratingCount: ratingCount,
                     dishCount: _dishCount,
+                    dishWithPhotoCount: _dishWithPhotoCount,
                     dishPhotoCount: _dishPhotoCount,
                     offline: _isOffline,
                   ),
@@ -315,13 +320,16 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     canteenId: widget.canteenId,
                     canteenName: widget.canteenName,
                     onViewAll: _openDishList,
-                    onStatsChanged: (count, photos) {
+                    onStatsDetailedChanged: (count, withPhoto, photos) {
                       if (!mounted) return;
-                      if (count == _dishCount && photos == _dishPhotoCount) {
+                      if (count == _dishCount &&
+                          withPhoto == _dishWithPhotoCount &&
+                          photos == _dishPhotoCount) {
                         return;
                       }
                       setState(() {
                         _dishCount = count;
+                        _dishWithPhotoCount = withPhoto;
                         _dishPhotoCount = photos;
                       });
                     },
@@ -376,6 +384,18 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     onReport: _reportReview,
                     onDelete: _deleteReview,
                     onOpenHistory: _openOwnReviewHistory,
+                    onOpenDish: (dishId, dishName) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CanteenDishDetailScreen(
+                            canteenId: widget.canteenId,
+                            dishId: dishId,
+                            dishName: dishName,
+                            canteenName: widget.canteenName,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -1111,6 +1131,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       return;
     }
 
+    final editContext = await context
+        .read<CanteenProvider>()
+        .loadReviewEditContext(_latestReviewId!);
+    if (!mounted) return;
+    if (editContext == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('评价编辑内容加载失败，请刷新后重试')),
+      );
+      return;
+    }
+
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CanteenReviewEditorScreen(
@@ -1123,7 +1154,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           dishCount: _dishCount,
           dishPhotoCount: _dishPhotoCount,
           mode: CanteenReviewEditorMode.edit,
-          existingReview: Map<String, dynamic>.from(latest),
+          existingReview: editContext,
         ),
       ),
     );

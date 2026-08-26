@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +24,7 @@ import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/app_cached_image.dart';
 import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
@@ -1210,7 +1210,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
-            child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
+            child: AppCachedImage.public(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              memCacheWidth: 2048,
+              memCacheHeight: 2048,
+            ),
           ),
         ),
       ),
@@ -1353,7 +1358,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           backgroundColor: Colors.black,
           appBar: AppBar(backgroundColor: Colors.transparent),
           body: Center(
-            child: InteractiveViewer(child: Image.network(avatarUrl)),
+            child: InteractiveViewer(
+              child: AppCachedImage.public(
+                imageUrl: avatarUrl,
+                fit: BoxFit.contain,
+                memCacheWidth: 2048,
+                memCacheHeight: 2048,
+              ),
+            ),
           ),
         ),
       ),

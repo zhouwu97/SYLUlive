@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_colors.dart';
+import '../app_cached_image.dart';
 
 /// 待审核食堂卡片：提交图缩略图（可点开全屏）+ 名称 + 提交人 + 时间 + 通过/驳回。
 class CanteenPendingCard extends StatelessWidget {
@@ -106,38 +107,19 @@ class _PendingThumbnailState extends State<_PendingThumbnail> {
           child: widget.imageUrl.isEmpty
               ? _placeholderIcon(
                   Icons.image_not_supported_outlined, Colors.grey)
-              : Image.network(
-                      widget.imageUrl,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color:
-                              AppColors.brandPrimary.withValues(alpha: 0.15),
-                          child: Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                value: progress.expectedTotalBytes != null
-                                    ? progress.cumulativeBytesLoaded /
-                                        progress.expectedTotalBytes!
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) {
-                        debugPrint(
-                            'CanteenPendingCard image load failed: ${widget.imageUrl}');
-                        return _placeholderIcon(
-                          Icons.broken_image_outlined,
-                          Colors.orange,
-                        );
-                      },
-                    ),
+              : AppCachedImage.public(
+                  imageUrl: widget.imageUrl,
+                  memCacheWidth: 112,
+                  memCacheHeight: 112,
+                  placeholder: (_, __) => _placeholderIcon(
+                    Icons.image_outlined,
+                    AppColors.brandPrimary,
+                  ),
+                  errorWidget: (_, __, ___) => _placeholderIcon(
+                    Icons.broken_image_outlined,
+                    Colors.orange,
+                  ),
+                ),
         ),
       ),
     );

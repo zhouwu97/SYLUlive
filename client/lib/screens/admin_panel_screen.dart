@@ -19,6 +19,7 @@ import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
+import '../widgets/app_cached_image.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -515,7 +516,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   fit: BoxFit.cover)
               : ThemeProvider.isLocalFileBackground(bgPath)
                   ? Image.file(File(bgPath), fit: BoxFit.cover)
-                  : Image.network(bgPath, fit: BoxFit.cover),
+                  : AppCachedImage.public(
+                      imageUrl: bgPath,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                    ),
           Container(
               color: isDark
                   ? Colors.black.withValues(alpha: 0.4)

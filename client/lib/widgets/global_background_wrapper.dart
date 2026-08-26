@@ -1,10 +1,12 @@
 import 'dart:io' show File;
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../utils/post_image_cache.dart';
 
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
     GlobalKey<BackgroundWrapperState>();
@@ -66,7 +68,10 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
             ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
+            : CachedNetworkImageProvider(
+                bgPath,
+                cacheManager: PostImageCache.manager,
+              ) as ImageProvider;
 
     return Stack(
       fit: StackFit.expand,

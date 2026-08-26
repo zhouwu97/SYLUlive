@@ -756,7 +756,7 @@ void main() {
     expect(clearedDecoration.color, Colors.transparent);
   });
 
-  testWidgets('帖子详情正文支持系统选择并提供复制正文菜单', (tester) async {
+  testWidgets('帖子详情正文使用统一可选组件并提供复制正文菜单', (tester) async {
     String? copiedText;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -793,7 +793,8 @@ void main() {
     await tester.pumpWidget(_postDetailTestApp(post));
     await tester.pumpAndSettle();
 
-    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(SelectionArea), findsNothing);
+    expect(find.byType(SelectableText), findsAtLeastNWidgets(1));
 
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();

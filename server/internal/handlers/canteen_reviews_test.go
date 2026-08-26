@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,6 +58,141 @@ func TestCreateReviewKeepsUnknownDishAsPendingCandidate(t *testing.T) {
 	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "铁板豆腐") ||
 		!strings.Contains(contributions.Body.String(), models.DishStatusPending) {
 		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+}
+
+func TestUpdateReviewDoesNotReviveRejectedDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "被驳回菜", NormalizedName: "被驳回菜",
+		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "无法确认菜品来源",
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4,
+		Comment: "原评价", Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.CanteenReviewEventDish{
+		ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	updated := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+itoaForTest(event.ID),
+		mapParams("reviewId", itoaForTest(event.ID)), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改文字","dish_ids":[%d]}`, dish.ID))
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
+	}
+	var refreshed models.CanteenDish
+	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != models.DishStatusRejected || refreshed.RejectReason != dish.RejectReason {
+		t.Fatalf("rejected dish was revived: %+v", refreshed)
+	}
+}
+
+func TestResubmitDishExplicitlyRevivesRejectedDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "可重提菜", NormalizedName: "可重提菜",
+		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "请补充来源",
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := performCanteenRequest(t, h.ResubmitDish, http.MethodPost,
+		"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/resubmit",
+		mapParams("dishId", itoaForTest(dish.ID)), user.ID, "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "已重新提交审核") {
+		t.Fatalf("resubmit status=%d body=%s", response.Code, response.Body.String())
+	}
+	var refreshed models.CanteenDish
+	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != models.DishStatusPending || refreshed.RejectReason != "" {
+		t.Fatalf("dish after resubmit=%+v", refreshed)
+	}
+}
+
+func TestReviewDishNamesAndPhotosRespectViewerVisibility(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	activeDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "公开菜", NormalizedName: "公开菜",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	pendingDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "待收录菜", NormalizedName: "待收录菜",
+		Status: models.DishStatusPending, CreatedBy: user.ID,
+	}
+	rejectedDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "未通过菜", NormalizedName: "未通过菜",
+		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "菜名无法核实",
+	}
+	for _, dish := range []*models.CanteenDish{&activeDish, &pendingDish, &rejectedDish} {
+		if err := h.db.Create(dish).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4,
+		Images: `[]`, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, dish := range []*models.CanteenDish{&activeDish, &pendingDish, &rejectedDish} {
+		if err := h.db.Create(&models.CanteenReviewEventDish{
+			ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	approvedFile := models.File{Path: "/uploads/approved.jpg", Hash: "review-approved", Size: 1, MimeType: "image/jpeg"}
+	pendingFile := models.File{Path: "/uploads/pending.jpg", Hash: "review-pending", Size: 1, MimeType: "image/jpeg"}
+	rejectedFile := models.File{Path: "/uploads/rejected.jpg", Hash: "review-rejected", Size: 1, MimeType: "image/jpeg"}
+	for _, file := range []*models.File{&approvedFile, &pendingFile, &rejectedFile} {
+		if err := h.db.Create(file).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	photos := []models.CanteenDishPhoto{
+		{DishID: activeDish.ID, FileID: approvedFile.ID, UserID: user.ID, Status: models.DishPhotoStatusApproved, ReviewEventID: &event.ID},
+		{DishID: pendingDish.ID, FileID: pendingFile.ID, UserID: user.ID, Status: models.DishPhotoStatusPending, ReviewEventID: &event.ID},
+		{DishID: rejectedDish.ID, FileID: rejectedFile.ID, UserID: user.ID, Status: models.DishPhotoStatusRejected, RejectReason: "图片模糊", ReviewEventID: &event.ID},
+	}
+	if err := h.db.Create(&photos).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	publicResponse := performCanteenRequest(t, h.GetReviews, http.MethodGet,
+		"/api/canteens/88/reviews", mapParams("id", "88"), 0, "")
+	if publicResponse.Code != http.StatusOK {
+		t.Fatalf("public status=%d body=%s", publicResponse.Code, publicResponse.Body.String())
+	}
+	if strings.Contains(publicResponse.Body.String(), "未通过菜") ||
+		strings.Contains(publicResponse.Body.String(), "图片模糊") ||
+		!strings.Contains(publicResponse.Body.String(), "approved.jpg") {
+		t.Fatalf("public visibility is wrong: %s", publicResponse.Body.String())
+	}
+
+	ownerResponse := performCanteenRequest(t, h.GetReviews, http.MethodGet,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, "")
+	if ownerResponse.Code != http.StatusOK ||
+		!strings.Contains(ownerResponse.Body.String(), "未通过菜") ||
+		!strings.Contains(ownerResponse.Body.String(), "图片模糊") ||
+		!strings.Contains(ownerResponse.Body.String(), "pending.jpg") {
+		t.Fatalf("owner visibility is wrong: %s", ownerResponse.Body.String())
 	}
 }
 

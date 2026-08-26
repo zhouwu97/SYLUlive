@@ -298,6 +298,9 @@ func TestMergeDishMovesAllRelationsAndLeavesNoHiddenSourceReferences(t *testing.
 	if err := db.First(&merged, source.ID).Error; err != nil || merged.Status != models.DishStatusMerged {
 		t.Fatalf("source status=%+v err=%v", merged, err)
 	}
+	if merged.MergedIntoDishID == nil || *merged.MergedIntoDishID != target.ID {
+		t.Fatalf("merged target id=%v want %d", merged.MergedIntoDishID, target.ID)
+	}
 	var sourcePhotoCount, sourceRelationCount, sourceRecommendationCount, sourceAliasCount int64
 	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", source.ID).Count(&sourcePhotoCount)
 	db.Model(&models.CanteenReviewEventDish{}).Where("dish_id = ?", source.ID).Count(&sourceRelationCount)
@@ -312,6 +315,12 @@ func TestMergeDishMovesAllRelationsAndLeavesNoHiddenSourceReferences(t *testing.
 	db.Model(&models.CanteenDishRatingSummary{}).Where("dish_id = ?", target.ID).Count(&summaryCount)
 	if relationCount != 1 || reviewCount != 1 || summaryCount != 1 {
 		t.Fatalf("target relations not rebuilt: relation=%d reviews=%d summaries=%d", relationCount, reviewCount, summaryCount)
+	}
+	contributions := performCanteenRequest(t, NewCanteenHandler(db).GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, admin.ID, "")
+	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "merged_into_dish_name") ||
+		!strings.Contains(contributions.Body.String(), target.Name) {
+		t.Fatalf("merged contribution target missing: status=%d body=%s", contributions.Code, contributions.Body.String())
 	}
 }
 

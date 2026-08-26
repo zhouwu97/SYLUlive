@@ -2074,9 +2074,9 @@ func main() {
 		// 菜品图库公开接口
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
 		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
-		canteen.GET("/:id/reviews", canteenHandler.GetReviews)
-		canteen.GET("/:id/reviews/history/:userId", canteenHandler.GetReviewHistory)
-		canteen.GET("/:id/reviewers/:userId/history", canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviews)
+		canteen.GET("/:id/reviews/history/:userId", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/reviewers/:userId/history", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/dish-suggestions", canteenHandler.GetDishSuggestions)
 		canteen.GET("/dishes/:dishId/reviews", canteenHandler.GetDishReviews)
 
@@ -2138,6 +2138,7 @@ func main() {
 		// 学生上传菜品实拍
 		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
 		canteenAuth.POST("/:id/dish-submissions", canteenDishPhotoHandler.SubmitDishPhotoV2)
+		canteenAuth.POST("/dishes/:dishId/resubmit", canteenHandler.ResubmitDish)
 
 	}
 

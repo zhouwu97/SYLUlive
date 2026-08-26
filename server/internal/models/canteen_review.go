@@ -45,6 +45,7 @@ type CanteenReviewEvent struct {
 	HistoryCount           int                      `gorm:"-" json:"history_count,omitempty"`
 	RecommendedDishNames   []string                 `gorm:"-" json:"recommended_dishes,omitempty"`
 	RecommendedDishDetails []map[string]interface{} `gorm:"-" json:"recommended_dish_details,omitempty"`
+	DishPhotos             []map[string]interface{} `gorm:"-" json:"dish_photos,omitempty"`
 	MyVote                 *string                  `gorm:"-" json:"my_vote,omitempty"`
 	Source                 string                   `gorm:"-" json:"source,omitempty"`
 	LegacyRatingID         *uint                    `gorm:"-" json:"legacy_rating_id,omitempty"`

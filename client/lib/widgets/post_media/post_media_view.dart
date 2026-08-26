@@ -221,8 +221,7 @@ class PostMediaView extends StatelessWidget {
       fit: fit,
       alignment: alignment,
       placeholder: (_, __) => Container(color: Colors.grey[200]),
-      errorWidget: (_, failedUrl, __) {
-        Future.microtask(() => PostImageCache.manager.removeFile(failedUrl));
+      errorWidget: (_, __, ___) {
         return Container(
           color: Colors.grey[200],
           alignment: Alignment.center,

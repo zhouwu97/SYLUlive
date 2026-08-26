@@ -14,7 +14,6 @@ import '../../utils/app_feedback.dart';
 import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
-import '../topic_chips.dart';
 import 'poll_option_tile.dart';
 
 enum PollCardVariant { homeCompact, centerFull, profileCompact }
@@ -237,10 +236,6 @@ class _PollPostCardState extends State<PollPostCard> {
                           ? AppColors.textSecondaryDark
                           : const Color(0xFF4E565A),
                     )),
-              ],
-              if (widget.post.topics.isNotEmpty) ...[
-                const SizedBox(height: AppSpacing.xs),
-                PostTopicChips(topics: widget.post.topics),
               ],
               if (widget.post.images.any(
                 (image) => image.resolvedOriginUrl.isNotEmpty,

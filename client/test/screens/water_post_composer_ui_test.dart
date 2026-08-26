@@ -52,8 +52,10 @@ class FakePostProvider extends Fake
     with ChangeNotifier
     implements PostProvider {
   int createPostCalls = 0;
+  int updatePostCalls = 0;
   String? lastContent;
   String? lastTitle;
+  List<TopicSelection>? lastTopics;
   Completer<CreatePostResult>? createPostCompleter;
 
   @override
@@ -79,8 +81,36 @@ class FakePostProvider extends Fake
     createPostCalls++;
     lastContent = content;
     lastTitle = title;
+    lastTopics = topics;
     final completer = createPostCompleter;
     if (completer != null) return completer.future;
+    return const CreatePostResult(success: true);
+  }
+
+  @override
+  Future<CreatePostResult> updatePost({
+    required int postId,
+    required int boardId,
+    required String content,
+    String? title,
+    String? postType,
+    int? waterTagId,
+    double? price,
+    String? contactType,
+    String? contact,
+    List<int>? fileIds,
+    List<String>? marketTags,
+    int? teamNeededCount,
+    List<String>? teamRoles,
+    DateTime? teamDeadline,
+    bool sendTeamFields = false,
+    bool sendWaterTagField = false,
+    List<TopicSelection>? topics,
+  }) async {
+    updatePostCalls++;
+    lastContent = content;
+    lastTitle = title;
+    lastTopics = topics;
     return const CreatePostResult(success: true);
   }
 
@@ -93,6 +123,7 @@ class FakePostProvider extends Fake
 Widget buildComposerTestApp(
   FakePostProvider postProvider, {
   FakeAuthProvider? authProvider,
+  Post? editingPost,
 }) {
   final auth = authProvider ?? FakeAuthProvider();
   return MultiProvider(
@@ -112,7 +143,7 @@ Widget buildComposerTestApp(
         useMaterial3: true,
         fontFamily: 'NotoSansCJKsc',
       ),
-      home: const WaterPostComposer(),
+      home: WaterPostComposer(editingPost: editingPost),
     ),
   );
 }
@@ -238,8 +269,8 @@ void main() {
     expect(find.text('图片'), findsOneWidget);
     expect(find.text('0/9'), findsOneWidget);
     expect(find.text('0/2000字'), findsOneWidget);
-    expect(find.text('话题'), findsOneWidget);
-    expect(find.text('0/5'), findsOneWidget);
+    expect(find.text('话题'), findsNothing);
+    expect(find.text('添加话题'), findsNothing);
     expect(find.text('地点'), findsNothing);
     expect(find.text('发布'), findsOneWidget);
     expect(find.byIcon(Icons.post_add_outlined), findsNothing);
@@ -361,36 +392,41 @@ void main() {
     expect(postProvider.lastContent, '今天食堂二楼的窗口很好吃');
   });
 
-  testWidgets('topic picker supports custom topic creation',
+  testWidgets('publishing does not submit topics_json',
       (WidgetTester tester) async {
     final postProvider = FakePostProvider();
 
     await tester.pumpWidget(buildComposerTestApp(postProvider));
     await tester.pumpAndSettle();
-    final addTopic = find.ancestor(
-      of: find.text('添加话题'),
-      matching: find.byType(ActionChip),
-    );
-    tester.widget<ActionChip>(addTopic).onPressed!();
+    await tester.enterText(find.byType(TextFormField).last, '不再提交话题的内容');
+    await tester.tap(find.text('发布'));
     await tester.pumpAndSettle();
 
-    expect(find.text('搜索或创建话题'), findsOneWidget);
-    expect(find.text('完成'), findsOneWidget);
+    expect(postProvider.createPostCalls, 1);
+    expect(postProvider.lastTopics, isNull);
+  });
 
-    final topicSearchField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.hintText == '搜索或创建话题',
+  testWidgets(
+      'editing an old post preserves its topics by omitting topics_json',
+      (WidgetTester tester) async {
+    final postProvider = FakePostProvider();
+    final oldPost = Post(
+      id: 42,
+      content: '历史帖子内容',
+      boardId: 1,
+      authorId: 1,
+      topics: const [Topic(id: 7, name: '历史话题')],
+      createdAt: DateTime(2026, 1, 1),
     );
-    await tester.enterText(topicSearchField, '#新生互助');
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('#新生互助'), findsNWidgets(2));
-    expect(find.text('发布帖子时创建'), findsOneWidget);
 
-    await tester.tap(find.text('#新生互助').last);
-    await tester.tap(find.text('完成'));
+    await tester.pumpWidget(
+      buildComposerTestApp(postProvider, editingPost: oldPost),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存修改'));
     await tester.pumpAndSettle();
 
-    expect(find.text('#新生互助'), findsOneWidget);
-    expect(find.text('1/5'), findsOneWidget);
+    expect(postProvider.updatePostCalls, 1);
+    expect(postProvider.lastTopics, isNull);
   });
 }

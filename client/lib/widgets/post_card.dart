@@ -19,7 +19,6 @@ import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_content_link_text.dart';
 import 'post_media/post_media_view.dart';
-import 'topic_chips.dart';
 import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -331,10 +330,6 @@ class _PostCardState extends State<PostCard>
                 ),
               ),
             ),
-            if (post.topics.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              PostTopicChips(topics: post.topics),
-            ],
             if (validImageCount > 0) ...[
               SizedBox(height: isDesktop ? 12 : 6),
               _buildImageGrid(context, post.images),
@@ -474,7 +469,7 @@ class _PostCardState extends State<PostCard>
                     ),
                   ),
                 ],
-                if (hasUsefulTag && post.topics.isEmpty) ...[
+                if (hasUsefulTag) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '#${labels.tagLabel}',
@@ -484,10 +479,6 @@ class _PostCardState extends State<PostCard>
                       color: AppColors.brandPrimary,
                     ),
                   ),
-                ],
-                if (post.topics.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  PostTopicChips(topics: post.topics),
                 ],
                 if (validImageCount > 0) ...[
                   const SizedBox(height: AppSpacing.xs),
@@ -728,9 +719,7 @@ class _PostCardState extends State<PostCard>
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {
     final labels = _waterLabels(context, post);
     final legacyTag =
-        post.topics.isEmpty && _isMeaningfulLegacyTopicLabel(labels.tagLabel)
-            ? labels.tagLabel
-            : '';
+        _isMeaningfulLegacyTopicLabel(labels.tagLabel) ? labels.tagLabel : '';
     final text = labels.sectionLabel.isNotEmpty && legacyTag.isNotEmpty
         ? '${labels.sectionLabel} · $legacyTag'
         : labels.sectionLabel;
@@ -759,7 +748,6 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildWaterInlineTag(BuildContext context, bool isDark, Post post) {
-    if (post.topics.isNotEmpty) return const SizedBox.shrink();
     final tagLabel = _waterLabels(context, post).tagLabel;
     if (!_isMeaningfulLegacyTopicLabel(tagLabel)) {
       return const SizedBox.shrink();

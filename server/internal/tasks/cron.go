@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -14,6 +15,8 @@ import (
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
+
+var ErrLotteryAlreadyDrawn = errors.New("lottery already drawn")
 
 const (
 	examPaperStorageJobInterval         = time.Minute
@@ -284,7 +287,7 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 	}
 
 	if event.Status == 1 {
-		return fmt.Errorf("该活动已经开过奖了")
+		return ErrLotteryAlreadyDrawn
 	}
 
 	var participants []models.LotteryParticipant

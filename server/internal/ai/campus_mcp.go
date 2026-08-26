@@ -1223,8 +1223,9 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if mcp.deviceJobs == nil {
 		return nil
 	}
+	waitDatasets := deviceWaitDatasets(request)
 	needsDevice := false
-	for _, dataset := range request.Datasets {
+	for _, dataset := range waitDatasets {
 		result := results[dataset]
 		if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 			needsDevice = true
@@ -1236,7 +1237,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
 	if err != nil {
-		for _, dataset := range request.Datasets {
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
@@ -1245,7 +1246,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	if denied {
-		for _, dataset := range request.Datasets {
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
@@ -1267,7 +1268,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			request.Reason,
 		)
 		if refreshErr != nil {
-			for _, dataset := range request.Datasets {
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
@@ -1276,7 +1277,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return nil
 		}
 		if refreshDenied {
-			for _, dataset := range request.Datasets {
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
@@ -1288,7 +1289,26 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return refreshWait
 		}
 	}
-	for _, dataset := range request.Datasets {
+	if request.Reason == "academic_risk_analysis" {
+		arguments := json.RawMessage(`{"max_age_seconds":{"grades":300,"academic_situation":21600,"credit_requirements":86400}}`)
+		job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
+			UserID: userID, RunID: call.RunID, ToolCallID: call.CallID,
+			ToolName: "device.academic.ensure_fresh_bundle", Arguments: arguments,
+			RequiredDataTypes: []string{"grades", "academic_situation", "credit_requirements"},
+			ExpiresAt:         time.Now().Add(2 * time.Minute),
+		})
+		if err != nil || strings.TrimSpace(job.ID) == "" {
+			return nil
+		}
+		return &ToolWait{
+			State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: job.ID,
+			Payload: map[string]interface{}{
+				"datasets": []string{"grades", "academic_situation", "credit_requirements"},
+				"reason":   request.Reason,
+			},
+		}
+	}
+	for _, dataset := range waitDatasets {
 		result := results[dataset]
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
 			continue
@@ -1311,6 +1331,17 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		}
 	}
 	return nil
+}
+
+func deviceWaitDatasets(request academic.ResolveContextRequest) []academic.DatasetType {
+	if request.Reason == "academic_risk_analysis" {
+		return []academic.DatasetType{
+			academic.DatasetGrades,
+			academic.DatasetCreditRequirements,
+			academic.DatasetAcademicSituation,
+		}
+	}
+	return request.Datasets
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
@@ -1366,6 +1397,8 @@ func deviceDatasetForTool(toolName string) string {
 		return string(academic.DatasetGrades)
 	case "device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
 		return string(academic.DatasetAcademicSituation)
+	case "device.academic.ensure_fresh_bundle":
+		return "academic_bundle"
 	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
 		return string(academic.DatasetSchedule)
 	case "device.academic.get_credit_summary", "device.academic.ensure_fresh_credit_summary":
@@ -1375,6 +1408,16 @@ func deviceDatasetForTool(toolName string) string {
 	default:
 		return ""
 	}
+}
+
+func deviceDatasetsForTool(toolName string) []string {
+	if toolName == "device.academic.ensure_fresh_bundle" {
+		return []string{"grades", "academic_situation", "credit_requirements"}
+	}
+	if dataset := deviceDatasetForTool(toolName); dataset != "" && dataset != "academic_bundle" {
+		return []string{dataset}
+	}
+	return nil
 }
 
 func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request academic.ResolveContextRequest) (map[academic.DatasetType]academic.ContextResult, *ToolWait, error) {
@@ -1486,12 +1529,32 @@ func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, fres
 // 下一次完整工具执行仍会重新构建分析输入并产出自己的 Tool Result。
 func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetType) (academic.ContextResult, bool) {
 	resume, ok := currentDeviceJobResumeContext(ctx)
-	if !ok || resume.Dataset != string(dataset) {
+	if !ok {
 		return academic.ContextResult{}, false
 	}
 	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
 		return personalContextUnavailable(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据"), true
 	}
+	if resume.Dataset == "academic_bundle" {
+		var bundle struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(resume.Result, &bundle); err != nil {
+			return personalContextUnavailable(academic.DataStatusFailed, "手机返回的学业数据 bundle 格式无法用于本次分析"), true
+		}
+		item, exists := bundle.Data[string(dataset)]
+		if !exists {
+			return personalContextUnavailable(academic.DataStatusFailed, "手机未返回本次分析所需的学业数据"), true
+		}
+		return decodeDeviceContextEnvelope(dataset, item)
+	}
+	if resume.Dataset != string(dataset) {
+		return academic.ContextResult{}, false
+	}
+	return decodeDeviceContextEnvelope(dataset, resume.Result)
+}
+
+func decodeDeviceContextEnvelope(dataset academic.DatasetType, raw json.RawMessage) (academic.ContextResult, bool) {
 	var envelope struct {
 		Data      json.RawMessage     `json:"data"`
 		Source    academic.DataSource `json:"source"`
@@ -1502,7 +1565,7 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 		Warnings  []string            `json:"warnings"`
 		Evidence  []academic.Evidence `json:"evidence"`
 	}
-	if err := json.Unmarshal(resume.Result, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
 		return personalContextUnavailable(academic.DataStatusFailed, "手机返回的数据格式无法用于本次分析"), true
 	}
 	source := envelope.Source

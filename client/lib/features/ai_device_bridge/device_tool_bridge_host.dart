@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../campus_data/storage/academic_cache_store.dart';
+import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/push_settings_service.dart';
@@ -118,10 +120,128 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       refreshAcademic: () async => _toRefreshResult(
         await sync.syncGrades(),
       ),
+      refreshAcademicSituation: () async => _toRefreshResult(
+        await sync.syncAcademicSituation(),
+      ),
+      refreshCreditRequirements: () async => _toRefreshResult(
+        await sync.syncCreditRequirements(),
+      ),
       refreshSchedule: () async => _toRefreshResult(
         await sync.syncSchedule(),
       ),
+      readAcademicDataset: (dataset) => _readAcademicDataset(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+        dataset: dataset,
+      ),
     );
+  }
+
+  Future<GatewayResult<Map<String, dynamic>>> _readAcademicDataset({
+    required String appUserId,
+    required String sourceAccountId,
+    required String dataset,
+  }) async {
+    final store = AcademicCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+    );
+    try {
+      final snapshot = await store.readSnapshot();
+      if (snapshot == null) {
+        return GatewayResult<Map<String, dynamic>>(
+          status: GatewayStatus.missing,
+          source: PersonalDataSource.none,
+        );
+      }
+      final now = DateTime.now().toUtc();
+      final data = switch (dataset) {
+        'academic_situation' => snapshot.situation == null
+            ? null
+            : _academicSituationData(snapshot.situation!.data),
+        'credit_requirements' => snapshot.creditRequirements == null
+            ? null
+            : _creditRequirementsData(snapshot.creditRequirements!),
+        _ => null,
+      };
+      if (data == null) {
+        return GatewayResult<Map<String, dynamic>>(
+          status: GatewayStatus.missing,
+          source: PersonalDataSource.none,
+        );
+      }
+      final fetchedAt = switch (dataset) {
+        'academic_situation' => snapshot.situation!.fetchedAt,
+        'credit_requirements' => snapshot.creditRequirementsFetchedAt,
+        _ => snapshot.fetchedAt,
+      };
+      if (fetchedAt == null) {
+        return GatewayResult<Map<String, dynamic>>(
+          data: data,
+          status: GatewayStatus.stale,
+          source: PersonalDataSource.deviceEncryptedCache,
+          isStale: true,
+          warnings: const <String>['学分要求缺少独立更新时间，需要重新获取'],
+        );
+      }
+      final ttl = dataset == 'academic_situation'
+          ? const Duration(hours: 6)
+          : const Duration(days: 1);
+      final expiresAt = fetchedAt.add(ttl);
+      // snapshot.isStale 是旧的全局快照标记，不能让成绩过期连带判定
+      // 学业情况或学分要求过期；bundle 的三个数据集各自按 TTL 判断。
+      final stale = !expiresAt.isAfter(now);
+      return GatewayResult<Map<String, dynamic>>(
+        data: data,
+        status: stale ? GatewayStatus.stale : GatewayStatus.available,
+        source: PersonalDataSource.localEncryptedVault,
+        fetchedAt: fetchedAt,
+        expiresAt: expiresAt,
+        isStale: stale,
+      );
+    } finally {
+      await store.close();
+    }
+  }
+
+  static Map<String, dynamic> _academicSituationData(
+    Map<String, dynamic> raw,
+  ) {
+    int integer(String key) => (raw[key] as num?)?.toInt() ?? 0;
+    final gpa = (raw['all_gpa'] as num?)?.toDouble() ?? 0;
+    return <String, dynamic>{
+      'total_courses': integer('total_courses'),
+      'passed_courses': integer('passed_courses'),
+      'failed_courses': integer('failed_courses'),
+      'in_progress_courses': integer('in_progress_courses'),
+      'degree_total_courses': integer('degree_total_courses'),
+      'degree_passed_courses': integer('degree_passed_courses'),
+      'degree_failed_courses': integer('degree_failed_courses'),
+      'degree_in_progress_courses': integer('degree_in_progress_courses'),
+      'all_gpa': gpa,
+    };
+  }
+
+  static Map<String, dynamic> _creditRequirementsData(
+    Map<String, dynamic> raw,
+  ) {
+    final modules = (raw['modules'] as List?)?.whereType<Map>() ??
+        const Iterable<Map>.empty();
+    double sum(String key) => modules.fold<double>(0, (total, item) {
+          final value = item[key];
+          return total + (value is num ? value.toDouble() : 0);
+        });
+    final required = sum('required_credits');
+    final earned = sum('earned_credits');
+    final gap = (required - earned).clamp(0, double.infinity).toDouble();
+    return <String, dynamic>{
+      'required_credits': required,
+      'earned_credits': earned,
+      'completed_credits': earned,
+      'remaining_credits': gap,
+      'credit_gap': gap,
+      'module_count': modules.length,
+    };
   }
 
   static RefreshResult _toRefreshResult(PersonalSyncItemResult result) {

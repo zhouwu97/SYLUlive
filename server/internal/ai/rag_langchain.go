@@ -177,6 +177,7 @@ func (c *RAGClient) newPolicyRequest(ctx context.Context, path string, body []by
 	}
 	request.Header.Set("X-Internal-Service-Token", c.serviceToken)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	return request, nil
 }
 

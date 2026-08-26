@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -111,8 +112,14 @@ func (r *Runtime) ResumeDeviceJob(ctx context.Context, jobID string) error {
 	default:
 		return nil
 	}
+	r.appendDeviceResumeTrace(ctx, job.RunID, "ai.device.job.completed", map[string]interface{}{
+		"job_id": job.ID, "tool_call_id": job.ToolCallID, "tool_name": job.ToolName,
+		"datasets": deviceDatasetsForTool(job.ToolName), "status": job.Status,
+		"result_bytes": len(job.ResultJSON), "result_hash": job.ResultHash,
+	})
 
 	var resume models.AIRunResumeJob
+	claimed := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("run_id = ? AND waiting_state = ? AND status = ?", job.RunID, models.AIRunStateWaitingDevice, "waiting").
@@ -150,14 +157,69 @@ func (r *Runtime) ResumeDeviceJob(ctx context.Context, jobID string) error {
 		if !matched {
 			return nil
 		}
-		return tx.Model(&models.AIRunResumeJob{}).Where("id = ? AND status = ?", resume.ID, "waiting").
-			Updates(map[string]interface{}{"status": "resuming", "updated_at": time.Now()}).Error
+		result := tx.Model(&models.AIRunResumeJob{}).Where("id = ? AND status = ?", resume.ID, "waiting").
+			Updates(map[string]interface{}{"status": "resuming", "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			claimed = true
+		}
+		return nil
 	})
-	if err != nil || resume.ID == "" {
+	if err != nil {
+		log.Printf("[AI_DEVICE_RESUME_FAILED] job_id=%s run_id=%s err=%v", job.ID, job.RunID, err)
 		return err
 	}
+	if resume.ID == "" || !claimed {
+		return nil
+	}
+	r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.device.resume.claimed", map[string]interface{}{
+		"job_id": job.ID, "resume_id": resume.ID, "tool_call_id": job.ToolCallID,
+		"tool_name": job.ToolName, "datasets": deviceDatasetsForTool(job.ToolName),
+		"status": "resuming", "waiting_state": resume.WaitingState,
+	})
 	go r.executeResumedRun(resume.ID)
 	return nil
+}
+
+// ReconcileWaitingDeviceJobs 兜底扫描设备已完成但 Run 仍在等待恢复的任务。
+// Handler 回调即使因瞬态数据库/CAS 错误失败，也不会让 Run 永久停在 waiting_device。
+func (r *Runtime) ReconcileWaitingDeviceJobs(ctx context.Context, limit int) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	var jobs []models.DeviceToolJob
+	if err := r.db.WithContext(ctx).
+		Where("status IN ?", []string{
+			models.DeviceToolJobCompleted, models.DeviceToolJobFailed,
+			models.DeviceToolJobCancelled, models.DeviceToolJobExpired,
+		}).
+		Where("EXISTS (SELECT 1 FROM ai_run_resume_jobs WHERE ai_run_resume_jobs.run_id = device_tool_jobs.run_id AND ai_run_resume_jobs.waiting_state = ? AND ai_run_resume_jobs.status = ?)", models.AIRunStateWaitingDevice, "waiting").
+		Order("updated_at ASC").Limit(limit).Find(&jobs).Error; err != nil {
+		return 0, err
+	}
+	resumed := 0
+	for _, job := range jobs {
+		if err := r.ResumeDeviceJob(ctx, job.ID); err != nil {
+			log.Printf("[AI_DEVICE_RECONCILE_FAILED] job_id=%s run_id=%s err=%v", job.ID, job.RunID, err)
+			continue
+		}
+		resumed++
+	}
+	return resumed, nil
+}
+
+func (r *Runtime) appendDeviceResumeTrace(ctx context.Context, runID, eventType string, payload map[string]interface{}) {
+	if strings.TrimSpace(runID) == "" {
+		return
+	}
+	if _, err := r.appendEvent(ctx, runID, eventType, payload, true); err != nil {
+		log.Printf("[AI_TRACE_APPEND_FAILED] run_id=%s event=%s err=%v", runID, eventType, err)
+	}
 }
 
 // ResumeUserConsent 在用户主动完成教务授权并成功拉取数据后，恢复等待授权的 Run。
@@ -339,6 +401,11 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 					r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
 					return
 				}
+				r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.device.result.consumed", map[string]interface{}{
+					"job_id": deviceJob.ID, "tool_call_id": item.CallID, "tool_name": deviceJob.ToolName,
+					"datasets": deviceDatasetsForTool(deviceJob.ToolName), "status": deviceJob.Status,
+					"result_bytes": len(deviceJob.ResultJSON), "result_hash": deviceJob.ResultHash,
+				})
 				retryContext = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
 					JobID: deviceJob.ID, ToolName: deviceJob.ToolName,
 					Dataset: deviceDatasetForTool(deviceJob.ToolName), Status: deviceJob.Status,
@@ -364,6 +431,11 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				return
 			}
 			if execution.Wait != nil {
+				r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.tool.retry.waiting_again", map[string]interface{}{
+					"call_id": item.CallID, "tool_name": item.ToolName,
+					"waiting_state": execution.Wait.State,
+					"resume_key":    execution.Wait.ResumeKey,
+				})
 				waiting = append(waiting, pendingToolWait{CallID: item.CallID, Name: item.ToolName, Wait: *execution.Wait})
 				continue
 			}
@@ -384,6 +456,9 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false, "resumed": true,
 			}, 0, 0), true)
+			r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.tool.retry.completed", map[string]interface{}{
+				"call_id": item.CallID, "tool_name": item.ToolName, "status": "completed",
+			})
 			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, execution.Result)
 		}
 		if len(waiting) > 0 {
@@ -451,13 +526,23 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	_ = r.db.WithContext(ctx).Where("id = ? AND status = ?", resume.ID, "resuming").Delete(&models.AIRunResumeJob{}).Error
 
 	startedAt := time.Now()
+	r.appendDeviceResumeTrace(ctx, run.ID, "ai.provider.started", map[string]interface{}{
+		"state": run.State, "planning_round": run.PlanningRound,
+		"constraint_version": run.ConstraintVersion, "plan_version": run.PlanVersion,
+	})
 	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, requiredToolCompleted, &agentState)
 	usage = mergeProviderUsage(usage, outcome.usage)
 	if outcome.cancelled {
+		r.appendDeviceResumeTrace(ctx, run.ID, "ai.provider.failed", map[string]interface{}{
+			"reason": "cancelled", "duration_ms": time.Since(startedAt).Milliseconds(),
+		})
 		r.finalizeCancelled(run.ID, true, usage, time.Since(startedAt))
 		return
 	}
 	if outcome.pause != nil {
+		r.appendDeviceResumeTrace(ctx, run.ID, "ai.provider.completed", map[string]interface{}{
+			"result": "waiting", "duration_ms": time.Since(startedAt).Milliseconds(),
+		})
 		if err := r.pauseRun(ctx, &run, outcome.pause, usage); err != nil {
 			r.failAfterProvider(run.ID, true, "run_pause_failed", usage, time.Since(startedAt))
 		}
@@ -468,9 +553,15 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		if code == "" {
 			code = ProviderErrorInvalid
 		}
+		r.appendDeviceResumeTrace(ctx, run.ID, "ai.provider.failed", map[string]interface{}{
+			"error_code": code, "duration_ms": time.Since(startedAt).Milliseconds(),
+		})
 		r.failAfterProvider(run.ID, true, code, usage, time.Since(startedAt))
 		return
 	}
+	r.appendDeviceResumeTrace(ctx, run.ID, "ai.provider.completed", map[string]interface{}{
+		"result": "answer", "duration_ms": time.Since(startedAt).Milliseconds(),
+	})
 	r.markQuotaConsumed(run.ID)
 	_, _ = r.appendEvent(ctx, run.ID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
 	r.completeRun(run.ID, outcome.answer, nil, usage, time.Since(startedAt), false)

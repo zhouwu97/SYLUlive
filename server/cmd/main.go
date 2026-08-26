@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -378,6 +379,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
+		log.Fatal("设备 Agent 任务索引迁移失败:", err)
+	}
 	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
 		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
 	}
@@ -524,7 +528,11 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-	r := gin.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	r := gin.New()
+	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
 
 	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
 	allowedOrigins := make(map[string]struct{})
@@ -554,7 +562,8 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
 
@@ -1004,6 +1013,27 @@ func main() {
 		}
 		deviceJobHandler.SetRunResumer(aiRuntime)
 		eduHandler.SetUserConsentRunResumer(aiRuntime)
+		go func() {
+			reconcile := func() {
+				count, err := aiRuntime.ReconcileWaitingDeviceJobs(appCtx, 50)
+				if err != nil {
+					log.Printf("[AI_DEVICE_RECONCILE_FAILED] %v", err)
+				} else if count > 0 {
+					log.Printf("[AI_DEVICE_RECONCILE] resumed=%d", count)
+				}
+			}
+			reconcile()
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case <-ticker.C:
+					reconcile()
+				}
+			}
+		}()
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}

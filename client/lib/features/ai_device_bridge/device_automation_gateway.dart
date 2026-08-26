@@ -4,6 +4,8 @@ import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 /// 设备侧可自动化的数据类型。该枚举只描述数据类别，不包含账号、凭据或原始页面。
 enum PersonalDataType {
   academic,
+  academicSituation,
+  creditRequirements,
   schedule,
   erke,
 }
@@ -51,7 +53,15 @@ typedef DeviceDataQuery<T> = Future<GatewayResult<T>> Function(
 abstract interface class DeviceAutomationGateway {
   Future<FreshnessState> inspect(PersonalDataType type);
 
+  Future<GatewayResult<Map<String, dynamic>>> readAcademicDataset(
+    String dataset,
+  );
+
   Future<RefreshResult> refreshAcademic();
+
+  Future<RefreshResult> refreshAcademicSituation();
+
+  Future<RefreshResult> refreshCreditRequirements();
 
   Future<RefreshResult> refreshSchedule();
 
@@ -60,6 +70,10 @@ abstract interface class DeviceAutomationGateway {
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+  });
+
+  Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
+    required Map<String, Duration> maxAges,
   });
 
   Future<GatewayResult<T>> read<T>(DeviceDataQuery<T> query);
@@ -71,25 +85,40 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   PersonalDataDeviceAutomationGateway({
     required PersonalDataGateway reader,
     Future<RefreshResult> Function()? refreshAcademic,
+    Future<RefreshResult> Function()? refreshAcademicSituation,
+    Future<RefreshResult> Function()? refreshCreditRequirements,
     Future<RefreshResult> Function()? refreshSchedule,
     Future<RefreshResult> Function()? refreshErke,
+    Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
+        readAcademicDataset,
     DateTime Function()? now,
   })  : _reader = reader,
         _refreshAcademic = refreshAcademic,
+        _refreshAcademicSituation = refreshAcademicSituation,
+        _refreshCreditRequirements = refreshCreditRequirements,
         _refreshSchedule = refreshSchedule,
         _refreshErke = refreshErke,
+        _readAcademicDataset = readAcademicDataset,
         _now = now ?? DateTime.now;
 
   final PersonalDataGateway _reader;
   final Future<RefreshResult> Function()? _refreshAcademic;
+  final Future<RefreshResult> Function()? _refreshAcademicSituation;
+  final Future<RefreshResult> Function()? _refreshCreditRequirements;
   final Future<RefreshResult> Function()? _refreshSchedule;
   final Future<RefreshResult> Function()? _refreshErke;
+  final Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
+      _readAcademicDataset;
   final DateTime Function() _now;
 
   @override
   Future<FreshnessState> inspect(PersonalDataType type) async {
     final result = switch (type) {
       PersonalDataType.academic => await _reader.getAcademicOverview(),
+      PersonalDataType.academicSituation =>
+        await readAcademicDataset('academic_situation'),
+      PersonalDataType.creditRequirements =>
+        await readAcademicDataset('credit_requirements'),
       PersonalDataType.schedule => await _reader.getScheduleOverview(
           start: _startOfWeek(_now()),
           end: _startOfWeek(_now()).add(const Duration(days: 6)),
@@ -101,6 +130,20 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
       expiresAt: result.expiresAt,
       isStale: result.isStale || result.status == GatewayStatus.stale,
     );
+  }
+
+  @override
+  Future<GatewayResult<Map<String, dynamic>>> readAcademicDataset(
+    String dataset,
+  ) async {
+    final reader = _readAcademicDataset;
+    if (reader == null) {
+      return GatewayResult<Map<String, dynamic>>(
+        status: GatewayStatus.missing,
+        source: PersonalDataSource.none,
+      );
+    }
+    return reader(dataset);
   }
 
   /// 设备在执行前再次判断 freshness，服务器传入的 maxAge 只能被本地策略收窄。
@@ -116,6 +159,14 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
 
     final refresh = switch (type) {
       PersonalDataType.academic => await refreshAcademic(),
+      PersonalDataType.academicSituation => await _refreshDataset(
+          _refreshAcademicSituation,
+          '学业情况',
+        ),
+      PersonalDataType.creditRequirements => await _refreshDataset(
+          _refreshCreditRequirements,
+          '学分要求',
+        ),
       PersonalDataType.schedule => await refreshSchedule(),
       PersonalDataType.erke => await refreshErke(),
     };
@@ -129,11 +180,54 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   }
 
   @override
+  Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
+    required Map<String, Duration> maxAges,
+  }) async {
+    final items = <String, EnsureFreshResult>{};
+    for (final entry in maxAges.entries) {
+      final type = switch (entry.key) {
+        'grades' => PersonalDataType.academic,
+        'academic_situation' => PersonalDataType.academicSituation,
+        'credit_requirements' => PersonalDataType.creditRequirements,
+        _ => throw ArgumentError('不支持的学业数据集: ${entry.key}'),
+      };
+      final item = await ensureFresh(type, maxAge: entry.value);
+      if (!item.after.isFreshAt(_now(), entry.value)) {
+        throw StateError('${entry.key}刷新后仍未达到新鲜度要求');
+      }
+      items[entry.key] = item;
+    }
+    return AcademicBundleEnsureResult(items: items);
+  }
+
+  @override
   Future<RefreshResult> refreshAcademic() {
     final refresh = _refreshAcademic;
     if (refresh != null) return refresh();
     return Future.value(
       const RefreshResult(performed: false, message: '设备暂未配置成绩刷新能力'),
+    );
+  }
+
+  @override
+  Future<RefreshResult> refreshAcademicSituation() => _refreshDataset(
+        _refreshAcademicSituation,
+        '学业情况',
+      );
+
+  @override
+  Future<RefreshResult> refreshCreditRequirements() => _refreshDataset(
+        _refreshCreditRequirements,
+        '学分要求',
+      );
+
+  Future<RefreshResult> _refreshDataset(
+    Future<RefreshResult> Function()? refresh,
+    String label,
+  ) {
+    if (refresh != null) return refresh();
+    return Future.value(
+      RefreshResult(performed: false, message: '$label刷新能力未配置'),
     );
   }
 
@@ -179,4 +273,10 @@ class EnsureFreshResult {
   final FreshnessState after;
   final bool refreshPerformed;
   final String? warning;
+}
+
+class AcademicBundleEnsureResult {
+  const AcademicBundleEnsureResult({required this.items});
+
+  final Map<String, EnsureFreshResult> items;
 }

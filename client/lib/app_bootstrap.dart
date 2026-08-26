@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
@@ -38,7 +37,6 @@ import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/privacy_center_screen.dart';
-import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
@@ -47,12 +45,14 @@ import 'services/course_reminder_service.dart';
 import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
+import 'utils/app_navigation.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
+import 'services/request_id.dart';
 import 'services/root_page_state_service.dart';
 import 'services/retry_interceptor.dart';
 import 'services/app_resume_coordinator.dart';
@@ -72,11 +72,18 @@ import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/app_crash_fallback.dart';
+import 'widgets/global_background_wrapper.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
 import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+
+export 'widgets/global_background_wrapper.dart'
+    show BackgroundWrapperState,
+        GlobalBackgroundWrapper,
+        PredictiveBackGate,
+        backgroundWrapperKey;
 
 String _hashError(
   String level,
@@ -1303,6 +1310,11 @@ Dio getSharedDio() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final requestId = options.headers['X-Request-ID']?.toString().trim();
+          options.headers['X-Request-ID'] =
+              requestId == null || requestId.isEmpty
+                  ? RequestId.newId()
+                  : requestId;
           if (options.extra['skip_app_version_interceptor'] == true) {
             handler.next(options);
             return;
@@ -1704,182 +1716,10 @@ class _AppContent extends StatelessWidget {
       ),
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/timetable': (context) => const PredictiveBackGate(
-              child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
-            ),
+        '/timetable': (context) => AppNavigation.buildTimetablePage(),
       },
       home: const PredictiveBackGate(
         child: GlobalBackgroundWrapper(child: AuthWrapper()),
-      ),
-    );
-  }
-}
-
-final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
-    GlobalKey<BackgroundWrapperState>();
-
-class GlobalBackgroundWrapper extends StatefulWidget {
-  final Widget child;
-
-  const GlobalBackgroundWrapper({super.key, required this.child});
-
-  @override
-  State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
-}
-
-class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
-  String _currentScreen = 'shuitie';
-
-  void updateScreen(String screen) {
-    if (_currentScreen != screen) {
-      if (mounted) {
-        setState(() {
-          _currentScreen = screen;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Always render background in consistent structure
-        _buildBackgroundLayer(themeProvider, isDark),
-        // Child content
-        widget.child,
-      ],
-    );
-  }
-
-  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.shouldShowCustomBackground) {
-      return _buildBackgroundImageLayer(themeProvider, isDark);
-    }
-    return _buildCleanBackground(isDark);
-  }
-
-  Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.getCustomBackgroundImageFor(context);
-    if (bgPath == null || bgPath.isEmpty) return _buildCleanBackground(isDark);
-    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
-    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-    final resolvedPath =
-        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
-
-    const alignment = Alignment.center;
-    final fillScreen =
-        themeProvider.getCustomBackgroundFillScreenFor(context) ||
-            _isUsingFallbackDirection(themeProvider);
-
-    final imageProvider = isAsset
-        ? AssetImage(resolvedPath) as ImageProvider
-        : isLocalFile
-            ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundImage(
-          imageProvider: imageProvider,
-          alignment: alignment,
-          isDark: isDark,
-          fillScreen: fillScreen,
-          blur: themeProvider.backgroundBlur,
-        ),
-        // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
-    );
-  }
-
-  bool _isUsingFallbackDirection(ThemeProvider themeProvider) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    return (isWide && !themeProvider.hasLandscapeBackground) ||
-        (!isWide && !themeProvider.hasBackground);
-  }
-
-  Widget _buildBackgroundImage({
-    required ImageProvider imageProvider,
-    required Alignment alignment,
-    required bool isDark,
-    required bool fillScreen,
-    required double blur,
-  }) {
-    Widget imageLayer;
-
-    if (fillScreen) {
-      imageLayer = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: alignment,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Container(
-          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-        ),
-      );
-    } else {
-      imageLayer = Stack(
-        fit: StackFit.expand,
-        children: [
-          // 补齐屏幕空白区域
-          Image(
-            image: imageProvider,
-            fit: BoxFit.cover,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => Container(
-              color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-            ),
-          ),
-          // 保留完整背景主体
-          Image(
-            image: imageProvider,
-            fit: BoxFit.contain,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
-        ],
-      );
-    }
-
-    final effectiveBlur = blur.clamp(0.0, 30.0);
-
-    if (effectiveBlur <= 0.01) {
-      return imageLayer;
-    }
-
-    // 模糊会从图片边缘采样，略微放大，避免四周出现透明边或暗边。
-    final scale = 1.0 + effectiveBlur / 300.0;
-
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: effectiveBlur,
-          sigmaY: effectiveBlur,
-        ),
-        child: Transform.scale(
-          scale: scale,
-          child: imageLayer,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCleanBackground(bool isDark) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }
@@ -1971,6 +1811,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
   StartupNavigationPlan? _startupPlan;
   int? _planUserId;
+  bool _startupPlanReady = false;
   int? _resolvingUserId;
   int _startupResolveGeneration = 0;
 
@@ -2106,9 +1947,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         }
 
         final userId = authProvider.user?.id;
-        // lastPage 模式需要先异步解析启动计划，期间显示加载门禁，
-        // 避免 HomeScreen 先以错误的 root tab 构建、再闪成目标页面。
-        if (tp.startupDestination == StartupDestinationMode.lastPage &&
+        if (_startupPlanReady && _planUserId != userId) {
+          // 账号变化才允许重新计算启动计划；同一账号修改“启动页面”只
+          // 影响下一次启动，不能重建当前会话已经展示的根页面。
+          _startupPlanReady = false;
+          _startupPlan = null;
+          _planUserId = null;
+          _startupResolveGeneration++;
+          _homeInitialTabResolver.reset();
+        }
+
+        // 启动计划只在当前 AuthWrapper 会话解析一次。尤其是 lastPage 的
+        // 异步读取完成后，ThemeProvider 再次通知也不能触发当前页面跳转。
+        if (!_startupPlanReady &&
+            tp.startupDestination == StartupDestinationMode.lastPage &&
             userId != null &&
             userId > 0) {
           if (_startupPlan == null || _planUserId != userId) {
@@ -2117,22 +1969,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return HomeScreen(
-            initialTab: _startupPlan!.rootTabIndex,
-            initialDeepPage: _startupPlan!.deepPage,
-          );
         }
 
-        // home / timetable（或 lastPage 但无有效用户）：同步可解，不设门禁。
-        // 同时丢弃已解析的 lastPage 计划，避免日后切回 lastPage 时复活旧深层页。
-        _startupPlan = null;
-        _planUserId = null;
-        final resolvedPlan = StartupNavigationPlan(
-          rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
-        );
+        if (!_startupPlanReady) {
+          // home / timetable（或 lastPage 但无有效用户）同步可解，不设门禁。
+          _startupPlan = StartupNavigationPlan(
+            rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
+          );
+          _planUserId = userId;
+          _startupPlanReady = true;
+        }
+
         return HomeScreen(
-          initialTab: resolvedPlan.rootTabIndex,
-          initialDeepPage: resolvedPlan.deepPage,
+          initialTab: _startupPlan!.rootTabIndex,
+          initialDeepPage: _startupPlan!.deepPage,
         );
       },
     );
@@ -2191,24 +2041,12 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               ? null
               : state,
         );
+        _startupPlanReady = true;
       });
     } finally {
       if (_resolvingUserId == userId) {
         _resolvingUserId = null;
       }
     }
-  }
-}
-
-/// 预测性返回手势开关门控
-/// 通过 ThemeProvider.predictiveBack 控制，默认开启
-class PredictiveBackGate extends StatelessWidget {
-  final Widget child;
-  const PredictiveBackGate({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    // 这里不再由全局接管拦截逻辑，而是由子页面按需拦截
-    return child;
   }
 }

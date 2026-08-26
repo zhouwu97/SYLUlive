@@ -422,6 +422,32 @@ sync_code() {
     -e logs/
 }
 
+# ===================== 应用版本化 AI 权限迁移 =====================
+apply_ai_permission_migrations() {
+  log_step "执行 AI 用户权限版本化 SQL 迁移..."
+
+  local dsn="host=127.0.0.1 port=5432 user=${DB_USER} dbname=${DB_NAME} sslmode=disable"
+  local migration
+  local migrations=(
+    "${APP_DIR}/server/sql/20260725_ai_user_permissions.sql"
+    "${APP_DIR}/server/sql/20260726_ai_external_model_permission.sql"
+  )
+
+  for migration in "${migrations[@]}"; do
+    if [ ! -f "$migration" ]; then
+      log_error "缺少 AI 权限迁移文件: $migration"
+      exit 1
+    fi
+    log_info "执行迁移: $(basename "$migration")"
+    if ! PGPASSWORD="${DB_PASS}" psql -X "$dsn" \
+        -v ON_ERROR_STOP=1 \
+        -f "$migration"; then
+      log_error "AI 权限迁移失败，拒绝启动新版本"
+      exit 1
+    fi
+  done
+}
+
 # ===================== 环境变量辅助函数 =====================
 upsert_env_key() {
   local file="$1"
@@ -543,7 +569,7 @@ build_app() {
       -trimpath \
       -ldflags="-s -w" \
       -o "$NEW_BINARY" \
-      ./cmd/main.go
+      ./cmd
   )
 
   if [ ! -s "$NEW_BINARY" ]; then
@@ -686,6 +712,7 @@ fi
 
 backup_legacy_sqlite
 sync_code
+apply_ai_permission_migrations
 
 # 复制最新 deploy.sh 到部署目录（覆盖 repo 中的旧版本）
 SCRIPT_PATH="$(readlink -f "$0")"

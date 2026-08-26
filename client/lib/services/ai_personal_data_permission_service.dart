@@ -1,4 +1,16 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
+
+import 'diagnostic_log_service.dart';
+
+typedef AiPermissionDiagnosticWriter = Future<void> Function({
+  required String route,
+  required int durationMs,
+  required int? httpStatus,
+  required String errorCode,
+  required String requestId,
+});
 
 /// 校园 Agent 访问个人数据的长期授权范围。
 enum AiPersonalDataPermissionScope {
@@ -86,9 +98,13 @@ class AiPersonalDataPermission {
 
 /// 读取和更新校园 Agent 的长期个人数据授权；Dio 复用当前用户的 JWT。
 class AiPersonalDataPermissionService {
-  AiPersonalDataPermissionService(this._dio);
+  AiPersonalDataPermissionService(
+    this._dio, {
+    AiPermissionDiagnosticWriter? diagnosticWriter,
+  }) : _diagnosticWriter = diagnosticWriter ?? _writePermissionDiagnostic;
 
   final Dio _dio;
+  final AiPermissionDiagnosticWriter _diagnosticWriter;
 
   Future<AiAgentPermissionMode> getMode() async {
     try {
@@ -110,21 +126,40 @@ class AiPersonalDataPermissionService {
   }
 
   Future<AiAgentPermissionMode> setMode(AiAgentPermissionMode mode) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await _dio.put(
         '/ai/permissions/mode',
         data: <String, String>{'mode': mode.wireValue},
       );
       if (response.statusCode != 200 || response.data is! Map) {
-        throw const AiPersonalDataPermissionException('更新 Agent 权限模式失败');
+        final apiError = _AiPermissionApiError.fromResponse(response);
+        throw AiPersonalDataPermissionException(
+          _setModeMessage(apiError),
+          code: apiError.code,
+          httpStatus: apiError.httpStatus,
+          requestId: apiError.requestId,
+        );
       }
       return AiAgentPermissionMode.fromWireValue(
         (response.data as Map)['mode']?.toString() ?? mode.wireValue,
       );
     } on AiPersonalDataPermissionException {
       rethrow;
-    } on DioException {
-      throw const AiPersonalDataPermissionException('更新 Agent 权限模式失败，请稍后重试');
+    } on DioException catch (error) {
+      stopwatch.stop();
+      final apiError = _AiPermissionApiError.fromDio(error);
+      _recordSetModeFailure(
+        apiError,
+        stopwatch.elapsedMilliseconds,
+        _diagnosticWriter,
+      );
+      throw AiPersonalDataPermissionException(
+        _setModeMessage(apiError),
+        code: apiError.code,
+        httpStatus: apiError.httpStatus,
+        requestId: apiError.requestId,
+      );
     }
   }
 
@@ -182,10 +217,163 @@ class AiPersonalDataPermissionService {
 }
 
 class AiPersonalDataPermissionException implements Exception {
-  const AiPersonalDataPermissionException(this.message);
+  const AiPersonalDataPermissionException(
+    this.message, {
+    this.code,
+    this.httpStatus,
+    this.requestId,
+  });
 
   final String message;
+  final String? code;
+  final int? httpStatus;
+  final String? requestId;
 
   @override
   String toString() => message;
+}
+
+class _AiPermissionApiError {
+  const _AiPermissionApiError({
+    this.httpStatus,
+    this.code = '',
+    this.message = '',
+    this.requestId = '',
+    this.isNetworkError = false,
+  });
+
+  final int? httpStatus;
+  final String code;
+  final String message;
+  final String requestId;
+  final bool isNetworkError;
+
+  factory _AiPermissionApiError.fromDio(DioException error) {
+    final response = error.response;
+    final data = response?.data;
+    final map = data is Map ? data : null;
+    return _AiPermissionApiError(
+      httpStatus: response?.statusCode,
+      code: _boundedText(map?['code']),
+      message: _boundedText(map?['message']),
+      requestId: _requestId(
+        map?['request_id'],
+        response?.headers.value('x-request-id'),
+        error.requestOptions.headers['X-Request-ID'],
+      ),
+      isNetworkError: response == null,
+    );
+  }
+
+  factory _AiPermissionApiError.fromResponse(Response<dynamic> response) {
+    final data = response.data;
+    final map = data is Map ? data : null;
+    return _AiPermissionApiError(
+      httpStatus: response.statusCode,
+      code: _boundedText(map?['code']),
+      message: _boundedText(map?['message']),
+      requestId: _requestId(
+        map?['request_id'],
+        response.headers.value('x-request-id'),
+      ),
+    );
+  }
+}
+
+String _setModeMessage(_AiPermissionApiError error) {
+  switch (error.httpStatus) {
+    case 400:
+      return error.message.isNotEmpty ? error.message : 'Agent 权限模式参数无效';
+    case 401:
+      return '请先登录后再设置 Agent 权限';
+    case 403:
+      return '当前账号没有修改 Agent 权限的权限';
+    case 404:
+      return 'Agent 权限模式接口不存在，请更新应用';
+    case 409:
+      return error.message.isNotEmpty ? error.message : 'Agent 权限模式正在变更，请稍后重试';
+    default:
+      if (error.httpStatus != null && error.httpStatus! >= 500) {
+        return error.message.isNotEmpty ? error.message : '个人数据权限服务暂时不可用，请稍后重试';
+      }
+      if (error.isNetworkError) return '网络连接失败，请检查网络后重试';
+      return error.message.isNotEmpty ? error.message : '更新 Agent 权限模式失败，请稍后重试';
+  }
+}
+
+void _recordSetModeFailure(
+  _AiPermissionApiError error,
+  int durationMs,
+  AiPermissionDiagnosticWriter writer,
+) {
+  final code = error.code.isNotEmpty
+      ? error.code
+      : error.isNetworkError
+          ? 'network_error'
+          : 'http_error';
+  final requestId = error.requestId;
+
+  try {
+    unawaited(
+      writer(
+        route: '/ai/permissions/mode',
+        durationMs: durationMs,
+        httpStatus: error.httpStatus,
+        errorCode: code,
+        requestId: requestId,
+      ).catchError((_) {}),
+    );
+  } catch (_) {
+    // 诊断日志不能反向影响权限设置错误的呈现。
+  }
+}
+
+Future<void> _writePermissionDiagnostic({
+  required String route,
+  required int durationMs,
+  required int? httpStatus,
+  required String errorCode,
+  required String requestId,
+}) async {
+  await DiagnosticLogService.instance.recordError(
+    source: 'AI 权限',
+    type: 'Agent 权限模式更新失败',
+    summary: 'PUT $route 请求失败',
+    detail: [
+      'HTTP: ${httpStatus ?? "无响应"}',
+      '耗时: ${durationMs}ms',
+      '错误码: $errorCode',
+      if (requestId.isNotEmpty) '请求 ID: $requestId',
+    ].join('\n'),
+    eventCode: 'ai_permission_mode_update_failed',
+    category: 'ai_permission',
+    operation: 'put',
+    durationMs: durationMs,
+    httpStatus: httpStatus,
+    route: route,
+    traceId: requestId,
+    metadata: <String, Object?>{
+      'method': 'PUT',
+      'errorCode': errorCode,
+      if (requestId.isNotEmpty) 'requestId': requestId,
+    },
+  );
+}
+
+String _boundedText(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  if (text.length <= 200) return text;
+  return text.substring(0, 200);
+}
+
+String _requestId(
+  Object? bodyValue,
+  String? headerValue, [
+  Object? requestValue,
+]) {
+  for (final value in <Object?>[bodyValue, headerValue, requestValue]) {
+    final text = _boundedText(value);
+    if (text.isNotEmpty) return text;
+  }
+  return '';
 }

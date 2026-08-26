@@ -60,3 +60,38 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 	}
 	return nil
 }
+
+// ValidateAIUserPermissionSchema 只读核验 Agent 长期权限的关键 CHECK 约束。
+// 该约束由版本化 SQL 维护，不能依赖 GORM AutoMigrate 自动修改命名约束。
+func ValidateAIUserPermissionSchema(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if !db.Migrator().HasTable("ai_user_permissions") {
+		return fmt.Errorf("missing table: ai_user_permissions")
+	}
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+
+	var definition string
+	if err := db.Raw(`
+		SELECT pg_get_constraintdef(oid)
+		FROM pg_constraint
+		WHERE conrelid = 'ai_user_permissions'::regclass
+		  AND conname = 'chk_ai_user_permissions_scope'
+	`).Scan(&definition).Error; err != nil {
+		return fmt.Errorf("inspect AI user permission scope constraint: %w", err)
+	}
+	if err := validateAIUserPermissionScopeConstraint(definition); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateAIUserPermissionScopeConstraint(definition string) error {
+	if !strings.Contains(strings.ToLower(definition), "ai_external_model_analysis") {
+		return fmt.Errorf("AI user permission scope constraint is outdated; execute server/sql/20260726_ai_external_model_permission.sql")
+	}
+	return nil
+}

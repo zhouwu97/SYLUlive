@@ -158,6 +158,14 @@ void main() {
       expect(d.isWeakContent, true);
     });
 
+    test('仅有 HTML 图片时不误判为弱正文', () {
+      const d = CampusArticleDetail(
+        id: 1,
+        contentHtml: '<p><img src="https://jwc.sylu.edu.cn/photo.jpg" /></p>',
+      );
+      expect(d.isWeakContent, false);
+    });
+
     test('content_text 有实际内容时不识别为弱正文', () {
       final d = CampusArticleDetail(
         id: 1,
@@ -320,6 +328,17 @@ void main() {
 
     test('拒绝 javascript 伪协议', () {
       expect(isSafeCampusUrl('javascript:alert(1)'), false);
+    });
+
+    test('拒绝凭据和非标准端口', () {
+      expect(
+        isSafeCampusUrl('https://user:pass@jwc.sylu.edu.cn/info/1116/1.htm'),
+        false,
+      );
+      expect(
+        isSafeCampusUrl('https://jwc.sylu.edu.cn:8443/info/1116/1.htm'),
+        false,
+      );
     });
   });
 

@@ -771,8 +771,9 @@ func main() {
 
 		// JWC sync (教务通知 + 教务公告)
 		jwcSpec := services.CrawlSourceSpec{
-			Source:     "jwc",
-			Categories: []string{"jwtz", "jwgg"},
+			Source:        "jwc",
+			Categories:    []string{"jwtz", "jwgg"},
+			ParserVersion: "jwc-v2",
 			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
 				return jwcClient.Crawl(ctx, &clients.CrawlRequest{
 					Categories:      []string{"jwtz", "jwgg"},
@@ -786,8 +787,9 @@ func main() {
 
 		// Competition sync (创新创业学院比赛通知)
 		competitionSpec := services.CrawlSourceSpec{
-			Source:     "cxcy",
-			Categories: []string{"competition"},
+			Source:        "cxcy",
+			Categories:    []string{"competition"},
+			ParserVersion: "competition-v2",
 			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
 				// 合并所有已知 URL 为扁平列表（Python competition 端接收 list）
 				var allURLs []string

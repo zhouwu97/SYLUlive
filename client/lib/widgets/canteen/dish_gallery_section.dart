@@ -14,11 +14,15 @@ import 'canteen_status_image.dart';
 /// 职责分离：
 /// - [onViewAll]：「查看全部」→ 菜品列表页
 /// - [onStatsChanged]：图鉴加载后回传真实菜品/实拍统计，供详情头刷新
+/// - [onStatsDetailedChanged]：额外回传“有实拍的菜品数”，与图片总数分开统计
 class DishGallerySection extends StatefulWidget {
   final int canteenId;
   final String canteenName;
   final VoidCallback? onViewAll;
   final void Function(int dishCount, int dishPhotoCount)? onStatsChanged;
+  final void Function(
+          int dishCount, int dishWithPhotoCount, int dishPhotoCount)?
+      onStatsDetailedChanged;
 
   const DishGallerySection({
     super.key,
@@ -26,6 +30,7 @@ class DishGallerySection extends StatefulWidget {
     required this.canteenName,
     this.onViewAll,
     this.onStatsChanged,
+    this.onStatsDetailedChanged,
   });
 
   @override
@@ -72,9 +77,14 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       _isLoading = false;
       _loadFailed = false;
     });
-    // 回传真实统计：/dishes 只返回有 approved 实拍的公开菜，photoCount 即实拍数
+    // 回传真实统计：/dishes 返回全部 active 菜，photoCount 只统计 approved 实拍
     widget.onStatsChanged?.call(
       dishes.length,
+      dishes.fold(0, (sum, d) => sum + d.photoCount),
+    );
+    widget.onStatsDetailedChanged?.call(
+      dishes.length,
+      dishes.where((dish) => dish.photoCount > 0).length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
   }

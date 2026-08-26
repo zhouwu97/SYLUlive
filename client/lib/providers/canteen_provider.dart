@@ -284,6 +284,8 @@ class CanteenProvider with ChangeNotifier {
     List<int> dishIds = const [],
     List<String> dishNames = const [],
     List<CanteenDishReviewInput> dishReviews = const [],
+    List<CanteenDishReviewInput> dishes = const [],
+    String? idempotencyKey,
     DateTime? baseUpdatedAt,
   }) async {
     errorCode = null;
@@ -296,11 +298,19 @@ class CanteenProvider with ChangeNotifier {
       if (dishNames.isNotEmpty) 'dish_names': dishNames,
       if (dishReviews.isNotEmpty)
         'dish_reviews': dishReviews.map((dish) => dish.toJson()).toList(),
+      if (dishes.isNotEmpty)
+        'dishes': dishes.map((dish) => dish.toJson()).toList(),
       if (baseUpdatedAt != null)
         'base_updated_at': baseUpdatedAt.toUtc().toIso8601String(),
     };
     try {
-      final response = await _dio.post('/canteens/$id/reviews', data: payload);
+      final response = await _dio.post(
+        '/canteens/$id/reviews',
+        data: payload,
+        options: idempotencyKey == null || idempotencyKey.trim().isEmpty
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey.trim()}),
+      );
       final data = response.data;
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           data is Map &&
@@ -339,6 +349,8 @@ class CanteenProvider with ChangeNotifier {
     List<int> dishIds = const [],
     List<String> dishNames = const [],
     List<CanteenDishReviewInput> dishReviews = const [],
+    List<CanteenDishReviewInput> dishes = const [],
+    String? idempotencyKey,
     DateTime? baseUpdatedAt,
   }) async {
     errorCode = null;
@@ -354,9 +366,14 @@ class CanteenProvider with ChangeNotifier {
           if (dishNames.isNotEmpty) 'dish_names': dishNames,
           if (dishReviews.isNotEmpty)
             'dish_reviews': dishReviews.map((dish) => dish.toJson()).toList(),
+          if (dishes.isNotEmpty)
+            'dishes': dishes.map((dish) => dish.toJson()).toList(),
           if (baseUpdatedAt != null)
             'base_updated_at': baseUpdatedAt.toUtc().toIso8601String(),
         },
+        options: idempotencyKey == null || idempotencyKey.trim().isEmpty
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey.trim()}),
       );
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           response.data is Map &&
@@ -493,6 +510,44 @@ class CanteenProvider with ChangeNotifier {
       if (e.response?.data is Map) {
         errorCode = e.response!.data['code']?.toString();
       }
+    }
+    return null;
+  }
+
+  /// 从服务端读取完整评价编辑上下文，供所有编辑入口共用。
+  Future<Map<String, dynamic>?> loadReviewEditContext(int reviewId) async {
+    try {
+      final response = await _dio.get(
+        '/canteens/reviews/$reviewId/edit-context',
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = Map<String, dynamic>.from(response.data as Map);
+        final review = data['review'];
+        return review is Map ? Map<String, dynamic>.from(review) : data;
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+    }
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>?> loadMyCanteenContributions() async {
+    try {
+      final response = await _dio.get('/user/canteen-contributions');
+      if (response.statusCode == 200 && response.data is Map) {
+        final raw = (response.data as Map)['items'];
+        return raw is List
+            ? raw
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+            : const [];
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
     }
     return null;
   }
@@ -725,6 +780,61 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>?> adminListPendingDishes() async {
+    try {
+      final response = await _dio.get('/canteens/dishes/pending');
+      if (response.statusCode == 200 && response.data is Map) {
+        final raw = (response.data as Map)['items'];
+        return raw is List
+            ? raw
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+            : const [];
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  Future<int?> adminPendingDishModerationCount() async {
+    try {
+      final response =
+          await _dio.get('/canteens/dish-moderation/pending-count');
+      if (response.statusCode == 200 && response.data is Map) {
+        final value = (response.data as Map)['count'];
+        return value is num ? value.toInt() : int.tryParse('$value');
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  Future<bool> adminApproveDish(int dishId) async {
+    try {
+      final response = await _dio.post('/canteens/dishes/$dishId/approve');
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      return false;
+    }
+  }
+
+  Future<bool> adminRejectDish(int dishId, String reason) async {
+    try {
+      final response = await _dio.post(
+        '/canteens/dishes/$dishId/reject',
+        data: {'reason': reason},
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      return false;
+    }
+  }
+
   /// 管理员待审核食堂提交列表。返回 null 表示请求失败；
   /// 成功但无数据时返回空列表。
   Future<List<Map<String, dynamic>>?> adminListPendingCanteens() async {
@@ -748,8 +858,7 @@ class CanteenProvider with ChangeNotifier {
   Future<String?> adminApproveCanteen(int canteenId) async {
     errorCode = null;
     try {
-      final response =
-          await _dio.post('/canteens/$canteenId/approve');
+      final response = await _dio.post('/canteens/$canteenId/approve');
       if (response.statusCode == 200) {
         return '审核已通过';
       }

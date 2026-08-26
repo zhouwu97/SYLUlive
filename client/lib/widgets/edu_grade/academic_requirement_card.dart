@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import 'academic_requirement_state.dart';
 
 /// 可折叠的学分要求模块。
@@ -48,10 +49,14 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
           child: Column(
             children: [
               _buildHeader(isDark, headerBackground),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
+              AnimatedOpacity(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : AppMotion.fast,
+                curve: AppMotion.standard,
+                opacity: _isExpanded ? 1 : 0,
+                // 内容在状态切换时直接采用最终布局，避免长课程列表逐帧
+                // 从 height=0 重新 layout 到完整高度。
                 child: _isExpanded
                     ? _buildCourseList(isDark)
                     : const SizedBox(width: double.infinity),
@@ -133,7 +138,10 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
               const SizedBox(width: 6),
               AnimatedRotation(
                 turns: _isExpanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 200),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : AppMotion.fast,
+                curve: AppMotion.standard,
                 child: Icon(
                   Icons.keyboard_arrow_down_rounded,
                   size: 24,

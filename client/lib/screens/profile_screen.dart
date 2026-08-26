@@ -1016,26 +1016,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: AppColors.brandPrimary, size: 20)
                     : null,
                 onTap: () async {
-                  final provider = context.read<ThemeProvider>();
-                  await provider.setStartupDestination(mode);
-                  if (mode == StartupDestinationMode.lastPage) {
-                    final userId = context.read<AuthProvider>().user?.id;
-                    if (userId != null && userId > 0) {
-                      await RootPageStateStore.instance.saveLastPage(
-                        RestorablePageState(
-                          type: RestorablePageType.rootTab,
-                          arguments: <String, dynamic>{
-                            'index': currentHomeTabIndex.value
-                          },
-                          accountId: userId,
-                        ),
-                      );
+                  try {
+                    final provider = context.read<ThemeProvider>();
+                    await provider.setStartupDestination(mode);
+                    if (mode == StartupDestinationMode.lastPage) {
+                      final userId = context.read<AuthProvider>().user?.id;
+                      if (userId != null && userId > 0) {
+                        await RootPageStateStore.instance.saveLastPage(
+                          RestorablePageState(
+                            type: RestorablePageType.rootTab,
+                            arguments: <String, dynamic>{
+                              'index': currentHomeTabIndex.value,
+                            },
+                            accountId: userId,
+                          ),
+                        );
+                      }
+                    }
+                    if (!mounted) return;
+                    setSheetState(() {});
+                    setState(() => _startupDestination = mode);
+                    Navigator.pop(sheetContext);
+                    AppFeedback.success('修改成功', context: context);
+                  } catch (_) {
+                    if (mounted) {
+                      AppFeedback.error('修改失败，请重试', context: context);
                     }
                   }
-                  if (!mounted) return;
-                  setSheetState(() {});
-                  setState(() => _startupDestination = mode);
-                  Navigator.pop(sheetContext);
                 },
               );
             }

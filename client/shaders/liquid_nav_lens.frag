@@ -2,35 +2,17 @@
 
 #include <flutter/runtime_effect.glsl>
 
-// The rounded-rect refraction and seven-channel dispersion equations are based
-// on Kyant0/AndroidLiquidGlass (Copyright 2025 Kyant, Apache License 2.0).
-// Flutter owns uInputSize/uBackdrop for ImageFilter.shader. All app-controlled
-// geometry remains in logical pixels and is normalized against uLogicalSize,
-// so the result is stable across device pixel ratios.
+// Kyant AndroidLiquidGlass RoundedRectRefraction 的 Flutter Runtime Shader
+// 移植。Flutter 负责 uInputSize/uBackdrop；其余坐标统一使用 logical px。
 uniform vec2 uInputSize;
 uniform vec2 uLogicalSize;
 uniform vec2 uLensCenter;
 uniform vec2 uLensHalfSize;
-uniform float uLensExponent; // legacy slot; Capsule geometry is fixed.
+uniform float uRefractionHeight;
 uniform float uRefraction;
-uniform float uMagnification; // legacy slot; center magnification is removed.
 uniform float uChromatic;
-uniform float uVelocity; // legacy slot; velocity shape is applied by Flutter.
-uniform float uDirection; // legacy slot; velocity shape is applied by Flutter.
-uniform float uEdgeCompression; // legacy slot; geometry remains Capsule.
-uniform float uDragState; // legacy slot; no decorative color overlay.
-uniform vec4 uTint; // legacy slot; no tint overlay.
-uniform float uLightStrength; // legacy slot; highlight is a separate layer.
-uniform float uRimStrength; // legacy slot; highlight is a separate layer.
-uniform float uVerticalRefractionScale; // legacy slot; gradient stays isotropic.
-uniform float uRefractionBandStart; // legacy slot.
-uniform float uRefractionBandPeak; // explicit refractionHeight in pixels.
-uniform float uRefractionBandEnd; // legacy slot.
-uniform float uMagnificationRadius; // legacy slot.
-uniform float uChromaticStart; // legacy slot.
-uniform float uFlowStrength; // legacy slot; no flow/tail geometry.
 uniform float uActivation;
-uniform float uPressDepth; // legacy slot; depthEffect is zero for parity.
+
 uniform sampler2D uBackdrop;
 
 out vec4 fragColor;
@@ -83,7 +65,7 @@ void main() {
   vec2 coord = logicalFragCoord();
   vec4 original = texture(uBackdrop, textureUv(coord));
   float activation = clamp(uActivation, 0.0, 1.0);
-  float refractionHeight = max(uRefractionBandPeak, 0.0001);
+  float refractionHeight = max(uRefractionHeight, 0.0001);
 
   if (activation <= 0.0001 || refractionHeight <= 0.0001) {
     fragColor = original;
@@ -94,27 +76,33 @@ void main() {
   vec2 centeredCoord = coord - uLensCenter;
   float radius = min(halfSize.x, halfSize.y);
   float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-
-  // Match the reference band contract: deeper than the explicit height
-  // returns the untouched backdrop.
-  if (-sd >= refractionHeight) {
+  if (sd > 0.0) {
     fragColor = original;
     return;
   }
 
+  if (-sd >= refractionHeight) {
+    fragColor = original;
+    return;
+  }
   sd = min(sd, 0.0);
+
+  // refraction 是由 Flutter 按 Kyant 的 Lens.kt 语义传入的负值。
   float d = circleMap(1.0 - (-sd / refractionHeight)) * uRefraction;
   float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
   vec2 grad = normalize(gradSdRoundedRect(centeredCoord, halfSize, gradRadius));
   vec2 refractedCoord = coord + d * grad;
 
-  // Kyant's seven-channel chromatic aberration. With chromatic == 0 all
-  // seven coordinates collapse to the same sample, preserving base color.
-  float dispersionIntensity = uChromatic * (
-      (centeredCoord.x * centeredCoord.y) /
-      max(halfSize.x * halfSize.y, 0.0001)
-  );
-  vec2 dispersedCoord = d * grad * dispersionIntensity;
+  // Kyant 的七通道色散作用于整个折射区域，不再裁成最外缘的一条彩边。
+  float dispersionIntensity = uChromatic *
+      ((centeredCoord.x * centeredCoord.y) /
+      max(halfSize.x * halfSize.y, 0.0001));
+  // chromatic-only QA 需要在没有几何位移时仍能看到 RGB 分离；使用半个
+  // 光学边缘高度作为最低色散基准，生产态的最大跨度仍由 d 控制。
+  float chromaticSign = d < -0.0001 ? -1.0 : 1.0;
+  float dispersionDistance =
+      max(abs(d), refractionHeight * 0.5) * chromaticSign;
+  vec2 dispersedCoord = dispersionDistance * grad * dispersionIntensity;
   vec4 color = vec4(0.0);
 
   vec4 red = texture(uBackdrop, textureUv(refractedCoord + dispersedCoord));

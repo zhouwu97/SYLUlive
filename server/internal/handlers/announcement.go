@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -76,7 +77,7 @@ func (h *AnnouncementHandler) GetOne(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的公告ID"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "announcement_id_invalid", "公告 ID 无效", nil)
 		return
 	}
 
@@ -171,7 +172,7 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的公告ID"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "announcement_id_invalid", "公告 ID 无效", nil)
 		return
 	}
 
@@ -231,7 +232,7 @@ func (h *AnnouncementHandler) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的公告ID"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "announcement_id_invalid", "公告 ID 无效", nil)
 		return
 	}
 
@@ -283,7 +284,7 @@ func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的公告ID"})
+		middleware.WriteAPIError(c, http.StatusBadRequest, "announcement_id_invalid", "公告 ID 无效", nil)
 		return
 	}
 

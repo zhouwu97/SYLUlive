@@ -13,11 +13,13 @@ class LiquidGlassRuntimeStatus {
   const LiquidGlassRuntimeStatus({
     this.tier = LiquidGlassTier.unknown,
     this.shaderSupported = false,
+    this.shaderEnabled = false,
     this.detail = '',
   });
 
   final LiquidGlassTier tier;
   final bool shaderSupported;
+  final bool shaderEnabled;
   final String detail;
 
   String get tierLabel {
@@ -39,15 +41,35 @@ final liquidGlassRuntimeStatus = ValueNotifier<LiquidGlassRuntimeStatus>(
   const LiquidGlassRuntimeStatus(),
 );
 
+// 一旦关键 shader 明确失败，本次进程内不允许后续另一个 shader 的成功
+// 加载把整体 Tier 伪装回 A。Lens 与 Dock 是并行加载的，必须保留最差结果。
+bool _hasCriticalShaderFallback = false;
+String _criticalShaderFallbackDetail = '';
+bool _criticalShaderSupported = false;
+
 void updateLiquidGlassRuntimeStatus({
   required LiquidGlassTier tier,
   required bool shaderSupported,
+  bool shaderEnabled = true,
   String detail = '',
 }) {
+  if (tier == LiquidGlassTier.c) {
+    _hasCriticalShaderFallback = true;
+    _criticalShaderFallbackDetail = detail;
+    _criticalShaderSupported = shaderSupported;
+  }
+  final hasStickyFallback = _hasCriticalShaderFallback;
   final nextStatus = LiquidGlassRuntimeStatus(
-    tier: tier,
-    shaderSupported: shaderSupported,
-    detail: detail,
+    tier: hasStickyFallback && tier != LiquidGlassTier.c
+        ? LiquidGlassTier.c
+        : tier,
+    shaderSupported: hasStickyFallback && tier != LiquidGlassTier.c
+        ? _criticalShaderSupported
+        : shaderSupported,
+    shaderEnabled: shaderEnabled,
+    detail: hasStickyFallback && tier != LiquidGlassTier.c
+        ? _criticalShaderFallbackDetail
+        : detail,
   );
   // Shader 探测可能从 Lens 的 initState 触发，而此时仍处在首帧 build/layout
   // 中；把全局诊断通知推迟到当前 frame 后，避免 Overlay 在 build 中 setState。
@@ -55,6 +77,8 @@ void updateLiquidGlassRuntimeStatus({
     if (liquidGlassRuntimeStatus.value.tier == nextStatus.tier &&
         liquidGlassRuntimeStatus.value.shaderSupported ==
             nextStatus.shaderSupported &&
+        liquidGlassRuntimeStatus.value.shaderEnabled ==
+            nextStatus.shaderEnabled &&
         liquidGlassRuntimeStatus.value.detail == nextStatus.detail) {
       return;
     }

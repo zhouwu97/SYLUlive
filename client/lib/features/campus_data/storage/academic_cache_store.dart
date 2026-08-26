@@ -93,6 +93,7 @@ class AcademicVaultSnapshot {
     required this.isStale,
     this.situation,
     this.creditRequirements,
+    this.creditRequirementsFetchedAt,
     this.isGradeSyncComplete = false,
   }) : terms = Map<String, AcademicTermSnapshot>.unmodifiable(terms);
 
@@ -102,6 +103,7 @@ class AcademicVaultSnapshot {
   final bool isStale;
   final AcademicSituationSnapshot? situation;
   final Map<String, dynamic>? creditRequirements;
+  final DateTime? creditRequirementsFetchedAt;
   final bool isGradeSyncComplete;
 }
 
@@ -177,6 +179,12 @@ class AcademicCacheStore {
         creditRequirements: payload['credit_requirements'] is Map
             ? Map<String, dynamic>.from(payload['credit_requirements'] as Map)
             : null,
+        creditRequirementsFetchedAt:
+            payload['credit_requirements_fetched_at'] is String
+                ? DateTime.tryParse(
+                    payload['credit_requirements_fetched_at'] as String,
+                  )?.toUtc()
+                : null,
         isGradeSyncComplete: payload['grade_sync_complete'] == true,
       );
     } on FormatException {
@@ -242,9 +250,12 @@ class AcademicCacheStore {
     DateTime? fetchedAt,
   }) async {
     _validateNamespace();
+    final capturedAt = fetchedAt ?? DateTime.now().toUtc();
     await _serializeMutation(() async {
       final payload = await _readPayload() ?? _emptyPayload();
       payload['credit_requirements'] = _copyAcademicMap(data);
+      payload['credit_requirements_fetched_at'] =
+          capturedAt.toUtc().toIso8601String();
       await _writePayload(payload);
     });
   }
@@ -275,6 +286,7 @@ class AcademicCacheStore {
         'grade_terms': <String, dynamic>{},
         'academic_situation': null,
         'credit_requirements': null,
+        'credit_requirements_fetched_at': null,
         'grade_sync_complete': false,
       };
 

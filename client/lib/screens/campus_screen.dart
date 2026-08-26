@@ -17,6 +17,7 @@ import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 import '../utils/app_feedback.dart';
 import '../utils/campus_today.dart';
+import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
 
 import '../widgets/campus/campus_theme.dart';
@@ -34,7 +35,6 @@ import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
 import 'competition_center_screen.dart';
-import 'course_schedule_screen.dart';
 import 'edu_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'canteen_screen.dart';
@@ -331,11 +331,13 @@ class _CampusScreenState extends State<CampusScreen>
                 : Icons.edit_calendar_rounded,
             title: entry.title,
             subtitle: entry.subtitle,
-            onTap: () => _openPage(
-              entry.kind == CampusTodayEntryKind.course
-                  ? const CourseScheduleScreen()
-                  : const ExamScheduleScreen(),
-            ),
+            onTap: () {
+              if (entry.kind == CampusTodayEntryKind.course) {
+                unawaited(AppNavigation.openTimetable(context));
+                return;
+              }
+              unawaited(_openPage(const ExamScheduleScreen()));
+            },
           ),
         )
         .toList(growable: false);
@@ -450,6 +452,8 @@ class _CampusScreenState extends State<CampusScreen>
                       ),
                     ],
                     const SizedBox(height: 12),
+                    // 仅保留校园服务区域的 Root Tab Reveal；服务项自身不再
+                    // 叠加 stagger、透明度和位移动画。
                     HomeTabRevealItem(
                       index: _aiCapabilities == null
                           ? (todayShown ? 3 : 2)

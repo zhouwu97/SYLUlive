@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/services"
 )
 
@@ -109,7 +111,7 @@ func (h *DeviceJobHandler) Progress(c *gin.Context) {
 		_ = h.progressReporter.PublishDeviceJobProgress(c.Request.Context(), job.ID, request.Stage)
 	}
 	if job.Status == "failed" && h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -145,7 +147,7 @@ func (h *DeviceJobHandler) Complete(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -167,7 +169,7 @@ func (h *DeviceJobHandler) Fail(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -184,9 +186,19 @@ func (h *DeviceJobHandler) Cancel(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+func (h *DeviceJobHandler) resumeDeviceJobAsync(jobID string, ctx context.Context) {
+	go func() {
+		if err := h.resumer.ResumeDeviceJob(ctx, jobID); err != nil {
+			// 设备任务已经完成，不能把 HTTP 响应改成 500；记录错误交给
+			// Runtime 的 reconciler 继续恢复，避免客户端重复提交同一结果。
+			log.Printf("[AI_DEVICE_RESUME_FAILED] job_id=%s err=%v", jobID, err)
+		}
+	}()
 }
 
 func deviceInstallationID(c *gin.Context) string {

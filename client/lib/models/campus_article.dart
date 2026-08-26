@@ -9,14 +9,26 @@ const Set<String> allowedCampusArticleHosts = {
   'cxcyxy.sylu.edu.cn',
 };
 
+/// 校园资讯 URI 是否满足安全传递规则。
+///
+/// 正文中的外部链接和图片可以通过 [allowExternalHost] 放宽域名白名单，
+/// 但仍必须使用 HTTPS、禁止 userInfo，并且只能使用默认端口或 443。
+bool isSafeCampusUri(Uri? uri, {bool allowExternalHost = false}) {
+  if (uri == null ||
+      uri.scheme.toLowerCase() != 'https' ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      (uri.hasPort && uri.port != 443)) {
+    return false;
+  }
+
+  return allowExternalHost ||
+      allowedCampusArticleHosts.contains(uri.host.toLowerCase());
+}
+
 /// 校园资讯 URL 是否安全（HTTPS + 白名单域名）。
 bool isSafeCampusUrl(String rawUrl) {
-  final uri = Uri.tryParse(rawUrl);
-  return uri != null &&
-      uri.scheme.toLowerCase() == 'https' &&
-      uri.userInfo.isEmpty &&
-      (!uri.hasPort || uri.port == 443) &&
-      allowedCampusArticleHosts.contains(uri.host.toLowerCase());
+  return isSafeCampusUri(Uri.tryParse(rawUrl));
 }
 
 /// 校园资讯文章数据模型。

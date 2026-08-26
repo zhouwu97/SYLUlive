@@ -376,6 +376,15 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 
 	reviewSort := c.DefaultQuery("review_sort", "best")
 	reviewFilter := c.DefaultQuery("review_filter", "all")
+	viewerID := uint(0)
+	if rawUserID, exists := c.Get("user_id"); exists {
+		userID, ok := rawUserID.(uint)
+		if !ok || userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
+			return
+		}
+		viewerID = userID
+	}
 
 	ratingQuery := h.db.Where("canteen_id = ? AND (status = ? OR status IS NULL OR status = '')", id, models.ReviewEventStatusActive).Preload("User")
 	switch reviewFilter {
@@ -421,9 +430,9 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		ratingIDs = append(ratingIDs, ratings[i].ID)
 	}
 	voteByRatingID := map[uint]string{}
-	if userID, exists := c.Get("user_id"); exists && len(ratingIDs) > 0 {
+	if viewerID != 0 && len(ratingIDs) > 0 {
 		var votes []models.CanteenRatingVote
-		if err := h.db.Where("rating_id IN ? AND user_id = ?", ratingIDs, userID).Find(&votes).Error; err == nil {
+		if err := h.db.Where("rating_id IN ? AND user_id = ?", ratingIDs, viewerID).Find(&votes).Error; err == nil {
 			for _, vote := range votes {
 				voteByRatingID[vote.RatingID] = vote.VoteType
 			}
@@ -479,12 +488,8 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		"retry_after_seconds": 0,
 		"next_create_at":      nil,
 	}
-	if userID, exists := c.Get("user_id"); exists {
-		uid, ok := userID.(uint)
-		if !ok || uid == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
-			return
-		}
+	if viewerID != 0 {
+		uid := viewerID
 		var rating models.CanteenRating
 		if err := h.db.Where("canteen_id = ? AND user_id = ? AND (status = ? OR status IS NULL OR status = '')", id, uid, models.ReviewEventStatusActive).First(&rating).Error; err == nil {
 			var user models.User
@@ -524,10 +529,10 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
 		return
 	}
-	if uid, exists := c.Get("user_id"); exists {
-		if userID, ok := uid.(uint); ok {
-			populateReviewVotes(h.db, reviews, userID)
-		}
+	populateReviewDishNamesForViewer(h.db, reviews, viewerID)
+	populateReviewDishPhotosForViewer(h.db, reviews, viewerID)
+	if viewerID != 0 {
+		populateReviewVotes(h.db, reviews, viewerID)
 	}
 	// 详情页同时展示两套历史数据时，不能让客户端把两个自增 ID 空间拼接后再猜
 	// 类型。display_reviews 明确携带 source，并在服务端完成按用户去重、筛选和全局排序。
@@ -536,10 +541,10 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
 		return
 	}
-	if uid, exists := c.Get("user_id"); exists {
-		if userID, ok := uid.(uint); ok {
-			populateReviewVotes(h.db, allV2Reviews, userID)
-		}
+	populateReviewDishNamesForViewer(h.db, allV2Reviews, viewerID)
+	populateReviewDishPhotosForViewer(h.db, allV2Reviews, viewerID)
+	if viewerID != 0 {
+		populateReviewVotes(h.db, allV2Reviews, viewerID)
 	}
 	displayReviews := buildCanteenDisplayReviews(canteen.Name, allV2Reviews, ratings, reviewSort, reviewFilter)
 	canteen.NormalizeOperatingStatus()
@@ -602,7 +607,7 @@ func buildCanteenDisplayReviews(canteenName string, v2Reviews []models.CanteenRe
 			"dimension_scores": map[string]int{"taste": review.TasteScore, "value": review.ValueScore, "queue": review.QueueScore, "hygiene": review.HygieneScore, "service": review.ServiceScore},
 			"comment":          review.Comment, "images": review.Images, "tags": review.Tags,
 			"recommended_dishes": review.RecommendedDishNames, "recommended_dish_details": review.RecommendedDishDetails,
-			"helpful_count":   review.HelpfulCount,
+			"dish_photos": review.DishPhotos, "helpful_count": review.HelpfulCount,
 			"unhelpful_count": review.UnhelpfulCount, "my_vote": review.MyVote, "score_version": review.ScoreVersion,
 			"created_at": review.CreatedAt, "updated_at": review.UpdatedAt,
 		}
@@ -660,13 +665,26 @@ func buildCanteenDisplayReviews(canteenName string, v2Reviews []models.CanteenRe
 func displayReviewMatchesFilter(item map[string]interface{}, filter string) bool {
 	switch filter {
 	case "with_image":
-		return hasReviewImages(fmt.Sprint(item["images"]))
+		return hasReviewImages(fmt.Sprint(item["images"])) || hasDisplayDishPhotos(item["dish_photos"])
 	case "high":
 		return floatFromDisplay(item["star"]) >= 4
 	case "low":
 		return floatFromDisplay(item["star"]) <= 2
 	default:
 		return true
+	}
+}
+
+func hasDisplayDishPhotos(raw interface{}) bool {
+	switch photos := raw.(type) {
+	case []map[string]interface{}:
+		return len(photos) > 0
+	case []interface{}:
+		return len(photos) > 0
+	case nil:
+		return false
+	default:
+		return hasReviewImages(fmt.Sprint(raw))
 	}
 }
 

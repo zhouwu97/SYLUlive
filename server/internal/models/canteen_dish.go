@@ -30,17 +30,18 @@ const (
 
 // CanteenDish 食堂菜品
 type CanteenDish struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	CanteenID      uint       `gorm:"not null;index" json:"canteen_id"`
-	Name           string     `gorm:"size:100;not null" json:"name"`
-	NormalizedName string     `gorm:"size:100;not null" json:"-"`
-	Status         string     `gorm:"size:20;not null;default:'active';index" json:"status"`
-	CreatedBy      uint       `gorm:"not null;index" json:"created_by"`
-	RejectReason   string     `gorm:"size:200" json:"reject_reason,omitempty"`
-	ReviewedBy     *uint      `json:"reviewed_by,omitempty"`
-	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	CanteenID        uint       `gorm:"not null;index" json:"canteen_id"`
+	Name             string     `gorm:"size:100;not null" json:"name"`
+	NormalizedName   string     `gorm:"size:100;not null" json:"-"`
+	Status           string     `gorm:"size:20;not null;default:'active';index" json:"status"`
+	MergedIntoDishID *uint      `gorm:"index" json:"merged_into_dish_id,omitempty"`
+	CreatedBy        uint       `gorm:"not null;index" json:"created_by"`
+	RejectReason     string     `gorm:"size:200" json:"reject_reason,omitempty"`
+	ReviewedBy       *uint      `json:"reviewed_by,omitempty"`
+	ReviewedAt       *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // CanteenDishPhoto 菜品实拍（最多 3 张 approved）

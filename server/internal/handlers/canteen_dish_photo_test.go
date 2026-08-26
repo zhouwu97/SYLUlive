@@ -458,6 +458,60 @@ func TestDishPhotoNormalizedNameReuse(t *testing.T) {
 	}
 }
 
+func TestDishPhotoRetryReusesAndRevivesSameRecord(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	createVerifiedUser(t, db, 2, "学生")
+	canteen := models.Canteen{Name: "实拍重试店", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := createTestFile(t, db, 120, 2, models.FileAccessPrivate)
+	submit := NewCanteenDishPhotoHandler(db)
+	path := fmt.Sprintf("/api/canteens/%d/dish-submissions", canteen.ID)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}
+	body := fmt.Sprintf(`{"dish_name":"重试菜","file_id":%d}`, file.ID)
+	first := performDishPhotoRequest(t, submit.SubmitDishPhotoV2, http.MethodPost, path, params, 2, body)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first submit status=%d body=%s", first.Code, first.Body.String())
+	}
+	var photo models.CanteenDishPhoto
+	if err := db.Where("file_id = ?", file.ID).First(&photo).Error; err != nil {
+		t.Fatal(err)
+	}
+	second := performDishPhotoRequest(t, submit.SubmitDishPhotoV2, http.MethodPost, path, params, 2, body)
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"reused":true`) {
+		t.Fatalf("retry status=%d body=%s", second.Code, second.Body.String())
+	}
+	var photoCount int64
+	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND file_id = ?", photo.DishID, file.ID).Count(&photoCount)
+	if photoCount != 1 {
+		t.Fatalf("same file created %d rows, want 1", photoCount)
+	}
+
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	approved := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", photo.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo.ID)}}, 1, "")
+	if approved.Code != http.StatusOK {
+		t.Fatalf("approve status=%d body=%s", approved.Code, approved.Body.String())
+	}
+	archived := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", photo.ID),
+		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo.ID)}}, 1, "")
+	if archived.Code != http.StatusOK {
+		t.Fatalf("archive status=%d body=%s", archived.Code, archived.Body.String())
+	}
+	retryAfterArchive := performDishPhotoRequest(t, submit.SubmitDishPhotoV2, http.MethodPost, path, params, 2, body)
+	if retryAfterArchive.Code != http.StatusOK || !strings.Contains(retryAfterArchive.Body.String(), "已重新提交审核") {
+		t.Fatalf("archive retry status=%d body=%s", retryAfterArchive.Code, retryAfterArchive.Body.String())
+	}
+	db.First(&photo, photo.ID)
+	if photo.Status != models.DishPhotoStatusPending {
+		t.Fatalf("photo after retry status=%s want pending", photo.Status)
+	}
+}
+
 func TestMigratePendingCanteenDishPhotos(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	createVerifiedUser(t, db, 1, "管理员")

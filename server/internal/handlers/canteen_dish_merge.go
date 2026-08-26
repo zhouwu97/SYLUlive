@@ -165,7 +165,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 				return err
 			}
 		}
-		if err := tx.Model(&source).Updates(map[string]interface{}{"status": models.DishStatusMerged, "updated_at": time.Now()}).Error; err != nil {
+		if err := tx.Model(&source).Updates(map[string]interface{}{
+			"status": models.DishStatusMerged, "merged_into_dish_id": target.ID, "updated_at": time.Now(),
+		}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&models.AdminLog{
@@ -182,5 +184,5 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 		return
 	}
 	canteenDiscoveryCache.Invalidate()
-	c.JSON(http.StatusOK, gin.H{"message": "菜品已合并"})
+	c.JSON(http.StatusOK, gin.H{"message": "菜品已合并", "dish_id": sourceID, "merged_into_dish_id": input.TargetDishID})
 }

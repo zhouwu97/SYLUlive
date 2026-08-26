@@ -28,7 +28,7 @@ enum _ContributionAction { review, dishPhoto }
 /// 商家详情页：Hero + 信息区 + 菜品区 + 评价区 + 底部贡献入口。
 ///
 /// Loading 拆两层：
-/// - [_initialLoading]：首次进入，展示 [CanteenDetailSkeleton]
+/// - [_initialLoading]：首次进入，保留入口封面 Hero，其余区域展示 [CanteenDetailSkeleton]
 /// - [_reviewsRefreshing]：筛选/排序切换，只刷新评价区（顶部 2px 进度条）
 /// - [_requestGeneration]：丢弃陈旧响应，防止快速切换被慢请求覆盖
 class CanteenDetailScreen extends StatefulWidget {
@@ -39,12 +39,22 @@ class CanteenDetailScreen extends StatefulWidget {
   final int dishCount;
   final int dishPhotoCount;
 
+  /// 入口列表已经展示的封面快照。详情请求完成前先用它维持 Hero 目标。
+  final String initialImage;
+  final bool initialOffline;
+
+  /// 入口 Hero 使用的 tag；未传入时沿用商家 ID 生成默认值。
+  final String? heroTag;
+
   const CanteenDetailScreen({
     super.key,
     required this.canteenId,
     required this.canteenName,
     this.dishCount = 0,
     this.dishPhotoCount = 0,
+    this.initialImage = '',
+    this.initialOffline = false,
+    this.heroTag,
   });
 
   @override
@@ -79,6 +89,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return raw['is_offline'] == true || raw['operating_status'] == 'offline';
   }
 
+  String get _heroTag {
+    final tag = widget.heroTag;
+    return tag == null || tag.isEmpty ? 'canteen-${widget.canteenId}' : tag;
+  }
+
   Map<String, dynamic> get _reviewAction {
     final raw = _canteenData?['review_action'];
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
@@ -107,7 +122,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   // ── Loading 状态机 ─────────────────────────────────────────────
 
-  /// 首次进入：整页 skeleton，不出现中央 spinner。
+  /// 首次进入：保留入口封面 Hero，其余区域使用骨架，不出现中央 spinner。
   Future<void> _loadInitial() async {
     final generation = ++_requestGeneration;
     setState(() => _initialLoading = true);
@@ -190,7 +205,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (_initialLoading) {
       return Scaffold(
         backgroundColor: CanteenTheme.pageBg(isDark),
-        body: const CanteenDetailSkeleton(),
+        body: CanteenDetailSkeleton(
+          imageUrl: widget.initialImage,
+          offline: widget.initialOffline,
+          heroTag: _heroTag,
+        ),
       );
     }
     if (_canteenData == null || _canteenData!['canteen'] == null) {
@@ -649,7 +668,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           fit: StackFit.expand,
           children: [
             Hero(
-              tag: 'canteen-${widget.canteenId}',
+              tag: _heroTag,
               child: hasImage
                   ? CanteenStatusImage(
                       imageUrl: ApiConstants.fullUrl(imageUrl),

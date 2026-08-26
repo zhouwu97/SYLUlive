@@ -6,6 +6,7 @@ class CanteenRankingItem {
   final int id;
   final String name;
   final String image;
+  final String operatingStatus;
 
   final double averageStar;
   final int ratingCount;
@@ -23,6 +24,7 @@ class CanteenRankingItem {
     required this.id,
     required this.name,
     this.image = '',
+    this.operatingStatus = 'active',
     this.averageStar = 0,
     this.ratingCount = 0,
     this.rankingScore = 0,
@@ -39,6 +41,9 @@ class CanteenRankingItem {
       id: (json['id'] ?? 0).toInt(),
       name: json['name']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
+      operatingStatus: json['is_offline'] == true
+          ? 'offline'
+          : (json['operating_status']?.toString() ?? 'active'),
       averageStar: (json['average_star'] ?? 0).toDouble(),
       ratingCount: (json['rating_count'] ?? 0).toInt(),
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
@@ -60,6 +65,8 @@ class CanteenRankingItem {
     if (ratingCount < 6) return '样本较少';
     return '';
   }
+
+  bool get isOffline => operatingStatus == 'offline';
 }
 
 class SummaryTag {

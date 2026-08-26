@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/clients"
 	"shenliyuan/internal/models"
 )
 
@@ -270,6 +273,89 @@ func TestCompetitionSyncStateSeparateFromJWC(t *testing.T) {
 	}
 	if jwcState.ConsecutiveFailures != 0 {
 		t.Errorf("JWC should have 0 failures, got %d", jwcState.ConsecutiveFailures)
+	}
+}
+
+func TestSyncForcesRebuildWhenParserVersionChanges(t *testing.T) {
+	db := setupSyncTestDB(t)
+	spec := competitionTestSpec
+	spec.ParserVersion = "competition-v2"
+
+	const sourceURL = "https://cxcyxy.sylu.edu.cn/info/1089/3317.htm"
+	oldHash := strings.Repeat("b", 64)
+	newHash := strings.Repeat("a", 64)
+	db.Create(&models.CampusArticle{
+		Source:          "cxcy",
+		Category:        "比赛通知",
+		CategorySlug:    "competition",
+		CategoryID:      "1089",
+		SourceArticleID: "3317",
+		SourceURL:       sourceURL,
+		Title:           "旧标题",
+		ContentHTML:     "<p>旧正文</p>",
+		ContentText:     "旧正文",
+		ContentHash:     oldHash,
+		Attachments:     datatypes.JSON([]byte("[]")),
+	})
+	db.Create(&models.JWCSyncState{
+		Source:        "cxcy",
+		ParserVersion: "competition-v1",
+	})
+
+	var observedKnown map[string][]string
+	spec.CrawlFunc = func(
+		_ context.Context,
+		knownURLs map[string][]string,
+		_ int,
+		_ bool,
+	) (*clients.CrawlResponse, error) {
+		observedKnown = knownURLs
+		return &clients.CrawlResponse{
+			Success:     true,
+			GeneratedAt: time.Now().Format(time.RFC3339),
+			Items: []clients.CrawlItem{{
+				Source:           "cxcy",
+				Category:         "比赛通知",
+				CategorySlug:     "competition",
+				CategoryID:       "1089",
+				SourceArticleID:  "3317",
+				SourceURL:        sourceURL,
+				Title:            "新标题",
+				PublishDate:      "2026-08-25",
+				AuthorDepartment: "体育部",
+				ContentHTML:      "<p>新正文</p>",
+				ContentText:      "新正文",
+				ContentHash:      newHash,
+			}},
+			Stats: clients.CrawlStats{ArticleDetailsFetched: 1},
+		}, nil
+	}
+
+	result := NewCampusSyncService(db, spec).Sync(context.Background(), false, 3)
+	if result.Error != nil {
+		t.Fatalf("sync failed: %v", result.Error)
+	}
+	if result.Updated != 1 {
+		t.Fatalf("expected one rebuilt article, got %+v", result)
+	}
+	if len(observedKnown) != 0 {
+		t.Fatalf("parser migration must disable URL de-duplication, got %v", observedKnown)
+	}
+
+	var article models.CampusArticle
+	if err := db.Where("source_url = ?", sourceURL).First(&article).Error; err != nil {
+		t.Fatalf("query article: %v", err)
+	}
+	if article.ContentText != "新正文" || article.AuthorDepartment != "体育部" {
+		t.Errorf("article was not rebuilt: %+v", article)
+	}
+
+	var state models.JWCSyncState
+	if err := db.Where("source = ?", "cxcy").First(&state).Error; err != nil {
+		t.Fatalf("query state: %v", err)
+	}
+	if state.ParserVersion != "competition-v2" {
+		t.Errorf("expected parser version to be persisted, got %q", state.ParserVersion)
 	}
 }
 

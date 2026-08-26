@@ -39,9 +39,9 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
-from services.html_sanitizer import sanitize_html
+from services.html_sanitizer import extract_semantic_text, sanitize_html
 
 # ── 常量 ─────────────────────────────────────────────────────────
 
@@ -65,6 +65,9 @@ REQUEST_GAP_SEC_MIN = 0.5
 REQUEST_GAP_SEC_MAX = 0.8
 TIMEOUT_SEC = 15.0
 MAX_RETRIES = 3
+
+# 解析规则变更必须显式升级版本，避免旧的 content_text 被同步层误判为最新。
+PARSER_VERSION = "competition-v2"
 
 DEFAULT_MAX_PAGES = 3
 
@@ -168,22 +171,26 @@ def _compute_content_hash(
     author_department: str,
     content_html: str,
     attachments: list[dict[str, str]],
+    content_text: str = "",
 ) -> str:
     """生成 content_hash (SHA-256)。
 
-    输入项: title + publish_date + author_department + 规范化 content_html
-    + 排序后的 attachment_names + 排序后的 attachment_urls
+    输入项: parser_version + title + publish_date + author_department
+    + 规范化 content_html + 规范化 content_text + 排序后的附件字段。
     """
     normalized_html = re.sub(r"\s+", " ", content_html.strip())
+    normalized_text = re.sub(r"\s+", " ", content_text.strip())
 
     att_names = sorted(a.get("name", "") for a in attachments)
     att_urls = sorted(a.get("url", "") for a in attachments)
 
     parts = [
+        PARSER_VERSION,
         title.strip(),
         publish_date.strip(),
         author_department.strip(),
         normalized_html,
+        normalized_text,
         "\n".join(att_names),
         "\n".join(att_urls),
     ]
@@ -392,17 +399,33 @@ def parse_competition_detail(
         if title_el:
             title = title_el.get_text(strip=True)
 
-    # 元信息: .main_contit p — "作者:XXX    时间：YYYY-MM-DD    点击数：..."
+    # 元信息：比赛站使用 .contain_con .span，旧模板才使用 .main_contit p。
+    # 先读取“来源/发布日期”，再兼容“作者/时间”，避免无匹配时过早走 fallback。
     publish_date = list_date
     author_department = ""
-    meta_el = soup.select_one(".main_contit p")
+    meta_el = soup.select_one(".contain_con .span")
+    if meta_el is None:
+        meta_el = soup.select_one(".main_contit p")
+    if meta_el is None:
+        title_el = soup.select_one(".contain_con h2")
+        if title_el:
+            for sibling in title_el.find_next_siblings():
+                if isinstance(sibling, Tag) and sibling.name == "span":
+                    meta_el = sibling
+                    break
     if meta_el:
         meta_text = meta_el.get_text(" ", strip=True)
-        m_author = re.search(r"作者[:：]\s*(\S+)", meta_text)
-        m_date = re.search(r"时间[:：]\s*(\d{4}-\d{2}-\d{2})", meta_text)
-        if m_author:
-            author_department = m_author.group(1)
-        if m_date and not publish_date:
+        m_source = re.search(r"来源\s*[:：]\s*([^|｜】\r\n]+)", meta_text)
+        m_author = re.search(r"作者\s*[:：]\s*([^\s|｜】]+)", meta_text)
+        m_date = re.search(
+            r"(?:发布日期|时间)\s*[:：]\s*(\d{4}-\d{2}-\d{2})",
+            meta_text,
+        )
+        if m_source and m_source.group(1).strip():
+            author_department = m_source.group(1).strip()
+        elif m_author and m_author.group(1).strip():
+            author_department = m_author.group(1).strip()
+        if m_date:
             publish_date = m_date.group(1)
 
     # 如果元信息没提取到部门，用默认值
@@ -420,7 +443,7 @@ def parse_competition_detail(
     if content_el:
         raw_html = str(content_el)
         content_html = sanitize_html(raw_html, COMPETITION_BASE_URL)
-        content_text = content_el.get_text("\n", strip=True)
+        content_text = extract_semantic_text(content_html)
 
     # 附件: a[href*="download.jsp"]（fixture 已确认）
     attachments: list[dict[str, str]] = []
@@ -440,7 +463,12 @@ def parse_competition_detail(
     has_attachment = len(attachments) > 0
 
     content_hash = _compute_content_hash(
-        title, publish_date, author_department, content_html, attachments
+        title,
+        publish_date,
+        author_department,
+        content_html,
+        attachments,
+        content_text,
     )
 
     return ArticleDetail(

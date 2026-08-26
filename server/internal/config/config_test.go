@@ -249,6 +249,18 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.False(t, cfg.AILangChainRAGEnabled)
 }
 
+func TestLoadAgentDefaultsDisabledWhenLegacyAIIsEnabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_API_KEY", "server-only-key")
+
+	cfg := Load()
+
+	require.True(t, cfg.AIEnabled)
+	require.False(t, cfg.AIAgentEnabled)
+	require.Equal(t, 0, cfg.AIAgentRolloutPercent)
+}
+
 func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")

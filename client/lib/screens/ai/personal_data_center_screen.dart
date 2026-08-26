@@ -16,6 +16,7 @@ import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/webvpn_service.dart';
 import '../../utils/app_feedback.dart';
+import '../../theme/app_spacing.dart';
 import '../../widgets/erke_snapshot_upload_dialog.dart';
 import 'campus_personal_data_permission_screen.dart';
 
@@ -165,6 +166,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                 obscureText: true,
                 decoration: const InputDecoration(labelText: '统一认证密码'),
               ),
+              const SizedBox(height: AppSpacing.sm),
               TextField(
                 controller: erkeController,
                 obscureText: true,

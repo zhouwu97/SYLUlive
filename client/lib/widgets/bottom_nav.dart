@@ -17,7 +17,7 @@ import 'liquid_glass/bottom_nav_controller.dart';
 export 'liquid_glass/bottom_nav_controller.dart';
 import 'liquid_glass/interactive_highlight.dart';
 import 'liquid_glass/liquid_glass_motion.dart';
-import 'liquid_glass/liquid_glass_highlight.dart';
+import 'liquid_glass/liquid_glass_visual_inertia.dart';
 import 'liquid_glass/liquid_lens_geometry.dart';
 export 'liquid_glass/liquid_lens_geometry.dart';
 import 'liquid_glass/liquid_glass_runtime.dart';
@@ -48,16 +48,6 @@ const _tapSettleSpring = SpringDescription(
   stiffness: 720,
   damping: 54,
 );
-const _scaleXSpring = SpringDescription(
-  mass: 1,
-  stiffness: 250,
-  damping: 18.97,
-);
-const _scaleYSpring = SpringDescription(
-  mass: 1,
-  stiffness: 250,
-  damping: 22.14,
-);
 
 class _NavItemVisualState {
   const _NavItemVisualState({
@@ -69,6 +59,10 @@ class _NavItemVisualState {
   final Color color;
   final FontWeight fontWeight;
   final double scale;
+}
+
+double _selectionPressProgress(double activation) {
+  return Curves.easeOutCubic.transform(activation.clamp(0.0, 1.0).toDouble());
 }
 
 LiquidGlassDragDeformation _selectionDragDeformation({
@@ -84,77 +78,67 @@ LiquidGlassDragDeformation _selectionDragDeformation({
 }
 
 double _selectionScaleX({
+  required double activation,
   required double velocityPixelsPerSecond,
   required LiquidGlassTuning tuning,
-  required double springScale,
   double edgeCompression = 0,
 }) {
+  final pressScale = ui.lerpDouble(
+    _selectionIdleWidthScale,
+    tuning.pressedScale,
+    _selectionPressProgress(activation),
+  )!;
   final deformation = _selectionDragDeformation(
     velocityPixelsPerSecond: velocityPixelsPerSecond,
     normalization: tuning.velocityNormalization,
     edgeCompression: edgeCompression,
   );
-  return springScale * deformation.horizontalScale;
+  return pressScale * deformation.horizontalScale;
 }
 
 double _selectionScaleY({
+  required double activation,
   required double velocityPixelsPerSecond,
   required LiquidGlassTuning tuning,
-  required double springScale,
   double edgeCompression = 0,
 }) {
+  final pressScale = ui.lerpDouble(
+    1.0,
+    tuning.pressedScale,
+    _selectionPressProgress(activation),
+  )!;
   final deformation = _selectionDragDeformation(
     velocityPixelsPerSecond: velocityPixelsPerSecond,
     normalization: tuning.velocityNormalization,
     edgeCompression: edgeCompression,
   );
-  return springScale * deformation.verticalScale;
+  return pressScale * deformation.verticalScale;
 }
 
 Rect _selectionRectFor({
   required Size dockSize,
   required double itemWidth,
   required double visualIndex,
-  required int currentIndex,
+  required double activation,
   required double velocityPixelsPerSecond,
   required double edgeCompression,
   required bool useLiquidGlass,
   required LiquidGlassTuning tuning,
-  double springScaleX = _selectionIdleWidthScale,
-  double springScaleY = 1.0,
 }) {
-  if (useLiquidGlass && tuning.isOldV1) {
-    final remaining = (currentIndex - visualIndex).abs().clamp(0.0, 1.0);
-    final baseWidth = math.max(84.0, itemWidth * 1.30);
-    final lensWidth = baseWidth * (1 + remaining * 0.12);
-    final lensHeight = 58.0 - remaining * 2;
-    final requestedCenter = itemWidth * (visualIndex + 0.5);
-    final lensCenter = requestedCenter.clamp(
-      lensWidth / 2 + 2,
-      dockSize.width - lensWidth / 2 - 2,
-    );
-    return Rect.fromLTWH(
-      lensCenter - lensWidth / 2,
-      (dockSize.height - lensHeight) / 2,
-      lensWidth,
-      lensHeight,
-    );
-  }
-
   final scaleX = useLiquidGlass
       ? _selectionScaleX(
+          activation: activation,
           velocityPixelsPerSecond: velocityPixelsPerSecond,
           edgeCompression: edgeCompression,
           tuning: tuning,
-          springScale: springScaleX,
         )
       : 1.0;
   final scaleY = useLiquidGlass
       ? _selectionScaleY(
+          activation: activation,
           velocityPixelsPerSecond: velocityPixelsPerSecond,
           edgeCompression: edgeCompression,
           tuning: tuning,
-          springScale: springScaleY,
         )
       : 1.0;
   final baseWidth = useLiquidGlass ? itemWidth : 56.0;
@@ -213,8 +197,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     with TickerProviderStateMixin {
   late final BottomNavController _controller;
   late final AnimationController _springController;
-  late final AnimationController _scaleXController;
-  late final AnimationController _scaleYController;
   late final AnimationController _activationController;
   late final AnimationController _highlightPositionController;
   late final AnimationController _highlightOpacityController;
@@ -223,6 +205,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
 
   double _itemWidth = 1;
   double _velocityPixelsPerSecond = 0;
+  double _lastPublishedLogicalPosition = 0;
   double _lastPointerX = 0;
   Duration? _lastPointerTime;
   double? _pointerDownX;
@@ -239,6 +222,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   int _settleSerial = 0;
   LiquidNavPhase _phase = LiquidNavPhase.idle;
   double _activation = 0;
+  double _surfaceVisualPosition = 0;
   Offset _highlightPosition = Offset.zero;
   Animation<Offset>? _highlightPositionAnimation;
   Timer? _highlightReleaseTimer;
@@ -254,6 +238,8 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
       itemCount: _navLabels.length,
       initialIndex: widget.currentIndex.clamp(0, _navLabels.length - 1),
     )..position = initialPosition;
+    _surfaceVisualPosition = initialPosition;
+    _lastPublishedLogicalPosition = initialPosition;
     _motionFrame = ValueNotifier(0);
     _visualFrameListenable = Listenable.merge([
       widget.visualIndexListenable,
@@ -263,14 +249,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
       vsync: this,
       value: initialPosition,
     )..addListener(_handleSpringTick);
-    _scaleXController = AnimationController.unbounded(
-      vsync: this,
-      value: 1.0,
-    )..addListener(_handleScaleTick);
-    _scaleYController = AnimationController.unbounded(
-      vsync: this,
-      value: 1.0,
-    )..addListener(_handleScaleTick);
     _activationController = AnimationController(
       vsync: this,
       duration: AppMotion.tab,
@@ -288,24 +266,9 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   }
 
   @override
-  void didUpdateWidget(covariant BottomNavWrapper oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.qaPhase != widget.qaPhase ||
-        oldWidget.qaActivation != widget.qaActivation) {
-      _syncSelectionScaleWithPhase();
-    }
-  }
-
-  @override
   void dispose() {
     _springController
       ..removeListener(_handleSpringTick)
-      ..dispose();
-    _scaleXController
-      ..removeListener(_handleScaleTick)
-      ..dispose();
-    _scaleYController
-      ..removeListener(_handleScaleTick)
       ..dispose();
     _activationController
       ..removeListener(_handleActivationTick)
@@ -335,26 +298,12 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     );
 
     final style = themeProvider.bottomNavStyle;
-    final useShader = themeProvider.bottomNavShaderEnabled;
-    final runtimeStatus = liquidGlassRuntimeStatus.value;
-    if (style == BottomNavStyle.liquidGlass &&
-        (runtimeStatus.tier == LiquidGlassTier.unknown ||
-            runtimeStatus.shaderEnabled != useShader)) {
-      updateLiquidGlassRuntimeStatus(
-        tier: LiquidGlassTier.unknown,
-        shaderSupported: ui.ImageFilter.isShaderFilterSupported,
-        shaderEnabled: useShader,
-        detail: useShader
-            ? 'shader probe pending'
-            : 'shader disabled by bottom-nav performance mode',
-      );
-    }
     if (style != BottomNavStyle.normal) {
       return _buildFloatingNav(
         context,
         isDark,
         style == BottomNavStyle.liquidGlass,
-        useShader: useShader,
+        useShader: themeProvider.bottomNavShaderEnabled,
         tuning: tuning,
       );
     }
@@ -480,36 +429,12 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     final highContrast = mediaQuery.highContrast;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     const dockHorizontalInset = 12.0;
-    final oldV1 = tuning.isOldV1;
-    final dockBottomInset = oldV1 ? 8.0 : 12.0;
-    final dockShadows = oldV1
-        ? <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.10),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-            if (useLiquidGlass)
-              BoxShadow(
-                color: AppColors.brandPrimary.withValues(
-                  alpha: isDark ? 0.12 : 0.08,
-                ),
-                blurRadius: 18,
-                spreadRadius: -4,
-              ),
-          ]
-        : <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.09),
-              blurRadius: useLiquidGlass ? 18 : 16,
-              offset: const Offset(0, 7),
-            ),
-          ];
+    const dockBottomInset = 12.0;
 
     return SafeArea(
       top: false,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(
+        padding: const EdgeInsets.fromLTRB(
           dockHorizontalInset,
           0,
           dockHorizontalInset,
@@ -533,12 +458,26 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                   animation: _visualFrameListenable,
                   builder: (context, child) {
                     final visualIndex = widget.visualIndexListenable.value;
+                    // 父级或测试 harness 也可能直接推进 logical notifier；这类
+                    // 外部同步不能被表面滞后吞掉，命中区域和选中窗口要立即对齐。
+                    if ((visualIndex - _lastPublishedLogicalPosition).abs() >
+                        0.0001) {
+                      _lastPublishedLogicalPosition = visualIndex;
+                      _surfaceVisualPosition = visualIndex;
+                    }
                     final effectiveVisualIndex = reduceMotion && !_isDragging
                         ? widget.currentIndex.toDouble()
                         : visualIndex;
                     final phase = widget.qaPhase ?? _phase;
                     final activation =
                         (widget.qaActivation ?? _activation).clamp(0.0, 1.0);
+                    if (phase == LiquidNavPhase.idle && !_isDragging) {
+                      _surfaceVisualPosition = effectiveVisualIndex;
+                    }
+                    final surfaceVisualIndex = clampLiquidGlassSurfacePosition(
+                      _surfaceVisualPosition,
+                      _navLabels.length,
+                    );
                     // QA 的 Dragging 状态没有真实 pointer velocity，使用固定预览值
                     // 让尾部、方向和边缘压缩仍然可被人工检查；生产路径继续读取真实速度。
                     final qaPreviewDragging =
@@ -548,7 +487,19 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                         : _velocityPixelsPerSecond;
                     final previewEdgeCompression =
                         qaPreviewDragging ? 0.16 : _controller.edgeCompression;
-                    final renderedSurfaceVisualIndex = effectiveVisualIndex;
+                    final renderedSurfaceVisualIndex = qaPreviewDragging
+                        ? clampLiquidGlassSurfacePosition(
+                            liquidGlassSurfaceTargetPosition(
+                              logicalPosition: effectiveVisualIndex,
+                              velocityPixelsPerSecond:
+                                  previewVelocityPixelsPerSecond,
+                              itemWidth: itemWidth,
+                              dragging: true,
+                              reduceMotion: reduceMotion,
+                            ),
+                            _navLabels.length,
+                          )
+                        : surfaceVisualIndex;
                     final idleSelectionIndex = phase == LiquidNavPhase.idle
                         ? effectiveVisualIndex
                         : (phase == LiquidNavPhase.collapsing &&
@@ -573,19 +524,16 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                       edgeCompression: selectionEdgeCompression,
                       reduceMotion: reduceMotion,
                       tuning: tuning,
-                      useLiquidGlass: useLiquidGlass,
                     );
                     final selectionRect = _selectionRectFor(
                       dockSize: dockSize,
                       itemWidth: itemWidth,
                       visualIndex: idleSelectionIndex,
-                      currentIndex: widget.currentIndex,
+                      activation: activation.toDouble(),
                       velocityPixelsPerSecond: selectionVelocity,
                       edgeCompression: selectionEdgeCompression,
                       useLiquidGlass: useLiquidGlass,
                       tuning: tuning,
-                      springScaleX: _scaleXController.value,
-                      springScaleY: _scaleYController.value,
                     );
 
                     return Transform.translate(
@@ -593,24 +541,12 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          if (useLiquidGlass && !oldV1)
+                          if (useLiquidGlass)
                             _FloatingLiquidSelection(
                               layer: _LiquidSelectionLayer.backdrop,
                               dockSize: dockSize,
                               itemWidth: itemWidth,
                               visualIndex: renderedSurfaceVisualIndex,
-                              currentIndex: widget.currentIndex,
-                              screenSize: mediaQuery.size,
-                              dockGlobalOffset: Offset(
-                                mediaQuery.padding.left + dockHorizontalInset,
-                                mediaQuery.size.height -
-                                    math.max(
-                                      mediaQuery.padding.bottom,
-                                      mediaQuery.viewInsets.bottom,
-                                    ) -
-                                    dockBottomInset -
-                                    _dockHeight,
-                              ),
                               velocityPixelsPerSecond: selectionVelocity,
                               edgeCompression: selectionEdgeCompression,
                               phase: phase,
@@ -624,8 +560,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                               tuning: tuning,
                               badges: widget.badges,
                               motion: motion,
-                              springScaleX: _scaleXController.value,
-                              springScaleY: _scaleYController.value,
                               highlightPosition: _highlightPosition,
                               highlightOpacity:
                                   _highlightOpacityController.value,
@@ -638,18 +572,24 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                               decoration: BoxDecoration(
                                 borderRadius:
                                     BorderRadius.circular(AppRadius.pill),
-                                boxShadow: dockShadows,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(
+                                      alpha: isDark ? 0.24 : 0.09,
+                                    ),
+                                    blurRadius: useLiquidGlass ? 18 : 16,
+                                    offset: const Offset(0, 7),
+                                  ),
+                                ],
                               ),
                               child: ClipPath(
-                                key: useLiquidGlass && !oldV1
+                                key: useLiquidGlass
                                     ? const ValueKey(
                                         'bottom-nav-dock-exclusion',
                                       )
                                     : null,
                                 clipper: _LiquidSelectionExclusionClipper(
-                                  useLiquidGlass && !oldV1
-                                      ? selectionRect
-                                      : null,
+                                  useLiquidGlass ? selectionRect : null,
                                 ),
                                 child: ClipRRect(
                                   key: _dockRenderKey,
@@ -682,13 +622,9 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                                     alpha: 0,
                                                   ),
                                                   Colors.white.withValues(
-                                                    alpha: oldV1
-                                                        ? (highContrast
-                                                            ? 0.75
-                                                            : 0.52)
-                                                        : (highContrast
-                                                            ? 0.28
-                                                            : 0.14),
+                                                    alpha: highContrast
+                                                        ? 0.28
+                                                        : 0.14,
                                                   ),
                                                   Colors.white.withValues(
                                                     alpha: 0,
@@ -713,8 +649,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                                 visualIndex: effectiveVisualIndex,
                                 useLiquidGlass: useLiquidGlass,
                                 selectionRect: selectionRect,
-                                oldV1: oldV1,
-                                excludeSelection: useLiquidGlass && !oldV1,
                               ),
                             ),
                           ),
@@ -725,18 +659,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                             dockSize: dockSize,
                             itemWidth: itemWidth,
                             visualIndex: renderedSurfaceVisualIndex,
-                            currentIndex: widget.currentIndex,
-                            screenSize: mediaQuery.size,
-                            dockGlobalOffset: Offset(
-                              mediaQuery.padding.left + dockHorizontalInset,
-                              mediaQuery.size.height -
-                                  math.max(
-                                    mediaQuery.padding.bottom,
-                                    mediaQuery.viewInsets.bottom,
-                                  ) -
-                                  dockBottomInset -
-                                  _dockHeight,
-                            ),
                             velocityPixelsPerSecond: selectionVelocity,
                             edgeCompression: selectionEdgeCompression,
                             phase: phase,
@@ -750,8 +672,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                             tuning: tuning,
                             badges: widget.badges,
                             motion: motion,
-                            springScaleX: _scaleXController.value,
-                            springScaleY: _scaleYController.value,
                             highlightPosition: _highlightPosition,
                             highlightOpacity: _highlightOpacityController.value,
                           ),
@@ -796,8 +716,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     required double visualIndex,
     required bool useLiquidGlass,
     required Rect selectionRect,
-    required bool oldV1,
-    required bool excludeSelection,
   }) {
     final tabs = Row(
       children: List.generate(
@@ -813,9 +731,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
                   index: index,
                   context: context,
                   width: itemWidth,
-                  visualIndex: visualIndex,
                   showBadge: showBadge,
-                  oldV1: oldV1,
                 )
               : _floatingItem(
                   icon: icon,
@@ -839,7 +755,7 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
         onPointerMove: _handlePointerMoveEvent,
         onPointerUp: _handlePointerUpEvent,
         onPointerCancel: _handlePointerCancelEvent,
-        child: excludeSelection
+        child: useLiquidGlass
             ? ClipPath(
                 key: const ValueKey('bottom-nav-normal-exclusion'),
                 clipper: _LiquidSelectionExclusionClipper(selectionRect),
@@ -1135,52 +1051,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     _setVisualPosition(position);
   }
 
-  void _handleScaleTick() {
-    if (!mounted) return;
-    _motionFrame.value++;
-  }
-
-  void _syncSelectionScaleWithPhase() {
-    if (!mounted) return;
-    final phase = widget.qaPhase ?? _phase;
-    final activation =
-        (widget.qaActivation ?? _activation).clamp(0.0, 1.0).toDouble();
-    final active = switch (phase) {
-      LiquidNavPhase.idle => activation > 0.0001,
-      LiquidNavPhase.pressing => true,
-      LiquidNavPhase.dragging => true,
-      LiquidNavPhase.settling => true,
-      LiquidNavPhase.collapsing => activation > 0.0001,
-    };
-    _animateSelectionScaleTo(active ? widget.tuning.pressedScale : 1.0);
-  }
-
-  void _animateSelectionScaleTo(double target) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    _scaleXController.stop();
-    _scaleYController.stop();
-    if (reduceMotion) {
-      _scaleXController.value = target;
-      _scaleYController.value = target;
-      return;
-    }
-
-    final xSimulation = SpringSimulation(
-      _scaleXSpring,
-      _scaleXController.value,
-      target,
-      _scaleXController.velocity,
-    );
-    final ySimulation = SpringSimulation(
-      _scaleYSpring,
-      _scaleYController.value,
-      target,
-      _scaleYController.velocity,
-    );
-    unawaited(_scaleXController.animateWith(xSimulation));
-    unawaited(_scaleYController.animateWith(ySimulation));
-  }
-
   void _finishSettle(
     int serial,
     int target, {
@@ -1366,7 +1236,9 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     if (_phase == phase) return;
     _phase = phase;
     _isDragging = phase == LiquidNavPhase.dragging;
-    _syncSelectionScaleWithPhase();
+    if (phase == LiquidNavPhase.idle) {
+      _surfaceVisualPosition = widget.visualIndexListenable.value;
+    }
     widget.onLiquidPhaseChanged?.call(phase);
     if (mounted) setState(() {});
   }
@@ -1378,8 +1250,18 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     if ((widget.visualIndexListenable.value - next).abs() > 0.0001) {
       widget.visualIndexListenable.value = next;
     }
-    // 位置立即用于命中和 Lens 几何；X/Y 的独立 spring 只负责形变，不延迟
-    // 业务位置，也不再用逐帧 lerp 制造“表面滞后”。
+    _lastPublishedLogicalPosition = next;
+    _surfaceVisualPosition = clampLiquidGlassSurfacePosition(
+      liquidGlassSurfacePositionFor(
+        logicalPosition: next,
+        previousPosition: _surfaceVisualPosition,
+        velocityPixelsPerSecond: _velocityPixelsPerSecond,
+        itemWidth: _itemWidth,
+        dragging: _phase == LiquidNavPhase.dragging,
+        reduceMotion: MediaQuery.disableAnimationsOf(context),
+      ),
+      _navLabels.length,
+    );
     // 位置被边界 clamp 后仍要重绘 edgeCompression / velocity 形变；不让
     // “手指继续向屏幕边缘拖”因为 position 没变化而丢失视觉反馈。
     _motionFrame.value++;
@@ -1412,13 +1294,13 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
   double _activeLensWidth() {
     return _itemWidth *
         _selectionScaleX(
+          activation: _activation,
           velocityPixelsPerSecond:
               _phase == LiquidNavPhase.dragging ? _velocityPixelsPerSecond : 0,
           edgeCompression: _phase == LiquidNavPhase.dragging
               ? _controller.edgeCompression
               : 0,
           tuning: widget.tuning,
-          springScale: _scaleXController.value,
         );
   }
 
@@ -1517,22 +1399,8 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     required int index,
     required BuildContext context,
     required double width,
-    required double visualIndex,
     required bool showBadge,
-    required bool oldV1,
   }) {
-    if (oldV1) {
-      return _floatingItem(
-        icon: icon,
-        label: label,
-        index: index,
-        context: context,
-        width: width,
-        visualIndex: visualIndex,
-        showBadge: showBadge,
-      );
-    }
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final normalColor =
         isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
@@ -1625,17 +1493,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
     );
     final inactiveColor =
         isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight;
-
-    if (widget.tuning.isOldV1) {
-      final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
-      final softenedT = Curves.easeOutCubic.transform(activeT);
-      return _NavItemVisualState(
-        color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
-        fontWeight: FontWeight.w600,
-        scale: 1.0,
-      );
-    }
-
     final focusColor = widget.tuning.focusColorFor(isDark);
     final pressedColor = widget.tuning.focusPressedColorFor(isDark);
     final pressSignal =
@@ -1656,7 +1513,6 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
 }
 
 Future<ui.FragmentProgram?>? _liquidGlassProgramFuture;
-Future<ui.FragmentProgram?>? _liquidGlassV1ProgramFuture;
 
 Future<ui.FragmentProgram?> _loadLiquidGlassProgram() {
   return _liquidGlassProgramFuture ??= () async {
@@ -1692,73 +1548,17 @@ Future<ui.FragmentProgram?> _loadLiquidGlassProgram() {
   }();
 }
 
-Future<ui.FragmentProgram?> _loadLiquidGlassV1Program() {
-  return _liquidGlassV1ProgramFuture ??= () async {
-    if (!ui.ImageFilter.isShaderFilterSupported) return null;
-    try {
-      final program = await ui.FragmentProgram.fromAsset(
-        'shaders/liquid_nav_lens_v1.frag',
-      );
-      updateLiquidGlassRuntimeStatus(
-        tier: LiquidGlassTier.a,
-        shaderSupported: true,
-        detail: '57ca812 old-v1 FragmentShader + ImageFilter.shader',
-      );
-      return program;
-    } catch (error) {
-      updateLiquidGlassRuntimeStatus(
-        tier: LiquidGlassTier.c,
-        shaderSupported: true,
-        detail: 'old-v1 shader compile/load failed',
-      );
-      debugPrint('[LiquidGlass] old-v1 shader load failed: $error');
-      return null;
-    }
-  }();
-}
-
 Future<ui.FragmentProgram?>? _liquidGlassDockProgramFuture;
 
 Future<ui.FragmentProgram?> _loadLiquidGlassDockProgram() {
   return _liquidGlassDockProgramFuture ??= () async {
-    if (!ui.ImageFilter.isShaderFilterSupported) {
-      updateLiquidGlassRuntimeStatus(
-        tier: LiquidGlassTier.c,
-        shaderSupported: false,
-        detail: 'Dock ImageFilter.shader unsupported',
-      );
-      debugPrint('[LiquidGlass] renderer=fallback tier=C shader=false dock');
-      return null;
-    }
-    try {
-      final program = await ui.FragmentProgram.fromAsset(
-        'shaders/liquid_nav_dock.frag',
-      );
-      debugPrint('[LiquidGlass] dock shader ready shader=true');
-      return program;
-    } catch (error) {
-      updateLiquidGlassRuntimeStatus(
-        tier: LiquidGlassTier.c,
-        shaderSupported: true,
-        detail: 'Dock shader compile/load failed',
-      );
-      debugPrint('[LiquidGlass] dock shader load failed: $error');
-      return null;
-    }
-  }();
-}
-
-Future<ui.FragmentProgram?>? _liquidGlassHighlightProgramFuture;
-
-Future<ui.FragmentProgram?> _loadLiquidGlassHighlightProgram() {
-  return _liquidGlassHighlightProgramFuture ??= () async {
     if (!ui.ImageFilter.isShaderFilterSupported) return null;
     try {
       return await ui.FragmentProgram.fromAsset(
-        'shaders/liquid_nav_highlight.frag',
+        'shaders/liquid_nav_dock.frag',
       );
     } catch (error) {
-      debugPrint('[LiquidGlass] highlight shader load failed: $error');
+      debugPrint('[LiquidGlass] dock shader load failed: $error');
       return null;
     }
   }();
@@ -1787,35 +1587,21 @@ class _FloatingDockSurface extends StatefulWidget {
 
 class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
   ui.FragmentShader? _shader;
-  ui.FragmentShader? _highlightShader;
 
   @override
   void initState() {
     super.initState();
-    if (widget.useLiquidGlass && widget.useShader && !widget.tuning.isOldV1) {
-      _loadShader();
-      _loadHighlightShader();
-    }
+    if (widget.useLiquidGlass && widget.useShader) _loadShader();
   }
 
   @override
   void didUpdateWidget(covariant _FloatingDockSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.tuning.isOldV1 != widget.tuning.isOldV1) {
-      _shader?.dispose();
-      _shader = null;
-      _highlightShader?.dispose();
-      _highlightShader = null;
-    }
     if (widget.useLiquidGlass &&
         widget.useShader &&
-        !widget.tuning.isOldV1 &&
-        (!oldWidget.useLiquidGlass ||
-            !oldWidget.useShader ||
-            oldWidget.tuning.isOldV1 != widget.tuning.isOldV1) &&
+        (!oldWidget.useLiquidGlass || !oldWidget.useShader) &&
         _shader == null) {
       _loadShader();
-      _loadHighlightShader();
     }
   }
 
@@ -1825,66 +1611,14 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
     setState(() => _shader = program.fragmentShader());
   }
 
-  Future<void> _loadHighlightShader() async {
-    final program = await _loadLiquidGlassHighlightProgram();
-    if (!mounted || program == null || _highlightShader != null) return;
-    setState(() => _highlightShader = program.fragmentShader());
-  }
-
   @override
   void dispose() {
     _shader?.dispose();
-    _highlightShader?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.useLiquidGlass && widget.tuning.isOldV1) {
-      final oldFill = DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: widget.isDark
-                ? [
-                    const Color(0xFF202526).withValues(
-                      alpha: widget.highContrast ? 0.78 : 0.62,
-                    ),
-                    const Color(0xFF141718).withValues(
-                      alpha: widget.highContrast ? 0.74 : 0.48,
-                    ),
-                  ]
-                : [
-                    Colors.white.withValues(
-                      alpha: widget.highContrast ? 0.86 : 0.62,
-                    ),
-                    const Color(0xFFEAF6F3).withValues(
-                      alpha: widget.highContrast ? 0.78 : 0.42,
-                    ),
-                  ],
-          ),
-          border: Border.all(
-            color: widget.isDark
-                ? Colors.white.withValues(
-                    alpha: widget.highContrast ? 0.28 : 0.14,
-                  )
-                : Colors.white.withValues(
-                    alpha: widget.highContrast ? 0.95 : 0.72,
-                  ),
-            width: widget.highContrast ? 1.25 : 1,
-          ),
-        ),
-      );
-      return BackdropFilter(
-        filter: ui.ImageFilter.blur(
-          sigmaX: widget.isDark ? 17 : 16,
-          sigmaY: widget.isDark ? 17 : 16,
-        ),
-        child: oldFill,
-      );
-    }
-
     final dockAlpha = widget.tuning.dockAlpha.clamp(0.0, 1.0).toDouble();
     final surfaceColor = widget.useLiquidGlass
         ? (widget.isDark ? const Color(0xFF121212) : const Color(0xFFFAFAFA))
@@ -1922,9 +1656,7 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
         final canRefract = widget.useShader &&
             shader != null &&
             ui.ImageFilter.isShaderFilterSupported &&
-            widget.motion.dockOpticalActivation > 0.0001 &&
-            (widget.motion.dockRefraction.abs() > 0.0001 ||
-                widget.motion.dockChromatic.abs() > 0.0001);
+            widget.motion.opticalActivation > 0.0001;
         if (canRefract) {
           LiquidGlassDockShaderUniforms(
             logicalSize: constraints.biggest,
@@ -1932,7 +1664,7 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
             refraction: widget.motion.dockRefraction,
             chromatic: widget.motion.dockChromatic,
             refractionHeight: widget.tuning.dockRefractionHeight,
-            activation: widget.motion.dockOpticalActivation,
+            activation: widget.motion.opticalActivation,
           ).apply(shader);
         }
         final backdropFilter = canRefract
@@ -1968,12 +1700,10 @@ class _FloatingDockSurfaceState extends State<_FloatingDockSurface> {
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
-                  painter: LiquidGlassDefaultHighlightPainter(
-                    shader: _highlightShader,
-                    progress: 1.0,
-                    strength: widget.tuning.effectiveDockSpecularStrength,
+                  painter: LiquidGlassDockSpecularPainter(
+                    progress: widget.motion.opticalActivation,
+                    strength: widget.tuning.dockSpecularStrength,
                     highContrast: widget.highContrast,
-                    cornerRadius: _dockHeight / 2,
                   ),
                 ),
               ),
@@ -2130,9 +1860,6 @@ class _FloatingLiquidSelection extends StatefulWidget {
     required this.dockSize,
     required this.itemWidth,
     required this.visualIndex,
-    required this.currentIndex,
-    required this.screenSize,
-    required this.dockGlobalOffset,
     required this.velocityPixelsPerSecond,
     required this.edgeCompression,
     required this.phase,
@@ -2146,8 +1873,6 @@ class _FloatingLiquidSelection extends StatefulWidget {
     required this.tuning,
     required this.badges,
     required this.motion,
-    required this.springScaleX,
-    required this.springScaleY,
     required this.highlightPosition,
     required this.highlightOpacity,
   });
@@ -2156,9 +1881,6 @@ class _FloatingLiquidSelection extends StatefulWidget {
   final Size dockSize;
   final double itemWidth;
   final double visualIndex;
-  final int currentIndex;
-  final Size screenSize;
-  final Offset dockGlobalOffset;
   final double velocityPixelsPerSecond;
   final double edgeCompression;
   final LiquidNavPhase phase;
@@ -2172,8 +1894,6 @@ class _FloatingLiquidSelection extends StatefulWidget {
   final LiquidGlassTuning tuning;
   final Map<int, bool> badges;
   final LiquidGlassMotionState motion;
-  final double springScaleX;
-  final double springScaleY;
   final Offset highlightPosition;
   final double highlightOpacity;
 
@@ -2184,80 +1904,42 @@ class _FloatingLiquidSelection extends StatefulWidget {
 
 class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
   ui.FragmentShader? _shader;
-  ui.FragmentShader? _highlightShader;
 
   @override
   void initState() {
     super.initState();
-    if (widget.useShader) {
-      if (widget.tuning.isOldV1 ||
-          widget.layer == _LiquidSelectionLayer.backdrop) {
-        _loadShader();
-      } else {
-        _loadHighlightShader();
-      }
+    if (widget.layer == _LiquidSelectionLayer.backdrop && widget.useShader) {
+      _loadShader();
     }
   }
 
   Future<void> _loadShader() async {
-    final program = widget.tuning.isOldV1
-        ? await _loadLiquidGlassV1Program()
-        : await _loadLiquidGlassProgram();
+    final program = await _loadLiquidGlassProgram();
     if (!mounted || program == null) return;
-    _shader?.dispose();
     setState(() => _shader = program.fragmentShader());
-  }
-
-  Future<void> _loadHighlightShader() async {
-    final program = await _loadLiquidGlassHighlightProgram();
-    if (!mounted || program == null || _highlightShader != null) return;
-    setState(() => _highlightShader = program.fragmentShader());
-  }
-
-  @override
-  void didUpdateWidget(covariant _FloatingLiquidSelection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.tuning.isOldV1 != widget.tuning.isOldV1) {
-      _shader?.dispose();
-      _shader = null;
-      _highlightShader?.dispose();
-      _highlightShader = null;
-    }
-    if (widget.useShader && !oldWidget.useShader) {
-      if (widget.tuning.isOldV1 ||
-          widget.layer == _LiquidSelectionLayer.backdrop) {
-        _loadShader();
-      } else {
-        _loadHighlightShader();
-      }
-    } else if (widget.useShader &&
-        oldWidget.tuning.isOldV1 != widget.tuning.isOldV1) {
-      if (widget.tuning.isOldV1 ||
-          widget.layer == _LiquidSelectionLayer.backdrop) {
-        _loadShader();
-      } else {
-        _loadHighlightShader();
-      }
-    }
   }
 
   @override
   void dispose() {
     _shader?.dispose();
-    _highlightShader?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final progress = widget.activation.clamp(0.0, 1.0).toDouble();
-    // Selection Idle 也保留基础 Lens；按压、拖拽与吸附只连续提升激活度。
+    // Idle 只保留 frosted surface；press/drag/settling/collapsing 才通过同一颗
+    // Lens 打开折射，避免没有交互时持续显示液态边缘。
     final opticalProgress = widget.motion.opticalActivation;
     final hasOpticalMaterial = widget.useLiquidGlass &&
         widget.useShader &&
         opticalProgress > 0.0001 &&
-        (widget.tuning.effectiveRefractionHeight > 0 ||
-            widget.tuning.effectiveHighlightStrength > 0);
+        (widget.tuning.effectiveRefractionHeight > 0 &&
+                (widget.motion.refraction.abs() > 0.0001 ||
+                    widget.motion.chromatic.abs() > 0.0001) ||
+            widget.tuning.effectiveLightStrength > 0 ||
+            widget.tuning.effectiveRimStrength > 0 ||
+            widget.tuning.mode == LiquidGlassQaMode.shapeOnly);
     final speed = widget.motion.speed;
     final direction = widget.motion.direction;
     // 背景光学层、Normal Row 挖空与 Accent 前景必须共享同一几何。
@@ -2265,13 +1947,11 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
       dockSize: widget.dockSize,
       itemWidth: widget.itemWidth,
       visualIndex: widget.visualIndex,
-      currentIndex: widget.currentIndex,
+      activation: progress,
       velocityPixelsPerSecond: widget.velocityPixelsPerSecond,
       edgeCompression: widget.edgeCompression,
       useLiquidGlass: widget.useLiquidGlass,
       tuning: widget.tuning,
-      springScaleX: widget.springScaleX,
-      springScaleY: widget.springScaleY,
     );
     final left = selectionRect.left;
     final top = selectionRect.top;
@@ -2288,61 +1968,39 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
     final canRefract = widget.useShader &&
         hasOpticalMaterial &&
         shader != null &&
-        ui.ImageFilter.isShaderFilterSupported &&
-        widget.tuning.effectiveRefractionHeight > 0 &&
-        (widget.motion.refraction.abs() > 0.0001 ||
-            widget.motion.chromatic.abs() > 0.0001);
+        ui.ImageFilter.isShaderFilterSupported;
 
     if (canRefract) {
-      if (widget.tuning.isOldV1) {
-        final screenSize = widget.screenSize;
-        final globalCenter = Offset(
-          widget.dockGlobalOffset.dx + left + lensWidth / 2,
-          widget.dockGlobalOffset.dy + top + lensHeight / 2,
-        );
-        LiquidGlassOldV1ShaderUniforms(
-          center: Offset(
-            globalCenter.dx / math.max(screenSize.width, 1),
-            globalCenter.dy / math.max(screenSize.height, 1),
-          ),
-          halfSize: Size(
-            lensWidth / 2 / math.max(screenSize.width, 1),
-            lensHeight / 2 / math.max(screenSize.height, 1),
-          ),
-          refraction:
-              (widget.isDark ? 8.0 : 7.0) / math.max(screenSize.width, 1),
-          zoom: widget.tuning.magnification,
-          chromatic: widget.tuning.chromatic,
-          motion:
-              (widget.currentIndex - widget.visualIndex).abs().clamp(0.0, 1.0),
-          direction: (widget.currentIndex - widget.visualIndex).sign.toDouble(),
-          tint: widget.isDark
-              ? AppColors.brandSurfaceDark
-              : AppColors.brandSurfaceLight,
-        ).apply(shader);
-      } else {
-        LiquidGlassShaderUniforms(
-          captureSize: captureSize,
-          lensCenter: captureLensCenter,
-          lensSize: visibleSize,
-          refractionHeight: widget.tuning.effectiveRefractionHeight,
-          refraction: widget.motion.refraction,
-          chromatic: widget.motion.chromatic,
-          activation: opticalProgress,
-        ).apply(shader);
-      }
-    }
-
-    if (widget.tuning.isOldV1 &&
-        widget.layer == _LiquidSelectionLayer.foreground) {
-      return _buildOldV1Lens(
-        left: left,
-        top: top,
-        lensWidth: lensWidth,
-        lensHeight: lensHeight,
-        canRefract: canRefract,
-        shader: shader,
-      );
+      LiquidGlassShaderUniforms(
+        captureSize: captureSize,
+        lensCenter: captureLensCenter,
+        lensSize: visibleSize,
+        lensExponent: widget.tuning.lensExponent,
+        refraction: widget.motion.refraction,
+        magnification: widget.tuning.effectiveMagnification,
+        chromatic: widget.motion.chromatic,
+        velocity: speed,
+        direction: direction,
+        edgeCompression: widget.edgeCompression,
+        dragState: widget.tuning.mode == LiquidGlassQaMode.finalGlass &&
+                widget.phase == LiquidNavPhase.dragging
+            ? 1.0
+            : 0.0,
+        lightStrength: widget.tuning.effectiveLightStrength *
+            (widget.highContrast ? 1.24 : 1.0),
+        rimStrength: widget.tuning.effectiveRimStrength *
+            (widget.highContrast ? 1.3 : 1.0),
+        verticalRefractionScale: widget.tuning.verticalRefractionScale,
+        refractionBandStart: widget.tuning.refractionBandStart,
+        // 折射带始终贴着完整 8px 边缘；只衰减位移强度，不缩窄边缘。
+        refractionBandPeak: widget.tuning.effectiveRefractionHeight,
+        refractionBandEnd: widget.tuning.refractionBandEnd,
+        magnificationRadius: widget.tuning.magnificationRadius,
+        chromaticStart: widget.tuning.chromaticStart,
+        flowStrength: widget.tuning.flowStrength,
+        activation: opticalProgress,
+        pressDepth: widget.pressDepth,
+      ).apply(shader);
     }
 
     final lensRadius =
@@ -2361,15 +2019,23 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
             children: [
               if (hasOpticalMaterial)
                 CustomPaint(
-                  key: const ValueKey(
-                    'bottom-nav-selection-default-highlight',
-                  ),
-                  painter: LiquidGlassDefaultHighlightPainter(
-                    shader: _highlightShader,
-                    progress: widget.motion.highlightProgress,
-                    strength: widget.tuning.effectiveHighlightStrength,
+                  key: const ValueKey('bottom-nav-selection-edge-halo'),
+                  painter: _LiquidLensHaloPainter(
                     highContrast: widget.highContrast,
-                    cornerRadius: lensHeight / 2,
+                    progress: opticalProgress,
+                    lightCenter: Offset(
+                      widget.highlightPosition == Offset.zero
+                          ? lensWidth * 0.28
+                          : widget.highlightPosition.dx - left,
+                      widget.highlightPosition == Offset.zero
+                          ? lensHeight * 0.24
+                          : widget.highlightPosition.dy - top,
+                    ),
+                    lightProgress: widget.highlightOpacity,
+                    speed: speed,
+                    direction: direction,
+                    showShapeOutline:
+                        widget.tuning.mode == LiquidGlassQaMode.shapeOnly,
                   ),
                 ),
               DecoratedBox(
@@ -2414,6 +2080,15 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                           ),
                         ),
                       ),
+                      if (hasOpticalMaterial)
+                        CustomPaint(
+                          painter: _LiquidLensRimPainter(
+                            highContrast: widget.highContrast,
+                            progress: opticalProgress,
+                            showShapeOutline: widget.tuning.mode ==
+                                LiquidGlassQaMode.shapeOnly,
+                          ),
+                        ),
                       if (widget.highlightOpacity > 0.0001)
                         Positioned.fill(
                           child: CustomPaint(
@@ -2427,8 +2102,7 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                               ),
                               progress: widget.highlightOpacity,
                               radiusScale: widget.tuning.highlightRadius,
-                              strength:
-                                  widget.tuning.effectiveHighlightStrength,
+                              strength: widget.tuning.highlightStrength,
                               highContrast: widget.highContrast,
                             ),
                           ),
@@ -2556,176 +2230,182 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
       ),
     );
   }
-
-  Widget _buildOldV1Lens({
-    required double left,
-    required double top,
-    required double lensWidth,
-    required double lensHeight,
-    required bool canRefract,
-    required ui.FragmentShader? shader,
-  }) {
-    final lensRadius = BorderRadius.circular(AppRadius.pill);
-    final filter = canRefract && shader != null
-        ? ui.ImageFilter.shader(shader)
-        : ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5);
-    final motion =
-        (widget.currentIndex - widget.visualIndex).abs().clamp(0.0, 1.0);
-    final direction =
-        (widget.currentIndex - widget.visualIndex).sign.toDouble();
-
-    return Positioned(
-      key: const ValueKey('bottom-nav-selection'),
-      left: left,
-      top: top,
-      width: lensWidth,
-      height: lensHeight,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: lensRadius,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(
-                  alpha: widget.isDark ? 0.28 : 0.12,
-                ),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: AppColors.brandPrimary.withValues(
-                  alpha: widget.isDark ? 0.18 : 0.10,
-                ),
-                blurRadius: 16,
-                spreadRadius: -4,
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: lensRadius,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                BackdropFilter(
-                  filter: filter,
-                  child: ColoredBox(
-                    color: canRefract
-                        ? const Color(0x01000000)
-                        : (widget.isDark
-                            ? Colors.white.withValues(alpha: 0.08)
-                            : Colors.white.withValues(alpha: 0.18)),
-                  ),
-                ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withValues(
-                          alpha: widget.isDark ? 0.10 : 0.18,
-                        ),
-                        AppColors.brandPrimary.withValues(
-                          alpha: widget.isDark ? 0.08 : 0.04,
-                        ),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-                CustomPaint(
-                  painter: _LiquidLensV1RimPainter(
-                    isDark: widget.isDark,
-                    highContrast: widget.highContrast,
-                    motion: motion,
-                    direction: direction,
-                    strength: widget.tuning.highlightStrength,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-class _LiquidLensV1RimPainter extends CustomPainter {
-  const _LiquidLensV1RimPainter({
-    required this.isDark,
+class _LiquidLensHaloPainter extends CustomPainter {
+  const _LiquidLensHaloPainter({
     required this.highContrast,
-    required this.motion,
+    required this.progress,
+    required this.lightCenter,
+    required this.lightProgress,
+    required this.speed,
     required this.direction,
-    required this.strength,
+    required this.showShapeOutline,
   });
 
-  final bool isDark;
   final bool highContrast;
-  final double motion;
+  final double progress;
+  final Offset lightCenter;
+  final double lightProgress;
+  final double speed;
   final double direction;
-  final double strength;
+  final bool showShapeOutline;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final strengthScale = strength.clamp(0.0, 1.5).toDouble();
-    final rect = (Offset.zero & size).deflate(highContrast ? 0.8 : 0.6);
-    final radius = Radius.circular(size.height / 2);
-    final rim = RRect.fromRectAndRadius(rect, radius);
-    final begin = direction < 0 ? Alignment.topRight : Alignment.topLeft;
-    final end = direction < 0 ? Alignment.bottomLeft : Alignment.bottomRight;
-    final rimPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 1.6 : 1.15
-      ..shader = LinearGradient(
-        begin: begin,
-        end: end,
-        colors: [
-          Colors.white.withValues(
-            alpha: (highContrast ? 0.96 : 0.82) * strengthScale,
-          ),
-          const Color(0xFF8FE9DF).withValues(
-            alpha: (isDark ? 0.62 : 0.48) * strengthScale,
-          ),
-          Colors.white.withValues(alpha: 0.18 * strengthScale),
-          const Color(0xFF9C8CFF).withValues(
-            alpha: (0.28 + motion * 0.14) * strengthScale,
-          ),
-          Colors.white.withValues(
-            alpha: (highContrast ? 0.78 : 0.52) * strengthScale,
-          ),
-        ],
-      ).createShader(rect);
-    canvas.drawRRect(rim, rimPaint);
+    if (showShapeOutline || size.isEmpty) return;
 
-    final highlightRect = Rect.fromLTWH(
-      size.width * 0.16,
-      1.2,
-      size.width * 0.68,
-      math.max(1.0, size.height * 0.32),
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(math.min(size.width, size.height) / 2),
     );
-    final highlightPaint = Paint()
+
+    final opticalProgress = progress.clamp(0.0, 1.0).toDouble();
+    final safeLightCenter = Offset(
+      lightCenter.dx.clamp(0.0, size.width).toDouble(),
+      lightCenter.dy.clamp(0.0, size.height).toDouble(),
+    );
+    final lightAngle = math.atan2(
+          safeLightCenter.dy - size.height / 2,
+          safeLightCenter.dx - size.width / 2,
+        ) +
+        direction * speed * 0.30;
+
+    // 选中 Lens 的色散由 shader 限制在最外侧边缘；这里仅画中性白色
+    // 厚度和一个左上入射 specular，避免绘制第二套彩色玻璃模型。
+    final edgeStrokeWidth = highContrast ? 3.2 : 2.4 + opticalProgress * 0.5;
+    final edgeAlpha = highContrast ? 0.42 : 0.16 + opticalProgress * 0.10;
+    final edgePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = highContrast ? 1.2 : 0.8
+      ..strokeWidth = edgeStrokeWidth
+      ..strokeCap = StrokeCap.round
+      ..blendMode = BlendMode.screen
+      ..color = Colors.white.withValues(alpha: edgeAlpha)
+      ..maskFilter = MaskFilter.blur(
+        BlurStyle.normal,
+        highContrast ? 1.4 : 1.8,
+      );
+    canvas.drawRRect(rrect.deflate(edgeStrokeWidth / 2 + 0.25), edgePaint);
+
+    final specularCenter = Offset(
+      size.width * 0.25 + math.cos(lightAngle) * speed * 1.5,
+      size.height * 0.16 + math.sin(lightAngle) * speed * 0.5,
+    );
+    final specularRect = Rect.fromCenter(
+      center: specularCenter,
+      width: size.width * 0.38,
+      height: math.max(2.0, size.height * 0.065),
+    );
+    final specularPaint = Paint()
+      ..blendMode = BlendMode.screen
       ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
         colors: [
-          Colors.white.withValues(alpha: 0),
-          Colors.white.withValues(
-            alpha: (highContrast ? 0.88 : 0.62) * strengthScale,
-          ),
-          Colors.white.withValues(alpha: 0),
+          Colors.transparent,
+          Colors.white.withValues(alpha: edgeAlpha * 0.72),
+          Colors.white.withValues(alpha: edgeAlpha * 0.18),
+          Colors.transparent,
         ],
-      ).createShader(highlightRect);
-    canvas.drawArc(highlightRect, math.pi, math.pi, false, highlightPaint);
+        stops: const [0.0, 0.34, 0.66, 1.0],
+      ).createShader(specularRect)
+      ..maskFilter =
+          MaskFilter.blur(BlurStyle.normal, highContrast ? 1.0 : 1.4);
+    canvas.drawOval(specularRect, specularPaint);
   }
 
   @override
-  bool shouldRepaint(covariant _LiquidLensV1RimPainter oldDelegate) {
-    return oldDelegate.isDark != isDark ||
-        oldDelegate.highContrast != highContrast ||
-        oldDelegate.motion != motion ||
+  bool shouldRepaint(covariant _LiquidLensHaloPainter oldDelegate) {
+    return oldDelegate.highContrast != highContrast ||
+        oldDelegate.progress != progress ||
+        oldDelegate.lightCenter != lightCenter ||
+        oldDelegate.lightProgress != lightProgress ||
+        oldDelegate.speed != speed ||
         oldDelegate.direction != direction ||
-        oldDelegate.strength != strength;
+        oldDelegate.showShapeOutline != showShapeOutline;
+  }
+}
+
+class _LiquidLensRimPainter extends CustomPainter {
+  const _LiquidLensRimPainter({
+    required this.highContrast,
+    required this.progress,
+    required this.showShapeOutline,
+  });
+
+  final bool highContrast;
+  final double progress;
+  final bool showShapeOutline;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(math.min(size.width, size.height) / 2),
+    );
+    if (showShapeOutline) {
+      final outline = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Colors.cyanAccent.withValues(alpha: 0.76);
+      canvas.drawRRect(rrect, outline);
+      return;
+    }
+
+    // 高光只存在于内侧边缘，不使用 BoxShadow 向四周扩散。
+    final innerGlow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 5.8 : 4.4
+      ..color = Colors.white.withValues(
+        alpha: highContrast ? 0.30 : 0.07 + 0.10 * progress,
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.inner, 1.2);
+    canvas.drawRRect(rrect.deflate(0.8), innerGlow);
+
+    final refractiveRim = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 1.7 : 1.2
+      ..strokeCap = StrokeCap.round
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(
+            alpha: highContrast ? 0.78 : 0.34 + 0.14 * progress,
+          ),
+          Colors.white.withValues(
+            alpha: highContrast ? 0.28 : 0.10 + 0.06 * progress,
+          ),
+          Colors.transparent,
+          Colors.white.withValues(
+            alpha: highContrast ? 0.46 : 0.18 + 0.08 * progress,
+          ),
+        ],
+        stops: const [0, 0.28, 0.66, 1],
+      ).createShader(rect);
+    canvas.drawRRect(
+      rrect.deflate(refractiveRim.strokeWidth / 2),
+      refractiveRim,
+    );
+
+    // 低透明内侧界线让白色页面上仍能读出折射带的厚度；它不延伸到中心。
+    final innerBoundary = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = highContrast ? 1.1 : 0.8
+      ..color = Colors.black.withValues(
+        alpha: highContrast ? 0.14 : 0.045 + 0.035 * progress,
+      )
+      ..maskFilter = const MaskFilter.blur(BlurStyle.inner, 0.8);
+    canvas.drawRRect(rrect.deflate(3.0), innerBoundary);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiquidLensRimPainter oldDelegate) {
+    return oldDelegate.highContrast != highContrast ||
+        oldDelegate.progress != progress ||
+        oldDelegate.showShapeOutline != showShapeOutline;
   }
 }
 
@@ -2784,21 +2464,6 @@ class _LiquidLensBoundsPainter extends CustomPainter {
   }
 }
 
-String _liquidNavPhaseLabel(LiquidNavPhase phase) {
-  switch (phase) {
-    case LiquidNavPhase.idle:
-      return '静止';
-    case LiquidNavPhase.pressing:
-      return '按压';
-    case LiquidNavPhase.dragging:
-      return '拖拽';
-    case LiquidNavPhase.settling:
-      return '吸附';
-    case LiquidNavPhase.collapsing:
-      return '收拢';
-  }
-}
-
 /// 仅由显式 QA 入口开启的渲染诊断。它故意放在 Dock 外部，避免把诊断文字
 /// 混进 Lens 的采样纹理，也不会拦截手势。
 class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
@@ -2837,31 +2502,23 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
           final status = liquidGlassRuntimeStatus.value;
           final lensWidth = itemWidth *
               _selectionScaleX(
+                activation: activation,
                 velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
                     ? velocityPixelsPerSecond
                     : 0,
                 edgeCompression:
                     phase == LiquidNavPhase.dragging ? edgeCompression : 0,
                 tuning: tuning,
-                springScale: ui.lerpDouble(
-                  1.0,
-                  tuning.pressedScale,
-                  activation,
-                )!,
               );
           final lensHeight = _selectionHeight *
               _selectionScaleY(
+                activation: activation,
                 velocityPixelsPerSecond: phase == LiquidNavPhase.dragging
                     ? velocityPixelsPerSecond
                     : 0,
                 edgeCompression:
                     phase == LiquidNavPhase.dragging ? edgeCompression : 0,
                 tuning: tuning,
-                springScale: ui.lerpDouble(
-                  1.0,
-                  tuning.pressedScale,
-                  activation,
-                )!,
               );
           final overscanX = tuning.overscanXFor(lensWidth);
           final overscanY = tuning.overscanYFor(lensHeight);
@@ -2884,20 +2541,19 @@ class _LiquidGlassDiagnosticsOverlay extends StatelessWidget {
                   fontFeatures: [ui.FontFeature.tabularFigures()],
                 ),
                 child: Text(
-                  '液态玻璃  等级: ${status.tierLabel}  '
-                  '能力: ${status.shaderSupported ? '支持' : '不支持'}  '
-                  '配置: ${status.shaderEnabled ? '开启' : '关闭'}\n'
-                  '阶段: ${_liquidNavPhaseLabel(phase)}  激活度: '
+                  'Liquid Glass  Tier: ${status.tierLabel}  '
+                  'Shader: ${status.shaderSupported}\n'
+                  'Phase: ${phase.name}  Activation: '
                   '${activation.toStringAsFixed(2)}\n'
-                  '拖拽: ${isDragging ? '是' : '否'}  '
-                  '位置: ${visualPosition.value.toStringAsFixed(3)}  '
-                  '速度: ${velocityPixelsPerSecond.round()} 像素/秒\n'
-                  '可见: ${lensWidth.round()}×${lensHeight.round()}  '
-                  '采样: ${(lensWidth + overscanX * 2).round()}×'
+                  'Dragging: $isDragging  '
+                  'Position: ${visualPosition.value.toStringAsFixed(3)}  '
+                  'Velocity: ${velocityPixelsPerSecond.round()} px/s\n'
+                  'Visible: ${lensWidth.round()}×${lensHeight.round()}  '
+                  'Capture: ${(lensWidth + overscanX * 2).round()}×'
                   '${(lensHeight + overscanY * 2).round()}  '
-                  '余量: ${overscanX.round()}×${overscanY.round()}\n'
-                  '最大采样偏移: ${maxOffsetX.toStringAsFixed(1)}×'
-                  '${maxOffsetY.toStringAsFixed(1)} 像素',
+                  'Overscan: ${overscanX.round()}×${overscanY.round()}\n'
+                  'Max sample: ${maxOffsetX.toStringAsFixed(1)}×'
+                  '${maxOffsetY.toStringAsFixed(1)} px',
                 ),
               ),
             ),

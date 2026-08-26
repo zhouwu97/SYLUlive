@@ -8,7 +8,6 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
-import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -95,18 +94,18 @@ void main() {
       find.byKey(const ValueKey('bottom-nav-selection-foreground')),
       findsOneWidget,
     );
-    // Dock 常态保留 Lens；Selection Idle 也保留基础曲面高光。
+    // 常态只显示独立毛玻璃；彩色边缘折射等交互激活后才出现。
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
-      findsOneWidget,
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsNothing,
     );
     final material = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-material')),
     );
     final decoration = material.decoration as BoxDecoration;
     expect(decoration.boxShadow, isNull);
-    // Shader 配置开启时，Idle 不再退回白色描边，而是使用真实光学材质。
-    expect(decoration.border, isNull);
+    // Idle 由 frosted blur + 轻轮廓组成，不启动 Liquid Lens halo。
+    expect(decoration.border, isNotNull);
     final backdrop = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
     );
@@ -120,7 +119,7 @@ void main() {
         matching: find.byType(ColoredBox),
       ),
     );
-    expect(surface.color.a, closeTo(0.08, 0.001));
+    expect(surface.color.a, closeTo(0.18, 0.001));
     final dockWidth = tester
         .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
         .width;
@@ -335,7 +334,7 @@ void main() {
     expect(leftWidth, closeTo(rightWidth, 1.0));
   });
 
-  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到基础 Lens idle', (tester) async {
+  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到 frosted idle', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
     final gestureLayer = find.byKey(
       const ValueKey('bottom-nav-gesture-layer'),
@@ -365,7 +364,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
@@ -398,8 +397,8 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('bottom-nav-selection-default-highlight')),
-      findsOneWidget,
+      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
+      findsNothing,
     );
     expect(
       find.byKey(
@@ -610,29 +609,6 @@ void main() {
       findsOneWidget,
     );
   });
-
-  testWidgets('Old v1 preset 使用 57ca812 的宽 Capsule 且不启用当前挖空层', (tester) async {
-    await _pumpNav(
-      tester,
-      liquidGlass: true,
-      tuning: LiquidGlassTuning.oldV1,
-    );
-
-    final dockWidth = tester
-        .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
-        .width;
-    final selectionWidth = tester
-        .getSize(find.byKey(const ValueKey('bottom-nav-selection')))
-        .width;
-
-    expect(selectionWidth, greaterThan(dockWidth / 5));
-    expect(
-      find.byKey(const ValueKey('bottom-nav-normal-exclusion')),
-      findsNothing,
-    );
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
 }
 
 Future<_NavHarness> _pumpNav(
@@ -644,7 +620,6 @@ Future<_NavHarness> _pumpNav(
   int initialIndex = 0,
   double? initialVisualIndex,
   bool showDiagnostics = false,
-  LiquidGlassTuning tuning = LiquidGlassTuning.current,
 }) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
@@ -653,7 +628,6 @@ Future<_NavHarness> _pumpNav(
   AppPreferencesStore.setMockInitialValues({
     'floating_nav_bar': true,
     'liquid_glass_v2': liquidGlass,
-    'bottom_nav_performance_mode': liquidGlass ? 'high_quality' : 'auto',
   });
   final themeProvider = ThemeProvider(loadOnStart: false);
   await themeProvider.loadThemeForTesting();
@@ -667,7 +641,6 @@ Future<_NavHarness> _pumpNav(
     disableAnimations: disableAnimations,
     textScale: textScale,
     showDiagnostics: showDiagnostics,
-    tuning: tuning,
   );
   addTearDown(harness.dispose);
 
@@ -686,7 +659,6 @@ class _NavHarness extends StatelessWidget {
     required this.disableAnimations,
     required this.textScale,
     required this.showDiagnostics,
-    required this.tuning,
   })  : lastTappedIndex = ValueNotifier(null),
         lastCommittedIndex = ValueNotifier(null),
         commitCount = ValueNotifier(0),
@@ -701,7 +673,6 @@ class _NavHarness extends StatelessWidget {
   final bool disableAnimations;
   final double textScale;
   final bool showDiagnostics;
-  final LiquidGlassTuning tuning;
   final ValueNotifier<int?> lastTappedIndex;
   final ValueNotifier<int?> lastCommittedIndex;
   final ValueNotifier<int> commitCount;
@@ -767,7 +738,6 @@ class _NavHarness extends StatelessWidget {
                       onLiquidActivationChanged: (value) =>
                           activation.value = value,
                       authProvider: authProvider,
-                      tuning: tuning,
                       showDiagnostics: showDiagnostics,
                     ),
                   );

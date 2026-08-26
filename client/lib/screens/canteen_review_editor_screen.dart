@@ -2153,11 +2153,15 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildCreditNotice(bool isDark) {
+    final user = context.watch<AuthProvider>().user;
+    final creditScore = (user?.creditScore ?? 100).clamp(0, 100);
+    final weight = 0.5 + 0.5 * (creditScore / 100.0);
+    final weightStr = weight == 1.0 ? '1.0' : weight.toStringAsFixed(2);
     return _buildNoticeSurface(
       isDark,
       icon: Icons.verified_user_rounded,
       color: const Color(0xFF10B981),
-      title: '你的诚信度 96 · 权重约 0.96',
+      title: '你的诚信度 $creditScore · 权重约 $weightStr',
       message: '评价会公开展示校园昵称和头像。若发现异常评价，可在评价菜单中举报。',
     );
   }

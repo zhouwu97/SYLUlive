@@ -155,16 +155,16 @@ func (service *AIUserPermissionService) SetMode(ctx context.Context, userID uint
 	}
 	return service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, scope := range allAIUserPermissionScopes {
-			scopePolicy := policy
 			if scope == models.AIUserPermissionExternalModelAnalysis {
-				// 完全信任只覆盖个人数据读取和必要刷新；外部模型分析仍按独立 scope 控制。
-				scopePolicy = models.AIUserPermissionAsk
+				// Agent 模式不覆盖外部模型分析；该权限由独立 scope 控制。
+				// 这也兼容尚未执行 20260726 CHECK 迁移的旧数据库。
+				continue
 			}
-			row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: scopePolicy}
+			row := models.AIUserPermission{UserID: userID, Scope: scope, Policy: policy}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "user_id"}, {Name: "scope"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
-					"policy": scopePolicy, "version": gorm.Expr("version + 1"), "updated_at": time.Now(),
+					"policy": policy, "version": gorm.Expr("version + 1"), "updated_at": time.Now(),
 				}),
 			}).Create(&row).Error; err != nil {
 				return err

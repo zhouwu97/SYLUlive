@@ -5,9 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/widgets/liquid_glass/bottom_nav_controller.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_motion.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_visual_inertia.dart';
 
 void main() {
-  test('Dock 常驻 Lens，Selection 从 Idle 基线连续提升折射与色散', () {
+  test('idle 保持 frosted，press/drag 才按阶段提升折射与色散', () {
     const tuning = LiquidGlassTuning();
     final idle = liquidGlassMotionFor(
       phase: LiquidNavPhase.idle,
@@ -40,44 +41,12 @@ void main() {
       tuning: tuning,
     );
 
-    expect(idle.opticalActivation, closeTo(0.38, 0.0001));
-    expect(idle.dockOpticalActivation, closeTo(1.0, 0.0001));
-    expect(idle.highlightProgress, closeTo(0.38, 0.0001));
-    expect(pressing.highlightProgress, greaterThan(0));
-    expect(dragging.highlightProgress, closeTo(1.0, 0.0001));
+    expect(idle.opticalActivation, closeTo(0.0, 0.0001));
     expect(idle.refraction, lessThan(pressing.refraction));
     expect(pressing.refraction, lessThan(dragging.refraction));
     expect(idle.chromatic, lessThan(pressing.chromatic));
     expect(pressing.chromatic, lessThan(dragging.chromatic));
     expect(dragging.dockRecoilX, greaterThan(0));
-    expect(dragging.dockChromatic, closeTo(0.16, 0.0001));
-  });
-
-  test('phase 边界沿用 Idle 基线，不发生光学强度闪断', () {
-    const tuning = LiquidGlassTuning();
-    final pressingStart = liquidGlassMotionFor(
-      phase: LiquidNavPhase.pressing,
-      activation: 0,
-      velocityPixelsPerSecond: 0,
-      visualPosition: 0,
-      currentIndex: 0,
-      edgeCompression: 0,
-      reduceMotion: false,
-      tuning: tuning,
-    );
-    final settlingEnd = liquidGlassMotionFor(
-      phase: LiquidNavPhase.collapsing,
-      activation: 0,
-      velocityPixelsPerSecond: 0,
-      visualPosition: 0,
-      currentIndex: 0,
-      edgeCompression: 0,
-      reduceMotion: false,
-      tuning: tuning,
-    );
-
-    expect(pressingStart.opticalActivation, closeTo(0.38, 0.0001));
-    expect(settlingEnd.opticalActivation, closeTo(0.38, 0.0001));
   });
 
   test('reduced motion 仍保留材质状态，但移除速度与 Dock recoil', () {
@@ -129,26 +98,64 @@ void main() {
     const uniforms = LiquidGlassDockShaderUniforms(
       logicalSize: Size(336, 64),
       dockSize: Size(336, 64),
-      refraction: 24,
-      chromatic: 0.16,
-      refractionHeight: 24,
-      activation: 1.0,
+      refraction: 8,
+      chromatic: 0.12,
+      refractionHeight: 12,
+      activation: 0.2,
     );
 
     expect(uniforms.values, hasLength(10));
     expect(uniforms.values[0].isNaN, isTrue);
     expect(uniforms.values[1].isNaN, isTrue);
     expect(uniforms.values[LiquidGlassDockShaderUniforms.logicalSizeX], 336);
-    expect(uniforms.values[LiquidGlassDockShaderUniforms.refractionIndex], -24);
-    expect(uniforms.values[LiquidGlassDockShaderUniforms.activationIndex], 1.0);
+    expect(uniforms.values[LiquidGlassDockShaderUniforms.activationIndex], 0.2);
 
     final source = File('shaders/liquid_nav_dock.frag').readAsStringSync();
     expect(source, contains('uniform vec2 uDockSize'));
     expect(source, contains('uniform float uRefractionHeight'));
-    expect(source, contains('float circleMap(float x)'));
     expect(source, contains('vec4 red'));
     expect(source, contains('vec4 green'));
     expect(source, contains('vec4 blue'));
-    expect(source, contains('chromaticBase'));
+    expect(source, contains('smoothstep'));
+  });
+
+  test('视觉表面在拖拽时只滞后几像素，逻辑位置不受影响', () {
+    final surface = liquidGlassSurfacePositionFor(
+      logicalPosition: 2.0,
+      previousPosition: 1.96,
+      velocityPixelsPerSecond: 900,
+      itemWidth: 72,
+      dragging: true,
+      reduceMotion: false,
+    );
+    final lagPixels = liquidGlassSurfaceLagPixels(
+      logicalPosition: 2.0,
+      surfacePosition: surface,
+      itemWidth: 72,
+    );
+
+    expect(lagPixels, lessThan(0));
+    expect(lagPixels.abs(), lessThanOrEqualTo(6));
+    expect(
+      liquidGlassSurfaceTargetPosition(
+        logicalPosition: 2,
+        velocityPixelsPerSecond: 1800,
+        itemWidth: 72,
+        dragging: true,
+        reduceMotion: false,
+      ),
+      closeTo(2 - 6 / 72, 0.0001),
+    );
+    expect(
+      liquidGlassSurfacePositionFor(
+        logicalPosition: 2,
+        previousPosition: 0,
+        velocityPixelsPerSecond: 900,
+        itemWidth: 72,
+        dragging: true,
+        reduceMotion: true,
+      ),
+      2,
+    );
   });
 }

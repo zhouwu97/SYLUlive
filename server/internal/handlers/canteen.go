@@ -82,15 +82,16 @@ var validCanteenTags = map[string]string{
 // Go 层计算对 SQLite/PostgreSQL 行为一致、可单元测试、可解释。
 type canteenStatsRow struct {
 	models.Canteen
-	RatingCount      int                `json:"rating_count"`
-	AverageStar      float64            `json:"average_star"`
-	ReviewerCount    int                `json:"reviewer_count"`
-	VisitReviewCount int                `json:"visit_review_count"`
-	EffectiveSample  float64            `json:"-"`
-	DimensionScores  map[string]float64 `gorm:"-" json:"dimension_scores,omitempty"`
-	DishCount        int                `json:"dish_count"`
-	DishPhotoCount   int                `json:"dish_photo_count"`
-	RankingScore     float64            `json:"ranking_score"`
+	RatingCount        int                `json:"rating_count"`
+	AverageStar        float64            `json:"average_star"`
+	ReviewerCount      int                `json:"reviewer_count"`
+	VisitReviewCount   int                `json:"visit_review_count"`
+	EffectiveSample    float64            `json:"-"`
+	DimensionScores    map[string]float64 `gorm:"-" json:"dimension_scores,omitempty"`
+	DishCount          int                `json:"dish_count"`
+	DishWithPhotoCount int                `json:"dish_with_photo_count"`
+	DishPhotoCount     int                `json:"dish_photo_count"`
+	RankingScore       float64            `json:"ranking_score"`
 }
 
 // canteenRankingEntry 一条可排名的食堂项（含计算出的 Bayesian score 与 rank）。
@@ -111,6 +112,7 @@ func (h *CanteenHandler) queryCanteenStats(includeOffline ...bool) ([]canteenSta
 			COALESCE(rs.rating_count, 0) as rating_count,
 			COALESCE(rs.average_star, 0) as average_star,
 			COALESCE(ds.dish_count, 0) as dish_count,
+			COALESCE(ds.dish_with_photo_count, 0) as dish_with_photo_count,
 			COALESCE(ds.dish_photo_count, 0) as dish_photo_count`).
 		Joins(`LEFT JOIN (
 			SELECT canteen_id, COUNT(*) as rating_count, AVG(CAST(star AS FLOAT)) as average_star
@@ -120,14 +122,15 @@ func (h *CanteenHandler) queryCanteenStats(includeOffline ...bool) ([]canteenSta
 		) rs ON rs.canteen_id = canteens.id`).
 		Joins(`LEFT JOIN (
 			SELECT d.canteen_id,
-				COUNT(DISTINCT CASE WHEN p.id IS NOT NULL THEN d.id END) as dish_count,
+				COUNT(DISTINCT d.id) as dish_count,
+				COUNT(DISTINCT CASE WHEN p.id IS NOT NULL THEN d.id END) as dish_with_photo_count,
 				COUNT(p.id) as dish_photo_count
 			FROM canteen_dishes d
 			LEFT JOIN canteen_dish_photos p ON p.dish_id = d.id AND p.status = 'approved'
 			WHERE d.status = 'active'
 			GROUP BY d.canteen_id
 		) ds ON ds.canteen_id = canteens.id`).
-		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_photo_count").
+		Group("canteens.id, rs.rating_count, rs.average_star, ds.dish_count, ds.dish_with_photo_count, ds.dish_photo_count").
 		Order("canteens.created_at DESC, canteens.id DESC")
 	if len(includeOffline) > 0 && includeOffline[0] {
 		query = query.Where("canteens.verified = ?", true)
@@ -598,7 +601,8 @@ func buildCanteenDisplayReviews(canteenName string, v2Reviews []models.CanteenRe
 			"hygiene_score": review.HygieneScore, "service_score": review.ServiceScore,
 			"dimension_scores": map[string]int{"taste": review.TasteScore, "value": review.ValueScore, "queue": review.QueueScore, "hygiene": review.HygieneScore, "service": review.ServiceScore},
 			"comment":          review.Comment, "images": review.Images, "tags": review.Tags,
-			"recommended_dishes": review.RecommendedDishNames, "helpful_count": review.HelpfulCount,
+			"recommended_dishes": review.RecommendedDishNames, "recommended_dish_details": review.RecommendedDishDetails,
+			"helpful_count":   review.HelpfulCount,
 			"unhelpful_count": review.UnhelpfulCount, "my_vote": review.MyVote, "score_version": review.ScoreVersion,
 			"created_at": review.CreatedAt, "updated_at": review.UpdatedAt,
 		}

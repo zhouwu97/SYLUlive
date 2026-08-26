@@ -33,6 +33,33 @@ func reviewBody() string {
 	return `{"taste_score":5,"value_score":4,"queue_score":3,"hygiene_score":4,"service_score":4,"comment":"好吃"}`
 }
 
+func TestCreateReviewKeepsUnknownDishAsPendingCandidate(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"铁板豆腐不错","dish_names":["铁板豆腐"]}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "铁板豆腐").First(&dish).Error; err != nil {
+		t.Fatalf("pending dish missing: %v", err)
+	}
+	if dish.Status != models.DishStatusPending || dish.CreatedBy != user.ID {
+		t.Fatalf("dish=%+v want pending candidate", dish)
+	}
+	var relation models.CanteenReviewEventDish
+	if err := h.db.Where("dish_id = ?", dish.ID).First(&relation).Error; err != nil {
+		t.Fatalf("review relation missing: %v", err)
+	}
+	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "铁板豆腐") ||
+		!strings.Contains(contributions.Body.String(), models.DishStatusPending) {
+		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+}
+
 func TestCreateReviewKeepsEventsAndRecomputesSummary(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	first := performCanteenRequest(t, h.CreateReview, http.MethodPost,

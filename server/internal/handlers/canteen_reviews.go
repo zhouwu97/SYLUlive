@@ -23,12 +23,17 @@ import (
 
 const reviewCreateCooldown = 6 * time.Hour
 
+var errReviewDishConflict = errors.New("review_dish_conflict")
+var errReviewDishPendingLimit = errors.New("review_dish_pending_limit")
+
 type reviewDishInput struct {
 	DishID       uint   `json:"dish_id"`
+	DishName     string `json:"dish_name,omitempty"`
 	TasteScore   int    `json:"taste_score"`
 	ValueScore   int    `json:"value_score"`
 	PortionScore int    `json:"portion_score"`
 	Comment      string `json:"comment"`
+	PhotoFileIDs []uint `json:"photo_file_ids,omitempty"`
 }
 
 type canteenReviewInput struct {
@@ -42,9 +47,12 @@ type canteenReviewInput struct {
 	Tags         []string `json:"tags"`
 	// DishIDs 表示“推荐/吃过”的菜品关系；DishReviews 只表示用户主动填写的菜品评分。
 	// 两者拆开后，推荐菜不再因为没有填写三项分数而被静默丢弃。
-	DishIDs       []uint            `json:"dish_ids"`
-	DishNames     []string          `json:"dish_names"`
-	DishReviews   []reviewDishInput `json:"dish_reviews"`
+	DishIDs     []uint            `json:"dish_ids"`
+	DishNames   []string          `json:"dish_names"`
+	DishReviews []reviewDishInput `json:"dish_reviews"`
+	// Dishes 是新客户端的一次提交载荷，携带菜名、可选三维评分和绑定的实拍 file_id。
+	// 旧字段继续保留，便于旧版本客户端平滑升级。
+	Dishes        []reviewDishInput `json:"dishes"`
 	BaseUpdatedAt *time.Time        `json:"base_updated_at"`
 }
 
@@ -95,7 +103,7 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
+	if len(input.Dishes) > 3 || len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "最多选择3道菜品"})
 		return
 	}
@@ -139,11 +147,14 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		if err := tx.Create(&saved).Error; err != nil {
 			return err
 		}
-		selectedDishIDs, err := h.resolveReviewDishIDs(tx, cid, input.DishIDs, input.DishNames, input.DishReviews)
+		resolvedDishes, selectedDishIDs, err := h.resolveReviewDishInputs(tx, cid, userID, input.DishIDs, input.DishNames, input.DishReviews, input.Dishes)
 		if err != nil {
 			return err
 		}
-		if err := h.syncDishReviews(tx, cid, userID, saved.ID, selectedDishIDs, input.DishReviews); err != nil {
+		if err := h.syncDishReviews(tx, cid, userID, saved.ID, selectedDishIDs, resolvedDishes); err != nil {
+			return err
+		}
+		if err := h.syncDishPhotos(tx, userID, saved.ID, resolvedDishes); err != nil {
 			return err
 		}
 		if err := recomputeCanteenUserSummary(tx, cid, userID); err != nil {
@@ -176,6 +187,18 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		}
 		if errors.Is(err, errReviewDishInvalid) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_dish", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, errReviewDishConflict) {
+			c.JSON(http.StatusConflict, gin.H{"code": "review_dish_conflict", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, errReviewDishPendingLimit) {
+			c.JSON(http.StatusConflict, gin.H{"code": "dish_pending_limit", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_image", "error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
@@ -216,7 +239,7 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
+	if len(input.Dishes) > 3 || len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "最多选择3道菜品"})
 		return
 	}
@@ -236,6 +259,10 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		}
 		if review.Status != models.ReviewEventStatusActive {
 			return errReviewNotActive
+		}
+		// 编辑也必须与商家下架串行化；否则下架与保存并发时可能留下半条公开链路。
+		if _, err := lockActiveCanteen(tx, review.CanteenID); err != nil {
+			return err
 		}
 		var latest models.CanteenReviewEvent
 		// 只能修改用户在该店创建的最新 V2 事件；status 仅决定该事件当前是否可操作。
@@ -262,11 +289,14 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		if err := tx.Save(&review).Error; err != nil {
 			return err
 		}
-		selectedDishIDs, err := h.resolveReviewDishIDs(tx, review.CanteenID, input.DishIDs, input.DishNames, input.DishReviews)
+		resolvedDishes, selectedDishIDs, err := h.resolveReviewDishInputs(tx, review.CanteenID, userID, input.DishIDs, input.DishNames, input.DishReviews, input.Dishes)
 		if err != nil {
 			return err
 		}
-		if err := h.syncDishReviews(tx, review.CanteenID, review.UserID, review.ID, selectedDishIDs, input.DishReviews); err != nil {
+		if err := h.syncDishReviews(tx, review.CanteenID, review.UserID, review.ID, selectedDishIDs, resolvedDishes); err != nil {
+			return err
+		}
+		if err := h.syncDishPhotos(tx, userID, review.ID, resolvedDishes); err != nil {
 			return err
 		}
 		if err := recomputeCanteenUserSummary(tx, review.CanteenID, review.UserID); err != nil {
@@ -285,12 +315,20 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "只能修改自己的评价"})
 		case errors.Is(err, errReviewNotActive):
 			c.JSON(http.StatusConflict, gin.H{"error": "该评价当前不可修改"})
+		case errors.Is(err, errCanteenOffline):
+			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能修改评价"})
 		case errors.Is(err, errReviewNotLatest):
 			c.JSON(http.StatusConflict, gin.H{"code": "review_not_latest", "error": "只能修改最近一次评价，请刷新后重试"})
+		case errors.Is(err, errReviewDishConflict):
+			c.JSON(http.StatusConflict, gin.H{"code": "review_dish_conflict", "error": err.Error()})
+		case errors.Is(err, errReviewDishPendingLimit):
+			c.JSON(http.StatusConflict, gin.H{"code": "dish_pending_limit", "error": err.Error()})
 		case errors.Is(err, errReviewConflict):
 			c.JSON(http.StatusConflict, gin.H{"code": "review_conflict", "error": "评价已在其他设备更新，请刷新后重试", "remote_updated_at": review.UpdatedAt})
 		case errors.Is(err, errReviewDishInvalid):
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_dish", "error": err.Error()})
+		case errors.Is(err, services.ErrInvalidImageFileReference):
+			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_image", "error": err.Error()})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
 		}
@@ -335,6 +373,30 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		// 菜品实拍属于独立社区资产：已审核图片脱离评价后继续公开；尚未审核的
+		// 评价证据随评价删除并归档，之后用户仍可重新提交。
+		var boundPhotos []models.CanteenDishPhoto
+		if tx.Migrator().HasTable(&models.CanteenDishPhoto{}) {
+			if err := tx.Where("review_event_id = ?", review.ID).Find(&boundPhotos).Error; err != nil {
+				return err
+			}
+		}
+		for _, photo := range boundPhotos {
+			if photo.Status == models.DishPhotoStatusApproved {
+				if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("review_event_id", nil).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Updates(map[string]interface{}{
+				"status": models.DishPhotoStatusArchived, "review_event_id": nil, "reject_reason": "评价已删除",
+			}).Error; err != nil {
+				return err
+			}
+			if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+				return err
+			}
+		}
 
 		var linked []models.CanteenDishReviewEvent
 		if err := tx.Where("canteen_review_event_id = ?", review.ID).Find(&linked).Error; err != nil {
@@ -343,6 +405,18 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 		affectedDishIDs := make(map[uint]struct{}, len(linked))
 		for _, dishReview := range linked {
 			affectedDishIDs[dishReview.DishID] = struct{}{}
+		}
+		var reviewRelations []models.CanteenReviewEventDish
+		if err := tx.Where("review_event_id = ?", review.ID).Find(&reviewRelations).Error; err != nil {
+			return err
+		}
+		for _, relation := range reviewRelations {
+			affectedDishIDs[relation.DishID] = struct{}{}
+		}
+		if len(reviewRelations) > 0 {
+			if err := tx.Where("review_event_id = ?", review.ID).Delete(&models.CanteenReviewEventDish{}).Error; err != nil {
+				return err
+			}
 		}
 		if len(linked) > 0 {
 			if err := tx.Model(&models.CanteenDishReviewEvent{}).
@@ -362,6 +436,32 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 		for dishID := range affectedDishIDs {
 			if err := recomputeDishUserSummary(tx, dishID, review.UserID); err != nil {
 				return err
+			}
+		}
+		for dishID := range affectedDishIDs {
+			var dish models.CanteenDish
+			if err := tx.First(&dish, dishID).Error; err != nil {
+				continue
+			}
+			if dish.Status != models.DishStatusPending {
+				continue
+			}
+			var evidence int64
+			if err := tx.Model(&models.CanteenDishPhoto{}).
+				Where("dish_id = ? AND status IN ?", dish.ID, []string{models.DishPhotoStatusPending, models.DishPhotoStatusApproved}).Count(&evidence).Error; err != nil {
+				return err
+			}
+			var otherRelations int64
+			if err := tx.Model(&models.CanteenReviewEventDish{}).
+				Where("dish_id = ?", dish.ID).Count(&otherRelations).Error; err != nil {
+				return err
+			}
+			if evidence == 0 && otherRelations == 0 {
+				if err := tx.Model(&models.CanteenDish{}).Where("id = ?", dish.ID).Updates(map[string]interface{}{
+					"status": models.DishStatusArchived, "reject_reason": "唯一评价证据已删除",
+				}).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return services.ReconcileFilePublicAccess(tx, oldImageFileIDs...)
@@ -729,15 +829,17 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 	}
 
 	type selectedDishRow struct {
-		DishID uint   `gorm:"column:dish_id"`
-		Name   string `gorm:"column:name"`
+		DishID       uint   `gorm:"column:dish_id"`
+		Name         string `gorm:"column:name"`
+		Status       string `gorm:"column:status"`
+		RejectReason string `gorm:"column:reject_reason"`
 	}
 	selectedDishes := make([]selectedDishRow, 0, 3)
 	if h.db.Migrator().HasTable(&models.CanteenReviewEventDish{}) {
 		if err := h.db.Table("canteen_review_event_dishes AS relation").
-			Select("relation.dish_id, dish.name").
+			Select("relation.dish_id, dish.name, dish.status, dish.reject_reason").
 			Joins("JOIN canteen_dishes AS dish ON dish.id = relation.dish_id").
-			Where("relation.review_event_id = ? AND dish.status = ?", event.ID, models.DishStatusActive).
+			Where("relation.review_event_id = ?", event.ID).
 			Order("relation.id ASC").Find(&selectedDishes).Error; err != nil && !isCanteenReviewSchemaMissing(err) {
 			return nil, err
 		}
@@ -745,11 +847,14 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 
 	dishNames := make(map[uint]string, len(selectedDishes))
 	recommendedDishes := make([]map[string]interface{}, 0, len(selectedDishes))
+	recommendedDishDetails := make([]map[string]interface{}, 0, len(selectedDishes))
 	for _, dish := range selectedDishes {
 		dishNames[dish.DishID] = dish.Name
 		recommendedDishes = append(recommendedDishes, map[string]interface{}{
-			"dish_id": dish.DishID,
-			"name":    dish.Name,
+			"dish_id": dish.DishID, "name": dish.Name,
+		})
+		recommendedDishDetails = append(recommendedDishDetails, map[string]interface{}{
+			"dish_id": dish.DishID, "name": dish.Name, "status": dish.Status, "reject_reason": dish.RejectReason,
 		})
 	}
 
@@ -764,7 +869,7 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 	dishReviews := make([]dishReviewPayload, 0, len(selectedDishes))
 	if h.db.Migrator().HasTable(&models.CanteenDishReviewEvent{}) {
 		var events []models.CanteenDishReviewEvent
-		if err := h.db.Where("canteen_review_event_id = ? AND status = ?", event.ID, models.ReviewEventStatusActive).
+		if err := h.db.Where("canteen_review_event_id = ? AND status <> ?", event.ID, models.ReviewEventStatusDeleted).
 			Order("id ASC").Find(&events).Error; err != nil && !isCanteenReviewSchemaMissing(err) {
 			return nil, err
 		} else if err == nil {
@@ -779,26 +884,89 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 	}
 
 	return map[string]interface{}{
-		"review_event_id":    event.ID,
-		"id":                 event.ID,
-		"canteen_id":         event.CanteenID,
-		"user_id":            event.UserID,
-		"star":               event.OverallScore,
-		"overall_score":      event.OverallScore,
-		"taste_score":        event.TasteScore,
-		"value_score":        event.ValueScore,
-		"queue_score":        event.QueueScore,
-		"hygiene_score":      event.HygieneScore,
-		"service_score":      event.ServiceScore,
-		"comment":            event.Comment,
-		"images":             event.Images,
-		"tags":               event.Tags,
-		"score_version":      event.ScoreVersion,
-		"created_at":         event.CreatedAt,
-		"updated_at":         event.UpdatedAt,
-		"recommended_dishes": recommendedDishes,
-		"dish_reviews":       dishReviews,
+		"review_event_id":          event.ID,
+		"id":                       event.ID,
+		"canteen_id":               event.CanteenID,
+		"user_id":                  event.UserID,
+		"star":                     event.OverallScore,
+		"overall_score":            event.OverallScore,
+		"taste_score":              event.TasteScore,
+		"value_score":              event.ValueScore,
+		"queue_score":              event.QueueScore,
+		"hygiene_score":            event.HygieneScore,
+		"service_score":            event.ServiceScore,
+		"comment":                  event.Comment,
+		"images":                   event.Images,
+		"tags":                     event.Tags,
+		"score_version":            event.ScoreVersion,
+		"created_at":               event.CreatedAt,
+		"updated_at":               event.UpdatedAt,
+		"recommended_dishes":       recommendedDishes,
+		"recommended_dish_details": recommendedDishDetails,
+		"dish_reviews":             dishReviews,
+		"dish_photos":              h.loadReviewDishPhotos(event.ID),
 	}, nil
+}
+
+// loadReviewDishPhotos 返回评价编辑器需要的图片-菜品绑定，包含 pending/rejected，
+// approved 图片也会保留用于展示和“删除评价但保留公共资产”的判断。
+func (h *CanteenHandler) loadReviewDishPhotos(reviewEventID uint) []map[string]interface{} {
+	rows := make([]map[string]interface{}, 0)
+	var photos []models.CanteenDishPhoto
+	if err := h.db.Where("review_event_id = ?", reviewEventID).Order("id ASC").Find(&photos).Error; err != nil {
+		return rows
+	}
+	for _, photo := range photos {
+		item := map[string]interface{}{
+			"id": photo.ID, "dish_id": photo.DishID, "file_id": photo.FileID,
+			"status": photo.Status, "reject_reason": photo.RejectReason,
+			"created_at": photo.CreatedAt,
+		}
+		var file models.File
+		if err := h.db.Select("path").First(&file, photo.FileID).Error; err == nil {
+			item["image"] = file.Path
+		}
+		var dish models.CanteenDish
+		if err := h.db.Select("name").First(&dish, photo.DishID).Error; err == nil {
+			item["dish_name"] = dish.Name
+		}
+		rows = append(rows, item)
+	}
+	return rows
+}
+
+// GetReviewEditContext 返回单条评价的权威编辑上下文。所有客户端编辑入口都应先读取此接口，
+// 不允许从评价列表的裁剪字段拼装保存请求。
+// GET /api/canteens/reviews/:reviewId/edit-context
+func (h *CanteenHandler) GetReviewEditContext(c *gin.Context) {
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	if err != nil || reviewID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
+		return
+	}
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("id = ? AND user_id = ?", reviewID, userID).First(&event).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在"})
+		return
+	}
+	if event.Status != models.ReviewEventStatusActive {
+		c.JSON(http.StatusConflict, gin.H{"code": "review_not_active", "error": "该评价当前不可编辑"})
+		return
+	}
+	payload, err := h.loadMyLatestReviewPayload(event.CanteenID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价编辑上下文失败"})
+		return
+	}
+	if payload == nil || fmt.Sprint(payload["review_event_id"]) != fmt.Sprint(event.ID) {
+		c.JSON(http.StatusConflict, gin.H{"code": "review_not_latest", "error": "只能编辑最近一次评价，请刷新后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"review": payload})
 }
 
 // buildReviewAction 返回详情页创建/编辑入口的服务端权威状态。
@@ -851,22 +1019,30 @@ func populateReviewDishNames(db *gorm.DB, reviews []models.CanteenReviewEvent) {
 	}
 	type dishNameRow struct {
 		ReviewEventID uint   `gorm:"column:review_event_id"`
+		DishID        uint   `gorm:"column:dish_id"`
 		Name          string `gorm:"column:name"`
+		Status        string `gorm:"column:status"`
+		RejectReason  string `gorm:"column:reject_reason"`
 	}
 	var rows []dishNameRow
 	if err := db.Table("canteen_review_event_dishes AS r").
-		Select("r.review_event_id, d.name").
+		Select("r.review_event_id, r.dish_id, d.name, d.status, d.reject_reason").
 		Joins("JOIN canteen_dishes d ON d.id = r.dish_id").
-		Where("r.review_event_id IN ? AND d.status = ?", ids, models.DishStatusActive).
+		Where("r.review_event_id IN ?", ids).
 		Order("r.id ASC").Find(&rows).Error; err != nil {
 		return
 	}
 	byReview := make(map[uint][]string, len(rows))
+	detailsByReview := make(map[uint][]map[string]interface{}, len(rows))
 	for _, row := range rows {
 		byReview[row.ReviewEventID] = append(byReview[row.ReviewEventID], row.Name)
+		detailsByReview[row.ReviewEventID] = append(detailsByReview[row.ReviewEventID], map[string]interface{}{
+			"dish_id": row.DishID, "name": row.Name, "status": row.Status, "reject_reason": row.RejectReason,
+		})
 	}
 	for i := range reviews {
 		reviews[i].RecommendedDishNames = byReview[reviews[i].ID]
+		reviews[i].RecommendedDishDetails = detailsByReview[reviews[i].ID]
 	}
 }
 
@@ -1048,6 +1224,124 @@ func (h *CanteenHandler) GetMyCanteenReviews(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// GetMyCanteenContributions 返回用户提交的 pending/approved/rejected 菜品与实拍，
+// 让投稿不会在评价发布后失去追踪入口。
+// GET /api/user/canteen-contributions
+func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+	type dishRow struct {
+		DishID      uint      `gorm:"column:dish_id"`
+		CanteenID   uint      `gorm:"column:canteen_id"`
+		CanteenName string    `gorm:"column:canteen_name"`
+		DishName    string    `gorm:"column:dish_name"`
+		DishStatus  string    `gorm:"column:dish_status"`
+		DishReason  string    `gorm:"column:dish_reason"`
+		CreatedAt   time.Time `gorm:"column:created_at"`
+	}
+	var dishes []dishRow
+	if err := h.db.Table("canteen_dishes d").
+		Joins("JOIN canteens c ON c.id = d.canteen_id").
+		Select("d.id AS dish_id, d.canteen_id, c.name AS canteen_name, d.name AS dish_name, d.status AS dish_status, d.reject_reason AS dish_reason, d.created_at").
+		Where("d.created_by = ?", userID).Order("d.created_at DESC, d.id DESC").Find(&dishes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂贡献失败"})
+		return
+	}
+	items := make([]map[string]interface{}, 0)
+	seen := make(map[string]struct{})
+	seenDishContributions := make(map[uint]struct{}, len(dishes))
+	for _, dish := range dishes {
+		seenDishContributions[dish.DishID] = struct{}{}
+		var photos []models.CanteenDishPhoto
+		_ = h.db.Where("dish_id = ? AND user_id = ?", dish.DishID, userID).Order("created_at DESC, id DESC").Find(&photos).Error
+		if len(photos) == 0 {
+			items = append(items, map[string]interface{}{
+				"type": "dish", "dish_id": dish.DishID, "dish_name": dish.DishName,
+				"canteen_id": dish.CanteenID, "canteen_name": dish.CanteenName,
+				"status": dish.DishStatus, "reject_reason": dish.DishReason, "submitted_at": dish.CreatedAt,
+			})
+			continue
+		}
+		for _, photo := range photos {
+			key := fmt.Sprintf("%d:%d", dish.DishID, photo.ID)
+			seen[key] = struct{}{}
+			item := map[string]interface{}{
+				"type": "dish_photo", "photo_id": photo.ID, "dish_id": dish.DishID, "dish_name": dish.DishName,
+				"canteen_id": dish.CanteenID, "canteen_name": dish.CanteenName,
+				"status": photo.Status, "reject_reason": photo.RejectReason, "submitted_at": photo.CreatedAt,
+			}
+			var file models.File
+			if err := h.db.Select("path").First(&file, photo.FileID).Error; err == nil {
+				item["image"] = file.Path
+			}
+			items = append(items, item)
+		}
+	}
+	// 用户也可以给已有 active 菜补图，此时菜品不是 created_by 本人，只返回其图片贡献。
+	var photos []models.CanteenDishPhoto
+	_ = h.db.Where("user_id = ?", userID).Order("created_at DESC, id DESC").Find(&photos).Error
+	for _, photo := range photos {
+		key := fmt.Sprintf("%d:%d", photo.DishID, photo.ID)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		var dish models.CanteenDish
+		if h.db.First(&dish, photo.DishID).Error != nil {
+			continue
+		}
+		var canteen models.Canteen
+		if h.db.Select("id", "name").First(&canteen, dish.CanteenID).Error != nil {
+			continue
+		}
+		item := map[string]interface{}{
+			"type": "dish_photo", "photo_id": photo.ID, "dish_id": dish.ID, "dish_name": dish.Name,
+			"canteen_id": dish.CanteenID, "canteen_name": canteen.Name,
+			"status": photo.Status, "reject_reason": photo.RejectReason, "submitted_at": photo.CreatedAt,
+		}
+		var file models.File
+		if err := h.db.Select("path").First(&file, photo.FileID).Error; err == nil {
+			item["image"] = file.Path
+		}
+		items = append(items, item)
+	}
+	// 菜品候选可能由其他同学先创建，但当前用户通过评价关联/补充了它；这类
+	// pending/rejected 候选也必须出现在“我的食堂贡献”，否则用户会看不到自己的证据。
+	if h.db.Migrator().HasTable(&models.CanteenReviewEventDish{}) {
+		var reviewDishes []struct {
+			DishID      uint      `gorm:"column:dish_id"`
+			CanteenID   uint      `gorm:"column:canteen_id"`
+			CanteenName string    `gorm:"column:canteen_name"`
+			DishName    string    `gorm:"column:dish_name"`
+			DishStatus  string    `gorm:"column:dish_status"`
+			DishReason  string    `gorm:"column:dish_reason"`
+			SubmittedAt time.Time `gorm:"column:submitted_at"`
+		}
+		if err := h.db.Table("canteen_review_event_dishes r").
+			Joins("JOIN canteen_review_events e ON e.id = r.review_event_id").
+			Joins("JOIN canteen_dishes d ON d.id = r.dish_id").
+			Joins("JOIN canteens c ON c.id = d.canteen_id").
+			Select("r.dish_id, d.canteen_id, c.name AS canteen_name, d.name AS dish_name, d.status AS dish_status, d.reject_reason AS dish_reason, e.created_at AS submitted_at").
+			Where("e.user_id = ? AND e.status = ? AND d.status <> ?", userID, models.ReviewEventStatusActive, models.DishStatusActive).
+			Order("e.created_at DESC, r.id DESC").Find(&reviewDishes).Error; err == nil {
+			for _, dish := range reviewDishes {
+				if _, exists := seenDishContributions[dish.DishID]; exists {
+					continue
+				}
+				seenDishContributions[dish.DishID] = struct{}{}
+				items = append(items, map[string]interface{}{
+					"type": "dish_review", "dish_id": dish.DishID, "dish_name": dish.DishName,
+					"canteen_id": dish.CanteenID, "canteen_name": dish.CanteenName,
+					"status": dish.DishStatus, "reject_reason": dish.DishReason,
+					"submitted_at": dish.SubmittedAt,
+				})
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
 func encodeMyCanteenReviewCursor(cursor myCanteenReviewCursor) string {
 	payload, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(payload)
@@ -1079,6 +1373,7 @@ func (h *CanteenHandler) buildMyCanteenReviewItems(userID uint) ([]myCanteenRevi
 			Order("created_at DESC, id DESC").Find(&allV2).Error; err != nil && !isCanteenReviewSchemaMissing(err) {
 			return nil, err
 		}
+		populateReviewDishNames(h.db, allV2)
 		for _, event := range allV2 {
 			allV2ByCanteen[event.CanteenID] = struct{}{}
 			if _, exists := latestV2ByCanteen[event.CanteenID]; !exists {
@@ -1183,11 +1478,40 @@ func (h *CanteenHandler) myV2ReviewPayload(event, latest models.CanteenReviewEve
 		"taste_score": event.TasteScore, "value_score": event.ValueScore, "queue_score": event.QueueScore,
 		"hygiene_score": event.HygieneScore, "service_score": event.ServiceScore,
 		"comment": event.Comment, "images": decodeStringList(event.Images), "tags": decodeStringList(event.Tags),
-		"recommended_dishes": event.RecommendedDishNames, "created_at": event.CreatedAt, "updated_at": event.UpdatedAt,
+		"recommended_dishes": event.RecommendedDishNames, "recommended_dish_details": event.RecommendedDishDetails,
+		"dish_reviews": h.loadReviewDishReviewPayload(event.ID), "dish_photos": h.loadReviewDishPhotos(event.ID),
+		"created_at": event.CreatedAt, "updated_at": event.UpdatedAt,
 		"is_edited":  event.UpdatedAt.Sub(event.CreatedAt).Abs() > time.Second,
 		"can_edit":   latest.ID == event.ID && event.Status == models.ReviewEventStatusActive,
 		"can_delete": event.Status == models.ReviewEventStatusActive,
 	}
+}
+
+func (h *CanteenHandler) loadReviewDishReviewPayload(reviewEventID uint) []map[string]interface{} {
+	var rows []struct {
+		DishID       uint   `gorm:"column:dish_id"`
+		DishName     string `gorm:"column:dish_name"`
+		TasteScore   int    `gorm:"column:taste_score"`
+		ValueScore   int    `gorm:"column:value_score"`
+		PortionScore int    `gorm:"column:portion_score"`
+		Comment      string `gorm:"column:comment"`
+	}
+	if err := h.db.Table("canteen_dish_review_events AS r").
+		Select("r.dish_id, d.name AS dish_name, r.taste_score, r.value_score, r.portion_score, r.comment").
+		Joins("JOIN canteen_dishes d ON d.id = r.dish_id").
+		Where("r.canteen_review_event_id = ? AND r.status <> ?", reviewEventID, models.ReviewEventStatusDeleted).
+		Order("r.id ASC").Scan(&rows).Error; err != nil {
+		return []map[string]interface{}{}
+	}
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, map[string]interface{}{
+			"dish_id": row.DishID, "dish_name": row.DishName,
+			"taste_score": row.TasteScore, "value_score": row.ValueScore,
+			"portion_score": row.PortionScore, "comment": row.Comment,
+		})
+	}
+	return result
 }
 
 func (h *CanteenHandler) myLegacyReviewPayload(rating models.CanteenRating) map[string]interface{} {
@@ -1650,30 +1974,157 @@ func uniqueReviewDishIDs(ids ...[]uint) []uint {
 	return result
 }
 
-// resolveReviewDishIDs 将明确选择的 dish_ids、已填写评分的菜品以及旧客户端的菜名
-// 解析为同一组实体。模糊候选不会在这里自动合并；未知菜名直接报错，避免“界面显示了但
-// 服务端静默丢弃”的假成功。
-func (h *CanteenHandler) resolveReviewDishIDs(tx *gorm.DB, canteenID uint, ids []uint, names []string, reviews []reviewDishInput) ([]uint, error) {
-	result := uniqueReviewDishIDs(ids)
-	for _, input := range reviews {
-		result = uniqueReviewDishIDs(result, []uint{input.DishID})
+// resolveReviewDishInputs 在一次评价事务内解析菜名和菜品 ID。
+// 已有 active 菜直接关联；pending 菜复用同一实体；未知菜名创建一个 pending candidate。
+// 这样评价可以立即发布，菜品实体仍然等待管理员审核，不会因为审核状态阻断主链路。
+func (h *CanteenHandler) resolveReviewDishInputs(tx *gorm.DB, canteenID, userID uint, ids []uint, names []string, legacyReviews, dishes []reviewDishInput) ([]reviewDishInput, []uint, error) {
+	resolved := make([]reviewDishInput, 0, len(legacyReviews)+len(dishes)+len(names))
+	selected := make([]uint, 0, 3)
+
+	appendDish := func(input reviewDishInput) error {
+		name := strings.TrimSpace(input.DishName)
+		var dish models.CanteenDish
+		if input.DishID > 0 {
+			if err := tx.Where("id = ? AND canteen_id = ?", input.DishID, canteenID).First(&dish).Error; err != nil {
+				return fmt.Errorf("%w: 菜品不存在", errReviewDishInvalid)
+			}
+			if dish.Status == models.DishStatusHidden || dish.Status == models.DishStatusMerged {
+				return fmt.Errorf("%w: 菜品已下架或合并，请刷新后重新选择", errReviewDishConflict)
+			}
+			if dish.Status == models.DishStatusRejected || dish.Status == models.DishStatusArchived {
+				if err := tx.Model(&dish).Updates(map[string]interface{}{
+					"status": models.DishStatusPending, "reject_reason": "", "reviewed_by": nil, "reviewed_at": nil,
+				}).Error; err != nil {
+					return err
+				}
+			}
+			if name == "" {
+				name = dish.Name
+			}
+		} else if name != "" {
+			var err error
+			normalized := utils.NormalizeDishName(name)
+			err = tx.Where("canteen_id = ? AND normalized_name = ?", canteenID, normalized).First(&dish).Error
+			if err == nil && dish.Status == models.DishStatusMerged {
+				var alias models.CanteenDishAlias
+				if aliasErr := tx.Where("canteen_id = ? AND normalized_alias = ?", canteenID, normalized).First(&alias).Error; aliasErr == nil {
+					if targetErr := tx.Where("id = ? AND canteen_id = ? AND status = ?", alias.DishID, canteenID, models.DishStatusActive).First(&dish).Error; targetErr != nil {
+						return fmt.Errorf("%w: 菜品合并目标已变化，请刷新后重新选择", errReviewDishConflict)
+					}
+				} else {
+					return fmt.Errorf("%w: 菜品已合并，请刷新后重新选择", errReviewDishConflict)
+				}
+			}
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				dish = models.CanteenDish{CanteenID: canteenID, Name: name, NormalizedName: normalized, Status: models.DishStatusPending, CreatedBy: userID}
+				result := tx.Create(&dish)
+				if result.Error != nil && !isUniqueConstraintError(result.Error) {
+					return result.Error
+				}
+				if result.Error != nil || result.RowsAffected == 0 {
+					if err := tx.Where("canteen_id = ? AND normalized_name = ?", canteenID, normalized).First(&dish).Error; err != nil {
+						return err
+					}
+				}
+			} else if err != nil {
+				return err
+			}
+			if dish.Status == models.DishStatusHidden || dish.Status == models.DishStatusMerged {
+				return fmt.Errorf("%w: 同名菜品已下架或合并，请刷新后重新选择", errReviewDishConflict)
+			}
+			if dish.Status == models.DishStatusRejected || dish.Status == models.DishStatusArchived {
+				if err := tx.Model(&dish).Updates(map[string]interface{}{
+					"status": models.DishStatusPending, "reject_reason": "", "reviewed_by": nil, "reviewed_at": nil,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if dish.ID == 0 {
+			return nil
+		}
+		input.DishID, input.DishName = dish.ID, dish.Name
+		selected = uniqueReviewDishIDs(selected, []uint{dish.ID})
+		resolved = append(resolved, input)
+		return nil
 	}
-	for _, rawName := range names {
-		name := strings.TrimSpace(rawName)
-		if name == "" {
+
+	for _, id := range ids {
+		if id == 0 {
 			continue
 		}
-		normalized := utils.NormalizeDishName(name)
-		var dish models.CanteenDish
-		if err := tx.Where("canteen_id = ? AND normalized_name = ? AND status = ?", canteenID, normalized, models.DishStatusActive).First(&dish).Error; err != nil {
-			return nil, fmt.Errorf("%w: 推荐菜品尚未收录，请先上传带照片的菜品投稿并等待审核", errReviewDishInvalid)
+		if err := appendDish(reviewDishInput{DishID: id}); err != nil {
+			return nil, nil, err
 		}
-		result = uniqueReviewDishIDs(result, []uint{dish.ID})
 	}
-	if len(result) > 3 {
-		return nil, fmt.Errorf("%w: 最多选择3道菜品", errReviewDishInvalid)
+	for _, input := range legacyReviews {
+		if input.DishID == 0 && strings.TrimSpace(input.DishName) == "" {
+			continue
+		}
+		if err := appendDish(input); err != nil {
+			return nil, nil, err
+		}
 	}
-	return result, nil
+	for _, input := range dishes {
+		if input.DishID == 0 && strings.TrimSpace(input.DishName) == "" {
+			continue
+		}
+		if err := appendDish(input); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, name := range names {
+		if err := appendDish(reviewDishInput{DishName: name}); err != nil {
+			return nil, nil, err
+		}
+	}
+	if len(selected) > 3 {
+		return nil, nil, fmt.Errorf("%w: 最多选择3道菜品", errReviewDishInvalid)
+	}
+	return dedupeReviewDishInputs(resolved), selected, nil
+}
+
+func dedupeReviewDishInputs(inputs []reviewDishInput) []reviewDishInput {
+	byDish := make(map[uint]reviewDishInput, len(inputs))
+	order := make([]uint, 0, len(inputs))
+	for _, input := range inputs {
+		if input.DishID == 0 {
+			continue
+		}
+		if _, exists := byDish[input.DishID]; !exists {
+			order = append(order, input.DishID)
+		}
+		current := byDish[input.DishID]
+		if input.TasteScore != 0 || input.ValueScore != 0 || input.PortionScore != 0 || input.Comment != "" {
+			current.TasteScore, current.ValueScore, current.PortionScore, current.Comment = input.TasteScore, input.ValueScore, input.PortionScore, input.Comment
+		}
+		if len(input.PhotoFileIDs) > 0 {
+			current.PhotoFileIDs = append(current.PhotoFileIDs, input.PhotoFileIDs...)
+		}
+		if current.DishName == "" {
+			current.DishName = input.DishName
+		}
+		byDish[input.DishID] = current
+	}
+	result := make([]reviewDishInput, 0, len(order))
+	for _, id := range order {
+		input := byDish[id]
+		seen := map[uint]struct{}{}
+		files := input.PhotoFileIDs[:0]
+		for _, fileID := range input.PhotoFileIDs {
+			if fileID == 0 {
+				continue
+			}
+			if _, exists := seen[fileID]; exists {
+				continue
+			}
+			seen[fileID] = struct{}{}
+			files = append(files, fileID)
+		}
+		input.PhotoFileIDs = files
+		result = append(result, input)
+	}
+	return result
 }
 
 // syncDishReviews 同步一条到店评价的菜品关系和可选菜品评分。
@@ -1683,7 +2134,7 @@ func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewE
 	selected := make(map[uint]struct{}, len(selectedIDs))
 	for _, id := range selectedIDs {
 		var dish models.CanteenDish
-		if err := tx.Where("id = ? AND canteen_id = ? AND status = ?", id, canteenID, models.DishStatusActive).First(&dish).Error; err != nil {
+		if err := tx.Where("id = ? AND canteen_id = ? AND status IN ?", id, canteenID, []string{models.DishStatusActive, models.DishStatusPending}).First(&dish).Error; err != nil {
 			return fmt.Errorf("%w: 菜品不存在或已下架", errReviewDishInvalid)
 		}
 		selected[id] = struct{}{}
@@ -1723,8 +2174,12 @@ func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewE
 		if _, selected := selected[input.DishID]; !selected {
 			return fmt.Errorf("%w: 菜品评分必须属于已选择的推荐菜品", errReviewDishInvalid)
 		}
+		allEmpty := input.TasteScore == 0 && input.ValueScore == 0 && input.PortionScore == 0
+		if allEmpty {
+			continue
+		}
 		if !services.ValidateDishScores(services.DishScores{Taste: input.TasteScore, Value: input.ValueScore, Portion: input.PortionScore}) {
-			return fmt.Errorf("%w: 菜品评分均需为1到5分", errReviewDishInvalid)
+			return fmt.Errorf("%w: 菜品评分需完整填写1到5分，或全部留空", errReviewDishInvalid)
 		}
 		if len([]rune(input.Comment)) > 500 {
 			return fmt.Errorf("%w: 菜品评价文字不能超过500字", errReviewDishInvalid)
@@ -1769,6 +2224,117 @@ func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewE
 	}
 	for dishID := range affected {
 		if err := recomputeDishUserSummary(tx, dishID, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncDishPhotos 将评价编辑器中已经上传的 file_id 绑定到菜品，图片仍保持 pending，
+// 只有管理员通过后才进入公开图库。编辑时 approved 资产脱离评价但继续保留，pending
+// 资产则随本次编辑删除并回收，避免删除评价时误删社区公共图片。
+func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint, inputs []reviewDishInput) error {
+	wanted := make(map[string]reviewDishInput)
+	allFileIDs := make([]uint, 0)
+	for _, input := range inputs {
+		if len(input.PhotoFileIDs) > 3 {
+			return fmt.Errorf("%w: 每道菜最多提交3张实拍", errReviewDishInvalid)
+		}
+		for _, fileID := range input.PhotoFileIDs {
+			if fileID == 0 {
+				continue
+			}
+			key := fmt.Sprintf("%d:%d", input.DishID, fileID)
+			wanted[key] = input
+			allFileIDs = append(allFileIDs, fileID)
+		}
+	}
+	if len(allFileIDs) > 0 {
+		if _, err := services.ValidateImageFileIDs(tx, allFileIDs, len(allFileIDs), userID); err != nil {
+			return err
+		}
+	}
+
+	var existing []models.CanteenDishPhoto
+	if err := tx.Where("review_event_id = ?", reviewEventID).Find(&existing).Error; err != nil {
+		return err
+	}
+	seenExisting := make(map[string]struct{}, len(existing))
+	for _, photo := range existing {
+		key := fmt.Sprintf("%d:%d", photo.DishID, photo.FileID)
+		if _, keep := wanted[key]; keep {
+			if photo.Status == models.DishPhotoStatusRejected || photo.Status == models.DishPhotoStatusArchived {
+				if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Updates(map[string]interface{}{
+					"status": models.DishPhotoStatusPending, "review_event_id": reviewEventID,
+					"reject_reason": "", "reviewed_by": nil, "reviewed_at": nil,
+				}).Error; err != nil {
+					return err
+				}
+			}
+			seenExisting[key] = struct{}{}
+			continue
+		}
+		if photo.Status == models.DishPhotoStatusApproved {
+			// 审核通过的社区资产不能因评价编辑被删除，只解除来源评价绑定。
+			if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("review_event_id", nil).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Updates(map[string]interface{}{
+			"status": models.DishPhotoStatusArchived, "review_event_id": nil, "reject_reason": "评价编辑移除",
+		}).Error; err != nil {
+			return err
+		}
+		if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+			return err
+		}
+	}
+
+	newPendingByDish := make(map[uint]int)
+	for key, input := range wanted {
+		if _, exists := seenExisting[key]; exists || input.DishID == 0 {
+			continue
+		}
+		newPendingByDish[input.DishID]++
+	}
+	for dishID, newCount := range newPendingByDish {
+		var pendingCount int64
+		if err := tx.Model(&models.CanteenDishPhoto{}).
+			Where("dish_id = ? AND user_id = ? AND status = ?", dishID, userID, models.DishPhotoStatusPending).
+			Count(&pendingCount).Error; err != nil {
+			return err
+		}
+		if pendingCount+int64(newCount) > 3 {
+			return fmt.Errorf("%w: 你对该菜品的待审核实拍已达到上限", errReviewDishPendingLimit)
+		}
+	}
+
+	for key, input := range wanted {
+		if _, exists := seenExisting[key]; exists {
+			continue
+		}
+		var duplicate models.CanteenDishPhoto
+		err := tx.Where("file_id = ?", strings.Split(key, ":")[1]).First(&duplicate).Error
+		if err == nil {
+			if duplicate.ReviewEventID != nil && *duplicate.ReviewEventID == reviewEventID {
+				continue
+			}
+			return fmt.Errorf("%w: 图片已绑定到其他菜品", errReviewDishInvalid)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		fileID := uint(0)
+		_, _ = fmt.Sscanf(strings.Split(key, ":")[1], "%d", &fileID)
+		if fileID == 0 || input.DishID == 0 {
+			continue
+		}
+		photo := models.CanteenDishPhoto{
+			DishID: input.DishID, FileID: fileID, UserID: userID,
+			Status: models.DishPhotoStatusPending, ReviewEventID: &reviewEventID,
+		}
+		if err := tx.Create(&photo).Error; err != nil {
 			return err
 		}
 	}

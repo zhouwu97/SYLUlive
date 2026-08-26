@@ -157,32 +157,34 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	tagMap := h.batchAggregateSummaryTags(summaryTagDays, 3)
 
 	type item struct {
-		Rank           int                   `json:"rank"`
-		ID             uint                  `json:"id"`
-		Name           string                `json:"name"`
-		Image          string                `json:"image"`
-		AverageStar    float64               `json:"average_star"`
-		RatingCount    int                   `json:"rating_count"`
-		RankingScore   float64               `json:"ranking_score"`
-		Confidence     string                `json:"confidence"`
-		DishCount      int                   `json:"dish_count"`
-		DishPhotoCount int                   `json:"dish_photo_count"`
-		SummaryTags    []services.SummaryTag `json:"summary_tags"`
+		Rank               int                   `json:"rank"`
+		ID                 uint                  `json:"id"`
+		Name               string                `json:"name"`
+		Image              string                `json:"image"`
+		AverageStar        float64               `json:"average_star"`
+		RatingCount        int                   `json:"rating_count"`
+		RankingScore       float64               `json:"ranking_score"`
+		Confidence         string                `json:"confidence"`
+		DishCount          int                   `json:"dish_count"`
+		DishWithPhotoCount int                   `json:"dish_with_photo_count"`
+		DishPhotoCount     int                   `json:"dish_photo_count"`
+		SummaryTags        []services.SummaryTag `json:"summary_tags"`
 	}
 	items := make([]item, 0, len(entries))
 	for _, e := range entries {
 		items = append(items, item{
-			Rank:           e.Rank,
-			ID:             e.ID,
-			Name:           e.Name,
-			Image:          e.Image,
-			AverageStar:    e.AverageStar,
-			RatingCount:    e.RatingCount,
-			RankingScore:   services.BayesianScoreTo100(e.RankingScore),
-			Confidence:     services.RatingConfidenceEffective(e.EffectiveSample),
-			DishCount:      e.DishCount,
-			DishPhotoCount: e.DishPhotoCount,
-			SummaryTags:    tagMap[e.ID],
+			Rank:               e.Rank,
+			ID:                 e.ID,
+			Name:               e.Name,
+			Image:              e.Image,
+			AverageStar:        e.AverageStar,
+			RatingCount:        e.RatingCount,
+			RankingScore:       services.BayesianScoreTo100(e.RankingScore),
+			Confidence:         services.RatingConfidenceEffective(e.EffectiveSample),
+			DishCount:          e.DishCount,
+			DishWithPhotoCount: e.DishWithPhotoCount,
+			DishPhotoCount:     e.DishPhotoCount,
+			SummaryTags:        tagMap[e.ID],
 		})
 	}
 

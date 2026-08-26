@@ -165,7 +165,7 @@ func (h *CanteenDishPhotoAdminHandler) AdminMergeDish(c *gin.Context) {
 				return err
 			}
 		}
-		if err := tx.Model(&source).Updates(map[string]interface{}{"status": models.DishStatusHidden, "updated_at": time.Now()}).Error; err != nil {
+		if err := tx.Model(&source).Updates(map[string]interface{}{"status": models.DishStatusMerged, "updated_at": time.Now()}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&models.AdminLog{

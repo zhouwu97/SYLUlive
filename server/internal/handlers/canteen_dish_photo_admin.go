@@ -120,6 +120,198 @@ func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishPhotos(c *gin.Context
 	c.JSON(http.StatusOK, gin.H{"items": rows})
 }
 
+// AdminListPendingDishes 返回没有进入公共菜品库的菜品候选。
+// GET /api/canteens/dishes/pending
+func (h *CanteenDishPhotoAdminHandler) AdminListPendingDishes(c *gin.Context) {
+	type pendingDishRow struct {
+		ID            uint      `json:"id"`
+		CanteenID     uint      `json:"canteen_id"`
+		CanteenName   string    `json:"canteen_name"`
+		Name          string    `json:"name"`
+		Status        string    `json:"status"`
+		RejectReason  string    `json:"reject_reason,omitempty"`
+		CreatedBy     uint      `json:"created_by"`
+		CreatedAt     time.Time `json:"created_at"`
+		PendingPhotos int       `json:"pending_photo_count"`
+		PossibleMatch []struct {
+			DishID     uint    `json:"dish_id"`
+			Name       string  `json:"name"`
+			MatchScore float64 `json:"match_score"`
+		} `gorm:"-" json:"possible_matches,omitempty"`
+	}
+	var rows []pendingDishRow
+	err := h.db.Table("canteen_dishes AS d").
+		Joins("JOIN canteens c ON c.id = d.canteen_id").
+		Select(`d.id, d.canteen_id, c.name AS canteen_name, d.name, d.status,
+			d.reject_reason, d.created_by, d.created_at,
+			(SELECT COUNT(*) FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?) AS pending_photos`, models.DishPhotoStatusPending).
+		Where("d.status = ?", models.DishStatusPending).
+		Order("d.created_at ASC, d.id ASC").Scan(&rows).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核菜品失败"})
+		return
+	}
+	if rows == nil {
+		rows = []pendingDishRow{}
+	}
+	for i := range rows {
+		var candidates []models.CanteenDish
+		if h.db.Where("canteen_id = ? AND status = ? AND id <> ?", rows[i].CanteenID, models.DishStatusActive, rows[i].ID).
+			Find(&candidates).Error != nil {
+			continue
+		}
+		current := utils.NormalizeDishName(rows[i].Name)
+		for _, candidate := range candidates {
+			normalized := utils.NormalizeDishName(candidate.Name)
+			if current == "" || normalized == "" {
+				continue
+			}
+			maxLen := len([]rune(current))
+			if otherLen := len([]rune(normalized)); otherLen > maxLen {
+				maxLen = otherLen
+			}
+			if maxLen == 0 {
+				continue
+			}
+			score := 1 - float64(runeEditDistance(current, normalized))/float64(maxLen)
+			if score >= 0.35 {
+				rows[i].PossibleMatch = append(rows[i].PossibleMatch, struct {
+					DishID     uint    `json:"dish_id"`
+					Name       string  `json:"name"`
+					MatchScore float64 `json:"match_score"`
+				}{DishID: candidate.ID, Name: candidate.Name, MatchScore: score})
+			}
+		}
+		sort.SliceStable(rows[i].PossibleMatch, func(a, b int) bool {
+			return rows[i].PossibleMatch[a].MatchScore > rows[i].PossibleMatch[b].MatchScore
+		})
+		if len(rows[i].PossibleMatch) > 3 {
+			rows[i].PossibleMatch = rows[i].PossibleMatch[:3]
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": rows})
+}
+
+// AdminPendingModerationCount 返回菜品候选和实拍待办数量。
+// GET /api/canteens/dish-moderation/pending-count
+func (h *CanteenDishPhotoAdminHandler) AdminPendingModerationCount(c *gin.Context) {
+	var pendingDishes, pendingPhotos int64
+	if err := h.db.Model(&models.CanteenDish{}).Where("status = ?", models.DishStatusPending).Count(&pendingDishes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取审核待办失败"})
+		return
+	}
+	if err := h.db.Model(&models.CanteenDishPhoto{}).Where("status = ?", models.DishPhotoStatusPending).Count(&pendingPhotos).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取审核待办失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"pending_dishes": pendingDishes, "pending_photos": pendingPhotos, "count": pendingDishes + pendingPhotos})
+}
+
+// AdminApproveDish 通过菜品候选，但不替代实拍审核。
+// POST /api/canteens/dishes/:dishId/approve
+func (h *CanteenDishPhotoAdminHandler) AdminApproveDish(c *gin.Context) {
+	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
+	if err != nil || dishID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var dish models.CanteenDish
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dishID).Error; err != nil {
+			return err
+		}
+		if dish.Status == models.DishStatusActive {
+			return nil
+		}
+		if dish.Status == models.DishStatusHidden {
+			return errDishHidden
+		}
+		now := time.Now()
+		if err := tx.Model(&dish).Updates(map[string]interface{}{
+			"status": models.DishStatusActive, "reject_reason": "", "reviewed_by": adminID, "reviewed_at": &now,
+		}).Error; err != nil {
+			return err
+		}
+		dish.Status = models.DishStatusActive
+		dish.RejectReason = ""
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID), Action: "通过菜品候选", Target: dish.Name,
+			Detail: fmt.Sprintf("通过菜品候选（dish ID: %d）", dish.ID),
+		}).Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "菜品不存在"})
+			return
+		}
+		respondDishPhotoAdminError(c, err)
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "菜品已通过", "dish_id": dish.ID, "status": dish.Status})
+}
+
+// AdminRejectDish 驳回菜品候选，并一并驳回其待审实拍证据。
+// POST /api/canteens/dishes/:dishId/reject
+func (h *CanteenDishPhotoAdminHandler) AdminRejectDish(c *gin.Context) {
+	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
+	if err != nil || dishID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
+		return
+	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || !dishRejectReasons[input.Reason] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "驳回原因不合法"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var dish models.CanteenDish
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dish, dishID).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&dish).Updates(map[string]interface{}{
+			"status": models.DishStatusRejected, "reject_reason": input.Reason, "reviewed_by": adminID, "reviewed_at": &now,
+		}).Error; err != nil {
+			return err
+		}
+		dish.Status = models.DishStatusRejected
+		dish.RejectReason = input.Reason
+		var pending []models.CanteenDishPhoto
+		if err := tx.Where("dish_id = ? AND status = ?", dish.ID, models.DishPhotoStatusPending).Find(&pending).Error; err != nil {
+			return err
+		}
+		for _, photo := range pending {
+			if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Updates(map[string]interface{}{
+				"status": models.DishPhotoStatusRejected, "reject_reason": input.Reason, "reviewed_by": adminID, "reviewed_at": &now,
+			}).Error; err != nil {
+				return err
+			}
+			if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+				return err
+			}
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID), Action: "驳回菜品候选", Target: dish.Name,
+			Detail: fmt.Sprintf("驳回菜品候选（dish ID: %d），原因 %s", dish.ID, input.Reason),
+		}).Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "菜品不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "驳回菜品失败"})
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "菜品已驳回", "dish_id": dish.ID, "status": dish.Status, "reject_reason": dish.RejectReason})
+}
+
 // ApproveDishPhoto 审核通过实拍：pending → approved，文件转 public。
 // POST /api/canteens/dish-photos/:photoId/approve
 func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
@@ -165,9 +357,12 @@ func (h *CanteenDishPhotoAdminHandler) ApproveDishPhoto(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		// 新菜品以 pending 创建；首张实拍审核通过后同步激活菜品实体。
-		if dish.Status == models.DishStatusPending {
-			if err := tx.Model(&dish).Update("status", models.DishStatusActive).Error; err != nil {
+		// 菜品和实拍是两条审核状态机；通过实拍时同步让候选菜进入 active，
+		// 但管理员也可以只通过菜品而暂时没有公开图片。
+		if dish.Status == models.DishStatusPending || dish.Status == models.DishStatusRejected || dish.Status == models.DishStatusArchived {
+			if err := tx.Model(&dish).Updates(map[string]interface{}{
+				"status": models.DishStatusActive, "reject_reason": "", "reviewed_by": adminID, "reviewed_at": &now,
+			}).Error; err != nil {
 				return err
 			}
 		}
@@ -231,6 +426,21 @@ func (h *CanteenDishPhotoAdminHandler) RejectDishPhoto(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
+		if dish.Status == models.DishStatusPending {
+			var pendingCount int64
+			if err := tx.Model(&models.CanteenDishPhoto{}).
+				Where("dish_id = ? AND status = ? AND id <> ?", dish.ID, models.DishPhotoStatusPending, photo.ID).
+				Count(&pendingCount).Error; err != nil {
+				return err
+			}
+			if pendingCount == 0 {
+				if err := tx.Model(&dish).Updates(map[string]interface{}{
+					"status": models.DishStatusRejected, "reject_reason": input.Reason, "reviewed_by": adminID, "reviewed_at": &now,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		}
 		// 不调用 ClaimPublicImageFiles；文件保持 private（若已被 ClaimPrivateFiles 激活则保持 active/private）
 		return tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: adminNickname(tx, adminID),
@@ -242,6 +452,7 @@ func (h *CanteenDishPhotoAdminHandler) RejectDishPhoto(c *gin.Context) {
 		respondDishPhotoAdminError(c, err)
 		return
 	}
+	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回", "photo_id": photo.ID})
 }
 

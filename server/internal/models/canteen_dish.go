@@ -12,9 +12,12 @@ import (
 
 // DishStatus 菜品状态
 const (
-	DishStatusPending = "pending"
-	DishStatusActive  = "active"
-	DishStatusHidden  = "hidden"
+	DishStatusPending  = "pending"
+	DishStatusActive   = "active"
+	DishStatusHidden   = "hidden"
+	DishStatusRejected = "rejected"
+	DishStatusArchived = "archived"
+	DishStatusMerged   = "merged"
 )
 
 // DishPhotoStatus 菜品实拍状态
@@ -27,29 +30,33 @@ const (
 
 // CanteenDish 食堂菜品
 type CanteenDish struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	CanteenID      uint      `gorm:"not null;index" json:"canteen_id"`
-	Name           string    `gorm:"size:100;not null" json:"name"`
-	NormalizedName string    `gorm:"size:100;not null" json:"-"`
-	Status         string    `gorm:"size:20;not null;default:'active';index" json:"status"`
-	CreatedBy      uint      `gorm:"not null;index" json:"created_by"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	CanteenID      uint       `gorm:"not null;index" json:"canteen_id"`
+	Name           string     `gorm:"size:100;not null" json:"name"`
+	NormalizedName string     `gorm:"size:100;not null" json:"-"`
+	Status         string     `gorm:"size:20;not null;default:'active';index" json:"status"`
+	CreatedBy      uint       `gorm:"not null;index" json:"created_by"`
+	RejectReason   string     `gorm:"size:200" json:"reject_reason,omitempty"`
+	ReviewedBy     *uint      `json:"reviewed_by,omitempty"`
+	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // CanteenDishPhoto 菜品实拍（最多 3 张 approved）
 type CanteenDishPhoto struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	DishID       uint       `gorm:"not null;index" json:"dish_id"`
-	FileID       uint       `gorm:"not null;index" json:"file_id"`
-	UserID       uint       `gorm:"not null;index" json:"user_id"`
-	Status       string     `gorm:"size:20;not null;default:'approved';index" json:"status"`
-	SortOrder    int        `gorm:"not null;default:0" json:"sort_order"`
-	ReviewedBy   *uint      `json:"reviewed_by"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-	RejectReason string     `gorm:"size:200" json:"reject_reason"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	DishID        uint       `gorm:"not null;index" json:"dish_id"`
+	FileID        uint       `gorm:"not null;index" json:"file_id"`
+	UserID        uint       `gorm:"not null;index" json:"user_id"`
+	Status        string     `gorm:"size:20;not null;default:'approved';index" json:"status"`
+	SortOrder     int        `gorm:"not null;default:0" json:"sort_order"`
+	ReviewedBy    *uint      `json:"reviewed_by"`
+	ReviewedAt    *time.Time `json:"reviewed_at"`
+	RejectReason  string     `gorm:"size:200" json:"reject_reason"`
+	ReviewEventID *uint      `gorm:"index" json:"review_event_id,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // EnsureCanteenDishSchema 建立菜品图库的数据库级唯一约束（幂等）。

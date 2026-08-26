@@ -303,12 +303,14 @@ func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	if arch.Code != http.StatusOK {
 		t.Fatalf("archive status=%d body=%s", arch.Code, arch.Body.String())
 	}
-	// archived 后公共列表不可见；孤立文件无其他公开引用应被回收为 private
+	// archived 后实拍不可见，但 active 菜品本身仍保留在公共菜品库；
+	// 孤立文件无其他公开引用应被回收为 private。
 	listResp := performDishPhotoRequest(t, dishHandler.ListDishes, http.MethodGet,
 		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 0, "")
-	if strings.Contains(listResp.Body.String(), "鸡腿饭") {
-		t.Fatalf("archived dish must not be visible: %s", listResp.Body.String())
+	if !strings.Contains(listResp.Body.String(), "鸡腿饭") ||
+		!strings.Contains(listResp.Body.String(), `"photo_count":0`) {
+		t.Fatalf("active dish should remain visible without approved photo: %s", listResp.Body.String())
 	}
 	var fileAfterArchive models.File
 	db.First(&fileAfterArchive, fileA.ID)

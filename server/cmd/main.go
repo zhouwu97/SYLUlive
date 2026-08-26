@@ -1251,6 +1251,7 @@ func main() {
 
 		user.GET("/profile", userHandler.GetProfile)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
+		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -2102,10 +2103,14 @@ func main() {
 
 		// 菜品实拍审核与菜品管理
 		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		canteenAdmin.GET("/dishes/pending", canteenDishPhotoAdminHandler.AdminListPendingDishes)
+		canteenAdmin.GET("/dish-moderation/pending-count", canteenDishPhotoAdminHandler.AdminPendingModerationCount)
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
 		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.POST("/dishes/:dishId/approve", canteenDishPhotoAdminHandler.AdminApproveDish)
+		canteenAdmin.POST("/dishes/:dishId/reject", canteenDishPhotoAdminHandler.AdminRejectDish)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
 
@@ -2122,6 +2127,7 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 		canteenAuth.POST("/:id/reviews", canteenHandler.CreateReview)
 		canteenAuth.PATCH("/reviews/:reviewId", canteenHandler.UpdateReview)
+		canteenAuth.GET("/reviews/:reviewId/edit-context", canteenHandler.GetReviewEditContext)
 		canteenAuth.DELETE("/reviews/:reviewId", canteenHandler.DeleteReview)
 		canteenAuth.DELETE("/ratings/:ratingId", canteenHandler.DeleteLegacyRating)
 		canteenAuth.PUT("/reviews/:reviewId/vote", canteenHandler.VoteReview)

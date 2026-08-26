@@ -15,6 +15,7 @@ import '../../widgets/team/team_ui_tokens.dart';
 import 'team_application_manage_screen.dart';
 import 'team_recruitment_create_screen.dart';
 import '../../widgets/cached_avatar.dart';
+import '../../widgets/app_cached_image.dart';
 
 class TeamRecruitmentDetailScreen extends StatefulWidget {
   final int recruitmentId;
@@ -339,10 +340,15 @@ class _TeamRecruitmentDetailScreenState
                           separatorBuilder: (_, __) => const SizedBox(width: 8),
                           itemBuilder: (_, index) => ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                ApiConstants.fullUrl(item.images[index].url),
+                              child: AppCachedImage.public(
+                                imageUrl: ApiConstants.fullUrl(
+                                  item.images[index].url,
+                                ),
                                 width: 170,
+                                height: 130,
                                 fit: BoxFit.cover,
+                                memCacheWidth: 340,
+                                memCacheHeight: 260,
                               ))))
                 ],
               ])),

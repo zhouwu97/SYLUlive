@@ -10,13 +10,11 @@ import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
-import '../../models/topic.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
-import '../../services/topic_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/app_feedback.dart';
@@ -24,8 +22,6 @@ import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/publish_media_section.dart';
 import 'widgets/publish_section_selector.dart';
-import 'widgets/publish_topic_section.dart';
-import 'widgets/topic_picker_sheet.dart';
 import 'widgets/water_post_bottom_bar.dart';
 
 class _PublishSessionChanged implements Exception {
@@ -34,7 +30,7 @@ class _PublishSessionChanged implements Exception {
 
 /// 水帖发布/编辑页（boardId == 1）。
 ///
-/// 采用整体滚动编辑布局：顶部标题、正文、话题与媒体顺序自然延展。
+/// 采用整体滚动编辑布局：顶部标题、正文与媒体顺序自然延展。
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
   final String? initialPostType;
@@ -48,7 +44,6 @@ class WaterPostComposer extends StatefulWidget {
 class _WaterPostComposerState extends State<WaterPostComposer>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
-  static const _maxTopics = 5;
   static const _maxContentLength = 2000;
   static const Color _hintLight = Color(0xFFA7ABB2);
   static const Color _titleWarning = Color(0xFFE5484D);
@@ -65,14 +60,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   String _selectedPostType = 'campus_life';
   int? _selectedTagId;
   bool _hasExplicitInitialPostType = false;
-
-  late final TopicService _topicService;
-  final List<TopicSelection> _selectedTopics = [];
-  List<Topic> _recommendedTopics = const [];
-  bool _topicLoading = false;
-  Timer? _topicDebounce;
-  String _lastTopicQuery = '';
-  int _topicRequestGeneration = 0;
 
   // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
   final List<PublishImageItem> _images = [];
@@ -246,7 +233,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void initState() {
     super.initState();
-    _topicService = TopicService(context.read<AuthProvider>().dio);
     _titleWarningController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -265,11 +251,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _images.addAll(post.images.map(PublishImageItem.existing));
       // 普通 Composer 不再暴露 legacy WaterTag；编辑旧帖时一并清空。
       _selectedTagId = null;
-      _selectedTopics.addAll(
-        post.topics.map(
-          (topic) => TopicSelection.existing(id: topic.id, name: topic.name),
-        ),
-      );
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
     _selectedPostType = rawPostType != null && rawPostType.trim().isNotEmpty
@@ -280,7 +261,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (!_isEditing) {
       unawaited(_restoreDraft());
     }
-    _scheduleTopicRecommendationRefresh();
     // 加载版块列表供标签选择
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<WaterSectionProvider>();
@@ -291,8 +271,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void dispose() {
     _draftDebounce?.cancel();
-    _topicDebounce?.cancel();
-    _topicRequestGeneration++;
     if (!_draftPersistenceDisabled) {
       unawaited(_persistDraft()); // 普通退出仍保留当前草稿
     }
@@ -307,7 +285,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   void _onTitleChanged() {
     _scheduleDraftSave();
-    _scheduleTopicRecommendationRefresh();
     if (!_titleNeedsAttention || _titleController.text.trim().isEmpty) {
       return;
     }
@@ -318,7 +295,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   void _onContentChanged() {
     _scheduleDraftSave();
-    _scheduleTopicRecommendationRefresh();
     setState(() {});
   }
 
@@ -338,9 +314,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     }
     // 兼容旧草稿结构，但不把普通 WaterTag 恢复到新 Composer。
     _selectedTagId = null;
-    _selectedTopics
-      ..clear()
-      ..addAll(draft.topics);
     for (final path in draft.draftImagePaths) {
       final file = File(path);
       if (await file.exists()) {
@@ -383,7 +356,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       content: _contentController.text.trim(),
       postType: _selectedPostType,
       waterTagId: _selectedTagId,
-      topics: List<TopicSelection>.unmodifiable(_selectedTopics),
       draftImagePaths: _images
           .where((e) => e.source == PublishImageSource.local)
           .map((e) => e.localFile!.path)
@@ -395,81 +367,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       return;
     }
     await _draftService.save(draft);
-  }
-
-  void _scheduleTopicRecommendationRefresh({bool immediate = false}) {
-    _topicDebounce?.cancel();
-    final delay = immediate ? Duration.zero : const Duration(milliseconds: 500);
-    _topicDebounce = Timer(delay, _refreshTopicRecommendations);
-  }
-
-  Future<void> _refreshTopicRecommendations() async {
-    final rawQuery =
-        '${_titleController.text.trim()} ${_contentController.text.trim()}'
-            .trim();
-    final query = rawQuery.runes.length < 4 ? '' : rawQuery;
-    if (query == _lastTopicQuery && _recommendedTopics.isNotEmpty) return;
-    final requestGeneration = ++_topicRequestGeneration;
-    final section = _selectedPostType;
-    _lastTopicQuery = query;
-    if (mounted) setState(() => _topicLoading = true);
-    try {
-      final topics = await _topicService.recommend(
-        query: query,
-        section: section,
-        limit: 8,
-      );
-      if (!mounted ||
-          requestGeneration != _topicRequestGeneration ||
-          section != _selectedPostType) {
-        return;
-      }
-      setState(() {
-        _recommendedTopics = topics;
-      });
-    } catch (_) {
-      // 推荐是增强能力；失败时保留已有推荐或空态，不打扰发帖。
-    } finally {
-      if (mounted && requestGeneration == _topicRequestGeneration) {
-        setState(() => _topicLoading = false);
-      }
-    }
-  }
-
-  void _addTopic(TopicSelection selection) {
-    if (_selectedTopics.any(
-        (item) => item.id == selection.id && item.name == selection.name)) {
-      return;
-    }
-    if (_selectedTopics.length >= 5) {
-      AppFeedback.error('最多选择 5 个话题', context: context);
-      return;
-    }
-    setState(() => _selectedTopics.add(selection));
-    _scheduleDraftSave();
-  }
-
-  void _removeTopic(TopicSelection selection) {
-    setState(() => _selectedTopics.remove(selection));
-    _scheduleDraftSave();
-  }
-
-  Future<void> _openTopicPicker() async {
-    final result = await showTopicPickerSheet(
-      context,
-      service: _topicService,
-      section: _selectedPostType,
-      recommendedTopics: _recommendedTopics,
-      selectedTopics: _selectedTopics,
-      maxTopics: _maxTopics,
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      _selectedTopics
-        ..clear()
-        ..addAll(result);
-    });
-    _scheduleDraftSave();
   }
 
   // ---------------------------------------------------------------------------
@@ -553,7 +450,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               title: title,
               postType: _selectedPostType,
               waterTagId: _selectedTagId,
-              topics: List<TopicSelection>.unmodifiable(_selectedTopics),
               price: 0,
               contact: '',
               fileIds: fileIds,
@@ -565,7 +461,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               title: title,
               postType: _selectedPostType,
               waterTagId: _selectedTagId,
-              topics: List<TopicSelection>.unmodifiable(_selectedTopics),
               price: null,
               contact: null,
               fileIds: fileIds.isNotEmpty ? fileIds : null,
@@ -768,7 +663,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         _selectedTagId = null;
       });
       _scheduleDraftSave();
-      _scheduleTopicRecommendationRefresh(immediate: true);
     }
   }
 
@@ -776,18 +670,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     return PublishSectionSelector(
       section: _selectedSection,
       onTap: _showCategorySheet,
-    );
-  }
-
-  Widget _buildTopicEditor() {
-    return PublishTopicSection(
-      selectedTopics: _selectedTopics,
-      recommendedTopics: _recommendedTopics,
-      loading: _topicLoading,
-      maxTopics: _maxTopics,
-      onAdd: _openTopicPicker,
-      onRemove: _removeTopic,
-      onSelectRecommendation: _addTopic,
     );
   }
 
@@ -924,7 +806,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     textAlignVertical: TextAlignVertical.top,
                   ),
                 ),
-                _buildTopicEditor(),
                 PublishMediaSection(
                   images: _images,
                   canAddMore: canAddMoreImages,

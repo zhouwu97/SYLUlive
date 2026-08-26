@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
+import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_motion.dart';
 import '../../utils/app_feedback.dart';
 import 'canteen_empty_state.dart';
@@ -405,6 +406,14 @@ class _ReviewItemContent extends StatelessWidget {
     final imgList = _parseImageList(review['images']);
     final tagLabels = _parseTagLabels(review['tags']);
     final dishDetails = _parseRecommendedDishDetails(review);
+    final visibleDishDetails = dishDetails.where((dish) {
+      final status = dish['status']?.toString() ?? '';
+      return isOwn ||
+          status.isEmpty ||
+          status == 'active' ||
+          status == 'pending';
+    }).toList(growable: false);
+    final dishPhotos = _parseDishPhotos(review['dish_photos'], isOwn);
     final dimensionScores = review['dimension_scores'] is Map
         ? Map<String, dynamic>.from(review['dimension_scores'] as Map)
         : const <String, dynamic>{};
@@ -514,41 +523,24 @@ class _ReviewItemContent extends StatelessWidget {
               ],
             ),
           ],
-          if (dishDetails.isNotEmpty) ...[
+          if (visibleDishDetails.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _buildDishRecommendations(isDark, dishDetails),
+            _buildDishRecommendations(isDark, visibleDishDetails, isOwn),
           ],
           if (imgList.isNotEmpty) ...[
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: imgList
-                  .map(
-                    (url) => ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        CanteenTheme.radiusSm,
-                      ),
-                      child: CachedNetworkImage(
-                        imageUrl: ApiConstants.fullUrl(url),
-                        width: 82,
-                        height: 82,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: CanteenTheme.surfaceMutedBg(isDark),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: CanteenTheme.surfaceMutedBg(isDark),
-                          child: const Icon(
-                            Icons.broken_image,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
+              children: [
+                for (var index = 0; index < imgList.length; index++)
+                  _buildReviewImage(context, imgList, index, isDark),
+              ],
             ),
+          ],
+          if (dishPhotos.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildDishPhotoGallery(context, dishPhotos, isDark),
           ],
           const SizedBox(height: 10),
           Row(
@@ -680,6 +672,125 @@ class _ReviewItemContent extends StatelessWidget {
     await onDelete!(id, source);
   }
 
+  Widget _buildReviewImage(
+    BuildContext context,
+    List<String> images,
+    int index,
+    bool isDark,
+  ) {
+    final imageUrl = images[index];
+    return InkWell(
+      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+      onTap: () => _openImageViewer(context, images, index),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+        child: CachedNetworkImage(
+          imageUrl: ApiConstants.fullUrl(imageUrl),
+          width: 82,
+          height: 82,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => Container(
+            color: CanteenTheme.surfaceMutedBg(isDark),
+          ),
+          errorWidget: (context, url, error) => Container(
+            color: CanteenTheme.surfaceMutedBg(isDark),
+            child: const Icon(Icons.broken_image, color: Colors.grey),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDishPhotoGallery(
+    BuildContext context,
+    List<Map<String, dynamic>> photos,
+    bool isDark,
+  ) {
+    final urls = photos
+        .map((photo) => photo['image']?.toString().trim() ?? '')
+        .where((url) => url.isNotEmpty)
+        .toList(growable: false);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (var index = 0; index < photos.length; index++)
+          _buildDishPhotoTile(context, urls, photos[index], isDark),
+      ],
+    );
+  }
+
+  Widget _buildDishPhotoTile(
+    BuildContext context,
+    List<String> urls,
+    Map<String, dynamic> photo,
+    bool isDark,
+  ) {
+    final image = photo['image']?.toString().trim() ?? '';
+    final dishName = photo['dish_name']?.toString().trim() ?? '菜品实拍';
+    final status = photo['status']?.toString() ?? '';
+    final statusLabel = switch (status) {
+      'approved' => '',
+      'pending' => ' · 审核中',
+      'rejected' => ' · 未通过',
+      'archived' => ' · 已归档',
+      _ => '',
+    };
+    final imageIndex = urls.indexOf(image);
+    final tile = SizedBox(
+      width: 92,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+            child: CachedNetworkImage(
+              imageUrl: ApiConstants.fullUrl(image),
+              width: 92,
+              height: 82,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: CanteenTheme.surfaceMutedBg(isDark),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: CanteenTheme.surfaceMutedBg(isDark),
+                child: const Icon(Icons.broken_image, color: Colors.grey),
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '$dishName$statusLabel',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              color: status == 'approved'
+                  ? CanteenTheme.textSecondaryColor(isDark)
+                  : CanteenTheme.textTertiaryColor(isDark),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (imageIndex < 0) return tile;
+    return InkWell(
+      borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+      onTap: () => _openImageViewer(context, urls, imageIndex),
+      child: tile,
+    );
+  }
+
+  void _openImageViewer(BuildContext context, List<String> images, int index) {
+    final urls = images.map(ApiConstants.fullUrl).toList(growable: false);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(imageUrls: urls, initialIndex: index),
+      ),
+    );
+  }
+
   Widget _buildDimensionBadge(String label, dynamic rawScore) {
     final score = rawScore is num
         ? rawScore.toDouble()
@@ -760,6 +871,7 @@ class _ReviewItemContent extends StatelessWidget {
   Widget _buildDishRecommendations(
     bool isDark,
     List<Map<String, dynamic>> dishes,
+    bool isOwn,
   ) {
     return Wrap(
       spacing: 6,
@@ -791,7 +903,13 @@ class _ReviewItemContent extends StatelessWidget {
           final status = dish['status']?.toString() ?? '';
           final isActive = status == 'active' && dishId > 0;
           final canOpen = isActive && onOpenDish != null;
-          final label = isActive ? name : '$name · 待收录';
+          final isPending = status.isEmpty || status == 'pending';
+          final label = isActive
+              ? name
+              : isPending
+                  ? '$name · 待收录'
+                  : '$name · 未收录';
+          final reason = dish['reject_reason']?.toString().trim() ?? '';
           final chip = Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
@@ -805,15 +923,30 @@ class _ReviewItemContent extends StatelessWidget {
                     : CanteenTheme.borderColor(isDark),
               ),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isActive
-                    ? CanteenTheme.accentStrongColor(isDark)
-                    : CanteenTheme.textTertiaryColor(isDark),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? CanteenTheme.accentStrongColor(isDark)
+                        : CanteenTheme.textTertiaryColor(isDark),
+                  ),
+                ),
+                if (isOwn && !isActive && reason.isNotEmpty)
+                  Text(
+                    '原因：$reason',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+              ],
             ),
           );
           if (!canOpen) return chip;
@@ -828,9 +961,16 @@ class _ReviewItemContent extends StatelessWidget {
   }
 
   List<String> _parseImageList(dynamic rawImages) {
-    if (rawImages == null || rawImages.toString().isEmpty) return [];
+    if (rawImages is List) {
+      return rawImages
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    final raw = rawImages?.toString().trim() ?? '';
+    if (raw.isEmpty) return [];
     try {
-      final decoded = jsonDecode(rawImages.toString());
+      final decoded = jsonDecode(raw);
       if (decoded is List) {
         return decoded
             .map((item) => item.toString().trim())
@@ -841,6 +981,18 @@ class _ReviewItemContent extends StatelessWidget {
       // ignore parsing error
     }
     return [];
+  }
+
+  List<Map<String, dynamic>> _parseDishPhotos(dynamic rawPhotos, bool isOwn) {
+    if (rawPhotos is! List) return [];
+    return rawPhotos
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where((photo) {
+      final image = photo['image']?.toString().trim() ?? '';
+      final status = photo['status']?.toString() ?? '';
+      return image.isNotEmpty && (isOwn || status == 'approved');
+    }).toList(growable: false);
   }
 
   static const Map<String, String> _canteenTagMap = {

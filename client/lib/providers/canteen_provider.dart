@@ -535,6 +535,7 @@ class CanteenProvider with ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>?> loadMyCanteenContributions() async {
+    _errorMessage = null;
     try {
       final response = await _dio.get('/user/canteen-contributions');
       if (response.statusCode == 200 && response.data is Map) {
@@ -546,6 +547,7 @@ class CanteenProvider with ChangeNotifier {
                 .toList()
             : const [];
       }
+      _errorMessage = '贡献记录加载失败，请重试';
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
     }
@@ -685,6 +687,7 @@ class CanteenProvider with ChangeNotifier {
     int? dishId,
     String? dishName,
     required int fileId,
+    String? idempotencyKey,
   }) async {
     errorCode = null;
     try {
@@ -696,10 +699,13 @@ class CanteenProvider with ChangeNotifier {
             'dish_name': dishName.trim(),
           'file_id': fileId,
         },
+        options: idempotencyKey == null || idempotencyKey.trim().isEmpty
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey.trim()}),
       );
-      if (response.statusCode == 201) {
-        return (response.data as Map<String, dynamic>)['message']?.toString() ??
-            '实拍已上传';
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        return data is Map ? data['message']?.toString() ?? '实拍已上传' : '实拍已上传';
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
@@ -717,6 +723,7 @@ class CanteenProvider with ChangeNotifier {
     int? dishId,
     String? dishName,
     required int fileId,
+    String? idempotencyKey,
   }) async {
     errorCode = null;
     try {
@@ -728,10 +735,13 @@ class CanteenProvider with ChangeNotifier {
             'dish_name': dishName.trim(),
           'file_id': fileId,
         },
+        options: idempotencyKey == null || idempotencyKey.trim().isEmpty
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey.trim()}),
       );
-      if (response.statusCode == 201) {
-        return (response.data as Map<String, dynamic>)['message']?.toString() ??
-            '已提交审核';
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        return data is Map ? data['message']?.toString() ?? '已提交审核' : '已提交审核';
       }
       // 旧服务端没有新路由时，保留旧提交路径作为兼容回退。
       if (response.statusCode == 404 ||
@@ -742,6 +752,7 @@ class CanteenProvider with ChangeNotifier {
           dishId: dishId,
           dishName: dishName,
           fileId: fileId,
+          idempotencyKey: idempotencyKey,
         );
       }
     } on DioException catch (e) {
@@ -755,10 +766,37 @@ class CanteenProvider with ChangeNotifier {
           dishId: dishId,
           dishName: dishName,
           fileId: fileId,
+          idempotencyKey: idempotencyKey,
         );
       }
     }
     return null;
+  }
+
+  /// 明确重新提交被驳回/归档的菜品候选；普通评价编辑不会隐式调用。
+  Future<bool> resubmitDish(int dishId, {String? idempotencyKey}) async {
+    errorCode = null;
+    try {
+      final response = await _dio.post(
+        '/canteens/dishes/$dishId/resubmit',
+        options: idempotencyKey == null || idempotencyKey.trim().isEmpty
+            ? null
+            : Options(headers: {'Idempotency-Key': idempotencyKey.trim()}),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+      if (response.data is Map) {
+        errorCode = response.data['code']?.toString();
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      if (e.response?.data is Map) {
+        errorCode = e.response!.data['code']?.toString();
+      }
+      debugPrint('Error resubmitting dish: $e');
+    }
+    return false;
   }
 
   /// 管理员待审核实拍列表。返回 null 表示请求失败；

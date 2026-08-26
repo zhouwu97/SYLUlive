@@ -2273,14 +2273,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (p.title.isNotEmpty) ...[
-                            SelectionArea(
-                              child: Text(
-                                p.title,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                            PostContentLinkText(
+                              text: p.title,
+                              selectable: true,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -2318,14 +2317,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             _buildMarketTagWrap(p.marketTags, isDark),
                             const SizedBox(height: 16),
                           ],
-                          SelectionArea(
-                            child: PostContentLinkText(
-                              text: p.content,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.6,
-                                color: isDark ? Colors.white70 : Colors.black87,
-                              ),
+                          PostContentLinkText(
+                            text: p.content,
+                            selectable: true,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.6,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -2423,14 +2421,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (p.title.isNotEmpty) ...[
-                            SelectionArea(
-                              child: Text(
-                                p.title,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                            PostContentLinkText(
+                              text: p.title,
+                              selectable: true,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -2468,14 +2465,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             _buildMarketTagWrap(p.marketTags, isDark),
                             const SizedBox(height: 16),
                           ],
-                          SelectionArea(
-                            child: PostContentLinkText(
-                              text: p.content,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.6,
-                                color: isDark ? Colors.white70 : Colors.black87,
-                              ),
+                          PostContentLinkText(
+                            text: p.content,
+                            selectable: true,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.6,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -2761,35 +2757,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         children: [
           _buildWaterSectionTagInfo(p, isDark),
           if (p.title.isNotEmpty || p.content.isNotEmpty)
-            SelectionArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (p.title.isNotEmpty) ...[
-                    Text(
-                      p.title,
-                      style: TextStyle(
-                        fontSize: 18.5,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (p.title.isNotEmpty) ...[
+                  PostContentLinkText(
+                    text: p.title,
+                    selectable: true,
+                    style: TextStyle(
+                      fontSize: 18.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
-                    const SizedBox(height: 6),
-                  ],
-                  if (p.content.isNotEmpty)
-                    PostContentLinkText(
-                      text: p.content,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        height: 1.55,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.82)
-                            : const Color(0xFF333333),
-                      ),
-                    ),
+                  ),
+                  const SizedBox(height: 6),
                 ],
-              ),
+                if (p.content.isNotEmpty)
+                  PostContentLinkText(
+                    text: p.content,
+                    selectable: true,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      height: 1.55,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : const Color(0xFF333333),
+                    ),
+                  ),
+              ],
             ),
           if (p.topics.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -4694,9 +4690,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   ],
                 ),
                 const SizedBox(height: 4),
-                SelectionContainer.disabled(
-                  child: _buildReplyContent(r, isDark),
-                ),
+                _buildReplyContent(r, isDark, onTextTap: onReply),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -4946,7 +4940,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    _buildChildContent(child, isDark),
+                    _buildChildContent(child, isDark, onTextTap: onReply),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -5068,60 +5062,54 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   /// 解析子回复内容中的 @用户名 并高亮
-  Widget _buildChildContent(Reply r, bool isDark) {
+  Widget _buildChildContent(
+    Reply r,
+    bool isDark, {
+    VoidCallback? onTextTap,
+  }) {
+    // 含贴纸的子回复继续复用完整内容布局，避免把“文字 + 贴纸”回复裁掉；
+    // 其中的文字已由 _buildReplyContent 使用统一可选组件渲染。
     if (r.hasSticker) {
-      return SelectionContainer.disabled(
-        child: _buildReplyContent(r, isDark, size: 104),
+      return _buildReplyContent(
+        r,
+        isDark,
+        size: 104,
+        onTextTap: onTextTap,
       );
     }
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
 
-    Widget textWidget;
-    if (match != null) {
-      final atName = match.group(1)!;
-      final rest = content.substring(match.end);
-      textWidget = Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: '@$atName ',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: Theme.of(context).primaryColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            TextSpan(
-              text: rest,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: isDark ? Colors.white60 : Colors.grey[700],
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      textWidget = Text(
-        content,
-        style: TextStyle(
-          fontSize: 13,
-          height: 1.4,
-          color: isDark ? Colors.white60 : Colors.grey[700],
-        ),
-      );
-    }
-    // 禁用文字选择，让行级长按直接弹出操作菜单
-    return SelectionContainer.disabled(child: textWidget);
+    return PostContentLinkText(
+      text: content,
+      selectable: true,
+      onPlainTextTap: onTextTap,
+      leadingTextEnd: match?.end,
+      leadingTextStyle: TextStyle(
+        fontSize: 13,
+        height: 1.4,
+        color: Theme.of(context).primaryColor,
+        fontWeight: FontWeight.w500,
+      ),
+      style: TextStyle(
+        fontSize: 13,
+        height: 1.4,
+        color: isDark ? Colors.white60 : Colors.grey[700],
+      ),
+    );
   }
 
-  Widget _buildReplyContent(Reply reply, bool isDark, {double size = 132}) {
-    final textWidget = Text(
-      reply.content,
+  Widget _buildReplyContent(
+    Reply reply,
+    bool isDark, {
+    double size = 132,
+    VoidCallback? onTextTap,
+  }) {
+    final textWidget = PostContentLinkText(
+      text: reply.content,
+      selectable: true,
+      onPlainTextTap: onTextTap,
       style: TextStyle(
         fontSize: 14,
         height: 1.55,

@@ -26,6 +26,7 @@ Future<void> pumpReplyItem(
   VoidCallback? onLike,
   bool likePending = false,
   VoidCallback? onReply,
+  VoidCallback? onLongPress,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -34,6 +35,7 @@ Future<void> pumpReplyItem(
         body: PostReplyItem(
           reply: reply,
           onReply: onReply ?? () {},
+          onLongPress: onLongPress,
           onLike: onLike,
           likePending: likePending,
         ),
@@ -60,7 +62,8 @@ void main() {
   });
 
   testWidgets('likeCount=12 显示 12', (tester) async {
-    await pumpReplyItem(tester, reply: buildLikeTestReply(likeCount: 12), onLike: () {});
+    await pumpReplyItem(tester,
+        reply: buildLikeTestReply(likeCount: 12), onLike: () {});
     expect(find.text('12'), findsOneWidget);
   });
 
@@ -113,6 +116,22 @@ void main() {
     await tester.tap(find.text('测试评论内容'));
     await tester.pump();
     expect(replyCalls, 1);
+  });
+
+  testWidgets('评论文字长按进入统一选择菜单，不触发行级长按操作', (tester) async {
+    var longPressCalls = 0;
+    await pumpReplyItem(
+      tester,
+      reply: buildLikeTestReply(),
+      onLongPress: () => longPressCalls++,
+    );
+
+    await tester.longPress(find.byType(EditableText));
+    await tester.pumpAndSettle();
+
+    expect(longPressCalls, 0);
+    expect(find.text('复制'), findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
   });
 
   testWidgets('onLike 为 null 时不渲染点赞按钮', (tester) async {

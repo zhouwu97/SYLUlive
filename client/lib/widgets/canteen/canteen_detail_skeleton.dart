@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../../config/api_constants.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
 /// 商家详情首屏骨架。保持与实际布局相同的高度，避免请求返回时页面结构跳变。
 /// 静态色块，不做 shimmer 循环动画。
 class CanteenDetailSkeleton extends StatelessWidget {
-  const CanteenDetailSkeleton({super.key});
+  final String imageUrl;
+  final bool offline;
+  final Object? heroTag;
+
+  const CanteenDetailSkeleton({
+    super.key,
+    this.imageUrl = '',
+    this.offline = false,
+    this.heroTag,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -26,10 +37,18 @@ class CanteenDetailSkeleton extends StatelessWidget {
       );
     }
 
+    final cover = _buildCover(isDark);
+    final heroCover = heroTag == null
+        ? cover
+        : Hero(
+            tag: heroTag!,
+            child: cover,
+          );
+
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        // Hero 占位
+        // 入口封面在请求期间仍是真实 Hero，未知信息才使用骨架。
         ClipRRect(
           borderRadius: const BorderRadius.vertical(
             bottom: Radius.circular(CanteenTheme.radiusLg),
@@ -37,7 +56,7 @@ class CanteenDetailSkeleton extends StatelessWidget {
           child: SizedBox(
             height: heroHeight,
             width: double.infinity,
-            child: ColoredBox(color: muted),
+            child: heroCover,
           ),
         ),
         // 店名 / 评分 / 统计
@@ -69,12 +88,34 @@ class CanteenDetailSkeleton extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             itemCount: 3,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, __) =>
-                block(148, 130, CanteenTheme.radiusMd),
+            itemBuilder: (_, __) => block(148, 130, CanteenTheme.radiusMd),
           ),
         ),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _buildCover(bool isDark) {
+    if (imageUrl.trim().isEmpty) return _placeholder(isDark);
+    return CanteenStatusImage(
+      imageUrl: ApiConstants.fullUrl(imageUrl),
+      offline: offline,
+      fit: BoxFit.cover,
+      errorWidget: (_, __, ___) => _placeholder(isDark),
+      placeholder: (_, __) => _placeholder(isDark),
+    );
+  }
+
+  Widget _placeholder(bool isDark) {
+    return Container(
+      color: CanteenTheme.surfaceMutedBg(isDark),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.restaurant_rounded,
+        size: 44,
+        color: CanteenTheme.textTertiaryColor(isDark),
+      ),
     );
   }
 }

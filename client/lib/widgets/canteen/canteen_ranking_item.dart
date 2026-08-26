@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/canteen_ranking.dart';
 import '../../theme/app_motion.dart';
+import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
 
 /// 完整排行页条目：排版数字排名 + 封面 + 名称 + 星级/评价人数 + 综合分 + 样本提示 + 标签。
@@ -188,8 +188,9 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
 
   Widget _buildCover(bool isDark) {
     if (widget.item.image.isEmpty) return _placeholder(isDark);
-    return CachedNetworkImage(
+    return CanteenStatusImage(
       imageUrl: ApiConstants.fullUrl(widget.item.image),
+      offline: widget.item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),

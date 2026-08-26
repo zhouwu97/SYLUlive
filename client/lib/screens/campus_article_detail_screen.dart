@@ -90,9 +90,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   /// 仅允许白名单域名的 HTTPS 链接。
   Future<void> _openExternalUrl(String url, {String? errorText}) async {
     final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !_isSafeHttpsUri(uri) ||
-        !allowedCampusArticleHosts.contains(uri.host.toLowerCase())) {
+    if (uri == null || !isSafeCampusUri(uri)) {
       AppFeedback.showSnackBar(
         context,
         errorText ?? '附件地址无效',
@@ -119,14 +117,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   /// 打开正文中的链接：校内链接直达，外部 HTTPS 链接先提示用户确认。
   Future<void> _openArticleLink(String url) async {
     final uri = Uri.tryParse(url);
-    if (uri == null || !_isSafeHttpsUri(uri)) {
+    if (uri == null || !isSafeCampusUri(uri, allowExternalHost: true)) {
       AppFeedback.showSnackBar(context, '链接地址无效', isError: true);
       return;
     }
 
-    final isOfficial = allowedCampusArticleHosts.contains(
-      uri.host.toLowerCase(),
-    );
+    final isOfficial = isSafeCampusUri(uri);
     if (!isOfficial) {
       final shouldOpen = await showDialog<bool>(
             context: context,
@@ -170,7 +166,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   /// 在应用内查看正文图片，避免用户离开详情页后无法回看上下文。
   Future<void> _openArticleImage(String url) async {
     final uri = Uri.tryParse(url);
-    if (uri == null || !_isSafeHttpsUri(uri)) {
+    if (uri == null || !isSafeCampusUri(uri, allowExternalHost: true)) {
       AppFeedback.showSnackBar(context, '图片地址无效', isError: true);
       return;
     }
@@ -215,13 +211,6 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         ),
       ),
     );
-  }
-
-  bool _isSafeHttpsUri(Uri? uri) {
-    return uri != null &&
-        uri.scheme.toLowerCase() == 'https' &&
-        uri.host.isNotEmpty &&
-        uri.userInfo.isEmpty;
   }
 
   @override

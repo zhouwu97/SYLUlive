@@ -7,7 +7,7 @@ import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_motion.dart';
 import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
 
 void main() {
-  test('Dock 常驻 Lens，Selection 只在交互阶段提升折射与色散', () {
+  test('Dock 常驻 Lens，Selection 从 Idle 基线连续提升折射与色散', () {
     const tuning = LiquidGlassTuning();
     final idle = liquidGlassMotionFor(
       phase: LiquidNavPhase.idle,
@@ -40,9 +40,9 @@ void main() {
       tuning: tuning,
     );
 
-    expect(idle.opticalActivation, closeTo(0.0, 0.0001));
+    expect(idle.opticalActivation, closeTo(0.38, 0.0001));
     expect(idle.dockOpticalActivation, closeTo(1.0, 0.0001));
-    expect(idle.highlightProgress, closeTo(0.0, 0.0001));
+    expect(idle.highlightProgress, closeTo(0.38, 0.0001));
     expect(pressing.highlightProgress, greaterThan(0));
     expect(dragging.highlightProgress, closeTo(1.0, 0.0001));
     expect(idle.refraction, lessThan(pressing.refraction));
@@ -50,7 +50,34 @@ void main() {
     expect(idle.chromatic, lessThan(pressing.chromatic));
     expect(pressing.chromatic, lessThan(dragging.chromatic));
     expect(dragging.dockRecoilX, greaterThan(0));
-    expect(dragging.dockChromatic, closeTo(0.0, 0.0001));
+    expect(dragging.dockChromatic, closeTo(0.16, 0.0001));
+  });
+
+  test('phase 边界沿用 Idle 基线，不发生光学强度闪断', () {
+    const tuning = LiquidGlassTuning();
+    final pressingStart = liquidGlassMotionFor(
+      phase: LiquidNavPhase.pressing,
+      activation: 0,
+      velocityPixelsPerSecond: 0,
+      visualPosition: 0,
+      currentIndex: 0,
+      edgeCompression: 0,
+      reduceMotion: false,
+      tuning: tuning,
+    );
+    final settlingEnd = liquidGlassMotionFor(
+      phase: LiquidNavPhase.collapsing,
+      activation: 0,
+      velocityPixelsPerSecond: 0,
+      visualPosition: 0,
+      currentIndex: 0,
+      edgeCompression: 0,
+      reduceMotion: false,
+      tuning: tuning,
+    );
+
+    expect(pressingStart.opticalActivation, closeTo(0.38, 0.0001));
+    expect(settlingEnd.opticalActivation, closeTo(0.38, 0.0001));
   });
 
   test('reduced motion 仍保留材质状态，但移除速度与 Dock recoil', () {
@@ -103,7 +130,7 @@ void main() {
       logicalSize: Size(336, 64),
       dockSize: Size(336, 64),
       refraction: 24,
-      chromatic: 0.0,
+      chromatic: 0.16,
       refractionHeight: 24,
       activation: 1.0,
     );
@@ -118,9 +145,10 @@ void main() {
     final source = File('shaders/liquid_nav_dock.frag').readAsStringSync();
     expect(source, contains('uniform vec2 uDockSize'));
     expect(source, contains('uniform float uRefractionHeight'));
+    expect(source, contains('float circleMap(float x)'));
     expect(source, contains('vec4 red'));
     expect(source, contains('vec4 green'));
     expect(source, contains('vec4 blue'));
-    expect(source, contains('smoothstep'));
+    expect(source, contains('chromaticBase'));
   });
 }

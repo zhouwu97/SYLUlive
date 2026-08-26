@@ -97,7 +97,12 @@ void main() {
   float dispersionIntensity = uChromatic *
       ((centeredCoord.x * centeredCoord.y) /
       max(halfSize.x * halfSize.y, 0.0001));
-  vec2 dispersedCoord = d * grad * dispersionIntensity;
+  // chromatic-only QA 需要在没有几何位移时仍能看到 RGB 分离；使用半个
+  // 光学边缘高度作为最低色散基准，生产态的最大跨度仍由 d 控制。
+  float chromaticSign = d < -0.0001 ? -1.0 : 1.0;
+  float dispersionDistance =
+      max(abs(d), refractionHeight * 0.5) * chromaticSign;
+  vec2 dispersedCoord = dispersionDistance * grad * dispersionIntensity;
   vec4 color = vec4(0.0);
 
   vec4 red = texture(uBackdrop, textureUv(refractedCoord + dispersedCoord));

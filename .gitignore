@@ -67,6 +67,8 @@ android/.kotlin/
 .codex/
 .sisyphus/
 .worktrees/
+.cache/
+.tools/
 
 # 本地任务设计文档，不纳入版本控制
 /docs/superpowers/

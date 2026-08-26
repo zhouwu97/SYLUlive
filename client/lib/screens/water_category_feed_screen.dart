@@ -5,14 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
-import '../models/topic.dart';
 import '../models/water_section.dart';
 import '../models/water_section_my_level.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_section_provider.dart';
-import '../services/topic_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
@@ -59,11 +57,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   bool _fabVisible = true;
   double? _lastScrollOffset;
   double _downwardScroll = 0;
-  List<Topic> _hotTopics = const [];
   bool? _optimisticIsFollowed;
   bool _followPending = false;
   int _myLevelRequestGeneration = 0;
-  int _hotTopicsRequestGeneration = 0;
 
   @override
   void initState() {
@@ -73,7 +69,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       _resolvedSection = widget.section;
       _sectionReady = true;
     }
-    if (widget.initialFilterKey != null) {
+    if (widget.initialFilterKey != null &&
+        _isSupportedFilterKey(widget.initialFilterKey!)) {
       _selectedFilterKey = widget.initialFilterKey!;
     } else {
       _selectedFilterKey = _filterKeyForSort(
@@ -86,7 +83,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   @override
   void dispose() {
     _myLevelRequestGeneration++;
-    _hotTopicsRequestGeneration++;
     _scrollController.dispose();
     super.dispose();
   }
@@ -111,9 +107,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
-  int? get _selectedTopicId {
-    if (!_selectedFilterKey.startsWith('topic:')) return null;
-    return int.tryParse(_selectedFilterKey.substring('topic:'.length));
+  bool _isSupportedFilterKey(String key) {
+    return key == 'mode:recommend' ||
+        key == 'mode:latest' ||
+        key == 'mode:featured' ||
+        key.startsWith('tag:');
   }
 
   MapEntry<String, int?> _resolveFilterKey(String key) {
@@ -131,13 +129,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         _load(),
         _loadMyLevel(),
         _resolveSection(),
-        _loadHotTopics(),
       ]);
       return;
     }
     await _resolveSection(updateSortFromFreshSection: true);
     if (!mounted) return;
-    await Future.wait<void>([_load(), _loadMyLevel(), _loadHotTopics()]);
+    await Future.wait<void>([_load(), _loadMyLevel()]);
   }
 
   Future<void> _resolveSection(
@@ -168,42 +165,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     });
   }
 
-  Future<void> _loadHotTopics() async {
-    final auth = context.read<AuthProvider>();
-    final accountId = auth.user?.id;
-    final accountSessionEpoch = auth.accountSessionEpoch;
-    final sectionSlug = _activeSection.slug;
-    final requestGeneration = ++_hotTopicsRequestGeneration;
-    try {
-      final dio = auth.dio;
-      if (dio.options.baseUrl.trim().isEmpty) return;
-      final topics =
-          await TopicService(dio).recommend(section: sectionSlug, limit: 8);
-      if (mounted &&
-          requestGeneration == _hotTopicsRequestGeneration &&
-          sectionSlug == _activeSection.slug &&
-          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
-        setState(() => _hotTopics = topics);
-      }
-    } catch (error) {
-      if (requestGeneration == _hotTopicsRequestGeneration &&
-          _sameAccountSession(auth, accountId, accountSessionEpoch)) {
-        debugPrint('加载版块热门话题失败: $error');
-      }
-    }
-  }
-
-  List<Topic> _topicsForPosts(List<Post> posts) {
-    if (_hotTopics.isNotEmpty) return _hotTopics;
-    final byId = <int, Topic>{};
-    for (final post in posts) {
-      for (final topic in post.topics) {
-        byId[topic.id] = topic;
-      }
-    }
-    return byId.values.take(8).toList(growable: false);
-  }
-
   Future<void> _load() async {
     final serial = ++_loadSerial;
     final section = _activeSection;
@@ -213,7 +174,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         );
     if (!mounted || serial != _loadSerial) return;
   }
@@ -273,7 +233,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           sort: filter.key,
           type: _activeSection.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         );
   }
 
@@ -285,12 +244,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     });
     await _scrollToTop();
     await _load();
-  }
-
-  Future<void> _selectTopic(Topic topic) async {
-    final key =
-        _selectedTopicId == topic.id ? 'mode:recommend' : 'topic:${topic.id}';
-    await _changeFilter(key);
   }
 
   Future<void> _scrollToTop() async {
@@ -426,14 +379,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         sort: filter.key,
         type: _activeSection.slug,
         tagId: filter.value,
-        topicId: _selectedTopicId,
       );
       final hasMore = provider.hasMoreFor(
         1,
         sort: filter.key,
         type: _activeSection.slug,
         tagId: filter.value,
-        topicId: _selectedTopicId,
       );
       if (!loading && hasMore) unawaited(_loadMore());
     }
@@ -460,49 +411,42 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         pinnedPosts: provider.pinnedPostsFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         isLoading: provider.isLoadingFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         hasLoaded: provider.hasLoadedFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         hasMore: provider.hasMoreFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         error: provider.errorFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
         revision: provider.revisionFor(
           1,
           sort: filter.key,
           type: section.slug,
           tagId: filter.value,
-          topicId: _selectedTopicId,
         ),
       ),
       builder: (context, data, _) => _buildPage(context, section, data),
@@ -526,7 +470,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final accent = _sectionColor(section, dark);
     final background =
         dark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight;
-    final topics = _topicsForPosts(data.posts);
     final pinned = data.pinnedPosts
         .where((post) => post.waterSectionPinned || post.isActivePinned)
         .toList(growable: false);
@@ -566,23 +509,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                           height: SectionFilterHeader.height,
                           child: SectionFilterHeader(
                             currentFilterKey: _selectedFilterKey,
-                            section: section,
                             accentColor: accent,
                             isDark: dark,
                             onFilterChanged: _changeFilter,
                           ),
                         ),
                       ),
-                      if (topics.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: SectionTopicRow(
-                            topics: topics,
-                            selectedTopicId: _selectedTopicId,
-                            accentColor: accent,
-                            isDark: dark,
-                            onTopicSelected: _selectTopic,
-                          ),
-                        ),
                       if (section.noticeText.trim().isNotEmpty)
                         SliverToBoxAdapter(
                             child: _buildNoticeBar(section, dark)),

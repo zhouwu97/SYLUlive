@@ -33,7 +33,6 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
 import '../widgets/post_content_link_text.dart';
-import '../widgets/topic_chips.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -2787,10 +2786,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   ),
               ],
             ),
-          if (p.topics.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            PostTopicChips(topics: p.topics, maxTopics: 5),
-          ],
         ],
       ),
     );
@@ -2803,7 +2798,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final provider = context.watch<WaterSectionProvider>();
     final section = provider.getBySlug(p.postType);
     final sectionLabel = section?.title ?? waterCategoryLabelOf(p.postType);
-    final tag = p.topics.isEmpty ? _findWaterTag(section, p.waterTagId) : null;
+    final tag = _findWaterTag(section, p.waterTagId);
     if (sectionLabel.isEmpty && tag == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

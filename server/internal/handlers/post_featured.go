@@ -59,7 +59,7 @@ func (h *PostHandler) GetFeaturedList(c *gin.Context) {
 
 	query := h.db.Model(&models.Post{}).
 		Where("status != ? AND is_featured = ?", models.PostStatusDeleted, true).
-		Preload("Author").Preload("Images").Preload("Images.File")
+		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
 
 	boardIDStr := c.Query("board")
 	if boardIDStr != "" {

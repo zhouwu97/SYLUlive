@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/gif"
-	"image/jpeg"
-	"image/png"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -19,7 +19,6 @@ import (
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
-	xdraw "golang.org/x/image/draw"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -138,150 +137,118 @@ func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandl
 	}
 }
 
-// ServePublic 提供普通公开上传文件。内容哈希路径可安全使用长期缓存。
+// ServePublic 仅提供数据库标记为公开的原图和已完成的版本化变体。
 func (h *UploadHandler) ServePublic(c *gin.Context) {
 	relative := strings.TrimPrefix(filepath.ToSlash(c.Param("filepath")), "/")
 	if relative == "" || strings.Contains(relative, "..") {
-		c.Status(http.StatusNotFound)
-		c.Writer.WriteHeaderNow()
+		servePublicNotFound(c)
 		return
 	}
-	path := "/uploads/" + relative
 	var file models.File
 	variant, originalRelative := imageVariantRequest(relative)
-	if variant == "" {
-		if err := h.db.Where("path = ? AND access_scope = ?", path, models.FileAccessPublic).First(&file).Error; err != nil {
-			c.Status(http.StatusNotFound)
-			c.Writer.WriteHeaderNow()
-			return
-		}
-	} else {
-		originalPath := "/uploads/" + originalRelative
-		if err := h.db.Where("path = ? AND access_scope = ?", originalPath, models.FileAccessPublic).First(&file).Error; err != nil {
-			c.Status(http.StatusNotFound)
-			c.Writer.WriteHeaderNow()
-			return
-		}
-	}
-	fullPath, err := services.ResolveUploadPath(h.uploadDir, path)
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		c.Writer.WriteHeaderNow()
+	if err := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPublic).First(&file).Error; err != nil {
+		servePublicNotFound(c)
 		return
 	}
+
+	publicPath := file.Path
+	mimeType := file.MimeType
 	if variant != "" {
-		originalFullPath, err := services.ResolveUploadPath(h.uploadDir, "/uploads/"+originalRelative)
-		if err != nil {
-			c.Status(http.StatusNotFound)
-			c.Writer.WriteHeaderNow()
+		expectedPath, ok := services.ImageVariantPath(file.Path, file.MimeType, variant)
+		if !ok || normalizeUploadPath(expectedPath) != normalizeUploadPath("/uploads/"+relative) {
+			servePublicNotFound(c)
 			return
 		}
-		maxDimension := 480
-		if variant == "medium" {
-			maxDimension = 1280
-		}
-		if err := ensureImageVariant(
-			originalFullPath,
-			fullPath,
-			file.MimeType,
-			maxDimension,
-		); err != nil {
-			c.Status(http.StatusNotFound)
-			c.Writer.WriteHeaderNow()
+		var imageVariant models.ImageVariant
+		if err := h.db.Where(
+			"file_id = ? AND variant = ? AND recipe_version = ? AND status = ? AND path IN ?",
+			file.ID,
+			variant,
+			services.ImageVariantRecipeVersion,
+			models.ImageVariantStatusReady,
+			uploadPathCandidates(relative),
+		).First(&imageVariant).Error; err != nil {
+			servePublicNotFound(c)
 			return
 		}
+		publicPath = imageVariant.Path
+		mimeType = imageVariant.MimeType
+	}
+
+	fullPath, err := services.ResolveUploadPath(h.uploadDir, publicPath)
+	if err != nil {
+		servePublicNotFound(c)
+		return
 	}
 	if _, err := os.Stat(fullPath); err != nil {
-		c.Status(http.StatusNotFound)
+		servePublicNotFound(c)
+		return
+	}
+	c.Header("Content-Type", mimeType)
+	c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+	if uploadAccelRedirectEnabled() {
+		c.Header("X-Accel-Redirect", uploadAccelRedirectPath(publicPath))
+		c.Status(http.StatusOK)
 		c.Writer.WriteHeaderNow()
 		return
 	}
-	c.Header("Content-Type", file.MimeType)
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	c.File(fullPath)
+}
+
+func servePublicNotFound(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Status(http.StatusNotFound)
+	c.Writer.WriteHeaderNow()
+}
+
+func uploadPathCandidates(publicPath string) []string {
+	normalized := normalizeUploadPath(publicPath)
+	if !strings.HasPrefix(normalized, "/uploads/") {
+		normalized = "/uploads/" + strings.TrimPrefix(normalized, "/")
+	}
+	return []string{normalized, strings.TrimPrefix(normalized, "/")}
+}
+
+func normalizeUploadPath(publicPath string) string {
+	normalized := filepath.ToSlash(filepath.Clean(publicPath))
+	if strings.HasPrefix(normalized, "uploads/") {
+		return "/" + normalized
+	}
+	return normalized
+}
+
+func uploadAccelRedirectEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func uploadAccelRedirectPath(publicPath string) string {
+	prefix := strings.TrimSpace(os.Getenv("UPLOAD_ACCEL_PREFIX"))
+	if prefix == "" {
+		prefix = "/_internal/uploads/"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	prefix = strings.TrimSuffix(prefix, "/") + "/"
+	relative := strings.TrimPrefix(normalizeUploadPath(publicPath), "/uploads/")
+	return prefix + relative
 }
 
 func imageVariantRequest(relative string) (variant string, original string) {
 	extension := filepath.Ext(relative)
 	base := strings.TrimSuffix(relative, extension)
 	for _, candidate := range []string{"thumb", "medium"} {
-		suffix := "_" + candidate
+		suffix := "_v1_" + candidate
 		if strings.HasSuffix(base, suffix) {
 			return candidate, strings.TrimSuffix(base, suffix) + extension
 		}
 	}
 	return "", relative
-}
-
-func ensureImageVariant(
-	originalPath string,
-	variantPath string,
-	mimeType string,
-	maxDimension int,
-) error {
-	if _, err := os.Stat(variantPath); err == nil {
-		return nil
-	}
-	source, err := os.Open(originalPath)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	decoded, _, err := image.Decode(source)
-	if err != nil {
-		return err
-	}
-	bounds := decoded.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	if width <= 0 || height <= 0 {
-		return fmt.Errorf("图片尺寸无效")
-	}
-	targetWidth, targetHeight := width, height
-	if width > maxDimension || height > maxDimension {
-		scale := float64(maxDimension) / float64(max(width, height))
-		targetWidth = max(1, int(float64(width)*scale))
-		targetHeight = max(1, int(float64(height)*scale))
-	}
-	resized := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	xdraw.CatmullRom.Scale(
-		resized,
-		resized.Bounds(),
-		decoded,
-		bounds,
-		xdraw.Over,
-		nil,
-	)
-
-	if err := os.MkdirAll(filepath.Dir(variantPath), 0755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(variantPath), ".image-variant-*")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-
-	switch mimeType {
-	case "image/jpeg":
-		err = jpeg.Encode(temp, resized, &jpeg.Options{Quality: 82})
-	case "image/png":
-		err = png.Encode(temp, resized)
-	case "image/gif":
-		err = gif.Encode(temp, resized, &gif.Options{NumColors: 256})
-	default:
-		err = fmt.Errorf("不支持生成缩略图的格式: %s", mimeType)
-	}
-	if closeErr := temp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if _, statErr := os.Stat(variantPath); statErr == nil {
-		return nil
-	}
-	return os.Rename(tempPath, variantPath)
 }
 
 // Upload 上传文件
@@ -619,4 +586,3 @@ func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
 		UserID: userID,
 	}).Error
 }
-

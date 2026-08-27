@@ -22,6 +22,7 @@ func TestGetUserMarketPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T)
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.File{},
+		&models.ImageVariant{},
 		&models.Post{},
 		&models.PostImage{},
 	); err != nil {

@@ -9,7 +9,7 @@ import (
 
 	"shenliyuan/internal/models"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +19,7 @@ func newFileReferenceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}); err != nil {
+	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}, &models.ImageVariant{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -103,6 +103,47 @@ func TestClaimPublicImagePathsNormalizesLegacyReferences(t *testing.T) {
 	}
 }
 
+func TestClaimPublicImageFilesCreatesVersionedTasksExactlyOnce(t *testing.T) {
+	db := newFileReferenceTestDB(t)
+	files := []models.File{
+		{Hash: "variant-jpeg", Path: "/uploads/variant-jpeg.jpg", MimeType: "image/jpeg"},
+		{Hash: "variant-png", Path: "/uploads/variant-png.png", MimeType: "image/png"},
+		{Hash: "variant-gif", Path: "/uploads/variant-gif.gif", MimeType: "image/gif"},
+	}
+	if err := db.Create(&files).Error; err != nil {
+		t.Fatal(err)
+	}
+	ids := []uint{files[0].ID, files[1].ID, files[2].ID}
+	if err := ClaimPublicImageFiles(db, ids); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClaimPublicImageFiles(db, ids); err != nil {
+		t.Fatal(err)
+	}
+
+	var variants []models.ImageVariant
+	if err := db.Order("file_id, variant").Find(&variants).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(variants) != 6 {
+		t.Fatalf("变体任务数量=%d，期望 6", len(variants))
+	}
+	for _, variant := range variants {
+		if variant.RecipeVersion != 1 {
+			t.Fatalf("配方版本=%d，期望 1", variant.RecipeVersion)
+		}
+		if variant.Status != "pending" && variant.Status != "unsupported" {
+			t.Fatalf("任务状态=%q", variant.Status)
+		}
+		if variant.FileID == files[2].ID && variant.Status != "unsupported" {
+			t.Fatalf("GIF 应标记为 unsupported，得到 %+v", variant)
+		}
+		if variant.FileID == files[2].ID && !strings.Contains(variant.Path, "_v1_") {
+			t.Fatalf("GIF 任务路径应保留版本信息，得到 %+v", variant)
+		}
+	}
+}
+
 func TestClaimPublicImagePathsForUserRejectsPrivateForeignFile(t *testing.T) {
 	db := newFileReferenceTestDB(t)
 	file := models.File{Hash: "foreign-path", Path: "/uploads/foreign-path.png", MimeType: "image/png", UploaderID: 7}
@@ -137,6 +178,13 @@ func TestClaimPrivateFilesActivatesButKeepsPrivate(t *testing.T) {
 		if file.AccessScope != models.FileAccessPrivate {
 			t.Fatalf("ClaimPrivateFiles must not flip access_scope to public, got %q", file.AccessScope)
 		}
+	}
+	var variantCount int64
+	if err := db.Model(&models.ImageVariant{}).Count(&variantCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if variantCount != 0 {
+		t.Fatalf("私有声明不应创建变体任务，得到 %d 条", variantCount)
 	}
 }
 

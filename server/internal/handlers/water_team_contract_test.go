@@ -38,6 +38,7 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 		&models.Post{},
 		&models.PostImage{},
 		&models.File{},
+		&models.ImageVariant{},
 		&models.WaterTeamRecruitment{},
 		&models.WaterTeamApplication{},
 	); err != nil {

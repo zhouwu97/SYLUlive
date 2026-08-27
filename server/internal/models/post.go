@@ -2,8 +2,6 @@ package models
 
 import (
 	"encoding/json"
-	"path"
-	"strings"
 	"time"
 )
 
@@ -133,43 +131,52 @@ type TeamRecruitmentMeta struct {
 
 // PostImage 帖子图片关联
 type PostImage struct {
-	ID        uint `gorm:"primaryKey" json:"id"`
-	PostID    uint `gorm:"not null" json:"post_id"`
-	FileID    uint `gorm:"not null" json:"file_id"`
-	SortOrder int  `gorm:"default:0" json:"sort_order"`
-	File      File `gorm:"foreignKey:FileID" json:"file"`
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	PostID    uint           `gorm:"not null" json:"post_id"`
+	FileID    uint           `gorm:"not null" json:"file_id"`
+	SortOrder int            `gorm:"default:0" json:"sort_order"`
+	File      File           `gorm:"foreignKey:FileID" json:"file"`
+	Variants  []ImageVariant `gorm:"foreignKey:FileID;references:FileID" json:"-"`
 }
 
 // MarshalJSON 为客户端提供统一的三档图片地址契约。
 func (image PostImage) MarshalJSON() ([]byte, error) {
 	type postImageJSON struct {
-		ID        uint   `json:"id"`
-		PostID    uint   `json:"post_id"`
-		FileID    uint   `json:"file_id"`
-		SortOrder int    `json:"sort_order"`
-		File      File   `json:"file"`
-		ThumbURL  string `json:"thumb_url,omitempty"`
-		MediumURL string `json:"medium_url,omitempty"`
-		OriginURL string `json:"origin_url,omitempty"`
+		ID            uint              `json:"id"`
+		PostID        uint              `json:"post_id"`
+		FileID        uint              `json:"file_id"`
+		SortOrder     int               `json:"sort_order"`
+		File          File              `json:"file"`
+		ThumbURL      string            `json:"thumb_url,omitempty"`
+		MediumURL     string            `json:"medium_url,omitempty"`
+		OriginURL     string            `json:"origin_url,omitempty"`
+		VariantStatus map[string]string `json:"variant_status"`
+	}
+	variantStatus := make(map[string]string, len(image.Variants))
+	for _, variant := range image.Variants {
+		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium") {
+			continue
+		}
+		variantStatus[variant.Variant] = string(variant.Status)
 	}
 	return json.Marshal(postImageJSON{
 		ID: image.ID, PostID: image.PostID, FileID: image.FileID,
 		SortOrder: image.SortOrder, File: image.File,
-		ThumbURL:  postImageVariantURL(image.File, "thumb"),
-		MediumURL: postImageVariantURL(image.File, "medium"),
-		OriginURL: image.File.Path,
+		ThumbURL:      postImageVariantURL(image.File.Path, image.Variants, "thumb"),
+		MediumURL:     postImageVariantURL(image.File.Path, image.Variants, "medium"),
+		OriginURL:     image.File.Path,
+		VariantStatus: variantStatus,
 	})
 }
 
-func postImageVariantURL(file File, variant string) string {
-	if file.Path == "" || file.MimeType == "image/gif" {
-		return file.Path
+func postImageVariantURL(originURL string, variants []ImageVariant, variantName string) string {
+	for _, variant := range variants {
+		if variant.Variant == variantName && variant.RecipeVersion == 1 &&
+			variant.Status == ImageVariantStatusReady && variant.Path != "" {
+			return variant.Path
+		}
 	}
-	extension := path.Ext(file.Path)
-	if extension == "" {
-		return file.Path
-	}
-	return strings.TrimSuffix(file.Path, extension) + "_" + variant + extension
+	return originURL
 }
 
 type FeaturedApplication struct {

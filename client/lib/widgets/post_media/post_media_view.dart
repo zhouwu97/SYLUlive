@@ -8,6 +8,7 @@ import '../../models/post.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/image_decode_size.dart';
 import '../../utils/post_image_cache.dart';
 
 enum PostMediaVariant { feed, homeFeed, sectionFeed, detail }
@@ -34,42 +35,33 @@ class PostMediaView extends StatelessWidget {
         .toList(growable: false);
     if (validImages.isEmpty) return const SizedBox.shrink();
 
-    final displayUrls = validImages
-        .map(
-          (image) => ApiConstants.fullUrl(
-            variant == PostMediaVariant.feed
-                ? image.resolvedThumbUrl
-                : image.resolvedMediumUrl,
-          ),
-        )
-        .toList(growable: false);
     final previewUrls = validImages
         .map((image) => ApiConstants.fullUrl(image.resolvedOriginUrl))
         .toList(growable: false);
 
-    if (displayUrls.length == 1) {
+    if (validImages.length == 1) {
       return _SinglePostImage(
-        url: displayUrls.first,
+        image: validImages.first,
         variant: variant,
         onTap: onTap ?? () => _openPreview(context, previewUrls, 0),
       );
     }
 
     final Widget multiChild;
-    if (displayUrls.length == 2) {
-      multiChild = _twoImages(context, displayUrls, previewUrls, onTap);
-    } else if (displayUrls.length == 3) {
-      multiChild = _threeImages(context, displayUrls, previewUrls, onTap);
-    } else if (displayUrls.length == 4) {
-      multiChild = _fourImages(context, displayUrls, previewUrls, onTap);
+    if (validImages.length == 2) {
+      multiChild = _twoImages(context, validImages, previewUrls, onTap);
+    } else if (validImages.length == 3) {
+      multiChild = _threeImages(context, validImages, previewUrls, onTap);
+    } else if (validImages.length == 4) {
+      multiChild = _fourImages(context, validImages, previewUrls, onTap);
     } else {
-      multiChild = _imageGrid(context, displayUrls, previewUrls, onTap);
+      multiChild = _imageGrid(context, validImages, previewUrls, onTap);
     }
 
     if (variant == PostMediaVariant.feed) {
-      final double maxWidth = displayUrls.length == 2
+      final double maxWidth = validImages.length == 2
           ? 280.0
-          : (displayUrls.length == 3 ? 280.0 : 290.0);
+          : (validImages.length == 3 ? 280.0 : 290.0);
       return Align(
         alignment: Alignment.centerLeft,
         child: SizedBox(
@@ -84,7 +76,7 @@ class PostMediaView extends StatelessWidget {
 
   Widget _twoImages(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     List<String> previewUrls,
     VoidCallback? onTap,
   ) {
@@ -92,9 +84,9 @@ class PostMediaView extends StatelessWidget {
       aspectRatio: 2,
       child: Row(
         children: [
-          Expanded(child: _tile(context, urls, previewUrls, 0, onTap)),
+          Expanded(child: _tile(context, images, previewUrls, 0, onTap)),
           const SizedBox(width: 4),
-          Expanded(child: _tile(context, urls, previewUrls, 1, onTap)),
+          Expanded(child: _tile(context, images, previewUrls, 1, onTap)),
         ],
       ),
     );
@@ -102,7 +94,7 @@ class PostMediaView extends StatelessWidget {
 
   Widget _threeImages(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     List<String> previewUrls,
     VoidCallback? onTap,
   ) {
@@ -110,11 +102,11 @@ class PostMediaView extends StatelessWidget {
       aspectRatio: 3,
       child: Row(
         children: [
-          Expanded(child: _tile(context, urls, previewUrls, 0, onTap)),
+          Expanded(child: _tile(context, images, previewUrls, 0, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, urls, previewUrls, 1, onTap)),
+          Expanded(child: _tile(context, images, previewUrls, 1, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, urls, previewUrls, 2, onTap)),
+          Expanded(child: _tile(context, images, previewUrls, 2, onTap)),
         ],
       ),
     );
@@ -122,7 +114,7 @@ class PostMediaView extends StatelessWidget {
 
   Widget _fourImages(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     List<String> previewUrls,
     VoidCallback? onTap,
   ) {
@@ -138,18 +130,18 @@ class PostMediaView extends StatelessWidget {
         ),
         itemCount: 4,
         itemBuilder: (context, index) =>
-            _tile(context, urls, previewUrls, index, onTap),
+            _tile(context, images, previewUrls, index, onTap),
       ),
     );
   }
 
   Widget _imageGrid(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     List<String> previewUrls,
     VoidCallback? onTap,
   ) {
-    final visibleCount = urls.length.clamp(5, 9);
+    final visibleCount = images.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
     return AspectRatio(
       aspectRatio: rows == 1 ? 3 : 1.5,
@@ -163,11 +155,11 @@ class PostMediaView extends StatelessWidget {
         ),
         itemCount: visibleCount,
         itemBuilder: (context, index) {
-          final hiddenCount = urls.length - visibleCount;
+          final hiddenCount = images.length - visibleCount;
           return Stack(
             fit: StackFit.expand,
             children: [
-              _tile(context, urls, previewUrls, index, onTap),
+              _tile(context, images, previewUrls, index, onTap),
               if (index == visibleCount - 1 && hiddenCount > 0)
                 IgnorePointer(
                   child: ColoredBox(
@@ -193,7 +185,7 @@ class PostMediaView extends StatelessWidget {
 
   Widget _tile(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     List<String> previewUrls,
     int index,
     VoidCallback? onTap,
@@ -203,26 +195,59 @@ class PostMediaView extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap ?? () => _openPreview(context, previewUrls, index),
-        child: _networkImage(urls[index], fit: BoxFit.cover),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final target = calculateImageDecodeTarget(
+              logicalSize: Size(constraints.maxWidth, constraints.maxHeight),
+              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+              maxLongEdge: imageThumbLongEdge,
+              fallbackLogicalSize: const Size(120, 120),
+            );
+            final selection = _selectResource(images[index], target);
+            return _networkImage(
+              selection: selection,
+              target: target,
+              fit: BoxFit.cover,
+            );
+          },
+        ),
       ),
     );
   }
 
-  static Widget _networkImage(
-    String url, {
+  static ImageResourceSelection _selectResource(
+    PostImage image,
+    ImageDecodeTarget target,
+  ) {
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    final mimeType = image.file?.mimeType.toLowerCase() ?? '';
+    return selectImageResource(
+      target: target,
+      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
+      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      originUrl: originUrl,
+      isAnimatedGif: mimeType == 'image/gif' ||
+          originUrl.toLowerCase().split('?').first.endsWith('.gif'),
+    );
+  }
+
+  static Widget _networkImage({
+    required ImageResourceSelection selection,
+    required ImageDecodeTarget target,
     required BoxFit fit,
     Alignment alignment = Alignment.center,
   }) {
     return CachedNetworkImage(
       cacheManager: PostImageCache.manager,
-      imageUrl: url,
+      imageUrl: selection.url,
       width: double.infinity,
       height: double.infinity,
       fit: fit,
       alignment: alignment,
+      memCacheWidth: selection.shouldResize ? target.width : null,
+      memCacheHeight: selection.shouldResize ? target.height : null,
       placeholder: (_, __) => Container(color: Colors.grey[200]),
-      errorWidget: (_, failedUrl, __) {
-        Future.microtask(() => PostImageCache.manager.removeFile(failedUrl));
+      errorWidget: (_, __, ___) {
         return Container(
           color: Colors.grey[200],
           alignment: Alignment.center,
@@ -319,12 +344,12 @@ Size calculateSinglePostImageSize({
 
 class _SinglePostImage extends StatefulWidget {
   const _SinglePostImage({
-    required this.url,
+    required this.image,
     required this.variant,
     required this.onTap,
   });
 
-  final String url;
+  final PostImage image;
   final PostMediaVariant variant;
   final VoidCallback onTap;
 
@@ -338,28 +363,78 @@ class _SinglePostImageState extends State<_SinglePostImage> {
   ImageStreamListener? _listener;
 
   @override
+  void initState() {
+    super.initState();
+    _applyServerAspectRatio();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _resolveAspectRatio();
+    if (!_hasServerDimensions) _resolveFallbackAspectRatio();
   }
 
   @override
   void didUpdateWidget(covariant _SinglePostImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) _resolveAspectRatio();
+    final hasChanged =
+        oldWidget.image.resolvedOriginUrl != widget.image.resolvedOriginUrl ||
+            oldWidget.image.file?.width != widget.image.file?.width ||
+            oldWidget.image.file?.height != widget.image.file?.height;
+    if (!hasChanged) return;
+    _aspectRatio = 4 / 3;
+    _applyServerAspectRatio();
+    if (!_hasServerDimensions) _resolveFallbackAspectRatio();
   }
 
-  void _resolveAspectRatio() {
+  bool get _hasServerDimensions =>
+      (widget.image.file?.width ?? 0) > 0 &&
+      (widget.image.file?.height ?? 0) > 0;
+
+  void _applyServerAspectRatio() {
+    if (!_hasServerDimensions) return;
+    _aspectRatio = widget.image.file!.width / widget.image.file!.height;
+  }
+
+  void _resolveFallbackAspectRatio() {
     _stream?.removeListener(_listener!);
+    final screenSize = MediaQuery.sizeOf(context);
+    final imageSize = calculateSinglePostImageSize(
+      availableWidth: screenSize.width,
+      aspectRatio: _aspectRatio,
+      variant: widget.variant,
+    );
+    final target = calculateImageDecodeTarget(
+      logicalSize: imageSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageMediumLongEdge,
+      fallbackLogicalSize: const Size(250, 220),
+    );
+    final selection = PostMediaView._selectResource(widget.image, target);
     final provider = CachedNetworkImageProvider(
-      widget.url,
+      selection.url,
       cacheManager: PostImageCache.manager,
     );
-    final stream = provider.resolve(createLocalImageConfiguration(context));
-    final listener = ImageStreamListener((info, _) {
-      if (!mounted || info.image.height == 0) return;
-      setState(() => _aspectRatio = info.image.width / info.image.height);
-    });
+    final ImageProvider<Object> resolvedProvider = selection.shouldResize
+        ? ResizeImage(
+            provider,
+            width: target.width,
+            height: target.height,
+            policy: ResizeImagePolicy.fit,
+          ) as ImageProvider<Object>
+        : provider as ImageProvider<Object>;
+    final stream = resolvedProvider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    final listener = ImageStreamListener(
+      (info, _) {
+        if (!mounted || info.image.height == 0) return;
+        final resolvedRatio = info.image.width / info.image.height;
+        if ((resolvedRatio - _aspectRatio).abs() < 0.001) return;
+        setState(() => _aspectRatio = resolvedRatio);
+      },
+      onError: (_, __) {},
+    );
     _stream = stream;
     _listener = listener;
     stream.addListener(listener);
@@ -375,11 +450,22 @@ class _SinglePostImageState extends State<_SinglePostImage> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final availableWidth =
+            constraints.maxWidth.isFinite && constraints.maxWidth > 0
+                ? constraints.maxWidth
+                : MediaQuery.sizeOf(context).width;
         final imageSize = calculateSinglePostImageSize(
-          availableWidth: constraints.maxWidth,
+          availableWidth: availableWidth,
           aspectRatio: _aspectRatio,
           variant: widget.variant,
         );
+        final target = calculateImageDecodeTarget(
+          logicalSize: imageSize,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+          maxLongEdge: imageMediumLongEdge,
+          fallbackLogicalSize: const Size(250, 220),
+        );
+        final selection = PostMediaView._selectResource(widget.image, target);
         return Align(
           alignment: Alignment.centerLeft,
           child: ClipRRect(
@@ -399,7 +485,8 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                     fit: StackFit.expand,
                     children: [
                       PostMediaView._networkImage(
-                        widget.url,
+                        selection: selection,
+                        target: target,
                         fit: BoxFit.cover,
                         alignment: _aspectRatio < 0.7
                             ? Alignment.topCenter

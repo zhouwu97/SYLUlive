@@ -11,6 +11,7 @@ import '../../models/team_recruitment.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
 import '../../widgets/team/team_form_section.dart';
 import '../../widgets/team/team_ui_tokens.dart';
+import '../../widgets/app_cached_image.dart';
 
 class TeamRecruitmentCreateScreen extends StatefulWidget {
   final TeamRecruitment? initialValue;
@@ -437,10 +438,12 @@ class _TeamRecruitmentCreateScreenState
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(fit: StackFit.expand, children: [
                         if (existingImage != null)
-                          Image.network(
-                            ApiConstants.fullUrl(existingImage.url),
+                          AppCachedImage.public(
+                            imageUrl: ApiConstants.fullUrl(existingImage.url),
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const ColoredBox(
+                            memCacheWidth: 512,
+                            memCacheHeight: 512,
+                            errorWidget: (_, __, ___) => const ColoredBox(
                               color: Color(0xFFE8ECEA),
                               child: Icon(Icons.broken_image_outlined),
                             ),

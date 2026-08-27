@@ -11,6 +11,7 @@ import '../services/async_action_guard.dart';
 import '../services/post_cache_service.dart';
 import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
+import '../utils/public_image_compressor.dart';
 
 /// 唯一描述一条 Feed 的状态、分页与缓存边界。
 ///
@@ -329,6 +330,7 @@ class PostProvider extends ChangeNotifier {
   final int _activeBoardId = 1;
   final AsyncActionGuard _actionGuard = AsyncActionGuard();
   final Map<String, String> _idempotencyKeys = <String, String>{};
+  final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
 
   PostProvider(this._dio, {bool enableCache = true})
       : _enableCache = enableCache;
@@ -1273,21 +1275,23 @@ class PostProvider extends ChangeNotifier {
     XFile file, {
     void Function(int sent, int total)? onProgress,
   }) async {
+    final prepared = await _publicImageCompressor.prepare(file);
     try {
-      final rawName = file.name.trim().isNotEmpty
-          ? file.name.trim()
-          : file.path.split('/').last;
+      final uploadFile = prepared.file;
+      final rawName = uploadFile.name.trim().isNotEmpty
+          ? uploadFile.name.trim()
+          : uploadFile.path.split('/').last;
       final filename = _safeUploadFilename(rawName);
 
       final MultipartFile multipartFile;
-      final path = file.path;
+      final path = uploadFile.path;
       final pathUsable = path.isNotEmpty &&
           !path.startsWith('blob:') &&
           await File(path).exists();
       if (pathUsable) {
         multipartFile = await MultipartFile.fromFile(path, filename: filename);
       } else {
-        final bytes = await file.readAsBytes();
+        final bytes = await uploadFile.readAsBytes();
         multipartFile = MultipartFile.fromBytes(bytes, filename: filename);
       }
 
@@ -1303,6 +1307,8 @@ class PostProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('上传图片失败: $e');
+    } finally {
+      await prepared.dispose();
     }
     return null;
   }

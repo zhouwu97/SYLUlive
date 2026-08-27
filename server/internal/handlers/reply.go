@@ -17,6 +17,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func withReplyImageVariants(db *gorm.DB) *gorm.DB {
+	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion)
+}
+
 // ReplyHandler 回复处理器
 type ReplyHandler struct {
 	db                *gorm.DB
@@ -163,7 +167,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	pageRoots := make([]models.Reply, 0, len(pageRootIDs))
 	if len(pageRootIDs) > 0 {
 		if err := h.db.Where("id IN ?", pageRootIDs).
-			Preload("Author").Preload("Images").Preload("Images.File").
+			Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).
 			Find(&pageRoots).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
 			return
@@ -205,7 +209,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		if len(previewIDs) > 0 {
 			var loaded []models.Reply
 			if err := h.db.Where("id IN ?", previewIDs).
-				Preload("Author").Preload("Images").Preload("Images.File").
+				Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).
 				Find(&loaded).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
 				return
@@ -303,7 +307,7 @@ func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
 	}
 
 	var target models.Reply
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&target, replyID).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).First(&target, replyID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "评论不存在"})
 		return
 	}
@@ -318,7 +322,7 @@ func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
 		rootID = *target.ParentReplyID
 	}
 	var root models.Reply
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&root, rootID).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).First(&root, rootID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "根评论不存在"})
 		return
 	}
@@ -403,7 +407,7 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 			replyID, models.ReplyStatusNormal, anchor.CreatedAt, anchor.CreatedAt, anchor.ID).
 			Order("created_at DESC, id DESC").
 			Limit(limit + 1).
-			Preload("Author").Preload("Images").Preload("Images.File").
+			Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).
 			Find(&tail).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取子回复失败"})
 			return
@@ -451,7 +455,7 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 	}
 
 	var children []models.Reply
-	if err := query.Preload("Author").Preload("Images").Preload("Images.File").
+	if err := query.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).
 		Order("created_at ASC, id ASC").
 		Limit(limit + 1).
 		Find(&children).Error; err != nil {
@@ -720,7 +724,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&reply, reply.ID).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).First(&reply, reply.ID).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to re-fetch reply with preloads after create: %v", err)
 	}
 	c.JSON(http.StatusCreated, reply)
@@ -755,7 +759,18 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var rows []models.ReplyImage
+		if err := tx.Select("file_id").Where("reply_id = ?", reply.ID).Find(&rows).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
+			return err
+		}
+		ids := make([]uint, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.FileID)
+		}
+		if err := services.ReconcileFilePublicAccess(tx, ids...); err != nil {
 			return err
 		}
 		return recalculatePostReplyStats(tx, reply.PostID)

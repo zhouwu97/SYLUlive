@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,9 @@ import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show currentHomeTabIndex;
+import '../utils/image_decode_size.dart';
+import '../utils/image_prefetch_coordinator.dart';
+import '../utils/post_image_cache.dart';
 import '../utils/post_route.dart';
 import '../utils/search_focus_gate.dart';
 
@@ -132,6 +136,11 @@ class ShuitieScreen extends StatefulWidget {
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
+  late final ImagePrefetchCoordinator _feedImagePrefetchCoordinator;
+  String? _feedPrefetchMode;
+  int _feedPrefetchRevision = -1;
+  int _feedPrefetchCursor = 0;
+  bool _feedPrefetchNearViewport = false;
 
   // FEED-3：事件会话与批量上报（注入或内部默认）。
   late final FeedSessionService _feedSessionService;
@@ -251,6 +260,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       for (final mode in kFeedModes)
         mode.key: ScrollController(keepScrollOffset: true),
     };
+    _feedImagePrefetchCoordinator = ImagePrefetchCoordinator();
     _feedVisualIndexListenable =
         ValueNotifier<double>(_currentModeIndex.toDouble());
 
@@ -396,6 +406,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         .removeListener(_handleReplyNotificationStateChanged);
     _announcementDelayTimer?.cancel();
     _announcementDelayTimer = null;
+    _feedImagePrefetchCoordinator.invalidate();
     unawaited(_persistCommunityState());
 
     for (final controller in _feedScrollControllers.values) {
@@ -569,10 +580,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           .clearPendingFreshSnapshot(boardId: 1, sort: previousSort);
     }
     _refreshFeedMode(mode);
+    _feedImagePrefetchCoordinator.invalidate();
     setState(() {
       _feedMode = mode;
       _feedTargetIndex = null;
       _freshnessBannerVisible = false;
+      _feedPrefetchNearViewport = false;
     });
 
     // 内容立即换，只有顶部 indicator 使用 120ms 的可 retarget 过渡。
@@ -2166,6 +2179,85 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  void _prefetchFeedImages({
+    required String mode,
+    required int revision,
+    required List<Post> posts,
+    required int limit,
+  }) {
+    if (posts.isEmpty || limit <= 0) return;
+    if (_feedPrefetchMode != mode || _feedPrefetchRevision != revision) {
+      _feedImagePrefetchCoordinator.invalidate();
+      _feedPrefetchMode = mode;
+      _feedPrefetchRevision = revision;
+      _feedPrefetchCursor = 0;
+      _feedPrefetchNearViewport = false;
+    }
+    if (_feedPrefetchCursor >= posts.length) return;
+
+    final target = calculateImageDecodeTarget(
+      logicalSize: Size(MediaQuery.sizeOf(context).width, 300),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageMediumLongEdge,
+      fallbackLogicalSize: const Size(360, 220),
+    );
+    final tasks = <ImagePrefetchTask>[];
+    var cursor = _feedPrefetchCursor;
+    while (cursor < posts.length && tasks.length < limit) {
+      for (final image in posts[cursor].images) {
+        if (tasks.length >= limit) break;
+        final task = _buildPublicImagePrefetchTask(image, target);
+        if (task != null) tasks.add(task);
+      }
+      cursor++;
+    }
+    _feedPrefetchCursor = cursor;
+    if (tasks.isNotEmpty) {
+      unawaited(_feedImagePrefetchCoordinator.enqueue(tasks, limit: limit));
+    }
+  }
+
+  ImagePrefetchTask? _buildPublicImagePrefetchTask(
+    PostImage image,
+    ImageDecodeTarget target,
+  ) {
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    if (originUrl.isEmpty ||
+        image.file?.mimeType.toLowerCase() == 'image/gif' ||
+        originUrl.toLowerCase().split('?').first.endsWith('.gif')) {
+      return null;
+    }
+    final selection = selectImageResource(
+      target: target,
+      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
+      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      originUrl: originUrl,
+    );
+    if (!selection.shouldResize || selection.url.isEmpty) return null;
+
+    return ImagePrefetchTask(
+      cacheKey: selection.url,
+      isCached: () async =>
+          await PostImageCache.manager.getFileFromCache(selection.url) != null,
+      preload: () {
+        if (!mounted) return Future<void>.value();
+        final provider = CachedNetworkImageProvider(
+          selection.url,
+          cacheManager: PostImageCache.manager,
+          cacheKey: selection.url,
+        );
+        return precacheImage(
+          ResizeImage.resizeIfNeeded(
+            target.width,
+            target.height,
+            provider,
+          ),
+          context,
+        );
+      },
+    );
+  }
+
   // ---- 普通信息流内容（含搜索框折叠） ----
   Widget _buildFeedContent(bool isDark) {
     return GestureDetector(
@@ -2247,12 +2339,35 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             .where((post) => !post.isActivePinned)
             .toList();
 
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _feedMode != mode) return;
+          _prefetchFeedImages(
+            mode: mode,
+            revision: data.revision,
+            posts: normalPosts,
+            limit: 2,
+          );
+        });
+
         return Stack(
           alignment: Alignment.topCenter,
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
                 _handleFabVisibilityScroll(notification);
+                final nearNextViewport = notification.metrics.extentAfter <=
+                    notification.metrics.viewportDimension * 1.5;
+                if (nearNextViewport && !_feedPrefetchNearViewport) {
+                  _feedPrefetchNearViewport = true;
+                  _prefetchFeedImages(
+                    mode: mode,
+                    revision: data.revision,
+                    posts: normalPosts,
+                    limit: 4,
+                  );
+                } else if (!nearNextViewport) {
+                  _feedPrefetchNearViewport = false;
+                }
                 final canLoadMore = mode != 'following' ||
                     context.read<AuthProvider>().isLoggedIn;
                 if (config.supportsRemoteLoading &&

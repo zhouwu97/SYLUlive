@@ -1300,7 +1300,8 @@ class AiAssistantProvider extends ChangeNotifier {
         runId: message.requestId,
         feedback: feedback,
       );
-      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      final updatedIndex =
+          _messages.indexWhere((item) => item.id == message.id);
       if (updatedIndex >= 0) {
         _messages[updatedIndex] = _messages[updatedIndex].copyWith(
           feedbackStatus: feedback.rating == AiFeedbackRating.positive
@@ -1311,7 +1312,8 @@ class AiAssistantProvider extends ChangeNotifier {
         );
       }
     } on AiAssistantServiceException catch (error) {
-      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      final updatedIndex =
+          _messages.indexWhere((item) => item.id == message.id);
       if (updatedIndex >= 0) {
         _messages[updatedIndex] = _messages[updatedIndex].copyWith(
           feedbackStatus: AiFeedbackStatus.failed,
@@ -1319,7 +1321,8 @@ class AiAssistantProvider extends ChangeNotifier {
         );
       }
     } catch (_) {
-      final updatedIndex = _messages.indexWhere((item) => item.id == message.id);
+      final updatedIndex =
+          _messages.indexWhere((item) => item.id == message.id);
       if (updatedIndex >= 0) {
         _messages[updatedIndex] = _messages[updatedIndex].copyWith(
           feedbackStatus: AiFeedbackStatus.failed,
@@ -1353,8 +1356,8 @@ class AiAssistantProvider extends ChangeNotifier {
           previousAssistant.requestId, 'possible_user_correction'));
     }
     if (_looksLikeRephrase(message, previousAssistant.content)) {
-      unawaited(_recordRunSignalOnce(
-          previousAssistant.requestId, 'run.rephrased'));
+      unawaited(
+          _recordRunSignalOnce(previousAssistant.requestId, 'run.rephrased'));
     }
   }
 
@@ -1474,7 +1477,8 @@ class AiAssistantProvider extends ChangeNotifier {
         AiRunEventType.planRevised ||
         AiRunEventType.consentRequired ||
         AiRunEventType.eduFetching ||
-        AiRunEventType.toolCompleted => true,
+        AiRunEventType.toolCompleted =>
+          true,
         _ => false,
       };
 
@@ -1589,6 +1593,8 @@ class AiAssistantProvider extends ChangeNotifier {
         return '该问题暂时无法处理，请调整表述后重试';
       case 'provider_request_rejected':
         return '回答服务暂时未接受本次请求，请重试';
+      case 'provider_model_unavailable':
+        return '当前回答模型暂不可用，管理员需要检查服务配置';
       case 'invalid_response':
       case 'unknown_provider_error':
         return '回答结果异常，请重新提问';

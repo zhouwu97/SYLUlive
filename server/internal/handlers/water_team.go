@@ -944,7 +944,7 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 		}
 
 		// 重新加载完整数据
-		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).First(&post, post.ID).Error; err != nil {
 			return err
 		}
 
@@ -1292,7 +1292,7 @@ func (h *WaterTeamHandler) GetMyTeamRecruitments(c *gin.Context) {
 		var posts []models.Post
 		if err := h.db.Preload("Author").Preload("Images", func(db *gorm.DB) *gorm.DB {
 			return db.Order("sort_order ASC")
-		}).Preload("Images.File").Where("id IN ?", postIDs).Find(&posts).Error; err != nil {
+		}).Preload("Images.File").Scopes(withPostImageVariants).Where("id IN ?", postIDs).Find(&posts).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取我的招募列表失败"})
 			return
 		}
@@ -1849,7 +1849,7 @@ func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
 			return err
 		}
 
-		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").First(&responsePost, post.ID).Error; err != nil {
+		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).First(&responsePost, post.ID).Error; err != nil {
 			return err
 		}
 

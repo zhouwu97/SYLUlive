@@ -106,12 +106,17 @@ func claimPublicFiles(tx *gorm.DB, fileIDs []uint) error {
 	if len(fileIDs) == 0 {
 		return nil
 	}
-	now := time.Now()
-	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
-		"status":       "active",
-		"claimed_at":   &now,
-		"access_scope": models.FileAccessPublic,
-	}).Error
+	return tx.Transaction(func(claimTx *gorm.DB) error {
+		now := time.Now()
+		if err := claimTx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+			"status":       "active",
+			"claimed_at":   &now,
+			"access_scope": models.FileAccessPublic,
+		}).Error; err != nil {
+			return err
+		}
+		return CreatePublicImageVariantTasks(claimTx, fileIDs)
+	})
 }
 
 // ClaimPublicImagePaths 将直接保存 URL 的公开图片引用升级为 public。
@@ -388,10 +393,19 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 		}
 		if tx.Migrator().HasTable("users") {
 			var userCount int64
-			if err := tx.Table("users").Where("avatar = ? OR avatar = ?", filePath, "/"+cleanPath).Count(&userCount).Error; err != nil {
+			if err := tx.Table("users").Where("avatar = ? OR avatar = ? OR background = ? OR background = ?", filePath, "/"+cleanPath, filePath, "/"+cleanPath).Count(&userCount).Error; err != nil {
 				return false, err
 			}
 			if userCount > 0 {
+				return true, nil
+			}
+		}
+		if tx.Migrator().HasTable("water_sections") {
+			var sectionCount int64
+			if err := tx.Table("water_sections").Where("avatar_url IN ? OR cover_url IN ? OR cover_portrait_url IN ? OR cover_landscape_url IN ? OR cover_square_url IN ?", []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}).Count(&sectionCount).Error; err != nil {
+				return false, err
+			}
+			if sectionCount > 0 {
 				return true, nil
 			}
 		}

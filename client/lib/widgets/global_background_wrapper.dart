@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../utils/image_decode_size.dart';
 import '../utils/post_image_cache.dart';
 
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
@@ -64,14 +65,28 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final fillScreen =
         themeProvider.getCustomBackgroundFillScreenFor(context) ||
             _isUsingFallbackDirection(themeProvider);
-    final imageProvider = isAsset
-        ? AssetImage(resolvedPath) as ImageProvider
+    final ImageProvider<Object> sourceImageProvider = isAsset
+        ? AssetImage(resolvedPath) as ImageProvider<Object>
         : isLocalFile
-            ? FileImage(File(bgPath)) as ImageProvider
+            ? FileImage(File(bgPath)) as ImageProvider<Object>
             : CachedNetworkImageProvider(
                 bgPath,
                 cacheManager: PostImageCache.manager,
-              ) as ImageProvider;
+              ) as ImageProvider<Object>;
+    final target = calculateImageDecodeTarget(
+      logicalSize: MediaQuery.sizeOf(context),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageViewerLongEdge,
+      fallbackLogicalSize: const Size(360, 800),
+    );
+    final isGif = bgPath.toLowerCase().split('?').first.endsWith('.gif');
+    final ImageProvider imageProvider = isGif
+        ? sourceImageProvider
+        : ResizeImage.resizeIfNeeded(
+            target.width,
+            target.height,
+            sourceImageProvider,
+          );
 
     return Stack(
       fit: StackFit.expand,

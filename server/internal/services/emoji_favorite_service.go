@@ -173,7 +173,12 @@ func (s *EmojiFavoriteService) CreateFromPublicImage(ctx context.Context, userID
 				AccessScope: models.FileAccessPublic,
 				Status:      "active",
 			}
-			if err := s.db.WithContext(ctx).Create(&source).Error; err != nil {
+			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				if err := tx.Create(&source).Error; err != nil {
+					return err
+				}
+				return CreatePublicImageVariantTasks(tx, []uint{source.ID})
+			}); err != nil {
 				return nil, err
 			}
 		} else {

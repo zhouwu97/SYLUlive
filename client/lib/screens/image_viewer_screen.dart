@@ -11,6 +11,8 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/post_image_cache.dart';
+import '../utils/image_decode_size.dart';
+import '../utils/image_prefetch_coordinator.dart';
 
 /// 全屏图片查看单项数据模型。
 class ImageViewerItem {
@@ -124,11 +126,11 @@ String _guessMimeType(String ext) {
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
   static const int _maxDownloadedImageEntries = 3;
-  static const int _maxGalleryDimension = 4096;
 
   late PageController _pageController;
   late int _currentIndex;
   late final List<ImageViewerItem> _resolvedItems;
+  late final ImagePrefetchCoordinator _prefetchCoordinator;
   bool _isSaving = false;
   final Map<int, _ImageBytesResult> _downloadedImages = {};
 
@@ -139,6 +141,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final total = _resolvedItems.length;
     _currentIndex = total == 0 ? 0 : widget.initialIndex.clamp(0, total - 1);
     _pageController = PageController(initialPage: _currentIndex);
+    _prefetchCoordinator = ImagePrefetchCoordinator();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefetchAdjacentImages();
+    });
   }
 
   List<ImageViewerItem> _computeResolvedItems() {
@@ -172,6 +178,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   @override
   void dispose() {
+    _prefetchCoordinator.invalidate();
     _pageController.dispose();
     super.dispose();
   }
@@ -278,8 +285,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
     // fallback 也限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
     final constrainedProvider = ResizeImage.resizeIfNeeded(
-      _maxGalleryDimension,
-      _maxGalleryDimension,
+      imageViewerLongEdge,
+      imageViewerLongEdge,
       provider,
     );
     final stream = constrainedProvider.resolve(const ImageConfiguration());
@@ -313,7 +320,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final canvas = Canvas(recorder);
     final scale = math.min(
       1.0,
-      _maxGalleryDimension /
+      imageViewerLongEdge /
           math.max(image.width.toDouble(), image.height.toDouble()),
     );
     final targetWidth = math.max(1, (image.width * scale).round());
@@ -486,6 +493,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   setState(() {
                     _currentIndex = index;
                   });
+                  _prefetchCoordinator.invalidate();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _prefetchAdjacentImages();
+                  });
                 }
               },
               itemBuilder: (context, index) {
@@ -494,31 +505,32 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     showModalBottomSheet(
                       context: context,
                       backgroundColor: Colors.transparent,
-                      builder: (context) => Container(
-                        margin: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
+                      builder: (context) => Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Material(
                           color: Theme.of(context).brightness == Brightness.dark
                               ? const Color(0xFF1E1E1E)
                               : Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.download),
-                              title: const Text('保存原图'),
-                              onTap: () {
-                                Navigator.pop(context);
-                                _saveImage();
-                              },
-                            ),
-                            ListTile(
-                              leading: const Icon(Icons.close),
-                              title: const Text('取消'),
-                              onTap: () => Navigator.pop(context),
-                            ),
-                          ],
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.download),
+                                title: const Text('保存原图'),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _saveImage();
+                                },
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.close),
+                                title: const Text('取消'),
+                                onTap: () => Navigator.pop(context),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -540,15 +552,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
     final item = _resolvedItems[index];
-    final cacheDimension = _imageCacheDimension();
+    final decodeTarget = _viewerDecodeTarget();
 
     // 优先级 1：内存字节
     if (item.bytes != null && item.bytes!.isNotEmpty) {
       return Image.memory(
         item.bytes!,
         fit: BoxFit.contain,
-        cacheWidth: cacheDimension,
-        cacheHeight: cacheDimension,
+        cacheWidth: decodeTarget.width,
+        cacheHeight: decodeTarget.height,
       );
     }
 
@@ -558,8 +570,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return Image.file(
         File(localPath),
         fit: BoxFit.contain,
-        cacheWidth: cacheDimension,
-        cacheHeight: cacheDimension,
+        cacheWidth: decodeTarget.width,
+        cacheHeight: decodeTarget.height,
         errorBuilder: (_, __, ___) => _networkImageView(item.url),
       );
     }
@@ -569,8 +581,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return Image.memory(
         _downloadedImages[index]!.bytes,
         fit: BoxFit.contain,
-        cacheWidth: cacheDimension,
-        cacheHeight: cacheDimension,
+        cacheWidth: decodeTarget.width,
+        cacheHeight: decodeTarget.height,
       );
     }
 
@@ -582,17 +594,18 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (url == null || url.isEmpty) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
-    final cacheDimension = _imageCacheDimension();
+    final decodeTarget = _viewerDecodeTarget();
     final cacheKey =
         widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
+    final isGif = url.toLowerCase().split('?').first.endsWith('.gif');
     return CachedNetworkImage(
       cacheManager: widget.cacheManager ?? PostImageCache.manager,
       imageUrl: url,
       cacheKey: cacheKey,
       httpHeaders: widget.httpHeaders,
       fit: BoxFit.contain,
-      memCacheWidth: cacheDimension,
-      memCacheHeight: cacheDimension,
+      memCacheWidth: isGif ? null : decodeTarget.width,
+      memCacheHeight: isGif ? null : decodeTarget.height,
       placeholder: (context, url) => const Center(
         child: CircularProgressIndicator(color: Colors.white),
       ),
@@ -604,12 +617,54 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
   }
 
-  int _imageCacheDimension() {
+  ImageDecodeTarget _viewerDecodeTarget() {
     final size = MediaQuery.sizeOf(context);
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final logicalDimension = math.max(size.width, size.height);
-    return (logicalDimension * dpr * 1.5).ceil().clamp(1024, 2048).toInt();
+    return calculateImageDecodeTarget(
+      logicalSize: size,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageViewerLongEdge,
+      fallbackLogicalSize: const Size(360, 800),
+    );
   }
+
+  void _prefetchAdjacentImages() {
+    final manager = widget.cacheManager ?? PostImageCache.manager;
+    final target = _viewerDecodeTarget();
+    final tasks = adjacentImageIndexes(
+      currentIndex: _currentIndex,
+      itemCount: _resolvedItems.length,
+    ).map((index) {
+      final item = _resolvedItems[index];
+      final url = item.url;
+      if (url == null || url.isEmpty || _isGifUrl(url)) return null;
+      final cacheKey =
+          widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : url;
+      return ImagePrefetchTask(
+        cacheKey: cacheKey,
+        isCached: () async => await manager.getFileFromCache(cacheKey) != null,
+        preload: () {
+          if (!mounted) return Future<void>.value();
+          final provider = CachedNetworkImageProvider(
+            url,
+            headers: widget.httpHeaders,
+            cacheManager: manager,
+            cacheKey: widget.cacheKeyBuilder != null ? cacheKey : null,
+          );
+          final resizedProvider = ResizeImage.resizeIfNeeded(
+            target.width,
+            target.height,
+            provider,
+          );
+          return precacheImage(resizedProvider, context);
+        },
+      );
+    }).whereType<ImagePrefetchTask>();
+
+    unawaited(_prefetchCoordinator.enqueue(tasks, limit: 2));
+  }
+
+  bool _isGifUrl(String url) =>
+      url.toLowerCase().split('?').first.endsWith('.gif');
 
   void _rememberDownloadedImage(int index, _ImageBytesResult image) {
     _downloadedImages[index] = image;

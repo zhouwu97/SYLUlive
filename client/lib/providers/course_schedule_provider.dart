@@ -10,6 +10,9 @@ import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
 
+// 教务课表由服务端代理访问学校系统，响应时间可能超过普通接口的 20 秒。
+const _eduScheduleRequestTimeout = Duration(seconds: 60);
+
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
   final int id;
@@ -852,6 +855,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       final fetchResp = await _apiDio.post(
         '/edu/courses',
         data: {'year': operation.year, 'semester': operation.semester},
+        options: Options(receiveTimeout: _eduScheduleRequestTimeout),
       );
       if (!_isCurrentOperation(operation)) return;
 

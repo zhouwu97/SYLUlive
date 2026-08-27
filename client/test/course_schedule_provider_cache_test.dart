@@ -127,6 +127,7 @@ void main() {
     final requestStarted = Completer<void>();
     final releaseResponse = Completer<void>();
     var requestedServerCourseCache = false;
+    Duration? requestedReceiveTimeout;
     final dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -143,6 +144,7 @@ void main() {
             return;
           }
           if (options.path == '/edu/courses') {
+            requestedReceiveTimeout = options.receiveTimeout;
             requestStarted.complete();
             releaseResponse.future.then((_) {
               handler.resolve(
@@ -193,6 +195,7 @@ void main() {
     expect(await oldStore.readTerm(year: '2025', semester: 12), isNull);
     expect(await newStore.readTerm(year: '2025', semester: 12), isNull);
     expect(requestedServerCourseCache, isFalse);
+    expect(requestedReceiveTimeout, const Duration(seconds: 60));
   });
 
   test('课程获取成功但保险箱写入失败时明确提示未持久化', () async {

@@ -55,12 +55,14 @@ func (r Reply) MarshalJSON() ([]byte, error) {
 
 // ReplyImage 回复图片关联
 type ReplyImage struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	ReplyID   uint           `gorm:"not null" json:"reply_id"`
-	FileID    uint           `gorm:"not null" json:"file_id"`
-	SortOrder int            `gorm:"default:0" json:"sort_order"`
-	File      File           `gorm:"foreignKey:FileID" json:"file"`
-	Variants  []ImageVariant `gorm:"foreignKey:FileID;references:FileID" json:"-"`
+	ID        uint `gorm:"primaryKey" json:"id"`
+	ReplyID   uint `gorm:"not null" json:"reply_id"`
+	FileID    uint `gorm:"not null" json:"file_id"`
+	SortOrder int  `gorm:"default:0" json:"sort_order"`
+	File      File `gorm:"foreignKey:FileID" json:"file"`
+	// 这是跨 PostImage/ReplyImage 共用 FileID 的逻辑关联，不能让 GORM 为其创建
+	// 外键，否则 image_variants.file_id 会被错误地同时指向两个父表。
+	Variants []ImageVariant `gorm:"foreignKey:FileID;references:FileID;-:migration" json:"-"`
 }
 
 // MarshalJSON 为回复图片复用公开图片的版本化 URL 与回退契约。

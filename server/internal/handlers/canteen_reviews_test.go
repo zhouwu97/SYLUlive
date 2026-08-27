@@ -241,7 +241,7 @@ func TestCreateReviewKeepsEventsAndRecomputesSummary(t *testing.T) {
 	}
 }
 
-func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
+func TestCreateReviewAllowsImmediateRepeat(t *testing.T) {
 	h, _, user := prepareReviewV2DB(t)
 	first := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
@@ -250,8 +250,15 @@ func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
 	}
 	second := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
-	if second.Code != http.StatusTooManyRequests || !containsReviewJSONCode(second.Body.Bytes(), "review_too_frequent") {
+	if second.Code != http.StatusCreated {
 		t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
+	}
+	var eventCount int64
+	if err := h.db.Model(&models.CanteenReviewEvent{}).Where("canteen_id = ? AND user_id = ?", 88, user.ID).Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("event count=%d want 2", eventCount)
 	}
 }
 
@@ -312,7 +319,7 @@ func TestDeleteReviewRejectsOtherUserAndHidden(t *testing.T) {
 	}
 }
 
-func TestDeletedLatestStillCountsForCreateCooldown(t *testing.T) {
+func TestDeletedLatestAllowsImmediateCreate(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
@@ -333,7 +340,7 @@ func TestDeletedLatestStillCountsForCreateCooldown(t *testing.T) {
 	}
 	createdAgain := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
-	if createdAgain.Code != http.StatusTooManyRequests || !containsReviewJSONCode(createdAgain.Body.Bytes(), "review_too_frequent") {
+	if createdAgain.Code != http.StatusCreated {
 		t.Fatalf("create after delete status=%d body=%s", createdAgain.Code, createdAgain.Body.String())
 	}
 }
@@ -552,12 +559,12 @@ func TestGetDetailReturnsEventLevelPayloadForEditing(t *testing.T) {
 	if action["can_edit_latest"] != true || action["latest_review_id"].(float64) != float64(event.ID) {
 		t.Fatalf("review action=%v", action)
 	}
-	if action["can_create"] != false || action["retry_after_seconds"].(float64) <= 0 {
-		t.Fatalf("expected cooldown action=%v", action)
+	if action["can_create"] != true {
+		t.Fatalf("unexpected create action=%v", action)
 	}
 }
 
-func TestGetDetailReviewActionAllowsCreateAfterCooldown(t *testing.T) {
+func TestGetDetailReviewActionAllowsCreateImmediately(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	event := models.CanteenReviewEvent{
 		CanteenID: canteen.ID, UserID: user.ID,
@@ -581,9 +588,8 @@ func TestGetDetailReviewActionAllowsCreateAfterCooldown(t *testing.T) {
 	}
 	if body.ReviewAction["can_create"] != true ||
 		body.ReviewAction["can_edit_latest"] != true ||
-		body.ReviewAction["latest_review_id"].(float64) != float64(event.ID) ||
-		body.ReviewAction["retry_after_seconds"].(float64) != 0 {
-		t.Fatalf("unexpected post-cooldown action=%v", body.ReviewAction)
+		body.ReviewAction["latest_review_id"].(float64) != float64(event.ID) {
+		t.Fatalf("unexpected immediate-create action=%v", body.ReviewAction)
 	}
 }
 
@@ -727,6 +733,76 @@ func TestCreateDishReviewValidatesParentEventOwnershipAndCanteen(t *testing.T) {
 		`{"taste_score":4,"value_score":4,"portion_score":4,"canteen_review_event_id":`+itoaForTest(wrongCanteen.ID)+`}`)
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("cross-canteen parent event status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestGetDishReviewsUsesParentCommentWithOptionalDishScore(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	other := models.User{ID: 90, StudentID: "student-90", PasswordHash: "test", Nickname: "另一位同学", CreditScore: 90}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "鱼香肉丝", NormalizedName: "鱼香肉丝",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	parentWithoutDishScore := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4.4,
+		Comment: "主评价里写的鱼香肉丝很好吃", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: time.Now().Add(-time.Hour), UpdatedAt: time.Now().Add(-time.Hour),
+	}
+	parentWithDishScore := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: other.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 3, HygieneScore: 4, ServiceScore: 4, OverallScore: 3.8,
+		Comment: "主评价评论应该展示在菜品详情", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := h.db.Create(&parentWithoutDishScore).Create(&parentWithDishScore).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, parent := range []models.CanteenReviewEvent{parentWithoutDishScore, parentWithDishScore} {
+		if err := h.db.Create(&models.CanteenReviewEventDish{
+			ReviewEventID: parent.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	parentID := parentWithDishScore.ID
+	if err := h.db.Create(&models.CanteenDishReviewEvent{
+		DishID: dish.ID, UserID: other.ID, TasteScore: 5, ValueScore: 3, PortionScore: 4,
+		OverallScore: 4, Comment: "可选的菜品三维评分", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 1, CanteenReviewEventID: &parentID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performCanteenRequest(t, h.GetDishReviews, http.MethodGet,
+		"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/reviews",
+		mapParams("dishId", itoaForTest(dish.ID)), 0, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("dish reviews status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items=%+v", body.Items)
+	}
+	commentsByUser := make(map[uint]string, len(body.Items))
+	for _, item := range body.Items {
+		userID := uint(item["user_id"].(float64))
+		commentsByUser[userID] = item["comment"].(string)
+	}
+	if commentsByUser[user.ID] != parentWithoutDishScore.Comment ||
+		commentsByUser[other.ID] != parentWithDishScore.Comment {
+		t.Fatalf("parent comments were not used: %+v", commentsByUser)
 	}
 }
 

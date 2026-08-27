@@ -320,6 +320,10 @@ type responseCaptureWriter struct {
 }
 
 func (w *responseCaptureWriter) WriteHeader(code int) {
+	// Gin 使用负数状态码作为渲染控制信号，不能将其写入真实响应。
+	if code <= 0 {
+		return
+	}
 	if w.passthrough {
 		w.ResponseWriter.WriteHeader(code)
 		return

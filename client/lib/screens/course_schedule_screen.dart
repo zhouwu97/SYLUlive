@@ -114,6 +114,41 @@ const _ends = [
 /// 格式化月/日
 String _md(DateTime d) => '${d.month}/${d.day}';
 
+/// 课表页的终态判定。
+///
+/// `empty` 只表示已经确认当前教务会话、保险箱和缓存恢复完成后仍没有课程。
+/// 任何身份、存储或异步加载状态未知的阶段都必须停留在 `restoring`，不能
+/// 把尚未得到答案的空列表误当成“还没有课表”。
+enum ScheduleViewState {
+  restoring,
+  unbound,
+  empty,
+  needsSemesterStart,
+  ready,
+}
+
+@visibleForTesting
+ScheduleViewState resolveScheduleViewState({
+  required bool eduStatusLoaded,
+  required bool eduBound,
+  required ScheduleSessionPhase sessionPhase,
+  required bool isLoading,
+  required bool isInitializing,
+  required bool hasCourses,
+  required bool hasSemesterStart,
+}) {
+  if (!eduStatusLoaded) return ScheduleViewState.restoring;
+  if (!eduBound) return ScheduleViewState.unbound;
+  if (sessionPhase != ScheduleSessionPhase.ready ||
+      isLoading ||
+      isInitializing) {
+    return ScheduleViewState.restoring;
+  }
+  if (!hasCourses) return ScheduleViewState.empty;
+  if (!hasSemesterStart) return ScheduleViewState.needsSemesterStart;
+  return ScheduleViewState.ready;
+}
+
 class CourseScheduleScreen extends StatefulWidget {
   const CourseScheduleScreen({super.key});
 
@@ -466,50 +501,40 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     }
                   }
 
-                  // 正在初始化或等待数据时也保持正式课表框架；课程数据到位后
-                  // 由 Consumer 局部更新课程网格，不经过整页 spinner / fade。
-                  if (edu.isBound && sc.courses.isEmpty && !sc.isSessionReady) {
-                    return _buildScheduleSessionRestoringState(sc, isDark);
-                  }
-
-                  if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
-                      sc.courses.isEmpty) {
-                    return _buildStableEmptySchedule(sc, isDark);
-                  }
-
-                  if (!edu.isBound) {
-                    return _buildBindView(context, edu, sc, isDark);
-                  }
-
-                  final hasAnyCourses = sc.courses.isNotEmpty;
-                  final hasSemesterStart = sc.semesterStart != null;
-
-                  if (!hasAnyCourses) {
-                    return Column(
-                      children: [
-                        _buildDateHeader(sc),
-                        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-                        Expanded(
-                          child: _buildNoScheduleState(context, isDark),
-                        ),
-                      ],
-                    );
-                  }
-
-                  if (!hasSemesterStart) {
-                    return Column(
-                      children: [
-                        _buildDateHeader(sc),
-                        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-                        Expanded(
-                          child: _buildSemesterStartRequiredState(
-                            context,
-                            sc,
-                            isDark,
+                  // 空课表是 terminal state：只有所有身份、本地会话和课程读取
+                  // 都确认完成后，才能向用户展示“还没有课表”。
+                  final viewState = resolveScheduleViewState(
+                    eduStatusLoaded: edu.isStatusLoaded,
+                    eduBound: edu.isBound,
+                    sessionPhase: sc.sessionPhase,
+                    isLoading: sc.isLoading,
+                    isInitializing: _initializing,
+                    hasCourses: sc.courses.isNotEmpty,
+                    hasSemesterStart: sc.semesterStart != null,
+                  );
+                  switch (viewState) {
+                    case ScheduleViewState.restoring:
+                      return _buildScheduleSessionRestoringState(sc, isDark);
+                    case ScheduleViewState.unbound:
+                      return _buildBindView(context, edu, sc, isDark);
+                    case ScheduleViewState.empty:
+                      return _buildStableEmptySchedule(sc, isDark);
+                    case ScheduleViewState.needsSemesterStart:
+                      return Column(
+                        children: [
+                          _buildDateHeader(sc),
+                          _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+                          Expanded(
+                            child: _buildSemesterStartRequiredState(
+                              context,
+                              sc,
+                              isDark,
+                            ),
                           ),
-                        ),
-                      ],
-                    );
+                        ],
+                      );
+                    case ScheduleViewState.ready:
+                      break;
                   }
 
                   final mainContent = Column(
@@ -542,8 +567,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   /// 设置读取期间也保持正式课表的空间结构，避免 GlobalBackgroundWrapper
-  /// 下面出现透明空 Scaffold。已有内存/缓存课程直接复用正式网格；没有数据时
-  /// 复用正式空状态，不引入第二套 Skeleton 或整页过渡。
+  /// 下面出现透明空 Scaffold。状态仍统一经过 [resolveScheduleViewState] 判定，
+  /// 不在设置加载期间把未知状态降级成空课表。
   Widget _buildStableScheduleShell(
     SystemUiOverlayStyle overlayStyle,
     bool isDark,
@@ -561,19 +586,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               }
               return Consumer2<EduProvider, CourseScheduleProvider>(
                 builder: (context, edu, sc, _) {
-                  if (sc.courses.isNotEmpty && sc.semesterStart != null) {
-                    return _buildStableCourseSurface(sc, isDark);
+                  final viewState = resolveScheduleViewState(
+                    eduStatusLoaded: edu.isStatusLoaded,
+                    eduBound: edu.isBound,
+                    sessionPhase: sc.sessionPhase,
+                    isLoading: sc.isLoading,
+                    isInitializing: _initializing,
+                    hasCourses: sc.courses.isNotEmpty,
+                    hasSemesterStart: sc.semesterStart != null,
+                  );
+                  switch (viewState) {
+                    case ScheduleViewState.restoring:
+                      return _buildScheduleSessionRestoringState(sc, isDark);
+                    case ScheduleViewState.unbound:
+                      return _buildBindView(context, edu, sc, isDark);
+                    case ScheduleViewState.empty:
+                      return _buildStableEmptySchedule(sc, isDark);
+                    case ScheduleViewState.needsSemesterStart:
+                      return _buildStableSemesterStartState(
+                          context, sc, isDark);
+                    case ScheduleViewState.ready:
+                      return _buildStableCourseSurface(sc, isDark);
                   }
-                  if (edu.isStatusLoaded && !edu.isBound) {
-                    return _buildBindView(context, edu, sc, isDark);
-                  }
-                  if (sc.courses.isNotEmpty && sc.semesterStart == null) {
-                    return _buildStableSemesterStartState(context, sc, isDark);
-                  }
-                  if (edu.isBound && !sc.isSessionReady) {
-                    return _buildScheduleSessionRestoringState(sc, isDark);
-                  }
-                  return _buildStableEmptySchedule(sc, isDark);
                 },
               );
             },

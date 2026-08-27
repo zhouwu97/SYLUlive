@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +7,7 @@ import '../services/idempotency_key.dart';
 import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
+import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_theme.dart';
 
 /// 食堂贡献追踪页：菜品候选和实拍共享服务端状态，不与评价列表混在一起。
@@ -159,8 +159,9 @@ class _MyCanteenContributionsScreenState
           if (image.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-              child: CachedNetworkImage(
-                imageUrl: ApiConstants.fullUrl(image),
+              child: CanteenStatusImage(
+                imageUrl: image,
+                variant: 'thumb',
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,

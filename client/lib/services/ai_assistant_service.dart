@@ -254,9 +254,8 @@ class AiAssistantService {
     required AiRunFeedback feedback,
   }) async {
     final data = <String, dynamic>{
-      'signal': feedback.rating == AiFeedbackRating.positive
-          ? 'answer.useful'
-          : null,
+      'signal':
+          feedback.rating == AiFeedbackRating.positive ? 'answer.useful' : null,
       'failure_reason': feedback.rating == AiFeedbackRating.negative
           ? (feedback.reason ?? AiFeedbackReason.other).failureReasonValue
           : null,
@@ -357,6 +356,9 @@ class AiAssistantService {
           '/ai/runs/$runId/events',
           options: Options(
             responseType: ResponseType.stream,
+            // 服务端事件流会在没有新事件时保持连接约 60 秒；不能沿用
+            // 普通接口的 20 秒接收超时，否则页面会丢失后续回答事件。
+            receiveTimeout: Duration.zero,
             headers: {if (lastEventId > 0) 'Last-Event-ID': '$lastEventId'},
           ),
           cancelToken: cancelToken,

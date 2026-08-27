@@ -21,8 +21,7 @@ class CanteenRankingItemTile extends StatefulWidget {
   });
 
   @override
-  State<CanteenRankingItemTile> createState() =>
-      _CanteenRankingItemTileState();
+  State<CanteenRankingItemTile> createState() => _CanteenRankingItemTileState();
 }
 
 class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
@@ -43,8 +42,8 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
           onTap: widget.onTap,
           onLongPress: widget.onLongPress,
           behavior: HitTestBehavior.opaque,
-          child: AnimatedScale(
-            scale: _pressed ? 0.985 : 1.0,
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.94 : 1.0,
             duration: AppMotion.micro,
             curve: AppMotion.standard,
             child: Row(
@@ -66,7 +65,7 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                 ),
                 const SizedBox(width: 12),
                 Hero(
-                  tag: 'canteen-${item.id}',
+                  tag: 'canteen-ranking-${item.id}',
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
                     child: SizedBox(
@@ -115,7 +114,8 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                         Row(
                           children: [
                             Icon(Icons.star_rounded,
-                                size: 14, color: CanteenTheme.accentColor(isDark)),
+                                size: 14,
+                                color: CanteenTheme.accentColor(isDark)),
                             const SizedBox(width: 2),
                             Text(
                               item.averageStar > 0
@@ -148,7 +148,8 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                                   item.sampleHint,
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: CanteenTheme.textSecondaryColor(isDark),
+                                    color:
+                                        CanteenTheme.textSecondaryColor(isDark),
                                   ),
                                 ),
                               ),
@@ -158,7 +159,10 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                         if (item.summaryTags.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           Text(
-                            item.summaryTags.take(3).map((t) => t.name).join(' · '),
+                            item.summaryTags
+                                .take(3)
+                                .map((t) => t.name)
+                                .join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -190,6 +194,7 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
     if (widget.item.image.isEmpty) return _placeholder(isDark);
     return CanteenStatusImage(
       imageUrl: ApiConstants.fullUrl(widget.item.image),
+      variant: 'thumb',
       offline: widget.item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

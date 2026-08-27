@@ -1544,6 +1544,8 @@ class AiAssistantProvider extends ChangeNotifier {
         return '当前已发布资料不足，暂时无法回答这个问题';
       case 'rag_unavailable':
         return '政策资料服务暂时不可用，请稍后重试';
+      case 'ai_budget_exceeded':
+        return '当前 AI 服务额度已达到平台限制\n额度购买与计费功能暂未开发';
       case 'provider_missing_citations':
         return '回答未生成可核验来源，请重试';
       case 'output_limit_reached':

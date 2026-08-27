@@ -111,16 +111,33 @@ class CanteenProvider with ChangeNotifier {
     String reviewSort = 'best',
     String reviewFilter = 'all',
   }) async {
+    final queryParameters = {
+      'review_sort': reviewSort,
+      'review_filter': reviewFilter,
+    };
+    try {
+      final response = await _dio.get(
+        '/canteens/$id/detail',
+        queryParameters: queryParameters,
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      // 新路由上线前的旧服务端仍可能只暴露 /canteens/:id，保留一次兼容回退。
+      if (e.response?.statusCode != 404) {
+        _errorMessage = _parseError(e);
+        debugPrint('Error loading canteen detail: $e');
+        return {};
+      }
+    }
     try {
       final response = await _dio.get(
         '/canteens/$id',
-        queryParameters: {
-          'review_sort': reviewSort,
-          'review_filter': reviewFilter,
-        },
+        queryParameters: queryParameters,
       );
-      if (response.statusCode == 200) {
-        return response.data as Map<String, dynamic>;
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
@@ -634,7 +651,6 @@ class CanteenProvider with ChangeNotifier {
       return null;
     } on DioException catch (e) {
       _dishesErrorMessage = _parseError(e);
-      _errorMessage = _dishesErrorMessage;
       debugPrint('Error loading dishes: $e');
       return null;
     } catch (e) {

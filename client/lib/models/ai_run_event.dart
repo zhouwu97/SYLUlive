@@ -127,7 +127,12 @@ class AiRunEvent {
       datasets: _strings(payload['datasets']),
       consentScope: payload['scope']?.toString() ?? '',
       consentReason: payload['reason']?.toString() ?? '',
-      errorCode: payload['code']?.toString() ?? '',
+      errorCode: _firstString(
+        payload['error_code'],
+        payload['code'],
+        json['error_code'],
+        json['code'],
+      ),
       retryable: payload['retryable'] == true,
       calendarActionDraft: payload['action_draft'] is Map
           ? UserCalendarActionDraft.fromJson(
@@ -174,6 +179,10 @@ AiRunEventType _eventType(String type) {
     case 'agent.activity':
       return AiRunEventType.agentActivity;
     case 'ai.device.job.completed':
+    case 'ai.device.job.succeeded':
+    case 'ai.device.job.failed':
+    case 'ai.device.job.cancelled':
+    case 'ai.device.job.expired':
     case 'ai.device.resume.claimed':
     case 'ai.device.result.consumed':
     case 'ai.tool.retry.waiting_again':
@@ -226,6 +235,14 @@ String _activityCodeForType(String type) {
       return type;
     case 'ai.device.job.completed':
       return 'device_job_completed';
+    case 'ai.device.job.succeeded':
+      return 'device_job_succeeded';
+    case 'ai.device.job.failed':
+      return 'device_job_failed';
+    case 'ai.device.job.cancelled':
+      return 'device_job_cancelled';
+    case 'ai.device.job.expired':
+      return 'device_job_expired';
     case 'ai.device.resume.claimed':
       return 'device_resume_claimed';
     case 'ai.device.result.consumed':

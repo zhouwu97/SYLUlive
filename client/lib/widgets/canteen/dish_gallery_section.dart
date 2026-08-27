@@ -4,6 +4,7 @@ import '../../config/api_constants.dart';
 import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/canteen_dish_detail_screen.dart';
+import '../../screens/image_viewer_screen.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
@@ -23,6 +24,9 @@ class DishGallerySection extends StatefulWidget {
   final void Function(
           int dishCount, int dishWithPhotoCount, int dishPhotoCount)?
       onStatsDetailedChanged;
+  final List<CanteenDish>? initialDishes;
+  final bool initialDishesLoadFailed;
+  final String? initialDishesErrorMessage;
 
   const DishGallerySection({
     super.key,
@@ -31,6 +35,9 @@ class DishGallerySection extends StatefulWidget {
     this.onViewAll,
     this.onStatsChanged,
     this.onStatsDetailedChanged,
+    this.initialDishes,
+    this.initialDishesLoadFailed = false,
+    this.initialDishesErrorMessage,
   });
 
   @override
@@ -47,7 +54,19 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialDishes != null || widget.initialDishesLoadFailed) {
+      _dishes = widget.initialDishes ?? [];
+      _isLoading = false;
+      _loadFailed = widget.initialDishesLoadFailed;
+      _errorSubtitle = widget.initialDishesErrorMessage;
+      if (!_loadFailed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _notifyStats(_dishes);
+        });
+      }
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -77,16 +96,52 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       _isLoading = false;
       _loadFailed = false;
     });
-    // 回传真实统计：/dishes 返回全部 active 菜，photoCount 只统计 approved 实拍
+    _notifyStats(dishes);
+  }
+
+  void _notifyStats(List<CanteenDish> dishes) {
+    // 聚合评价图片不是一道可评分菜品；菜品数/有实拍菜品数只统计真实菜品，
+    // 但图片总数包含评价实拍，保证详情头部不会漏报用户贡献的图片。
+    final realDishes = dishes.where((dish) => !dish.isReviewGallery).toList();
     widget.onStatsChanged?.call(
-      dishes.length,
+      realDishes.length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
     widget.onStatsDetailedChanged?.call(
-      dishes.length,
-      dishes.where((dish) => dish.photoCount > 0).length,
+      realDishes.length,
+      realDishes.where((dish) => dish.photoCount > 0).length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
+  }
+
+  void _openDish(CanteenDish dish) {
+    if (dish.isReviewGallery) {
+      final images =
+          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
+      final urls = images
+          .where((image) => image.trim().isNotEmpty)
+          .map(ApiConstants.fullUrl)
+          .toList(growable: false);
+      if (urls.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(imageUrls: urls),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishDetailScreen(
+          canteenId: widget.canteenId,
+          dishId: dish.id,
+          dishName: dish.name,
+          canteenName: widget.canteenName,
+        ),
+      ),
+    ).then((_) => _load());
   }
 
   @override
@@ -154,19 +209,7 @@ class _DishGallerySectionState extends State<DishGallerySection> {
                   return _DishCard(
                     dish: dish,
                     isDark: isDark,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CanteenDishDetailScreen(
-                            canteenId: widget.canteenId,
-                            dishId: dish.id,
-                            dishName: dish.name,
-                            canteenName: widget.canteenName,
-                          ),
-                        ),
-                      ).then((_) => _load());
-                    },
+                    onTap: () => _openDish(dish),
                   );
                 },
               ),
@@ -236,6 +279,7 @@ class _DishCard extends StatelessWidget {
                 child: dish.coverImage.isNotEmpty
                     ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder(),

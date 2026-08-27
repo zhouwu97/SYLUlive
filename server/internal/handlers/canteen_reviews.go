@@ -21,8 +21,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const reviewCreateCooldown = 6 * time.Hour
-
 var errReviewDishConflict = errors.New("review_dish_conflict")
 var errReviewDishPendingLimit = errors.New("review_dish_pending_limit")
 
@@ -103,13 +101,12 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(input.Dishes) > 3 || len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "最多选择3道菜品"})
+	if len(input.Dishes) > 1 || len(input.DishReviews) > 1 || len(input.DishIDs) > 1 || len(input.DishNames) > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_dish", "error": "每条评价只能选择1道菜品"})
 		return
 	}
 
 	var saved models.CanteenReviewEvent
-	var lastReview *models.CanteenReviewEvent
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 锁定食堂行作为同一用户/食堂创建评价的轻量串行闸门，兼容 SQLite/PostgreSQL。
 		var canteen models.Canteen
@@ -119,14 +116,6 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		canteen.NormalizeOperatingStatus()
 		if canteen.IsOffline {
 			return errCanteenOffline
-		}
-		// 冷却依据 latestEvent，而不是 latestActiveEvent。删除/隐藏最新事件后，
-		// 旧历史不能重新成为可编辑目标，也不能借删除绕过 6 小时限制。
-		if err := tx.Where("canteen_id = ? AND user_id = ? AND (score_version >= ? OR score_version = ?)", cid, userID, 2, 0).
-			Order("created_at DESC, id DESC").First(&lastReview).Error; err == nil && time.Since(lastReview.CreatedAt) < reviewCreateCooldown {
-			return errReviewTooFrequent
-		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
 		}
 		if err := ensureLegacyReviewEvent(tx, cid, userID); err != nil {
 			return err
@@ -163,20 +152,6 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 		return services.ClaimPublicImagePathsForUser(tx, userID, cleanedImages...)
 	})
 	if err != nil {
-		if errors.Is(err, errReviewTooFrequent) {
-			seconds := int(reviewCreateCooldown.Seconds())
-			if lastReview != nil {
-				remaining := int(math.Ceil(reviewCreateCooldown.Seconds() - time.Since(lastReview.CreatedAt).Seconds()))
-				if remaining > 0 {
-					seconds = remaining
-				}
-			}
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code": "review_too_frequent", "error": "你刚刚评价过这家店，可以修改最近一次评价",
-				"last_review_id": lastReviewID(lastReview), "retry_after_seconds": seconds,
-			})
-			return
-		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 			return
@@ -239,8 +214,8 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(input.Dishes) > 3 || len(input.DishReviews) > 3 || len(input.DishIDs) > 3 || len(input.DishNames) > 3 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "最多选择3道菜品"})
+	if len(input.Dishes) > 1 || len(input.DishReviews) > 1 || len(input.DishIDs) > 1 || len(input.DishNames) > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_dish", "error": "每条评价只能选择1道菜品"})
 		return
 	}
 	cleanedTags, err := cleanReviewTags(input.Tags)
@@ -829,7 +804,7 @@ func (h *CanteenHandler) loadMyLatestReviewPayload(canteenID, userID uint) (map[
 		return nil, err
 	}
 	if event.Status != models.ReviewEventStatusActive {
-		// latestEvent 仍然参与冷却/编辑历史保护，但已经删除或隐藏的事件不能进入编辑器。
+		// 已删除或隐藏的事件不能进入编辑器；创建新评价不再受时间冷却限制。
 		return nil, nil
 	}
 
@@ -978,11 +953,9 @@ func (h *CanteenHandler) GetReviewEditContext(c *gin.Context) {
 // Legacy 摘要只代表历史兼容数据，不会被标记为可编辑的 V2 事件。
 func (h *CanteenHandler) buildReviewAction(canteenID, userID uint) (map[string]interface{}, error) {
 	action := map[string]interface{}{
-		"can_create":          true,
-		"can_edit_latest":     false,
-		"latest_review_id":    nil,
-		"retry_after_seconds": 0,
-		"next_create_at":      nil,
+		"can_create":       true,
+		"can_edit_latest":  false,
+		"latest_review_id": nil,
 	}
 	if !h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) {
 		return action, nil
@@ -1002,13 +975,6 @@ func (h *CanteenHandler) buildReviewAction(canteenID, userID uint) (map[string]i
 
 	action["latest_review_id"] = latest.ID
 	action["can_edit_latest"] = latest.Status == models.ReviewEventStatusActive
-	nextCreateAt := latest.CreatedAt.Add(reviewCreateCooldown)
-	remaining := time.Until(nextCreateAt)
-	if remaining > 0 {
-		action["can_create"] = false
-		action["retry_after_seconds"] = int(math.Ceil(remaining.Seconds()))
-		action["next_create_at"] = nextCreateAt
-	}
 	return action, nil
 }
 
@@ -1808,38 +1774,181 @@ func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
 }
 
 // GetDishReviews 获取菜品评价，默认按用户去重展示最近一条。
+// 菜品详情的评论正文以主到店评价为准；菜品三维评分只是可选扩展，不能
+// 因为没有 CanteenDishReviewEvent 就把主评价评论过滤掉。
 func (h *CanteenHandler) GetDishReviews(c *gin.Context) {
 	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
 		return
 	}
-	var events []models.CanteenDishReviewEvent
-	if err := h.db.Where("dish_id = ? AND status = ?", dishID, models.ReviewEventStatusActive).
-		Preload("User").Order("created_at DESC, id DESC").Find(&events).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品评价失败"})
-		return
+	type relationRow struct {
+		ReviewEventID uint      `gorm:"column:review_event_id"`
+		CreatedAt     time.Time `gorm:"column:created_at"`
 	}
-	if c.Query("history") != "1" {
-		seen := map[uint]bool{}
-		latest := events[:0]
-		for _, event := range events {
-			if seen[event.UserID] {
+	type responseItem struct {
+		userID    uint
+		createdAt time.Time
+		id        uint
+		payload   map[string]interface{}
+	}
+
+	items := make([]responseItem, 0)
+	parentByID := make(map[uint]models.CanteenReviewEvent)
+	parentIncluded := make(map[uint]struct{})
+	if h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) &&
+		h.db.Migrator().HasTable(&models.CanteenReviewEventDish{}) {
+		var relations []relationRow
+		if err := h.db.Table("canteen_review_event_dishes AS relation").
+			Select("relation.review_event_id, review.created_at").
+			Joins("JOIN canteen_review_events AS review ON review.id = relation.review_event_id").
+			Where("relation.dish_id = ? AND review.status = ?", dishID, models.ReviewEventStatusActive).
+			Order("review.created_at DESC, review.id DESC").Find(&relations).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品评价失败"})
+			return
+		}
+		parentIDs := make([]uint, 0, len(relations))
+		seenParentIDs := make(map[uint]struct{}, len(relations))
+		for _, relation := range relations {
+			if _, exists := seenParentIDs[relation.ReviewEventID]; exists {
 				continue
 			}
-			seen[event.UserID] = true
-			latest = append(latest, event)
+			seenParentIDs[relation.ReviewEventID] = struct{}{}
+			parentIDs = append(parentIDs, relation.ReviewEventID)
 		}
-		events = latest
+		if len(parentIDs) > 0 {
+			var parents []models.CanteenReviewEvent
+			if err := h.db.Preload("User").Where("id IN ?", parentIDs).Find(&parents).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品评价失败"})
+				return
+			}
+			for _, parent := range parents {
+				parentByID[parent.ID] = parent
+			}
+		}
+
+		var dishReviews []models.CanteenDishReviewEvent
+		if len(parentIDs) > 0 && h.db.Migrator().HasTable(&models.CanteenDishReviewEvent{}) {
+			if err := h.db.Where("dish_id = ? AND status = ? AND canteen_review_event_id IN ?", dishID, models.ReviewEventStatusActive, parentIDs).
+				Preload("User").Find(&dishReviews).Error; err != nil && len(parentIDs) > 0 {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品评价失败"})
+				return
+			}
+		}
+		childByParent := make(map[uint]models.CanteenDishReviewEvent, len(dishReviews))
+		for _, dishReview := range dishReviews {
+			if dishReview.CanteenReviewEventID != nil {
+				childByParent[*dishReview.CanteenReviewEventID] = dishReview
+			}
+		}
+		for _, relation := range relations {
+			parent, exists := parentByID[relation.ReviewEventID]
+			if !exists {
+				continue
+			}
+			populateReviewPublicFields(h.db, &parent)
+			payload := map[string]interface{}{
+				"id":                      parent.ID,
+				"review_id":               parent.ID,
+				"dish_id":                 uint(dishID),
+				"user_id":                 parent.UserID,
+				"user_name":               parent.UserName,
+				"user_avatar":             parent.UserAvatar,
+				"credit_score":            parent.CreditScore,
+				"credit_weight":           parent.CreditWeight,
+				"history_count":           parent.HistoryCount,
+				"taste_score":             parent.TasteScore,
+				"value_score":             parent.ValueScore,
+				"queue_score":             parent.QueueScore,
+				"hygiene_score":           parent.HygieneScore,
+				"service_score":           parent.ServiceScore,
+				"portion_score":           0,
+				"overall_score":           parent.OverallScore,
+				"comment":                 parent.Comment,
+				"images":                  decodeStringList(parent.Images),
+				"tags":                    decodeStringList(parent.Tags),
+				"status":                  parent.Status,
+				"score_version":           parent.ScoreVersion,
+				"canteen_review_event_id": parent.ID,
+				"parent_review_event_id":  parent.ID,
+				"created_at":              parent.CreatedAt,
+				"updated_at":              parent.UpdatedAt,
+				"review_source":           "canteen_review_event",
+			}
+			if child, ok := childByParent[parent.ID]; ok {
+				populateDishReviewPublicFields(h.db, &child)
+				payload["dish_review_id"] = child.ID
+				payload["portion_score"] = child.PortionScore
+				payload["dish_taste_score"] = child.TasteScore
+				payload["dish_value_score"] = child.ValueScore
+				payload["dish_overall_score"] = child.OverallScore
+			}
+			parentIncluded[parent.ID] = struct{}{}
+			items = append(items, responseItem{
+				userID: parent.UserID, createdAt: parent.CreatedAt, id: parent.ID, payload: payload,
+			})
+		}
 	}
-	for i := range events {
-		populateDishReviewPublicFields(h.db, &events[i])
+
+	// 保留没有主评价关系的历史独立菜品评价，避免升级期间丢失旧数据。
+	if h.db.Migrator().HasTable(&models.CanteenDishReviewEvent{}) {
+		var legacyEvents []models.CanteenDishReviewEvent
+		if err := h.db.Where("dish_id = ? AND status = ?", dishID, models.ReviewEventStatusActive).
+			Preload("User").Order("created_at DESC, id DESC").Find(&legacyEvents).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品评价失败"})
+			return
+		}
+		for _, event := range legacyEvents {
+			if event.CanteenReviewEventID != nil {
+				if _, represented := parentIncluded[*event.CanteenReviewEventID]; represented {
+					continue
+				}
+			}
+			populateDishReviewPublicFields(h.db, &event)
+			items = append(items, responseItem{
+				userID: event.UserID, createdAt: event.CreatedAt, id: event.ID,
+				payload: map[string]interface{}{
+					"id": event.ID, "dish_review_id": event.ID, "dish_id": event.DishID,
+					"user_id": event.UserID, "user_name": event.UserName, "user_avatar": event.UserAvatar,
+					"credit_score": event.CreditScore, "credit_weight": event.CreditWeight,
+					"taste_score": event.TasteScore, "value_score": event.ValueScore,
+					"portion_score": event.PortionScore, "overall_score": event.OverallScore,
+					"comment": event.Comment, "status": event.Status, "score_version": event.ScoreVersion,
+					"canteen_review_event_id": event.CanteenReviewEventID,
+					"parent_review_event_id":  event.CanteenReviewEventID,
+					"created_at":              event.CreatedAt, "updated_at": event.UpdatedAt,
+					"review_source": "canteen_dish_review",
+				},
+			})
+		}
 	}
-	c.JSON(http.StatusOK, gin.H{"items": events, "count": len(events)})
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].createdAt.Equal(items[j].createdAt) {
+			return items[i].id > items[j].id
+		}
+		return items[i].createdAt.After(items[j].createdAt)
+	})
+	if c.Query("history") != "1" {
+		seenUsers := make(map[uint]struct{}, len(items))
+		latest := items[:0]
+		for _, item := range items {
+			if _, seen := seenUsers[item.userID]; seen {
+				continue
+			}
+			seenUsers[item.userID] = struct{}{}
+			latest = append(latest, item)
+		}
+		items = latest
+	}
+	response := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		response = append(response, item.payload)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": response, "count": len(response)})
 }
 
 var (
-	errReviewTooFrequent        = errors.New("review_too_frequent")
 	errReviewForbidden          = errors.New("review_forbidden")
 	errReviewNotActive          = errors.New("review_not_active")
 	errReviewNotLatest          = errors.New("review_not_latest")
@@ -1949,13 +2058,6 @@ func decodeStringList(raw string) []string {
 		return values
 	}
 	return values
-}
-
-func lastReviewID(review *models.CanteenReviewEvent) uint {
-	if review == nil {
-		return 0
-	}
-	return review.ID
 }
 
 // ensureLegacyReviewEvent 在用户第一次进入 V2 时把旧 /rate 摘要复制成独立历史事件。
@@ -2069,7 +2171,7 @@ func recomputeCanteenUserSummary(tx *gorm.DB, canteenID, userID uint) error {
 
 func uniqueReviewDishIDs(ids ...[]uint) []uint {
 	seen := make(map[uint]struct{})
-	result := make([]uint, 0, 3)
+	result := make([]uint, 0, 1)
 	for _, group := range ids {
 		for _, id := range group {
 			if id == 0 {
@@ -2090,7 +2192,7 @@ func uniqueReviewDishIDs(ids ...[]uint) []uint {
 // 这样评价可以立即发布，菜品实体仍然等待管理员审核，不会因为审核状态阻断主链路。
 func (h *CanteenHandler) resolveReviewDishInputs(tx *gorm.DB, canteenID, userID uint, ids []uint, names []string, legacyReviews, dishes []reviewDishInput) ([]reviewDishInput, []uint, error) {
 	resolved := make([]reviewDishInput, 0, len(legacyReviews)+len(dishes)+len(names))
-	selected := make([]uint, 0, 3)
+	selected := make([]uint, 0, 1)
 
 	appendDish := func(input reviewDishInput) error {
 		name := strings.TrimSpace(input.DishName)
@@ -2175,8 +2277,8 @@ func (h *CanteenHandler) resolveReviewDishInputs(tx *gorm.DB, canteenID, userID 
 			return nil, nil, err
 		}
 	}
-	if len(selected) > 3 {
-		return nil, nil, fmt.Errorf("%w: 最多选择3道菜品", errReviewDishInvalid)
+	if len(selected) > 1 {
+		return nil, nil, fmt.Errorf("%w: 每条评价只能选择1道菜品", errReviewDishInvalid)
 	}
 	return dedupeReviewDishInputs(resolved), selected, nil
 }

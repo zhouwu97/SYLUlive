@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../widgets/rating_detail/ranking_tokens.dart';
+import '../../widgets/canteen/canteen_status_image.dart';
 
 /// 管理员菜品实拍审核页：待审核列表 + 通过/驳回。
 class CanteenDishPhotoReviewScreen extends StatefulWidget {
@@ -494,8 +494,9 @@ class _ReviewCard extends StatelessWidget {
               height: 200,
               width: double.infinity,
               child: image.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: ApiConstants.fullUrl(image),
+                  ? CanteenStatusImage(
+                      imageUrl: image,
+                      variant: 'thumb',
                       fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => _placeholder(),
                       placeholder: (_, __) => _placeholder(),

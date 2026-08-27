@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/api_constants.dart';
 import '../models/canteen.dart';
 import '../models/canteen_home.dart';
 import '../models/canteen_dish.dart';
@@ -72,13 +71,22 @@ class _CanteenScreenState extends State<CanteenScreen> {
     });
   }
 
-  void _openDetail(int canteenId, String canteenName) {
+  void _openDetail(
+    int canteenId,
+    String canteenName, {
+    String initialImage = '',
+    bool initialOffline = false,
+    String? heroTag,
+  }) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => CanteenDetailScreen(
           canteenId: canteenId,
           canteenName: canteenName,
+          initialImage: initialImage,
+          initialOffline: initialOffline,
+          heroTag: heroTag,
         ),
       ),
     ).then((_) {
@@ -385,7 +393,13 @@ class _CanteenScreenState extends State<CanteenScreen> {
   Widget _buildSearchResultCard(bool isDark, Canteen canteen,
       {required int rank}) {
     return GestureDetector(
-      onTap: () => _openDetail(canteen.id, canteen.name),
+      onTap: () => _openDetail(
+        canteen.id,
+        canteen.name,
+        initialImage: canteen.image,
+        initialOffline: canteen.isOffline,
+        heroTag: 'canteen-search-${canteen.id}',
+      ),
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -398,7 +412,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Hero(
-              tag: 'canteen-${canteen.id}',
+              tag: 'canteen-search-${canteen.id}',
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
                 child: SizedBox(
@@ -413,7 +427,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                               color: CanteenTheme.textTertiaryColor(isDark)),
                         )
                       : CanteenStatusImage(
-                          imageUrl: ApiConstants.fullUrl(canteen.image),
+                          imageUrl: canteen.image,
+                          variant: 'thumb',
                           offline: canteen.isOffline,
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => Container(
@@ -555,8 +570,17 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: CanteenHeroRecommendationCard(
                     hero: provider.home.hero,
-                    onTap: () => _openDetail(provider.home.hero.canteenId,
-                        provider.home.hero.canteenName),
+                    onTap: () => _openDetail(
+                      provider.home.hero.canteenId,
+                      provider.home.hero.canteenName,
+                      initialImage: provider.home.hero.image,
+                      initialOffline:
+                          provider.home.hero.operatingStatus == 'offline',
+                      heroTag:
+                          'canteen-home-hero-${provider.home.hero.canteenId}',
+                    ),
+                    heroTag:
+                        'canteen-home-hero-${provider.home.hero.canteenId}',
                   ),
                 ),
               Padding(
@@ -749,7 +773,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   child: dish.coverImage.isEmpty
                       ? _buildDishPlaceholder(isDark, index)
                       : CanteenStatusImage(
-                          imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                          imageUrl: dish.coverImage,
+                          variant: 'thumb',
                           offline: dish.isCanteenOffline,
                           width: double.infinity,
                           fit: BoxFit.cover,

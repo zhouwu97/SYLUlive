@@ -92,6 +92,7 @@ Dio _detailDio({
 Widget _app(
   Post? initialPost, {
   required bool focusReplyComposer,
+  bool scrollToReplies = false,
   List<Map<String, dynamic>> replies = const [],
   String postContent = '测试内容',
 }) {
@@ -112,6 +113,7 @@ Widget _app(
         postId: 100,
         initialPost: initialPost,
         focusReplyComposer: focusReplyComposer,
+        scrollToReplies: scrollToReplies,
       ),
     ),
   );
@@ -261,6 +263,100 @@ void main() {
     expect(input, findsOneWidget, reason: '评论输入框应展开');
     final field = tester.widget<TextField>(input);
     expect(field.focusNode?.hasFocus, isTrue, reason: '评论输入框应获得焦点');
+  });
+
+  testWidgets('评论入口只滚到评论区，不自动打开评论输入框', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: List.filled(90, '用于撑开详情滚动区域的正文。').join('\n'),
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        scrollToReplies: true,
+        postContent: initial.content,
+        replies: [
+          {
+            'id': 7,
+            'post_id': 100,
+            'author_id': 2,
+            'content': '用于验证评论区定位的评论',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
+    final scrollable = find.descendant(
+      of: scrollView,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollable.first).position;
+
+    expect(position.pixels, greaterThan(0));
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('post-reply-input')))
+          .focusNode
+          ?.hasFocus,
+      isFalse,
+    );
+  });
+
+  testWidgets('评论输入激活后向下滑动可收起键盘并保留草稿', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: List.filled(90, '用于撑开详情滚动区域的正文。').join('\n'),
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: true,
+        postContent: initial.content,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final input = find.byKey(const ValueKey('post-reply-input'));
+    await tester.enterText(input, '保留这段评论草稿');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+
+    final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
+    final scrollStart = tester.getCenter(scrollView);
+    final upwardGesture = await tester.startGesture(scrollStart);
+    await upwardGesture.moveBy(const Offset(0, -240));
+    await upwardGesture.up();
+    await tester.pump();
+    final downwardGesture = await tester.startGesture(scrollStart);
+    await downwardGesture.moveBy(const Offset(0, 48));
+    await downwardGesture.up();
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(input);
+    expect(field.focusNode?.hasFocus, isFalse);
+    expect(field.controller?.text, '保留这段评论草稿');
   });
 
   testWidgets('focusReplyComposer=false 时评论输入框显示但不自动聚焦', (tester) async {

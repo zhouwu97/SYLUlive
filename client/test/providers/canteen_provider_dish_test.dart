@@ -47,6 +47,27 @@ void main() {
       expect(dishes[1].coverImage, '');
     });
 
+    test('loadDishes 解析评价图片聚合卡', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        return _json(
+          '[{"id":0,"name":"用户评价实拍","source":"review_images",'
+          '"cover_image":"/uploads/review-a.jpg","photo_count":2,'
+          '"photo_images":["/uploads/review-a.jpg","/uploads/review-b.jpg"]}]',
+          200,
+        );
+      });
+      final provider = CanteenProvider(dio);
+      final dishes = await provider.loadDishes(1);
+
+      expect(dishes, hasLength(1));
+      expect(dishes![0].isReviewGallery, isTrue);
+      expect(dishes[0].photoImages, [
+        '/uploads/review-a.jpg',
+        '/uploads/review-b.jpg',
+      ]);
+    });
+
     test('loadDishes 成功但为空返回 []（区别于失败）', () async {
       final dio = Dio(BaseOptions(baseUrl: 'http://test'));
       dio.httpClientAdapter = FakeAdapter((options) async {

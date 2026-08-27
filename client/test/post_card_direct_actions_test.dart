@@ -9,6 +9,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
+import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/widgets/post_card.dart';
 
 class _CardAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -184,6 +185,53 @@ void main() {
 
     expect(captured?.id, 1);
     expect(captured?.replyCount, 3);
+  });
+
+  testWidgets('默认评论入口进入详情但不自动聚焦评论输入框', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+            ),
+          );
+        },
+      ),
+    );
+    final auth = _CardAuthProvider(client: dio, loggedIn: true);
+    final postProvider = PostProvider(dio, enableCache: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+          ChangeNotifierProvider<ThemeProvider>.value(
+            value: ThemeProvider(loadOnStart: false),
+          ),
+          ChangeNotifierProvider<WaterSectionProvider>.value(
+            value: WaterSectionProvider(null),
+          ),
+        ],
+        child: MaterialApp(home: Scaffold(body: PostCard(post: _post()))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('post-card-comment')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PostDetailScreen), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('post-reply-input')))
+          .focusNode
+          ?.hasFocus,
+      isFalse,
+    );
   });
 
   testWidgets('未登录点赞提示登录且不改计数', (tester) async {

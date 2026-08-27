@@ -8,6 +8,7 @@ import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_motion.dart';
 import '../../utils/app_feedback.dart';
 import 'canteen_empty_state.dart';
+import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
 
 /// 商家评价区（presentational）。
@@ -684,8 +685,9 @@ class _ReviewItemContent extends StatelessWidget {
       onTap: () => _openImageViewer(context, images, index),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-        child: CachedNetworkImage(
-          imageUrl: ApiConstants.fullUrl(imageUrl),
+        child: CanteenStatusImage(
+          imageUrl: imageUrl,
+          variant: 'thumb',
           width: 82,
           height: 82,
           fit: BoxFit.cover,
@@ -744,8 +746,9 @@ class _ReviewItemContent extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-            child: CachedNetworkImage(
-              imageUrl: ApiConstants.fullUrl(image),
+            child: CanteenStatusImage(
+              imageUrl: image,
+              variant: 'thumb',
               width: 92,
               height: 82,
               fit: BoxFit.cover,

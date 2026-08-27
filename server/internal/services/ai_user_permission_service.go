@@ -164,7 +164,9 @@ func (service *AIUserPermissionService) SetMode(ctx context.Context, userID uint
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "user_id"}, {Name: "scope"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
-					"policy": policy, "version": gorm.Expr("version + 1"), "updated_at": time.Now(),
+					// PostgreSQL 的 ON CONFLICT 同时暴露目标行和 EXCLUDED 行；
+					// 不限定表名会让 version 引用产生歧义，事务直接失败。
+					"policy": policy, "version": gorm.Expr("ai_user_permissions.version + 1"), "updated_at": time.Now(),
 				}),
 			}).Create(&row).Error; err != nil {
 				return err

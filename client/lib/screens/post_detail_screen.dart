@@ -53,6 +53,7 @@ class PostDetailScreen extends StatefulWidget {
   final bool isDesktopSplitMode;
   final bool hideBackButton;
   final bool focusReplyComposer;
+  final bool scrollToReplies;
   final ValueChanged<int>? onAuthorTap;
 
   const PostDetailScreen({
@@ -64,6 +65,7 @@ class PostDetailScreen extends StatefulWidget {
     this.isDesktopSplitMode = false,
     this.hideBackButton = false,
     this.focusReplyComposer = false,
+    this.scrollToReplies = false,
     this.onAuthorTap,
   });
 
@@ -198,9 +200,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   int? _activeTargetReplyId;
 
   final Map<int, GlobalKey> _replyKeys = {};
+  final GlobalKey _commentsSectionKey = GlobalKey();
   bool _hasScrolledToTarget = false;
+  bool _hasScrolledToReplies = false;
   int? _highlightedReplyId;
   Timer? _highlightTimer;
+
+  // 评论输入激活后，沿用私信页的手势语义：下滑累计达到阈值即收起输入。
+  bool _dragStartedWithInputPanel = false;
+  double _keyboardDownDrag = 0;
+  static const double _keyboardDismissDragTrigger = 18;
 
   // ---- 评论排序 + 点赞状态 ----
 
@@ -253,6 +262,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
     _activeTargetReplyId = widget.targetReplyId;
     _loadPost();
+    if (widget.scrollToReplies && widget.initialPost != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scheduleScrollToReplies();
+      });
+    }
     if (widget.focusReplyComposer) {
       // 等详情页首帧完成后再展开评论输入框并聚焦，
       // 避免在路由/键盘尚未就绪时“碰运气”等待。
@@ -343,6 +357,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _post = mergedPost;
           _isLoading = false;
         });
+      if (widget.scrollToReplies && !_hasScrolledToReplies) {
+        // 帖子主体已经完成布局即可定位，不必等待权限等后台请求。
+        _scheduleScrollToReplies();
+      }
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
         context.read<PostProvider>().updatePostInCache(_post!);
@@ -484,6 +502,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         _hasScrolledToTarget = true;
         debugPrint('目标回复未进入组件树: $targetId');
         return;
+      }
+    });
+  }
+
+  /// 从信息流的评论入口进入详情时，只把评论区带到视野内，不自动聚焦输入框。
+  void _scheduleScrollToReplies([int retries = 5]) {
+    if (_hasScrolledToReplies) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _hasScrolledToReplies) return;
+
+      final commentsContext = _commentsSectionKey.currentContext;
+      if (commentsContext != null) {
+        final reduceMotion =
+            MediaQuery.maybeOf(commentsContext)?.disableAnimations ?? false;
+        Scrollable.ensureVisible(
+          commentsContext,
+          duration: reduceMotion ? Duration.zero : AppMotion.page,
+          curve: AppMotion.incoming,
+          alignment: 0.0,
+        );
+        _hasScrolledToReplies = true;
+      } else if (retries > 0) {
+        Future<void>.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _scheduleScrollToReplies(retries - 1);
+        });
       }
     });
   }
@@ -1713,39 +1756,109 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       animation: _replyComposerActivity,
       child: child,
       builder: (context, child) {
-        final inputActive = _replyComposerController.focusNode.hasFocus ||
-            _replyComposerController.showEmojiPanel;
+        final inputActive =
+            _replyComposerController.bottomPanel != PostReplyBottomPanel.none ||
+                _replyComposerController.inputHandoffActive ||
+                _replyComposerController.focusNode.hasFocus;
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            child!,
-            Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !inputActive,
-                child: ExcludeSemantics(
-                  excluding: !inputActive,
-                  child: Semantics(
-                    button: true,
-                    enabled: inputActive,
-                    label: '收起评论输入',
-                    onTap: inputActive
-                        ? () => _replyComposerController.close()
-                        : null,
-                    child: GestureDetector(
-                      key: const ValueKey('post-detail-input-dismiss-layer'),
-                      behavior: HitTestBehavior.opaque,
-                      excludeFromSemantics: true,
-                      onTap: () => _replyComposerController.close(),
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) {
+            _keyboardDownDrag = 0;
+            _dragStartedWithInputPanel = inputActive;
+          },
+          onPointerMove: (event) {
+            if (!_dragStartedWithInputPanel) return;
+            if (event.delta.dy > 0) {
+              _keyboardDownDrag += event.delta.dy;
+              if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
+                _dragStartedWithInputPanel = false;
+                _keyboardDownDrag = 0;
+                _replyComposerController.close();
+              }
+            } else if (event.delta.dy < 0) {
+              _keyboardDownDrag = 0;
+            }
+          },
+          onPointerUp: (_) {
+            _keyboardDownDrag = 0;
+            _dragStartedWithInputPanel = false;
+          },
+          onPointerCancel: (_) {
+            _keyboardDownDrag = 0;
+            _dragStartedWithInputPanel = false;
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: _handleDetailScrollNotification,
+                child: child!,
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !inputActive,
+                  child: ExcludeSemantics(
+                    excluding: !inputActive,
+                    child: Semantics(
+                      button: true,
+                      enabled: inputActive,
+                      label: '收起评论输入',
+                      onTap: inputActive
+                          ? () => _replyComposerController.close()
+                          : null,
+                      child: GestureDetector(
+                        key: const ValueKey('post-detail-input-dismiss-layer'),
+                        behavior: HitTestBehavior.opaque,
+                        excludeFromSemantics: true,
+                        onTap: () => _replyComposerController.close(),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
+  }
+
+  /// 评论输入激活时，下滑达到 18dp 收起键盘/表情面板但保留草稿。
+  ///
+  /// 这里监听滚动通知而不是只依赖点击空白区域，因此在详情页评论区和
+  /// 集市详情的滚动容器中都能保持与私信页一致的交互。
+  bool _handleDetailScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _keyboardDownDrag = 0;
+      _dragStartedWithInputPanel = _replyComposerController.keyboardInset > 0 ||
+          _replyComposerController.bottomPanel != PostReplyBottomPanel.none ||
+          _replyComposerController.focusNode.hasFocus;
+    } else if (notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification) {
+      final dy = (notification is ScrollUpdateNotification
+              ? notification.dragDetails?.primaryDelta
+              : (notification as OverscrollNotification)
+                  .dragDetails
+                  ?.primaryDelta) ??
+          0;
+      if (_dragStartedWithInputPanel) {
+        if (dy > 0) {
+          _keyboardDownDrag += dy;
+          if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
+            _dragStartedWithInputPanel = false;
+            _keyboardDownDrag = 0;
+            _replyComposerController.close();
+          }
+        } else if (dy < 0) {
+          _keyboardDownDrag = 0;
+        }
+      }
+    } else if (notification is ScrollEndNotification) {
+      _keyboardDownDrag = 0;
+      _dragStartedWithInputPanel = false;
+    }
+    return false;
   }
 
   PreferredSizeWidget _buildMarketAppBar(
@@ -2334,9 +2447,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                           const SizedBox(height: 32),
                           _buildActionBar(isDark),
                           const SizedBox(height: 24),
-                          _buildCommentsHeader(isDark),
-                          const SizedBox(height: 10),
-                          _buildCompactReplies(isDark),
+                          KeyedSubtree(
+                            key: _commentsSectionKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCommentsHeader(isDark),
+                                const SizedBox(height: 10),
+                                _buildCompactReplies(isDark),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2482,9 +2603,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                           const SizedBox(height: 32),
                           _buildActionBar(isDark),
                           const SizedBox(height: 24),
-                          _buildCommentsHeader(isDark),
-                          const SizedBox(height: 10),
-                          _buildCompactReplies(isDark),
+                          KeyedSubtree(
+                            key: _commentsSectionKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCommentsHeader(isDark),
+                                const SizedBox(height: 10),
+                                _buildCompactReplies(isDark),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2647,6 +2776,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
           // 白色评论区卡片
           Container(
+            key: _commentsSectionKey,
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: _buildWaterCommentsSection(isDark),
           ),

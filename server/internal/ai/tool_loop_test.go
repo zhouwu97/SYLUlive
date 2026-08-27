@@ -729,6 +729,18 @@ func TestRuntimeResumesWaitingDeviceJobOnlyOnce(t *testing.T) {
 	require.Len(t, provider.Requests(), 2)
 }
 
+func TestDeviceJobTerminalEventPreservesTerminalMeaning(t *testing.T) {
+	tests := map[string]string{
+		models.DeviceToolJobCompleted: "ai.device.job.succeeded",
+		models.DeviceToolJobFailed:    "ai.device.job.failed",
+		models.DeviceToolJobCancelled: "ai.device.job.cancelled",
+		models.DeviceToolJobExpired:   "ai.device.job.expired",
+	}
+	for status, want := range tests {
+		require.Equal(t, want, deviceJobTerminalEvent(status))
+	}
+}
+
 func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{

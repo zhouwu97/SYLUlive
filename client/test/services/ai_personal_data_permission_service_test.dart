@@ -41,7 +41,7 @@ void main() {
       400: 'Agent 权限模式参数无效',
       401: '请先登录后再设置 Agent 权限',
       403: '当前账号没有修改 Agent 权限的权限',
-      404: 'Agent 权限模式接口不存在，请更新应用',
+      404: 'Agent 权限服务版本不匹配，请更新服务器后重试',
       409: '权限模式冲突',
       500: '个人数据权限服务暂时不可用',
     };
@@ -79,6 +79,64 @@ void main() {
     expect(diagnostics.single['route'], '/ai/permissions/mode');
     expect(diagnostics.single.containsKey('body'), isFalse);
     expect(diagnostics.single.containsKey('token'), isFalse);
+  });
+
+  test('setMode 成功后回读目标模式才返回成功', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    var putCalls = 0;
+    var getCalls = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'PUT') {
+            putCalls++;
+          } else {
+            getCalls++;
+          }
+          handler.resolve(
+            Response<dynamic>(
+              requestOptions: options,
+              statusCode: 200,
+              data: const <String, String>{'mode': 'trusted'},
+            ),
+          );
+        },
+      ),
+    );
+
+    final mode = await AiPersonalDataPermissionService(dio).setMode(
+      AiAgentPermissionMode.trusted,
+    );
+
+    expect(mode, AiAgentPermissionMode.trusted);
+    expect(putCalls, 1);
+    expect(getCalls, 1);
+  });
+
+  test('setMode 回读不一致时保留原设置并返回同步错误', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) => handler.resolve(
+          Response<dynamic>(
+            requestOptions: options,
+            statusCode: 200,
+            data: const <String, String>{'mode': 'ask'},
+          ),
+        ),
+      ),
+    );
+
+    await expectLater(
+      AiPersonalDataPermissionService(dio).setMode(
+        AiAgentPermissionMode.trusted,
+      ),
+      throwsA(
+        isA<AiPersonalDataPermissionException>()
+            .having((error) => error.code, 'code', 'ai_permission_mode_sync_mismatch')
+            .having((error) => error.message, 'message', '权限状态同步失败，已保留原设置，请重试'),
+      ),
+    );
   });
 }
 

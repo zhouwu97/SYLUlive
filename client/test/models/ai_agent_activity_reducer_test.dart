@@ -148,6 +148,29 @@ void main() {
     expect(summary, hasLength(1));
   });
 
+  test('设备失败终态不会显示为完成，并保留教务会话错误码', () {
+    final event = AiRunEvent.fromJson({
+      'run_id': 'run-failed',
+      'seq': 1,
+      'type': 'ai.device.job.failed',
+      'payload': {
+        'call_id': 'call-1',
+        'job_id': 'job-1',
+        'tool_name': 'device.academic.ensure_fresh_bundle',
+        'datasets': ['grades', 'academic_situation', 'credit_requirements'],
+        'status': 'failed',
+        'error_code': 'EDU_SESSION_EXPIRED',
+      },
+    });
+
+    final activity = AiAgentActivityReducer.reduce([event]).single;
+    expect(activity.status, AiAgentActivityStatus.failed);
+    expect(activity.code, 'device_job_failed');
+    expect(activity.title, '手机更新学业失败');
+    expect(activity.errorCode, 'EDU_SESSION_EXPIRED');
+    expect(activity.detail, '教务登录状态已失效，请重新验证教务');
+  });
+
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
     final activities = AiAgentActivityReducer.reduce([
       AiRunEvent.fromJson({

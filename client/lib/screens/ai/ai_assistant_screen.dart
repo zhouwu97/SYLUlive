@@ -67,6 +67,7 @@ import '../../widgets/ai/ai_agent_permission_sheet.dart';
 import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
+import '../account_security_screen.dart';
 
 enum _ConsentChoice { denied, once, always }
 
@@ -106,6 +107,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   String _lastConsentDialogKey = '';
   bool _agentTrusted = false;
   bool _agentPermissionLoaded = false;
+  AgentPermissionLoadState _agentPermissionState =
+      AgentPermissionLoadState.loading;
+  DeviceBridgeStatus _bridgeStatus = DeviceToolBridge.status;
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -139,6 +143,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
     _permissionService = AiPersonalDataPermissionService(widget.dio);
     _provider.addListener(_handleRunConsentRequired);
+    DeviceToolBridge.statusNotifier.addListener(_handleBridgeStatusChanged);
     final initialPrompt = widget.initialPrompt?.trim() ?? '';
     if (initialPrompt.isNotEmpty) {
       _inputController.value = TextEditingValue(
@@ -170,6 +175,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void dispose() {
     _authProvider?.removeListener(_handleAccountContextChanged);
     _eduProvider?.removeListener(_handleAccountContextChanged);
+    DeviceToolBridge.statusNotifier.removeListener(_handleBridgeStatusChanged);
     _toolCancellation?.cancel();
     unawaited(_activeToolModel?.cancel());
     _inputFocusNode.dispose();
@@ -177,6 +183,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _provider.removeListener(_handleRunConsentRequired);
     _provider.dispose();
     super.dispose();
+  }
+
+  void _handleBridgeStatusChanged() {
+    if (!mounted) return;
+    setState(() => _bridgeStatus = DeviceToolBridge.status);
   }
 
   void _handleRunConsentRequired() {
@@ -829,6 +840,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         setState(() {
           _agentTrusted = mode == AiAgentPermissionMode.trusted;
           _agentPermissionLoaded = true;
+          _agentPermissionState = _agentTrusted
+              ? AgentPermissionLoadState.trusted
+              : AgentPermissionLoadState.ask;
         });
         _handleRunConsentRequired();
       }
@@ -837,6 +851,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         setState(() {
           _agentTrusted = false;
           _agentPermissionLoaded = true;
+          _agentPermissionState = AgentPermissionLoadState.unavailable;
         });
         _handleRunConsentRequired();
       }
@@ -846,6 +861,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _showAgentPermissions() async {
     await AiAgentPermissionSheet.show(context, widget.dio);
     if (mounted) unawaited(_loadAgentPermissionMode());
+  }
+
+  Future<void> _reauthorizeEduAndRetry() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AccountSecurityScreen(),
+      ),
+    );
+    if (!mounted) return;
+    final edu = _eduProvider;
+    await edu?.refreshStatus();
+    if (!mounted) return;
+    if (edu?.isAuthorized == true && edu?.sessionState == 'active') {
+      if (_provider.canRetry) _provider.retryLast();
+      return;
+    }
+    AppFeedback.error('教务仍未恢复，请完成重新授权或登录后再试', context: context);
   }
 
   Future<void> _submitInlineAgentConsent(_ConsentChoice choice) async {
@@ -1174,6 +1207,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       await _showAgentPermissions();
       return;
     }
+    if (value == 'billing') {
+      AppFeedback.info('计费与额度功能暂未开发', context: context);
+      return;
+    }
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
       AppFeedback.info('毕业助手在当前内测版本中暂未开放', context: context);
       return;
@@ -1288,6 +1325,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         label: 'Agent 权限',
                         icon: Icons.admin_panel_settings_outlined,
                       ),
+                      AppPopupAction(
+                        value: 'billing',
+                        label: '计费与额度（暂未开发）',
+                        icon: Icons.account_balance_wallet_outlined,
+                      ),
                       if (BetaReleasePolicy.aiGraduationAssistant)
                         AppPopupAction(
                           value: 'graduation',
@@ -1382,8 +1424,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                       onRetrySources: () => unawaited(
                                         _provider.retryMessageSources(message),
                                       ),
-                                      onFeedback: (feedback) =>
-                                          _provider.submitFeedback(message, feedback),
+                                      onFeedback: (feedback) => _provider
+                                          .submitFeedback(message, feedback),
                                     ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==
@@ -1418,6 +1460,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                             provider.canUseExistingData
                                                 ? provider.useExistingData
                                                 : null,
+                                        onReauthorizeEdu: provider.canRetry
+                                            ? _reauthorizeEduAndRetry
+                                            : null,
                                       ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==
@@ -1477,6 +1522,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',
                     showAgentPermissionMode: !_personalMode,
                     agentTrusted: _agentTrusted,
+                    agentPermissionState: _agentPermissionState,
+                    bridgeStatus: _bridgeStatus,
                     onAgentPermissionTap: _showAgentPermissions,
                   ),
                 ],

@@ -765,6 +765,7 @@ void main() {
       'external_mcp_invalid_result': '学业分析结果校验失败，请稍后重试',
       'provider_unavailable': '回答服务暂时不可用，请稍后重试',
       'provider_request_rejected': '回答服务暂时未接受本次请求，请重试',
+      'provider_model_unavailable': '当前回答模型暂不可用，管理员需要检查服务配置',
       'rate_limited': '当前请求较多，请稍后重试',
     };
 

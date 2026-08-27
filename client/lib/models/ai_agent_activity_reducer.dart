@@ -285,6 +285,8 @@ class AiAgentActivityReducer {
         return '教务登录状态已失效，请重新验证教务';
       case 'network_unavailable':
         return '网络连接失败，请重试';
+      case 'provider_model_unavailable':
+        return '当前回答模型暂不可用，管理员需要检查服务配置';
       case 'refresh_incomplete':
         return '$label更新不完整，可使用已有数据继续分析';
       case 'local_storage_failed':

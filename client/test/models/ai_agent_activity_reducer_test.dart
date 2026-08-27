@@ -171,6 +171,20 @@ void main() {
     expect(activity.detail, '教务登录状态已失效，请重新验证教务');
   });
 
+  test('模型配置错误会给出管理员可执行的恢复说明', () {
+    const event = AiRunEvent(
+      runId: 'run-model-unavailable',
+      seq: 1,
+      type: AiRunEventType.failed,
+      errorCode: 'provider_model_unavailable',
+      retryable: true,
+    );
+
+    final activity = AiAgentActivityReducer.reduce([event]).single;
+    expect(activity.status, AiAgentActivityStatus.failed);
+    expect(activity.detail, '当前回答模型暂不可用，管理员需要检查服务配置');
+  });
+
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
     final activities = AiAgentActivityReducer.reduce([
       AiRunEvent.fromJson({

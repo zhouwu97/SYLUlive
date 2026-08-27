@@ -508,7 +508,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     eduBound: edu.isBound,
                     sessionPhase: sc.sessionPhase,
                     isLoading: sc.isLoading,
-                    isInitializing: _initializing,
+                    isInitializing: _initializing && sc.courses.isEmpty,
                     hasCourses: sc.courses.isNotEmpty,
                     hasSemesterStart: sc.semesterStart != null,
                   );
@@ -586,12 +586,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               }
               return Consumer2<EduProvider, CourseScheduleProvider>(
                 builder: (context, edu, sc, _) {
+                  _autoLoad(edu, sc);
                   final viewState = resolveScheduleViewState(
                     eduStatusLoaded: edu.isStatusLoaded,
                     eduBound: edu.isBound,
                     sessionPhase: sc.sessionPhase,
                     isLoading: sc.isLoading,
-                    isInitializing: _initializing,
+                    isInitializing: _initializing && sc.courses.isEmpty,
                     hasCourses: sc.courses.isNotEmpty,
                     hasSemesterStart: sc.semesterStart != null,
                   );

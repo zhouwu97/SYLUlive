@@ -97,11 +97,11 @@ type EduClientOptions struct {
 	HTTP    *http.Client
 }
 
-// NewEduClient 创建内部教务客户端。调用方未传 HTTP 客户端时使用 45 秒硬超时。
+// NewEduClient 创建内部教务客户端。调用方未传 HTTP 客户端时使用 25 秒硬超时。
 func NewEduClient(options EduClientOptions) *EduClient {
 	client := options.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 45 * time.Second}
+		client = &http.Client{Timeout: 25 * time.Second}
 	}
 	return &EduClient{baseURL: options.BaseURL, token: options.Token, http: client}
 }

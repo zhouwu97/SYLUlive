@@ -195,7 +195,7 @@ void main() {
     expect(await oldStore.readTerm(year: '2025', semester: 12), isNull);
     expect(await newStore.readTerm(year: '2025', semester: 12), isNull);
     expect(requestedServerCourseCache, isFalse);
-    expect(requestedReceiveTimeout, const Duration(seconds: 60));
+    expect(requestedReceiveTimeout, const Duration(seconds: 25));
   });
 
   test('课程获取成功但保险箱写入失败时明确提示未持久化', () async {

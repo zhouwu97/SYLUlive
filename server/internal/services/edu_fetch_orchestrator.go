@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultEduFetchTimeout = 45 * time.Second
+	defaultEduFetchTimeout = 20 * time.Second
 	defaultEduFetchWorkers = 3
 )
 
@@ -118,7 +118,7 @@ func (orchestrator *EduFetchOrchestrator) Fetch(ctx context.Context, userID uint
 		}
 	}
 
-	result := orchestrator.fetchRemote(userID, generation, request, dataset, scopeKey, lookup)
+	result := orchestrator.fetchRemote(ctx, userID, generation, request, dataset, scopeKey, lookup)
 	orchestrator.finishFlight(flightKey, flight, result)
 	return result, nil
 }
@@ -150,8 +150,8 @@ func (orchestrator *EduFetchOrchestrator) FetchBundle(ctx context.Context, reque
 	return results, nil
 }
 
-func (orchestrator *EduFetchOrchestrator) fetchRemote(userID, generation uint, request EduFetchRequest, dataset clients.EduContextDataset, scopeKey string, staleSnapshot AcademicSnapshotLookup) academic.ContextResult {
-	contextWithTimeout, cancel := context.WithTimeout(context.Background(), orchestrator.timeout)
+func (orchestrator *EduFetchOrchestrator) fetchRemote(ctx context.Context, userID, generation uint, request EduFetchRequest, dataset clients.EduContextDataset, scopeKey string, staleSnapshot AcademicSnapshotLookup) academic.ContextResult {
+	contextWithTimeout, cancel := context.WithTimeout(ctx, orchestrator.timeout)
 	defer cancel()
 	select {
 	case orchestrator.workers <- struct{}{}:

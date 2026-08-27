@@ -10,7 +10,7 @@ import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-const _eduLongRequestTimeout = Duration(seconds: 60);
+const _eduLongRequestTimeout = Duration(seconds: 25);
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {

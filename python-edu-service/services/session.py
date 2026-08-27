@@ -46,7 +46,7 @@ async def execute_with_session_refresh(
     db: AsyncSession,
     edu_user: EduUser,
     operation: Callable[[EduCrawler, str], Awaitable[T]],
-    timeout: float = 15.0,
+    timeout: float = 8.0,
 ) -> T:
     """在已登录的 EduCrawler 上下文中执行 operation,自动处理 Cookie 过期。
 

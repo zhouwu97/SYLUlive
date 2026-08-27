@@ -108,7 +108,9 @@ class StudentInfo:
 class EduCrawler:
     """教务系统爬虫"""
 
-    def __init__(self, timeout: float = 10.0):
+    timeout: float = 8.0
+
+    def __init__(self, timeout: float = 8.0):
         self.timeout = timeout
         self.client: Optional[httpx.AsyncClient] = None
         self.cookies: List[httpx.Cookies] = []
@@ -511,7 +513,13 @@ class EduCrawler:
 
     # ============== 课表相关 ==============
 
-    async def fetch_courses(self, cookie: str, year: str, semester: int) -> List[CourseRawData]:
+    async def fetch_courses(
+        self,
+        cookie: str,
+        year: str,
+        semester: int,
+        total_budget: float = 12.0,
+    ) -> List[CourseRawData]:
         """获取课表，优先桌面端 JSON（全量），回退移动端 JSON。
 
         失败必须按原因分类。原来两个分支都用 ``except Exception`` 吞掉，然后统一抛
@@ -522,6 +530,7 @@ class EduCrawler:
         if not self.client:
             raise NetworkError("Client not initialized")
 
+        start_time = time.monotonic()
         base_headers = {
             "Cookie": cookie,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -596,13 +605,15 @@ class EduCrawler:
             "Origin": COURSE_URL,
         })
 
+        base_timeout = getattr(self, "timeout", 8.0)
+        desk_timeout = min(base_timeout, 6.0)
         try:
             resp = await self.client.post(
                 f"{COURSE_URL}/xskbcx_cxXsKb.html",
                 params={"gnmkdm": "N2154"},
                 data={"xnm": str(year), "xqm": str(semester), "kblx": "1"},
                 headers=desktop_headers,
-                timeout=10.0
+                timeout=desk_timeout,
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
             _consume(resp, "DESK")
@@ -613,17 +624,19 @@ class EduCrawler:
             print(f"  [DESK] 失败: {type(e).__name__}")
 
         # ==========================================
-        # Step 2: 移动端 JSON（备用回退）
+        # Step 2: 移动端 JSON（备用回退，使用剩余预算）
         # ==========================================
         if not all_courses:
-            print("  [MOBILE] 桌面端无数据，回退移动端")
+            elapsed = time.monotonic() - start_time
+            mobile_timeout = max(2.0, min(base_timeout, total_budget - elapsed))
+            print(f"  [MOBILE] 桌面端无数据，回退移动端 (剩余超时预算: {mobile_timeout:.1f}s)")
             try:
                 resp = await self.client.post(
                     f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
                     params={"gnmkdm": "N2154"},
                     data={"xnm": str(year), "zs": "1", "doType": "app", "xqm": str(semester), "kblx": "1"},
                     headers=base_headers,
-                    timeout=10.0
+                    timeout=mobile_timeout,
                 )
                 print(f"  [MOBILE] status={resp.status_code}, len={len(resp.text)}")
                 _consume(resp, "MOBILE")

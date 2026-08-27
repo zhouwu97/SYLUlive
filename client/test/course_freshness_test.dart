@@ -115,6 +115,9 @@ class _BoundEduProvider extends EduProvider {
   bool get isStatusLoaded => true;
 
   @override
+  String get studentId => 'edu-1';
+
+  @override
   void setUserId(String userId) {}
 
   @override

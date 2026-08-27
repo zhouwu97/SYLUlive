@@ -289,3 +289,48 @@ func TestEduFetchDoesNotHideAuthorizationFailureBehindStaleSnapshot(t *testing.T
 		t.Fatalf("authorization failure must not use stale snapshot: source=%s status=%s", result.Source, result.Status)
 	}
 }
+
+func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	resultCh := make(chan academic.ContextResult, 1)
+
+	go func() {
+		res, err := orchestrator.Fetch(ctx, 1, gradesRequest(true))
+		resultCh <- res
+		errCh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	// 取消请求
+	cancel()
+	close(release)
+
+	select {
+	case res := <-resultCh:
+		// 当请求被取消时，结果应为失败状态并释放 worker
+		if res.Status != academic.DataStatusFailed && res.Status != academic.DataStatusStale {
+			t.Fatalf("expected failed or stale on cancel, got %s", res.Status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fetch did not return after cancellation")
+	}
+
+	// 确认 worker 已经被释放（容量为2，能成功塞入2个）
+	orchestrator.workers <- struct{}{}
+	orchestrator.workers <- struct{}{}
+	<-orchestrator.workers
+	<-orchestrator.workers
+}
+

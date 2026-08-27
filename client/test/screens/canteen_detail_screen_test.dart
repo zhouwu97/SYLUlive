@@ -36,8 +36,7 @@ String _detailJson({
   int ratingCount = 0,
 }) {
   final ratingsJson = ratings
-      .map((r) =>
-          '{"id":${r['id'] ?? 1},"user_id":2,"user_name":"同学A",'
+      .map((r) => '{"id":${r['id'] ?? 1},"user_id":2,"user_name":"同学A",'
           '"comment":"${r['comment'] ?? '好吃'}","star":${r['star'] ?? 5},'
           '"images":"[]","helpful_count":1,"unhelpful_count":0,'
           '"created_at":"2026-07-22"}')
@@ -203,8 +202,9 @@ void main() {
     await tester.ensureVisible(find.text('有图'));
     await tester.pump();
     await tester.tap(find.text('有图'), warnIfMissed: true);
-    for (var i = 0; i < 50 &&
-        !pending.any((r) => r.filter == 'with_image'); i++) {
+    for (var i = 0;
+        i < 50 && !pending.any((r) => r.filter == 'with_image');
+        i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
 
@@ -219,8 +219,7 @@ void main() {
     }
     // ignore: avoid_print
     print('pending filters: ${pending.map((r) => r.filter).toList()}');
-    expect(pending.any((r) => r.filter == 'high'), isTrue,
-        reason: '高分请求未发出');
+    expect(pending.any((r) => r.filter == 'high'), isTrue, reason: '高分请求未发出');
     final requestB = pending.firstWhere((r) => r.filter == 'high');
     final requestA = pending.firstWhere((r) => r.filter == 'with_image');
 
@@ -230,10 +229,11 @@ void main() {
     expect(find.text('暂无高分评价'), findsOneWidget);
 
     // 请求 A（with_image，带数据）晚到 → 必须被 generation 丢弃
-    requestA.completer
-        .complete(_json(_detailJson(ratingCount: 1, ratings: [
+    requestA.completer.complete(_json(
+        _detailJson(ratingCount: 1, ratings: [
           {'id': '9', 'comment': '带图评价', 'star': '5'},
-        ]), 200));
+        ]),
+        200));
     await tester.pumpAndSettle();
 
     // 仍停留在「高分」空态，未被陈旧 with_image 响应覆盖
@@ -266,7 +266,7 @@ void main() {
     await tester.tap(find.text('贡献内容'));
     await tester.pumpAndSettle();
     expect(find.text('你想贡献什么？'), findsOneWidget);
-    expect(find.text('写商家评价'), findsOneWidget);
+    expect(find.text('写菜品评价'), findsOneWidget);
     expect(find.text('上传菜品实拍'), findsOneWidget);
   });
 
@@ -295,7 +295,7 @@ void main() {
     await tester.tap(find.text('贡献内容'));
     await tester.pumpAndSettle();
 
-    expect(find.text('写商家评价'), findsOneWidget);
+    expect(find.text('写菜品评价'), findsOneWidget);
     expect(find.text('上传菜品实拍'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -365,8 +365,9 @@ void main() {
     await tester.ensureVisible(find.text('有图'));
     await tester.pump();
     await tester.tap(find.text('有图'), warnIfMissed: true);
-    for (var i = 0; i < 50 &&
-        !pending.any((r) => r.filter == 'with_image'); i++) {
+    for (var i = 0;
+        i < 50 && !pending.any((r) => r.filter == 'with_image');
+        i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
 
@@ -387,9 +388,11 @@ void main() {
 
     // with_image 随后返回 200 但 stale → 必须被丢弃，不覆盖 all
     final withImageReq = pending.firstWhere((r) => r.filter == 'with_image');
-    withImageReq.completer.complete(_json(_detailJson(ratingCount: 1, ratings: [
-      {'id': '9', 'comment': '带图评价', 'star': '5'},
-    ]), 200));
+    withImageReq.completer.complete(_json(
+        _detailJson(ratingCount: 1, ratings: [
+          {'id': '9', 'comment': '带图评价', 'star': '5'},
+        ]),
+        200));
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
 

@@ -64,6 +64,7 @@ class AiAgentActivityReducer {
         callId: last.callId,
         jobId: last.jobId,
         freshnessAfter: last.freshnessAfter,
+        errorCode: last.errorCode,
         success: true,
       ));
     }
@@ -102,6 +103,8 @@ class AiAgentActivityReducer {
       freshnessAfter: latest.freshnessAfter.isEmpty
           ? previous.freshnessAfter
           : latest.freshnessAfter,
+      errorCode:
+          latest.errorCode.isEmpty ? previous.errorCode : latest.errorCode,
       success: latest.success,
     );
   }
@@ -123,6 +126,9 @@ class AiAgentActivityReducer {
     final isFailure = event.type == AiRunEventType.failed ||
         event.activityCode == 'refresh_failed' ||
         event.activityCode == 'provider_failed' ||
+        event.activityCode == 'device_job_failed' ||
+        event.activityCode == 'device_job_cancelled' ||
+        event.activityCode == 'device_job_expired' ||
         event.status == 'failed';
     final status = isFailure
         ? AiAgentActivityStatus.failed
@@ -157,6 +163,7 @@ class AiAgentActivityReducer {
       jobId: event.jobId,
       freshnessBefore: event.freshnessBefore,
       freshnessAfter: event.freshnessAfter,
+      errorCode: event.errorCode,
       success: event.success || status == AiAgentActivityStatus.success,
     );
   }
@@ -194,9 +201,13 @@ class AiAgentActivityReducer {
       'tool.requested' => _toolTitle(event.toolName, label),
       'tool.executing' => _toolTitle(event.toolName, label),
       'tool.completed' => '已读取$label数据',
-      'device_job_completed' => '设备任务已完成',
+      'device_job_completed' => _deviceJobTitle(dataset, event, legacy: true),
+      'device_job_succeeded' => '手机已完成$label更新',
+      'device_job_failed' => '手机更新$label失败',
+      'device_job_cancelled' => '设备任务已取消',
+      'device_job_expired' => '设备任务已超时',
       'device_resume_claimed' => '已接收设备结果',
-      'device_result_consumed' => '已读取设备更新结果',
+      'device_result_consumed' => _consumedDeviceTitle(dataset, event),
       'tool_retry_waiting' => '正在等待下一项数据',
       'tool_retry_completed' => '已完成数据读取',
       'provider_started' => '开始综合分析',
@@ -210,7 +221,7 @@ class AiAgentActivityReducer {
       'action.failed' => '安排未能添加',
       'consent.required' => '需要你的许可才能更新$label',
       'run.completed' => '已完成分析',
-      'run.failed' => label == '成绩' ? '没能获取最新成绩' : 'Agent 处理未完成',
+      'run.failed' => _runFailureTitle(label, event),
       'run.cancelled' => '本次处理已取消',
       _ => event.text.trim().isEmpty ? '正在处理$label' : event.text.trim(),
     };
@@ -224,9 +235,73 @@ class AiAgentActivityReducer {
       return '数据已验证为最新';
     }
     if (code == 'run.failed') {
-      return '可以稍后重新获取，或选择使用已有数据';
+      return _errorDetail(event.errorCode, dataset, event.toolName) ??
+          '可以稍后重新获取，或选择使用已有数据';
     }
+    final errorDetail = _errorDetail(event.errorCode, dataset, event.toolName);
+    if (errorDetail != null) return errorDetail;
     return '';
+  }
+
+  static String _deviceJobTitle(
+    String dataset,
+    AiRunEvent event, {
+    required bool legacy,
+  }) {
+    final status = event.status.trim().toLowerCase();
+    if (status == 'failed') {
+      return '手机更新${_datasetLabel(dataset, event.toolName)}失败';
+    }
+    if (status == 'cancelled') return '设备任务已取消';
+    if (status == 'expired') return '设备任务已超时';
+    return legacy
+        ? '设备任务已完成'
+        : '手机已完成${_datasetLabel(dataset, event.toolName)}更新';
+  }
+
+  static String _consumedDeviceTitle(String dataset, AiRunEvent event) {
+    final status = event.status.trim().toLowerCase();
+    if (status == 'failed') {
+      return '已收到${_datasetLabel(dataset, event.toolName)}失败结果';
+    }
+    if (status == 'cancelled') return '已收到设备取消结果';
+    if (status == 'expired') return '已收到设备超时结果';
+    return '已读取设备更新结果';
+  }
+
+  static String _runFailureTitle(String label, AiRunEvent event) {
+    if (_isEduSessionCode(event.errorCode)) return '教务登录状态已失效';
+    return label == '成绩' ? '没能获取最新成绩' : 'Agent 处理未完成';
+  }
+
+  static String? _errorDetail(String code, String dataset, String toolName) {
+    final label = _datasetLabel(dataset, toolName);
+    switch (code.trim().toLowerCase()) {
+      case 'edu_authorization_revoked':
+      case 'edu_session_logged_out':
+      case 'edu_session_expired':
+      case 'edu_credential_unavailable':
+      case 'credential_unavailable':
+        return '教务登录状态已失效，请重新验证教务';
+      case 'network_unavailable':
+        return '网络连接失败，请重试';
+      case 'refresh_incomplete':
+        return '$label更新不完整，可使用已有数据继续分析';
+      case 'local_storage_failed':
+        return '$label已获取，但本地加密保存失败';
+      case 'device_refresh_not_fresh':
+        return '$label刷新后仍未达到新鲜度要求';
+    }
+    return null;
+  }
+
+  static bool _isEduSessionCode(String code) {
+    final normalized = code.trim().toLowerCase();
+    return normalized == 'edu_authorization_revoked' ||
+        normalized == 'edu_session_logged_out' ||
+        normalized == 'edu_session_expired' ||
+        normalized == 'edu_credential_unavailable' ||
+        normalized == 'credential_unavailable';
   }
 
   static String _toolTitle(String toolName, String label) {

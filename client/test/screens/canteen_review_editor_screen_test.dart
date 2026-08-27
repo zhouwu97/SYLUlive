@@ -204,7 +204,7 @@ void main() {
     }
 
     // 五个维度未完成时，发布按钮不可点击
-    final publishButtonFinder = find.widgetWithText(FilledButton, '发布评价');
+    final publishButtonFinder = find.widgetWithText(FilledButton, '发布菜品评价');
     expect(publishButtonFinder, findsOneWidget);
     final filledBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(filledBtn.onPressed, isNull);
@@ -291,8 +291,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 1. 验证初始状态：0 / 3，展示快捷推荐
-    expect(find.text('0 / 3'), findsOneWidget);
+    // 1. 验证初始状态：0 / 1，展示快捷推荐
+    expect(find.text('0 / 1'), findsOneWidget);
     expect(find.text('已有菜品（点击快速填入）：'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
 
@@ -307,33 +307,34 @@ void main() {
     // 未收录的自由输入保留在本次评价中，作为待收录菜品随评价一次提交。
     expect(find.text('自创麻辣烫'), findsWidgets);
     expect(find.text('待收录'), findsOneWidget);
+    expect(find.text('1 / 1'), findsOneWidget);
 
-    // 3. 点击快捷推荐中的“牛肉面”
+    // 3. 删除后再从已有菜品中选择“牛肉面”
+    var closeIcons = find.byIcon(Icons.close_rounded);
+    expect(closeIcons, findsOneWidget);
+    await tester.ensureVisible(closeIcons.first);
+    await tester.tap(closeIcons.first);
+    await tester.pumpAndSettle();
     final beefNoodleFinder = find.text('牛肉面').first;
     await tester.ensureVisible(beefNoodleFinder);
     await tester.pumpAndSettle();
     await tester.tap(beefNoodleFinder);
     await tester.pumpAndSettle();
 
-    // 验证已收录菜品可以与待收录菜品一起建立推荐关系
-    expect(find.text('2 / 3'), findsOneWidget);
+    // 单条评价只能保留一道菜
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(find.text('牛肉面'), findsWidgets);
 
-    // 4. 删除已选择的推荐菜品：先删已有菜，再删待收录菜
-    var closeIcons = find.byIcon(Icons.close_rounded);
-    expect(closeIcons, findsNWidgets(2));
-    await tester.ensureVisible(closeIcons.last);
-    await tester.pumpAndSettle();
-    await tester.tap(closeIcons.last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('1 / 3'), findsOneWidget);
+    // 4. 删除已选择的推荐菜品后恢复为空
     closeIcons = find.byIcon(Icons.close_rounded);
     expect(closeIcons, findsOneWidget);
+    await tester.ensureVisible(closeIcons.first);
+    await tester.pumpAndSettle();
     await tester.tap(closeIcons.first);
     await tester.pumpAndSettle();
 
     // 验证删除后恢复为空，快捷推荐仍可再次选择已有菜品
-    expect(find.text('0 / 3'), findsOneWidget);
+    expect(find.text('0 / 1'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
   });
 
@@ -365,7 +366,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('修改评价'), findsOneWidget);
+    expect(find.text('修改菜品评价'), findsOneWidget);
     expect(find.text('老评价内容'), findsOneWidget);
     expect(find.text('4.30'), findsOneWidget);
     expect(find.text('2/6'), findsOneWidget);
@@ -436,7 +437,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
     await tester.pumpAndSettle();
 
     expect(reviewCalled, isTrue);
@@ -478,7 +479,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     await blockingStore.firstMatchingWriteStarted.future;
 
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
     await tester.pump(const Duration(milliseconds: 20));
     expect(reviewCalled, isTrue);
 
@@ -548,7 +549,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布评价
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 500));

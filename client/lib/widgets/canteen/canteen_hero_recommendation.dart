@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../config/api_constants.dart';
 import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
@@ -12,11 +11,13 @@ import 'canteen_status_image.dart';
 class CanteenHeroRecommendationCard extends StatefulWidget {
   final CanteenHero hero;
   final VoidCallback onTap;
+  final String? heroTag;
 
   const CanteenHeroRecommendationCard({
     super.key,
     required this.hero,
     required this.onTap,
+    this.heroTag,
   });
 
   @override
@@ -32,6 +33,7 @@ class _CanteenHeroRecommendationCardState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final h = widget.hero;
+    final heroTag = widget.heroTag ?? 'canteen-home-hero-${h.canteenId}';
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
@@ -39,8 +41,8 @@ class _CanteenHeroRecommendationCardState
       onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: _pressed ? 0.985 : 1.0,
+      child: AnimatedOpacity(
+        opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
         child: Container(
@@ -56,7 +58,7 @@ class _CanteenHeroRecommendationCardState
               Stack(
                 children: [
                   Hero(
-                    tag: 'canteen-${h.canteenId}',
+                    tag: heroTag,
                     child: SizedBox(
                       width: double.infinity,
                       height: 176,
@@ -249,7 +251,8 @@ class _CanteenHeroRecommendationCardState
       );
     }
     return CanteenStatusImage(
-      imageUrl: ApiConstants.fullUrl(h.image),
+      imageUrl: h.image,
+      variant: 'medium',
       offline: h.operatingStatus == 'offline',
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

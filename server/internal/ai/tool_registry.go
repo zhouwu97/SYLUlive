@@ -63,11 +63,12 @@ type toolCallContext struct {
 // deviceJobResumeContext 只在服务端重试原始外层工具的调用栈中存在。
 // 它不会写入 Run 消息或 Tool Call Result，设备结果因此只是外层工具的依赖。
 type deviceJobResumeContext struct {
-	JobID    string
-	ToolName string
-	Dataset  string
-	Status   string
-	Result   json.RawMessage
+	JobID     string
+	ToolName  string
+	Dataset   string
+	Status    string
+	ErrorCode string
+	Result    json.RawMessage
 }
 
 type deviceJobResumeContextKey struct{}

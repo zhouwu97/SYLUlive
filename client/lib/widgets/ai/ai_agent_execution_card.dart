@@ -22,6 +22,7 @@ class AiAgentExecutionCard extends StatefulWidget {
     this.onDeny,
     this.onRetryRefresh,
     this.onUseExistingData,
+    this.onReauthorizeEdu,
   });
 
   final List<AiAgentActivity> activities;
@@ -36,6 +37,7 @@ class AiAgentExecutionCard extends StatefulWidget {
   final VoidCallback? onDeny;
   final VoidCallback? onRetryRefresh;
   final VoidCallback? onUseExistingData;
+  final VoidCallback? onReauthorizeEdu;
 
   @override
   State<AiAgentExecutionCard> createState() => _AiAgentExecutionCardState();
@@ -43,6 +45,7 @@ class AiAgentExecutionCard extends StatefulWidget {
 
 class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
   bool _expanded = true;
+  bool _showTechnicalDetails = false;
 
   List<AiAgentActivity> get _activities {
     if (widget.activities.isNotEmpty) return widget.activities;
@@ -65,6 +68,7 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     final newRun = widget.event?.runId != oldWidget.event?.runId;
     if (newRun || (widget.running && !oldWidget.running)) {
       _expanded = true;
+      _showTechnicalDetails = false;
     } else if (widget.completed && !oldWidget.completed) {
       _expanded = false;
     }
@@ -88,13 +92,25 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         : latest?.title ?? (widget.running ? '正在处理当前问题…' : 'Agent 过程');
     final detail = latest?.detail ?? '';
     final isError = latest?.status == AiAgentActivityStatus.failed;
-    final refreshFailed =
-        activities.any((item) => item.code == 'refresh_failed');
+    final refreshFailed = activities.any(
+      (item) =>
+          item.code == 'refresh_failed' ||
+          item.code == 'device_job_failed' ||
+          item.errorCode == 'refresh_incomplete' ||
+          item.errorCode == 'device_refresh_not_fresh' ||
+          item.errorCode == 'network_unavailable' ||
+          _isEduRecoveryCode(item.errorCode),
+    );
+    final needsEduRecovery = activities.any(
+      (item) => _isEduRecoveryCode(item.errorCode),
+    );
     final compactActivities = activities.length <= 3
         ? activities
         : activities.sublist(activities.length - 3);
     final showFullProcessButton =
         !_expanded && widget.rawEvents.isNotEmpty && rawActivities.isNotEmpty;
+    final showTechnicalDetailsButton =
+        _expanded && widget.rawEvents.isNotEmpty && rawActivities.isNotEmpty;
 
     return AnimatedSize(
       duration: AppMotion.duration(context, AppMotion.fast),
@@ -156,7 +172,9 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                       ),
                       Icon(
                         _expanded
-                            ? Icons.keyboard_arrow_up_rounded
+                            ? (_showTechnicalDetails
+                                ? Icons.subject_rounded
+                                : Icons.keyboard_arrow_up_rounded)
                             : Icons.keyboard_arrow_down_rounded,
                         color: colors.onSurfaceVariant,
                       ),
@@ -169,7 +187,11 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: _ActivityList(
-                  activities: _expanded ? rawActivities : compactActivities,
+                  activities: _showTechnicalDetails
+                      ? rawActivities
+                      : _expanded
+                          ? activities
+                          : compactActivities,
                 ),
               ),
             if (showFullProcessButton || (!_expanded && activities.length > 3))
@@ -180,15 +202,32 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                   child: const Text('查看完整过程'),
                 ),
               ),
+            if (showTechnicalDetailsButton)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => setState(
+                      () => _showTechnicalDetails = !_showTechnicalDetails),
+                  child: Text(
+                    _showTechnicalDetails ? '收起技术详情' : '查看技术详情',
+                  ),
+                ),
+              ),
             if (refreshFailed &&
                 isError &&
                 (widget.onRetryRefresh != null ||
-                    widget.onUseExistingData != null))
+                    widget.onUseExistingData != null ||
+                    widget.onReauthorizeEdu != null))
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (needsEduRecovery && widget.onReauthorizeEdu != null)
+                      TextButton(
+                        onPressed: widget.onReauthorizeEdu,
+                        child: const Text('重新验证教务'),
+                      ),
                     if (widget.onUseExistingData != null)
                       TextButton(
                         onPressed: widget.onUseExistingData,
@@ -206,6 +245,19 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         ),
       ),
     );
+  }
+
+  static bool _isEduRecoveryCode(String code) {
+    switch (code.trim().toLowerCase()) {
+      case 'edu_authorization_revoked':
+      case 'edu_session_logged_out':
+      case 'edu_session_expired':
+      case 'edu_credential_unavailable':
+      case 'credential_unavailable':
+        return true;
+      default:
+        return false;
+    }
   }
 }
 

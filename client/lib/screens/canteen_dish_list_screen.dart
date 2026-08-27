@@ -7,6 +7,7 @@ import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
+import 'image_viewer_screen.dart';
 
 /// 商家菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
@@ -72,6 +73,36 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     }
   }
 
+  void _openDish(CanteenDish dish) {
+    if (dish.isReviewGallery) {
+      final images =
+          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
+      final urls = images
+          .where((image) => image.trim().isNotEmpty)
+          .map(ApiConstants.fullUrl)
+          .toList(growable: false);
+      if (urls.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(imageUrls: urls),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishDetailScreen(
+          canteenId: widget.canteenId,
+          dishId: dish.id,
+          dishName: dish.name,
+          canteenName: widget.canteenName,
+        ),
+      ),
+    ).then((_) => _load());
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -125,19 +156,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                         return _GridDishCard(
                           dish: dish,
                           isDark: isDark,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CanteenDishDetailScreen(
-                                  canteenId: widget.canteenId,
-                                  dishId: dish.id,
-                                  dishName: dish.name,
-                                  canteenName: widget.canteenName,
-                                ),
-                              ),
-                            ).then((_) => _load());
-                          },
+                          onTap: () => _openDish(dish),
                         );
                       },
                     ),
@@ -173,6 +192,7 @@ class _GridDishCard extends StatelessWidget {
                 child: dish.coverImage.isNotEmpty
                     ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder(),

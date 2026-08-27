@@ -594,7 +594,7 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 		case "ai_quota_exceeded":
 			status = http.StatusTooManyRequests
 		case "ai_budget_exceeded":
-			status = http.StatusPaymentRequired
+			status = http.StatusServiceUnavailable
 		case "idempotency_key_conflict":
 			status = http.StatusConflict
 		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":

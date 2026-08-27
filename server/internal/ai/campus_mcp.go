@@ -1533,7 +1533,11 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 		return academic.ContextResult{}, false
 	}
 	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
-		return personalContextUnavailable(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据"), true
+		code := strings.TrimSpace(resume.ErrorCode)
+		if code == "" {
+			code = "device_job_failed"
+		}
+		return personalContextUnavailableWithCode(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据", code), true
 	}
 	if resume.Dataset == "academic_bundle" {
 		var bundle struct {
@@ -1558,6 +1562,7 @@ func decodeDeviceContextEnvelope(dataset academic.DatasetType, raw json.RawMessa
 	var envelope struct {
 		Data      json.RawMessage     `json:"data"`
 		Source    academic.DataSource `json:"source"`
+		ErrorCode string              `json:"error_code"`
 		FetchedAt *time.Time          `json:"fetched_at"`
 		ExpiresAt *time.Time          `json:"expires_at"`
 		IsStale   bool                `json:"is_stale"`
@@ -1586,7 +1591,7 @@ func decodeDeviceContextEnvelope(dataset academic.DatasetType, raw json.RawMessa
 		}}
 	}
 	return academic.ContextResult{
-		Data: envelope.Data, Status: status, Source: source,
+		Data: envelope.Data, Status: status, Source: source, ErrorCode: envelope.ErrorCode,
 		FetchedAt: envelope.FetchedAt, ExpiresAt: envelope.ExpiresAt,
 		IsStale: envelope.IsStale, IsPartial: envelope.IsPartial,
 		Warnings: envelope.Warnings, Evidence: evidence,
@@ -1594,7 +1599,16 @@ func decodeDeviceContextEnvelope(dataset academic.DatasetType, raw json.RawMessa
 }
 
 func personalContextUnavailable(status academic.DataStatus, warning string) academic.ContextResult {
-	return academic.ContextResult{Data: json.RawMessage(`{"error_code":"personal_context_unavailable"}`), Status: status, Source: academic.DataSourceNone, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
+	return personalContextUnavailableWithCode(status, warning, "personal_context_unavailable")
+}
+
+func personalContextUnavailableWithCode(status academic.DataStatus, warning, code string) academic.ContextResult {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "personal_context_unavailable"
+	}
+	payload, _ := json.Marshal(map[string]string{"error_code": code})
+	return academic.ContextResult{Data: payload, Status: status, Source: academic.DataSourceNone, ErrorCode: code, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
 }
 
 func (mcp *campusMCP) getGradeSummary(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {

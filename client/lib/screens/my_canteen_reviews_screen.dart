@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -180,7 +179,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除这条评价？',
-      message: '删除后将从商家评价中移除，历史记录不会再参与评分统计。',
+      message: '删除后将从菜品评价中移除，历史记录不会再参与评分统计。',
       confirmText: '删除',
     );
     if (!confirmed || !mounted) return;
@@ -210,7 +209,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
       appBar: AppPageAppBar(
-        title: const Text('我的商家评价'),
+        title: const Text('我的菜品评价'),
         actions: [
           IconButton(
             tooltip: '我的食堂贡献',
@@ -268,7 +267,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         size: 42,
                         color: CanteenTheme.textTertiaryColor(isDark)),
                     const SizedBox(height: 16),
-                    Text('还没有商家评价',
+                    Text('还没有菜品评价',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -396,6 +395,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                       height: 52,
                       child: CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(canteen.image),
+                        variant: 'thumb',
                         offline: canteen.isOffline,
                         errorWidget: (_, __, ___) => ColoredBox(
                           color: CanteenTheme.surfaceMutedBg(isDark),
@@ -486,8 +486,9 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, index) => ClipRRect(
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                  child: CachedNetworkImage(
-                    imageUrl: ApiConstants.fullUrl(item.images[index]),
+                  child: CanteenStatusImage(
+                    imageUrl: item.images[index],
+                    variant: 'thumb',
                     width: 68,
                     height: 68,
                     fit: BoxFit.cover,

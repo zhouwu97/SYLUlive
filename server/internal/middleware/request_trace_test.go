@@ -71,3 +71,22 @@ func TestRequestTraceMiddlewareGeneratesRequestID(t *testing.T) {
 		t.Fatalf("generated request id=%q is not UUID-shaped", requestID)
 	}
 }
+
+func TestRequestTraceMiddlewarePreservesRedirectStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(RequestTraceMiddleware())
+	router.GET("/api/redirect", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/target")
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/redirect", nil))
+
+	if response.Code != http.StatusFound {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusFound)
+	}
+	if got := response.Header().Get("Location"); got != "/target" {
+		t.Fatalf("redirect location=%q, want %q", got, "/target")
+	}
+}

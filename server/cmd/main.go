@@ -380,7 +380,7 @@ func main() {
 
 	}
 	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
-		log.Fatal("AI 用户权限数据库约束未就绪，请先执行 server/sql/20260726_ai_external_model_permission.sql:", err)
+		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
 	}
 	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
 		log.Fatal("设备 Agent 任务索引迁移失败:", err)
@@ -2070,6 +2070,7 @@ func main() {
 
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
+		canteen.GET("/:id/detail", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
 
 		// 菜品图库公开接口
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)

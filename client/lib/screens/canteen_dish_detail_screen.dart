@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
@@ -9,6 +8,7 @@ import '../providers/canteen_provider.dart';
 import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 import '../widgets/image_upload_widget.dart';
@@ -390,8 +390,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                     PopupMenuButton<String>(
                       tooltip: '举报评价',
                       padding: EdgeInsets.zero,
-                      onSelected: (_) => _reportDishReview(
-                          (review['id'] as num?)?.toInt() ?? 0),
+                      onSelected: (_) => _reportDishReview(review),
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'report', child: Text('举报该评价')),
                       ],
@@ -404,19 +403,31 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     );
   }
 
-  Future<void> _reportDishReview(int reviewId) async {
-    if (reviewId == 0) return;
+  Future<void> _reportDishReview(Map<String, dynamic> review) async {
+    final dishReviewId = (review['dish_review_id'] as num?)?.toInt() ?? 0;
+    final parentReviewId = (review['review_id'] as num?)?.toInt() ??
+        (review['id'] as num?)?.toInt() ??
+        0;
+    // 主评价关联的菜品评论正文来自 canteen_review_event，即使同时存在
+    // 菜品三维评分，也应举报实际展示的主评价，而不是只举报评分扩展对象。
+    final isParentReview = review['review_source'] == 'canteen_review_event';
+    final targetType = !isParentReview && dishReviewId > 0
+        ? 'canteen_dish_review'
+        : 'canteen_review';
+    final targetId =
+        targetType == 'canteen_dish_review' ? dishReviewId : parentReviewId;
+    if (targetId == 0) return;
     await showRatingReportSheet(
       context: context,
-      targetType: 'canteen_dish_review',
-      targetId: reviewId,
+      targetType: targetType,
+      targetId: targetId,
       onSubmit: (reasonCode, description) async {
         try {
           final response = await context.read<AuthProvider>().dio.post(
             '/reports',
             data: {
-              'target_type': 'canteen_dish_review',
-              'target_id': reviewId,
+              'target_type': targetType,
+              'target_id': targetId,
               'reason_code': reasonCode,
               'reason': description.trim().isEmpty
                   ? '举报原因：$reasonCode'
@@ -779,8 +790,9 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
               errorBuilder: (_, __, ___) => _previewPlaceholder(isDark),
             )
           else if (url.isNotEmpty)
-            CachedNetworkImage(
-              imageUrl: ApiConstants.fullUrl(url),
+            CanteenStatusImage(
+              imageUrl: url,
+              variant: 'medium',
               fit: BoxFit.cover,
               errorWidget: (_, __, ___) => _previewPlaceholder(isDark),
               placeholder: (_, __) => _previewPlaceholder(isDark),

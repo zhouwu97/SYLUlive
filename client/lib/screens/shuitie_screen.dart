@@ -154,8 +154,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // 后台新鲜度探测：列表未在顶部时不直接覆写，显示“内容有更新”浮条。
   bool _freshnessBannerVisible = false;
   String _freshnessBannerLabel = '内容有更新';
-  // 桌面分屏模式：评论入口请求打开详情时聚焦评论输入框。
-  bool _selectedFocusReply = false;
+  // 桌面分屏模式：评论入口请求打开详情时滚到评论区。
+  bool _selectedScrollToReplies = false;
   static const double _freshnessNearTopThreshold = 160;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -1332,7 +1332,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               initialPost: _selectedPost,
               isDesktopSplitMode: true,
               hideBackButton: true,
-              focusReplyComposer: _selectedFocusReply,
+              scrollToReplies: _selectedScrollToReplies,
               onAuthorTap: _openUserInSplit,
             ),
     );
@@ -1344,21 +1344,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _openPostInSplit(Post post,
-      {bool focusReply = false, String feedKind = '', int position = 0}) {
+      {bool scrollToReplies = false, String feedKind = '', int position = 0}) {
     if (!mounted) return;
     _finalizeSplitDwell(newPostId: post.id);
     _recordSplitOpen(post, feedKind: feedKind, position: position);
     setState(() {
       _selectedPost = post;
       _selectedUserId = null;
-      _selectedFocusReply = focusReply;
+      _selectedScrollToReplies = scrollToReplies;
     });
-    if (focusReply) {
-      // PostDetailScreen 在 initState 读取 focusReplyComposer 后重置，
-      // 避免同帖重复打开时再次弹键盘。
+    if (scrollToReplies) {
+      // PostDetailScreen 在 initState 读取 scrollToReplies 后重置，
+      // 避免同帖重复打开时再次滚动。
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _selectedFocusReply) {
-          setState(() => _selectedFocusReply = false);
+        if (mounted && _selectedScrollToReplies) {
+          setState(() => _selectedScrollToReplies = false);
         }
       });
     }
@@ -2433,7 +2433,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                     if (ResponsiveUtil.useDesktopShell(
                                         context)) {
                                       _openPostInSplit(commentPost,
-                                          focusReply: true);
+                                          scrollToReplies: true);
                                     } else {
                                       Navigator.push(
                                         context,
@@ -2442,7 +2442,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                             postId: commentPost.id,
                                             isMarket: false,
                                             initialPost: commentPost,
-                                            focusReplyComposer: true,
+                                            scrollToReplies: true,
                                           ),
                                         ),
                                       );

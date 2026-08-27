@@ -10,6 +10,16 @@ enum PersonalSyncItemStatus {
   permissionDenied,
 }
 
+enum PersonalSyncFailureReason {
+  eduSessionExpired,
+  authorizationRequired,
+  credentialUnavailable,
+  networkUnavailable,
+  refreshIncomplete,
+  localStorageFailed,
+  unknown,
+}
+
 class PersonalSyncItemResult {
   const PersonalSyncItemResult({
     required this.dataset,
@@ -18,6 +28,7 @@ class PersonalSyncItemResult {
     this.updatedAt,
     this.isPartial = false,
     this.message,
+    this.failureReason,
   });
 
   final PersonalSyncDataset dataset;
@@ -26,6 +37,7 @@ class PersonalSyncItemResult {
   final DateTime? updatedAt;
   final bool isPartial;
   final String? message;
+  final PersonalSyncFailureReason? failureReason;
 
   bool get isSuccessful =>
       status == PersonalSyncItemStatus.success ||

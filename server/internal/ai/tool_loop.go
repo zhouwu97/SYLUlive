@@ -282,6 +282,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 					eventPayload["capability_status"] = "unavailable"
 				}
 			}
+			if actions := academicRiskOptionalActions(call.name, execution.Result); len(actions) > 0 {
+				eventPayload["optional_actions"] = actions
+			}
 			if agentState != nil {
 				eventPayload["new_fact_count"] = addRuntimeObservation(agentState, call.name, execution.Result, time.Now())
 				if envelope, decodeErr := DecodeToolResult(execution.Result); decodeErr == nil {
@@ -492,6 +495,30 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 
 func isAcademicRiskToolName(toolName string) bool {
 	return toolName == "academic_get_risk_analysis" || toolName == "academic.get_risk_analysis"
+}
+
+// academicRiskOptionalActions 只透传白名单内的用户主动操作。SSE 不携带工具原始
+// 结果，避免个人数据泄露；客户端据此仅展示已存在的本地入口。
+func academicRiskOptionalActions(toolName string, result json.RawMessage) []string {
+	if !isAcademicRiskToolName(toolName) {
+		return nil
+	}
+	var envelope struct {
+		Data struct {
+			OptionalActions []struct {
+				ID string `json:"id"`
+			} `json:"optional_actions"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(result, &envelope) != nil {
+		return nil
+	}
+	for _, action := range envelope.Data.OptionalActions {
+		if action.ID == "update_erke" {
+			return []string{"update_erke"}
+		}
+	}
+	return nil
 }
 
 func stringList(value interface{}) []string {

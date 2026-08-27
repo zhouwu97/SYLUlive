@@ -456,9 +456,13 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				return
 			}
 			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(toolResultForModel(item.ToolName, execution.Result))})
-			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, map[string]interface{}{
+			eventPayload := map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false, "resumed": true,
-			}, 0, 0), true)
+			}
+			if actions := academicRiskOptionalActions(item.ToolName, execution.Result); len(actions) > 0 {
+				eventPayload["optional_actions"] = actions
+			}
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, eventPayload, 0, 0), true)
 			r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.tool.retry.completed", map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "status": "completed",
 			})
@@ -513,9 +517,13 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				return
 			}
 			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(toolResultForModel(item.ToolName, result))})
-			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, map[string]interface{}{
+			eventPayload := map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
-			}, 0, 0), true)
+			}
+			if actions := academicRiskOptionalActions(item.ToolName, result); len(actions) > 0 {
+				eventPayload["optional_actions"] = actions
+			}
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", r.agentTracePayload(&run, eventPayload, 0, 0), true)
 			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, result)
 		}
 		if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolCompleted); err != nil {

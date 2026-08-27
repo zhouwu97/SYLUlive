@@ -606,7 +606,7 @@ class EduCrawler:
         })
 
         base_timeout = getattr(self, "timeout", 8.0)
-        desk_timeout = min(base_timeout, 6.0)
+        desk_timeout = min(base_timeout, 6.0, total_budget)
         try:
             resp = await self.client.post(
                 f"{COURSE_URL}/xskbcx_cxXsKb.html",
@@ -624,27 +624,31 @@ class EduCrawler:
             print(f"  [DESK] 失败: {type(e).__name__}")
 
         # ==========================================
-        # Step 2: 移动端 JSON（备用回退，使用剩余预算）
+        # Step 2: 移动端 JSON（备用回退，使用严格剩余预算）
         # ==========================================
         if not all_courses:
-            elapsed = time.monotonic() - start_time
-            mobile_timeout = max(2.0, min(base_timeout, total_budget - elapsed))
-            print(f"  [MOBILE] 桌面端无数据，回退移动端 (剩余超时预算: {mobile_timeout:.1f}s)")
-            try:
-                resp = await self.client.post(
-                    f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
-                    params={"gnmkdm": "N2154"},
-                    data={"xnm": str(year), "zs": "1", "doType": "app", "xqm": str(semester), "kblx": "1"},
-                    headers=base_headers,
-                    timeout=mobile_timeout,
-                )
-                print(f"  [MOBILE] status={resp.status_code}, len={len(resp.text)}")
-                _consume(resp, "MOBILE")
-            except EduError:
-                raise
-            except Exception as e:
-                failures.append(f"MOBILE:{type(e).__name__}")
-                print(f"  [MOBILE] 失败: {type(e).__name__}")
+            remaining = total_budget - (time.monotonic() - start_time)
+            if remaining > 0:
+                mobile_timeout = min(base_timeout, remaining)
+                print(f"  [MOBILE] 桌面端无数据，回退移动端 (剩余超时预算: {mobile_timeout:.1f}s)")
+                try:
+                    resp = await self.client.post(
+                        f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
+                        params={"gnmkdm": "N2154"},
+                        data={"xnm": str(year), "zs": "1", "doType": "app", "xqm": str(semester), "kblx": "1"},
+                        headers=base_headers,
+                        timeout=mobile_timeout,
+                    )
+                    print(f"  [MOBILE] status={resp.status_code}, len={len(resp.text)}")
+                    _consume(resp, "MOBILE")
+                except EduError:
+                    raise
+                except Exception as e:
+                    failures.append(f"MOBILE:{type(e).__name__}")
+                    print(f"  [MOBILE] 失败: {type(e).__name__}")
+            else:
+                print("  [MOBILE] 抓取总预算已耗尽，跳过移动端回退")
+                failures.append("MOBILE:budget_exhausted")
 
         if all_courses:
             return all_courses

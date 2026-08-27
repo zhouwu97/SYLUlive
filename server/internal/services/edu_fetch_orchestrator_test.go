@@ -25,7 +25,7 @@ type fakeEduContextFetcher struct {
 	release chan struct{}
 }
 
-func (fetcher *fakeEduContextFetcher) FetchContextBundle(_ context.Context, _ uint, datasets []clients.EduContextDataset) (clients.EduContextBundle, error) {
+func (fetcher *fakeEduContextFetcher) FetchContextBundle(ctx context.Context, _ uint, datasets []clients.EduContextDataset) (clients.EduContextBundle, error) {
 	fetcher.mu.Lock()
 	fetcher.calls++
 	started := fetcher.started
@@ -40,7 +40,11 @@ func (fetcher *fakeEduContextFetcher) FetchContextBundle(_ context.Context, _ ui
 		}
 	}
 	if release != nil {
-		<-release
+		select {
+		case <-ctx.Done():
+			return clients.EduContextBundle{}, ctx.Err()
+		case <-release:
+		}
 	}
 	if err != nil {
 		return clients.EduContextBundle{}, err
@@ -294,6 +298,7 @@ func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
+	defer close(release)
 	fetcher := &fakeEduContextFetcher{started: started, release: release}
 	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
 
@@ -313,15 +318,13 @@ func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
 		t.Fatal("remote fetch did not start")
 	}
 
-	// 取消请求
+	// 仅取消 ctx，不主动 close(release)，验证取消后能立即返回并释放 worker
 	cancel()
-	close(release)
 
 	select {
-	case res := <-resultCh:
-		// 当请求被取消时，结果应为失败状态并释放 worker
-		if res.Status != academic.DataStatusFailed && res.Status != academic.DataStatusStale {
-			t.Fatalf("expected failed or stale on cancel, got %s", res.Status)
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("fetch did not return after cancellation")
@@ -333,4 +336,128 @@ func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
 	<-orchestrator.workers
 	<-orchestrator.workers
 }
+
+func TestEduFetchSingleflightLeaderCancelDoesNotFailFollower(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+
+	resACh := make(chan academic.ContextResult, 1)
+	errACh := make(chan error, 1)
+	resBCh := make(chan academic.ContextResult, 1)
+	errBCh := make(chan error, 1)
+
+	// A 作为 Leader 发起
+	go func() {
+		res, err := orchestrator.Fetch(ctxA, 1, gradesRequest(true))
+		resACh <- res
+		errACh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	// B 作为 Follower 加入同一 flight
+	go func() {
+		res, err := orchestrator.Fetch(ctxB, 1, gradesRequest(true))
+		resBCh <- res
+		errBCh <- err
+	}()
+
+	// 等待 B 挂入 flight
+	time.Sleep(20 * time.Millisecond)
+
+	// Leader A 取消请求
+	cancelA()
+
+	select {
+	case err := <-errACh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected Leader A to get context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Leader A did not return after cancellation")
+	}
+
+	// 此时 release 仍未释放，远端请求并未被取消（因为 B 仍在等待）
+	close(release)
+
+	select {
+	case err := <-errBCh:
+		if err != nil {
+			t.Fatalf("Follower B should succeed, got error: %v", err)
+		}
+		res := <-resBCh
+		if res.Source != academic.DataSourceRemoteEduFetch {
+			t.Fatalf("Follower B expected remote success result, got: %s", res.Source)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Follower B did not receive result after release")
+	}
+}
+
+func TestEduFetchSingleflightAllWaitersCancelAbortsRemoteFetch(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+
+	errACh := make(chan error, 1)
+	errBCh := make(chan error, 1)
+
+	go func() {
+		_, err := orchestrator.Fetch(ctxA, 1, gradesRequest(true))
+		errACh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	go func() {
+		_, err := orchestrator.Fetch(ctxB, 1, gradesRequest(true))
+		errBCh <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// A 和 B 均取消请求
+	cancelA()
+	cancelB()
+
+	for _, ch := range []chan error{errACh, errBCh} {
+		select {
+		case err := <-ch:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context.Canceled, got %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("waiter did not return after cancellation")
+		}
+	}
+
+	// 确认 worker 在未 close(release) 的情况下已被底层取消并释放
+	time.Sleep(20 * time.Millisecond)
+	orchestrator.workers <- struct{}{}
+	orchestrator.workers <- struct{}{}
+	<-orchestrator.workers
+	<-orchestrator.workers
+}
+
 

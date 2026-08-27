@@ -246,14 +246,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _didLoad = true;
       _loadedSessionKey = sc.sessionKey;
       _primedGeneration = sc.contextGeneration;
-      if (mounted) setState(() => _initializing = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _initializing = false);
+      });
       return;
     }
     // 教务状态已绑定不代表来源学号已经同步到课表会话。此时不能把空缓存
     // 判定为“暂无课表”，应等待 Provider 完成正确 namespace 的恢复。
     if (!sc.isSessionReady) {
-      if (mounted && !_initializing) {
-        setState(() => _initializing = true);
+      if (!_initializing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _initializing = true);
+        });
       }
       return;
     }
@@ -278,12 +282,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (sessionKey != sc.sessionKey || generation != sc.contextGeneration) {
       return;
     }
-    if (mounted) {
-      setState(() {
-        _hasCache = hasCache || sc.courses.isNotEmpty;
-        _initializing = false;
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _hasCache = hasCache || sc.courses.isNotEmpty;
+          _initializing = false;
+        });
+      }
+    });
 
     if (hasCache) {
       _silentSync(sc);

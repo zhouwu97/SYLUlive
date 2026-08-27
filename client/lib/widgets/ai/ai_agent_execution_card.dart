@@ -23,6 +23,7 @@ class AiAgentExecutionCard extends StatefulWidget {
     this.onRetryRefresh,
     this.onUseExistingData,
     this.onReauthorizeEdu,
+    this.onUpdateErke,
   });
 
   final List<AiAgentActivity> activities;
@@ -38,6 +39,7 @@ class AiAgentExecutionCard extends StatefulWidget {
   final VoidCallback? onRetryRefresh;
   final VoidCallback? onUseExistingData;
   final VoidCallback? onReauthorizeEdu;
+  final VoidCallback? onUpdateErke;
 
   @override
   State<AiAgentExecutionCard> createState() => _AiAgentExecutionCardState();
@@ -147,7 +149,10 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                   child: Row(
                     children: [
                       _ActivityMark(
-                          activity: latest, completed: widget.completed),
+                        activity: latest,
+                        completed: widget.completed,
+                        running: widget.running,
+                      ),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Column(
@@ -241,6 +246,18 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                   ],
                 ),
               ),
+            if (widget.onUpdateErke != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: widget.onUpdateErke,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('更新二课数据'),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -262,14 +279,22 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
 }
 
 class _ActivityMark extends StatelessWidget {
-  const _ActivityMark({this.activity, required this.completed});
+  const _ActivityMark({
+    this.activity,
+    required this.completed,
+    required this.running,
+  });
 
   final AiAgentActivity? activity;
   final bool completed;
+  final bool running;
 
   @override
   Widget build(BuildContext context) {
     final status = activity?.status;
+    if (running && !completed && status != AiAgentActivityStatus.failed) {
+      return const AiThinkingIndicator(size: 20);
+    }
     final icon = completed || status == AiAgentActivityStatus.success
         ? Icons.check_circle_outline_rounded
         : status == AiAgentActivityStatus.failed
@@ -281,6 +306,89 @@ class _ActivityMark extends StatelessWidget {
             ? AppColors.success
             : AppColors.brandPrimary;
     return Icon(icon, size: 20, color: color);
+  }
+}
+
+/// 低频的 Agent 运行反馈。它只改变图标的透明度和缩放，不参与布局，
+/// 并在系统关闭动画时退化为静态图标。
+class AiThinkingIndicator extends StatefulWidget {
+  const AiThinkingIndicator({
+    super.key,
+    this.size = 16,
+    this.color = AppColors.brandPrimary,
+  });
+
+  final double size;
+  final Color color;
+
+  @override
+  State<AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
+}
+
+class _AiThinkingIndicatorState extends State<AiThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool? _reducedMotion;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: AppMotion.normal);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reducedMotion == reducedMotion) return;
+    _reducedMotion = reducedMotion;
+    if (reducedMotion) {
+      _controller
+        ..stop()
+        ..value = 1;
+    } else {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = ExcludeSemantics(
+      child: Icon(
+        Icons.auto_awesome_rounded,
+        size: widget.size,
+        color: widget.color,
+      ),
+    );
+    if (_reducedMotion ?? MediaQuery.disableAnimationsOf(context)) {
+      return KeyedSubtree(
+        key: const ValueKey('ai-thinking-indicator-static'),
+        child: icon,
+      );
+    }
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = Curves.easeInOut.transform(_controller.value);
+        return Opacity(
+          opacity: 0.58 + 0.42 * value,
+          child: Transform.scale(
+            scale: 0.9 + 0.1 * value,
+            child: child,
+          ),
+        );
+      },
+      child: KeyedSubtree(
+        key: const ValueKey('ai-thinking-indicator-animated'),
+        child: icon,
+      ),
+    );
   }
 }
 
@@ -312,12 +420,6 @@ class _ActivityRow extends StatelessWidget {
       AiAgentActivityStatus.running => AppColors.brandPrimary,
       AiAgentActivityStatus.pending => Theme.of(context).colorScheme.outline,
     };
-    final icon = switch (activity.status) {
-      AiAgentActivityStatus.success => Icons.check_rounded,
-      AiAgentActivityStatus.failed => Icons.priority_high_rounded,
-      AiAgentActivityStatus.running => Icons.circle,
-      AiAgentActivityStatus.pending => Icons.radio_button_unchecked,
-    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -327,11 +429,20 @@ class _ActivityRow extends StatelessWidget {
             width: 20,
             height: 20,
             child: Center(
-              child: Icon(
-                icon,
-                size: activity.status == AiAgentActivityStatus.running ? 8 : 16,
-                color: color,
-              ),
+              child: activity.status == AiAgentActivityStatus.running
+                  ? AiThinkingIndicator(size: 16, color: color)
+                  : Icon(
+                      switch (activity.status) {
+                        AiAgentActivityStatus.success => Icons.check_rounded,
+                        AiAgentActivityStatus.failed =>
+                          Icons.priority_high_rounded,
+                        AiAgentActivityStatus.pending =>
+                          Icons.radio_button_unchecked,
+                        AiAgentActivityStatus.running => Icons.circle,
+                      },
+                      size: 16,
+                      color: color,
+                    ),
             ),
           ),
           const SizedBox(width: 9),

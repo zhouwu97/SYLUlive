@@ -57,6 +57,30 @@ void main() {
     expect(activities.single.title, '没能获取最新成绩');
   });
 
+  test('读取设备结果和继续分析阶段保持 running', () {
+    final activities = AiAgentActivityReducer.reduce([
+      const AiRunEvent(
+        runId: 'run-1',
+        seq: 4,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'reading_result',
+        dataset: 'grades',
+      ),
+      const AiRunEvent(
+        runId: 'run-1',
+        seq: 5,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'provider_started',
+      ),
+    ]);
+
+    expect(activities.map((item) => item.status), [
+      AiAgentActivityStatus.running,
+      AiAgentActivityStatus.running,
+    ]);
+    expect(activities.last.title, '正在继续分析…');
+  });
+
   test('同一个 call 和 job 的设备阶段折叠为一行，并优先使用显式数据集', () {
     final activities = AiAgentActivityReducer.reduce([
       const AiRunEvent(

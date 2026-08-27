@@ -526,7 +526,7 @@ func (r *Runtime) Execute(runID, message string) {
 	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
 	} else if hasTools {
-		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’；如果结果提供 covered_terms，必须明确说明分析覆盖的学期范围，不能把单学期统计冒充全部成绩。"
+		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、核心数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’。若结果的 optional_missing 仅含 erke，须明确“二课风险暂未纳入”，但可以就完整的成绩、学分和学业情况说明核心学业范围内的观察；不得把这个观察扩展为整体结论。如果结果提供 covered_terms，必须明确说明分析覆盖的学期范围，不能把单学期统计冒充全部成绩。"
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},

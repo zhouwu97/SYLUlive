@@ -138,7 +138,9 @@ class AiAgentActivityReducer {
                 ? AiAgentActivityStatus.pending
                 : event.type == AiRunEventType.agentActivity &&
                         (event.status == 'running' ||
-                            event.activityCode == 'refresh_started')
+                            event.activityCode == 'refresh_started' ||
+                            event.activityCode == 'reading_result' ||
+                            event.activityCode == 'provider_started')
                     ? AiAgentActivityStatus.running
                     : (event.type == AiRunEventType.toolExecuting ||
                             event.type == AiRunEventType.eduFetching ||
@@ -210,7 +212,7 @@ class AiAgentActivityReducer {
       'device_result_consumed' => _consumedDeviceTitle(dataset, event),
       'tool_retry_waiting' => '正在等待下一项数据',
       'tool_retry_completed' => '已完成数据读取',
-      'provider_started' => '开始综合分析',
+      'provider_started' => '正在继续分析…',
       'provider_completed' => '已生成分析结果',
       'provider_failed' => '分析未完成',
       'goal.updated' => '已理解你的目标和限制',

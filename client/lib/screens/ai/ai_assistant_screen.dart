@@ -58,6 +58,7 @@ import 'ai_model_settings_screen.dart';
 import 'ai_feature_settings_screen.dart';
 import 'graduation_checklist_screen.dart';
 import 'personal_data_center_screen.dart';
+import '../erke_score_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
@@ -1463,6 +1464,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         onReauthorizeEdu: provider.canRetry
                                             ? _reauthorizeEduAndRetry
                                             : null,
+                                        onUpdateErke:
+                                            provider.hasOptionalErkeUpdate
+                                                ? _openErkeUpdate
+                                                : null,
                                       ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==
@@ -1531,6 +1536,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _openErkeUpdate() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ErkeScoreScreen(),
       ),
     );
   }

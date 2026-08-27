@@ -237,9 +237,11 @@ func TestCampusMCPAcademicRiskAnalysisKeepsObservedRiskAndCoverageBoundary(t *te
 	require.NoError(t, err)
 	envelope := value.(CampusToolResult)
 	data := envelope.Data.(map[string]interface{})
-	require.Equal(t, "incomplete", data["risk_level"])
+	require.Equal(t, "observed_risk", data["risk_level"])
 	require.Contains(t, data["risks"], "发现 1 门未通过课程（大学物理B2）")
 	require.Equal(t, 3, data["available_dataset_count"])
+	require.Equal(t, []string{"erke"}, data["optional_missing"])
+	require.Equal(t, "update_erke", data["optional_actions"].([]map[string]interface{})[0]["id"])
 }
 
 func TestCampusMCPRiskAnalysisSchedulesOneAcademicBundle(t *testing.T) {
@@ -274,6 +276,151 @@ func TestCampusMCPRiskAnalysisSchedulesOneAcademicBundle(t *testing.T) {
 	require.Equal(t, "device.academic.ensure_fresh_bundle", scheduled.ToolName)
 	require.JSONEq(t, `{"max_age_seconds":{"grades":300,"academic_situation":21600,"credit_requirements":86400}}`, string(scheduled.Arguments))
 	require.Equal(t, 1, deviceJobs, "risk analysis must create one bundle wait")
+}
+
+func TestCampusMCPRiskAnalysisPartialCoreDataSchedulesAcademicBundle(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`), Status: academic.DataStatusPartial,
+			IsPartial: true, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetCreditRequirements: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetAcademicSituation: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "device-job"}, nil
+		})),
+	)
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
+		withToolCallContext(context.Background(), "run-partial", "call-partial", 7, "academic.get_risk_analysis"),
+		7,
+		json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	_, waiting := value.(ToolWait)
+	require.True(t, waiting)
+	require.Equal(t, 1, deviceJobs)
+}
+
+func TestCampusMCPRiskAnalysisFreshCoreDataDoesNotScheduleDeviceJob(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetCreditRequirements: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetAcademicSituation: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "unexpected"}, nil
+		})),
+	)
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
+		withToolCallContext(context.Background(), "run-fresh", "call-fresh", 7, "academic.get_risk_analysis"),
+		7,
+		json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	_, waiting := value.(ToolWait)
+	require.False(t, waiting)
+	require.Equal(t, 0, deviceJobs)
+}
+
+func TestCampusMCPRiskAnalysisResumedPartialBundleDoesNotScheduleAgain(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{}
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "unexpected"}, nil
+		})),
+	)
+	resumeResult := json.RawMessage(`{
+		"data": {
+			"grades":{"data":{"grades":[]},"source":"remote_edu_fetch","is_partial":true},
+			"academic_situation":{"data":{"earned_credits":30,"required_credits":30},"source":"remote_edu_fetch"},
+			"credit_requirements":{"data":{"earned_credits":30,"required_credits":30},"source":"remote_edu_fetch"}
+		}
+	}`)
+	ctx := withToolCallContext(context.Background(), "run-resume", "call-resume", 7, "academic.get_risk_analysis")
+	ctx = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
+		JobID: "device-job", ToolName: "device.academic.ensure_fresh_bundle", Dataset: "academic_bundle",
+		Status: models.DeviceToolJobCompleted, Result: resumeResult,
+	})
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(ctx, 7, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, waiting := value.(ToolWait)
+	require.False(t, waiting, "恢复后的原 Tool Call 必须直接完成")
+	require.Equal(t, 0, deviceJobs, "partial 设备结果不得触发第二个 bundle")
+	data := value.(CampusToolResult).Data.(map[string]interface{})
+	refresh := data["refresh"].(map[string]interface{})
+	require.Equal(t, "refresh_incomplete", refresh["status"])
+	require.Equal(t, false, refresh["retry_scheduled"])
+}
+
+func TestCampusMCPRiskAnalysisRefreshIncompleteKeepsExistingDataWithoutLoop(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`), Status: academic.DataStatusPartial,
+			IsPartial: true, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetCreditRequirements: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetAcademicSituation: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "unexpected"}, nil
+		})),
+	)
+	ctx := withToolCallContext(context.Background(), "run-failed", "call-failed", 7, "academic.get_risk_analysis")
+	ctx = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
+		JobID: "device-job", ToolName: "device.academic.ensure_fresh_bundle", Dataset: "academic_bundle",
+		Status: models.DeviceToolJobFailed, ErrorCode: "refresh_incomplete",
+	})
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(ctx, 7, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	require.Equal(t, 0, deviceJobs)
+	data := value.(CampusToolResult).Data.(map[string]interface{})
+	require.Equal(t, 3, data["core_available_dataset_count"])
+	refresh := data["refresh"].(map[string]interface{})
+	require.Equal(t, "refresh_incomplete", refresh["status"])
+}
+
+func TestAcademicRiskOptionalActionsOnlyExposeWhitelistedErkeEntry(t *testing.T) {
+	actions := academicRiskOptionalActions("academic.get_risk_analysis", json.RawMessage(`{
+		"data":{"optional_actions":[{"id":"update_erke"},{"id":"unexpected"}]}
+	}`))
+	require.Equal(t, []string{"update_erke"}, actions)
+	require.Nil(t, academicRiskOptionalActions("academic.get_grade_summary", json.RawMessage(`{
+		"data":{"optional_actions":[{"id":"update_erke"}]}
+	}`)))
 }
 
 type countingAcademicSnapshotReader struct {

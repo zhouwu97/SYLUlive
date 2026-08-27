@@ -55,6 +55,7 @@ class AiRunEvent {
   final String dataset;
   final String freshnessBefore;
   final String freshnessAfter;
+  final List<String> optionalActions;
   final bool success;
 
   const AiRunEvent({
@@ -80,6 +81,7 @@ class AiRunEvent {
     this.dataset = '',
     this.freshnessBefore = '',
     this.freshnessAfter = '',
+    this.optionalActions = const [],
     this.success = false,
   });
 
@@ -116,6 +118,7 @@ class AiRunEvent {
       ),
       freshnessBefore: payload['freshness_before']?.toString() ?? '',
       freshnessAfter: payload['freshness_after']?.toString() ?? '',
+      optionalActions: _strings(payload['optional_actions']),
       success: payload['success'] == true,
       sources: rawSources is List
           ? rawSources

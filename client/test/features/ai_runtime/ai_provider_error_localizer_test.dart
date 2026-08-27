@@ -32,6 +32,18 @@ void main() {
     );
   });
 
+  test('平台内部预算限制不走第三方余额文案', () {
+    expect(
+      localizeAIProviderError(
+        statusCode: 503,
+        errorCode: 'ai_budget_exceeded',
+        rawMessage: '当前 AI 服务额度已达到平台限制',
+        fallback: '模型服务请求失败',
+      ),
+      '当前 AI 服务额度已达到平台限制\n额度购买与计费功能暂未开发',
+    );
+  });
+
   test('未知英文不直接显示，中文服务商提示予以保留', () {
     expect(
       localizeAIProviderError(

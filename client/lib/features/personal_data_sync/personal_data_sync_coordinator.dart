@@ -58,6 +58,7 @@ class EduProviderPersonalAcademicSyncGateway
     return _failed(
       PersonalSyncDataset.schedule,
       result?.errorMessage ?? '更新课表失败',
+      result?.errorCode,
     );
   }
 
@@ -66,7 +67,10 @@ class EduProviderPersonalAcademicSyncGateway
     final result = await _provider.syncAllGrades();
     if (!result.success) {
       return _failed(
-          PersonalSyncDataset.grades, result.errorMessage ?? '更新成绩失败');
+        PersonalSyncDataset.grades,
+        result.errorMessage ?? '更新成绩失败',
+        result.errorCode,
+      );
     }
     final totalTerms =
         EduSemester.buildSemesterList(_provider.enrollmentYear).length;
@@ -79,6 +83,8 @@ class EduProviderPersonalAcademicSyncGateway
       updatedAt: _now(),
       isPartial: isPartial,
       message: isPartial ? '仅同步了 $syncedTerms/$totalTerms 个学期，已保留已有缓存' : null,
+      failureReason:
+          isPartial ? PersonalSyncFailureReason.refreshIncomplete : null,
     );
   }
 
@@ -96,6 +102,7 @@ class EduProviderPersonalAcademicSyncGateway
     return _failed(
       PersonalSyncDataset.academicSituation,
       result.errorMessage ?? '更新学业情况失败',
+      result.errorCode,
     );
   }
 
@@ -113,16 +120,44 @@ class EduProviderPersonalAcademicSyncGateway
     return _failed(
       PersonalSyncDataset.creditRequirements,
       result.errorMessage ?? '更新学分要求失败',
+      result.errorCode,
     );
   }
 
-  PersonalSyncItemResult _failed(PersonalSyncDataset dataset, String message) =>
+  PersonalSyncItemResult _failed(
+    PersonalSyncDataset dataset,
+    String message, [
+    String? errorCode,
+  ]) =>
       PersonalSyncItemResult(
         dataset: dataset,
         status: PersonalSyncItemStatus.failed,
         source: PersonalDataSource.none,
         message: message,
+        failureReason: _failureReason(errorCode),
       );
+
+  PersonalSyncFailureReason _failureReason(String? code) {
+    switch (code?.trim().toLowerCase()) {
+      case 'edu_authorization_revoked':
+      case 'edu_session_logged_out':
+      case 'edu_session_expired':
+        return PersonalSyncFailureReason.eduSessionExpired;
+      case 'credential_unavailable':
+      case 'edu_credential_unavailable':
+        return PersonalSyncFailureReason.credentialUnavailable;
+      case 'network_unavailable':
+        return PersonalSyncFailureReason.networkUnavailable;
+      case 'refresh_incomplete':
+        return PersonalSyncFailureReason.refreshIncomplete;
+      case 'local_storage_failed':
+        return PersonalSyncFailureReason.localStorageFailed;
+      case 'authorization_required':
+        return PersonalSyncFailureReason.authorizationRequired;
+      default:
+        return PersonalSyncFailureReason.unknown;
+    }
+  }
 }
 
 /// 二课适配器复用既有 WebVPN 和解析器，只持有调用期间的临时凭据。
@@ -308,6 +343,7 @@ class PersonalDataSyncCoordinator {
         status: PersonalSyncItemStatus.failed,
         source: PersonalDataSource.none,
         message: message,
+        failureReason: PersonalSyncFailureReason.unknown,
       );
     }
   }

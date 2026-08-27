@@ -481,12 +481,10 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	var myLatestReview map[string]interface{}
 	reviewAction := map[string]interface{}{
 		// 未登录时仍展示“添加评价”入口，客户端点击后负责引导登录；
-		// 登录用户的冷却/编辑状态再由下方按账号覆盖。
-		"can_create":          true,
-		"can_edit_latest":     false,
-		"latest_review_id":    nil,
-		"retry_after_seconds": 0,
-		"next_create_at":      nil,
+		// 登录用户的编辑状态再由下方按账号覆盖；新评价允许立即重复发布。
+		"can_create":       true,
+		"can_edit_latest":  false,
+		"latest_review_id": nil,
 	}
 	if viewerID != 0 {
 		uid := viewerID

@@ -42,7 +42,7 @@ class PostCard extends StatefulWidget {
   final bool disableAuthorNavigation;
   final ValueChanged<int>? onAuthorTap;
 
-  /// 评论按钮点击回调；为空时默认进入详情并聚焦评论输入框。
+  /// 评论按钮点击回调；为空时默认进入详情并滚到评论区，不自动聚焦输入框。
   final ValueChanged<Post>? onCommentTap;
 
   /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
@@ -126,7 +126,7 @@ class _PostCardState extends State<PostCard>
           postId: post.id,
           isMarket: post.boardId == 2,
           initialPost: post,
-          focusReplyComposer: true,
+          scrollToReplies: true,
         ),
       ),
     );

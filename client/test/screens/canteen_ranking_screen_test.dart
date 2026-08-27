@@ -8,11 +8,12 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
+import 'package:shenliyuan/screens/canteen_detail_screen.dart';
 import 'package:shenliyuan/screens/canteen_ranking_screen.dart';
 import 'package:shenliyuan/widgets/canteen/canteen_detail_skeleton.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_status_image.dart';
 
-const _rankingsBody =
-    '{"items":['
+const _rankingsBody = '{"items":['
     '{"rank":1,"id":1,"name":"一食堂二楼","image":"/uploads/a.jpg","average_star":4.6,'
     '"rating_count":5,"ranking_score":86.0,"confidence":"low","dish_count":12,"dish_photo_count":26,'
     '"summary_tags":[{"key":"taste_good","name":"味道不错","count":8}]},'
@@ -42,7 +43,9 @@ class _FakeAdapter implements HttpClientAdapter {
 ResponseBody _json(String body) => ResponseBody.fromString(
       body,
       200,
-      headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType]
+      },
     );
 
 Widget _app(Dio dio) {
@@ -111,7 +114,8 @@ void main() {
       if (options.path == '/canteens/rankings') {
         return _json(_rankingsBody);
       }
-      if (options.path == '/canteens/1') {
+      if (options.path == '/canteens/1/detail' ||
+          options.path == '/canteens/1') {
         detailRequested = true;
         return detailPending.future;
       }
@@ -130,23 +134,32 @@ void main() {
 
     expect(detailRequested, isTrue);
     expect(find.byType(CanteenDetailSkeleton), findsOneWidget);
-    final skeleton = tester.widget<CanteenDetailSkeleton>(
-      find.byType(CanteenDetailSkeleton),
+    final detailHeroFinder = find.descendant(
+      of: find.byType(CanteenDetailScreen),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Hero && widget.tag == 'canteen-ranking-1',
+      ),
     );
-    expect(skeleton.imageUrl, '/uploads/a.jpg');
-    expect(skeleton.offline, isFalse);
+    expect(detailHeroFinder, findsOneWidget);
+    final heroImage = tester.widget<CanteenStatusImage>(
+      find.byWidgetPredicate(
+        (widget) => widget is CanteenStatusImage && widget.variant == 'medium',
+      ),
+    );
+    expect(heroImage.imageUrl, '/uploads/a.jpg');
+    expect(heroImage.variant, 'medium');
+    expect(heroImage.offline, isFalse);
     expect(
       find.descendant(
         of: find.byType(CanteenDetailSkeleton),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is Hero && widget.tag == 'canteen-1',
-        ),
+        matching: find.byType(Hero),
       ),
-      findsOneWidget,
+      findsNothing,
     );
 
-    detailPending.complete(ResponseBody.fromString(_detailBody, 200,
-        headers: {Headers.contentTypeHeader: [Headers.jsonContentType]}));
+    detailPending.complete(ResponseBody.fromString(_detailBody, 200, headers: {
+      Headers.contentTypeHeader: [Headers.jsonContentType]
+    }));
     await tester.pumpAndSettle();
   });
 }

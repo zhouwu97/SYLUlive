@@ -1,4 +1,5 @@
 import '../ai_runtime/deterministic/academic_calculation_engine.dart';
+import '../ai_runtime/personal_data/gateway/gateway_error.dart';
 import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
@@ -541,7 +542,9 @@ class DeviceToolRegistry {
       maxAge: Duration(seconds: seconds),
     );
     if (!ensured.after.isFreshAt(DateTime.now(), Duration(seconds: seconds))) {
-      throw const DeviceToolExecutionException('device_refresh_not_fresh');
+      throw DeviceToolExecutionException(
+        ensured.errorCode ?? 'device_refresh_not_fresh',
+      );
     }
     return ensured;
   }
@@ -555,7 +558,7 @@ class DeviceToolRegistry {
             result.status == GatewayStatus.stale)) {
       return result.data!;
     }
-    throw DeviceToolExecutionException(_gatewayErrorCode(result.status));
+    throw DeviceToolExecutionException(_gatewayErrorCode(result));
   }
 
   Map<String, dynamic> _envelope<T>(
@@ -635,19 +638,38 @@ class DeviceToolRegistry {
     return parsed.toUtc();
   }
 
-  static String _gatewayErrorCode(GatewayStatus status) => switch (status) {
-        GatewayStatus.missing ||
-        GatewayStatus.needsRefresh =>
-          'local_data_missing',
-        GatewayStatus.corrupted => 'local_cache_corrupted',
-        GatewayStatus.accountMismatch ||
-        GatewayStatus.closed =>
+  static String _gatewayErrorCode<T>(GatewayResult<T> result) {
+    final explicit = result.error?.code;
+    if (explicit != null) {
+      return switch (explicit) {
+        GatewayErrorCode.eduSessionExpired => 'edu_session_expired',
+        GatewayErrorCode.credentialUnavailable => 'credential_unavailable',
+        GatewayErrorCode.networkUnavailable => 'network_unavailable',
+        GatewayErrorCode.localStorageFailed => 'local_storage_failed',
+        GatewayErrorCode.refreshIncomplete => 'refresh_incomplete',
+        GatewayErrorCode.refreshFailed => 'refresh_failed',
+        GatewayErrorCode.accountMismatch ||
+        GatewayErrorCode.closed =>
           'device_context_unavailable',
-        GatewayStatus.unsupported => 'local_data_unsupported',
-        GatewayStatus.available ||
-        GatewayStatus.stale =>
-          'local_data_unavailable',
+        GatewayErrorCode.corrupted => 'local_cache_corrupted',
+        GatewayErrorCode.unsupported => 'local_data_unsupported',
+        GatewayErrorCode.unknown => 'local_data_unavailable',
       };
+    }
+    return switch (result.status) {
+      GatewayStatus.missing ||
+      GatewayStatus.needsRefresh =>
+        'local_data_missing',
+      GatewayStatus.corrupted => 'local_cache_corrupted',
+      GatewayStatus.accountMismatch ||
+      GatewayStatus.closed =>
+        'device_context_unavailable',
+      GatewayStatus.unsupported => 'local_data_unsupported',
+      GatewayStatus.available ||
+      GatewayStatus.stale =>
+        'local_data_unavailable',
+    };
+  }
 
   static String _date(DateTime value) =>
       value.toUtc().toIso8601String().substring(0, 10);

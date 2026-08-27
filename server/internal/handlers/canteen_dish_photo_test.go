@@ -36,6 +36,7 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.CanteenReviewEvent{},
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.AdminLog{},
@@ -46,6 +47,66 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure schema: %v", err)
 	}
 	return db
+}
+
+func TestListDishesAddsActiveReviewImageGallery(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	canteen := models.Canteen{Name: "评价图片食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 1, Status: models.ReviewEventStatusActive,
+		Images: `[{"not":"a string"}]`, CreatedAt: now.Add(-2 * time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 2, Status: models.ReviewEventStatusActive,
+		Images: `[/uploads/bad.json]`, CreatedAt: now.Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 3, Status: models.ReviewEventStatusActive,
+		Images: `["/uploads/review-new.jpg","/uploads/review-duplicate.jpg"]`, CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 4, Status: models.ReviewEventStatusHidden,
+		Images: `["/uploads/hidden.jpg"]`, CreatedAt: now.Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenRating{
+		CanteenID: canteen.ID, UserID: 5, Star: 5, Status: models.ReviewEventStatusActive,
+		Images: `["/uploads/review-duplicate.jpg","/uploads/legacy.jpg"]`, CreatedAt: now.Add(-30 * time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performDishPhotoRequest(t, NewCanteenDishHandler(db).ListDishes, http.MethodGet,
+		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 0, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["source"] != "review_images" {
+		t.Fatalf("review image gallery missing: %#v", rows)
+	}
+	images, ok := rows[0]["photo_images"].([]interface{})
+	if !ok || len(images) != 3 || images[0] != "/uploads/review-new.jpg" || images[1] != "/uploads/review-duplicate.jpg" || images[2] != "/uploads/legacy.jpg" {
+		t.Fatalf("unexpected gallery images: %#v", rows[0]["photo_images"])
+	}
+	if strings.Contains(resp.Body.String(), "hidden.jpg") {
+		t.Fatalf("hidden review image must not be public: %s", resp.Body.String())
+	}
 }
 
 func createVerifiedUser(t *testing.T, db *gorm.DB, id uint, nickname string) models.User {

@@ -78,6 +78,7 @@ class DishPhotoMosaic extends StatelessWidget {
         width: double.infinity,
         child: CanteenStatusImage(
           imageUrl: url,
+          variant: 'medium',
           offline: offline,
           fit: BoxFit.cover,
           errorWidget: (_, __, ___) => _buildPlaceholder(),

@@ -4,12 +4,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../config/api_constants.dart';
+import '../models/canteen_dish.dart';
 import '../widgets/canteen/canteen_detail_header.dart';
 import '../widgets/canteen/canteen_detail_skeleton.dart';
 import '../widgets/canteen/canteen_review_section.dart';
@@ -21,6 +21,7 @@ import 'canteen_dish_detail_screen.dart';
 import 'canteen_dish_list_screen.dart';
 import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
+import 'image_viewer_screen.dart';
 import '../utils/app_feedback.dart';
 
 enum _ContributionAction { review, dishPhoto }
@@ -85,6 +86,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   late int _dishCount;
   late int _dishWithPhotoCount;
   late int _dishPhotoCount;
+  List<CanteenDish>? _preloadedDishes;
+  bool _dishesLoadFailed = false;
+  String? _dishesLoadError;
 
   bool get _isOffline {
     final raw = _canteenData?['canteen'];
@@ -130,13 +134,23 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   Future<void> _loadInitial() async {
     final generation = ++_requestGeneration;
     setState(() => _initialLoading = true);
-    final data = await context.read<CanteenProvider>().loadCanteenDetail(
-          widget.canteenId,
-          reviewSort: _appliedReviewSort,
-          reviewFilter: _appliedReviewFilter,
-        );
+    final provider = context.read<CanteenProvider>();
+    final results = await Future.wait<dynamic>([
+      provider.loadCanteenDetail(
+        widget.canteenId,
+        reviewSort: _appliedReviewSort,
+        reviewFilter: _appliedReviewFilter,
+      ),
+      provider.loadDishes(widget.canteenId),
+    ]);
+    final data = results[0] as Map<String, dynamic>;
+    final dishes = results[1] as List<CanteenDish>?;
+    final dishesError = provider.dishesErrorMessage;
     if (!mounted || generation != _requestGeneration) return;
     setState(() {
+      _preloadedDishes = dishes;
+      _dishesLoadFailed = dishes == null;
+      _dishesLoadError = dishesError;
       if (data.isNotEmpty && data['canteen'] != null) {
         _canteenData = data;
         _appliedReviewSort = _reviewSort;
@@ -207,72 +221,65 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final accent = CanteenTheme.accentColor(isDark);
 
     if (_initialLoading) {
-      return Scaffold(
-        backgroundColor: CanteenTheme.pageBg(isDark),
-        body: CanteenDetailSkeleton(
-          imageUrl: widget.initialImage,
-          offline: widget.initialOffline,
-          heroTag: _heroTag,
-        ),
+      return _buildDetailShell(
+        isDark: isDark,
+        slivers: [
+          SliverToBoxAdapter(child: _buildHeroSection()),
+          SliverToBoxAdapter(
+            child: CanteenDetailSkeleton(includeHero: false),
+          ),
+        ],
       );
     }
     if (_canteenData == null || _canteenData!['canteen'] == null) {
       final errorMessage =
           context.watch<CanteenProvider>().errorMessage ?? '加载商家详情失败，请检查网络后重试';
-      return Scaffold(
-        backgroundColor: CanteenTheme.pageBg(isDark),
-        appBar: AppBar(
-          title: Text(widget.canteenName),
-          backgroundColor: CanteenTheme.surfaceBg(isDark),
-        ),
-        body: RefreshIndicator(
-          onRefresh: _loadInitial,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              SizedBox(
-                height: MediaQuery.of(context).size.height * 0.6,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.wifi_off_rounded,
-                          size: 56,
-                          color: isDark ? Colors.white38 : Colors.black38,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          errorMessage,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton.icon(
-                          onPressed: _loadInitial,
-                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: const Text('重新加载'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: accent,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                      ],
+      return _buildDetailShell(
+        isDark: isDark,
+        onRefresh: _loadInitial,
+        slivers: [
+          SliverToBoxAdapter(child: _buildHeroSection()),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.wifi_off_rounded,
+                      size: 56,
+                      color: isDark ? Colors.white38 : Colors.black38,
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    Text(
+                      errorMessage,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _loadInitial,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('重新加载'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       );
     }
 
@@ -289,6 +296,125 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         (_canteenData!['rating_count'] as num?)?.toInt() ??
         0;
 
+    return _buildDetailShell(
+      isDark: isDark,
+      bottomNavigationBar: _buildContributionBar(isDark, accent),
+      slivers: [
+        SliverToBoxAdapter(child: _buildHeroSection()),
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CanteenDetailHeader(
+                name: _canteenData?['canteen']?['name']?.toString() ?? '',
+                rating:
+                    (_canteenData?['average_star'] as num?)?.toDouble() ?? 0,
+                ratingCount: ratingCount,
+                dishCount: _dishCount,
+                dishWithPhotoCount: _dishWithPhotoCount,
+                dishPhotoCount: _dishPhotoCount,
+                offline: _isOffline,
+              ),
+              _buildDimensionSummary(isDark),
+              DishGallerySection(
+                canteenId: widget.canteenId,
+                canteenName: widget.canteenName,
+                initialDishes: _preloadedDishes,
+                initialDishesLoadFailed: _dishesLoadFailed,
+                initialDishesErrorMessage: _dishesLoadError,
+                onViewAll: _openDishList,
+                onStatsDetailedChanged: (count, withPhoto, photos) {
+                  if (!mounted) return;
+                  if (count == _dishCount &&
+                      withPhoto == _dishWithPhotoCount &&
+                      photos == _dishPhotoCount) {
+                    return;
+                  }
+                  setState(() {
+                    _dishCount = count;
+                    _dishWithPhotoCount = withPhoto;
+                    _dishPhotoCount = photos;
+                  });
+                },
+              ),
+              CanteenReviewSection(
+                reviews: reviews,
+                reviewCount: ratingCount,
+                sort: _reviewSort,
+                filter: _reviewFilter,
+                dataVersion: _reviewDataVersion,
+                isRefreshing: _reviewsRefreshing,
+                isVoting: _isVoting,
+                currentUserId: context.read<AuthProvider>().user?.id,
+                onSortChanged: (value) async {
+                  if (_reviewSort == value) return;
+                  setState(() => _reviewSort = value);
+                  final result = await _refreshReviews(
+                    sort: value,
+                    filter: _reviewFilter,
+                  );
+                  if (!mounted) return;
+                  if (result == false) {
+                    // 恢复为「最后成功 applied」状态（sort/filter 一起回滚）
+                    setState(() {
+                      _reviewSort = _appliedReviewSort;
+                      _reviewFilter = _appliedReviewFilter;
+                    });
+                    _showRefreshFailed();
+                  }
+                },
+                onFilterChanged: (value) async {
+                  if (_reviewFilter == value) return;
+                  setState(() => _reviewFilter = value);
+                  final result = await _refreshReviews(
+                    sort: _reviewSort,
+                    filter: value,
+                  );
+                  if (!mounted) return;
+                  if (result == false) {
+                    setState(() {
+                      _reviewSort = _appliedReviewSort;
+                      _reviewFilter = _appliedReviewFilter;
+                    });
+                    _showRefreshFailed();
+                  }
+                },
+                onVote: _voteRating,
+                canWriteReview:
+                    !_isOffline && (_canCreateReview || _canEditLatest),
+                latestReviewId: _latestReviewId,
+                onEditLatestReview: _openEditLatestReviewEditor,
+                onReport: _reportReview,
+                onDelete: _deleteReview,
+                onOpenHistory: _openOwnReviewHistory,
+                onOpenDish: (dishId, dishName) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => CanteenDishDetailScreen(
+                        canteenId: widget.canteenId,
+                        dishId: dishId,
+                        dishName: dishName,
+                        canteenName: widget.canteenName,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 104)),
+      ],
+    );
+  }
+
+  Widget _buildDetailShell({
+    required bool isDark,
+    required List<Widget> slivers,
+    Widget? bottomNavigationBar,
+    Future<void> Function()? onRefresh,
+  }) {
+    final scrollView = CustomScrollView(slivers: slivers);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -296,113 +422,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       ),
       child: Scaffold(
         backgroundColor: CanteenTheme.pageBg(isDark),
-        bottomNavigationBar: _buildContributionBar(isDark, accent),
-        body: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeroSection()),
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CanteenDetailHeader(
-                    name: _canteenData?['canteen']?['name']?.toString() ?? '',
-                    rating:
-                        (_canteenData?['average_star'] as num?)?.toDouble() ??
-                            0,
-                    ratingCount: ratingCount,
-                    dishCount: _dishCount,
-                    dishWithPhotoCount: _dishWithPhotoCount,
-                    dishPhotoCount: _dishPhotoCount,
-                    offline: _isOffline,
-                  ),
-                  _buildDimensionSummary(isDark),
-                  DishGallerySection(
-                    canteenId: widget.canteenId,
-                    canteenName: widget.canteenName,
-                    onViewAll: _openDishList,
-                    onStatsDetailedChanged: (count, withPhoto, photos) {
-                      if (!mounted) return;
-                      if (count == _dishCount &&
-                          withPhoto == _dishWithPhotoCount &&
-                          photos == _dishPhotoCount) {
-                        return;
-                      }
-                      setState(() {
-                        _dishCount = count;
-                        _dishWithPhotoCount = withPhoto;
-                        _dishPhotoCount = photos;
-                      });
-                    },
-                  ),
-                  CanteenReviewSection(
-                    reviews: reviews,
-                    reviewCount: ratingCount,
-                    sort: _reviewSort,
-                    filter: _reviewFilter,
-                    dataVersion: _reviewDataVersion,
-                    isRefreshing: _reviewsRefreshing,
-                    isVoting: _isVoting,
-                    currentUserId: context.read<AuthProvider>().user?.id,
-                    onSortChanged: (value) async {
-                      if (_reviewSort == value) return;
-                      setState(() => _reviewSort = value);
-                      final result = await _refreshReviews(
-                        sort: value,
-                        filter: _reviewFilter,
-                      );
-                      if (!mounted) return;
-                      if (result == false) {
-                        // 恢复为「最后成功 applied」状态（sort/filter 一起回滚）
-                        setState(() {
-                          _reviewSort = _appliedReviewSort;
-                          _reviewFilter = _appliedReviewFilter;
-                        });
-                        _showRefreshFailed();
-                      }
-                    },
-                    onFilterChanged: (value) async {
-                      if (_reviewFilter == value) return;
-                      setState(() => _reviewFilter = value);
-                      final result = await _refreshReviews(
-                        sort: _reviewSort,
-                        filter: value,
-                      );
-                      if (!mounted) return;
-                      if (result == false) {
-                        setState(() {
-                          _reviewSort = _appliedReviewSort;
-                          _reviewFilter = _appliedReviewFilter;
-                        });
-                        _showRefreshFailed();
-                      }
-                    },
-                    onVote: _voteRating,
-                    canWriteReview:
-                        !_isOffline && (_canCreateReview || _canEditLatest),
-                    latestReviewId: _latestReviewId,
-                    onEditLatestReview: _openEditLatestReviewEditor,
-                    onReport: _reportReview,
-                    onDelete: _deleteReview,
-                    onOpenHistory: _openOwnReviewHistory,
-                    onOpenDish: (dishId, dishName) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => CanteenDishDetailScreen(
-                            canteenId: widget.canteenId,
-                            dishId: dishId,
-                            dishName: dishName,
-                            canteenName: widget.canteenName,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 104)),
-          ],
-        ),
+        bottomNavigationBar: bottomNavigationBar,
+        body: onRefresh == null
+            ? scrollView
+            : RefreshIndicator(onRefresh: onRefresh, child: scrollView),
       ),
     );
   }
@@ -669,8 +692,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Widget _buildHeroSection() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final imageUrl = _canteenData?['canteen']?['image']?.toString() ?? '';
-    final hasImage = imageUrl.isNotEmpty;
+    final loadedImage = _canteenData?['canteen']?['image']?.toString() ?? '';
+    final imageUrl = loadedImage.trim().isNotEmpty
+        ? loadedImage.trim()
+        : widget.initialImage.trim();
+    final offline = _canteenData == null ? widget.initialOffline : _isOffline;
     final heroHeight =
         (MediaQuery.of(context).size.width * 0.5).clamp(190.0, 230.0);
 
@@ -687,29 +713,33 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Hero(
-              tag: _heroTag,
-              child: hasImage
-                  ? CanteenStatusImage(
-                      imageUrl: ApiConstants.fullUrl(imageUrl),
-                      offline: _isOffline,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          _buildImagePlaceholder(isDark),
-                      placeholder: (_, __) => _buildImagePlaceholder(isDark),
-                    )
-                  : _buildImagePlaceholder(isDark),
+            GestureDetector(
+              onTap: imageUrl.isEmpty ? null : () => _openCoverImage(imageUrl),
+              behavior: HitTestBehavior.opaque,
+              child: Hero(
+                tag: _heroTag,
+                child: CanteenStatusImage(
+                  imageUrl: imageUrl,
+                  variant: 'medium',
+                  offline: offline,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => _buildImagePlaceholder(isDark),
+                  placeholder: (_, __) => _buildImagePlaceholder(isDark),
+                ),
+              ),
             ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.22),
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.24),
-                  ],
+            IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.22),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.24),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -731,6 +761,19 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openCoverImage(String imageUrl) {
+    final normalized = imageUrl.trim();
+    if (normalized.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: [ApiConstants.fullUrl(normalized)],
+          initialIndex: 0,
         ),
       ),
     );
@@ -864,7 +907,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       child: _buildContributionActionButton(
                         isDark: isDark,
                         icon: Icons.rate_review_outlined,
-                        label: '写商家评价',
+                        label: '写菜品评价',
                         enabled: canWriteReview,
                         onPressed: () => Navigator.pop(
                           sheetContext,
@@ -1386,8 +1429,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
 
     if (currentImage.isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: ApiConstants.fullUrl(currentImage),
+      return CanteenStatusImage(
+        imageUrl: currentImage,
+        variant: 'medium',
         fit: BoxFit.cover,
         errorWidget: (_, __, ___) => _buildCoverPreviewPlaceholder(isDark),
         placeholder: (_, __) => _buildCoverPreviewPlaceholder(isDark),

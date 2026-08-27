@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -10,6 +9,7 @@ import '../../models/canteen_review_draft.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../services/canteen_review_draft_repository.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
 /// 商家评价图片选择与草稿暂存组件。
 ///
@@ -67,9 +67,9 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
     try {
       final XFile? file = await _picker.pickImage(
         source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
         requestFullMetadata: false,
       );
 
@@ -264,8 +264,9 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
     if (image.type == ReviewDraftImageType.publishedRemote &&
         image.url != null &&
         image.url!.isNotEmpty) {
-      content = CachedNetworkImage(
-        imageUrl: ApiConstants.fullUrl(image.url!),
+      content = CanteenStatusImage(
+        imageUrl: image.url!,
+        variant: 'thumb',
         fit: BoxFit.cover,
         placeholder: (_, __) => Container(
           color: CanteenTheme.surfaceMutedBg(isDark),

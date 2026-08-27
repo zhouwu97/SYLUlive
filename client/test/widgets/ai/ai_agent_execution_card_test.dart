@@ -195,6 +195,9 @@ void main() {
 
     await tester.tap(find.text('查看完整过程'));
     await tester.pumpAndSettle();
+    expect(find.text('查看技术详情'), findsOneWidget);
+    await tester.tap(find.text('查看技术详情'));
+    await tester.pumpAndSettle();
     expect(find.text('设备任务已完成'), findsOneWidget);
     expect(find.text('已接收设备结果'), findsOneWidget);
     expect(find.text('已读取设备更新结果'), findsOneWidget);

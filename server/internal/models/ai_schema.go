@@ -61,7 +61,7 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 	return nil
 }
 
-// ValidateAIUserPermissionSchema 只读核验 Agent 长期权限的关键 CHECK 约束。
+// ValidateAIUserPermissionSchema 只读核验 Agent 长期权限表的生产约束。
 // 该约束由版本化 SQL 维护，不能依赖 GORM AutoMigrate 自动修改命名约束。
 func ValidateAIUserPermissionSchema(db *gorm.DB) error {
 	if db == nil {
@@ -74,24 +74,103 @@ func ValidateAIUserPermissionSchema(db *gorm.DB) error {
 		return nil
 	}
 
-	var definition string
+	type columnInfo struct {
+		ColumnName string `gorm:"column:column_name"`
+		IsNullable string `gorm:"column:is_nullable"`
+	}
+	var columns []columnInfo
 	if err := db.Raw(`
-		SELECT pg_get_constraintdef(oid)
+		SELECT column_name, is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'ai_user_permissions'
+		  AND column_name IN ('user_id', 'scope', 'policy', 'version')
+	`).Scan(&columns).Error; err != nil {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_DATABASE_UNAVAILABLE: inspect permission columns: %w", err)
+	}
+	columnByName := make(map[string]columnInfo, len(columns))
+	for _, column := range columns {
+		columnByName[column.ColumnName] = column
+	}
+	for _, name := range []string{"user_id", "scope", "policy", "version"} {
+		column, ok := columnByName[name]
+		if !ok {
+			return fmt.Errorf("AI_PERMISSION_SCHEMA_INVALID: missing column ai_user_permissions.%s", name)
+		}
+		if strings.ToUpper(column.IsNullable) != "NO" {
+			return fmt.Errorf("AI_PERMISSION_SCHEMA_INVALID: column ai_user_permissions.%s must be NOT NULL", name)
+		}
+	}
+
+	var uniqueIndexCount int64
+	if err := db.Raw(`
+		SELECT count(*)
+		FROM pg_index AS index_row
+		JOIN pg_class AS index_class ON index_class.oid = index_row.indexrelid
+		JOIN pg_class AS table_row ON table_row.oid = index_row.indrelid
+		JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+		WHERE namespace_row.nspname = current_schema()
+		  AND table_row.relname = 'ai_user_permissions'
+		  AND index_row.indisunique
+		  AND regexp_replace(pg_get_indexdef(index_row.indexrelid), '\s+', '', 'g')
+		      LIKE '%(user_id,scope)%'
+	`).Scan(&uniqueIndexCount).Error; err != nil {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_DATABASE_UNAVAILABLE: inspect permission unique index: %w", err)
+	}
+	if uniqueIndexCount == 0 {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_INVALID: missing unique index on ai_user_permissions(user_id, scope)")
+	}
+
+	type constraintInfo struct {
+		Name       string `gorm:"column:conname"`
+		Definition string `gorm:"column:definition"`
+	}
+	var constraints []constraintInfo
+	if err := db.Raw(`
+		SELECT conname, pg_get_constraintdef(oid) AS definition
 		FROM pg_constraint
 		WHERE conrelid = 'ai_user_permissions'::regclass
-		  AND conname = 'chk_ai_user_permissions_scope'
-	`).Scan(&definition).Error; err != nil {
-		return fmt.Errorf("inspect AI user permission scope constraint: %w", err)
+		  AND contype = 'c'
+		  AND conname IN ('chk_ai_user_permissions_scope', 'chk_ai_user_permissions_policy')
+	`).Scan(&constraints).Error; err != nil {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_DATABASE_UNAVAILABLE: inspect permission checks: %w", err)
 	}
-	if err := validateAIUserPermissionScopeConstraint(definition); err != nil {
-		return err
+	constraintByName := make(map[string]string, len(constraints))
+	for _, constraint := range constraints {
+		constraintByName[constraint.Name] = constraint.Definition
+	}
+	if err := validateAIUserPermissionScopeConstraint(constraintByName["chk_ai_user_permissions_scope"]); err != nil {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_INVALID: %w", err)
+	}
+	if err := validateAIUserPermissionPolicyConstraint(constraintByName["chk_ai_user_permissions_policy"]); err != nil {
+		return fmt.Errorf("AI_PERMISSION_SCHEMA_INVALID: %w", err)
 	}
 	return nil
 }
 
 func validateAIUserPermissionScopeConstraint(definition string) error {
-	if !strings.Contains(strings.ToLower(definition), "ai_external_model_analysis") {
-		return fmt.Errorf("AI user permission scope constraint is outdated; execute server/sql/20260726_ai_external_model_permission.sql")
+	definition = strings.ToLower(definition)
+	for _, scope := range []string{
+		"ai_personal_data_access",
+		"ai_device_cache_access",
+		"ai_remote_edu_refresh",
+		"erke_snapshot_upload",
+		"academic_cloud_storage",
+		"ai_external_model_analysis",
+	} {
+		if !strings.Contains(definition, "'"+scope+"'") {
+			return fmt.Errorf("scope CHECK constraint is missing %s", scope)
+		}
+	}
+	return nil
+}
+
+func validateAIUserPermissionPolicyConstraint(definition string) error {
+	definition = strings.ToLower(definition)
+	for _, policy := range []string{"ask", "always", "never"} {
+		if !strings.Contains(definition, "'"+policy+"'") {
+			return fmt.Errorf("policy CHECK constraint is missing %s", policy)
+		}
 	}
 	return nil
 }

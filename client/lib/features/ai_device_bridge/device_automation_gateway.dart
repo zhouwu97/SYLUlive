@@ -34,12 +34,24 @@ class RefreshResult {
   const RefreshResult({
     required this.performed,
     this.message,
+    this.errorCode,
   });
 
   final bool performed;
   final String? message;
+  final String? errorCode;
 
   bool get succeeded => message == null;
+}
+
+class DeviceAutomationException implements Exception {
+  const DeviceAutomationException(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => 'DeviceAutomationException($code)';
 }
 
 typedef DeviceDataQuery<T> = Future<GatewayResult<T>> Function(
@@ -176,6 +188,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
       after: after,
       refreshPerformed: refresh.performed,
       warning: refresh.message,
+      errorCode: refresh.errorCode,
     );
   }
 
@@ -193,7 +206,10 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
       };
       final item = await ensureFresh(type, maxAge: entry.value);
       if (!item.after.isFreshAt(_now(), entry.value)) {
-        throw StateError('${entry.key}刷新后仍未达到新鲜度要求');
+        throw DeviceAutomationException(
+          item.errorCode ?? 'refresh_incomplete',
+          item.warning ?? '${entry.key}刷新后仍未达到新鲜度要求',
+        );
       }
       items[entry.key] = item;
     }
@@ -267,12 +283,14 @@ class EnsureFreshResult {
     required this.after,
     this.refreshPerformed = false,
     this.warning,
+    this.errorCode,
   });
 
   final FreshnessState before;
   final FreshnessState after;
   final bool refreshPerformed;
   final String? warning;
+  final String? errorCode;
 }
 
 class AcademicBundleEnsureResult {

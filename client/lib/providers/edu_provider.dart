@@ -10,19 +10,31 @@ import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+const _eduLongRequestTimeout = Duration(seconds: 60);
+
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
   final bool success;
   final T? data;
   final String? errorMessage;
+  final String? errorCode;
 
-  const OperationResult({required this.success, this.data, this.errorMessage});
+  const OperationResult({
+    required this.success,
+    this.data,
+    this.errorMessage,
+    this.errorCode,
+  });
 
   factory OperationResult.ok(T data) =>
       OperationResult(success: true, data: data);
 
-  factory OperationResult.fail(String message) =>
-      OperationResult(success: false, errorMessage: message);
+  factory OperationResult.fail(String message, {String? errorCode}) =>
+      OperationResult(
+        success: false,
+        errorMessage: message,
+        errorCode: errorCode,
+      );
 }
 
 /// 成绩缓存条目
@@ -303,29 +315,87 @@ class EduProvider extends ChangeNotifier {
     );
   }
 
-  /// 判断 DioException 是否是教务会话过期（按结构化 error code，不按中文文字）
-  bool _isEduSessionExpired(DioException e) {
-    final data = e.response?.data;
-    if (data is Map) {
-      const sessionCodes = <String>{
-        'EDU_AUTHORIZATION_REVOKED',
-        'EDU_SESSION_LOGGED_OUT',
-        'EDU_SESSION_EXPIRED',
-        'EDU_CREDENTIAL_UNAVAILABLE',
-      };
-      final code = data['code']?.toString();
-      final upstream = data['upstream_code']?.toString();
-      if (sessionCodes.contains(code) || sessionCodes.contains(upstream)) {
-        return true;
+  String? _eduFailureCode(DioException e) {
+    final payload = e.response?.data;
+    final values = <String>[];
+    if (payload is Map) {
+      for (final key in const ['code', 'error_code', 'upstream_code']) {
+        final value = payload[key]?.toString().trim();
+        if (value != null && value.isNotEmpty) values.add(value);
       }
     }
-    return false;
+    for (final value in values) {
+      switch (value.toUpperCase()) {
+        case 'EDU_AUTHORIZATION_REVOKED':
+          return 'edu_authorization_revoked';
+        case 'EDU_SESSION_LOGGED_OUT':
+          return 'edu_session_logged_out';
+        case 'EDU_SESSION_EXPIRED':
+          return 'edu_session_expired';
+        case 'EDU_CREDENTIAL_UNAVAILABLE':
+          return 'credential_unavailable';
+      }
+    }
+    return switch (e.type) {
+      DioExceptionType.connectionTimeout ||
+      DioExceptionType.sendTimeout ||
+      DioExceptionType.receiveTimeout ||
+      DioExceptionType.connectionError =>
+        'network_unavailable',
+      _ => null,
+    };
+  }
+
+  String? _eduPayloadCode(Object? payload) {
+    if (payload is! Map) return null;
+    final value = payload['error_code'] ?? payload['code'];
+    final code = value?.toString().trim();
+    if (code == null || code.isEmpty) return null;
+    switch (code.toUpperCase()) {
+      case 'EDU_AUTHORIZATION_REVOKED':
+        return 'edu_authorization_revoked';
+      case 'EDU_SESSION_LOGGED_OUT':
+        return 'edu_session_logged_out';
+      case 'EDU_SESSION_EXPIRED':
+        return 'edu_session_expired';
+      case 'EDU_CREDENTIAL_UNAVAILABLE':
+        return 'credential_unavailable';
+      default:
+        return code.toLowerCase();
+    }
+  }
+
+  String _eduFailureMessage(String code) => switch (code) {
+        'edu_authorization_revoked' ||
+        'edu_session_logged_out' ||
+        'edu_session_expired' ||
+        'credential_unavailable' =>
+          '教务会话已失效，请在账号与安全中手动恢复或重新授权',
+        'network_unavailable' => '教务服务网络连接失败，请稍后重试',
+        _ => '教务操作失败，请稍后重试',
+      };
+
+  OperationResult<T> _failFromDio<T>(DioException error, String fallback) {
+    final code = _eduFailureCode(error);
+    return OperationResult.fail(
+      code == null
+          ? (error.response == null ? fallback : _parseDioError(error))
+          : _eduFailureMessage(code),
+      errorCode: code,
+    );
   }
 
   Future<void> ensureStatusLoaded() async {
     while (!_statusLoaded) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
+  }
+
+  /// 重新读取当前账号的教务状态，供 Agent 恢复原请求前确认会话确实可用。
+  Future<void> refreshStatus() async {
+    final userId = _userId;
+    if (userId == null || userId.isEmpty) return;
+    await loadStatus(expectedUserId: userId, generation: _statusGeneration);
   }
 
   // 获取绑定状态
@@ -468,6 +538,7 @@ class EduProvider extends ChangeNotifier {
           'password': password,
           'edu_data_consent_accepted': eduDataConsentAccepted,
         },
+        options: Options(receiveTimeout: _eduLongRequestTimeout),
       );
 
       _isLoading = false;
@@ -532,9 +603,9 @@ class EduProvider extends ChangeNotifier {
       }
       return OperationResult.fail('退出教务登录失败');
     } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      debugPrint('退出教务登录失败: $errorMsg');
-      return OperationResult.fail(errorMsg);
+      final result = _failFromDio(e, '退出教务登录失败');
+      debugPrint('退出教务登录失败: ${result.errorMessage}');
+      return result;
     }
   }
 
@@ -556,7 +627,7 @@ class EduProvider extends ChangeNotifier {
       }
       return OperationResult.fail('恢复教务会话失败');
     } on DioException catch (error) {
-      return OperationResult.fail(_parseDioError(error));
+      return _failFromDio(error, '恢复教务会话失败');
     }
   }
 
@@ -585,7 +656,7 @@ class EduProvider extends ChangeNotifier {
       }
       return OperationResult.fail('撤销教务授权失败');
     } on DioException catch (error) {
-      return OperationResult.fail(_parseDioError(error));
+      return _failFromDio(error, '撤销教务授权失败');
     }
   }
 
@@ -612,6 +683,7 @@ class EduProvider extends ChangeNotifier {
         final response = await _authDio.post(
           '/edu/courses',
           data: {'year': year, 'semester': semester},
+          options: Options(receiveTimeout: _eduLongRequestTimeout),
         );
         if (!isCurrentContext()) {
           return OperationResult.fail('用户已切换');
@@ -637,19 +709,21 @@ class EduProvider extends ChangeNotifier {
               (data['error'] ?? data['message'] ?? data['detail'] ?? '')
                   .toString();
           if (errorMsg.isNotEmpty) {
-            return OperationResult.fail(errorMsg);
+            return OperationResult.fail(
+              errorMsg,
+              errorCode: _eduPayloadCode(data),
+            );
           }
           if (data['success'] == false) {
-            return OperationResult.fail(data['message'] ?? '获取课表失败');
+            return OperationResult.fail(
+              data['message'] ?? '获取课表失败',
+              errorCode: _eduPayloadCode(data),
+            );
           }
         }
         return OperationResult.fail('获取课表失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (_isEduSessionExpired(e)) {
-          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
-        }
-        return OperationResult.fail(errorMsg);
+        return _failFromDio(e, '获取课表失败');
       }
     });
   }
@@ -689,6 +763,10 @@ class EduProvider extends ChangeNotifier {
         } catch (error) {
           // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
           debugPrint('保存加密成绩失败: ${error.runtimeType}');
+          return OperationResult.fail(
+            '成绩已获取，但保存加密成绩失败',
+            errorCode: 'local_storage_failed',
+          );
         }
       }
       if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
@@ -702,7 +780,10 @@ class EduProvider extends ChangeNotifier {
       );
       return OperationResult.ok(grades);
     }
-    return OperationResult.fail(raw?.errorMessage ?? '获取成绩失败');
+    return OperationResult.fail(
+      raw?.errorMessage ?? '获取成绩失败',
+      errorCode: raw?.errorCode,
+    );
   }
 
   /// 为个人助手同步从入学至今的全部有效学期，并在加密仓库中记录完整性。
@@ -715,6 +796,7 @@ class EduProvider extends ChangeNotifier {
     final terms = EduSemester.buildSemesterList(enrollmentYear);
     var syncedTerms = 0;
     String? lastError;
+    String? lastErrorCode;
     for (final term in terms) {
       final result = await fetchGrades(term.year, term.semester);
       if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
@@ -724,6 +806,7 @@ class EduProvider extends ChangeNotifier {
         syncedTerms++;
       } else {
         lastError = result.errorMessage;
+        lastErrorCode = result.errorCode;
         break;
       }
     }
@@ -736,15 +819,26 @@ class EduProvider extends ChangeNotifier {
         await store?.markGradeSyncComplete();
       } catch (error) {
         debugPrint('保存成绩完整同步标记失败: ${error.runtimeType}');
-        return OperationResult.fail('成绩已获取，但保存加密成绩失败');
+        return OperationResult.fail(
+          '成绩已获取，但保存加密成绩失败',
+          errorCode: 'local_storage_failed',
+        );
       }
       return OperationResult.ok(syncedTerms);
     }
     if (syncedTerms > 0) {
       // 部分学期可用时仍返回已同步数量，Gateway 会标记为需要刷新并明确提示范围不完整。
-      return OperationResult.ok(syncedTerms);
+      return OperationResult(
+        success: true,
+        data: syncedTerms,
+        errorMessage: '仅同步了部分学期，已保留已有缓存',
+        errorCode: 'refresh_incomplete',
+      );
     }
-    return OperationResult.fail(lastError ?? '自动同步成绩失败');
+    return OperationResult.fail(
+      lastError ?? '自动同步成绩失败',
+      errorCode: lastErrorCode,
+    );
   }
 
   Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
@@ -786,6 +880,7 @@ class EduProvider extends ChangeNotifier {
           'student_grade_id':
               grade.studentGradeId.isNotEmpty ? grade.studentGradeId : null,
         },
+        options: Options(receiveTimeout: _eduLongRequestTimeout),
       );
     }
 
@@ -807,11 +902,7 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取成绩构成失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (_isEduSessionExpired(e)) {
-          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
-        }
-        return OperationResult.fail(errorMsg);
+        return _failFromDio(e, '获取成绩构成失败');
       }
     }).whenComplete(() {
       if (identical(_gradeDetailRequests[cacheKey], requestFuture)) {
@@ -898,6 +989,7 @@ class EduProvider extends ChangeNotifier {
       return _authDio.post(
         '/edu/academic-situation',
         data: const <String, dynamic>{},
+        options: Options(receiveTimeout: _eduLongRequestTimeout),
       );
     }
 
@@ -916,7 +1008,10 @@ class EduProvider extends ChangeNotifier {
             rawSituation,
           );
           if (!situation.success) {
-            return OperationResult.fail(situation.message ?? '获取学业情况失败');
+            return OperationResult.fail(
+              situation.message ?? '获取学业情况失败',
+              errorCode: _eduPayloadCode(rawSituation),
+            );
           }
           final persisted = await _persistAcademicSituation(
             appUserId: requestUserId,
@@ -924,7 +1019,10 @@ class EduProvider extends ChangeNotifier {
             raw: rawSituation,
           );
           if (!persisted) {
-            return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
+            return OperationResult.fail(
+              '学业情况本地加密保存失败，请稍后重试',
+              errorCode: 'local_storage_failed',
+            );
           }
           _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
               AcademicSituationCacheEntry(
@@ -935,11 +1033,7 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取学业情况失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (_isEduSessionExpired(e)) {
-          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
-        }
-        return OperationResult.fail(errorMsg);
+        return _failFromDio(e, '获取学业情况失败');
       }
     });
   }
@@ -962,7 +1056,7 @@ class EduProvider extends ChangeNotifier {
     } catch (error) {
       // 页面保留本次网络响应，但 AI 侧不会获得未落入保险箱的数据。
       debugPrint('保存加密学业情况失败: ${error.runtimeType}');
-      return _isSameAcademicContext(appUserId, sourceAccountId);
+      return false;
     }
   }
 
@@ -981,6 +1075,7 @@ class EduProvider extends ChangeNotifier {
         final response = await _authDio.post(
           '/edu/grades',
           data: {'year': year, 'semester': semester},
+          options: Options(receiveTimeout: _eduLongRequestTimeout),
         );
 
         if (response.statusCode == 200) {
@@ -991,16 +1086,15 @@ class EduProvider extends ChangeNotifier {
             );
           }
           if (data['error'] != null) {
-            return OperationResult.fail(data['error'].toString());
+            return OperationResult.fail(
+              data['error'].toString(),
+              errorCode: _eduPayloadCode(data),
+            );
           }
         }
         return OperationResult.fail('获取成绩失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (_isEduSessionExpired(e)) {
-          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
-        }
-        return OperationResult.fail(errorMsg);
+        return _failFromDio(e, '获取成绩失败');
       }
     });
   }
@@ -1018,6 +1112,7 @@ class EduProvider extends ChangeNotifier {
         final response = await _authDio.post(
           '/edu/credit-requirements',
           data: const <String, dynamic>{},
+          options: Options(receiveTimeout: _eduLongRequestTimeout),
         );
         if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
           return OperationResult.fail('用户已切换');
@@ -1029,7 +1124,10 @@ class EduProvider extends ChangeNotifier {
           final raw = Map<String, dynamic>.from(response.data as Map);
           final overview = EduCreditRequirementOverview.fromJson(raw);
           if (!overview.success) {
-            return OperationResult.fail(overview.message ?? '获取学分要求失败');
+            return OperationResult.fail(
+              overview.message ?? '获取学分要求失败',
+              errorCode: _eduPayloadCode(raw),
+            );
           }
           // 持久化到 AES-GCM 保险箱
           final store = _academicCacheStoreFor(
@@ -1044,6 +1142,10 @@ class EduProvider extends ChangeNotifier {
               );
             } catch (error) {
               debugPrint('保存加密学分要求失败: ${error.runtimeType}');
+              return OperationResult.fail(
+                '学分要求已获取，但本地加密保存失败',
+                errorCode: 'local_storage_failed',
+              );
             }
           }
           if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
@@ -1058,11 +1160,7 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取学分要求失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (_isEduSessionExpired(e)) {
-          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
-        }
-        return OperationResult.fail(errorMsg);
+        return _failFromDio(e, '获取学分要求失败');
       }
     });
   }

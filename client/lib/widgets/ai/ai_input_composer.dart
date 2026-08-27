@@ -4,6 +4,9 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../providers/ai_assistant_provider.dart';
+import '../../features/ai_device_bridge/device_tool_worker.dart';
+
+enum AgentPermissionLoadState { loading, ask, trusted, unavailable }
 
 class AiInputComposer extends StatefulWidget {
   final TextEditingController controller;
@@ -16,6 +19,8 @@ class AiInputComposer extends StatefulWidget {
   final String hintText;
   final bool showAgentPermissionMode;
   final bool agentTrusted;
+  final AgentPermissionLoadState agentPermissionState;
+  final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onAgentPermissionTap;
 
   const AiInputComposer({
@@ -30,6 +35,8 @@ class AiInputComposer extends StatefulWidget {
     required this.hintText,
     this.showAgentPermissionMode = false,
     this.agentTrusted = false,
+    this.agentPermissionState = AgentPermissionLoadState.ask,
+    this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onAgentPermissionTap,
   });
 
@@ -110,6 +117,8 @@ class _AiInputComposerState extends State<AiInputComposer> {
                 padding: const EdgeInsets.only(bottom: 2),
                 child: AiAgentPermissionModeBar(
                   trusted: widget.agentTrusted,
+                  permissionState: widget.agentPermissionState,
+                  bridgeStatus: widget.bridgeStatus,
                   onTap: widget.onAgentPermissionTap,
                 ),
               ),
@@ -209,19 +218,48 @@ class AiAgentPermissionModeBar extends StatelessWidget {
   const AiAgentPermissionModeBar({
     super.key,
     required this.trusted,
+    this.permissionState,
+    this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onTap,
   });
 
   final bool trusted;
+  final AgentPermissionLoadState? permissionState;
+  final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = Theme.of(context).colorScheme;
+    final state = permissionState ??
+        (trusted
+            ? AgentPermissionLoadState.trusted
+            : AgentPermissionLoadState.ask);
+    final permissionLabel = switch (state) {
+      AgentPermissionLoadState.loading => '正在同步权限状态',
+      AgentPermissionLoadState.trusted => '完全信任',
+      AgentPermissionLoadState.ask => '每次询问',
+      AgentPermissionLoadState.unavailable => '权限状态暂不可同步',
+    };
+    final bridgeLabel = switch (bridgeStatus) {
+      DeviceBridgeStatus.connected => '设备桥接在线',
+      DeviceBridgeStatus.syncing => '设备桥接同步中',
+      DeviceBridgeStatus.degraded => '设备桥接异常',
+      DeviceBridgeStatus.offline => '设备桥接离线',
+      DeviceBridgeStatus.unknown => '设备桥接状态未知',
+    };
+    final bridgeColor = switch (bridgeStatus) {
+      DeviceBridgeStatus.connected => AppColors.success,
+      DeviceBridgeStatus.syncing ||
+      DeviceBridgeStatus.degraded =>
+        AppColors.warning,
+      DeviceBridgeStatus.offline => AppColors.danger,
+      DeviceBridgeStatus.unknown => colors.outline,
+    };
     return Semantics(
       button: true,
-      label: trusted ? '校园 Agent 权限：完全信任' : '校园 Agent 权限：每次询问',
+      label: '校园 Agent 权限：$permissionLabel，$bridgeLabel',
       hint: '点击打开 Agent 权限设置',
       child: Material(
         color: Colors.transparent,
@@ -242,7 +280,7 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      trusted ? '完全信任' : '每次询问',
+                      permissionLabel,
                       style: TextStyle(
                         color: isDark
                             ? colors.onSurfaceVariant
@@ -255,14 +293,14 @@ class AiAgentPermissionModeBar extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.success,
+                      decoration: BoxDecoration(
+                        color: bridgeColor,
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      '设备桥接在线',
+                      bridgeLabel,
                       style: TextStyle(
                         color: isDark
                             ? colors.onSurfaceVariant

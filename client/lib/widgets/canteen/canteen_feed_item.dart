@@ -11,11 +11,13 @@ import 'canteen_status_image.dart';
 class CanteenFeedItemCard extends StatefulWidget {
   final CanteenFeedItem item;
   final VoidCallback onTap;
+  final String? heroTag;
 
   const CanteenFeedItemCard({
     super.key,
     required this.item,
     required this.onTap,
+    this.heroTag,
   });
 
   @override
@@ -25,18 +27,19 @@ class CanteenFeedItemCard extends StatefulWidget {
 class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   bool _pressed = false;
 
+  String get _heroTag => widget.heroTag ?? 'canteen-feed-${widget.item.id}';
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: _pressed ? 0.985 : 1.0,
+      child: AnimatedOpacity(
+        opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
         child: widget.item.isRecentPhoto
@@ -81,7 +84,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Hero(
-                tag: 'canteen-${item.canteenId}',
+                tag: _heroTag,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
                   child: SizedBox(
@@ -280,6 +283,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   Widget _thumb(bool isDark, String url) {
     return CanteenStatusImage(
       imageUrl: url,
+      variant: 'thumb',
       offline: widget.item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
@@ -291,7 +295,8 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     final item = widget.item;
     if (item.image.isEmpty) return _placeholder(isDark);
     return CanteenStatusImage(
-      imageUrl: ApiConstants.fullUrl(item.image),
+      imageUrl: item.image,
+      variant: 'thumb',
       offline: item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

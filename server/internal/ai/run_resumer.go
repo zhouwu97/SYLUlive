@@ -112,9 +112,10 @@ func (r *Runtime) ResumeDeviceJob(ctx context.Context, jobID string) error {
 	default:
 		return nil
 	}
-	r.appendDeviceResumeTrace(ctx, job.RunID, "ai.device.job.completed", map[string]interface{}{
+	r.appendDeviceResumeTrace(ctx, job.RunID, deviceJobTerminalEvent(job.Status), map[string]interface{}{
 		"job_id": job.ID, "tool_call_id": job.ToolCallID, "tool_name": job.ToolName,
 		"datasets": deviceDatasetsForTool(job.ToolName), "status": job.Status,
+		"error_code":   job.ErrorCode,
 		"result_bytes": len(job.ResultJSON), "result_hash": job.ResultHash,
 	})
 
@@ -404,12 +405,14 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				r.appendDeviceResumeTrace(ctx, resume.RunID, "ai.device.result.consumed", map[string]interface{}{
 					"job_id": deviceJob.ID, "tool_call_id": item.CallID, "tool_name": deviceJob.ToolName,
 					"datasets": deviceDatasetsForTool(deviceJob.ToolName), "status": deviceJob.Status,
+					"error_code":   deviceJob.ErrorCode,
 					"result_bytes": len(deviceJob.ResultJSON), "result_hash": deviceJob.ResultHash,
 				})
 				retryContext = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
 					JobID: deviceJob.ID, ToolName: deviceJob.ToolName,
 					Dataset: deviceDatasetForTool(deviceJob.ToolName), Status: deviceJob.Status,
-					Result: json.RawMessage(deviceJob.ResultJSON),
+					ErrorCode: deviceJob.ErrorCode,
+					Result:    json.RawMessage(deviceJob.ResultJSON),
 				})
 			}
 			cachedResult, alreadyCommitted, readBackErr := r.readCommittedToolResult(ctx, item.CallID, resume.RunID, resume.UserID, item.ToolName)
@@ -565,6 +568,21 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	r.markQuotaConsumed(run.ID)
 	_, _ = r.appendEvent(ctx, run.ID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
 	r.completeRun(run.ID, outcome.answer, nil, usage, time.Since(startedAt), false)
+}
+
+func deviceJobTerminalEvent(status string) string {
+	switch status {
+	case models.DeviceToolJobCompleted:
+		return "ai.device.job.succeeded"
+	case models.DeviceToolJobFailed:
+		return "ai.device.job.failed"
+	case models.DeviceToolJobCancelled:
+		return "ai.device.job.cancelled"
+	case models.DeviceToolJobExpired:
+		return "ai.device.job.expired"
+	default:
+		return "ai.device.job.terminal"
+	}
 }
 
 // readCommittedToolResult 是恢复路径的副作用 read-back。Tool Call 已完成时，

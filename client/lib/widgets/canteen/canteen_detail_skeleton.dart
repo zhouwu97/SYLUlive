@@ -10,12 +10,14 @@ class CanteenDetailSkeleton extends StatelessWidget {
   final String imageUrl;
   final bool offline;
   final Object? heroTag;
+  final bool includeHero;
 
   const CanteenDetailSkeleton({
     super.key,
     this.imageUrl = '',
     this.offline = false,
     this.heroTag,
+    this.includeHero = true,
   });
 
   @override
@@ -45,10 +47,9 @@ class CanteenDetailSkeleton extends StatelessWidget {
             child: cover,
           );
 
-    return ListView(
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        // 入口封面在请求期间仍是真实 Hero，未知信息才使用骨架。
+    final children = <Widget>[
+      if (includeHero)
+        // 独立使用骨架时保留入口封面；详情页会把 Hero 提升到稳定的页面根布局。
         ClipRRect(
           borderRadius: const BorderRadius.vertical(
             bottom: Radius.circular(CanteenTheme.radiusLg),
@@ -59,40 +60,50 @@ class CanteenDetailSkeleton extends StatelessWidget {
             child: heroCover,
           ),
         ),
-        // 店名 / 评分 / 统计
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              block(180, 22, CanteenTheme.radiusSm),
-              const SizedBox(height: 12),
-              block(140, 14, CanteenTheme.radiusSm),
-              const SizedBox(height: 9),
-              block(110, 13, CanteenTheme.radiusSm),
-            ],
-          ),
+      // 店名 / 评分 / 统计
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            block(180, 22, CanteenTheme.radiusSm),
+            const SizedBox(height: 12),
+            block(140, 14, CanteenTheme.radiusSm),
+            const SizedBox(height: 9),
+            block(110, 13, CanteenTheme.radiusSm),
+          ],
         ),
-        const SizedBox(height: 28),
-        // “商家菜品”标题 + 图鉴横排
-        Padding(
+      ),
+      const SizedBox(height: 28),
+      // “商家菜品”标题 + 图鉴横排
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: block(96, 17, CanteenTheme.radiusSm),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 130,
+        child: ListView.separated(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: block(96, 17, CanteenTheme.radiusSm),
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 3,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (_, __) => block(148, 130, CanteenTheme.radiusMd),
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 130,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            scrollDirection: Axis.horizontal,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 3,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, __) => block(148, 130, CanteenTheme.radiusMd),
-          ),
-        ),
-        const SizedBox(height: 24),
-      ],
+      ),
+      const SizedBox(height: 24),
+    ];
+
+    if (!includeHero) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      );
+    }
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      children: children,
     );
   }
 
@@ -100,6 +111,7 @@ class CanteenDetailSkeleton extends StatelessWidget {
     if (imageUrl.trim().isEmpty) return _placeholder(isDark);
     return CanteenStatusImage(
       imageUrl: ApiConstants.fullUrl(imageUrl),
+      variant: 'medium',
       offline: offline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

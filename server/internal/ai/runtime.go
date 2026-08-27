@@ -331,7 +331,11 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return &RuntimeError{Code: "ai_budget_exceeded", Message: "AI 使用预算暂不可用"}
+			return &RuntimeError{
+				Code:      "ai_budget_exceeded",
+				Message:   "当前 AI 服务额度已达到平台限制",
+				Retryable: true,
+			}
 		}
 
 		runID, reservationID := uuid.NewString(), uuid.NewString()

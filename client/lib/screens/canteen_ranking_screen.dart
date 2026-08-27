@@ -89,7 +89,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           dishPhotoCount: item.dishPhotoCount,
           initialImage: item.image,
           initialOffline: item.isOffline,
-          heroTag: 'canteen-${item.id}',
+          heroTag: 'canteen-ranking-${item.id}',
         ),
       ),
     );

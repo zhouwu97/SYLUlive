@@ -141,9 +141,47 @@ class AiPersonalDataPermissionService {
           requestId: apiError.requestId,
         );
       }
-      return AiAgentPermissionMode.fromWireValue(
-        (response.data as Map)['mode']?.toString() ?? mode.wireValue,
-      );
+      // PUT 只代表服务端接受了写入请求；再读一次真实状态，避免接口返回 200
+      // 但事务未落稳时，客户端先切换了 UI。
+      AiAgentPermissionMode confirmedMode;
+      try {
+        confirmedMode = await getMode();
+      } on AiPersonalDataPermissionException catch (error) {
+        stopwatch.stop();
+        _recordSetModeFailure(
+          _AiPermissionApiError(
+            httpStatus: error.httpStatus,
+            code: (error.code ?? '').isNotEmpty
+                ? error.code!
+                : 'ai_permission_mode_sync_failed',
+            message: error.message,
+            requestId: error.requestId ?? '',
+          ),
+          stopwatch.elapsedMilliseconds,
+          _diagnosticWriter,
+        );
+        throw const AiPersonalDataPermissionException(
+          '权限状态同步失败，已保留原设置，请重试',
+          code: 'ai_permission_mode_sync_failed',
+        );
+      }
+      if (confirmedMode != mode) {
+        stopwatch.stop();
+        _recordSetModeFailure(
+          const _AiPermissionApiError(
+            code: 'ai_permission_mode_sync_mismatch',
+            message: '权限模式回读结果与目标不一致',
+          ),
+          stopwatch.elapsedMilliseconds,
+          _diagnosticWriter,
+        );
+        throw const AiPersonalDataPermissionException(
+          '权限状态同步失败，已保留原设置，请重试',
+          code: 'ai_permission_mode_sync_mismatch',
+        );
+      }
+      stopwatch.stop();
+      return confirmedMode;
     } on AiPersonalDataPermissionException {
       rethrow;
     } on DioException catch (error) {
@@ -289,7 +327,7 @@ String _setModeMessage(_AiPermissionApiError error) {
     case 403:
       return '当前账号没有修改 Agent 权限的权限';
     case 404:
-      return 'Agent 权限模式接口不存在，请更新应用';
+      return 'Agent 权限服务版本不匹配，请更新服务器后重试';
     case 409:
       return error.message.isNotEmpty ? error.message : 'Agent 权限模式正在变更，请稍后重试';
     default:

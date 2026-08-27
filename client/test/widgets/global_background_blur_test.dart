@@ -23,14 +23,14 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
   });
 
-  Future<ThemeProvider> _provider() async {
+  Future<ThemeProvider> providerForTest() async {
     final theme = ThemeProvider(loadOnStart: false);
     await theme.loadThemeForTesting();
     return theme;
   }
 
   testWidgets('简洁模式下不渲染任何模糊层', (tester) async {
-    final theme = await _provider();
+    final theme = await providerForTest();
     await theme.setBackgroundBlur(12);
     // 简洁模式下即使保留了模糊数值也不渲染
     expect(theme.isCleanBackgroundMode, isTrue);
@@ -43,7 +43,7 @@ void main() {
   });
 
   testWidgets('自定义背景 fillScreen 模式产生统一模糊层', (tester) async {
-    final theme = await _provider();
+    final theme = await providerForTest();
     // 横竖屏都配置，避免测试窗口方向触发兜底填充逻辑
     await theme.setBackgroundImage('portrait.jpg', fillScreen: true);
     await theme.setLandscapeBackgroundImage('landscape.jpg', fillScreen: true);
@@ -64,8 +64,28 @@ void main() {
     );
   });
 
+  testWidgets('背景按屏幕尺寸等比限制解码', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final theme = await providerForTest();
+    await theme.setBackgroundImage('portrait.jpg', fillScreen: true);
+    await theme.setLandscapeBackgroundImage('landscape.jpg', fillScreen: true);
+    await theme.setBackgroundBlur(0);
+
+    await tester.pumpWidget(_buildWrapper(theme));
+    await tester.pump();
+
+    final image = tester.widget<Image>(find.byType(Image));
+    final provider = image.image as ResizeImage;
+    expect(provider.width, 922);
+    expect(provider.height, 2048);
+  });
+
   testWidgets('自定义背景 contain 模式整个组合层被统一模糊', (tester) async {
-    final theme = await _provider();
+    final theme = await providerForTest();
     await theme.setBackgroundImage('portrait.jpg', fillScreen: false);
     await theme.setLandscapeBackgroundImage('landscape.jpg', fillScreen: false);
     await theme.setBackgroundBlur(12);
@@ -83,7 +103,7 @@ void main() {
   });
 
   testWidgets('blur 为 0 时不创建 ImageFiltered', (tester) async {
-    final theme = await _provider();
+    final theme = await providerForTest();
     await theme.setBackgroundImage('portrait.jpg', fillScreen: true);
     await theme.setLandscapeBackgroundImage('landscape.jpg', fillScreen: true);
     await theme.setBackgroundBlur(0);
@@ -97,7 +117,7 @@ void main() {
   });
 
   testWidgets('简洁模式下保存的模糊值不影响渲染，仅自定义模式生效', (tester) async {
-    final theme = await _provider();
+    final theme = await providerForTest();
     // 保留模糊数值但切回简洁模式
     await theme.setBackgroundBlur(20);
     await theme.setCleanBackgroundMode();

@@ -55,6 +55,15 @@ func TestLoadCompetitionAwardEvidenceDirDefaultsByEnvironmentAndAllowsOverride(t
 	require.Equal(t, "/srv/private/competition-evidence", overridden.CompetitionAwardEvidenceDir)
 }
 
+func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "")
+	require.False(t, Load().ImageVariantWorkerEnabled)
+
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
+	require.True(t, Load().ImageVariantWorkerEnabled)
+}
+
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("JWT_SECRET", "your-super-secret-jwt-key-change-this")

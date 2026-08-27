@@ -87,6 +87,11 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
+      # P2 补偿完成并验收前保持关闭。
+      - IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-false}
+      # 默认由 Go 直接输出；只有完成共享卷和 Nginx internal 验证后才开启。
+      - UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-false}
+      - UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
       - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
@@ -182,6 +187,8 @@ services:
     volumes:
       - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
       - ./client/build/web:/usr/share/nginx/html:ro
+      # 与 server_data 使用同一命名卷，仅以只读方式提供给 internal location。
+      - server_data:/var/lib/sylulive/uploads:ro
     depends_on:
       - server
     networks:

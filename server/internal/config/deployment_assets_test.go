@@ -95,6 +95,7 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		"JWT_SECRET=",
 		"SUPER_ADMIN_ID=",
 		"SUPER_ADMIN_PASSWORD=",
+		"IMAGE_VARIANT_WORKER_ENABLED=",
 		"AI_EXTERNAL_MCP_ENABLED=",
 		"AI_EXTERNAL_MCP_TRANSPORT=",
 		"AI_EXTERNAL_MCP_COMMAND=",
@@ -138,6 +139,135 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if !strings.Contains(dockerfileText, "openssh-client") {
 		t.Fatal("server 镜像启用 ssh_stdio 前必须安装 openssh-client")
 	}
+}
+
+// TestPublicUploadAccelDeploymentAssets 验证公开上传仍先经 Go 授权，再由 Nginx internal location 投递。
+func TestPublicUploadAccelDeploymentAssets(t *testing.T) {
+	repoRoot := deploymentRepoRoot(t)
+
+	nginxText := readDeploymentAsset(t, repoRoot, "nginx", "docker.conf")
+	composeText := strings.ReplaceAll(readDeploymentAsset(t, repoRoot, "docker-compose.yml"), "\r\n", "\n")
+	deployDoc := readDeploymentAsset(t, repoRoot, "DEPLOY.md")
+	mainSource := readDeploymentAsset(t, repoRoot, "server", "cmd", "main.go")
+
+	if !strings.Contains(nginxText, "location ^~ /uploads/ {") {
+		t.Fatal("公开上传必须使用明确的 /uploads/ 代理位置")
+	}
+	publicLocation := deploymentLocationBody(nginxText, "location ^~ /uploads/ {")
+	for _, expected := range []string{
+		"proxy_pass http://server:8080;",
+		"proxy_set_header Host $host;",
+		"proxy_set_header X-Real-IP $remote_addr;",
+		"proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"proxy_intercept_errors off;",
+	} {
+		if !strings.Contains(publicLocation, expected) {
+			t.Errorf("公开上传代理位置缺少授权传输配置 %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"alias ", "root ", "try_files ", "return 200"} {
+		if strings.Contains(publicLocation, forbidden) {
+			t.Errorf("公开上传位置不得包含绕过 Go 授权的静态配置 %q", forbidden)
+		}
+	}
+
+	if !strings.Contains(nginxText, "location ^~ /_internal/uploads/ {") {
+		t.Fatal("必须存在专用的公开上传 internal location")
+	}
+	internalLocation := deploymentLocationBody(nginxText, "location ^~ /_internal/uploads/ {")
+	for _, expected := range []string{
+		"internal;",
+		"alias /var/lib/sylulive/uploads/;",
+		"disable_symlinks on from=/var/lib/sylulive/uploads/;",
+		"autoindex off;",
+		"sendfile on;",
+		"aio threads;",
+	} {
+		if !strings.Contains(internalLocation, expected) {
+			t.Errorf("internal 上传位置缺少安全或传输配置 %q", expected)
+		}
+	}
+	if strings.Contains(internalLocation, "proxy_pass ") {
+		t.Fatal("internal 上传位置必须由 Nginx 直接投递文件，不能再次代理")
+	}
+
+	serverBlock := deploymentServiceBody(t, composeText, "server")
+	nginxBlock := deploymentServiceBody(t, composeText, "nginx")
+	if !strings.Contains(serverBlock, "- server_data:/app/uploads") {
+		t.Fatal("Go 服务必须挂载公开上传共享卷")
+	}
+	if !strings.Contains(nginxBlock, "- server_data:/var/lib/sylulive/uploads:ro") {
+		t.Fatal("Nginx 只能以只读方式挂载公开上传共享卷")
+	}
+	if strings.Contains(nginxBlock, "exam_paper_data") || strings.Contains(nginxBlock, "competition_award_evidence_data") {
+		t.Fatal("Nginx 不得挂载试卷或竞赛证明材料私有卷")
+	}
+	for _, expected := range []string{
+		"UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-false}",
+		"UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}",
+		"IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-false}",
+	} {
+		if !strings.Contains(serverBlock, expected) {
+			t.Errorf("Go 服务必须默认关闭公开上传 X-Accel 开关并固定内部前缀 %q", expected)
+		}
+	}
+	if !strings.Contains(mainSource, "if cfg.ImageVariantWorkerEnabled {") ||
+		!strings.Contains(mainSource, "services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)") {
+		t.Fatal("main.go 必须仅在 IMAGE_VARIANT_WORKER_ENABLED 开启时启动变体 worker")
+	}
+
+	for _, expected := range []string{
+		"UPLOAD_USE_ACCEL_REDIRECT=false",
+		"UPLOAD_ACCEL_PREFIX=/_internal/uploads/",
+		"IMAGE_VARIANT_WORKER_ENABLED=false",
+		"IMAGE_VARIANT_WORKER_ENABLED=true",
+		"补偿任务",
+		"仅在",
+		"nginx -t",
+		"P2 worker",
+		"P3",
+		"停 worker",
+		"继续返回 origin URL",
+		"不得删除文件",
+		"private, no-store",
+	} {
+		if !strings.Contains(deployDoc, expected) {
+			t.Errorf("部署文档缺少 P3 开关、发布或回退约束 %q", expected)
+		}
+	}
+}
+
+func deploymentLocationBody(config, marker string) string {
+	start := strings.Index(config, marker)
+	if start < 0 {
+		return ""
+	}
+	remaining := config[start+len(marker):]
+	if end := strings.Index(remaining, "\n    }"); end >= 0 {
+		return remaining[:end]
+	}
+	return remaining
+}
+
+func deploymentServiceBody(t *testing.T, compose, service string) string {
+	t.Helper()
+	marker := "\n  " + service + ":\n"
+	start := strings.Index(compose, marker)
+	if start < 0 {
+		t.Fatalf("Docker Compose 缺少服务 %q", service)
+	}
+	remaining := compose[start+len(marker):]
+	lines := strings.Split(remaining, "\n")
+	for index, line := range lines {
+		if index == 0 {
+			continue
+		}
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(line, ":") {
+			return strings.Join(lines[:index], "\n")
+		}
+	}
+	return remaining
 }
 
 // TestPaperStorageDeploymentAssets 验证文件服务部署资产维持最小权限、私有文件和密钥隔离边界。

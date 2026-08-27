@@ -26,7 +26,7 @@ func newUploadTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}); err != nil {
+	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}, &models.ImageVariant{}); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
 	return db

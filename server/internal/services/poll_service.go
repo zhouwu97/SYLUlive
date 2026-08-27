@@ -433,7 +433,7 @@ func (s *PollService) Get(pollID, viewerID uint) (models.Post, error) {
 
 func (s *PollService) GetByPostID(postID, viewerID uint) (models.Post, error) {
 	var post models.Post
-	if err := s.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, postID).Error; err != nil {
+	if err := s.db.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).First(&post, postID).Error; err != nil {
 		return models.Post{}, newPollError(PollCodeNotFound, "投票不存在")
 	}
 	if post.ContentKind != models.PostContentKindPoll || post.Status == models.PostStatusDeleted {
@@ -469,7 +469,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 
 	var posts []models.Post
 	if input.Sort == "recommend" {
-		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Limit(500).Find(&posts).Error; err != nil {
+		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(500).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {
@@ -484,7 +484,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		} else {
 			query = query.Order("posts.created_at DESC")
 		}
-		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Offset((input.Page - 1) * input.Limit).Limit(input.Limit).Find(&posts).Error; err != nil {
+		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Offset((input.Page - 1) * input.Limit).Limit(input.Limit).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {

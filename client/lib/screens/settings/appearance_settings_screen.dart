@@ -14,6 +14,7 @@ import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
+import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
 
@@ -111,19 +112,27 @@ class AppearanceSettingsScreen extends StatelessWidget {
         !themeProvider.isCleanBackgroundMode) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
       final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-      final imageProvider = isAsset
-          ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
-              as ImageProvider
-          : isLocalFile
-              ? FileImage(File(bgPath)) as ImageProvider
-              : NetworkImage(bgPath) as ImageProvider;
-
-      backgroundWidget = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
-        errorBuilder: (_, __, ___) => Container(color: pageBgColor),
-      );
+      if (isAsset || isLocalFile) {
+        final imageProvider = isAsset
+            ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
+                as ImageProvider
+            : FileImage(File(bgPath)) as ImageProvider;
+        backgroundWidget = Image(
+          image: imageProvider,
+          fit: BoxFit.cover,
+          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          errorBuilder: (_, __, ___) => Container(color: pageBgColor),
+        );
+      } else {
+        backgroundWidget = AppCachedImage.public(
+          imageUrl: bgPath,
+          fit: BoxFit.cover,
+          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          memCacheWidth: 1024,
+          memCacheHeight: 1024,
+          errorWidget: (_, __, ___) => Container(color: pageBgColor),
+        );
+      }
 
       // 微缩预览按实际显示比例缩小模糊值，避免小预览糊成一整块。
       final customBackgroundActive =

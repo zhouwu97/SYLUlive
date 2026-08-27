@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
+import '../widgets/app_cached_image.dart';
 import 'post_detail_screen.dart';
 import 'dart:io' show File;
 
@@ -265,10 +266,12 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _gradient(d),
                     )
-                  : Image.network(
-                      bg,
+                  : AppCachedImage.public(
+                      imageUrl: bg,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _gradient(d),
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) => _gradient(d),
                     ),
           Container(
             color: d

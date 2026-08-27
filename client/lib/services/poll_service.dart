@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/post.dart';
+import '../utils/public_image_compressor.dart';
 
 class PollApiException implements Exception {
   final String code;
@@ -69,6 +70,7 @@ class PollDraft {
 
 class PollService {
   final Dio dio;
+  final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
 
   PollService(this.dio);
 
@@ -144,19 +146,25 @@ class PollService {
 
   Future<List<int>> uploadImages(List<XFile> images) async {
     final ids = <int>[];
-    for (final image in images) {
-      final bytes = await image.readAsBytes();
+    for (final source in images) {
+      final prepared = await _publicImageCompressor.prepare(source);
       try {
+        final bytes = await prepared.file.readAsBytes();
         final response = await dio.post(
           '/upload',
           data: FormData.fromMap({
-            'file': MultipartFile.fromBytes(bytes, filename: image.name),
+            'file': MultipartFile.fromBytes(
+              bytes,
+              filename: prepared.file.name,
+            ),
           }),
         );
         final value = response.data is Map ? response.data['file_id'] : null;
         if (value is num) ids.add(value.toInt());
       } on DioException catch (error) {
         throw _mapError(error);
+      } finally {
+        await prepared.dispose();
       }
     }
     return ids;

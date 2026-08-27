@@ -315,7 +315,7 @@ func Load() *Config {
 	}
 	aiChatModel := firstNonEmptyEnv("AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
 	if aiChatModel == "" {
-		aiChatModel = "gpt-5.4-mini"
+		aiChatModel = "gpt-5.4"
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
@@ -591,8 +591,8 @@ func validateAIConfig(
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
-	if model != "gpt-5.4-mini" {
-		return fmt.Errorf("AI_CHAT_MODEL 必须是 gpt-5.4-mini")
+	if model != "gpt-5.4" && model != "gpt-5.4-mini" {
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4 或 gpt-5.4-mini")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {

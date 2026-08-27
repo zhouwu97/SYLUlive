@@ -247,7 +247,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               isDeviceConsent
                   ? '为了回答当前问题，Agent 会检查数据新鲜度，必要时刷新并读取${requestedData.isEmpty ? '相关校园数据' : requestedData}，然后只回传本次问题所需的最小化摘要。\n\n不会读取密码、Cookie、Token 或设备标识。此选择只对当前请求生效，不会修改长期设置。'
                   : consent.consentScope == 'ai_external_model_analysis'
-                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
                       : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
             ),
             actions: [

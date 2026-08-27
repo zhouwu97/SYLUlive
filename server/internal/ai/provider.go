@@ -110,16 +110,17 @@ func (e *ProviderError) Error() string { return e.Class }
 func (e *ProviderError) Unwrap() error { return e.Err }
 
 const (
-	ProviderErrorAuthentication  = "authentication_error"
-	ProviderErrorRateLimited     = "rate_limited"
-	ProviderErrorTimeout         = "provider_timeout"
-	ProviderErrorUnavailable     = "provider_unavailable"
-	ProviderErrorInvalid         = "invalid_response"
-	ProviderErrorCancelled       = "context_cancelled"
-	ProviderErrorRejected        = "content_rejected"
-	ProviderErrorRequestRejected = "provider_request_rejected"
-	ProviderErrorOutputLimit     = "output_limit_reached"
-	ProviderErrorUnknown         = "unknown_provider_error"
+	ProviderErrorAuthentication   = "authentication_error"
+	ProviderErrorRateLimited      = "rate_limited"
+	ProviderErrorTimeout          = "provider_timeout"
+	ProviderErrorUnavailable      = "provider_unavailable"
+	ProviderErrorInvalid          = "invalid_response"
+	ProviderErrorCancelled        = "context_cancelled"
+	ProviderErrorRejected         = "content_rejected"
+	ProviderErrorRequestRejected  = "provider_request_rejected"
+	ProviderErrorModelUnavailable = "provider_model_unavailable"
+	ProviderErrorOutputLimit      = "output_limit_reached"
+	ProviderErrorUnknown          = "unknown_provider_error"
 )
 
 // Provider 隔离外部模型厂商，生产实现与测试 Mock 必须遵守相同取消语义。

@@ -91,13 +91,17 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 func buildLiveRunner(ctx context.Context, k int, getenv func(string) string) (*ai.EvaluationRunner, func(), error) {
 	apiKey := firstConfiguredValue(getenv, "AI_API_KEY", "DEEPSEEK_API_KEY")
 	baseURL := firstConfiguredValue(getenv, "AI_BASE_URL", "DEEPSEEK_BASE_URL")
+	chatModel := firstConfiguredValue(getenv, "AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
+	if chatModel == "" {
+		chatModel = "gpt-5.4"
+	}
 	required := map[string]string{
 		"DATABASE_DSN":      strings.TrimSpace(getenv("DATABASE_DSN")),
 		"RAG_SERVICE_URL":   strings.TrimSpace(getenv("RAG_SERVICE_URL")),
 		"RAG_SERVICE_TOKEN": strings.TrimSpace(getenv("RAG_SERVICE_TOKEN")),
 		"AI_API_KEY":        apiKey,
 		"AI_BASE_URL":       baseURL,
-		"AI_CHAT_MODEL":     "gpt-5.4-mini",
+		"AI_CHAT_MODEL":     chatModel,
 	}
 	missing := make([]string, 0)
 	for _, name := range []string{"DATABASE_DSN", "RAG_SERVICE_URL", "RAG_SERVICE_TOKEN", "AI_API_KEY", "AI_BASE_URL"} {

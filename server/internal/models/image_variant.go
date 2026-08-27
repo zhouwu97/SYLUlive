@@ -16,8 +16,10 @@ const (
 // ImageVariant 保存可公开读取图片的版本化静态变体及其生成状态。
 // 同一文件、变体名称与配方版本只能有一条记录，避免重复生成和旧配方互相覆盖。
 type ImageVariant struct {
-	ID            uint               `gorm:"primaryKey" json:"id"`
-	FileID        uint               `gorm:"not null;uniqueIndex:idx_image_variant_recipe,priority:1" json:"file_id"`
+	ID     uint `gorm:"primaryKey" json:"id"`
+	FileID uint `gorm:"not null;uniqueIndex:idx_image_variant_recipe,priority:1" json:"file_id"`
+	// 变体属于 files，而不是某一种图片关联（帖子图片和回复图片都可能引用同一文件）。
+	File          File               `gorm:"foreignKey:FileID" json:"-"`
 	Variant       string             `gorm:"size:16;not null;uniqueIndex:idx_image_variant_recipe,priority:2" json:"variant"`
 	RecipeVersion int                `gorm:"not null;uniqueIndex:idx_image_variant_recipe,priority:3" json:"recipe_version"`
 	Status        ImageVariantStatus `gorm:"size:16;not null;default:'pending';check:chk_image_variant_status,status IN ('pending','running','ready','failed','unsupported');index" json:"status"`

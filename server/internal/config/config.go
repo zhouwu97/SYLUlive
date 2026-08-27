@@ -16,6 +16,7 @@ type Config struct {
 	JWTSecret                        string // JWT密钥
 	DSN                              string // 数据库连接字符串
 	UploadDir                        string // 文件上传目录
+	ImageVariantWorkerEnabled        bool   // 是否启动异步图片变体 worker
 	HomeFeedPersonalizationShadow    bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
 	HomeFeedPersonalizationPercent   int    // FEED-5 个性化 active rollout 百分比（0~100）
 	HomeFeedV5PersonalizationShadow  bool   // FEED-V5 个性化 shadow
@@ -160,6 +161,7 @@ func Load() *Config {
 	if uploadDir == "" {
 		uploadDir = "./uploads"
 	}
+	imageVariantWorkerEnabled := envBool("IMAGE_VARIANT_WORKER_ENABLED", false)
 
 	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
 	if examPaperDir == "" {
@@ -404,6 +406,7 @@ func Load() *Config {
 		JWTSecret:                        jwtSecret,
 		DSN:                              dsn,
 		UploadDir:                        uploadDir,
+		ImageVariantWorkerEnabled:        imageVariantWorkerEnabled,
 		HomeFeedPersonalizationShadow:    homeFeedShadow(),
 		HomeFeedPersonalizationPercent:   homeFeedPercent(),
 		HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),

@@ -6,6 +6,7 @@ import '../models/team_recruitment.dart';
 import '../models/water_team.dart';
 import '../services/team_recruitment_service.dart';
 import '../services/idempotency_key.dart';
+import '../utils/public_image_compressor.dart';
 
 /// 组队大厅首屏状态，网络失败不能伪装成空列表。
 enum TeamFeedViewState {
@@ -43,6 +44,7 @@ enum TeamErrorType {
 /// 组队大厅独立状态；不会刷新或修改普通水帖的信息流缓存。
 class TeamRecruitmentProvider extends ChangeNotifier {
   final Dio _dio;
+  final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
   late final TeamRecruitmentService _service = TeamRecruitmentService(_dio);
 
   TeamRecruitmentProvider(this._dio);
@@ -653,16 +655,24 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   Future<List<int>> _uploadImages(List<XFile> images) async {
     final fileIds = <int>[];
-    for (final image in images) {
-      final bytes = await image.readAsBytes();
-      final response = await _dio.post('/upload',
-          data: FormData.fromMap({
-            'file': MultipartFile.fromBytes(bytes, filename: image.name),
-          }));
-      final id =
-          (response.data is Map ? response.data['file_id'] : null) as num?;
-      if (id == null) throw StateError('图片上传失败');
-      fileIds.add(id.toInt());
+    for (final source in images) {
+      final prepared = await _publicImageCompressor.prepare(source);
+      try {
+        final bytes = await prepared.file.readAsBytes();
+        final response = await _dio.post('/upload',
+            data: FormData.fromMap({
+              'file': MultipartFile.fromBytes(
+                bytes,
+                filename: prepared.file.name,
+              ),
+            }));
+        final id =
+            (response.data is Map ? response.data['file_id'] : null) as num?;
+        if (id == null) throw StateError('图片上传失败');
+        fileIds.add(id.toInt());
+      } finally {
+        await prepared.dispose();
+      }
     }
     return fileIds;
   }

@@ -94,6 +94,28 @@ void main() {
     expect(image.cacheKey, equals('pm:42:$testUrl'));
   });
 
+  testWidgets('查看器按屏幕尺寸等比限制网络图片解码', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          imageUrls: ['https://example.test/origin.jpg'],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(image.memCacheWidth, 922);
+    expect(image.memCacheHeight, 2048);
+  });
+
   testWidgets('全屏私信图片长按保存时，私有缓存未命中严禁回退到公开/默认缓存', (tester) async {
     final fakePrivateCache = _TrackingFakeCacheManager();
     const testUrl = 'https://example.test/private.jpg';

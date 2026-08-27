@@ -43,8 +43,10 @@ type EduFetchBundleRequest struct {
 }
 
 type eduFetchFlight struct {
-	done   chan struct{}
-	result academic.ContextResult
+	done    chan struct{}
+	result  academic.ContextResult
+	cancel  context.CancelFunc
+	waiters int
 }
 
 // EduFetchOrchestrator 统一处理缓存优先、远程抓取去重、并发上限和旧快照回退。
@@ -108,19 +110,21 @@ func (orchestrator *EduFetchOrchestrator) Fetch(ctx context.Context, userID uint
 	}
 
 	flightKey := fmt.Sprintf("%d:%d:%s:%s", userID, generation, dataset.Type, scopeKey)
-	flight, leader := orchestrator.joinFlight(flightKey)
-	if !leader {
-		select {
-		case <-ctx.Done():
-			return academic.ContextResult{}, ctx.Err()
-		case <-flight.done:
-			return flight.result, nil
-		}
+	flight, leader, flightCtx := orchestrator.joinFlight(flightKey)
+	if leader {
+		go func() {
+			result := orchestrator.fetchRemote(flightCtx, userID, generation, request, dataset, scopeKey, lookup)
+			orchestrator.finishFlight(flightKey, flight, result)
+		}()
 	}
 
-	result := orchestrator.fetchRemote(ctx, userID, generation, request, dataset, scopeKey, lookup)
-	orchestrator.finishFlight(flightKey, flight, result)
-	return result, nil
+	select {
+	case <-ctx.Done():
+		orchestrator.leaveFlight(flightKey, flight)
+		return academic.ContextResult{}, ctx.Err()
+	case <-flight.done:
+		return flight.result, nil
+	}
 }
 
 // FetchBundle 逐项复用同一套飞行任务；同一个 AI Run 中的重复数据集只会执行一次远程抓取。
@@ -151,15 +155,13 @@ func (orchestrator *EduFetchOrchestrator) FetchBundle(ctx context.Context, reque
 }
 
 func (orchestrator *EduFetchOrchestrator) fetchRemote(ctx context.Context, userID, generation uint, request EduFetchRequest, dataset clients.EduContextDataset, scopeKey string, staleSnapshot AcademicSnapshotLookup) academic.ContextResult {
-	contextWithTimeout, cancel := context.WithTimeout(ctx, orchestrator.timeout)
-	defer cancel()
 	select {
 	case orchestrator.workers <- struct{}{}:
 		defer func() { <-orchestrator.workers }()
-	case <-contextWithTimeout.Done():
-		return orchestrator.remoteFailureResult(contextWithTimeout.Err(), request.Dataset, staleSnapshot)
+	case <-ctx.Done():
+		return orchestrator.remoteFailureResult(ctx.Err(), request.Dataset, staleSnapshot)
 	}
-	bundle, err := orchestrator.client.FetchContextBundle(contextWithTimeout, userID, []clients.EduContextDataset{dataset})
+	bundle, err := orchestrator.client.FetchContextBundle(ctx, userID, []clients.EduContextDataset{dataset})
 	if err != nil {
 		return orchestrator.remoteFailureResult(err, request.Dataset, staleSnapshot)
 	}
@@ -172,7 +174,7 @@ func (orchestrator *EduFetchOrchestrator) fetchRemote(ctx context.Context, userI
 	}
 	now := orchestrator.now()
 	isPartial := bundle.Partial
-	if err := orchestrator.snapshots.StoreRemote(contextWithTimeout, AcademicSnapshotInput{
+	if err := orchestrator.snapshots.StoreRemote(ctx, AcademicSnapshotInput{
 		UserID: userID, Dataset: request.Dataset, ScopeKey: scopeKey, SchemaVersion: 1,
 		Source: academic.DataSourceRemoteEduFetch, Payload: item.Data, FetchedAt: now,
 		ExpiresAt: orchestrator.snapshotExpiry(request, now), IsPartial: isPartial, CredentialGeneration: generation,
@@ -204,20 +206,36 @@ func (orchestrator *EduFetchOrchestrator) fetchRemote(ctx context.Context, userI
 	}
 }
 
-func (orchestrator *EduFetchOrchestrator) joinFlight(key string) (*eduFetchFlight, bool) {
+func (orchestrator *EduFetchOrchestrator) joinFlight(key string) (*eduFetchFlight, bool, context.Context) {
 	orchestrator.mu.Lock()
 	defer orchestrator.mu.Unlock()
 	if existing := orchestrator.inflight[key]; existing != nil {
-		return existing, false
+		existing.waiters++
+		return existing, false, nil
 	}
-	flight := &eduFetchFlight{done: make(chan struct{})}
+	flightCtx, cancel := context.WithTimeout(context.Background(), orchestrator.timeout)
+	flight := &eduFetchFlight{
+		done:    make(chan struct{}),
+		cancel:  cancel,
+		waiters: 1,
+	}
 	orchestrator.inflight[key] = flight
-	return flight, true
+	return flight, true, flightCtx
+}
+
+func (orchestrator *EduFetchOrchestrator) leaveFlight(key string, flight *eduFetchFlight) {
+	orchestrator.mu.Lock()
+	defer orchestrator.mu.Unlock()
+	flight.waiters--
+	if flight.waiters <= 0 {
+		flight.cancel()
+	}
 }
 
 func (orchestrator *EduFetchOrchestrator) finishFlight(key string, flight *eduFetchFlight, result academic.ContextResult) {
 	orchestrator.mu.Lock()
 	flight.result = result
+	flight.cancel()
 	delete(orchestrator.inflight, key)
 	close(flight.done)
 	orchestrator.mu.Unlock()

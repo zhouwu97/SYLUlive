@@ -566,6 +566,50 @@ void main() {
     expect(provider.pendingConsent?.consentScope, 'ai_device_cache_access');
   });
 
+  test('deviceWaiting SSE 立即主动补拉设备任务且 Run 保持运行中', () async {
+    var syncCalls = 0;
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+      deviceToolSync: () async {
+        syncCalls++;
+      },
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-device',
+      seq: 1,
+      type: AiRunEventType.deviceWaiting,
+      datasets: ['grades', 'academic_situation', 'credit_requirements'],
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(syncCalls, 1);
+    expect(provider.isRunning, isTrue);
+    expect(provider.agentFlowCompleted, isFalse);
+  });
+
+  test('风险分析的二课可选动作会保留为客户端入口', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(AiRunEvent.fromJson({
+      'run_id': 'run-erke',
+      'seq': 1,
+      'type': 'tool.completed',
+      'payload': {
+        'tool_name': 'academic.get_risk_analysis',
+        'optional_actions': ['update_erke'],
+      },
+    }));
+
+    expect(provider.hasOptionalErkeUpdate, isTrue);
+  });
+
   test('完成事件中的笼统来源标记会从 Run 来源接口恢复引用', () async {
     final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));

@@ -1220,16 +1220,24 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if !hasCall {
 		return nil
 	}
+	// 风险分析从设备任务恢复时，设备结果（即使仍不完整）就是本次 Tool Call
+	// 唯一允许使用的刷新尝试。这里必须短路，避免恢复后再次创建同一 bundle。
+	if request.Reason == "academic_risk_analysis" && hasResumedAcademicRiskBundle(ctx) {
+		return nil
+	}
 	if mcp.deviceJobs == nil {
 		return nil
 	}
 	waitDatasets := deviceWaitDatasets(request)
-	needsDevice := false
-	for _, dataset := range waitDatasets {
-		result := results[dataset]
-		if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
-			needsDevice = true
-			break
+	needsDevice := request.Reason == "academic_risk_analysis" &&
+		needsAcademicRiskRefresh(results)
+	if !needsDevice {
+		for _, dataset := range waitDatasets {
+			result := results[dataset]
+			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+				needsDevice = true
+				break
+			}
 		}
 	}
 	if !needsDevice {
@@ -1237,6 +1245,10 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
 	if err != nil {
+		if request.Reason == "academic_risk_analysis" {
+			markAcademicRiskRefreshUnavailable(results, academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
+			return nil
+		}
 		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -1246,6 +1258,10 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	if denied {
+		if request.Reason == "academic_risk_analysis" {
+			markAcademicRiskRefreshUnavailable(results, academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
+			return nil
+		}
 		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -1268,6 +1284,10 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			request.Reason,
 		)
 		if refreshErr != nil {
+			if request.Reason == "academic_risk_analysis" {
+				markAcademicRiskRefreshUnavailable(results, academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
+				return nil
+			}
 			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -1277,6 +1297,10 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return nil
 		}
 		if refreshDenied {
+			if request.Reason == "academic_risk_analysis" {
+				markAcademicRiskRefreshUnavailable(results, academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
+				return nil
+			}
 			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -1342,6 +1366,56 @@ func deviceWaitDatasets(request academic.ResolveContextRequest) []academic.Datas
 		}
 	}
 	return request.Datasets
+}
+
+// academicRiskCoreDatasets 是风险分析的阻断数据；二课缺失只会减少覆盖范围，
+// 不得阻断成绩、学分和学业情况的核心分析。
+func academicRiskCoreDatasets() []academic.DatasetType {
+	return []academic.DatasetType{
+		academic.DatasetGrades,
+		academic.DatasetCreditRequirements,
+		academic.DatasetAcademicSituation,
+	}
+}
+
+func academicRiskDatasetNeedsRefresh(result academic.ContextResult) bool {
+	return result.Status == academic.DataStatusMissing ||
+		result.Status == academic.DataStatusNeedsRefresh ||
+		result.Status == academic.DataStatusStale ||
+		result.Status == academic.DataStatusPartial ||
+		result.IsStale || result.IsPartial
+}
+
+func needsAcademicRiskRefresh(results map[academic.DatasetType]academic.ContextResult) bool {
+	for _, dataset := range academicRiskCoreDatasets() {
+		if academicRiskDatasetNeedsRefresh(results[dataset]) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasResumedAcademicRiskBundle(ctx context.Context) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == "device.academic.ensure_fresh_bundle" &&
+		resume.Dataset == "academic_bundle"
+}
+
+// markAcademicRiskRefreshUnavailable 保留仍可解释的旧快照，避免一次权限或网络
+// 故障抹掉已有事实；只有原本没有可用数据的数据集才替换为不可用状态。
+func markAcademicRiskRefreshUnavailable(results map[academic.DatasetType]academic.ContextResult, status academic.DataStatus, warning string) {
+	for _, dataset := range academicRiskCoreDatasets() {
+		result := results[dataset]
+		if !academicRiskDatasetNeedsRefresh(result) {
+			continue
+		}
+		if usablePersonalResult(result) {
+			result.Warnings = uniqueStrings(append(result.Warnings, warning))
+			results[dataset] = result
+			continue
+		}
+		results[dataset] = personalContextUnavailable(status, warning)
+	}
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
@@ -1497,8 +1571,14 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		}
 		result := lookup.Result
 		if request.Freshness == academic.FreshnessRequireFresh && result.IsStale {
-			result.Status = academic.DataStatusNeedsRefresh
-			result.Warnings = append(result.Warnings, "该问题要求最新数据，需要刷新后再分析")
+			if request.Reason == "academic_risk_analysis" && hasResumedAcademicRiskBundle(ctx) {
+				// 本轮已刷新过但仍只能得到旧快照时，保留可解释的 stale 数据，
+				// 供风险工具给出覆盖边界；不能把它再次升级成等待刷新。
+				result.Warnings = append(result.Warnings, "本轮已尝试刷新，以下仅使用仍可读取的旧快照")
+			} else {
+				result.Status = academic.DataStatusNeedsRefresh
+				result.Warnings = append(result.Warnings, "该问题要求最新数据，需要刷新后再分析")
+			}
 		}
 		results[dataset] = result
 	}
@@ -1533,11 +1613,9 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 		return academic.ContextResult{}, false
 	}
 	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
-		code := strings.TrimSpace(resume.ErrorCode)
-		if code == "" {
-			code = "device_job_failed"
-		}
-		return personalContextUnavailableWithCode(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据", code), true
+		// 失败的刷新不覆盖服务端已有快照。调用方会通过 refresh 状态向模型
+		// 明确说明边界，并且 waitForPersonalContext 会阻止同一 Call 重复排队。
+		return academic.ContextResult{}, false
 	}
 	if resume.Dataset == "academic_bundle" {
 		var bundle struct {
@@ -1696,6 +1774,7 @@ func (mcp *campusMCP) getRiskAnalysis(ctx context.Context, userID uint, argument
 		return *wait, nil
 	}
 	data, warnings := buildAcademicRiskAnalysis(results, requested)
+	appendAcademicRiskRefreshOutcome(ctx, results, data, &warnings)
 	return aggregatePersonalToolResult(data, results, warnings), nil
 }
 
@@ -1984,31 +2063,35 @@ func academicGradeText(item map[string]interface{}) string {
 
 func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.ContextResult, requested []academic.DatasetType) (map[string]interface{}, []string) {
 	data := map[string]interface{}{
-		"coverage":   make(map[string]string, len(requested)),
-		"risks":      make([]string, 0),
-		"actions":    make([]string, 0),
-		"to_confirm": make([]string, 0),
+		"coverage":         make(map[string]string, len(requested)),
+		"risks":            make([]string, 0),
+		"actions":          make([]string, 0),
+		"to_confirm":       make([]string, 0),
+		"optional_missing": make([]string, 0),
 	}
 	warnings := make([]string, 0)
 	coverage := data["coverage"].(map[string]string)
 	risks := data["risks"].([]string)
 	actions := data["actions"].([]string)
 	toConfirm := data["to_confirm"].([]string)
+	optionalMissing := data["optional_missing"].([]string)
 	usableCount := 0
-	incompleteData := false
+	coreUsableCount := 0
+	coreIncomplete := false
 
 	grades := results[academic.DatasetGrades]
 	coverage[string(academic.DatasetGrades)] = string(grades.Status)
 	if usablePersonalResult(grades) {
 		usableCount++
+		coreUsableCount++
 		summary := summarizeGrades(grades.Data)
 		data["grades"] = summary
-		if grades.IsStale {
-			incompleteData = true
+		if grades.Status == academic.DataStatusStale || grades.IsStale {
+			coreIncomplete = true
 			toConfirm = append(toConfirm, "成绩快照已过期，最新变动请先刷新教务数据后再核对")
 		}
-		if grades.IsPartial {
-			incompleteData = true
+		if grades.Status == academic.DataStatusPartial || grades.IsPartial {
+			coreIncomplete = true
 			toConfirm = append(toConfirm, "成绩快照覆盖不完整，不能据此断言全部学期没有风险")
 		}
 		if summary.FailedCourseCount > 0 {
@@ -2024,6 +2107,7 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 			toConfirm = append(toConfirm, "补齐未知成绩课程的最终成绩和通过状态")
 		}
 	} else {
+		coreIncomplete = true
 		warnings = append(warnings, grades.Warnings...)
 		toConfirm = append(toConfirm, "刷新或授权读取成绩快照后再判断挂科风险")
 	}
@@ -2036,14 +2120,18 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		coverage[string(dataset)] = string(result.Status)
 		if usablePersonalResult(result) {
 			usableCount++
-			if result.IsStale || result.IsPartial {
-				incompleteData = true
+			coreUsableCount++
+			if result.Status == academic.DataStatusStale ||
+				result.Status == academic.DataStatusPartial ||
+				result.IsStale || result.IsPartial {
+				coreIncomplete = true
 			}
 			if len(credit) == 0 || (len(credit) == 1 && credit["available"] == true) {
 				credit = extractCreditFields(result.Data)
 			}
 			creditAvailable = true
 		} else {
+			coreIncomplete = true
 			warnings = append(warnings, result.Warnings...)
 		}
 	}
@@ -2068,8 +2156,9 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	coverage[string(academic.DatasetErke)] = string(erke.Status)
 	if usablePersonalResult(erke) {
 		usableCount++
-		if erke.IsStale || erke.IsPartial {
-			incompleteData = true
+		if erke.Status == academic.DataStatusStale ||
+			erke.Status == academic.DataStatusPartial || erke.IsStale || erke.IsPartial {
+			toConfirm = append(toConfirm, "二课快照覆盖不完整或已过期，二课风险仅供参考")
 		}
 		overview := extractErkeOverview(erke.Data)
 		data["erke"] = overview
@@ -2079,15 +2168,27 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		}
 	} else {
 		warnings = append(warnings, erke.Warnings...)
-		toConfirm = append(toConfirm, "确认二课快照是否已上传及其认定口径")
+		optionalMissing = append(optionalMissing, string(academic.DatasetErke))
+		toConfirm = append(toConfirm, "二课风险暂未纳入；可在需要时更新二课数据后重新分析")
 	}
 
 	data["available_dataset_count"] = usableCount
 	data["requested_dataset_count"] = len(requested)
-	if len(risks) == 0 && !incompleteData && usableCount >= len(requested) {
+	data["core_available_dataset_count"] = coreUsableCount
+	data["core_requested_dataset_count"] = len(academicRiskCoreDatasets())
+	data["optional_missing"] = uniqueStrings(optionalMissing)
+	if len(optionalMissing) > 0 {
+		// 这是显式的后续入口描述，不触发后台请求，也不会索取或上传二课密码。
+		data["optional_actions"] = []map[string]interface{}{{
+			"id":                        "update_erke",
+			"label":                     "更新二课数据",
+			"requires_user_credentials": true,
+		}}
+	}
+	if len(risks) == 0 && !coreIncomplete && coreUsableCount >= len(academicRiskCoreDatasets()) {
 		data["risk_level"] = "no_observed_risk"
 		toConfirm = append(toConfirm, "毕业学分、必修课和二课要求以学校当期培养方案及教务审核为准")
-	} else if incompleteData || usableCount < len(requested) {
+	} else if coreIncomplete || coreUsableCount < len(academicRiskCoreDatasets()) {
 		data["risk_level"] = "incomplete"
 		toConfirm = append(toConfirm, "当前数据覆盖不完整，不能据此断言整体没有风险")
 	} else {
@@ -2097,6 +2198,38 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	data["actions"] = uniqueStrings(actions)
 	data["to_confirm"] = uniqueStrings(toConfirm)
 	return data, uniqueStrings(warnings)
+}
+
+// appendAcademicRiskRefreshOutcome 将本轮设备刷新尝试写入工具结果。设备任务只在
+// 同一个 Tool Call 中消费一次；刷新后仍不完整时，模型可据此使用已有数据有限分析。
+func appendAcademicRiskRefreshOutcome(ctx context.Context, results map[academic.DatasetType]academic.ContextResult, data map[string]interface{}, warnings *[]string) {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	if !ok || resume.ToolName != "device.academic.ensure_fresh_bundle" || resume.Dataset != "academic_bundle" {
+		return
+	}
+	status := "refreshed"
+	message := "已使用手机刚刚刷新并回传的学业数据"
+	if resume.Status != models.DeviceToolJobCompleted {
+		status = strings.TrimSpace(resume.ErrorCode)
+		if status == "" {
+			status = "device_job_failed"
+		}
+		message = "已尝试通过手机刷新学业数据，但未得到完整刷新结果；以下分析仅使用现有可用数据"
+	} else if needsAcademicRiskRefresh(results) {
+		status = "refresh_incomplete"
+		message = "已尝试通过手机刷新学业数据，但学校返回的数据仍不完整；以下分析仅覆盖已取得部分"
+	}
+	data["refresh"] = map[string]interface{}{
+		"attempted":       true,
+		"status":          status,
+		"retry_scheduled": false,
+		"datasets":        []string{"grades", "academic_situation", "credit_requirements"},
+	}
+	if status != "refreshed" {
+		*warnings = append(*warnings, message)
+		toConfirm, _ := data["to_confirm"].([]string)
+		data["to_confirm"] = uniqueStrings(append(toConfirm, message))
+	}
 }
 
 func aggregatePersonalToolResult(data map[string]interface{}, results map[academic.DatasetType]academic.ContextResult, warnings []string) CampusToolResult {

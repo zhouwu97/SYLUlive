@@ -132,6 +132,9 @@ class AiAssistantProvider extends ChangeNotifier {
           completed: _agentFlowCompleted);
   List<AiRunEvent> get agentRawEvents =>
       List.unmodifiable(_agentActivityEvents);
+  bool get hasOptionalErkeUpdate => _agentActivityEvents.any(
+        (event) => event.optionalActions.contains('update_erke'),
+      );
   String? get activeSubmissionRequestId => _activeSubmissionRequestId;
   bool get agentFlowCompleted => _agentFlowCompleted;
   AiRunEvent? get pendingConsent => _pendingConsent;

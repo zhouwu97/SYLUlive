@@ -18,9 +18,9 @@ void main() {
           home: Scaffold(
             body: ListView(
               padding: const EdgeInsets.all(16),
-              children: [
+              children: const [
                 AiAgentExecutionCard(
-                  event: const AiRunEvent(
+                  event: AiRunEvent(
                     type: AiRunEventType.eduFetching,
                     datasets: ['grades'],
                   ),
@@ -36,6 +36,70 @@ void main() {
         find.byKey(const ValueKey('ai-agent-execution-card')), findsOneWidget);
     expect(find.text('正在获取最新成绩…'), findsNWidgets(2));
     expect(find.text('检查成绩更新时间'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-static')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-animated')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('运行中的 Agent 状态使用轻量动态指示器', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            event: AiRunEvent(
+              type: AiRunEventType.eduFetching,
+              datasets: ['grades'],
+            ),
+            running: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AiThinkingIndicator), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-animated')),
+      findsNWidgets(2),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('深色与大字号下运行态不溢出', (tester) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(360, 800),
+          textScaler: TextScaler.linear(1.5),
+        ),
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: ListView(
+              padding: const EdgeInsets.all(16),
+              children: const [
+                AiAgentExecutionCard(
+                  event: AiRunEvent(
+                    type: AiRunEventType.agentActivity,
+                    activityCode: 'provider_started',
+                    status: 'running',
+                  ),
+                  running: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('正在继续分析…'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 
@@ -132,6 +196,24 @@ void main() {
     await tester.tap(find.text('使用已有数据'));
     expect(retryCount, 1);
     expect(staleCount, 1);
+  });
+
+  testWidgets('二课可选入口由用户主动打开', (tester) async {
+    var updateCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            running: true,
+            onUpdateErke: () => updateCount++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('更新二课数据'), findsOneWidget);
+    await tester.tap(find.text('更新二课数据'));
+    expect(updateCount, 1);
   });
 
   testWidgets('完成后显示摘要，并可查看未合并的完整审计过程', (tester) async {

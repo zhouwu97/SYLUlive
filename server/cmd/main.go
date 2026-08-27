@@ -257,6 +257,7 @@ func main() {
 
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.UserEmojiAsset{},
 		&models.UserEmojiFavorite{},
 
@@ -1096,6 +1097,10 @@ func main() {
 
 	// 启动后台定时任务
 
+	if cfg.ImageVariantWorkerEnabled {
+		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
+		log.Println("图片变体 worker 已启用")
+	}
 	tasks.StartLotteryCron(db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
@@ -2433,12 +2438,15 @@ func ensureSecurityHardeningSchema(db *gorm.DB) error {
 		`ALTER TABLE files ADD COLUMN IF NOT EXISTS access_scope VARCHAR(16) NOT NULL DEFAULT 'private'`,
 		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
 		`UPDATE files SET access_scope = 'private' WHERE access_scope IS NULL OR access_scope = ''`,
+		`UPDATE files SET access_scope = 'private' WHERE access_scope = 'public'`,
 		`UPDATE files
 SET status = 'active', claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
 WHERE EXISTS (SELECT 1 FROM messages WHERE messages.file_id = files.id)`,
 		`UPDATE files SET access_scope = 'public'
-WHERE EXISTS (SELECT 1 FROM post_images WHERE post_images.file_id = files.id)
-   OR EXISTS (SELECT 1 FROM reply_images WHERE reply_images.file_id = files.id)
+WHERE EXISTS (SELECT 1 FROM post_images JOIN posts ON posts.id = post_images.post_id
+              WHERE post_images.file_id = files.id AND posts.status IN ('normal','sold','closed'))
+   OR EXISTS (SELECT 1 FROM reply_images JOIN replies ON replies.id = reply_images.reply_id
+              WHERE reply_images.file_id = files.id AND replies.status = 'normal')
    OR EXISTS (SELECT 1 FROM users WHERE users.avatar = files.path OR users.avatar LIKE files.path || '?%')
    OR EXISTS (SELECT 1 FROM users WHERE users.background = files.path OR users.background LIKE files.path || '?%')
    OR EXISTS (SELECT 1 FROM water_sections
@@ -2468,7 +2476,7 @@ WHERE EXISTS (SELECT 1 FROM canteens
 			return err
 		}
 	}
-	return nil
+	return services.BackfillPublicImageVariantTasks(db)
 }
 
 // ensureUserCalendarReminderLiveUniqueIndex 将提醒唯一性限定在未软删除记录。

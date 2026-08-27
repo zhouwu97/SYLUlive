@@ -571,6 +571,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
+		Scopes(withPostImageVariants).
 		Where("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusNormal, models.BoardMarket).
 		Order("created_at DESC").
 		Offset(offset).
@@ -625,6 +626,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
+		Scopes(withPostImageVariants).
 		Order("created_at DESC").
 		Offset(offset).
 		Limit(limit).

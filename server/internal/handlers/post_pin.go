@@ -115,6 +115,7 @@ func (h *PostHandler) AdminPinPost(c *gin.Context) {
 		return tx.Preload("Author").
 			Preload("Images").
 			Preload("Images.File").
+			Scopes(withPostImageVariants).
 			First(&updatedPost, post.ID).Error
 	})
 
@@ -169,6 +170,7 @@ func (h *PostHandler) AdminUnpinPost(c *gin.Context) {
 		return tx.Preload("Author").
 			Preload("Images").
 			Preload("Images.File").
+			Scopes(withPostImageVariants).
 			First(&updatedPost, post.ID).Error
 	})
 	if err != nil {
@@ -199,7 +201,8 @@ func (h *PostHandler) AdminGetPinnedPosts(c *gin.Context) {
 		).
 		Preload("Author").
 		Preload("Images").
-		Preload("Images.File")
+		Preload("Images.File").
+		Scopes(withPostImageVariants)
 
 	if boardID != "" {
 		if id, err := strconv.Atoi(boardID); err == nil {

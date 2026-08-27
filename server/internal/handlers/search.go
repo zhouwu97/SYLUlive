@@ -65,7 +65,8 @@ func (h *SearchHandler) searchPosts(
 		Where("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)", searchLike, searchLike).
 		Preload("Author").
 		Preload("Images").
-		Preload("Images.File")
+		Preload("Images.File").
+		Scopes(withPostImageVariants)
 	if !supportsPollRequest(c) {
 		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 	}

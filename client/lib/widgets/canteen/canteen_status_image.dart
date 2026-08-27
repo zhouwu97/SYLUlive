@@ -1,7 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/canteen_image_url.dart';
+import '../app_cached_image.dart';
 
 /// 商家状态图片：下架只改变客户端渲染，不修改服务端原图或文件记录。
 class CanteenStatusImage extends StatelessWidget {
@@ -10,6 +10,7 @@ class CanteenStatusImage extends StatelessWidget {
   final BoxFit fit;
   final double? width;
   final double? height;
+
   /// 与 CachedNetworkImage 同名的解码尺寸参数；为空时按显示尺寸自动计算。
   final int? memCacheWidth;
   final int? memCacheHeight;
@@ -101,7 +102,7 @@ class CanteenStatusImage extends StatelessWidget {
     required int? decodeHeight,
     required int? diskWidth,
   }) {
-    return CachedNetworkImage(
+    return AppCachedImage.public(
       imageUrl: url,
       fit: fit,
       width: width,

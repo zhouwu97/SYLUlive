@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/models/post.dart';
@@ -202,5 +203,136 @@ void main() {
 
     expect(tapped, isTrue);
     expect(find.byType(PostMediaView), findsOneWidget);
+  });
+
+  testWidgets('低分辨率 Feed 单图使用 thumb 并限制解码尺寸', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.imageUrl, contains('/uploads/thumb.jpg'));
+    expect(cached.memCacheWidth, 288);
+    expect(cached.memCacheHeight, 162);
+  });
+
+  testWidgets('3x 首页单图使用 medium 并限制解码尺寸', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.imageUrl, contains('/uploads/medium.jpg'));
+    expect(cached.memCacheWidth, 1280);
+    expect(cached.memCacheHeight, 720);
+  });
+
+  testWidgets('长图在深色模式和 1.3x 文字缩放下不发生布局异常', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 900,
+        height: 1600,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: Scaffold(
+              body: SizedBox(
+                width: 360,
+                child: PostMediaView(
+                  images: [image],
+                  variant: PostMediaVariant.homeFeed,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('长图'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

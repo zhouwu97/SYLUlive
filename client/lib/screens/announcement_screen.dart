@@ -14,6 +14,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/app_cached_image.dart';
 
 class AnnouncementScreen extends StatefulWidget {
   const AnnouncementScreen({super.key, this.onAnnouncementRead});
@@ -165,10 +166,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                     )
-                  : Image.network(
-                      path,
+                  : AppCachedImage.public(
+                      imageUrl: path,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) => _buildDefaultBg(isDark),
                     ),
           Container(
             color: isDark
@@ -233,59 +236,59 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
                     : RefreshIndicator(
                         onRefresh: _loadAnnouncements,
                         child: ListView(
-                            physics: const BouncingScrollPhysics(),
-                            padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
-                            children: [
-                              if (unread.isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  isDark,
-                                  icon: Icons.mark_email_unread_outlined,
-                                  title: '未读公告',
-                                  subtitle: '${unread.length} 条等待查看',
-                                  accent: Colors.red,
+                          physics: const BouncingScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                          children: [
+                            if (unread.isNotEmpty) ...[
+                              _buildSectionHeader(
+                                isDark,
+                                icon: Icons.mark_email_unread_outlined,
+                                title: '未读公告',
+                                subtitle: '${unread.length} 条等待查看',
+                                accent: Colors.red,
+                              ),
+                              const SizedBox(height: 10),
+                              ...List.generate(
+                                unread.length,
+                                (index) => _AnnouncementCard(
+                                  key: ValueKey(unread[index].id),
+                                  announcement: unread[index],
+                                  isDark: isDark,
+                                  index: index,
+                                  emphasized: unread[index].isPinned,
+                                  timeText:
+                                      _formatTime(unread[index].createdAt),
+                                  onMarkRead: () =>
+                                      _markAnnouncementRead(unread[index]),
                                 ),
-                                const SizedBox(height: 10),
-                                ...List.generate(
-                                  unread.length,
-                                  (index) => _AnnouncementCard(
-                                    key: ValueKey(unread[index].id),
-                                    announcement: unread[index],
-                                    isDark: isDark,
-                                    index: index,
-                                    emphasized: unread[index].isPinned,
-                                    timeText:
-                                        _formatTime(unread[index].createdAt),
-                                    onMarkRead: () =>
-                                        _markAnnouncementRead(unread[index]),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                              ],
-                              if (history.isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  isDark,
-                                  icon: Icons.history_rounded,
-                                  title: '历史公告',
-                                  subtitle: '${history.length} 条，可随时查看',
-                                  accent: Theme.of(context).primaryColor,
-                                ),
-                                const SizedBox(height: 10),
-                                ...List.generate(
-                                  history.length,
-                                  (index) => _AnnouncementCard(
-                                    key: ValueKey(history[index].id),
-                                    announcement: history[index],
-                                    isDark: isDark,
-                                    index: index + unread.length,
-                                    emphasized: history[index].isPinned,
-                                    timeText:
-                                        _formatTime(history[index].createdAt),
-                                  ),
-                                ),
-                              ],
+                              ),
+                              const SizedBox(height: 6),
                             ],
-                          ),
+                            if (history.isNotEmpty) ...[
+                              _buildSectionHeader(
+                                isDark,
+                                icon: Icons.history_rounded,
+                                title: '历史公告',
+                                subtitle: '${history.length} 条，可随时查看',
+                                accent: Theme.of(context).primaryColor,
+                              ),
+                              const SizedBox(height: 10),
+                              ...List.generate(
+                                history.length,
+                                (index) => _AnnouncementCard(
+                                  key: ValueKey(history[index].id),
+                                  announcement: history[index],
+                                  isDark: isDark,
+                                  index: index + unread.length,
+                                  emphasized: history[index].isPinned,
+                                  timeText:
+                                      _formatTime(history[index].createdAt),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
+                      ),
           ],
         ),
       ),

@@ -639,7 +639,7 @@ func (h *InvitationHandler) voteInvitation(c *gin.Context, invitation models.Inv
 
 	if invitation.Status != models.InvitationStatusAccepted {
 
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该邀请未进入管理员代办"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该邀请未进入管理员待办"})
 
 		return
 

@@ -236,7 +236,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('邀请已发送，用户同意后进入管理员代办'),
+          content: Text('邀请已发送，用户同意后进入管理员待办'),
           backgroundColor: Colors.green,
         ),
       );

@@ -234,30 +234,19 @@ FEED-H1 加固：
 |---|---|---|
 | `GET` | `/api/canteens/:id/dishes` | 公开菜品列表（approved-only），返回 `id/name/cover_image/photo_count/last_photo_at` |
 | `GET` | `/api/canteens/:canteenId/dishes/:dishId` | 公开菜品详情 + approved 实拍列表 |
-| `POST` | `/api/canteens/:canteenId/dish-photos` | (需登录+绑定教务) 投稿实拍，单图 |
+| `POST` | `/api/canteens/:canteenId/dish-photos` | 已退休，返回 `410 dish_submission_retired`；请改用食堂评价关联菜品实拍 |
 | `GET` | `/api/canteens/dish-photos/pending` | (管理员) 待审核实拍列表 |
 | `POST` | `/api/canteens/dish-photos/:photoId/approve` | (管理员) 通过实拍，文件转 public |
 | `POST` | `/api/canteens/dish-photos/:photoId/reject` | (管理员) 驳回实拍，文件保持 private |
 | `POST` | `/api/canteens/dish-photos/:photoId/archive` | (管理员) 下架实拍（业务隐藏，不 revoke 文件） |
 | `PATCH` | `/api/canteens/dishes/:dishId` | (管理员) 重命名或隐藏菜品 |
 
-**投稿**
+**实拍提交迁移**
 
-`POST /api/canteens/:canteenId/dish-photos`，Body 二选一：
-
-```json
-{ "dish_id": 12, "file_id": 9527 }
-```
-
-或（未找到菜品时按名称创建/复用）：
-
-```json
-{ "dish_name": "锅包肉", "file_id": 9527 }
-```
-
-- 菜名归一化：trim、合并并删除内部空白、兼容全角空格、转小写（`"锅 包 肉"` → `"锅包肉"`），同食堂归一化菜名唯一。
-- 一次投稿严格一张图片（服务端 `maxCount=1` 硬限制）。
-- 投稿后 `DishPhoto.status = pending`，文件保持 `active/private`，公共接口不可见。
+独立菜品投稿接口 `/dish-photos`、`/dish-submissions` 和菜品 `resubmit` 已退休，统一返回
+`410` 与 `code=dish_submission_retired`。客户端应通过 `POST /api/canteens/:id/reviews`
+提交食堂评价，在 `dishes[].dish_name` 中关联菜品，并在 `dishes[].photo_file_ids` 中绑定实拍文件；
+评价提交流程负责菜品归一化、直接创建 active 菜品和 approved 实拍。
 
 错误码：
 

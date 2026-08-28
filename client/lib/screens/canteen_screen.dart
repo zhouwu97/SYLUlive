@@ -17,7 +17,6 @@ import '../widgets/canteen/canteen_recent_review_card.dart';
 import '../widgets/image_upload_widget.dart';
 import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
-import 'canteen_dish_list_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
 
@@ -162,26 +161,6 @@ class _CanteenScreenState extends State<CanteenScreen> {
           _buildSearchBar(isDark),
           Expanded(child: _buildBody(isDark)),
         ],
-      ),
-    );
-  }
-
-  void _openDishDirectory() {
-    final hero = context.read<CanteenDiscoveryProvider>().home.hero;
-    if (hero.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂时没有可浏览的菜品')),
-      );
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CanteenDishListScreen(
-          canteenId: hero.canteenId,
-          canteenName: hero.canteenName,
-          offline: hero.operatingStatus == 'offline',
-        ),
       ),
     );
   }
@@ -599,10 +578,10 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 CanteenEmptyState(
                   icon: Icons.photo_camera_outlined,
                   title: '还没有菜品实拍',
-                  subtitle: showHero ? null : '先添加商家，再上传菜品实拍',
-                  actionLabel: showHero ? '去上传第一道菜' : '添加商家',
+                  subtitle: showHero ? '在食堂评价中关联菜品并上传实拍' : '先添加商家，再发布评价',
+                  actionLabel: showHero ? '去评价并上传实拍' : '添加商家',
                   onAction: showHero
-                      ? _openDishDirectory
+                      ? _openReviewComposer
                       : () => _showAddCanteenSheet(isDark),
                   minHeight: 150,
                 )

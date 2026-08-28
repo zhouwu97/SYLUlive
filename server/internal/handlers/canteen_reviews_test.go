@@ -102,27 +102,12 @@ func TestUpdateReviewDoesNotReviveRejectedDish(t *testing.T) {
 	}
 }
 
-func TestResubmitDishExplicitlyRevivesRejectedDish(t *testing.T) {
-	h, canteen, user := prepareReviewV2DB(t)
-	dish := models.CanteenDish{
-		CanteenID: canteen.ID, Name: "可重提菜", NormalizedName: "可重提菜",
-		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "请补充来源",
-	}
-	if err := h.db.Create(&dish).Error; err != nil {
-		t.Fatal(err)
-	}
+func TestResubmitDishEndpointIsRetired(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
 	response := performCanteenRequest(t, h.ResubmitDish, http.MethodPost,
-		"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/resubmit",
-		mapParams("dishId", itoaForTest(dish.ID)), user.ID, "")
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "已重新提交审核") {
+		"/api/canteens/dishes/1/resubmit", mapParams("dishId", "1"), user.ID, "")
+	if response.Code != http.StatusGone || !strings.Contains(response.Body.String(), "dish_submission_retired") {
 		t.Fatalf("resubmit status=%d body=%s", response.Code, response.Body.String())
-	}
-	var refreshed models.CanteenDish
-	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if refreshed.Status != models.DishStatusPending || refreshed.RejectReason != "" {
-		t.Fatalf("dish after resubmit=%+v", refreshed)
 	}
 }
 

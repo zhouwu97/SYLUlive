@@ -24,7 +24,7 @@ import 'canteen_review_history_screen.dart';
 import 'image_viewer_screen.dart';
 import '../utils/app_feedback.dart';
 
-enum _ContributionAction { review, dishPhoto }
+enum _ContributionAction { review }
 
 /// 商家详情页：Hero + 信息区 + 菜品区 + 评价区 + 底部贡献入口。
 ///
@@ -894,40 +894,22 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '选择一种内容，帮助其他同学做决定',
+                  '评价中可以关联菜品并上传实拍，帮助其他同学做决定',
                   style: TextStyle(
                     fontSize: 13,
                     color: CanteenTheme.textSecondaryColor(isDark),
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildContributionActionButton(
-                        isDark: isDark,
-                        icon: Icons.rate_review_outlined,
-                        label: '写菜品评价',
-                        enabled: canWriteReview,
-                        onPressed: () => Navigator.pop(
-                          sheetContext,
-                          _ContributionAction.review,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildContributionActionButton(
-                        isDark: isDark,
-                        icon: Icons.photo_camera_outlined,
-                        label: '上传菜品实拍',
-                        onPressed: () => Navigator.pop(
-                          sheetContext,
-                          _ContributionAction.dishPhoto,
-                        ),
-                      ),
-                    ),
-                  ],
+                _buildContributionActionButton(
+                  isDark: isDark,
+                  icon: Icons.rate_review_outlined,
+                  label: '写菜品评价',
+                  enabled: canWriteReview,
+                  onPressed: () => Navigator.pop(
+                    sheetContext,
+                    _ContributionAction.review,
+                  ),
                 ),
               ],
             ),
@@ -939,8 +921,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     switch (action) {
       case _ContributionAction.review:
         await _openPrimaryReviewEditor();
-      case _ContributionAction.dishPhoto:
-        await _openDishPhotoUpload();
     }
   }
 
@@ -984,11 +964,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
     if (mounted) await _reloadSilently();
   }
-
-  Future<void> _openDishPhotoUpload() async {
-    await _openDishList();
-  }
-
 
   void _showRefreshFailed() {
     ScaffoldMessenger.of(context).showSnackBar(

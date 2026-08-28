@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
-import '../services/idempotency_key.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_status_image.dart';
@@ -24,7 +23,6 @@ class _MyCanteenContributionsScreenState
   bool _loadFailed = false;
   String? _loadError;
   List<Map<String, dynamic>> _items = const [];
-  final Map<String, String> _retryIdempotencyKeys = <String, String>{};
 
   @override
   void initState() {
@@ -214,17 +212,11 @@ class _MyCanteenContributionsScreenState
                 ),
                 if (status == 'rejected' || status == 'archived') ...[
                   const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => _retryContribution(item),
-                      icon: const Icon(Icons.refresh_rounded, size: 16),
-                      label: Text(isPhoto ? '重新提交实拍' : '重新提交菜品'),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 30),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+                  Text(
+                    isPhoto ? '请从食堂评价重新关联菜品或实拍' : '请从食堂评价重新关联菜品',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CanteenTheme.textSecondaryColor(isDark),
                     ),
                   ),
                 ],
@@ -234,57 +226,5 @@ class _MyCanteenContributionsScreenState
         ],
       ),
     );
-  }
-
-  Future<void> _retryContribution(Map<String, dynamic> item) async {
-    final canteenId = (item['canteen_id'] as num?)?.toInt() ?? 0;
-    final dishId = (item['dish_id'] as num?)?.toInt() ?? 0;
-    if (canteenId <= 0 || dishId <= 0) return;
-    final provider = context.read<CanteenProvider>();
-    if (item['type'] == 'dish_photo') {
-      final fileId = (item['file_id'] as num?)?.toInt() ?? 0;
-      if (fileId > 0) {
-        final key = 'photo:${item['photo_id'] ?? fileId}';
-        final message = await provider.submitDishSubmission(
-          canteenId,
-          dishId: dishId,
-          dishName: item['dish_name']?.toString(),
-          fileId: fileId,
-          idempotencyKey: _retryIdempotencyKeys[key] ??=
-              newIdempotencyKey('canteen-dish-photo-retry'),
-        );
-        if (!mounted) return;
-        if (message != null) {
-          _retryIdempotencyKeys.remove(key);
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(message)));
-          await _reload();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(provider.errorMessage ?? '提交失败，请稍后重试')),
-          );
-        }
-        return;
-      }
-    } else {
-      final key = 'dish:$dishId';
-      final success = await provider.resubmitDish(
-        dishId,
-        idempotencyKey: _retryIdempotencyKeys[key] ??=
-            newIdempotencyKey('canteen-dish-retry'),
-      );
-      if (!mounted) return;
-      if (success) {
-        _retryIdempotencyKeys.remove(key);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('菜品已重新提交审核')),
-        );
-        await _reload();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(provider.errorMessage ?? '提交失败，请稍后重试')),
-        );
-      }
-    }
   }
 }

@@ -76,7 +76,7 @@ func TestCanteenOfflineOnlinePreservesHistoryAndBlocksNewWrites(t *testing.T) {
 		photo := performCanteenRequest(t, submit, http.MethodPost,
 			"/api/canteens/88/dish-submissions", mapParams("id", "88"), user.ID,
 			`{"dish_name":"麻辣烫","file_id":1}`)
-		if photo.Code != http.StatusConflict || !strings.Contains(photo.Body.String(), "canteen_offline") {
+		if photo.Code != http.StatusGone || !strings.Contains(photo.Body.String(), "dish_submission_retired") {
 			t.Fatalf("offline dish submission status=%d body=%s", photo.Code, photo.Body.String())
 		}
 	}

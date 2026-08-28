@@ -211,6 +211,51 @@ void main() {
     expect(exam.items, isEmpty);
   });
 
+  test('小组件课表 schema v2 全量数据动态计算当天课表', () async {
+    final now = DateTime.now();
+    final weekday = now.weekday;
+    final semesterStart = DateTime(now.year, now.month, now.day).subtract(Duration(days: (weekday - 1)));
+    final semesterStartStr =
+        '${semesterStart.year}-${semesterStart.month.toString().padLeft(2, '0')}-${semesterStart.day.toString().padLeft(2, '0')}';
+
+    AppPreferencesStore.setMockInitialValues({
+      'widget_course_data': jsonEncode({
+        'schema_version': 2,
+        'semester_start': semesterStartStr,
+        'academic_year': '2026-2027',
+        'semester': 1,
+        'courses': [
+          {
+            'name': '今日课程',
+            'weekday': weekday,
+            'start_section': 1,
+            'end_section': 2,
+            'weeks': [1, 2, 3],
+            'location': '综A101',
+            'teacher': '王老师',
+            'color': '#3B82F6',
+          },
+          {
+            'name': '非今日课程',
+            'weekday': weekday == 7 ? 1 : weekday + 1,
+            'start_section': 3,
+            'end_section': 4,
+            'weeks': [1, 2, 3],
+            'location': '综B202',
+            'teacher': '李老师',
+            'color': '#10B981',
+          },
+        ],
+      }),
+    });
+
+    final preview = await HomeWidgetService.getPreviewData(HomeWidgetKind.course);
+    expect(preview.items, hasLength(1));
+    expect(preview.items.single.title, '今日课程');
+    expect(preview.items.single.primaryDetail, '08:00-09:40');
+    expect(preview.items.single.secondaryDetail, '综A101 · 王老师');
+  });
+
   test('小组件考试 schema v0 顶层数组仍可读取', () async {
     AppPreferencesStore.setMockInitialValues({
       'widget_exam_data': jsonEncode([

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
+import '../providers/course_schedule_provider.dart';
+import 'home_widget_service.dart';
 import 'reply_notification_state.dart';
 
 class _VisibleRefreshEntry {
@@ -163,6 +165,16 @@ class AppResumeCoordinator {
       accountId: accountId,
       sessionGeneration: sessionGeneration,
     );
+
+    try {
+      final schedule = context.read<CourseScheduleProvider>();
+      if (schedule.isSessionReady && schedule.courses.isNotEmpty) {
+        await _safeRun(
+          '桌面课表小组件同步',
+          () => HomeWidgetService.syncCourseData(schedule),
+        );
+      }
+    } catch (_) {}
   }
 
   bool _sameSession(

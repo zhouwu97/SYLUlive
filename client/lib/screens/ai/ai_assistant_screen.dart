@@ -191,6 +191,19 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     setState(() => _bridgeStatus = DeviceToolBridge.status);
   }
 
+  Future<void> _retryDeviceBridge() async {
+    try {
+      await DeviceToolBridge.syncPending();
+      if (mounted && DeviceToolBridge.status == DeviceBridgeStatus.connected) {
+        AppFeedback.success('设备桥接已恢复', context: context);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.error('设备桥接仍不可用，请检查网络后重试', context: context);
+      }
+    }
+  }
+
   void _handleRunConsentRequired() {
     final consent = _provider.pendingConsent;
     if (!mounted ||
@@ -1530,6 +1543,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     agentPermissionState: _agentPermissionState,
                     bridgeStatus: _bridgeStatus,
                     onAgentPermissionTap: _showAgentPermissions,
+                    onBridgeRetry: () => unawaited(_retryDeviceBridge()),
                   ),
                 ],
               ),

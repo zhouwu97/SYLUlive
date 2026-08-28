@@ -16,6 +16,7 @@ const (
 	DatasetCreditRequirements DatasetType = "credit_requirements"
 	DatasetCreditSummary      DatasetType = "credit_summary"
 	DatasetErke               DatasetType = "erke"
+	DatasetPhysical           DatasetType = "physical"
 )
 
 // Valid 判断数据集是否可由统一上下文解析器处理。
@@ -26,7 +27,8 @@ func (dataset DatasetType) Valid() bool {
 		DatasetAcademicSituation,
 		DatasetCreditRequirements,
 		DatasetCreditSummary,
-		DatasetErke:
+		DatasetErke,
+		DatasetPhysical:
 		return true
 	default:
 		return false

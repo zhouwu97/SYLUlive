@@ -53,6 +53,68 @@ void main() {
     );
   });
 
+  test('体测设备工具只返回最近概览并支持刷新证据', () async {
+    final fetchedAt = DateTime.now().toUtc();
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(fetchedAt),
+      physicalOverview: GatewayResult<PhysicalOverview>(
+        status: GatewayStatus.available,
+        source: PersonalDataSource.deviceEncryptedCache,
+        fetchedAt: fetchedAt,
+        expiresAt: fetchedAt.add(const Duration(days: 30)),
+        data: const PhysicalOverview(
+          latestYear: '2026',
+          availableYears: <String>['2026'],
+          totalGrade: '良好',
+          totalScore: 82.5,
+          metrics: <PhysicalMetricOverview>[
+            PhysicalMetricOverview(
+              name: '50 米跑',
+              result: '7.2 秒',
+              grade: '良好',
+              score: 82,
+            ),
+          ],
+        ),
+      ),
+    );
+    final freshness = EnsureFreshResult(
+      before: FreshnessState(
+        fetchedAt: fetchedAt.subtract(const Duration(days: 31)),
+        expiresAt: fetchedAt.subtract(const Duration(days: 1)),
+        isStale: true,
+      ),
+      after: FreshnessState(
+        fetchedAt: fetchedAt,
+        expiresAt: fetchedAt.add(const Duration(days: 30)),
+        isStale: false,
+      ),
+      refreshPerformed: true,
+    );
+    final result = await DeviceToolRegistry().execute(
+      DeviceToolJob(
+        id: 'physical-job',
+        toolName: 'device.physical.ensure_fresh_overview',
+        arguments: const <String, dynamic>{'max_age_seconds': 86400},
+        requiredDataTypes: const <String>['physical'],
+        status: 'pending',
+        stateVersion: 0,
+        expiresAt: fetchedAt.add(const Duration(minutes: 1)),
+      ),
+      null,
+      automationGateway: _FakeAutomationGateway(
+        gateway,
+        ensured: freshness,
+      ),
+    );
+
+    expect(result.value['refresh_performed'], isTrue);
+    final data = result.value['data'] as Map<String, dynamic>;
+    expect(data['latest_year'], '2026');
+    expect(data['total_score'], 82.5);
+    expect((data['metrics'] as List), hasLength(1));
+  });
+
   test('用户拒绝授权时任务失败且不读取本地缓存', () async {
     final job = _job(now);
     final api = _FakeDeviceJobApi(pendingJobs: [job]);
@@ -525,11 +587,13 @@ class _FakeGateway implements PersonalDataGateway {
   _FakeGateway({
     required this.academicOverview,
     this.academicRecords,
+    this.physicalOverview,
     this.onAcademicRead,
   });
 
   final GatewayResult<AcademicOverview> academicOverview;
   final GatewayResult<AcademicRecords>? academicRecords;
+  final GatewayResult<PhysicalOverview>? physicalOverview;
   final void Function()? onAcademicRead;
   int academicReadCount = 0;
   bool closed = false;
@@ -556,8 +620,11 @@ class _FakeGateway implements PersonalDataGateway {
       throw UnimplementedError();
 
   @override
-  Future<GatewayResult<PhysicalOverview>> getPhysicalOverview() =>
-      throw UnimplementedError();
+  Future<GatewayResult<PhysicalOverview>> getPhysicalOverview() {
+    final result = physicalOverview;
+    if (result == null) throw UnimplementedError();
+    return Future.value(result);
+  }
 
   @override
   Future<GatewayResult<ScheduleOverview>> getScheduleOverview({
@@ -611,6 +678,10 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
 
   @override
   Future<RefreshResult> refreshErke() async =>
+      const RefreshResult(performed: true);
+
+  @override
+  Future<RefreshResult> refreshPhysical() async =>
       const RefreshResult(performed: true);
 
   @override

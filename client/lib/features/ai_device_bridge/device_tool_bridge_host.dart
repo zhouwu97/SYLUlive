@@ -2,14 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../campus_data/storage/academic_cache_store.dart';
+import '../campus_data/erke/erke_repository.dart';
+import '../campus_data/storage/erke_cache_store.dart';
 import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/edu_provider.dart';
+import '../../services/physical_credential_store.dart';
 import '../../services/push_settings_service.dart';
+import '../../services/webvpn_service.dart';
+import '../../utils/app_feedback.dart';
+import '../../utils/app_navigator.dart';
 import '../ai_runtime/personal_data/gateway/personal_account_context.dart';
 import '../ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
+import '../physical/physical_data_sync_service.dart';
 import '../personal_data_sync/personal_data_sync_coordinator.dart';
 import '../personal_data_sync/personal_data_sync_result.dart';
+import 'device_credential_prompt_sheet.dart';
+import 'device_credential_store.dart';
 import 'device_job_client.dart';
 import 'device_job_models.dart';
 import 'device_job_permission_sheet.dart';
@@ -31,6 +40,14 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
   late final AuthProvider _auth;
   late final EduProvider _edu;
   late final DeviceToolWorker _worker;
+  final DeviceCredentialStore _credentialStore = DeviceCredentialStore();
+  final PhysicalCredentialStore _physicalCredentialStore =
+      PhysicalCredentialStore();
+  DeviceErkeCredentials? _sessionErkeCredentials;
+  String? _sessionPhysicalPassword;
+  String? _sessionCredentialAccountId;
+  bool _saveErkeCredentials = false;
+  bool _savePhysicalCredential = false;
 
   @override
   void initState() {
@@ -79,7 +96,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
 
   Future<DeviceToolWorkerContext?> _resolveContext() async {
     final appUserId = _auth.user?.id.toString().trim() ?? '';
-    final sourceAccountId = _edu.studentId.trim();
+    final sourceAccountId = _sourceAccountId();
     if (!_auth.isLoggedIn || appUserId.isEmpty || sourceAccountId.isEmpty) {
       return null;
     }
@@ -100,7 +117,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
           mounted &&
           _auth.isLoggedIn &&
           _auth.user?.id.toString() == appUserId &&
-          _edu.studentId.trim() == sourceAccountId,
+          _sourceAccountId() == sourceAccountId,
     );
   }
 
@@ -128,6 +145,14 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       ),
       refreshSchedule: () async => _toRefreshResult(
         await sync.syncSchedule(),
+      ),
+      refreshErke: () => _refreshErke(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      refreshPhysical: () => _refreshPhysical(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
       ),
       readAcademicDataset: (dataset) => _readAcademicDataset(
         appUserId: appUserId,
@@ -279,14 +304,202 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
     if (job.status != 'waiting_user') {
       // 这类 Job 已经通过服务端的 ask / always / never 决策；再次弹窗会
       // 造成双重授权。只有显式 waiting_user 才由设备侧完成一次确认。
-      return DeviceToolPermissionDecision.allow;
+      return await _prepareCredentials(job)
+          ? DeviceToolPermissionDecision.allow
+          : DeviceToolPermissionDecision.deny;
     }
     // 任务状态为 waiting_user 时才会走到这里；pending / pushed 已经在
     // 服务端完成 ask / always / never 合并，避免再次弹出同一授权。
-    final allowed = await DeviceJobPermissionSheet.request(context, job);
-    return allowed
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return DeviceToolPermissionDecision.defer;
+    final allowed = await DeviceJobPermissionSheet.request(dialogContext, job);
+    if (!allowed) return DeviceToolPermissionDecision.deny;
+    return await _prepareCredentials(job)
         ? DeviceToolPermissionDecision.allow
         : DeviceToolPermissionDecision.deny;
+  }
+
+  BuildContext? get _dialogContext =>
+      appNavigatorKey.currentState?.overlay?.context;
+
+  String _sourceAccountId() {
+    final eduStudentId = _edu.studentId.trim();
+    if (eduStudentId.isNotEmpty) return eduStudentId;
+    final boundStudentId = _auth.user?.eduStudentId.trim() ?? '';
+    if (boundStudentId.isNotEmpty) return boundStudentId;
+    return _auth.user?.studentId.trim() ?? '';
+  }
+
+  Future<bool> _prepareCredentials(DeviceToolJob job) async {
+    if (!job.toolName.contains('.ensure_fresh_')) return true;
+    final dialogContext = _dialogContext;
+    if (dialogContext == null || !mounted) return false;
+    final sourceAccountId = _sourceAccountId();
+    if (sourceAccountId.isEmpty) return false;
+    _resetSessionCredentialsIfAccountChanged(sourceAccountId);
+
+    if (job.toolName.startsWith('device.erke.')) {
+      _sessionErkeCredentials ??=
+          await _credentialStore.readErke(sourceAccountId);
+      if (_sessionErkeCredentials != null) return true;
+      final currentContext = _dialogContext;
+      if (currentContext == null || !currentContext.mounted) return false;
+      final input = await DeviceCredentialPromptSheet.request(
+        currentContext,
+        kind: DeviceCredentialKind.erke,
+        sourceAccountId: sourceAccountId,
+      );
+      if (input == null) return false;
+      _sessionErkeCredentials = DeviceErkeCredentials(
+        casPassword: input.password,
+        erkePassword: input.secondaryPassword,
+      );
+      _saveErkeCredentials = input.saveOnDevice;
+      return true;
+    }
+
+    if (job.toolName.startsWith('device.physical.')) {
+      _sessionPhysicalPassword ??=
+          await _physicalCredentialStore.read(sourceAccountId);
+      if (_sessionPhysicalPassword?.isNotEmpty == true) return true;
+      final currentContext = _dialogContext;
+      if (currentContext == null || !currentContext.mounted) return false;
+      final input = await DeviceCredentialPromptSheet.request(
+        currentContext,
+        kind: DeviceCredentialKind.physical,
+        sourceAccountId: sourceAccountId,
+      );
+      if (input == null) return false;
+      _sessionPhysicalPassword = input.password;
+      _savePhysicalCredential = input.saveOnDevice;
+      return true;
+    }
+
+    await _edu.refreshStatus();
+    if (!mounted || _sourceAccountId() != sourceAccountId) return false;
+    if (_edu.isAuthorized && _edu.sessionState == 'active') return true;
+    final currentContext = _dialogContext;
+    if (currentContext == null || !currentContext.mounted) return false;
+    final input = await DeviceCredentialPromptSheet.request(
+      currentContext,
+      kind: DeviceCredentialKind.education,
+      sourceAccountId: sourceAccountId,
+    );
+    if (input == null) return false;
+    final bound = await _edu.bind(
+      sourceAccountId,
+      input.password,
+      eduDataConsentAccepted: true,
+    );
+    final feedbackContext = _dialogContext;
+    if (!bound && feedbackContext != null && feedbackContext.mounted) {
+      AppFeedback.error(
+        _edu.errorMessage ?? '教务验证失败，请检查密码后重试',
+        context: feedbackContext,
+      );
+    }
+    return bound;
+  }
+
+  void _resetSessionCredentialsIfAccountChanged(String sourceAccountId) {
+    if (_sessionCredentialAccountId == sourceAccountId) return;
+    _sessionCredentialAccountId = sourceAccountId;
+    _sessionErkeCredentials = null;
+    _sessionPhysicalPassword = null;
+    _saveErkeCredentials = false;
+    _savePhysicalCredential = false;
+  }
+
+  Future<RefreshResult> _refreshErke({
+    required String appUserId,
+    required String sourceAccountId,
+  }) async {
+    final credentials = _sessionErkeCredentials ??
+        await _credentialStore.readErke(sourceAccountId);
+    if (credentials == null) {
+      return const RefreshResult(
+        performed: false,
+        message: '二课密码尚未填写',
+        errorCode: 'credential_unavailable',
+      );
+    }
+    final vpn = WebVpnService();
+    final repository = ErkeRepository(
+      vpnService: vpn,
+      cacheStore: ErkeCacheStore(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+    );
+    try {
+      final result = await ErkeRepositoryPersonalSyncGateway(
+        repository: repository,
+        requestCredentials: () async => PersonalErkeCredentials(
+          studentId: sourceAccountId,
+          casPassword: credentials.casPassword,
+          erkePassword: credentials.erkePassword,
+        ),
+      ).syncErke();
+      if (result.status == PersonalSyncItemStatus.success) {
+        if (_saveErkeCredentials) {
+          await _credentialStore.writeErke(sourceAccountId, credentials);
+          _saveErkeCredentials = false;
+        }
+        return const RefreshResult(performed: true);
+      }
+      _sessionErkeCredentials = null;
+      await _credentialStore.deleteErke(sourceAccountId);
+      return RefreshResult(
+        performed: false,
+        message: result.message ?? '二课更新失败，请重新输入密码',
+        errorCode: 'credential_unavailable',
+      );
+    } finally {
+      vpn.dispose();
+    }
+  }
+
+  Future<RefreshResult> _refreshPhysical({
+    required String appUserId,
+    required String sourceAccountId,
+  }) async {
+    final password = _sessionPhysicalPassword ??
+        await _physicalCredentialStore.read(sourceAccountId);
+    if (password == null || password.isEmpty) {
+      return const RefreshResult(
+        performed: false,
+        message: '体测密码尚未填写',
+        errorCode: 'credential_unavailable',
+      );
+    }
+    final service = PhysicalDataSyncService();
+    try {
+      final result = await service.syncLatest(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+        password: password,
+      );
+      if (result.success) {
+        if (_savePhysicalCredential) {
+          await _physicalCredentialStore.write(sourceAccountId, password);
+          _savePhysicalCredential = false;
+        }
+        return const RefreshResult(performed: true);
+      }
+      if (result.errorCode == 'physical_credential_invalid') {
+        _sessionPhysicalPassword = null;
+        await _physicalCredentialStore.delete(sourceAccountId);
+      }
+      return RefreshResult(
+        performed: false,
+        message: result.errorCode == 'network_unavailable'
+            ? '体测系统网络不可用'
+            : '体测更新失败，请重新输入密码',
+        errorCode: result.errorCode,
+      );
+    } finally {
+      service.close();
+    }
   }
 
   @override

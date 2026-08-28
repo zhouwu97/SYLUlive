@@ -27,6 +27,7 @@ class DeviceToolRegistry {
     'device.schedule.get_cached_week',
     'device.academic.get_credit_summary',
     'device.erke.get_cached_overview',
+    'device.physical.get_cached_overview',
     'device.academic.ensure_fresh_overview',
     'device.academic.ensure_fresh_grade_summary',
     'device.academic.ensure_fresh_risk_context',
@@ -34,6 +35,7 @@ class DeviceToolRegistry {
     'device.schedule.ensure_fresh_week',
     'device.academic.ensure_fresh_credit_summary',
     'device.erke.ensure_fresh_overview',
+    'device.physical.ensure_fresh_overview',
   };
 
   final AcademicCalculationEngine _academicEngine;
@@ -50,6 +52,7 @@ class DeviceToolRegistry {
       'device.schedule.get_cached_week' => _scheduleWeek(job, gateway),
       'device.academic.get_credit_summary' => _creditSummary(job, gateway),
       'device.erke.get_cached_overview' => _erkeOverview(job, gateway),
+      'device.physical.get_cached_overview' => _physicalOverview(job, gateway),
       'device.academic.ensure_fresh_overview' => _academicOverview(
           job,
           gateway,
@@ -81,6 +84,11 @@ class DeviceToolRegistry {
           automationGateway: automationGateway,
         ),
       'device.erke.ensure_fresh_overview' => _erkeOverview(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.physical.ensure_fresh_overview' => _physicalOverview(
           job,
           gateway,
           automationGateway: automationGateway,
@@ -502,6 +510,52 @@ class DeviceToolRegistry {
     );
   }
 
+  Future<DeviceToolExecutionResult> _physicalOverview(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.physical,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['physical'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getPhysicalOverview(),
+    );
+    final data = _requiredData(result);
+    return DeviceToolExecutionResult(
+      _envelope(
+        result,
+        data: <String, dynamic>{
+          'latest_year': data.latestYear,
+          'available_year_count': data.availableYears.length,
+          'total_grade': data.totalGrade,
+          'total_score': data.totalScore,
+          'metrics': data.metrics
+              .take(16)
+              .map(
+                (item) => <String, dynamic>{
+                  'name': item.name,
+                  'result': item.result,
+                  'grade': item.grade,
+                  'score': item.score,
+                },
+              )
+              .toList(growable: false),
+        },
+        freshness: freshness,
+      ),
+    );
+  }
+
   Future<GatewayResult<T>> _read<T>(
     PersonalDataGateway? gateway,
     DeviceAutomationGateway? automationGateway,
@@ -535,6 +589,7 @@ class DeviceToolRegistry {
       PersonalDataType.creditRequirements => 24 * 60 * 60,
       PersonalDataType.schedule => 10 * 60,
       PersonalDataType.erke => 30 * 60,
+      PersonalDataType.physical => 24 * 60 * 60,
     };
     final seconds = requested.toInt().clamp(ceiling, 24 * 60 * 60);
     final ensured = await automationGateway.ensureFresh(

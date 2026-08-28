@@ -101,10 +101,10 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
           item.errorCode == 'refresh_incomplete' ||
           item.errorCode == 'device_refresh_not_fresh' ||
           item.errorCode == 'network_unavailable' ||
-          _isEduRecoveryCode(item.errorCode),
+          _isEduRecoveryCode(item.errorCode, item.toolName),
     );
     final needsEduRecovery = activities.any(
-      (item) => _isEduRecoveryCode(item.errorCode),
+      (item) => _isEduRecoveryCode(item.errorCode, item.toolName),
     );
     final compactActivities = activities.length <= 3
         ? activities
@@ -264,14 +264,14 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     );
   }
 
-  static bool _isEduRecoveryCode(String code) {
+  static bool _isEduRecoveryCode(String code, String toolName) {
     switch (code.trim().toLowerCase()) {
       case 'edu_authorization_revoked':
       case 'edu_session_logged_out':
       case 'edu_session_expired':
       case 'edu_credential_unavailable':
       case 'credential_unavailable':
-        return true;
+        return toolName.contains('academic') || toolName.contains('schedule');
       default:
         return false;
     }

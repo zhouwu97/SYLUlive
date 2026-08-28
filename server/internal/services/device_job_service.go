@@ -34,6 +34,7 @@ var deviceToolRequirements = map[string][]string{
 	"device.schedule.get_cached_week":             {"schedule"},
 	"device.academic.get_credit_summary":          {"academic"},
 	"device.erke.get_cached_overview":             {"erke"},
+	"device.physical.get_cached_overview":         {"physical"},
 	"device.academic.ensure_fresh_overview":       {"academic"},
 	"device.academic.ensure_fresh_grade_summary":  {"grades"},
 	"device.academic.ensure_fresh_risk_context":   {"grades"},
@@ -41,6 +42,7 @@ var deviceToolRequirements = map[string][]string{
 	"device.schedule.ensure_fresh_week":           {"schedule"},
 	"device.academic.ensure_fresh_credit_summary": {"academic"},
 	"device.erke.ensure_fresh_overview":           {"erke"},
+	"device.physical.ensure_fresh_overview":       {"physical"},
 }
 
 type DeviceJobError struct {
@@ -462,9 +464,35 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 			return false
 		}
 		return validErkeCategories(data["unmet_categories"])
+	case "device.physical.get_cached_overview", "device.physical.ensure_fresh_overview":
+		if !hasExactJSONKeys(data, []string{"latest_year", "available_year_count", "total_grade", "total_score", "metrics"}) ||
+			!validJSONString(data["latest_year"], 8) ||
+			!validIntegerRange(data["available_year_count"], 1, 8) ||
+			!validBoundedString(data["total_grade"], 32) ||
+			!validOptionalJSONNumber(data["total_score"]) {
+			return false
+		}
+		return validPhysicalMetrics(data["metrics"])
 	default:
 		return false
 	}
+}
+
+func validPhysicalMetrics(value json.RawMessage) bool {
+	var metrics []map[string]json.RawMessage
+	if string(value) == "null" || json.Unmarshal(value, &metrics) != nil || len(metrics) > 16 {
+		return false
+	}
+	for _, metric := range metrics {
+		if !hasExactJSONKeys(metric, []string{"name", "result", "grade", "score"}) ||
+			!validJSONString(metric["name"], 80) ||
+			!validBoundedString(metric["result"], 80) ||
+			!validBoundedString(metric["grade"], 32) ||
+			!validOptionalJSONNumber(metric["score"]) {
+			return false
+		}
+	}
+	return true
 }
 
 func validAcademicTerms(value, count json.RawMessage) bool {
@@ -617,6 +645,11 @@ func validJSONString(value json.RawMessage, maxLength int) bool {
 	return json.Unmarshal(value, &decoded) == nil && decoded != "" && len(decoded) <= maxLength
 }
 
+func validBoundedString(value json.RawMessage, maxLength int) bool {
+	var decoded string
+	return json.Unmarshal(value, &decoded) == nil && len(decoded) <= maxLength
+}
+
 func validOptionalString(value json.RawMessage, maxLength int) bool {
 	if string(value) == "null" {
 		return true
@@ -654,13 +687,13 @@ func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
 	switch toolName {
 	case "device.schedule.get_cached_week":
 		return hasExactJSONKeys(arguments, []string{"week_containing"}) && validDateString(arguments["week_containing"])
-	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview",
+	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview", "device.physical.get_cached_overview",
 		"device.academic.get_cached_grade_summary", "device.academic.get_cached_risk_context":
 		return len(arguments) == 0
 	case "device.schedule.ensure_fresh_week":
 		return hasExactJSONKeys(arguments, []string{"week_containing", "max_age_seconds"}) &&
 			validDateString(arguments["week_containing"]) && validMaxAgeSeconds(arguments["max_age_seconds"])
-	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview":
+	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview", "device.physical.ensure_fresh_overview":
 		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validMaxAgeSeconds(arguments["max_age_seconds"])
 	case "device.academic.ensure_fresh_bundle":
 		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validBundleMaxAgeSeconds(arguments["max_age_seconds"])

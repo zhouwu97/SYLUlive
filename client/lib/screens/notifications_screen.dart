@@ -430,7 +430,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       Map<String, dynamic> notification, bool isDark) {
     final id = _notificationId(notification);
     final type = notification['type'] as String?;
-    final postId = notification['post_id'] as int?;
+    // 服务端对无帖通知（如食堂审核结果）返回 post_id=0，需视为无关联帖子。
+    final rawPostId = notification['post_id'] as int?;
+    final postId = (rawPostId != null && rawPostId > 0) ? rawPostId : null;
     final relatedId = notification['related_id'] as int?;
     final content = notification['content']?.toString() ?? '';
     final createdAt =

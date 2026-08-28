@@ -104,7 +104,7 @@ void main() {
     expect(find.text('上传菜品实拍'), findsNothing);
   });
 
-  testWidgets('1/3 显示上传入口状态', (tester) async {
+  testWidgets('1/3 显示关联评价引导', (tester) async {
     await tester.pumpWidget(_buildApp(detailJson: '''
       {
         "dish": {"id":12,"name":"锅包肉","canteen_id":1},
@@ -114,8 +114,8 @@ void main() {
     '''));
     await tester.pumpAndSettle();
 
-    expect(find.text('实拍图库 1 / 3'), findsOneWidget);
-    expect(find.text('上传菜品实拍'), findsOneWidget);
+    expect(find.text('0 人评价中提到 · 1 张同学真实实拍'), findsOneWidget);
+    expect(find.textContaining('发表食堂评价时关联「锅包肉」'), findsOneWidget);
     expect(find.text('实拍资料已完善'), findsNothing);
   });
 
@@ -155,7 +155,7 @@ void main() {
     expect(find.text('管理员提示：长按实拍图片可进行下架治理'), findsOneWidget);
 
     // 长按实拍图片唤起管理 Sheet
-    await tester.longPress(find.byType(Image));
+    await tester.longPress(find.byType(Image).first);
     await tester.pumpAndSettle();
 
     expect(find.text('管理已发布实拍'), findsOneWidget);

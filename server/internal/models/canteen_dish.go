@@ -96,15 +96,20 @@ func validatePhotoFileOnDisk(f File) bool {
 	return err == nil && !info.IsDir()
 }
 
-// MigratePendingCanteenDishPhotos 迁移现存 pending 实拍图片：
-// 对于每道菜：
-//
-//	已有 approved 数 = N
-//	剩余容量 = 3 - N (若 N >= 3 则容量为 0)
-//	按 created_at ASC 取最多剩余容量个合法且文件存在 pending -> approved，并将其对应 File 设为 public
-//	超出容量或文件非法/缺失的 pending -> archived
-func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
+// MigratePendingDishesAndPhotos 迁移历史 pending 菜品和实拍：
+// 1. 将所有 status = 'pending' 的 CanteenDish 自动转为 'active'；
+// 2. 将合法且文件存在的 pending 实拍转为 'approved' 并将 File 设为 public；
+// 3. 历史 rejected / hidden / archived 状态保持不变。
+func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
+		// 1. 将所有 pending 状态的菜品迁移为 active
+		if err := tx.Model(&CanteenDish{}).
+			Where("status = ?", DishStatusPending).
+			Update("status", DishStatusActive).Error; err != nil {
+			return err
+		}
+
+		// 2. 迁移实拍图片
 		var dishIDs []uint
 		if err := tx.Model(&CanteenDishPhoto{}).
 			Where("status = ?", DishPhotoStatusPending).
@@ -121,7 +126,7 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 			if err := tx.First(&dish, dishID).Error; err != nil {
 				return err
 			}
-			if dish.Status == DishStatusHidden {
+			if dish.Status == DishStatusHidden || dish.Status == DishStatusArchived || dish.Status == DishStatusRejected {
 				if err := tx.Model(&CanteenDishPhoto{}).
 					Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusPending).
 					Update("status", DishPhotoStatusArchived).Error; err != nil {
@@ -188,4 +193,9 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+// MigratePendingCanteenDishPhotos 保留历史函数名向后兼容
+func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
+	return MigratePendingDishesAndPhotos(db)
 }

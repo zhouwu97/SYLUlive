@@ -267,7 +267,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('你想贡献什么？'), findsOneWidget);
     expect(find.text('写菜品评价'), findsOneWidget);
-    expect(find.text('上传菜品实拍'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsNothing);
+    expect(
+      find.text('评价中可以关联菜品并上传实拍，帮助其他同学做决定'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('暗色与大字号下贡献入口面板无溢出', (tester) async {
@@ -296,7 +300,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('写菜品评价'), findsOneWidget);
-    expect(find.text('上传菜品实拍'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

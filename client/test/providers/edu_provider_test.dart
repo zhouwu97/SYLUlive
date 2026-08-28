@@ -821,6 +821,7 @@ void main() {
 
     test('同时打开同一课程详情时复用进行中的请求', () async {
       final detailCompleter = Completer<void>();
+      final detailRequestStarted = Completer<void>();
       var detailRequestCount = 0;
       final dio = Dio();
       dio.interceptors.add(
@@ -841,6 +842,9 @@ void main() {
             }
             if (options.path == '/edu/grades/detail') {
               detailRequestCount++;
+              if (!detailRequestStarted.isCompleted) {
+                detailRequestStarted.complete();
+              }
               detailCompleter.future.then((_) {
                 handler.resolve(
                   Response(
@@ -880,7 +884,8 @@ void main() {
 
       final first = value.fetchGradeDetail(grade, '2025', 12);
       final second = value.fetchGradeDetail(grade, '2025', 12);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // 等待真实请求进入拦截器，再断言并发去重；固定短延迟会把调度抖动误报成回归。
+      await detailRequestStarted.future.timeout(const Duration(seconds: 1));
       expect(detailRequestCount, 1);
 
       detailCompleter.complete();

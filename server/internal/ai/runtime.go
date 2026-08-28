@@ -968,8 +968,7 @@ func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, 
 			return errors.New("run no longer generating")
 		}
 		if err := tx.Model(&run).Updates(map[string]interface{}{
-			"state": models.AIRunStateCompleted, "state_version": gorm.Expr("state_version + 1"),
-			"answer_checkpoint": answer, "completed_at": now, "updated_at": now,
+			"answer_checkpoint": answer, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -989,7 +988,51 @@ func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, 
 		"input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens,
 		"cache_hit_tokens": usage.CacheHitTokens, "cost_micro_yuan": cost,
 	}, true)
-	_, _ = r.appendEvent(ctx, runID, "run.completed", map[string]interface{}{"state": models.AIRunStateCompleted}, true)
+	r.finalizeCompletedRun(ctx, runID, now)
+}
+
+// finalizeCompletedRun 将完成状态和最终事件放在同一事务中提交。
+// 在此之前，answer、sources 和 usage 事件均已持久化，避免调用方先观察到
+// completed 状态却读不到结算结果。
+func (r *Runtime) finalizeCompletedRun(ctx context.Context, runID string, completedAt time.Time) {
+	var event RunEvent
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var run models.AIRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&run, "id = ?", runID).Error; err != nil {
+			return err
+		}
+		if run.State != models.AIRunStateGenerating {
+			return errors.New("run no longer generating")
+		}
+		if err := tx.Model(&run).Updates(map[string]interface{}{
+			"state": models.AIRunStateCompleted, "state_version": gorm.Expr("state_version + 1"),
+			"completed_at": completedAt, "updated_at": completedAt,
+		}).Error; err != nil {
+			return err
+		}
+		seq := run.LastEventSeq + 1
+		payload, err := marshalEventPayload("run.completed", map[string]interface{}{"state": models.AIRunStateCompleted}, true)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&run).Update("last_event_seq", seq).Error; err != nil {
+			return err
+		}
+		timestamp := time.Now()
+		if err := tx.Create(&models.AIEvent{
+			RunID: runID, Seq: seq, Type: "run.completed", Payload: datatypes.JSON(payload), CreatedAt: timestamp,
+		}).Error; err != nil {
+			return err
+		}
+		event = RunEvent{
+			RunID: runID, Seq: seq, Type: "run.completed", Timestamp: timestamp,
+			Payload: json.RawMessage(payload), Persisted: true,
+		}
+		return nil
+	})
+	if err == nil {
+		r.broker.Publish(event)
+	}
 }
 
 func (r *Runtime) currentPublishedChunks(chunks []RetrievedChunk) []RetrievedChunk {

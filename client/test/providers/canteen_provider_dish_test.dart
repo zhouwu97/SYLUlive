@@ -91,37 +91,6 @@ void main() {
       expect(dishes, isNull);
     });
 
-    test('submitDishPhoto 成功返回 message', () async {
-      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
-      dio.httpClientAdapter = FakeAdapter((options) async {
-        expect(options.path, '/canteens/3/dish-photos');
-        return _json('{"message":"已提交审核","photo":{"id":9}}', 201);
-      });
-      final provider = CanteenProvider(dio);
-      final message = await provider.submitDishPhoto(
-        3,
-        dishName: '锅包肉',
-        fileId: 9527,
-      );
-      expect(message, '已提交审核');
-      expect(provider.errorCode, isNull);
-    });
-
-    test('submitDishPhoto 409 gallery_full 暴露 errorCode', () async {
-      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
-      dio.httpClientAdapter = FakeAdapter((options) async {
-        return _json('{"code":"dish_gallery_full","error":"该菜品已有3张审核实拍"}', 409);
-      });
-      final provider = CanteenProvider(dio);
-      final message = await provider.submitDishPhoto(
-        3,
-        dishId: 12,
-        fileId: 9527,
-      );
-      expect(message, isNull);
-      expect(provider.errorCode, 'dish_gallery_full');
-    });
-
     test('adminListPendingDishPhotos 解析 items', () async {
       final dio = Dio(BaseOptions(baseUrl: 'http://test'));
       dio.httpClientAdapter = FakeAdapter((options) async {

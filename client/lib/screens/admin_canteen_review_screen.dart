@@ -253,9 +253,12 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
   }
 
   Widget _buildCard(Map<String, dynamic> canteen, bool isDark) {
+    final auth = context.watch<AuthProvider>();
     return CanteenPendingCard(
       canteen: canteen,
       isDark: isDark,
+      token: auth.token,
+      accountId: auth.user?.id,
       onApprove: () => _approve(canteen),
       onReject: () => _reject(canteen),
     );

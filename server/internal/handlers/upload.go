@@ -15,10 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -126,18 +128,71 @@ type UploadHandler struct {
 	db        *gorm.DB
 	uploadDir string
 	maxSize   int64
+	jwtSecret string
 }
 
 // NewUploadHandler 创建上传处理器
-func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandler {
-	return &UploadHandler{
+func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB, jwtSecrets ...string) *UploadHandler {
+	handler := &UploadHandler{
 		db:        db,
 		uploadDir: uploadDir,
 		maxSize:   maxSize,
 	}
+	if len(jwtSecrets) > 0 {
+		handler.jwtSecret = jwtSecrets[0]
+	}
+	return handler
 }
 
-// ServePublic 仅提供数据库标记为公开的原图和已完成的版本化变体。
+func (h *UploadHandler) SetJWTSecret(secret string) {
+	h.jwtSecret = secret
+}
+
+// isAuthorizedForPrivateFile 检查请求是否有权访问私有待审核文件（管理员/超级管理员/文件上传者）
+func (h *UploadHandler) isAuthorizedForPrivateFile(c *gin.Context, file models.File) bool {
+	if role, exists := c.Get("role"); exists {
+		if roleStr, ok := role.(string); ok && (roleStr == "admin" || roleStr == "super_admin") {
+			return true
+		}
+	}
+	if userIDVal, exists := c.Get("user_id"); exists {
+		if uid, ok := userIDVal.(uint); ok && uid != 0 && uid == file.UploaderID {
+			return true
+		}
+	}
+
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		if cookieToken, err := c.Cookie("jwt"); err == nil && cookieToken != "" {
+			authHeader = "Bearer " + cookieToken
+		}
+	}
+	if authHeader == "" {
+		return false
+	}
+	tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if tokenString == "" {
+		return false
+	}
+
+	claims := &middleware.Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(h.jwtSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return false
+	}
+
+	if claims.Role == "admin" || claims.Role == "super_admin" {
+		return true
+	}
+	if claims.UserID != 0 && claims.UserID == file.UploaderID {
+		return true
+	}
+	return false
+}
+
+// ServePublic 提供公开图片原图/变体，以及授权管理员/上传者的待审核私有原图。
 func (h *UploadHandler) ServePublic(c *gin.Context) {
 	relative := strings.TrimPrefix(filepath.ToSlash(c.Param("filepath")), "/")
 	if relative == "" || strings.Contains(relative, "..") {
@@ -146,9 +201,18 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	}
 	var file models.File
 	variant, originalRelative := imageVariantRequest(relative)
+	isPublic := true
 	if err := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPublic).First(&file).Error; err != nil {
-		servePublicNotFound(c)
-		return
+		// 如果不是公开文件，尝试检查是否为私有待审核文件并校验管理员/上传者身份
+		if privErr := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPrivate).First(&file).Error; privErr != nil {
+			servePublicNotFound(c)
+			return
+		}
+		if !h.isAuthorizedForPrivateFile(c, file) {
+			servePublicNotFound(c)
+			return
+		}
+		isPublic = false
 	}
 
 	publicPath := file.Path
@@ -185,7 +249,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", mimeType)
-	c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+	if isPublic {
+		c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+	} else {
+		c.Header("Cache-Control", "private, no-store")
+	}
 	if uploadAccelRedirectEnabled() {
 		c.Header("X-Accel-Redirect", uploadAccelRedirectPath(publicPath))
 		c.Status(http.StatusOK)

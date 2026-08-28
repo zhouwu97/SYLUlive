@@ -36,7 +36,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _reportsCount;
   int? _featuredCount;
   int? _reviewTasksCount; // Teachers + Majors + Canteens
-  int? _dishModerationCount; // 菜品候选 + 实拍
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   bool _hasLoadError = false;
@@ -72,7 +71,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/admin/removals/pending')),
       safeGet(dio.get('/admin/exam-papers/pending-count')),
       safeGet(dio.get('/canteens/pending')),
-      safeGet(dio.get('/canteens/dish-moderation/pending-count')),
     ]);
 
     if (!mounted) return;
@@ -104,7 +102,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
       _reviewTasksCount = sumCounts([responses[2], responses[3], responses[7]]);
-      _dishModerationCount = getCount(responses[8]);
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _hasLoadError = responses.any((response) => response == null);
@@ -246,7 +243,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       ],
                     ),
                     _AdminSectionGroup(
-                      title: '审核代办',
+                      title: '审核待办',
                       isDark: isDark,
                       children: [
                         _AdminActionPill(
@@ -338,7 +335,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.how_to_reg,
                           iconColor: Colors.green,
                           title: '邀请 / 罢免',
-                          subtitle: '管理员协作代办',
+                          subtitle: '管理员协作待办',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -473,17 +470,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
-              title: '菜品',
-              count: _dishModerationCount,
-              isLoading: _isLoading,
-              isDark: isDark,
-              onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const CanteenDishPhotoReviewScreen()))
-                  .then((_) => _loadCounts()),
-            ),
-            _AdminMetricPill(
               title: '试卷',
               count: _examPapersCount,
               isLoading: _isLoading,
@@ -495,7 +481,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
-              title: '管理员代办',
+              title: '管理员待办',
               count: _adminTasksCount,
               isLoading: _isLoading,
               isDark: isDark,

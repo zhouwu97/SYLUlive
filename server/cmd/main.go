@@ -447,6 +447,12 @@ func main() {
 	if err := models.BackfillLegacyMarketContacts(db); err != nil {
 		log.Fatal("历史集市联系方式回填失败:", err)
 	}
+	// 退役类型通知（集市广播、食堂待审等）仅为历史数据，查询已过滤，启动时分批清除。
+	if purged, err := models.PurgeRetiredNotifications(db); err != nil {
+		log.Printf("[DB_WARN] 退役通知清理失败（不影响启动）: %v", err)
+	} else if purged > 0 {
+		log.Printf("已清理退役通知 %d 条", purged)
+	}
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)

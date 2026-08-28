@@ -22,8 +22,6 @@ const (
 	notificationMaxPageSize    = 50
 	legacyNotificationPageSize = 100
 
-	// NotificationTypeCanteenPending 食堂提交待审核（通知管理员）
-	NotificationTypeCanteenPending = "canteen_pending"
 	// NotificationTypeCanteenReviewResult 食堂审核结果（通知提交者）
 	NotificationTypeCanteenReviewResult = "canteen_review_result"
 )
@@ -80,7 +78,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	var count int64
 	if err := h.db.Model(&models.Notification{}).
 		Where("user_id = ? AND is_read = ?", uid, false).
-		Where("type != ?", models.RetiredNotificationTypeMarketPost).
+		Where("type NOT IN ?", models.RetiredNotificationTypes).
 		Count(&count).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读数量失败"})
 		return
@@ -136,7 +134,7 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 
 	var notifications []models.Notification
 	query := h.db.Where("user_id = ?", uid).
-		Where("type != ?", models.RetiredNotificationTypeMarketPost)
+		Where("type NOT IN ?", models.RetiredNotificationTypes)
 	if c.Query("cursor") != "" {
 		query = query.Where(
 			"(created_at < ? OR (created_at = ? AND id < ?))",
@@ -533,36 +531,6 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 			log.Printf("[DB_ERROR] CreateMarketPostNotification batch insert failed: %v", err)
 		}
 	}
-}
-
-// CreateCanteenPendingNotification 食堂提交后通知所有管理员审核（仅写库）。
-func CreateCanteenPendingNotification(db *gorm.DB, canteenID uint, canteenName string, submitterID uint) {
-	var admins []models.User
-	if err := db.Select("id").Where("role IN ?", []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).Find(&admins).Error; err != nil {
-		log.Printf("[DB_WARN] CreateCanteenPendingNotification Find admins failed: %v", err)
-		return
-	}
-	content := fmt.Sprintf("有新的食堂提交待审核：「%s」", textutils.TruncateGraphemes(canteenName, 50))
-	notifications := make([]models.Notification, 0, len(admins))
-	for _, admin := range admins {
-		notifications = append(notifications, models.Notification{
-			UserID:    admin.ID,
-			Type:      NotificationTypeCanteenPending,
-			Content:   content,
-			RelatedID: canteenID,
-			FromUID:   submitterID,
-			IsRead:    false,
-			DedupKey:  fmt.Sprintf("canteen_pending:%d", canteenID),
-		})
-	}
-	if len(notifications) == 0 {
-		return
-	}
-	if err := db.CreateInBatches(&notifications, 200).Error; err != nil {
-		log.Printf("[DB_ERROR] CreateCanteenPendingNotification batch insert failed: %v", err)
-		return
-	}
-	// 管理端待办与角标依赖未读通知，推送仅在站内，避免重复打扰。
 }
 
 // CreateCanteenReviewResultNotification 审核通过/驳回后通知提交者（仅写库）。

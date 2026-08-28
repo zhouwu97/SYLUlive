@@ -459,8 +459,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '有成员退出了你的组队';
     } else if (type == 'team_member_removed') {
       actionText = '你已被移出组队';
-    } else if (type == 'canteen_pending') {
-      actionText = '食堂提交待审核';
     } else if (type == 'canteen_review_result') {
       actionText = '食堂审核结果';
     }

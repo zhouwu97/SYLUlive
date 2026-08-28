@@ -951,7 +951,7 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		return
 	}
 
-	CreateCanteenPendingNotification(h.db, canteen.ID, canteen.Name, canteen.CreatedBy)
+	// 待审食堂仅在管理端待办/角标展示（/canteens/pending），不再写管理员个人通知。
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "已提交审核",

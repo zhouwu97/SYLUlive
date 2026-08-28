@@ -87,6 +87,7 @@ class DeviceJobPermissionSheet extends StatelessWidget {
           'academic' => '成绩',
           'schedule' => '课表',
           'erke' => '二课',
+          'physical' => '体测',
           _ => '个人数据',
         });
     return '仅返回本次问题所需的${labels.join('、')}摘要';

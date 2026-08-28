@@ -22,6 +22,7 @@ class AiInputComposer extends StatefulWidget {
   final AgentPermissionLoadState agentPermissionState;
   final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onAgentPermissionTap;
+  final VoidCallback? onBridgeRetry;
 
   const AiInputComposer({
     super.key,
@@ -38,6 +39,7 @@ class AiInputComposer extends StatefulWidget {
     this.agentPermissionState = AgentPermissionLoadState.ask,
     this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onAgentPermissionTap,
+    this.onBridgeRetry,
   });
 
   @override
@@ -120,6 +122,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
                   permissionState: widget.agentPermissionState,
                   bridgeStatus: widget.bridgeStatus,
                   onTap: widget.onAgentPermissionTap,
+                  onBridgeRetry: widget.onBridgeRetry,
                 ),
               ),
             Container(
@@ -221,12 +224,14 @@ class AiAgentPermissionModeBar extends StatelessWidget {
     this.permissionState,
     this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onTap,
+    this.onBridgeRetry,
   });
 
   final bool trusted;
   final AgentPermissionLoadState? permissionState;
   final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onTap;
+  final VoidCallback? onBridgeRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -257,62 +262,82 @@ class AiAgentPermissionModeBar extends StatelessWidget {
       DeviceBridgeStatus.offline => AppColors.danger,
       DeviceBridgeStatus.unknown => colors.outline,
     };
-    return Semantics(
-      button: true,
-      label: '校园 Agent 权限：$permissionLabel，$bridgeLabel',
-      hint: '点击打开 Agent 权限设置',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          child: SizedBox(
-            height: 44,
-            child: Center(
-              child: SizedBox(
-                height: 25,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.shield_outlined,
-                      size: 14,
-                      color: isDark ? colors.primary : AppColors.brandPrimary,
+    final canRetryBridge = bridgeStatus == DeviceBridgeStatus.degraded ||
+        bridgeStatus == DeviceBridgeStatus.offline;
+    return Material(
+      color: Colors.transparent,
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Expanded(
+              child: Semantics(
+                button: true,
+                label: '校园 Agent 权限：$permissionLabel',
+                hint: '点击打开 Agent 权限设置',
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          size: 14,
+                          color:
+                              isDark ? colors.primary : AppColors.brandPrimary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          permissionLabel,
+                          style: TextStyle(
+                            color: isDark
+                                ? colors.onSurfaceVariant
+                                : AppColors.textSecondaryLight,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      permissionLabel,
-                      style: TextStyle(
-                        color: isDark
-                            ? colors.onSurfaceVariant
-                            : AppColors.textSecondaryLight,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: bridgeColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      bridgeLabel,
-                      style: TextStyle(
-                        color: isDark
-                            ? colors.onSurfaceVariant
-                            : AppColors.textSecondaryLight,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+            Semantics(
+              button: canRetryBridge,
+              label: bridgeLabel,
+              hint: canRetryBridge ? '点击重试设备桥接' : null,
+              child: InkWell(
+                onTap: canRetryBridge ? onBridgeRetry : null,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        canRetryBridge ? Icons.refresh_rounded : Icons.circle,
+                        size: canRetryBridge ? 16 : 6,
+                        color: bridgeColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        bridgeLabel,
+                        style: TextStyle(
+                          color: isDark
+                              ? colors.onSurfaceVariant
+                              : AppColors.textSecondaryLight,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

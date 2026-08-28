@@ -283,8 +283,13 @@ class AiAgentActivityReducer {
       case 'edu_session_logged_out':
       case 'edu_session_expired':
       case 'edu_credential_unavailable':
-      case 'credential_unavailable':
         return '教务登录状态已失效，请重新验证教务';
+      case 'credential_unavailable':
+        if (label == '二课') return '缺少二课密码，请在手机验证后重试';
+        if (label == '体测') return '缺少体测密码，请在手机验证后重试';
+        return '教务登录状态已失效，请重新验证教务';
+      case 'physical_credential_invalid':
+        return '体测密码验证失败，请重新输入';
       case 'network_unavailable':
         return '网络连接失败，请重试';
       case 'provider_model_unavailable':
@@ -304,8 +309,7 @@ class AiAgentActivityReducer {
     return normalized == 'edu_authorization_revoked' ||
         normalized == 'edu_session_logged_out' ||
         normalized == 'edu_session_expired' ||
-        normalized == 'edu_credential_unavailable' ||
-        normalized == 'credential_unavailable';
+        normalized == 'edu_credential_unavailable';
   }
 
   static String _toolTitle(String toolName, String label) {
@@ -330,11 +334,14 @@ class AiAgentActivityReducer {
         return '课表';
       case 'erke':
         return '二课';
+      case 'physical':
+        return '体测';
     }
     if (dataset.isNotEmpty) return '校园数据';
     if (toolName.contains('grade')) return '成绩';
     if (toolName.contains('schedule')) return '课表';
     if (toolName.contains('erke')) return '二课';
+    if (toolName.contains('physical')) return '体测';
     if (toolName.contains('academic')) return '学业';
     return '校园数据';
   }

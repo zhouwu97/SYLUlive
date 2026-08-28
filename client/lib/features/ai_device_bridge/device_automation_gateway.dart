@@ -8,6 +8,7 @@ enum PersonalDataType {
   creditRequirements,
   schedule,
   erke,
+  physical,
 }
 
 /// 只暴露新鲜度元数据，避免 freshness 检查越过 PersonalDataGateway 读取原始快照。
@@ -79,6 +80,8 @@ abstract interface class DeviceAutomationGateway {
 
   Future<RefreshResult> refreshErke();
 
+  Future<RefreshResult> refreshPhysical();
+
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
@@ -101,6 +104,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
     Future<RefreshResult> Function()? refreshCreditRequirements,
     Future<RefreshResult> Function()? refreshSchedule,
     Future<RefreshResult> Function()? refreshErke,
+    Future<RefreshResult> Function()? refreshPhysical,
     Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
         readAcademicDataset,
     DateTime Function()? now,
@@ -110,6 +114,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
         _refreshCreditRequirements = refreshCreditRequirements,
         _refreshSchedule = refreshSchedule,
         _refreshErke = refreshErke,
+        _refreshPhysical = refreshPhysical,
         _readAcademicDataset = readAcademicDataset,
         _now = now ?? DateTime.now;
 
@@ -119,6 +124,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   final Future<RefreshResult> Function()? _refreshCreditRequirements;
   final Future<RefreshResult> Function()? _refreshSchedule;
   final Future<RefreshResult> Function()? _refreshErke;
+  final Future<RefreshResult> Function()? _refreshPhysical;
   final Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
       _readAcademicDataset;
   final DateTime Function() _now;
@@ -136,6 +142,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
           end: _startOfWeek(_now()).add(const Duration(days: 6)),
         ),
       PersonalDataType.erke => await _reader.getErkeOverview(),
+      PersonalDataType.physical => await _reader.getPhysicalOverview(),
     };
     return FreshnessState(
       fetchedAt: result.fetchedAt,
@@ -181,6 +188,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
         ),
       PersonalDataType.schedule => await refreshSchedule(),
       PersonalDataType.erke => await refreshErke(),
+      PersonalDataType.physical => await refreshPhysical(),
     };
     final after = await inspect(type);
     return EnsureFreshResult(
@@ -262,6 +270,15 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
     if (refresh != null) return refresh();
     return Future.value(
       const RefreshResult(performed: false, message: '二课刷新需要单独的设备授权'),
+    );
+  }
+
+  @override
+  Future<RefreshResult> refreshPhysical() {
+    final refresh = _refreshPhysical;
+    if (refresh != null) return refresh();
+    return Future.value(
+      const RefreshResult(performed: false, message: '体测刷新需要设备密码'),
     );
   }
 

@@ -303,6 +303,30 @@ func TestDeviceJobScheduleBindsResultToRequestedWeek(t *testing.T) {
 	}
 }
 
+func TestDeviceJobAcceptsMinimalPhysicalOverview(t *testing.T) {
+	_, service := newDeviceJobFixture(t, time.Now().UTC())
+	_, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID: "physical-installation", ToolNames: []string{"device.physical.get_cached_overview"},
+		BridgeProtocolVersion: requiredDeviceBridgeVersion, ClientVersion: "1.0.0",
+	})
+	require.NoError(t, err)
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "physical-run", ToolCallID: "physical-call",
+		ToolName: "device.physical.get_cached_overview", Arguments: json.RawMessage(`{}`),
+		RequiredDataTypes: []string{"physical"}, ExpiresAt: time.Now().UTC().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	claimed, err := service.ClaimJob(context.Background(), 1, "physical-installation", job.ID, job.StateVersion)
+	require.NoError(t, err)
+	completed, err := service.CompleteJob(context.Background(), 1, "physical-installation", job.ID, claimed.StateVersion, json.RawMessage(`{
+		"data":{"latest_year":"2026","available_year_count":1,"total_grade":"良好","total_score":82.5,"metrics":[{"name":"50 米跑","result":"7.2 秒","grade":"良好","score":82}]},
+		"source":"device_encrypted_cache","fetched_at":"2026-08-28T00:00:00Z","expires_at":"2026-09-27T00:00:00Z","is_stale":false,"is_partial":false,"warnings":[],
+		"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-08-28T00:00:00Z","expires_at":"2026-09-27T00:00:00Z","is_stale":false}]
+	}`))
+	require.NoError(t, err)
+	require.Equal(t, models.DeviceToolJobCompleted, completed.Status)
+}
+
 func TestDeviceJobIgnoresStaleAndOutdatedDevices(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	db, service := newDeviceJobFixture(t, now)

@@ -172,6 +172,7 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"academic.get_risk_analysis", "基于已授权成绩、学分和二课快照生成有边界的确定性风险与行动项。", emptySchema(), mcp.getRiskAnalysis},
 		campusMCPTool{"schedule.get_availability", "根据已授权课表快照计算指定教学周的空闲节次。", availabilitySchema(), mcp.getScheduleAvailability},
 		campusMCPTool{"erke.get_overview", "读取用户已授权上传的二课概览；没有上传时明确说明缺失。", emptySchema(), mcp.getErkeOverview},
+		campusMCPTool{"physical.get_overview", "从用户当前手机读取最近一次体测概览；不作医疗诊断。", emptySchema(), mcp.getPhysicalOverview},
 		campusMCPTool{"profile.get_academic_identity", "读取当前用户已授权的年级、学院和专业，不返回学号或账号信息。", emptySchema(), mcp.getAcademicIdentity},
 		campusMCPTool{"personal_calendar.get_events", "读取当前用户自己的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
 		campusMCPTool{"personal_calendar.get_range", "读取当前用户日期范围内的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
@@ -311,7 +312,7 @@ func compareSchema() map[string]interface{} {
 func resolveContextSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
-			"datasets":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 6, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke"}}},
+			"datasets":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 7, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke", "physical"}}},
 			"freshness":                map[string]interface{}{"type": "string", "enum": []string{"prefer_recent", "require_fresh", "allow_stale"}},
 			"reason":                   map[string]interface{}{"type": "string", "maxLength": 120},
 			"schedule_week_containing": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
@@ -1457,6 +1458,11 @@ func deviceRequestForDataset(dataset academic.DatasetType, request academic.Reso
 			return "device.erke.ensure_fresh_overview", []string{"erke"}, json.RawMessage(`{"max_age_seconds":1800}`), true
 		}
 		return "device.erke.get_cached_overview", []string{"erke"}, json.RawMessage(`{}`), true
+	case academic.DatasetPhysical:
+		if ensureFresh {
+			return "device.physical.ensure_fresh_overview", []string{"physical"}, json.RawMessage(`{"max_age_seconds":86400}`), true
+		}
+		return "device.physical.get_cached_overview", []string{"physical"}, json.RawMessage(`{}`), true
 	default:
 		return "", nil, nil, false
 	}
@@ -1479,6 +1485,8 @@ func deviceDatasetForTool(toolName string) string {
 		return string(academic.DatasetCreditRequirements)
 	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
 		return string(academic.DatasetErke)
+	case "device.physical.get_cached_overview", "device.physical.ensure_fresh_overview":
+		return string(academic.DatasetPhysical)
 	default:
 		return ""
 	}
@@ -1517,7 +1525,7 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 	}
 	needsAcademicSnapshot := false
 	for _, dataset := range request.Datasets {
-		if dataset != academic.DatasetErke {
+		if dataset != academic.DatasetErke && dataset != academic.DatasetPhysical {
 			needsAcademicSnapshot = true
 			break
 		}
@@ -1554,6 +1562,13 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		}
 		if dataset == academic.DatasetErke {
 			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
+			continue
+		}
+		if dataset == academic.DatasetPhysical {
+			results[dataset] = personalContextUnavailable(
+				academic.DataStatusMissing,
+				"体测数据只保存在手机本地；需要向当前手机请求最小化概览",
+			)
 			continue
 		}
 		if generationErr != nil {
@@ -1819,7 +1834,7 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessPreferRecent, Reason: "erke_overview"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessRequireFresh, Reason: "erke_overview"})
 	if err != nil {
 		return nil, err
 	}
@@ -1832,6 +1847,29 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 		return result, nil
 	}
 	return personalToolResult(extractErkeOverview(result.Data), result), nil
+}
+
+func (mcp *campusMCP) getPhysicalOverview(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	if err := requireEmptyArguments(arguments); err != nil {
+		return nil, err
+	}
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
+		Datasets:  []academic.DatasetType{academic.DatasetPhysical},
+		Freshness: academic.FreshnessRequireFresh,
+		Reason:    "physical_overview",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	result := results[academic.DatasetPhysical]
+	if !usablePersonalResult(result) {
+		result.Warnings = append(result.Warnings, "体测数据只保存在当前手机的加密保险箱中")
+		return result, nil
+	}
+	return personalToolResult(result.Data, result), nil
 }
 
 func (mcp *campusMCP) getAcademicIdentity(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {

@@ -85,4 +85,35 @@ void main() {
     expect(schedule, contains('_scheduleCardOpacity'));
     expect(schedule, contains('_scheduleSlotHeight'));
   });
+
+  test('WidgetDateChangeReceiver 注册系统日期/时间变更广播', () {
+    final manifest = source('android/app/src/main/AndroidManifest.xml');
+    expect(manifest, contains('.WidgetDateChangeReceiver'));
+    expect(manifest, contains('android.intent.action.DATE_CHANGED'));
+    expect(manifest, contains('android.intent.action.TIME_SET'));
+    expect(manifest, contains('android.intent.action.TIMEZONE_CHANGED'));
+
+    final receiver = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/WidgetDateChangeReceiver.kt',
+    );
+    expect(receiver, contains('HomeWidgetRegistry.refreshAll(context)'));
+  });
+
+  test('CourseDataReader 原生实现 Schema v2 全量课表动态计算与过期节次过滤', () {
+    final reader = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/CourseData.kt',
+    );
+    expect(reader, contains('parseV2'));
+    expect(reader, contains('parseV1'));
+    expect(reader, contains('semester_start'));
+    expect(reader, contains('currentWeekday'));
+    expect(reader, contains('academicWeek'));
+  });
+
+  test('MainActivity onResume 触发桌面小组件全量刷新', () {
+    final mainActivity = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/MainActivity.kt',
+    );
+    expect(mainActivity, contains('HomeWidgetRegistry.refreshAll(this)'));
+  });
 }

@@ -63,30 +63,90 @@ struct Provider: TimelineProvider {
         if let raw,
            let data = raw.data(using: .utf8),
            let object = try? JSONSerialization.jsonObject(with: data),
-           let payload = object as? [String: Any],
-           (payload["schema_version"] as? Int) == 1 {
+           let payload = object as? [String: Any] {
+            let version = (payload["schema_version"] as? Int) ?? 1
             title = payload["title"] as? String ?? title
-            dateInfo = payload["date"] as? String ?? ""
-            if let dateKey = payload["date_key"] as? String,
-               !dateKey.isEmpty,
-               dateKey != currentDateKey() {
-                return CourseEntry(
-                    date: Date(),
-                    title: title,
-                    dateInfo: "暂无今日数据",
-                    isEmpty: true,
-                    courses: []
-                )
-            }
-            let rawCourses = payload["courses"] as? [[String: Any]] ?? []
-            courses = rawCourses.compactMap { item in
-                guard let name = item["name"] as? String,
-                      let time = item["time"] as? String else { return nil }
-                return CourseItem(
-                    name: name,
-                    time: time,
-                    location: item["location"] as? String ?? ""
-                )
+
+            if version == 2 {
+                let now = Date()
+                let calendar = Calendar.current
+                let weekday = calendar.component(.weekday, from: now)
+                let mappedWeekday = weekday == 1 ? 7 : weekday - 1
+
+                var academicWeek: Int? = nil
+                if let startStr = payload["semester_start"] as? String, !startStr.isEmpty {
+                    let formatter = DateFormatter()
+                    formatter.locale = Locale(identifier: "en_US_POSIX")
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    if let startDate = formatter.date(from: startStr) {
+                        let startOfDay = calendar.startOfDay(for: now)
+                        let startOfSemester = calendar.startOfDay(for: startDate)
+                        let diffDays = calendar.dateComponents([.day], from: startOfSemester, to: startOfDay).day ?? 0
+                        if diffDays >= 0 {
+                            academicWeek = (diffDays / 7) + 1
+                        }
+                    }
+                }
+
+                let month = calendar.component(.month, from: now)
+                let day = calendar.component(.day, from: now)
+                let weekdaySymbols = ["", "一", "二", "三", "四", "五", "六", "日"]
+                let weekName = (mappedWeekday >= 1 && mappedWeekday <= 7) ? weekdaySymbols[mappedWeekday] : ""
+                let weekText = academicWeek != nil ? "第\(academicWeek!)周 " : ""
+                dateInfo = "\(month).\(day) \(weekText)周\(weekName)"
+
+                let starts = ["08:00", "08:55", "10:00", "10:55", "13:00", "13:55", "14:50", "15:45", "16:40", "17:35", "18:30", "19:25"]
+                let ends = ["08:45", "09:40", "10:45", "11:40", "13:45", "14:40", "15:35", "16:30", "17:25", "18:20", "19:15", "20:10"]
+
+                let rawCourses = payload["courses"] as? [[String: Any]] ?? []
+                var candidateCourses: [(startSection: Int, item: CourseItem)] = []
+
+                for item in rawCourses {
+                    guard let name = item["name"] as? String,
+                          let itemWeekday = item["weekday"] as? Int,
+                          itemWeekday == mappedWeekday else { continue }
+
+                    if let academicWeek = academicWeek,
+                       let weeks = item["weeks"] as? [Int],
+                       !weeks.isEmpty,
+                       !weeks.contains(academicWeek) {
+                        continue
+                    }
+
+                    let startSection = max(1, min(12, item["start_section"] as? Int ?? 1))
+                    let endSection = max(startSection, min(12, item["end_section"] as? Int ?? startSection))
+                    let time = "\(starts[startSection - 1])-\(ends[endSection - 1])"
+                    candidateCourses.append((
+                        startSection: startSection,
+                        item: CourseItem(name: name, time: time, location: item["location"] as? String ?? "")
+                    ))
+                }
+
+                candidateCourses.sort { $0.startSection < $1.startSection }
+                courses = candidateCourses.map { $0.item }
+            } else if version == 1 {
+                dateInfo = payload["date"] as? String ?? ""
+                if let dateKey = payload["date_key"] as? String,
+                   !dateKey.isEmpty,
+                   dateKey != currentDateKey() {
+                    return CourseEntry(
+                        date: Date(),
+                        title: title,
+                        dateInfo: "暂无今日数据",
+                        isEmpty: true,
+                        courses: []
+                    )
+                }
+                let rawCourses = payload["courses"] as? [[String: Any]] ?? []
+                courses = rawCourses.compactMap { item in
+                    guard let name = item["name"] as? String,
+                          let time = item["time"] as? String else { return nil }
+                    return CourseItem(
+                        name: name,
+                        time: time,
+                        location: item["location"] as? String ?? ""
+                    )
+                }
             }
         }
 

@@ -819,15 +819,15 @@ func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.
 		if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {
 			return value
 		}
-		for dataset, minimum := range map[string]float64{
+		for dataset, maximum := range map[string]float64{
 			"grades": 300, "academic_situation": 6 * 60 * 60, "credit_requirements": 24 * 60 * 60,
 		} {
 			var seconds float64
 			if json.Unmarshal(requested[dataset], &seconds) != nil {
 				return value
 			}
-			if seconds < minimum {
-				seconds = minimum
+			if seconds > maximum {
+				seconds = maximum
 			}
 			requested[dataset] = json.RawMessage(strconv.FormatInt(int64(seconds), 10))
 		}
@@ -842,14 +842,16 @@ func clampDeviceFreshnessArguments(toolName string, value json.RawMessage) json.
 	if json.Unmarshal(arguments["max_age_seconds"], &requested) != nil {
 		return value
 	}
-	minimum := 300.0
+	maximum := 300.0
 	if strings.Contains(toolName, "schedule") {
-		minimum = 600
+		maximum = 600
 	} else if strings.Contains(toolName, "erke") {
-		minimum = 1800
+		maximum = 1800
+	} else if strings.Contains(toolName, "physical") {
+		maximum = 24 * 60 * 60
 	}
-	if requested < minimum {
-		arguments["max_age_seconds"], _ = json.Marshal(minimum)
+	if requested > maximum {
+		arguments["max_age_seconds"], _ = json.Marshal(maximum)
 	}
 	encoded, err := json.Marshal(arguments)
 	if err != nil {

@@ -447,12 +447,29 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         }
         return const RefreshResult(performed: true);
       }
-      _sessionErkeCredentials = null;
-      await _credentialStore.deleteErke(sourceAccountId);
+      // 只有明确的凭据失败才删除密码
+      final shouldClearCredential = result.failureReason ==
+              PersonalSyncFailureReason.credentialUnavailable ||
+          result.failureReason == PersonalSyncFailureReason.eduSessionExpired;
+      if (shouldClearCredential) {
+        _sessionErkeCredentials = null;
+        await _credentialStore.deleteErke(sourceAccountId);
+        return RefreshResult(
+          performed: false,
+          message: result.message ?? '二课密码验证失败，请重新输入密码',
+          errorCode: 'credential_unavailable',
+        );
+      }
+      // 网络失败、解析失败等保留密码
       return RefreshResult(
         performed: false,
-        message: result.message ?? '二课更新失败，请重新输入密码',
-        errorCode: 'credential_unavailable',
+        message: result.message ?? '二课更新失败',
+        errorCode: switch (result.failureReason) {
+          PersonalSyncFailureReason.networkUnavailable =>
+            'network_unavailable',
+          PersonalSyncFailureReason.refreshIncomplete => 'refresh_incomplete',
+          _ => 'device_refresh_failed',
+        },
       );
     } finally {
       vpn.dispose();

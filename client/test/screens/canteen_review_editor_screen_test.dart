@@ -204,7 +204,7 @@ void main() {
     }
 
     // 五个维度未完成时，发布按钮不可点击
-    final publishButtonFinder = find.widgetWithText(FilledButton, '发布菜品评价');
+    final publishButtonFinder = find.widgetWithText(FilledButton, '发布食堂评价');
     expect(publishButtonFinder, findsOneWidget);
     final filledBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(filledBtn.onPressed, isNull);
@@ -304,9 +304,8 @@ void main() {
     await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
     await tester.pumpAndSettle();
 
-    // 未收录的自由输入保留在本次评价中，作为待收录菜品随评价一次提交。
+    // 新输入的菜名在本次评价中保留，作为本次菜品随评价一次提交。
     expect(find.text('自创麻辣烫'), findsWidgets);
-    expect(find.text('待收录'), findsOneWidget);
     expect(find.text('1 / 1'), findsOneWidget);
 
     // 3. 删除后再从已有菜品中选择“牛肉面”
@@ -366,7 +365,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('修改菜品评价'), findsOneWidget);
+    expect(find.text('修改食堂评价'), findsOneWidget);
     expect(find.text('老评价内容'), findsOneWidget);
     expect(find.text('4.30'), findsOneWidget);
     expect(find.text('2/6'), findsOneWidget);
@@ -437,7 +436,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布
-    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
     await tester.pumpAndSettle();
 
     expect(reviewCalled, isTrue);
@@ -479,7 +478,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     await blockingStore.firstMatchingWriteStarted.future;
 
-    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
     await tester.pump(const Duration(milliseconds: 20));
     expect(reviewCalled, isTrue);
 
@@ -549,7 +548,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布评价
-    await tester.tap(find.widgetWithText(FilledButton, '发布菜品评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 500));

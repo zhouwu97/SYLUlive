@@ -503,7 +503,7 @@ func TestCanteenApproveWithoutCreatorSkipsExpAward(t *testing.T) {
 	}
 }
 
-func TestCanteenSubmissionNotifiesAdmins(t *testing.T) {
+func TestCanteenSubmissionDoesNotNotifyAdmins(t *testing.T) {
 	db := newCanteenTestDB(t)
 	createCanteenTestUser(t, db, 1, "管理员")
 	createCanteenTestUser(t, db, 2, "提交者")
@@ -548,23 +548,15 @@ func TestCanteenSubmissionNotifiesAdmins(t *testing.T) {
 		t.Fatalf("submit status=%d body=%s", submitted.Code, submitted.Body.String())
 	}
 
-	var adminNotification models.Notification
-	if err := db.Where("user_id = ? AND type = ? AND related_id = ?", 1, NotificationTypeCanteenPending, 1).First(&adminNotification).Error; err != nil {
-		t.Fatalf("admin should receive pending notification: %v", err)
-	}
-	if !strings.Contains(adminNotification.Content, "新食堂") {
-		t.Fatalf("pending notification content=%s", adminNotification.Content)
-	}
-
-	// 重复提交同一记录不应产生重复通知（DedupKey）
+	// 待审食堂仅在管理端待办展示，不应给管理员写个人通知。
 	var count int64
 	if err := db.Model(&models.Notification{}).
-		Where("user_id = ? AND type = ? AND related_id = ?", 1, NotificationTypeCanteenPending, 1).
+		Where("user_id = ? AND type = ?", 1, models.RetiredNotificationTypeCanteenPending).
 		Count(&count).Error; err != nil {
 		t.Fatalf("count admin notifications: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("expected exactly 1 admin notification, got %d", count)
+	if count != 0 {
+		t.Fatalf("expected 0 admin notification, got %d", count)
 	}
 }
 

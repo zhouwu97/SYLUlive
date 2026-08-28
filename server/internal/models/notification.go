@@ -8,9 +8,16 @@ import (
 )
 
 const (
-	RetiredNotificationTypeMarketPost = "market_post"
-	legacyNotificationCleanupBatch    = 500
+	RetiredNotificationTypeMarketPost     = "market_post"
+	RetiredNotificationTypeCanteenPending = "canteen_pending"
+	legacyNotificationCleanupBatch        = 500
 )
+
+// RetiredNotificationTypes 已退役通知类型：不再产生，查询时过滤并分批清理历史数据。
+var RetiredNotificationTypes = []string{
+	RetiredNotificationTypeMarketPost,
+	RetiredNotificationTypeCanteenPending,
+}
 
 // Notification 用户通知模型
 type Notification struct {
@@ -26,29 +33,32 @@ type Notification struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// PurgeLegacyMarketPostNotifications 分批清理已退役的集市广播通知，避免单次删除长期占用数据库锁。
-func PurgeLegacyMarketPostNotifications(db *gorm.DB) (int64, error) {
+// PurgeRetiredNotifications 分批清理已退役类型的通知，避免单次删除长期占用数据库锁。
+func PurgeRetiredNotifications(db *gorm.DB) (int64, error) {
 	var total int64
-	for {
-		var ids []uint
-		if err := db.Model(&Notification{}).
-			Where("type = ?", RetiredNotificationTypeMarketPost).
-			Order("id ASC").
-			Limit(legacyNotificationCleanupBatch).
-			Pluck("id", &ids).Error; err != nil {
-			return total, err
-		}
-		if len(ids) == 0 {
-			return total, nil
-		}
+	for _, retiredType := range RetiredNotificationTypes {
+		for {
+			var ids []uint
+			if err := db.Model(&Notification{}).
+				Where("type = ?", retiredType).
+				Order("id ASC").
+				Limit(legacyNotificationCleanupBatch).
+				Pluck("id", &ids).Error; err != nil {
+				return total, err
+			}
+			if len(ids) == 0 {
+				break
+			}
 
-		result := db.Where("id IN ?", ids).Delete(&Notification{})
-		if result.Error != nil {
-			return total, result.Error
+			result := db.Where("id IN ?", ids).Delete(&Notification{})
+			if result.Error != nil {
+				return total, result.Error
+			}
+			if result.RowsAffected == 0 {
+				return total, fmt.Errorf("退役通知清理未取得进展")
+			}
+			total += result.RowsAffected
 		}
-		if result.RowsAffected == 0 {
-			return total, fmt.Errorf("集市广播通知清理未取得进展")
-		}
-		total += result.RowsAffected
 	}
+	return total, nil
 }

@@ -1404,7 +1404,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   leading: const Icon(Icons.person_add, color: Colors.blue),
                   title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
                   subtitle: Text(
-                    '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员代办，满 3 票后生效'}',
+                    '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员待办，满 3 票后生效'}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

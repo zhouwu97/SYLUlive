@@ -380,6 +380,12 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.EnsureCanteenDishSchema(db); err != nil {
+		log.Fatal("食堂菜品索引迁移失败:", err)
+	}
+	if err := models.MigratePendingDishesAndPhotos(db); err != nil {
+		log.Fatal("食堂菜品与实拍历史数据迁移失败:", err)
+	}
 	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
 		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
 	}
@@ -681,7 +687,7 @@ func main() {
 
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
-	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db, cfg.JWTSecret)
 
 	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
 	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
@@ -2107,16 +2113,9 @@ func main() {
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
-		// 菜品实拍审核与菜品管理
-		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
-		canteenAdmin.GET("/dishes/pending", canteenDishPhotoAdminHandler.AdminListPendingDishes)
-		canteenAdmin.GET("/dish-moderation/pending-count", canteenDishPhotoAdminHandler.AdminPendingModerationCount)
+		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
-		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
-		canteenAdmin.POST("/dishes/:dishId/approve", canteenDishPhotoAdminHandler.AdminApproveDish)
-		canteenAdmin.POST("/dishes/:dishId/reject", canteenDishPhotoAdminHandler.AdminRejectDish)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
 

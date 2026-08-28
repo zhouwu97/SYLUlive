@@ -137,7 +137,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         data: {'reject': !approve, 'reason': reason},
       );
       if (mounted) {
-        // 本地移除该代办
+        // 本地移除该待办
         if (mounted) {
           setState(
             () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']),

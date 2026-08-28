@@ -341,7 +341,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('审核代办空态提供明确反馈与刷新入口', (tester) async {
+  testWidgets('审核待办空态提供明确反馈与刷新入口', (tester) async {
     await tester.pumpWidget(
       _buildApp(
         const AdminReviewTasksScreen(),
@@ -361,6 +361,11 @@ void main() {
   });
 
   testWidgets('管理员面板显示全部待办指标与审核入口，且无菜品实拍审核', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     String? requestedReportStatus;
     await tester.pumpWidget(
       _buildApp(
@@ -402,13 +407,13 @@ void main() {
     expect(find.text('精华'), findsOneWidget);
     expect(find.text('审核'), findsOneWidget);
     expect(find.text('试卷'), findsOneWidget);
-    expect(find.text('管理员代办'), findsOneWidget);
+    expect(find.text('管理员待办'), findsOneWidget);
 
     // 社区治理区块
     expect(find.text('精华申请'), findsOneWidget);
     expect(find.text('版块图标审核'), findsOneWidget);
 
-    // 审核代办区块：包含教师、试卷、专业审核，绝无菜品实拍审核
+    // 审核待办区块：包含教师、试卷、专业审核，绝无菜品实拍审核
     expect(find.text('教师审核'), findsOneWidget);
     expect(find.text('试卷审核'), findsOneWidget);
     expect(find.text('专业审核'), findsOneWidget);

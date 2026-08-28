@@ -460,7 +460,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
 
     return Scaffold(
-      appBar: const AppPageAppBar(title: Text('审核代办')),
+      appBar: const AppPageAppBar(title: Text('审核待办')),
       body: SafeArea(
         top: false,
         child: body,

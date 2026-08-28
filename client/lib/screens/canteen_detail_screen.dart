@@ -985,18 +985,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (mounted) await _reloadSilently();
   }
 
-  /// 空图鉴「上传菜品实拍」：直接打开上传 Sheet（dish_name 模式），
-  /// 不再经由菜品列表页的空列表死路。
   Future<void> _openDishPhotoUpload() async {
-    final success = await showDishPhotoUploadSheet(
-      context,
-      canteenId: widget.canteenId,
-      provider: context.read<CanteenProvider>(),
-    );
-    if (success == true && mounted) {
-      await _reloadSilently();
-    }
+    await _openDishList();
   }
+
 
   void _showRefreshFailed() {
     ScaffoldMessenger.of(context).showSnackBar(

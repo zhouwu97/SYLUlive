@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../services/idempotency_key.dart';
-import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_status_image.dart';
@@ -286,15 +285,6 @@ class _MyCanteenContributionsScreenState
           SnackBar(content: Text(provider.errorMessage ?? '提交失败，请稍后重试')),
         );
       }
-      return;
     }
-    final success = await showDishPhotoUploadSheet(
-      context,
-      canteenId: canteenId,
-      dishId: dishId,
-      dishName: item['dish_name']?.toString(),
-      provider: provider,
-    );
-    if (success == true && mounted) await _reload();
   }
 }

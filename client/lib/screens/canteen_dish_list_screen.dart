@@ -61,18 +61,6 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     }
   }
 
-  /// 空列表 → 直接打开上传 Sheet（dish_name 模式），可输入新菜名投稿第一张实拍。
-  Future<void> _openUploadSheet() async {
-    final success = await showDishPhotoUploadSheet(
-      context,
-      canteenId: widget.canteenId,
-      provider: context.read<CanteenProvider>(),
-    );
-    if (success == true && mounted) {
-      await _load();
-    }
-  }
-
   void _openDish(CanteenDish dish) {
     if (dish.isReviewGallery) {
       final images =
@@ -134,12 +122,11 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                 )
               : _dishes.isEmpty
                   ? CanteenEmptyState(
-                      icon: Icons.photo_camera_outlined,
-                      title: '还没有收录菜品',
-                      subtitle:
-                          widget.offline ? '所属商家已下架，历史菜品暂不支持新增' : '上传第一道菜实拍吧',
-                      actionLabel: widget.offline ? null : '上传第一道菜实拍',
-                      onAction: widget.offline ? null : _openUploadSheet,
+                      icon: Icons.restaurant_menu_rounded,
+                      title: '暂无收录菜品',
+                      subtitle: widget.offline
+                          ? '所属商家已下架'
+                          : '发表食堂评价时填写菜品名称即可自动收录',
                     )
                   : GridView.builder(
                       padding: const EdgeInsets.all(16),

@@ -2188,8 +2188,7 @@ func uniqueReviewDishIDs(ids ...[]uint) []uint {
 }
 
 // resolveReviewDishInputs 在一次评价事务内解析菜名和菜品 ID。
-// 已有 active 菜直接关联；pending 菜复用同一实体；未知菜名创建一个 pending candidate。
-// 这样评价可以立即发布，菜品实体仍然等待管理员审核，不会因为审核状态阻断主链路。
+// 已有 active 菜直接关联；未收录菜名随评价直接创建 active 菜品。
 func (h *CanteenHandler) resolveReviewDishInputs(tx *gorm.DB, canteenID, userID uint, ids []uint, names []string, legacyReviews, dishes []reviewDishInput) ([]reviewDishInput, []uint, error) {
 	resolved := make([]reviewDishInput, 0, len(legacyReviews)+len(dishes)+len(names))
 	selected := make([]uint, 0, 1)
@@ -2222,7 +2221,7 @@ func (h *CanteenHandler) resolveReviewDishInputs(tx *gorm.DB, canteenID, userID 
 				}
 			}
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				dish = models.CanteenDish{CanteenID: canteenID, Name: name, NormalizedName: normalized, Status: models.DishStatusPending, CreatedBy: userID}
+				dish = models.CanteenDish{CanteenID: canteenID, Name: name, NormalizedName: normalized, Status: models.DishStatusActive, CreatedBy: userID}
 				result := tx.Create(&dish)
 				if result.Error != nil && !isUniqueConstraintError(result.Error) {
 					return result.Error
@@ -2294,6 +2293,7 @@ func dedupeReviewDishInputs(inputs []reviewDishInput) []reviewDishInput {
 			order = append(order, input.DishID)
 		}
 		current := byDish[input.DishID]
+		current.DishID = input.DishID
 		if input.TasteScore != 0 || input.ValueScore != 0 || input.PortionScore != 0 || input.Comment != "" {
 			current.TasteScore, current.ValueScore, current.PortionScore, current.Comment = input.TasteScore, input.ValueScore, input.PortionScore, input.Comment
 		}
@@ -2326,9 +2326,7 @@ func dedupeReviewDishInputs(inputs []reviewDishInput) []reviewDishInput {
 	return result
 }
 
-// syncDishReviews 同步一条到店评价的菜品关系和可选菜品评分。
-// 关系是“推荐/吃过”，评分事件是独立对象；编辑时删除关系、隐藏被移除的评分事件，
-// 并为所有受影响菜品重算用户摘要，避免旧评分残留在统计中。
+// syncDishReviews 同步一条到店评价的菜品关联关系。
 func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewEventID uint, selectedIDs []uint, inputs []reviewDishInput) error {
 	selected := make(map[uint]struct{}, len(selectedIDs))
 	for _, id := range selectedIDs {
@@ -2373,7 +2371,7 @@ func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewE
 			continue
 		}
 		if _, selected := selected[input.DishID]; !selected {
-			return fmt.Errorf("%w: 菜品评分必须属于已选择的推荐菜品", errReviewDishInvalid)
+			return fmt.Errorf("%w: 菜品必须属于已选择的菜品", errReviewDishInvalid)
 		}
 		allEmpty := input.TasteScore == 0 && input.ValueScore == 0 && input.PortionScore == 0
 		if allEmpty {
@@ -2431,9 +2429,8 @@ func (h *CanteenHandler) syncDishReviews(tx *gorm.DB, canteenID, userID, reviewE
 	return nil
 }
 
-// syncDishPhotos 将评价编辑器中已经上传的 file_id 绑定到菜品，图片仍保持 pending，
-// 只有管理员通过后才进入公开图库。编辑时 approved 资产脱离评价但继续保留，pending
-// 资产则随本次编辑删除并回收，避免删除评价时误删社区公共图片。
+// syncDishPhotos 将评价编辑器中上传的关联菜品图片直接保存为 approved，
+// 并自动将对应 File 设为 public。
 func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint, inputs []reviewDishInput) error {
 	wanted := make(map[string]reviewDishInput)
 	allFileIDs := make([]uint, 0)
@@ -2467,42 +2464,13 @@ func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint,
 			seenExisting[key] = struct{}{}
 			continue
 		}
-		if photo.Status == models.DishPhotoStatusApproved {
-			// 审核通过的社区资产不能因评价编辑被删除，只解除来源评价绑定。
-			if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("review_event_id", nil).Error; err != nil {
-				return err
-			}
-			continue
-		}
-		if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Updates(map[string]interface{}{
-			"status": models.DishPhotoStatusArchived, "review_event_id": nil, "reject_reason": "评价编辑移除",
-		}).Error; err != nil {
-			return err
-		}
-		if err := services.ReconcileFilePublicAccess(tx, photo.FileID); err != nil {
+		// 历史关联移除：解除 review_event_id 绑定，保留 approved 社区实拍
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("review_event_id", nil).Error; err != nil {
 			return err
 		}
 	}
 
-	newPendingByDish := make(map[uint]int)
-	for key, input := range wanted {
-		if _, exists := seenExisting[key]; exists || input.DishID == 0 {
-			continue
-		}
-		newPendingByDish[input.DishID]++
-	}
-	for dishID, newCount := range newPendingByDish {
-		var pendingCount int64
-		if err := tx.Model(&models.CanteenDishPhoto{}).
-			Where("dish_id = ? AND user_id = ? AND status = ?", dishID, userID, models.DishPhotoStatusPending).
-			Count(&pendingCount).Error; err != nil {
-			return err
-		}
-		if pendingCount+int64(newCount) > 3 {
-			return fmt.Errorf("%w: 你对该菜品的待审核实拍已达到上限", errReviewDishPendingLimit)
-		}
-	}
-
+	newFileIDs := make([]uint, 0)
 	for key, input := range wanted {
 		if _, exists := seenExisting[key]; exists {
 			continue
@@ -2525,9 +2493,16 @@ func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint,
 		}
 		photo := models.CanteenDishPhoto{
 			DishID: input.DishID, FileID: fileID, UserID: userID,
-			Status: models.DishPhotoStatusPending, ReviewEventID: &reviewEventID,
+			Status: models.DishPhotoStatusApproved, ReviewEventID: &reviewEventID,
 		}
 		if err := tx.Create(&photo).Error; err != nil {
+			return err
+		}
+		newFileIDs = append(newFileIDs, fileID)
+	}
+
+	if len(newFileIDs) > 0 {
+		if err := services.ClaimPublicImageFiles(tx, newFileIDs); err != nil {
 			return err
 		}
 	}

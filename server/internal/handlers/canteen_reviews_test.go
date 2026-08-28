@@ -14,6 +14,8 @@ import (
 
 func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.User) {
 	t.Helper()
+	uploadDir := t.TempDir()
+	t.Setenv("UPLOAD_DIR", uploadDir)
 	db := newCanteenTestDB(t)
 	if err := models.EnsureCanteenReviewSchema(db); err != nil {
 		t.Fatalf("migrate review v2: %v", err)
@@ -34,7 +36,7 @@ func reviewBody() string {
 	return `{"taste_score":5,"value_score":4,"queue_score":3,"hygiene_score":4,"service_score":4,"comment":"好吃"}`
 }
 
-func TestCreateReviewKeepsUnknownDishAsPendingCandidate(t *testing.T) {
+func TestCreateReviewCreatesActiveDishDirectly(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
@@ -44,10 +46,10 @@ func TestCreateReviewKeepsUnknownDishAsPendingCandidate(t *testing.T) {
 	}
 	var dish models.CanteenDish
 	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "铁板豆腐").First(&dish).Error; err != nil {
-		t.Fatalf("pending dish missing: %v", err)
+		t.Fatalf("dish missing: %v", err)
 	}
-	if dish.Status != models.DishStatusPending || dish.CreatedBy != user.ID {
-		t.Fatalf("dish=%+v want pending candidate", dish)
+	if dish.Status != models.DishStatusActive || dish.CreatedBy != user.ID {
+		t.Fatalf("dish=%+v want active status", dish)
 	}
 	var relation models.CanteenReviewEventDish
 	if err := h.db.Where("dish_id = ?", dish.ID).First(&relation).Error; err != nil {
@@ -56,7 +58,7 @@ func TestCreateReviewKeepsUnknownDishAsPendingCandidate(t *testing.T) {
 	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
 		"/api/user/canteen-contributions", nil, user.ID, "")
 	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "铁板豆腐") ||
-		!strings.Contains(contributions.Body.String(), models.DishStatusPending) {
+		!strings.Contains(contributions.Body.String(), models.DishStatusActive) {
 		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
 	}
 }
@@ -821,6 +823,106 @@ func TestDishSuggestionsDistinguishExactAndPossible(t *testing.T) {
 		"/api/canteens/88/dish-suggestions?q=辣子", mapParams("id", "88"), 0, "")
 	if resp.Code != http.StatusOK || !containsReviewJSONCode(resp.Body.Bytes(), "possible") {
 		t.Fatalf("possible response=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestReviewWithDishDirectlyCreatesActiveDishAndApprovedPhotos(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 501, user.ID, models.FileAccessPrivate)
+
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"火锅牛肉米线超好吃","dishes":[{"dish_name":"火锅牛肉米线","photo_file_ids":[%d]}]}`, file.ID))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "火锅牛肉米线").First(&dish).Error; err != nil {
+		t.Fatalf("dish not found: %v", err)
+	}
+	if dish.Status != models.DishStatusActive {
+		t.Fatalf("dish status = %s, want active", dish.Status)
+	}
+
+	var photo models.CanteenDishPhoto
+	if err := h.db.Where("dish_id = ? AND file_id = ?", dish.ID, file.ID).First(&photo).Error; err != nil {
+		t.Fatalf("dish photo not found: %v", err)
+	}
+	if photo.Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status = %s, want approved", photo.Status)
+	}
+
+	var updatedFile models.File
+	if err := h.db.First(&updatedFile, file.ID).Error; err != nil {
+		t.Fatalf("file not found: %v", err)
+	}
+	if updatedFile.AccessScope != models.FileAccessPublic || updatedFile.Status != "active" {
+		t.Fatalf("file access_scope = %s status = %s, want public active", updatedFile.AccessScope, updatedFile.Status)
+	}
+}
+
+func TestReviewReusesExistingDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	existing := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "火锅牛肉米线", NormalizedName: "火锅牛肉米线",
+		Status: models.DishStatusActive, CreatedBy: 1,
+	}
+	if err := h.db.Create(&existing).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"再次打卡","dish_names":["火锅牛肉米线"]}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var count int64
+	h.db.Model(&models.CanteenDish{}).Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "火锅牛肉米线").Count(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 dish row, got %d", count)
+	}
+}
+
+func TestMigratePendingDishesAndPhotosMigration(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	pendingDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "待审历史菜", NormalizedName: "待审历史菜",
+		Status: models.DishStatusPending, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&pendingDish).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := createTestFile(t, h.db, 601, user.ID, models.FileAccessPrivate)
+	pendingPhoto := models.CanteenDishPhoto{
+		DishID: pendingDish.ID, FileID: file.ID, UserID: user.ID, Status: models.DishPhotoStatusPending,
+	}
+	if err := h.db.Create(&pendingPhoto).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := models.MigratePendingDishesAndPhotos(h.db); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	var refreshedDish models.CanteenDish
+	h.db.First(&refreshedDish, pendingDish.ID)
+	if refreshedDish.Status != models.DishStatusActive {
+		t.Fatalf("dish status after migration = %s, want active", refreshedDish.Status)
+	}
+
+	var refreshedPhoto models.CanteenDishPhoto
+	h.db.First(&refreshedPhoto, pendingPhoto.ID)
+	if refreshedPhoto.Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status after migration = %s, want approved", refreshedPhoto.Status)
+	}
+
+	var refreshedFile models.File
+	h.db.First(&refreshedFile, file.ID)
+	if refreshedFile.AccessScope != models.FileAccessPublic {
+		t.Fatalf("file access after migration = %s, want public", refreshedFile.AccessScope)
 	}
 }
 

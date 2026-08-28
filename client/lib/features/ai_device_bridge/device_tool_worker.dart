@@ -233,6 +233,77 @@ class DeviceToolWorker {
         result.value,
       );
     } on DeviceAutomationException catch (error) {
+      // 凭据失败时，尝试本地重试一次：弹窗输入密码后重新执行
+      if (error.code == 'credential_unavailable' && await context.isCurrent()) {
+        final retryDecision = await resolver.call(job);
+        if (retryDecision == DeviceToolPermissionDecision.allow &&
+            await context.isCurrent()) {
+          // 密码已更新，在同一个 claimed job 上重试
+          try {
+            final retryResult = await _registry.execute(
+              current,
+              gateway,
+              automationGateway: automation,
+            );
+            if (!await context.isCurrent()) return;
+            if (refreshing) {
+              current = await _reportProgress(
+                installationId,
+                current,
+                'refresh_completed',
+              );
+            }
+            current = await _reportProgress(
+              installationId,
+              current,
+              'reading_result',
+            );
+            await _client.complete(
+              installationId,
+              current.id,
+              current.stateVersion,
+              retryResult.value,
+            );
+            return;
+          } on DeviceAutomationException catch (retryError) {
+            // 重试失败，正常走 fail 流程
+            if (await context.isCurrent()) {
+              if (refreshing) {
+                current = await _reportProgress(
+                  installationId,
+                  current,
+                  'refresh_failed',
+                );
+              }
+              await _client.fail(
+                installationId,
+                current.id,
+                current.stateVersion,
+                retryError.code,
+              );
+            }
+            return;
+          } on DeviceToolExecutionException catch (retryError) {
+            if (await context.isCurrent()) {
+              if (refreshing) {
+                current = await _reportProgress(
+                  installationId,
+                  current,
+                  'refresh_failed',
+                );
+              }
+              await _client.fail(
+                installationId,
+                current.id,
+                current.stateVersion,
+                retryError.code,
+              );
+            }
+            return;
+          }
+        }
+      }
+
       if (await context.isCurrent()) {
         if (refreshing) {
           current = await _reportProgress(

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -27,13 +28,13 @@ func NewCanteenDishPhotoHandler(db *gorm.DB) *CanteenDishPhotoHandler {
 
 // SubmitDishPhoto 是旧客户端路径的兼容别名。
 //
-// 旧路径不能再保留“直接 active + approved + public”的历史行为，否则任何普通
-// 学生都可以绕过菜品审核。统一转入 V2 pending 流程，保证旧客户端也不能绕过审核。
+// 独立菜品投稿流程已退休，现在通过食堂评价直接创建 active 菜品。
 // POST /api/canteens/:canteenId/dish-photos
 func (h *CanteenDishPhotoHandler) SubmitDishPhoto(c *gin.Context) {
-	// 旧 URL 只承担协议兼容；新评价/投稿 API 使用 approved-only 容量语义。
-	c.Set("legacy_dish_photo_submission", true)
-	h.SubmitDishPhotoV2(c)
+	c.JSON(http.StatusGone, gin.H{
+		"code":  "dish_submission_retired",
+		"error": "菜品与实拍现已通过食堂评价提交，请更新客户端",
+	})
 }
 
 // errDishNotFound 菜品不存在或不属于该食堂。

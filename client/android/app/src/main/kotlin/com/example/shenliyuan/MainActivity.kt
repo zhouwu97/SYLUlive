@@ -155,6 +155,10 @@ class MainActivity : FlutterActivity() {
         appInForeground = true
         PrivateMessageNotificationState.setAppForeground(this, true)
         recordActivityTransition("resume", "应用进入前台")
+        try {
+            HomeWidgetRegistry.refreshAll(this)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onPause() {

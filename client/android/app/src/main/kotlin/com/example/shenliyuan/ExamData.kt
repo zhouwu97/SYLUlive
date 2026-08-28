@@ -67,7 +67,8 @@ object ExamDataReader {
             "考试日程" to JSONArray(normalized)
         } else {
             val root = JSONObject(normalized)
-            if (root.optInt("schema_version", -1) != 1) return WidgetExamData()
+            val version = root.optInt("schema_version", -1)
+            if (version < 1 || version > 2) return WidgetExamData()
             root.optString("title", "考试日程") to (root.optJSONArray("exams") ?: JSONArray())
         }
         val exams = mutableListOf<WidgetExamData.Exam>()

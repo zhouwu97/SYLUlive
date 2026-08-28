@@ -284,7 +284,8 @@ struct ExamProvider: TimelineProvider {
               let data = raw.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
               let payload = object as? [String: Any],
-              (payload["schema_version"] as? Int) == 1 else {
+              let version = (payload["schema_version"] as? Int),
+              version >= 1 && version <= 2 else {
             return ExamEntry(date: Date(), exams: [])
         }
         let rawExams = payload["exams"] as? [[String: Any]] ?? []

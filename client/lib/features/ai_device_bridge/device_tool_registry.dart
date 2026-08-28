@@ -591,7 +591,7 @@ class DeviceToolRegistry {
       PersonalDataType.erke => 30 * 60,
       PersonalDataType.physical => 24 * 60 * 60,
     };
-    final seconds = requested.toInt().clamp(ceiling, 24 * 60 * 60);
+    final seconds = requested.toInt().clamp(1, ceiling);
     final ensured = await automationGateway.ensureFresh(
       type,
       maxAge: Duration(seconds: seconds),

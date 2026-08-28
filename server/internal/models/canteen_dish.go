@@ -96,11 +96,25 @@ func validatePhotoFileOnDisk(f File) bool {
 	return err == nil && !info.IsDir()
 }
 
-// MigratePendingDishesAndPhotos 迁移历史 pending 菜品和实拍：
+const CanteenPendingDishMigrationVersion = "20260825_01_canteen_pending_dish_migration"
+
+// MigratePendingDishesAndPhotos 迁移历史 pending 菜品和实拍（一次性迁移）：
 // 1. 将所有 status = 'pending' 的 CanteenDish 自动转为 'active'；
 // 2. 将合法且文件存在的 pending 实拍转为 'approved' 并将 File 设为 public；
 // 3. 历史 rejected / hidden / archived 状态保持不变。
+//
+// 此迁移只运行一次。运行后不再自动处理新产生的 pending 数据。
 func MigratePendingDishesAndPhotos(db *gorm.DB) error {
+	if err := db.AutoMigrate(&AppSchemaMigration{}); err != nil {
+		return err
+	}
+
+	var existing AppSchemaMigration
+	if err := db.Where("version = ?", CanteenPendingDishMigrationVersion).First(&existing).Error; err == nil {
+		// 已经运行过，跳过
+		return nil
+	}
+
 	return db.Transaction(func(tx *gorm.DB) error {
 		// 1. 将所有 pending 状态的菜品迁移为 active
 		if err := tx.Model(&CanteenDish{}).
@@ -118,7 +132,11 @@ func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 			return err
 		}
 		if len(dishIDs) == 0 {
-			return nil
+			// 记录迁移完成
+			return tx.Create(&AppSchemaMigration{
+				Version:   CanteenPendingDishMigrationVersion,
+				AppliedAt: time.Now().UTC(),
+			}).Error
 		}
 
 		for _, dishID := range dishIDs {
@@ -191,7 +209,12 @@ func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 				}
 			}
 		}
-		return nil
+
+		// 记录迁移完成
+		return tx.Create(&AppSchemaMigration{
+			Version:   CanteenPendingDishMigrationVersion,
+			AppliedAt: time.Now().UTC(),
+		}).Error
 	})
 }
 

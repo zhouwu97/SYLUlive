@@ -102,7 +102,8 @@ class HomeWidgetService {
   static const _channel = MethodChannel('shenliyuan/widget');
   static const _courseDataKey = 'widget_course_data';
   static const _examDataKey = 'widget_exam_data';
-  static const widgetSchemaVersion = 2;
+  static const courseWidgetSchemaVersion = 2;
+  static const examWidgetSchemaVersion = 2;
 
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
@@ -205,7 +206,7 @@ class HomeWidgetService {
       }).toList();
 
       final payload = {
-        'schema_version': widgetSchemaVersion,
+        'schema_version': courseWidgetSchemaVersion,
         'updated_at': now.toIso8601String(),
         'title': '沈理院课表',
         'semester_start': semesterStartStr,
@@ -217,7 +218,7 @@ class HomeWidgetService {
       final prefs = await AppPreferencesStore.getInstance();
       await prefs.setString(_courseDataKey, jsonEncode(payload));
       await _refreshNative();
-      debugPrint('课表小组件已全量同步 (Schema v$widgetSchemaVersion)：${courses.length} 门课');
+      debugPrint('课表小组件已全量同步 (Schema v$courseWidgetSchemaVersion)：${courses.length} 门课');
     } catch (error) {
       debugPrint('课表小组件同步失败：$error');
     }
@@ -247,7 +248,7 @@ class HomeWidgetService {
       await prefs.setString(
         _examDataKey,
         jsonEncode({
-          'schema_version': widgetSchemaVersion,
+          'schema_version': examWidgetSchemaVersion,
           'updated_at': now.toIso8601String(),
           'exams': exams,
         }),

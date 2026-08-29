@@ -118,8 +118,15 @@ func RequestTraceMiddleware() gin.HandlerFunc {
 		}
 
 		c.Writer = originalWriter
-		captureWriter.forward(body)
-		logRequest(c, requestID, status, time.Since(startedAt), errorCode)
+		if captureWriter.Written() {
+			captureWriter.forward(body)
+			logRequest(c, requestID, status, time.Since(startedAt), errorCode)
+			return
+		}
+		// gin 路由级 404/405 不经过任何 handler，状态由 gin 直接写在底层
+		// writer 上。此时兜底 forward 会把未知路径提交成 200 空响应，客户端
+		// 会把打错的路径当成成功；交还 gin 完成默认错误响应。
+		logRequest(c, requestID, originalWriter.Status(), time.Since(startedAt), errorCode)
 	}
 }
 

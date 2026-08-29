@@ -294,6 +294,54 @@ func TestEduFetchDoesNotHideAuthorizationFailureBehindStaleSnapshot(t *testing.T
 	}
 }
 
+func TestEduFetchInvalidCredentialsRequiresReauthorizationDespiteStaleSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	fetcher := &fakeEduContextFetcher{bundle: clients.EduContextBundle{Results: map[string]clients.EduContextItem{
+		"grades:2025-2026:3": {Status: "failed", ErrorCode: "EDU_INVALID_CREDENTIALS", Message: "教务账号或密码错误，请重新输入密码"},
+	}}}
+	_, snapshots, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+	if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+		UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+		Source: academic.DataSourceRemoteEduFetch, Payload: json.RawMessage(`{"success":true,"grades":["old"]}`),
+		FetchedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour), CredentialGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := orchestrator.Fetch(context.Background(), 1, gradesRequest(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != academic.DataStatusPermissionRequired || result.Source != academic.DataSourceNone {
+		t.Fatalf("invalid credentials must request re-entry instead of stale fallback: source=%s status=%s", result.Source, result.Status)
+	}
+}
+
+func TestEduFetchUpstreamUnavailableKeepsStaleSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	for _, code := range []string{"EDU_UPSTREAM_UNAVAILABLE", "EDU_NETWORK_ERROR"} {
+		t.Run(code, func(t *testing.T) {
+			fetcher := &fakeEduContextFetcher{bundle: clients.EduContextBundle{Results: map[string]clients.EduContextItem{
+				"grades:2025-2026:3": {Status: "failed", ErrorCode: code, Message: "教务系统暂时无法完成自动登录，请稍后重试"},
+			}}}
+			_, snapshots, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+			if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+				UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+				Source: academic.DataSourceRemoteEduFetch, Payload: json.RawMessage(`{"success":true,"grades":["old"]}`),
+				FetchedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour), CredentialGeneration: 1,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			result, err := orchestrator.Fetch(context.Background(), 1, gradesRequest(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != academic.DataStatusStale || !result.IsStale {
+				t.Fatalf("%s must fall back to stale snapshot instead of requiring reauthorization: status=%s stale=%v", code, result.Status, result.IsStale)
+			}
+		})
+	}
+}
+
 func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	started := make(chan struct{}, 1)

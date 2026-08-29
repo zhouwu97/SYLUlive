@@ -761,6 +761,57 @@ func TestRuntimeResumesWaitingDeviceJobOnlyOnce(t *testing.T) {
 	require.Len(t, provider.Requests(), 2)
 }
 
+// 复现生产故障：pending 任务过期后无人触碰，惰性过期永不触发，Run 卡死在
+// waiting_device。Reconcile 必须先把超时任务收尾成终态，再接进恢复路径。
+func TestReconcileWaitingDeviceJobsExpiresStalePendingJob(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "device_call", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "device_call", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "设备未响应，已按现有数据完成分析。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	executions := 0
+	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		executions++
+		if executions == 1 {
+			return ToolWait{
+				State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: "device-job-stale",
+				Payload: map[string]interface{}{"datasets": []string{"academic"}},
+			}, nil
+		}
+		return map[string]interface{}{"source": "outer_tool"}, nil
+	}}
+	runtime := newToolRuntime(t, db, provider, tool)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "分析成绩"})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateWaitingDevice)
+
+	require.NoError(t, db.Create(&models.DeviceToolJob{
+		ID: "device-job-stale", UserID: 7, RunID: run.ID, ToolCallID: "device_call",
+		InstallationID: "gone-installation", ToolName: "device.academic.get_cached_overview",
+		ArgumentsJSON: datatypes.JSON([]byte(`{}`)), RequiredDataTypes: datatypes.JSON([]byte(`["academic"]`)),
+		Status: models.DeviceToolJobPending, ExpiresAt: time.Now().UTC().Add(-time.Minute),
+	}).Error)
+
+	_, err = runtime.ReconcileWaitingDeviceJobs(context.Background(), 50)
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "设备未响应，已按现有数据完成分析。", completed.AnswerCheckpoint)
+
+	var job models.DeviceToolJob
+	require.NoError(t, db.First(&job, "id = ?", "device-job-stale").Error)
+	require.Equal(t, models.DeviceToolJobExpired, job.Status)
+	require.Equal(t, "job_expired", job.ErrorCode)
+	require.Len(t, provider.Requests(), 2)
+}
+
 func TestDeviceJobTerminalEventPreservesTerminalMeaning(t *testing.T) {
 	tests := map[string]string{
 		models.DeviceToolJobCompleted: "ai.device.job.succeeded",

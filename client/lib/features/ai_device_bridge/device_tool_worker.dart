@@ -302,6 +302,27 @@ class DeviceToolWorker {
             return;
           }
         }
+        if (retryDecision == DeviceToolPermissionDecision.deny &&
+            await context.isCurrent()) {
+          // 用户主动取消密码框：按用户拒绝收尾，Run 得到明确结果。
+          await _client.fail(
+            installationId,
+            current.id,
+            current.stateVersion,
+            'permission_denied',
+          );
+          return;
+        }
+        if (retryDecision == DeviceToolPermissionDecision.defer) {
+          // 非前台等不适合弹窗的场景：任务持久化为 waiting_user 且不 fail，
+          // Run 保持存活；用户回来后 PendingJobs 会重新带回该任务继续执行。
+          await _client.waitForUser(
+            installationId,
+            current.id,
+            current.stateVersion,
+          );
+          return;
+        }
       }
 
       if (await context.isCurrent()) {

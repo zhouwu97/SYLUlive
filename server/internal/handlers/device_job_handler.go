@@ -130,6 +130,22 @@ func (h *DeviceJobHandler) Claim(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
 
+// WaitForUser 记录设备任务进入等待用户凭据状态；不触发 Run resume，
+// 由用户完成凭据输入后的 Complete/Fail 流程继续驱动。
+func (h *DeviceJobHandler) WaitForUser(c *gin.Context) {
+	var request deviceJobStateRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "等待请求无效"})
+		return
+	}
+	job, err := h.service.WaitForUserJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
 type deviceJobCompleteRequest struct {
 	StateVersion int64           `json:"state_version"`
 	Result       json.RawMessage `json:"result"`

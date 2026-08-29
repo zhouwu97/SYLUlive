@@ -22,7 +22,6 @@ import 'device_credential_prompt_sheet.dart';
 import 'device_credential_store.dart';
 import 'device_job_client.dart';
 import 'device_job_models.dart';
-import 'device_job_permission_sheet.dart';
 import 'device_automation_gateway.dart';
 import 'device_tool_worker.dart';
 
@@ -309,19 +308,9 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
       return DeviceToolPermissionDecision.defer;
     }
-    if (job.status != 'waiting_user') {
-      // 这类 Job 已经通过服务端的 ask / always / never 决策；再次弹窗会
-      // 造成双重授权。只有显式 waiting_user 才由设备侧完成一次确认。
-      return await _prepareCredentials(job)
-          ? DeviceToolPermissionDecision.allow
-          : DeviceToolPermissionDecision.deny;
-    }
-    // 任务状态为 waiting_user 时才会走到这里；pending / pushed 已经在
-    // 服务端完成 ask / always / never 合并，避免再次弹出同一授权。
-    final dialogContext = _dialogContext;
-    if (dialogContext == null) return DeviceToolPermissionDecision.defer;
-    final allowed = await DeviceJobPermissionSheet.request(dialogContext, job);
-    if (!allowed) return DeviceToolPermissionDecision.deny;
+    // pending / pushed 已在服务端完成 ask / always / never 授权合并，不能
+    // 重复弹授权面板；waiting_user（等待凭据）同样只需准备凭据。用户取消
+    // 密码框返回 deny，由 Worker 以 permission_denied 收尾。
     return await _prepareCredentials(job)
         ? DeviceToolPermissionDecision.allow
         : DeviceToolPermissionDecision.deny;

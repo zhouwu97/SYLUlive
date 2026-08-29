@@ -386,6 +386,9 @@ func main() {
 	if err := models.MigratePendingDishesAndPhotos(db); err != nil {
 		log.Fatal("食堂菜品与实拍历史数据迁移失败:", err)
 	}
+	if err := models.MigrateCanteenLocations(db); err != nil {
+		log.Fatal("食堂位置标签历史数据迁移失败:", err)
+	}
 	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
 		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
 	}
@@ -1184,6 +1187,7 @@ func main() {
 		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
 		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
 		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
 		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
 		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
 		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
@@ -2539,23 +2543,37 @@ func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
 func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	var canteens []models.Canteen
-	if err := db.Select("id", "name", "normalized_name").Find(&canteens).Error; err != nil {
+	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor").Find(&canteens).Error; err != nil {
 		return err
 	}
-	seen := make(map[string]uint, len(canteens))
+	type locationKey struct {
+		normalized string
+		area       string
+		floor      string
+	}
+	seen := make(map[locationKey]uint, len(canteens))
 	for _, canteen := range canteens {
 		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
-		if previousID, exists := seen[normalized]; exists {
+		key := locationKey{
+			normalized: normalized,
+			area:       canteen.LocationArea,
+			floor:      canteen.LocationFloor,
+		}
+		if previousID, exists := seen[key]; exists {
 			return errors.New("食堂名称规范化后重复: id=" + strconv.FormatUint(uint64(previousID), 10) + ", id=" + strconv.FormatUint(uint64(canteen.ID), 10))
 		}
-		seen[normalized] = canteen.ID
+		seen[key] = canteen.ID
 		if canteen.NormalizedName != normalized {
 			if err := db.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Update("normalized_name", normalized).Error; err != nil {
 				return err
 			}
 		}
 	}
-	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name)").Error
+	// 位置字段加入唯一约束：同名店铺允许存在于不同食堂区域/楼层。
+	if err := db.Exec("DROP INDEX IF EXISTS idx_canteens_normalized_name").Error; err != nil {
+		return err
+	}
+	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name, location_area, location_floor)").Error
 }
 
 func ensureFeatureCollaborationIndexes(db *gorm.DB) error {

@@ -303,6 +303,64 @@ func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installati
 	return &result, nil
 }
 
+// WaitForUserJob 把已领取的设备任务转入等待用户凭据状态，让 Run 在密码框期间
+// 保持存活而不是被判定失败。仅 claimed/running 可转入；重复上报幂等返回。
+func (s *DeviceJobService) WaitForUserJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64) (*models.DeviceToolJob, error) {
+	if stateVersion < 0 {
+		return nil, newDeviceJobError("invalid_state_version")
+	}
+	if err := s.requireActiveDevice(ctx, userID, installationID); err != nil {
+		return nil, err
+	}
+	now := s.clock().UTC()
+	var result models.DeviceToolJob
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var job models.DeviceToolJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ? AND installation_id = ?", jobID, userID, installationID).First(&job).Error; err != nil {
+			return mapDeviceJobNotFound(err)
+		}
+		if !job.ExpiresAt.After(now) {
+			return expireLockedJob(tx, &job, now)
+		}
+		if job.Status == models.DeviceToolJobWaitingUser {
+			// 上一次请求可能已提交但响应丢失；不推进状态版本，直接返回当前任务。
+			if job.StateVersion != stateVersion && job.StateVersion-1 != stateVersion {
+				return newDeviceJobError("state_version_conflict")
+			}
+			result = job
+			return nil
+		}
+		if job.StateVersion != stateVersion {
+			return newDeviceJobError("state_version_conflict")
+		}
+		if job.Status != models.DeviceToolJobClaimed && job.Status != models.DeviceToolJobRunning {
+			return newDeviceJobError("invalid_job_state")
+		}
+		// 任务要等用户输入凭据，有效期延长为所属 Run 的预算窗口；
+		// Run 不存在或预算已到期时任务没有等待意义，按过期收尾。
+		var run models.AIRun
+		if err := tx.Select("id", "expires_at").Where("id = ?", job.RunID).First(&run).Error; err != nil || !run.ExpiresAt.After(now) {
+			return expireLockedJob(tx, &job, now)
+		}
+		updates := map[string]interface{}{
+			"status":        models.DeviceToolJobWaitingUser,
+			"expires_at":    run.ExpiresAt,
+			"state_version": gorm.Expr("state_version + 1"),
+		}
+		if err := tx.Model(&models.DeviceToolJob{}).
+			Where("id = ? AND state_version = ? AND status IN ?", job.ID, stateVersion, []string{models.DeviceToolJobClaimed, models.DeviceToolJobRunning}).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", job.ID).First(&result).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // ProgressJob 接受设备桥接的固定阶段，不接受客户端自定义文案或任意状态。
 func (s *DeviceJobService) ProgressJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, stage string) (*models.DeviceToolJob, error) {
 	if stateVersion < 0 || !validDeviceJobStage(stage) {
@@ -693,8 +751,13 @@ func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
 	case "device.schedule.ensure_fresh_week":
 		return hasExactJSONKeys(arguments, []string{"week_containing", "max_age_seconds"}) &&
 			validDateString(arguments["week_containing"]) && validMaxAgeSeconds(arguments["max_age_seconds"])
-	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.erke.ensure_fresh_overview", "device.physical.ensure_fresh_overview":
+	case "device.academic.ensure_fresh_overview", "device.academic.ensure_fresh_grade_summary", "device.academic.ensure_fresh_risk_context", "device.academic.ensure_fresh_credit_summary", "device.physical.ensure_fresh_overview":
 		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validMaxAgeSeconds(arguments["max_age_seconds"])
+	case "device.erke.ensure_fresh_overview":
+		// allow_upload 只能由服务端在用户已授权二课上传时写入，客户端不得
+		// 通过伪造参数绕过上传策略。
+		return hasExactJSONKeys(arguments, []string{"max_age_seconds", "allow_upload"}) &&
+			validMaxAgeSeconds(arguments["max_age_seconds"]) && validJSONBool(arguments["allow_upload"])
 	case "device.academic.ensure_fresh_bundle":
 		return hasExactJSONKeys(arguments, []string{"max_age_seconds"}) && validBundleMaxAgeSeconds(arguments["max_age_seconds"])
 	default:

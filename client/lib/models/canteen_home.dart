@@ -232,6 +232,9 @@ class CanteenHotDish {
   }
 
   bool get isCanteenOffline => canteenOperatingStatus == 'offline';
+
+  /// 首页热菜是图片驱动内容；没有图片地址时不应生成菜品卡。
+  bool get hasDisplayImage => coverImage.trim().isNotEmpty;
 }
 
 /// 首页“同学最近在吃”评价卡。

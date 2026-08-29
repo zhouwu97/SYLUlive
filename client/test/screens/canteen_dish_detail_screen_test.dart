@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,8 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_dish_detail_screen.dart';
+
+import '../helpers/mock_public_image_http.dart';
 
 class FakeAdapter implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions options) _handler;
@@ -29,9 +32,9 @@ ResponseBody _json(String body, int status) {
   });
 }
 
-Widget _buildApp({required String detailJson, bool isAdmin = false}) {
-  final dio = Dio(BaseOptions(baseUrl: 'http://test'));
-  dio.httpClientAdapter = FakeAdapter((options) async {
+Future<ResponseBody> Function(RequestOptions options) _handlerFor(
+    String detailJson) {
+  return (options) async {
     if (options.path == '/canteens/1/dishes/12') {
       return _json(detailJson, 200);
     }
@@ -42,7 +45,12 @@ Widget _buildApp({required String detailJson, bool isAdmin = false}) {
       return _json('{"message":"已下架","photo_id":1}', 200);
     }
     return _json('{"error":"not found"}', 404);
-  });
+  };
+}
+
+Widget _buildApp({required String detailJson, bool isAdmin = false}) {
+  final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+  dio.httpClientAdapter = FakeAdapter(_handlerFor(detailJson));
   final user = isAdmin
       ? User(
           id: 1,
@@ -117,6 +125,67 @@ void main() {
     expect(find.text('0 人评价中提到 · 1 张同学真实实拍'), findsOneWidget);
     expect(find.textContaining('发表食堂评价时关联「锅包肉」'), findsOneWidget);
     expect(find.text('实拍资料已完善'), findsNothing);
+  });
+
+  testWidgets('空地址实拍不渲染占位大图，计数按有效实拍统计', (tester) async {
+    await tester.pumpWidget(_buildApp(detailJson: '''
+      {
+        "dish": {"id":12,"name":"锅包肉","canteen_id":1},
+        "photo_count": 2,
+        "photos": [
+          {"id":1,"image":"","created_at":"2026-08-13"},
+          {"id":2,"image":"   ","created_at":"2026-08-13"}
+        ]
+      }
+    '''));
+    await tester.pumpAndSettle();
+
+    expect(find.text('0 人评价中提到 · 0 张同学真实实拍'), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.textContaining('发表食堂评价时关联「锅包肉」'), findsOneWidget);
+  });
+
+  testWidgets('实拍地址混合有效与空白时只渲染有效项', (tester) async {
+    await tester.pumpWidget(_buildApp(detailJson: '''
+      {
+        "dish": {"id":12,"name":"锅包肉","canteen_id":1},
+        "photo_count": 2,
+        "photos": [
+          {"id":1,"image":"","created_at":"2026-08-13"},
+          {"id":2,"image":"/uploads/b.jpg","created_at":"2026-08-13"}
+        ]
+      }
+    '''));
+    await tester.pumpAndSettle();
+
+    expect(find.text('0 人评价中提到 · 1 张同学真实实拍'), findsOneWidget);
+    final networkImages = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(networkImages, hasLength(1));
+    expect(networkImages.single.imageUrl, contains('b_v1_medium.jpg'));
+  });
+
+  testWidgets('实拍 404（数据库有记录但文件丢失）确认后移除并回落上传引导', (tester) async {
+    const detailJson = '''
+      {
+        "dish": {"id":12,"name":"锅包肉","canteen_id":1},
+        "photo_count": 1,
+        "photos": [{"id":1,"image":"/uploads/missing.jpg","created_at":"2026-08-13"}]
+      }
+    ''';
+    await tester.runAsync(
+        () => installMockPublicImageHttp(apiHandler: _handlerFor(detailJson)));
+    addTearDown(uninstallMockPublicImageHttp);
+
+    await tester.pumpWidget(_buildApp(detailJson: detailJson));
+    await driveMockPublicImageLoads(tester);
+    await flushMockPublicImageTimers(tester);
+
+    // 计数从 1 回落到 0，404 大占位图不再展示
+    expect(find.text('0 人评价中提到 · 0 张同学真实实拍'), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.textContaining('发表食堂评价时关联「锅包肉」'), findsOneWidget);
   });
 
   testWidgets('无星级评分展示', (tester) async {

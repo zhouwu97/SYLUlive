@@ -53,6 +53,9 @@ class CanteenDish {
 
   bool get isCanteenOffline => canteenOperatingStatus == 'offline';
 
+  /// 图片型菜品入口只展示存在有效图片地址的数据，避免用占位图冒充实拍。
+  bool get hasDisplayImage => coverImage.trim().isNotEmpty;
+
   /// 没有明确菜名的评价图片聚合卡，不应跳转到 dishId=0 的详情接口。
   bool get isReviewGallery => source == 'review_images';
 }

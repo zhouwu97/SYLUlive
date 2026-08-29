@@ -13,14 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestImageVariantRequestOnlyAcceptsVersionedPaths(t *testing.T) {
-	variant, original := imageVariantRequest("ab/hash_v1_medium.png")
-	if variant != "medium" || original != "ab/hash.png" {
-		t.Fatalf("variant=%q original=%q", variant, original)
+func TestImageVariantRequestRecognizesVersionedAndLegacyPaths(t *testing.T) {
+	variant, original, legacy := imageVariantRequest("ab/hash_v1_medium.png")
+	if variant != "medium" || original != "ab/hash.png" || legacy {
+		t.Fatalf("variant=%q original=%q legacy=%v", variant, original, legacy)
 	}
-	variant, original = imageVariantRequest("ab/hash_medium.png")
-	if variant != "" || original != "ab/hash_medium.png" {
-		t.Fatalf("旧变体路径不应再被识别: variant=%q original=%q", variant, original)
+	variant, original, legacy = imageVariantRequest("ab/hash_medium.png")
+	if variant != "medium" || original != "ab/hash.png" || !legacy {
+		t.Fatalf("旧变体路径解析错误: variant=%q original=%q legacy=%v", variant, original, legacy)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestServePublicProvidesReadyVersionedVariant(t *testing.T) {
 	}
 }
 
-func TestServePublicLegacyVariantReturnsNoStore404(t *testing.T) {
+func TestServePublicLegacyVariantServesReadyCurrentVariantWithoutCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newUploadTestDB(t)
 	uploadDir := t.TempDir()
@@ -75,7 +75,13 @@ func TestServePublicLegacyVariantReturnsNoStore404(t *testing.T) {
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(uploadDir, "legacy-variant.jpg"), []byte("origin"), 0o600); err != nil {
+	if err := db.Exec(
+		"INSERT INTO image_variants (file_id, variant, recipe_version, status, path, mime_type) VALUES (?, ?, ?, ?, ?, ?)",
+		file.ID, "thumb", 1, "ready", "/uploads/legacy-variant_v1_thumb.jpg", "image/jpeg",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(uploadDir, "legacy-variant_v1_thumb.jpg"), []byte("ready legacy alias"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	handler := NewUploadHandler(uploadDir, 10<<20, db)
@@ -84,11 +90,14 @@ func TestServePublicLegacyVariantReturnsNoStore404(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/uploads/%s", "legacy-variant_thumb.jpg"), nil))
-	if recorder.Code != http.StatusNotFound {
+	if recorder.Code != http.StatusOK {
 		t.Fatalf("遗留变体响应=%d", recorder.Code)
 	}
 	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("遗留变体 Cache-Control=%q", got)
+	}
+	if got := recorder.Body.String(); got != "ready legacy alias" {
+		t.Fatalf("遗留变体内容=%q", got)
 	}
 }
 

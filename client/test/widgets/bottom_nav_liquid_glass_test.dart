@@ -629,7 +629,12 @@ Future<_NavHarness> _pumpNav(
     'floating_nav_bar': true,
     'liquid_glass_v2': liquidGlass,
   });
-  final themeProvider = ThemeProvider(loadOnStart: false);
+  final themeProvider = ThemeProvider(
+    loadOnStart: false,
+    // 固定高性能档：auto 模式按 CPU 核数探测（桌面 ≥6 核才算 high），CI 的
+    // 4 vCPU runner 会被判成 medium 而关闭 shader，edge-halo 断言随之失真。
+    performanceLevel: DevicePerformanceLevel.high,
+  );
   await themeProvider.loadThemeForTesting();
   final authProvider = AuthProvider(Dio(), loadStoredAuth: false);
   final harness = _NavHarness(

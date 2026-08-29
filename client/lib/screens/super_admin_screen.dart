@@ -152,8 +152,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       }
     } on DioException catch (e) {
       final data = e.response?.data;
-      final message = data is Map && data['error'] != null
-          ? data['error'].toString()
+      final message = data is Map
+          ? ((data['message'] ?? data['error'])?.toString() ?? '操作失败')
           : '操作失败';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -604,7 +604,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 _loadAdminLogs();
                 if (navigator.mounted) navigator.pop();
               } on DioException catch (e) {
-                final msg = e.response?.data?['error'] ?? '操作失败';
+                final data = e.response?.data;
+                final msg = data is Map
+                    ? ((data['message'] ?? data['error']) ?? '操作失败')
+                    : '操作失败';
                 if (mounted) {
                   messenger.showSnackBar(
                     SnackBar(content: Text(msg.toString())),
@@ -836,8 +839,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       _refreshLotteryTab();
     } on DioException catch (e) {
       final data = e.response?.data;
-      final msg = data is Map && data['error'] != null
-          ? data['error'].toString()
+      final msg = data is Map
+          ? ((data['message'] ?? data['error'])?.toString() ?? '删除失败')
           : '删除失败';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -998,8 +1001,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   if (navigator.mounted) navigator.pop(true);
                 } on DioException catch (e) {
                   final data = e.response?.data;
-                  final msg = data is Map && data['error'] != null
-                      ? data['error'].toString()
+                  final msg = data is Map
+                      ? ((data['message'] ?? data['error'])?.toString() ?? '发布失败')
                       : '发布失败';
                   messenger.showSnackBar(
                     SnackBar(content: Text(msg), backgroundColor: Colors.red),

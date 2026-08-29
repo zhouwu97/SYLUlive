@@ -606,7 +606,8 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   String _error(Object error) {
     if (error is DioException && error.response?.data is Map) {
-      return error.response!.data['error']?.toString() ?? '请求失败';
+      final data = error.response!.data as Map;
+      return (data['message'] ?? data['error'])?.toString() ?? '请求失败';
     }
     return '请求失败，请稍后重试';
   }

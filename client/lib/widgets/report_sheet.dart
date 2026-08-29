@@ -109,9 +109,9 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
       }
     } on DioException catch (e) {
       String msg = '举报失败';
-      if (e.response?.data is Map &&
-          (e.response!.data as Map).containsKey('error')) {
-        msg = (e.response!.data as Map)['error'].toString();
+      if (e.response?.data is Map) {
+        final data = e.response!.data as Map;
+        msg = (data['message'] ?? data['error'])?.toString() ?? msg;
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -1613,7 +1613,7 @@ class PostProvider extends ChangeNotifier {
           statusCode >= 400 &&
           statusCode < 500 &&
           data is Map &&
-          data['error'] != null;
+          data['message'] != null;
       if (isExplicitConflict) {
         // 服务端明确拒绝（例如“已经点赞/未点赞”）：单次 REST reconcile，
         // 用服务端状态覆盖，而不是盲目回滚成本地旧快照。

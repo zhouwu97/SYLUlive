@@ -517,8 +517,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           }
         } on DioException catch (error) {
           if (mounted) {
-            final message = error.response?.data is Map
-                ? error.response?.data['error']?.toString() ?? '举报提交失败'
+            final data = error.response?.data;
+            final message = data is Map
+                ? (data['message'] ?? data['error'])?.toString() ??
+                    '举报提交失败'
                 : '举报提交失败';
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text(message)));

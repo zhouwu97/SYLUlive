@@ -50,31 +50,40 @@ readlink -f /proc/$(pgrep -o shenliyuan)/exe
 
 ## 图片公开上传的授权静态传输（Docker P3）
 
-Docker 部署中的 `/uploads/` 仍然先反代到 Go 的 `ServePublic`。图片变体 worker 必须先完成
-历史公开图片补偿任务和抽样验收，再显式设置 `IMAGE_VARIANT_WORKER_ENABLED=true`；在此之前保持
-`false`，由旧路径提供原图。worker 仅在该开关开启后启动。只有 Go 根据
+Docker 部署中的 `/uploads/` 仍然先反代到 Go 的 `ServePublic`。图片变体 worker 与
+X-Accel 静态直传现已默认开启：Go 启动时会自动为历史公开图片执行补偿任务（补建
+变体任务），worker 仅在 `IMAGE_VARIANT_WORKER_ENABLED=true` 时启动并消化 pending
+任务；变体就绪前客户端继续回退原图，不会出现长期 404。只有 Go 根据
 `files.access_scope = public` 完成授权、通过 `ResolveUploadPath` 路径校验并确认文件存在后，
-才可以在开启开关时返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能直接请求它。
+才会返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能直接请求它。
 
-默认保持 Go 直接输出文件，确保 P2 worker、版本化 URL 和原图回退先完成：
+当前默认值：
 
 ```env
 UPLOAD_DIR=/app/uploads
+IMAGE_VARIANT_WORKER_ENABLED=true
+UPLOAD_USE_ACCEL_REDIRECT=true
+UPLOAD_ACCEL_PREFIX=/_internal/uploads/
+```
+
+回退开关（worker 异常或传输链路异常时使用）：
+
+```env
 IMAGE_VARIANT_WORKER_ENABLED=false
 UPLOAD_USE_ACCEL_REDIRECT=false
-UPLOAD_ACCEL_PREFIX=/_internal/uploads/
 ```
 
 `docker-compose.yml` 中 `server_data` 同时挂载到 Go 的 `/app/uploads` 和 Nginx 的
 `/var/lib/sylulive/uploads`，Nginx 挂载必须带 `:ro`。不要把 `exam_paper_data`、
 `competition_award_evidence_data` 或任何私有目录挂载到 Nginx；如果修改 `UPLOAD_DIR`，
-必须同步重新验证 Go 的存储路径和 Nginx alias，未完成前保持 `UPLOAD_USE_ACCEL_REDIRECT=false`。
+必须同步重新验证 Go 的存储路径和 Nginx alias，未完成前先把 `UPLOAD_USE_ACCEL_REDIRECT`
+改回 `false` 并重启 Go。
 
-### 开启前检查
+### 部署时检查
 
-按以下顺序执行，任一步失败都不要开启开关：
+按以下顺序执行，任一步失败都不要发布新默认值：
 
-1. 先发布 P2 worker 和 API 的原图回退逻辑，确认 pending、failed、unsupported 不会让客户端请求长期 404。
+1. 确认 P2 worker 和 API 的原图回退逻辑已发布，pending、failed、unsupported 不会让客户端请求长期 404。
 2. 确认 Go 与 Nginx 使用同一公开上传共享卷，且 Nginx 对该卷只读挂载；目录中的路径只能由服务端生成。
 3. 渲染 Compose 配置并检查挂载：
 
@@ -92,20 +101,17 @@ docker compose run --rm --no-deps nginx nginx -t
 5. 用测试图片验证：公开图片必须在 Go 允许后正常返回；私有图片、包含 `..` 的路径和
    `/_internal/uploads/` 的外部请求都必须被拒绝。Go 拒绝时 Nginx 不得回退为静态文件。
 
-确认以上检查通过后，才在服务端 `.env` 中设置：
-
-```env
-UPLOAD_USE_ACCEL_REDIRECT=true
-UPLOAD_ACCEL_PREFIX=/_internal/uploads/
-```
-
-然后重新创建 Go 和 Nginx 容器，并再次执行 `nginx -t`。开关只改变已通过 Go 授权的
+检查通过后重新创建 Go 和 Nginx 容器，并再次执行 `nginx -t`。开关只改变已通过 Go 授权的
 公开文件传输方式，不改变数据库权限判断，也不能让客户端访问 internal 位置。
 
 ### 缓存、发布与回退
 
-- 可撤回的公开上传文件由 Go 设置可重新验证的公开 `Cache-Control`；Nginx 不覆盖该响应头，
-  也不为 404 或鉴权失败设置共享长缓存。
+- 可撤回的公开上传文件路径由内容哈希构成，Go 返回有界 TTL 的公开 `Cache-Control`
+  （`public, max-age=86400, stale-while-revalidate=604800`）：内容不可变不代表访问权限
+  不可变（`access_scope` 动态判断），因此不下发一年期 immutable；浏览器命中不超过 24 小时，
+  被撤回文件不存在长期缓存问题。Nginx 不覆盖该响应头，也不为 404 或鉴权失败设置共享长缓存。
+  未来引入共享缓存层前，必须先把公开资源与私有（JWT）资源拆分为不同的 URL 空间，
+  否则 `/uploads/` 不得配置 `proxy_cache` 或 CDN。
 - 私有文件始终保持 `private, no-store`，不得经 Nginx 外部静态路径或 CDN 访问。
 - 发布顺序固定为 P2 worker 和 API 回退、客户端资源选择、最后发布 P3。客户端预取没有远程
   开关，不能把服务端开关描述成客户端预取的关闭开关。

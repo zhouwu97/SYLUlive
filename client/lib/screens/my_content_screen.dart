@@ -635,12 +635,16 @@ class _MyContentScreenState extends State<MyContentScreen>
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: AppCachedImage.public(
-                imageUrl: ApiConstants.fullUrl(post.images.first.url),
+                // 60dp 缩略图走 thumb 档（480 长边）；变体未就绪时回退原图，不会 404。
+                imageUrl:
+                    ApiConstants.fullUrl(post.images.first.resolvedThumbUrl),
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,
                 memCacheWidth: 120,
                 memCacheHeight: 120,
+                maxWidthDiskCache: 480,
+                maxHeightDiskCache: 480,
                 errorWidget: (_, __, ___) => Container(
                   width: 60,
                   height: 60,

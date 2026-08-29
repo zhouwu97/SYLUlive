@@ -271,9 +271,11 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 func imageVariantRecipe(variant string) (maxDimension, quality int, ok bool) {
 	switch variant {
 	case ImageVariantThumb:
-		return 480, 80, true
+		return ImageVariantThumbMaxDimension, 80, true
 	case ImageVariantMedium:
-		return 1280, 84, true
+		return ImageVariantMediumMaxDimension, 84, true
+	case ImageVariantViewer:
+		return ImageVariantViewerMaxDimension, 84, true
 	default:
 		return 0, 0, false
 	}

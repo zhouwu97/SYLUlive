@@ -553,3 +553,91 @@ func TestDeviceJobWaitForUserExpiresStaleJob(t *testing.T) {
 		t.Fatalf("expected lazily expired job, got status=%s code=%s", refreshed.Status, refreshed.ErrorCode)
 	}
 }
+
+// 复现生产故障：任务创建时绑定到随后静默的 installation，实际轮询的是同账号
+// 的另一个安装。未领取的 pending 任务必须能被新安装看到、认领并重绑。
+func TestPendingJobsDeliversUnclaimedJobToNewInstallation(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "stale-installation")
+	job := createTestDeviceJob(t, service, 1, now)
+	if job.InstallationID != "stale-installation" {
+		t.Fatalf("job bound to unexpected installation: %s", job.InstallationID)
+	}
+	registerTestDevice(t, service, 1, "fresh-installation")
+
+	pending, err := service.PendingJobs(context.Background(), 1, "fresh-installation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, candidate := range pending {
+		if candidate.ID == job.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("new installation must see the unclaimed job, got %d jobs", len(pending))
+	}
+
+	claimed, err := service.ClaimJob(context.Background(), 1, "fresh-installation", job.ID, job.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.InstallationID != "fresh-installation" || claimed.Status != models.DeviceToolJobClaimed {
+		t.Fatalf("takeover must rebind installation: installation=%s status=%s", claimed.InstallationID, claimed.Status)
+	}
+	completed, err := service.CompleteJob(context.Background(), 1, "fresh-installation", job.ID, claimed.StateVersion, deviceToolTestResult())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != models.DeviceToolJobCompleted {
+		t.Fatalf("expected completed job, got %s", completed.Status)
+	}
+}
+
+func TestPendingJobsHidesOrphanedJobFromDeviceWithoutTool(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	if _, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID:        "freshness-holder",
+		ToolNames:             []string{"device.academic.ensure_fresh_overview"},
+		BridgeProtocolVersion: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-1", ToolCallID: "call-fresh", ToolName: "device.academic.ensure_fresh_overview",
+		Arguments: json.RawMessage(`{"max_age_seconds":300}`), RequiredDataTypes: []string{"academic"}, ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerTestDevice(t, service, 1, "academic-only")
+
+	pending, err := service.PendingJobs(context.Background(), 1, "academic-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range pending {
+		if candidate.ID == job.ID {
+			t.Fatal("device without the tool must not see the orphaned job")
+		}
+	}
+	_, err = service.ClaimJob(context.Background(), 1, "academic-only", job.ID, job.StateVersion)
+	assertDeviceJobCode(t, err, "tool_not_allowed")
+}
+
+func TestClaimJobRejectsTakeoverOfClaimedJob(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "first-installation")
+	job := createTestDeviceJob(t, service, 1, now)
+	claimed, err := service.ClaimJob(context.Background(), 1, "first-installation", job.ID, job.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerTestDevice(t, service, 1, "second-installation")
+	_, err = service.ClaimJob(context.Background(), 1, "second-installation", job.ID, claimed.StateVersion)
+	assertDeviceJobCode(t, err, "invalid_job_state")
+}

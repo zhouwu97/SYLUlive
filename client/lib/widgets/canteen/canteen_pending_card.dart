@@ -33,6 +33,12 @@ class CanteenPendingCard extends StatelessWidget {
     final image = (canteen['image'] ?? '').toString();
     final creator = (canteen['creator_name'] ?? '').toString();
     final name = (canteen['name'] ?? '').toString();
+    final locationArea = (canteen['location_area'] ?? '').toString();
+    final locationFloor = (canteen['location_floor'] ?? '').toString();
+    final locationLabel = [
+      if (locationArea.isNotEmpty) locationArea,
+      if (locationFloor.isNotEmpty) locationFloor,
+    ].join('·');
     final canteenId = (canteen['id'] as num?)?.toInt();
     final createdAt =
         DateTime.tryParse((canteen['created_at'] ?? '').toString());
@@ -104,6 +110,27 @@ class CanteenPendingCard extends StatelessWidget {
                     height: 1.3,
                   ),
                 ),
+                if (locationLabel.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 15,
+                        color: textSecondary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        locationLabel,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
 
                 // 提交人信息

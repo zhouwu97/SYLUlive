@@ -160,6 +160,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		Rank               int                   `json:"rank"`
 		ID                 uint                  `json:"id"`
 		Name               string                `json:"name"`
+		LocationArea       string                `json:"location_area"`
+		LocationFloor      string                `json:"location_floor"`
 		Image              string                `json:"image"`
 		AverageStar        float64               `json:"average_star"`
 		RatingCount        int                   `json:"rating_count"`
@@ -176,6 +178,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			Rank:               e.Rank,
 			ID:                 e.ID,
 			Name:               e.Name,
+			LocationArea:       e.LocationArea,
+			LocationFloor:      e.LocationFloor,
 			Image:              e.Image,
 			AverageStar:        e.AverageStar,
 			RatingCount:        e.RatingCount,
@@ -219,6 +223,8 @@ type canteenFeedItem struct {
 	Type              string             `json:"type"`
 	CanteenID         uint               `json:"canteen_id"`
 	CanteenName       string             `json:"canteen_name"`
+	LocationArea      string             `json:"location_area,omitempty"`
+	LocationFloor     string             `json:"location_floor,omitempty"`
 	OperatingStatus   string             `json:"operating_status"`
 	Image             string             `json:"image,omitempty"`
 	DishID            uint               `json:"dish_id,omitempty"`
@@ -388,6 +394,8 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 			Type:            "recommended_store",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			// Title 仅保留兼容字段；首页客户端使用 Type 映射轻量标签，
@@ -420,6 +428,8 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 			Type:            "stable_choice",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			Title:           "评价稳定",
@@ -451,6 +461,8 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 			Type:            "trending",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			Title:           "近期热门",
@@ -709,6 +721,8 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			Type:              "recommended_store",
 			CanteenID:         e.ID,
 			CanteenName:       e.Name,
+			LocationArea:      e.LocationArea,
+			LocationFloor:     e.LocationFloor,
 			OperatingStatus:   e.OperatingStatus,
 			Image:             e.Image,
 			Title:             "综合推荐",

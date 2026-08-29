@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../models/canteen_ranking.dart';
 import '../../theme/app_motion.dart';
+import 'canteen_location_chip.dart';
 import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
 
@@ -135,6 +136,10 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                                 color: CanteenTheme.textSecondaryColor(isDark),
                               ),
                             ),
+                            if (item.locationLabel.isNotEmpty) ...[
+                              const SizedBox(width: 7),
+                              CanteenLocationChip(label: item.locationLabel),
+                            ],
                             if (item.sampleHint.isNotEmpty) ...[
                               const SizedBox(width: 7),
                               Container(

@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
+import '../widgets/canteen/canteen_location_chip.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_hero_recommendation.dart';
@@ -482,6 +483,10 @@ class _CanteenScreenState extends State<CanteenScreen> {
                           color: CanteenTheme.textSecondaryColor(isDark),
                         ),
                       ),
+                      if (canteen.locationLabel.isNotEmpty) ...[
+                        const SizedBox(width: 7),
+                        CanteenLocationChip(label: canteen.locationLabel),
+                      ],
                     ],
                   ),
                   if (canteen.ratingCount > 0 && !canteen.isOffline) ...[
@@ -986,6 +991,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
     final nameCtrl = TextEditingController(text: prefill ?? '');
     List<String> uploadedImageUrls = [];
     var submitting = false;
+    String? selectedArea;
+    String? selectedFloor;
     final accent = CanteenTheme.accentColor(isDark);
 
     await showModalBottomSheet<void>(
@@ -1051,7 +1058,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '填写名称并上传一张商家图片',
+                                  '填写名称、选择位置并上传一张商家图片',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color:
@@ -1097,6 +1104,24 @@ class _CanteenScreenState extends State<CanteenScreen> {
                             borderSide: BorderSide(color: accent, width: 1.4),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      _locationChipGroup(
+                        isDark,
+                        label: '食堂',
+                        options: const ['一食堂', '二食堂'],
+                        selected: selectedArea,
+                        onSelected: (value) =>
+                            setModalState(() => selectedArea = value),
+                      ),
+                      const SizedBox(height: 12),
+                      _locationChipGroup(
+                        isDark,
+                        label: '楼层',
+                        options: const ['一楼', '二楼'],
+                        selected: selectedFloor,
+                        onSelected: (value) =>
+                            setModalState(() => selectedFloor = value),
                       ),
                       const SizedBox(height: 16),
                       ImageUploadWidget(
@@ -1146,6 +1171,24 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                         );
                                         return;
                                       }
+                                      if (selectedArea == null) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请选择商家所在的食堂'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (selectedFloor == null) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请选择商家所在的楼层'),
+                                          ),
+                                        );
+                                        return;
+                                      }
                                       if (uploadedImageUrls.isEmpty) {
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
@@ -1162,6 +1205,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                                           .addCanteen(
                                             name,
                                             uploadedImageUrls.first,
+                                            locationArea: selectedArea!,
+                                            locationFloor: selectedFloor!,
                                           );
                                       if (!mounted || !sheetContext.mounted) {
                                         return;
@@ -1222,5 +1267,76 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
 
     nameCtrl.dispose();
+  }
+
+  // ── 位置标签选择行：提交商家时选择食堂区域与楼层，避免把位置写进店名 ──
+
+  Widget _locationChipGroup(
+    bool isDark, {
+    required String label,
+    required List<String> options,
+    required String? selected,
+    required ValueChanged<String> onSelected,
+  }) {
+    final accent = CanteenTheme.accentColor(isDark);
+    return Row(
+      children: [
+        SizedBox(
+          width: 36,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Row(
+            children: [
+              for (var i = 0; i < options.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => onSelected(options[i]),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected == options[i]
+                            ? CanteenTheme.accentSoftColor(isDark)
+                            : CanteenTheme.surfaceMutedBg(isDark),
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusMd),
+                        border: Border.all(
+                          color: selected == options[i]
+                              ? accent
+                              : CanteenTheme.borderColor(isDark),
+                        ),
+                      ),
+                      child: Text(
+                        options[i],
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: selected == options[i]
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: selected == options[i]
+                              ? CanteenTheme.accentStrongColor(isDark)
+                              : CanteenTheme.textSecondaryColor(isDark),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

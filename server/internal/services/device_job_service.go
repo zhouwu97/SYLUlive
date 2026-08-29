@@ -235,6 +235,22 @@ func (s *DeviceJobService) PushPayload(job *models.DeviceToolJob) map[string]str
 	return map[string]string{"type": "ai_device_job", "job_id": job.ID}
 }
 
+// installation 绑定只是创建时的投递优化：App 每次进程启动都会生成新
+// installation，原安装静默后任务必须还能被同账号下支持该工具的活跃设备
+// 认领，否则任务会饿死、Run 永远停在等待状态。
+func deviceSupportsTool(device models.UserDevice, toolName string) bool {
+	var tools []string
+	if json.Unmarshal(device.ToolNames, &tools) != nil {
+		return false
+	}
+	for _, tool := range tools {
+		if tool == toolName {
+			return device.BridgeProtocolVersion >= requiredDeviceBridgeVersion
+		}
+	}
+	return false
+}
+
 func (s *DeviceJobService) PendingJobs(ctx context.Context, userID uint, installationID string) ([]models.DeviceToolJob, error) {
 	if err := s.requireActiveDevice(ctx, userID, installationID); err != nil {
 		return nil, err
@@ -247,7 +263,27 @@ func (s *DeviceJobService) PendingJobs(ctx context.Context, userID uint, install
 	err := s.db.WithContext(ctx).
 		Where("user_id = ? AND installation_id = ? AND status IN ? AND expires_at > ?", userID, installationID, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobWaitingUser}, now).
 		Order("created_at ASC").Limit(20).Find(&jobs).Error
-	return jobs, err
+	if err != nil {
+		return nil, err
+	}
+	var device models.UserDevice
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND installation_id = ? AND revoked_at IS NULL", userID, installationID).
+		First(&device).Error; err != nil {
+		return jobs, nil
+	}
+	var orphaned []models.DeviceToolJob
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND installation_id <> ? AND status = ? AND expires_at > ?", userID, installationID, models.DeviceToolJobPending, now).
+		Order("created_at ASC").Limit(20).Find(&orphaned).Error; err != nil {
+		return jobs, err
+	}
+	for _, job := range orphaned {
+		if deviceSupportsTool(device, job.ToolName) {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs, nil
 }
 
 func (s *DeviceJobService) GetJob(ctx context.Context, userID uint, installationID, jobID string) (*models.DeviceToolJob, error) {
@@ -279,7 +315,7 @@ func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installati
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job models.DeviceToolJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND user_id = ? AND installation_id = ?", jobID, userID, installationID).First(&job).Error; err != nil {
+			Where("id = ? AND user_id = ?", jobID, userID).First(&job).Error; err != nil {
 			return mapDeviceJobNotFound(err)
 		}
 		if !job.ExpiresAt.After(now) {
@@ -292,6 +328,22 @@ func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installati
 			return newDeviceJobError("invalid_job_state")
 		}
 		updates := map[string]interface{}{"status": models.DeviceToolJobClaimed, "claimed_at": now, "state_version": gorm.Expr("state_version + 1")}
+		if job.InstallationID != installationID {
+			// 接管其他 installation 的任务：仅未领取的 pending 可被同账号下
+			// 支持该工具的活跃设备接管；领取时把任务重绑到接管设备，
+			// 后续 progress/complete 仍按原归属校验。
+			if job.Status != models.DeviceToolJobPending {
+				return newDeviceJobError("invalid_job_state")
+			}
+			var device models.UserDevice
+			if err := tx.Where("user_id = ? AND installation_id = ? AND revoked_at IS NULL", userID, installationID).First(&device).Error; err != nil {
+				return newDeviceJobError("device_not_registered")
+			}
+			if !deviceSupportsTool(device, job.ToolName) {
+				return newDeviceJobError("tool_not_allowed")
+			}
+			updates["installation_id"] = installationID
+		}
 		if err := tx.Model(&models.DeviceToolJob{}).Where("id = ? AND state_version = ? AND status IN ?", job.ID, stateVersion, []string{models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobWaitingUser}).Updates(updates).Error; err != nil {
 			return err
 		}

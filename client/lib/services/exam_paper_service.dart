@@ -26,7 +26,9 @@ class ExamPaperApiException implements Exception {
     final data = _errorMap(error.response?.data);
     if (data != null) {
       return ExamPaperApiException(
-        message: data['error']?.toString() ?? '请求失败，请稍后重试',
+        // 服务端统一错误格式为 {code, message, request_id}，error 仅旧接口兜底。
+        message: (data['message'] ?? data['error'])?.toString() ??
+            '请求失败，请稍后重试',
         code: data['code']?.toString() ?? 'request_failed',
         statusCode: error.response?.statusCode,
       );

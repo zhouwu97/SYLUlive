@@ -530,7 +530,10 @@ class _DraftPayload {
 String _apiErrorMessage(Object error, String fallback) {
   if (error is DioException) {
     final data = error.response?.data;
-    if (data is Map && data['error'] != null) return data['error'].toString();
+    if (data is Map) {
+      final message = data['message'] ?? data['error'];
+      if (message != null) return message.toString();
+    }
   }
   return fallback;
 }

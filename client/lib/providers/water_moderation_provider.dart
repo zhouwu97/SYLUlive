@@ -204,7 +204,7 @@ class WaterModerationProvider extends ChangeNotifier {
 
   String? _extractError(dynamic data) {
     if (data is Map) {
-      final detail = data['error'] ?? data['message'];
+      final detail = data['message'] ?? data['error'];
       if (detail is String && detail.trim().isNotEmpty) {
         return detail.trim();
       }

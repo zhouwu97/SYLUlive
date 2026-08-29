@@ -208,7 +208,7 @@ class PollService {
     final map = data is Map ? data : const <String, dynamic>{};
     return PollApiException(
       map['code']?.toString() ?? 'poll_network_error',
-      map['error']?.toString() ?? '网络连接失败，请稍后重试',
+      (map['message'] ?? map['error'])?.toString() ?? '网络连接失败，请稍后重试',
       statusCode: error.response?.statusCode,
     );
   }

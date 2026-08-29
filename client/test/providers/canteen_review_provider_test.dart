@@ -93,4 +93,24 @@ void main() {
     expect(result.errorCode, 'review_conflict');
     expect(result.remoteUpdatedAt, DateTime.utc(2026, 8, 23, 10));
   });
+
+  test('updateReview 读取统一错误格式 message 字段展示真实原因', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+      ..httpClientAdapter = _FakeAdapter((_) async => _json(
+            '{"code":"invalid_review_dish",'
+            '"message":"invalid_review_dish: 图片已绑定到其他菜品",'
+            '"request_id":"req-1"}',
+            400,
+          ));
+    final provider = CanteenProvider(dio);
+    final result = await provider.updateReview(
+      9,
+      dimensions: _dimensions,
+      comment: '修改',
+    );
+
+    expect(result.success, isFalse);
+    expect(result.errorCode, 'invalid_review_dish');
+    expect(result.errorMessage, 'invalid_review_dish: 图片已绑定到其他菜品');
+  });
 }

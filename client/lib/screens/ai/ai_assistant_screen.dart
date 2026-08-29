@@ -1449,6 +1449,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         rawEvents: provider.agentRawEvents,
                                         event: provider.agentEvent,
                                         running: provider.isRunning,
+                                        reconnecting: provider.isReconnecting,
                                         completed: provider.agentFlowCompleted,
                                         onOpenPermissions:
                                             _showAgentPermissions,

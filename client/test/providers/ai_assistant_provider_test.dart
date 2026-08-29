@@ -6,8 +6,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
+import 'package:shenliyuan/models/ai_conversation.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
+import 'package:shenliyuan/models/ai_run.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
+import 'package:shenliyuan/models/agent_context.dart';
 import 'package:shenliyuan/providers/ai_assistant_provider.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
@@ -839,4 +842,206 @@ void main() {
       expect(provider.error, entry.value, reason: entry.key);
     }
   });
+
+  test('SSE 断流且 Run 生成中时进入恢复态并继续回放', () async {
+    final service = _FakeStreamingAiService();
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 1,
+        type: AiRunEventType.started,
+      ));
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 2,
+        type: AiRunEventType.delta,
+        text: '根据',
+      ));
+      controller.addError(StateError('sse reset'));
+      unawaited(controller.close());
+    });
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 3,
+        type: AiRunEventType.delta,
+        text: '成绩',
+      ));
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 4,
+        type: AiRunEventType.completed,
+      ));
+      unawaited(controller.close());
+    });
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(() => provider.isReconnecting);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '根据');
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.completed);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '根据成绩');
+    expect(service.lastEventIds, const [0, 2]);
+  });
+
+  test('Run 已失败时恢复循环直接落败且不提示连接中断', () async {
+    final service = _FakeStreamingAiService();
+    service.streamScripts.add((controller) {
+      controller.addError(StateError('sse reset'));
+      unawaited(controller.close());
+    });
+    service.getRunOverride = const AiRun(
+      id: 'run-recovery',
+      conversationId: 'conversation-1',
+      state: 'failed',
+      lastEventSeq: 0,
+      errorCode: 'provider_unavailable',
+    );
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.failed);
+    expect(provider.error, '回答服务暂时不可用，请稍后重试');
+    expect(service.lastEventIds, hasLength(1));
+  });
+
+  test('多次断流期间非终态永不显示连接中断', () async {
+    final service = _FakeStreamingAiService();
+    for (var i = 0; i < 3; i++) {
+      service.streamScripts.add((controller) {
+        controller.add(AiRunEvent(
+          runId: 'run-recovery',
+          seq: i * 2 + 1,
+          type: AiRunEventType.delta,
+          text: '段$i',
+        ));
+        controller.addError(StateError('reset $i'));
+        unawaited(controller.close());
+      });
+    }
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 7,
+        type: AiRunEventType.completed,
+      ));
+      unawaited(controller.close());
+    });
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+    final observedErrors = <List<String?>>[];
+    provider.addListener(() => observedErrors.add(<String?>[provider.error]));
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.completed);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '段0段1段2');
+    expect(service.lastEventIds, const [0, 1, 3, 5]);
+    expect(
+      observedErrors
+          .expand((element) => element)
+          .whereType<String>()
+          .where((text) => text.contains('连接已中断')),
+      isEmpty,
+    );
+  });
+}
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('等待状态超时');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+}
+
+class _FakeStreamingAiService extends AiAssistantService {
+  _FakeStreamingAiService() : super(Dio());
+
+  AiRun run = const AiRun(
+    id: 'run-recovery',
+    conversationId: 'conversation-1',
+    state: 'generating',
+    lastEventSeq: 0,
+  );
+  AiRun? getRunOverride;
+  final List<void Function(StreamController<AiRunEvent>)> streamScripts = [];
+  final List<int> lastEventIds = <int>[];
+
+  @override
+  Future<AiRunCreation> createRun({
+    required String conversationId,
+    required String clientRequestId,
+    required String message,
+    AgentLaunchContext? launchContext,
+  }) async {
+    return AiRunCreation(run: run, duplicate: false);
+  }
+
+  @override
+  Future<AiRun> getRun(String runId) async {
+    return getRunOverride ?? run;
+  }
+
+  @override
+  Stream<AiRunEvent> streamRunEvents(String runId, {int lastEventId = 0}) {
+    lastEventIds.add(lastEventId);
+    final controller = StreamController<AiRunEvent>();
+    if (streamScripts.isNotEmpty) {
+      streamScripts.removeAt(0)(controller);
+    }
+    return controller.stream;
+  }
+
+  @override
+  Future<AiRunSources> getRunSources(String runId) async {
+    return const AiRunSources();
+  }
+
+  @override
+  Future<AiCapabilities> getCapabilities() async {
+    return _availableCapabilities();
+  }
+
+  @override
+  Future<List<AiConversation>> listConversations() async {
+    return const [];
+  }
+
+  @override
+  Future<void> recordRunSignal({
+    required String runId,
+    required String signal,
+  }) async {}
 }

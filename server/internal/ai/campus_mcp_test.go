@@ -352,7 +352,7 @@ func TestCampusMCPRiskAnalysisFreshCoreDataSchedulesOnlyErkeRefresh(t *testing.T
 	erkeReader := fixedPersonalSnapshotReader{lookup: academic.SnapshotLookup{
 		Found: true,
 		Result: academic.ContextResult{
-			Data: json.RawMessage(`{"graduation":{"earned_total":42.5,"required_total":60}}`),
+			Data:   json.RawMessage(`{"graduation":{"earned_total":42.5,"required_total":60}}`),
 			Status: academic.DataStatusAvailable, Source: academic.DataSourceUserUploadedSnapshot,
 			FetchedAt: &now,
 		},
@@ -418,18 +418,18 @@ func TestCampusMCPRiskAnalysisExpiredBundleExplainsTimeout(t *testing.T) {
 	fetched := time.Now().Add(-3 * time.Hour)
 	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
 		academic.DatasetGrades: {
-			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`),
+			Data:   json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`),
 			Status: academic.DataStatusStale, IsStale: true,
 			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
 			Warnings: []string{"该学业快照已过期"},
 		},
 		academic.DatasetCreditRequirements: {
-			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
+			Data:   json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
 			Status: academic.DataStatusStale, IsStale: true,
 			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
 		},
 		academic.DatasetAcademicSituation: {
-			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
+			Data:   json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
 			Status: academic.DataStatusStale, IsStale: true,
 			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
 		},

@@ -12,6 +12,7 @@ import (
 
 // DishStatus 菜品状态
 const (
+	// Deprecated: DishStatusPending 历史待审状态，新流程直接创建 active
 	DishStatusPending  = "pending"
 	DishStatusActive   = "active"
 	DishStatusHidden   = "hidden"
@@ -22,6 +23,7 @@ const (
 
 // DishPhotoStatus 菜品实拍状态
 const (
+	// Deprecated: DishPhotoStatusPending 历史待审实拍状态，新流程直接进入 approved
 	DishPhotoStatusPending  = "pending"
 	DishPhotoStatusApproved = "approved"
 	DishPhotoStatusRejected = "rejected"
@@ -96,7 +98,10 @@ func validatePhotoFileOnDisk(f File) bool {
 	return err == nil && !info.IsDir()
 }
 
-const CanteenPendingDishMigrationVersion = "20260825_01_canteen_pending_dish_migration"
+const (
+	CanteenPendingDishMigrationVersion    = "20260825_01_canteen_pending_dish_migration"
+	CanteenPendingCleanupMigrationVersion = "20260829_01_canteen_pending_cleanup"
+)
 
 // MigratePendingDishesAndPhotos 迁移历史 pending 菜品和实拍（一次性迁移）：
 // 1. 将所有 status = 'pending' 的 CanteenDish 自动转为 'active'；
@@ -110,7 +115,7 @@ func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 	}
 
 	var existing AppSchemaMigration
-	if err := db.Where("version = ?", CanteenPendingDishMigrationVersion).First(&existing).Error; err == nil {
+	if err := db.Where("version = ?", CanteenPendingCleanupMigrationVersion).First(&existing).Error; err == nil {
 		// 已经运行过，跳过
 		return nil
 	}
@@ -134,7 +139,7 @@ func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 		if len(dishIDs) == 0 {
 			// 记录迁移完成
 			return tx.Create(&AppSchemaMigration{
-				Version:   CanteenPendingDishMigrationVersion,
+				Version:   CanteenPendingCleanupMigrationVersion,
 				AppliedAt: time.Now().UTC(),
 			}).Error
 		}
@@ -212,7 +217,7 @@ func MigratePendingDishesAndPhotos(db *gorm.DB) error {
 
 		// 记录迁移完成
 		return tx.Create(&AppSchemaMigration{
-			Version:   CanteenPendingDishMigrationVersion,
+			Version:   CanteenPendingCleanupMigrationVersion,
 			AppliedAt: time.Now().UTC(),
 		}).Error
 	})

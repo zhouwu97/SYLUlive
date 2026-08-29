@@ -8,6 +8,7 @@ enum AiRunEventType {
   started,
   status,
   delta,
+  rollback,
   checkpoint,
   sources,
   toolRequested,
@@ -166,6 +167,8 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.status;
     case 'answer.delta':
       return AiRunEventType.delta;
+    case 'answer.rollback':
+      return AiRunEventType.rollback;
     case 'answer.checkpoint':
     case 'answer.completed':
       return AiRunEventType.checkpoint;

@@ -537,6 +537,90 @@ void main() {
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 
+  test('工具轮 rollback 撤销预工具文本，最终 checkpoint 重新对齐', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '我先查看',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 2,
+      type: AiRunEventType.delta,
+      text: '成绩数据…',
+    ));
+    expect(provider.streamedText, '我先查看成绩数据…');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 3,
+      type: AiRunEventType.rollback,
+      text: '',
+    ));
+    expect(provider.streamedText, '');
+    expect(provider.messages.single.content, '');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 4,
+      type: AiRunEventType.delta,
+      text: '最终答案',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 5,
+      type: AiRunEventType.checkpoint,
+      text: '最终答案：绩点 3.6。',
+    ));
+
+    expect(provider.streamedText, '最终答案：绩点 3.6。');
+    expect(provider.messages.single.content, '最终答案：绩点 3.6。');
+  });
+
+  test('checkpoint 绝对替换后再追加 delta 保持序列一致', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '正在',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 2,
+      type: AiRunEventType.delta,
+      text: '生成',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 3,
+      type: AiRunEventType.checkpoint,
+      text: '正在生成回答',
+    ));
+    expect(provider.streamedText, '正在生成回答');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 4,
+      type: AiRunEventType.delta,
+      text: '正文。',
+    ));
+    expect(provider.streamedText, '正在生成回答正文。');
+    expect(provider.messages.single.content, '正在生成回答正文。');
+  });
+
   test('普通 Tool 事件不会伪造授权卡，真实授权事件才设置 pendingConsent', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),

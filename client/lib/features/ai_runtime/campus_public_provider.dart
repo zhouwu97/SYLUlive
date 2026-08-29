@@ -77,6 +77,9 @@ class CampusPublicProvider implements AIModelProvider {
           case AiRunEventType.checkpoint:
             if (event.text.isNotEmpty) answer = event.text;
             break;
+          case AiRunEventType.rollback:
+            answer = event.text;
+            break;
           case AiRunEventType.completed:
             return _completedAnswer(
               answer,

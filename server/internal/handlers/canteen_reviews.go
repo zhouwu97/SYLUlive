@@ -2458,6 +2458,7 @@ func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint,
 		return err
 	}
 	seenExisting := make(map[string]struct{}, len(existing))
+	justUnbound := make(map[uint]uint, len(existing))
 	for _, photo := range existing {
 		key := fmt.Sprintf("%d:%d", photo.DishID, photo.FileID)
 		if _, keep := wanted[key]; keep {
@@ -2468,28 +2469,39 @@ func (h *CanteenHandler) syncDishPhotos(tx *gorm.DB, userID, reviewEventID uint,
 		if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("review_event_id", nil).Error; err != nil {
 			return err
 		}
+		justUnbound[photo.FileID] = photo.ID
 	}
 
 	newFileIDs := make([]uint, 0)
 	for key, input := range wanted {
+		fileID := uint(0)
+		_, _ = fmt.Sscanf(strings.Split(key, ":")[1], "%d", &fileID)
+		if fileID == 0 || input.DishID == 0 {
+			continue
+		}
 		if _, exists := seenExisting[key]; exists {
 			continue
 		}
 		var duplicate models.CanteenDishPhoto
-		err := tx.Where("file_id = ?", strings.Split(key, ":")[1]).First(&duplicate).Error
+		err := tx.Where("file_id = ?", fileID).First(&duplicate).Error
 		if err == nil {
 			if duplicate.ReviewEventID != nil && *duplicate.ReviewEventID == reviewEventID {
+				continue
+			}
+			if photoID, unbound := justUnbound[fileID]; unbound && photoID == duplicate.ID {
+				// 评价内换菜改绑：同一实拍刚从本评价解除绑定，应改绑到新菜品而不是报错
+				if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photoID).Updates(map[string]interface{}{
+					"dish_id":         input.DishID,
+					"review_event_id": reviewEventID,
+				}).Error; err != nil {
+					return err
+				}
 				continue
 			}
 			return fmt.Errorf("%w: 图片已绑定到其他菜品", errReviewDishInvalid)
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
-		}
-		fileID := uint(0)
-		_, _ = fmt.Sscanf(strings.Split(key, ":")[1], "%d", &fileID)
-		if fileID == 0 || input.DishID == 0 {
-			continue
 		}
 		photo := models.CanteenDishPhoto{
 			DishID: input.DishID, FileID: fileID, UserID: userID,

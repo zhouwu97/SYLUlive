@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../screens/image_viewer_screen.dart';
+import '../../utils/canteen_image_failure.dart';
 import 'canteen_status_image.dart';
 
 /// 菜品实拍三图布局：
@@ -111,9 +112,13 @@ class _DishPhotoMosaicState extends State<DishPhotoMosaic> {
           variant: 'medium',
           offline: widget.offline,
           fit: BoxFit.cover,
-          errorWidget: (_, __, ___) {
-            _hideFailedImage(sourceUrl);
-            return const SizedBox.shrink();
+          errorWidget: (_, __, error) {
+            if (isGoneImageFailure(error)) {
+              _hideFailedImage(sourceUrl);
+              return const SizedBox.shrink();
+            }
+            // 瞬时故障：保留图片位，等待下次进入或刷新重试。
+            return _buildPlaceholder(icon: Icons.cloud_off_rounded);
           },
           placeholder: (_, __) => _buildPlaceholder(),
         ),
@@ -121,14 +126,14 @@ class _DishPhotoMosaicState extends State<DishPhotoMosaic> {
     );
   }
 
-  Widget _buildPlaceholder() {
+  Widget _buildPlaceholder({IconData icon = Icons.restaurant_rounded}) {
     return Container(
       color: const Color(0xFFEDEFF2),
       alignment: Alignment.center,
-      child: const Icon(
-        Icons.restaurant_rounded,
+      child: Icon(
+        icon,
         size: 32,
-        color: Color(0xFF9FA7B5),
+        color: const Color(0xFF9FA7B5),
       ),
     );
   }

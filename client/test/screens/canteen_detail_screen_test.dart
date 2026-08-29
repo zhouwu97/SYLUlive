@@ -256,8 +256,9 @@ void main() {
     await tester.pumpWidget(_buildApp(dio));
     await tester.pumpAndSettle();
 
-    // 菜品空态仍保留信息，但新增动作统一收进底部贡献入口。
-    expect(find.text('还没有菜品实拍'), findsOneWidget);
+    // 图鉴为图片驱动模块：无图可展示时整个模块收起，
+    // 贡献动作统一收进底部贡献入口。
+    expect(find.text('商家菜品'), findsNothing);
     expect(find.text('上传菜品实拍'), findsNothing);
     expect(find.text('贡献内容'), findsOneWidget);
     expect(find.text('添加一条新的商家评价...'), findsNothing);

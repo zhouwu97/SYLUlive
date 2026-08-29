@@ -16,7 +16,6 @@ import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
 import 'admin_water_icon_review_screen.dart';
 import 'admin_canteen_operations_screen.dart';
-import 'admin/canteen_dish_photo_review_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
@@ -297,20 +296,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                       builder: (_) =>
                                           const AdminCanteenReviewScreen()))
                               .then((_) => _loadCounts()),
-                        ),
-                        _AdminActionPill(
-                          icon: Icons.restaurant_menu_outlined,
-                          iconColor: Colors.deepPurple,
-                          title: '菜品与实拍审核',
-                          subtitle: '菜品候选、实拍通过/驳回/合并',
-                          isDark: isDark,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  const CanteenDishPhotoReviewScreen(),
-                            ),
-                          ).then((_) => _loadCounts()),
                         ),
                       ],
                     ),

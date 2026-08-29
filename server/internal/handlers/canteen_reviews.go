@@ -1019,7 +1019,7 @@ func populateReviewDishNamesForViewer(db *gorm.DB, reviews []models.CanteenRevie
 	byReview := make(map[uint][]string, len(rows))
 	detailsByReview := make(map[uint][]map[string]interface{}, len(rows))
 	for _, row := range rows {
-		isPublic := row.Status == models.DishStatusActive || row.Status == models.DishStatusPending
+		isPublic := row.Status == models.DishStatusActive
 		isOwner := viewerID != 0 && ownerByReview[row.ReviewEventID] == viewerID
 		if !isPublic && !isOwner {
 			continue

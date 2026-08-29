@@ -724,7 +724,8 @@ func localEduStatusPayload(user models.User) gin.H {
 
 func isStableEduStateErrorCode(code string) bool {
 	switch code {
-	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE":
+	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE",
+		"EDU_INVALID_CREDENTIALS", "EDU_UPSTREAM_UNAVAILABLE", "EDU_NETWORK_ERROR":
 		return true
 	default:
 		return false

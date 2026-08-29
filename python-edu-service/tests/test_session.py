@@ -5,7 +5,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.session import execute_with_session_refresh, CookieLapseError
-from services.crawler import LoginFailedError
+from services.crawler import LoginFailedError, NetworkError
 from models.database import EduUser
 from services.security import encrypt_credential
 from routers.auth import bind_edu_account, refresh_cookie, resume_edu_session
@@ -49,7 +49,7 @@ async def test_session_refresh_success():
 
 @pytest.mark.asyncio
 async def test_session_refresh_login_failed():
-    """旧 Cookie 失败 → 登录失败 → 返回 CookieLapseError"""
+    """明确密码错误 → EDU_INVALID_CREDENTIALS，提示重新输入密码"""
     mock_db = AsyncMock()
     edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
 
@@ -58,10 +58,10 @@ async def test_session_refresh_login_failed():
 
     with patch("services.session.EduCrawler") as MockCrawlerClass:
         mock_crawler_instance = AsyncMock()
-        mock_crawler_instance.login.side_effect = LoginFailedError("Wrong pass", "401")
+        mock_crawler_instance.login.side_effect = LoginFailedError("用户名或密码错误", "INVALID_CREDENTIALS")
         MockCrawlerClass.return_value.__aenter__.return_value = mock_crawler_instance
 
-        with pytest.raises(CookieLapseError, match="账号密码可能已变更"):
+        with pytest.raises(CookieLapseError, match="教务账号或密码错误"):
             await execute_with_session_refresh(
                 db=mock_db,
                 edu_user=edu_user,
@@ -70,6 +70,79 @@ async def test_session_refresh_login_failed():
 
         assert operation.call_count == 1
         mock_db.commit.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_session_refresh_login_failed_invalid_credentials_code():
+    """INVALID_CREDENTIALS 错误码必须是 EDU_INVALID_CREDENTIALS，供 Go 侧要求重输密码"""
+    mock_db = AsyncMock()
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
+
+    operation = AsyncMock()
+    operation.side_effect = [CookieLapseError("Expired")]
+
+    with patch("services.session.EduCrawler") as MockCrawlerClass:
+        mock_crawler_instance = AsyncMock()
+        mock_crawler_instance.login.side_effect = LoginFailedError("密码不正确", "INVALID_CREDENTIALS")
+        MockCrawlerClass.return_value.__aenter__.return_value = mock_crawler_instance
+
+        with pytest.raises(CookieLapseError) as exc_info:
+            await execute_with_session_refresh(
+                db=mock_db,
+                edu_user=edu_user,
+                operation=operation
+            )
+
+    assert exc_info.value.code == "EDU_INVALID_CREDENTIALS"
+
+@pytest.mark.asyncio
+async def test_session_refresh_login_cas_flow_changed_is_upstream_unavailable():
+    """CAS/登录流程变化不是密码错误：保留密码、报上游暂时不可用"""
+    mock_db = AsyncMock()
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
+
+    operation = AsyncMock()
+    operation.side_effect = [CookieLapseError("Expired")]
+
+    with patch("services.session.EduCrawler") as MockCrawlerClass:
+        mock_crawler_instance = AsyncMock()
+        mock_crawler_instance.login.side_effect = LoginFailedError("登录页可能变化", "CAS_FLOW_CHANGED")
+        MockCrawlerClass.return_value.__aenter__.return_value = mock_crawler_instance
+
+        with pytest.raises(CookieLapseError) as exc_info:
+            await execute_with_session_refresh(
+                db=mock_db,
+                edu_user=edu_user,
+                operation=operation
+            )
+
+    assert exc_info.value.code == "EDU_UPSTREAM_UNAVAILABLE"
+    assert "账号密码" not in str(exc_info.value)
+    mock_db.commit.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_session_refresh_login_network_error():
+    """网络异常 → EDU_NETWORK_ERROR，不做凭据判断"""
+    mock_db = AsyncMock()
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
+
+    operation = AsyncMock()
+    operation.side_effect = [CookieLapseError("Expired")]
+
+    with patch("services.session.EduCrawler") as MockCrawlerClass:
+        mock_crawler_instance = AsyncMock()
+        mock_crawler_instance.login.side_effect = NetworkError("获取CSRF超时")
+        MockCrawlerClass.return_value.__aenter__.return_value = mock_crawler_instance
+
+        with pytest.raises(CookieLapseError) as exc_info:
+            await execute_with_session_refresh(
+                db=mock_db,
+                edu_user=edu_user,
+                operation=operation
+            )
+
+    assert exc_info.value.code == "EDU_NETWORK_ERROR"
+    assert "教务系统网络异常" in str(exc_info.value)
+    mock_db.commit.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_session_refresh_concurrent_requests():

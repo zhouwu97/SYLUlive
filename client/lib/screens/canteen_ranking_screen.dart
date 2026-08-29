@@ -23,15 +23,14 @@ class CanteenRankingScreen extends StatefulWidget {
 
 class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _sort = CanteenRankingSort.composite;
-  String _locationFilter = '';
+  String _locationArea = '';
+  String _locationFloor = '';
 
-  /// 位置筛选（'' = 全部）：区域命中区域字段，楼层命中楼层字段。
+  /// 位置筛选（'' = 不限）：区域与楼层组合生效。
   List<CanteenRankingItem> _applyLocationFilter(List<CanteenRankingItem> items) {
-    if (_locationFilter.isEmpty) return items;
     return items
-        .where((item) =>
-            item.locationArea == _locationFilter ||
-            item.locationFloor == _locationFilter)
+        .where((item) => canteenRankingItemMatchesLocation(
+            item, _locationArea, _locationFloor))
         .toList();
   }
 
@@ -159,9 +158,13 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           CanteenRankingFilterBar(
             selected: _sort,
             onChanged: _switchSort,
-            locationFilter: _locationFilter,
-            onLocationFilterChanged: (value) =>
-                setState(() => _locationFilter = value),
+            locationArea: _locationArea,
+            locationFloor: _locationFloor,
+            onLocationFilterChanged: (area, floor) =>
+                setState(() {
+                  _locationArea = area;
+                  _locationFloor = floor;
+                }),
           ),
           _buildExplanationLine(isDark),
           const SizedBox(height: 4),
@@ -220,12 +223,17 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           );
         }
         if (items.isEmpty) {
-          if (_locationFilter.isNotEmpty && provider.rankingItems.isNotEmpty) {
+          final hasLocationFilter =
+              _locationArea.isNotEmpty || _locationFloor.isNotEmpty;
+          if (hasLocationFilter && provider.rankingItems.isNotEmpty) {
             return CanteenEmptyState(
               title: '该位置暂无商家',
               subtitle: '试试切换其他食堂或楼层',
               actionLabel: '查看全部商家',
-              onAction: () => setState(() => _locationFilter = ''),
+              onAction: () => setState(() {
+                _locationArea = '';
+                _locationFloor = '';
+              }),
             );
           }
           return CanteenEmptyState(

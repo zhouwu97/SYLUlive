@@ -25,6 +25,7 @@ enum AiConnectionState {
   idle,
   connecting,
   streaming,
+  reconnecting,
   completed,
   failed,
   cancelled
@@ -62,11 +63,21 @@ int aiVisibleCharacterCount(String value) =>
     normalizeAiMessage(value).characters.length;
 
 class AiAssistantProvider extends ChangeNotifier {
+  static const List<Duration> reconnectBackoffSchedule = [
+    Duration(milliseconds: 500),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+    Duration(seconds: 10),
+  ];
+
   final AiAssistantService _service;
   final Future<void> Function()? _deviceToolSync;
   final Random _random;
   final AgentLaunchContext? _launchContext;
   final AiCapabilities? _initialCapabilities;
+  final List<Duration> _reconnectBackoffSchedule;
 
   AiAssistantProvider(
     this._service, {
@@ -74,11 +85,14 @@ class AiAssistantProvider extends ChangeNotifier {
     Future<void> Function()? deviceToolSync,
     Random? random,
     AgentLaunchContext? launchContext,
+    List<Duration>? reconnectBackoff,
   })  : _capabilities = initialCapabilities,
         _quota = initialCapabilities?.quota,
         _initialCapabilities = initialCapabilities,
         _deviceToolSync = deviceToolSync,
         _launchContext = launchContext,
+        _reconnectBackoffSchedule =
+            reconnectBackoff ?? reconnectBackoffSchedule,
         _random = random ?? Random() {
     _syncQuickPrompts();
   }
@@ -151,7 +165,10 @@ class AiAssistantProvider extends ChangeNotifier {
   bool get canReconnectRun => _run != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
+      _connectionState == AiConnectionState.reconnecting ||
       _connectionState == AiConnectionState.streaming;
+  bool get isReconnecting =>
+      _connectionState == AiConnectionState.reconnecting;
 
   String get friendlyRunStatus {
     final event = _currentRun;
@@ -211,6 +228,9 @@ class AiAssistantProvider extends ChangeNotifier {
         raw.contains('rag') ||
         raw.contains('policy')) {
       return '正在查找学校资料…';
+    }
+    if (_connectionState == AiConnectionState.reconnecting) {
+      return '连接波动，正在恢复…';
     }
     if (_connectionState == AiConnectionState.connecting) return '正在连接沈理 AI…';
     return '正在整理回答…';
@@ -559,7 +579,7 @@ class AiAssistantProvider extends ChangeNotifier {
       _conversationId = creation.run.conversationId;
       _replaceUserStatus(submission.requestId, AiMessageStatus.completed);
       unawaited(
-          _consumeEvents(creation.run.id, generation: ++_streamGeneration));
+          _streamUntilTerminal(creation.run.id, ++_streamGeneration));
     } on AiAssistantServiceException catch (exception) {
       if (_ownsSessionRequest(sessionRequest)) {
         _handleSubmitFailure(submission, exception);
@@ -685,15 +705,13 @@ class AiAssistantProvider extends ChangeNotifier {
     _error = null;
     _connectionState = AiConnectionState.connecting;
     _notify();
-    await _cancelActiveEventStream();
-    await _consumeEvents(runId,
-        generation: ++_streamGeneration, allowReconnect: false);
+    await _streamUntilTerminal(runId, ++_streamGeneration);
   }
 
+  /// 消费 SSE 直到流结束；是否继续重连由 [_streamUntilTerminal] 决定。
   Future<void> _consumeEvents(
     String runId, {
     required int generation,
-    bool allowReconnect = true,
   }) async {
     try {
       await _cancelActiveEventStream();
@@ -731,14 +749,33 @@ class AiAssistantProvider extends ChangeNotifier {
         _eventSubscription = null;
         _eventStreamDone = null;
       }
-      if (!_disposed && generation == _streamGeneration && isRunning) {
-        await _recoverRun(runId, generation, allowReconnect: allowReconnect);
-      }
     } catch (_) {
-      if (!_disposed && generation == _streamGeneration) {
-        await _recoverRun(runId, generation, allowReconnect: allowReconnect);
-      }
+      // 建流失败时保持运行态，交给恢复循环评估，避免网络抖动直接报错。
     }
+  }
+
+  /// SSE 断开后持续恢复：每轮先 GET Run 评估终态，非终态则进入恢复态并
+  /// 按指数退避重连，直到 Run 到达终态、被新一代流接管或组件销毁。
+  Future<void> _streamUntilTerminal(String runId, int generation) async {
+    var attempt = 0;
+    while (!_disposed && generation == _streamGeneration) {
+      await _consumeEvents(runId, generation: generation);
+      if (_disposed || generation != _streamGeneration) return;
+      if (!isRunning) return;
+      if (!await _recoverRunState(runId, generation)) return;
+      await _waitReconnectBackoff(attempt);
+      attempt += 1;
+    }
+  }
+
+  Future<void> _waitReconnectBackoff(int attempt) {
+    final schedule = _reconnectBackoffSchedule;
+    final base = attempt < schedule.length ? schedule[attempt] : schedule.last;
+    final jitter = 0.2 * (_random.nextDouble() * 2 - 1);
+    final milliseconds = (base.inMilliseconds * (1 + jitter)).round();
+    return Future<void>.delayed(
+      Duration(milliseconds: milliseconds < 0 ? 0 : milliseconds),
+    );
   }
 
   Future<void> _cancelActiveEventStream() async {
@@ -750,11 +787,11 @@ class AiAssistantProvider extends ChangeNotifier {
     await subscription?.cancel();
   }
 
-  Future<void> _recoverRun(String runId, int generation,
-      {required bool allowReconnect}) async {
+  /// GET Run 并按状态收尾；返回 false 表示已终态或恢复不再有意义。
+  Future<bool> _recoverRunState(String runId, int generation) async {
     try {
       final run = await _service.getRun(runId);
-      if (_disposed || generation != _streamGeneration) return;
+      if (_disposed || generation != _streamGeneration) return false;
       _run = run;
       if (run.answerCheckpoint.isNotEmpty &&
           run.answerCheckpoint != _streamedText) {
@@ -775,18 +812,20 @@ class AiAssistantProvider extends ChangeNotifier {
               : AiSourceRecoveryState.loaded,
         );
         if (_sources.isEmpty) await _resolveSourcesForRun(runId);
-        if (_disposed || generation != _streamGeneration) return;
+        if (_disposed || generation != _streamGeneration) return false;
         await _finishRun();
+        return false;
       } else if (run.state == 'failed' || run.state == 'expired') {
         _connectionState = AiConnectionState.failed;
         _error = _friendlyError(run.errorCode);
         _notify();
+        return false;
       } else if (run.state == 'cancelled') {
         _connectionState = AiConnectionState.cancelled;
         _error = '已取消本次回答';
         _notify();
+        return false;
       } else if (_isWaitingState(run.state)) {
-        _connectionState = AiConnectionState.streaming;
         _currentRun = AiRunEvent(
           runId: run.id,
           type: AiRunEventType.status,
@@ -805,24 +844,17 @@ class AiAssistantProvider extends ChangeNotifier {
         }
         if (run.state == 'waiting_device') _syncDeviceTools();
         _notify();
-      } else if (allowReconnect) {
-        await Future<void>.delayed(const Duration(milliseconds: 350));
-        if (!_disposed && generation == _streamGeneration) {
-          await _consumeEvents(runId,
-              generation: generation, allowReconnect: false);
-        }
-      } else {
-        _connectionState = AiConnectionState.failed;
-        _error = '连接已中断，可点击重新连接继续回放';
-        _notify();
       }
     } catch (_) {
-      if (!_disposed && generation == _streamGeneration) {
-        _connectionState = AiConnectionState.failed;
-        _error = '连接已中断，可点击重新连接继续回放';
-        _notify();
-      }
+      // GET 失败按链路抖动处理，保持恢复循环继续。
+      if (_disposed || generation != _streamGeneration) return false;
     }
+    if (_connectionState != AiConnectionState.reconnecting) {
+      _connectionState = AiConnectionState.reconnecting;
+      _error = null;
+      _notify();
+    }
+    return true;
   }
 
   /// SSE 回放可能重复到达，统一按 seq 去重，并用 checkpoint 覆盖增量文本。
@@ -898,6 +930,8 @@ class AiAssistantProvider extends ChangeNotifier {
         // 才能进入授权 UI，否则“允许本次”没有可提交的授权范围。
         _pendingConsent = null;
         _connectionState = AiConnectionState.streaming;
+        // 出现新的工具/认领进展说明任务已被设备接手，停止补拉轮询。
+        _stopDeviceSyncPolling();
         break;
       case AiRunEventType.consentRequired:
         _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
@@ -907,6 +941,7 @@ class AiAssistantProvider extends ChangeNotifier {
         _pendingConsent = event.consentScope.trim().isEmpty ? null : event;
         _connectionState = AiConnectionState.streaming;
         _syncDeviceTools();
+        _startDeviceSyncPolling();
         break;
       case AiRunEventType.eduFetching:
       case AiRunEventType.toolCompleted:
@@ -933,6 +968,7 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
+        _stopDeviceSyncPolling();
         _agentFlowCompleted = _agentEvent?.runId == event.runId;
         if (event.quota != null) _quota = event.quota;
         final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
@@ -951,6 +987,7 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.failed:
         _connectionState = AiConnectionState.failed;
+        _stopDeviceSyncPolling();
         _error = _friendlyError(event.errorCode);
         if (event.retryable && _activeSubmissionRequestId != null) {
           final requestId = _activeSubmissionRequestId!;
@@ -986,6 +1023,7 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.cancelled:
         _connectionState = AiConnectionState.cancelled;
+        _stopDeviceSyncPolling();
         _error = '已取消本次回答';
         break;
       case AiRunEventType.heartbeat:
@@ -1503,6 +1541,32 @@ class AiAssistantProvider extends ChangeNotifier {
     }());
   }
 
+  // 设备任务最长有效期为 5 分钟；等待认领期间按固定间隔补拉，
+  // 防止推送丢失且 SSE 分片缺失时任务一直无人认领。
+  static const Duration _deviceSyncPollInterval = Duration(seconds: 15);
+  static const Duration _deviceSyncPollWindow = Duration(minutes: 6);
+  Timer? _deviceSyncPollTimer;
+  DateTime? _deviceSyncPollDeadline;
+
+  void _startDeviceSyncPolling() {
+    _deviceSyncPollTimer?.cancel();
+    _deviceSyncPollDeadline = DateTime.now().add(_deviceSyncPollWindow);
+    _deviceSyncPollTimer = Timer.periodic(_deviceSyncPollInterval, (_) {
+      final deadline = _deviceSyncPollDeadline;
+      if (deadline == null || DateTime.now().isAfter(deadline)) {
+        _stopDeviceSyncPolling();
+        return;
+      }
+      _syncDeviceTools();
+    });
+  }
+
+  void _stopDeviceSyncPolling() {
+    _deviceSyncPollTimer?.cancel();
+    _deviceSyncPollTimer = null;
+    _deviceSyncPollDeadline = null;
+  }
+
   List<AiPersonalDataEvidence> _evidenceForRun(String runId) =>
       List.unmodifiable(_personalDataEvidence[runId] ?? const []);
 
@@ -1626,6 +1690,7 @@ class AiAssistantProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _stopDeviceSyncPolling();
     _accountRequestGeneration++;
     _streamGeneration++;
     unawaited(_cancelActiveEventStream());

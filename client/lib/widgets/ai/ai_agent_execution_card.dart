@@ -15,6 +15,7 @@ class AiAgentExecutionCard extends StatefulWidget {
     this.rawEvents = const <AiRunEvent>[],
     this.event,
     this.running = false,
+    this.reconnecting = false,
     this.completed = false,
     this.onOpenPermissions,
     this.onAllowOnce,
@@ -31,6 +32,7 @@ class AiAgentExecutionCard extends StatefulWidget {
   // 兼容旧调用面；新页面应传 activities。
   final AiRunEvent? event;
   final bool running;
+  final bool reconnecting;
   final bool completed;
   final VoidCallback? onOpenPermissions;
   final VoidCallback? onAllowOnce;
@@ -91,7 +93,10 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     final latest = activities.isEmpty ? null : activities.last;
     final title = widget.completed
         ? '已完成分析'
-        : latest?.title ?? (widget.running ? '正在处理当前问题…' : 'Agent 过程');
+        : widget.reconnecting
+            ? '连接波动，正在恢复…'
+            : latest?.title ??
+                (widget.running ? '正在处理当前问题…' : 'Agent 过程');
     final detail = latest?.detail ?? '';
     final isError = latest?.status == AiAgentActivityStatus.failed;
     final refreshFailed = activities.any(

@@ -5,6 +5,14 @@ import '../storage/erke_cache_store.dart';
 import 'erke_client.dart';
 import 'erke_models.dart';
 
+/// 二课抓取失败的结构化分类。只有 [credentialInvalid] 有资格让调用方清除
+/// 已保存密码；其余都是链路或上游问题，清密码会导致用户被误要求重输。
+enum ErkeFetchFailureCategory {
+  credentialInvalid,
+  networkUnavailable,
+  unknown,
+}
+
 class ErkeRepository {
   final WebVpnService _vpn;
   final ErkeCacheStore _cache;
@@ -27,6 +35,7 @@ class ErkeRepository {
   bool isYearlyLoading = false;
   String? yearlyError;
   String? fetchError;
+  ErkeFetchFailureCategory failureCategory = ErkeFetchFailureCategory.unknown;
 
   ErkeRepository({
     required WebVpnService vpnService,
@@ -68,6 +77,7 @@ class ErkeRepository {
     String erkePassword,
   ) async {
     fetchError = null;
+    failureCategory = ErkeFetchFailureCategory.unknown;
     String phase = 'init';
 
     // 提前声明，以便 catch 块在部分成功时保存已获取数据
@@ -81,6 +91,14 @@ class ErkeRepository {
       final vpnOk = await _vpn.login(studentId, casPassword);
       if (!vpnOk) {
         fetchError = _vpn.lastError ?? '统一认证登录失败，请检查密码';
+        switch (_vpn.lastFailureType) {
+          case WebVpnLoginFailureType.invalidCredentials:
+            failureCategory = ErkeFetchFailureCategory.credentialInvalid;
+          case WebVpnLoginFailureType.unavailable:
+            failureCategory = ErkeFetchFailureCategory.networkUnavailable;
+          case WebVpnLoginFailureType.unknown || null:
+            failureCategory = ErkeFetchFailureCategory.unknown;
+        }
         debugPrint(
             '[Erke] phase=$phase failed type=VpnLoginFailed message=$fetchError');
         hasLiveSession = false;

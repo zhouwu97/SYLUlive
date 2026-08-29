@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_automation_gateway.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_job_client.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_job_models.dart';
+import 'package:shenliyuan/features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_tool_registry.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_tool_worker.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/gateway_result.dart';
@@ -14,6 +15,11 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_rec
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/erke_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
+import 'package:shenliyuan/features/campus_data/erke/erke_repository.dart';
+import 'package:shenliyuan/features/campus_data/storage/erke_cache_store.dart';
+import 'package:shenliyuan/features/personal_data_sync/personal_data_sync_coordinator.dart';
+import 'package:shenliyuan/features/personal_data_sync/personal_data_sync_result.dart';
+import 'package:shenliyuan/services/webvpn_service.dart';
 
 void main() {
   final now = DateTime.now().toUtc();
@@ -336,6 +342,74 @@ void main() {
     expect(api.claimedJobIDs, ['job-1', 'job-2']);
     expect(api.completedJobIDs, ['job-1', 'job-2']);
   });
+
+  test('WebVPN 判定密码错误时二课同步标记凭据失败并允许清除', () async {
+    final result = await _syncErkeWithVpnFailure(
+      WebVpnLoginFailureType.invalidCredentials,
+    );
+
+    expect(result.status, PersonalSyncItemStatus.failed);
+    expect(result.failureReason, PersonalSyncFailureReason.credentialUnavailable);
+    expect(shouldClearErkeCredential(result.failureReason), isTrue);
+  });
+
+  test('WebVPN 网络失败时二课同步保留凭据', () async {
+    final result = await _syncErkeWithVpnFailure(
+      WebVpnLoginFailureType.unavailable,
+    );
+
+    expect(result.status, PersonalSyncItemStatus.failed);
+    expect(result.failureReason, PersonalSyncFailureReason.networkUnavailable);
+    expect(shouldClearErkeCredential(result.failureReason), isFalse);
+  });
+
+  test('未知二课失败与教务会话过期都不清除凭据', () async {
+    final unknown = await _syncErkeWithVpnFailure(null);
+
+    expect(unknown.failureReason, PersonalSyncFailureReason.unknown);
+    expect(shouldClearErkeCredential(unknown.failureReason), isFalse);
+    expect(
+      shouldClearErkeCredential(PersonalSyncFailureReason.eduSessionExpired),
+      isFalse,
+    );
+  });
+}
+
+Future<PersonalSyncItemResult> _syncErkeWithVpnFailure(
+  WebVpnLoginFailureType? failureType,
+) {
+  final repository = ErkeRepository(
+    vpnService: _ScriptedWebVpn(failureType),
+    cacheStore:
+        ErkeCacheStore(appUserId: 'user-1', sourceAccountId: 'source-1'),
+  );
+  return ErkeRepositoryPersonalSyncGateway(
+    repository: repository,
+    requestCredentials: () async => const PersonalErkeCredentials(
+      studentId: 'source-1',
+      casPassword: 'cas-pass',
+      erkePassword: 'erke-pass',
+    ),
+  ).syncErke();
+}
+
+class _ScriptedWebVpn extends WebVpnService {
+  _ScriptedWebVpn(this.failureType);
+
+  final WebVpnLoginFailureType? failureType;
+
+  @override
+  Future<bool> login(String username, String password) async => false;
+
+  @override
+  String? get lastError => switch (failureType) {
+        WebVpnLoginFailureType.invalidCredentials => '统一认证登录失败，请检查密码',
+        WebVpnLoginFailureType.unavailable => 'WebVPN 网络连接失败，请检查网络后重试',
+        _ => '统一认证流程异常，请稍后重试',
+      };
+
+  @override
+  WebVpnLoginFailureType? get lastFailureType => failureType;
 }
 
 DeviceToolJob _job(
@@ -677,7 +751,7 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
       const RefreshResult(performed: true);
 
   @override
-  Future<RefreshResult> refreshErke() async =>
+  Future<RefreshResult> refreshErke({bool automationUpload = false}) async =>
       const RefreshResult(performed: true);
 
   @override
@@ -688,6 +762,7 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+    bool automationUpload = false,
   }) async =>
       ensured;
 

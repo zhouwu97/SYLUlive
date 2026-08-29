@@ -911,6 +911,85 @@ func TestMigratePendingDishesAndPhotosMigration(t *testing.T) {
 	}
 }
 
+func TestUpdateReviewKeepsDishPhotoAfterCreate(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 701, user.ID, models.FileAccessPrivate)
+
+	createResp := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"原评价","dishes":[{"dish_name":"贵妃荔枝鸡肉燥双拼饭","photo_file_ids":[%d]}]}`, file.ID))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	editContext := performCanteenRequest(t, h.GetReviewEditContext, http.MethodGet,
+		"/api/canteens/reviews/1/edit-context", mapParams("reviewId", "1"), user.ID, "")
+	if editContext.Code != http.StatusOK {
+		t.Fatalf("edit-context status=%d body=%s", editContext.Code, editContext.Body.String())
+	}
+	var ctxBody struct {
+		Review map[string]interface{} `json:"review"`
+	}
+	if err := json.Unmarshal(editContext.Body.Bytes(), &ctxBody); err != nil {
+		t.Fatal(err)
+	}
+	reviewID := fmt.Sprint(ctxBody.Review["review_event_id"])
+	updatedAt := fmt.Sprint(ctxBody.Review["updated_at"])
+
+	// 模拟客户端编辑保存载荷：绑定了菜品的实拍只走 dishes[].photo_file_ids，
+	// 不再重复出现在 images 里。
+	patchBody := fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改后的评价","images":[],"tags":["portion_enough"],"dishes":[{"dish_id":0,"dish_name":"贵妃荔枝鸡肉燥双拼饭","taste_score":0,"value_score":0,"portion_score":0,"comment":"","photo_file_ids":[%d]}],"base_updated_at":%q}`, file.ID, updatedAt)
+	patchResp := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+reviewID, mapParams("reviewId", reviewID), user.ID, patchBody)
+	if patchResp.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", patchResp.Code, patchResp.Body.String())
+	}
+
+	var photos []models.CanteenDishPhoto
+	if err := h.db.Where("file_id = ?", file.ID).Find(&photos).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 1 {
+		t.Fatalf("photo rows=%d, want 1", len(photos))
+	}
+	if photos[0].Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status=%s, want approved", photos[0].Status)
+	}
+}
+
+func TestUpdateReviewRebindsPhotoToChangedDish(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 801, user.ID, models.FileAccessPrivate)
+
+	createResp := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"原评价","dishes":[{"dish_name":"贵妃荔枝鸡肉燥双拼饭","photo_file_ids":[%d]}]}`, file.ID))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	// 用户在编辑器里把菜品从「贵妃荔枝鸡肉燥双拼饭」换成另一道菜，
+	// 图片会自动改绑到新菜品。
+	patchBody := fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"换了个菜","images":[],"tags":["portion_enough"],"dishes":[{"dish_id":0,"dish_name":"麻辣香锅","taste_score":0,"value_score":0,"portion_score":0,"comment":"","photo_file_ids":[%d]}]}`, file.ID)
+	patchResp := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/1", mapParams("reviewId", "1"), user.ID, patchBody)
+	if patchResp.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", patchResp.Code, patchResp.Body.String())
+	}
+
+	var photo models.CanteenDishPhoto
+	if err := h.db.Where("file_id = ?", file.ID).First(&photo).Error; err != nil {
+		t.Fatalf("photo missing: %v", err)
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = 88 AND normalized_name = ?", "麻辣香锅").First(&dish).Error; err != nil {
+		t.Fatalf("new dish missing: %v", err)
+	}
+	if photo.DishID != dish.ID {
+		t.Fatalf("photo bound to dish %d, want %d", photo.DishID, dish.ID)
+	}
+}
+
 func mapParams(key, value string) []gin.Param {
 	return []gin.Param{{Key: key, Value: value}}
 }

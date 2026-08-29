@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:shenliyuan/utils/post_image_cache.dart';
 
 /// CachedNetworkImage（公开图片）在 widget 测试中的全链路 mock。
 ///
@@ -13,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 路由规则：
 /// - `/uploads/` 下 path 含 `missing` → 404（模拟脏记录：数据库有记录但文件丢失）
+/// - `/uploads/` 下 path 含 `flaky` → 500（模拟瞬时故障：服务端暂时不可用）
 /// - 其余 `/uploads/` → 200 + 1x1 透明 PNG
 /// - 传入 [apiHandler] 时，非 `/uploads/` 请求转交该处理器（复用 Dio FakeAdapter
 ///   的接口 mock，否则 Dio 请求会落进图片 mock）
@@ -24,36 +26,67 @@ typedef MockApiHandler = Future<ResponseBody> Function(RequestOptions options);
 
 Directory? _tempRoot;
 MockApiHandler? _apiHandler;
+PathProviderPlatform? _previousPathProvider;
 
 Future<void> installMockPublicImageHttp({MockApiHandler? apiHandler}) async {
+  PostImageCache.resetInstance();
   _apiHandler = apiHandler;
   _tempRoot = await Directory.systemTemp.createTemp('mock_public_image');
   final tmpDir = await Directory('${_tempRoot!.path}/tmp').create(recursive: true);
   final supportDir =
       await Directory('${_tempRoot!.path}/support').create(recursive: true);
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(
-    const MethodChannel('plugins.flutter.io/path_provider'),
-    (call) async => switch (call.method) {
-      'getTemporaryDirectory' => tmpDir.path,
-      _ => supportDir.path,
-    },
+  // 直接覆盖平台接口实现：MethodChannel 的 mock 回包要跨 fake-async zone 投递，
+  // 时序敏感（同一文件里首个 mock 测试能过、后续测试的回包永远不到）。
+  // 平台接口层返回同步完成的 Future，绕开 zone 投递，链路完全确定。
+  _previousPathProvider = PathProviderPlatform.instance;
+  PathProviderPlatform.instance = _FakePathProviderPlatform(
+    temporaryPath: tmpDir.path,
+    supportPath: supportDir.path,
   );
   HttpOverrides.global = _MockImageHttpOverrides();
 }
 
 void uninstallMockPublicImageHttp() {
   HttpOverrides.global = null;
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(
-          const MethodChannel('plugins.flutter.io/path_provider'), null);
+  if (_previousPathProvider != null) {
+    PathProviderPlatform.instance = _previousPathProvider!;
+    _previousPathProvider = null;
+  }
   _apiHandler = null;
   final root = _tempRoot;
   _tempRoot = null;
   root?.delete(recursive: true).ignore();
 }
 
+/// 固定目录版 path_provider：测试中目录随 install 创建、随 uninstall 删除，
+/// 避免 flutter_cache_manager 在真实用户目录留下状态。
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  _FakePathProviderPlatform({required this.temporaryPath, required this.supportPath});
+
+  final String temporaryPath;
+  final String supportPath;
+
+  @override
+  Future<String?> getTemporaryPath() async => temporaryPath;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => supportPath;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => supportPath;
+
+  @override
+  Future<String?> getDownloadsPath() async => supportPath;
+
+  @override
+  Future<String?> getLibraryPath() async => supportPath;
+}
+
 /// 驱动真实时间窗，让缓存管理器文件 IO 与网络请求在测试中实际完成。
+///
+/// 每个窗口后 pump 必须推进 fake 时间：屏幕类测试里 Dio 的回包链依赖
+/// fake 定时器推进（`pump()` 不推时间会让请求卡到 flush 才完成，错过全部
+/// 真实窗口，图片链路起跑时已无事可做）。
 Future<void> driveMockPublicImageLoads(
   WidgetTester tester, {
   int windows = 15,
@@ -61,7 +94,7 @@ Future<void> driveMockPublicImageLoads(
   for (var i = 0; i < windows; i++) {
     await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
   }
 }
 
@@ -87,8 +120,9 @@ const _transparentImage = <int>[
 
 class _MockImageHttpOverrides extends HttpOverrides {
   @override
-  HttpClient createHttpClient(SecurityContext? context) =>
-      _MockImageHttpClient();
+  HttpClient createHttpClient(SecurityContext? context) {
+    return _MockImageHttpClient();
+  }
 }
 
 class _MockImageHttpClient extends Fake implements HttpClient {
@@ -99,8 +133,9 @@ class _MockImageHttpClient extends Fake implements HttpClient {
   Duration idleTimeout = Duration.zero;
 
   @override
-  Future<HttpClientRequest> openUrl(String method, Uri url) async =>
-      _MockImageHttpRequest(url);
+  Future<HttpClientRequest> openUrl(String method, Uri url) async {
+    return _MockImageHttpRequest(url);
+  }
 
   @override
   void close({bool force = false}) {}
@@ -140,8 +175,11 @@ class _MockImageHttpRequest extends Fake implements HttpClientRequest {
       return path.contains('missing')
           ? _MockImageHttpResponse(404, const [],
               contentType: 'image/jpeg')
-          : _MockImageHttpResponse(200, _transparentImage,
-              contentType: 'image/png');
+          : path.contains('flaky')
+              ? _MockImageHttpResponse(500, const [],
+                  contentType: 'image/jpeg')
+              : _MockImageHttpResponse(200, _transparentImage,
+                  contentType: 'image/png');
     }
     final apiHandler = _apiHandler;
     if (apiHandler != null) {

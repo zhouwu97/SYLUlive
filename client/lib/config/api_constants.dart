@@ -32,8 +32,9 @@ class ApiConstants {
 
   /// 为上传图片生成服务端支持的缩略图变体 URL。
   ///
-  /// 变体只作用于文件名，不会丢失查询参数；传入已经带有变体后缀的
-  /// URL 时先剥离旧后缀，避免出现 `image_thumb_v1_medium.jpg`。
+  /// 变体只作用于 /uploads/ 下的文件名，不会丢失查询参数；外部资源原样返回。
+  /// 传入已经带有变体后缀的 URL 时先剥离旧后缀，避免出现
+  /// `image_thumb_v1_medium.jpg`。
   static String imageVariant(String path, String variant) {
     final normalizedPath = path.trim();
     final normalizedVariant = variant.trim().toLowerCase();
@@ -43,7 +44,7 @@ class ApiConstants {
     }
 
     final uri = Uri.tryParse(normalizedPath);
-    if (uri == null) return normalizedPath;
+    if (uri == null || !uri.path.contains('/uploads/')) return normalizedPath;
 
     final sourcePath = uri.path;
     final slashIndex = sourcePath.lastIndexOf('/');

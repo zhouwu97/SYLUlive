@@ -110,4 +110,31 @@ void main() {
     expect(networkImages, hasLength(1));
     expect(networkImages.single.imageUrl, contains('ok_v1_medium.jpg'));
   });
+
+  testWidgets('瞬时错误（500）图片保留占位，不触发移除回传', (tester) async {
+    await tester.runAsync(() => installMockPublicImageHttp());
+    addTearDown(uninstallMockPublicImageHttp);
+
+    final failedUrls = <String>[];
+    await tester.pumpWidget(_wrap(
+      ['/uploads/flaky.jpg', '/uploads/ok.jpg'],
+      onImageError: failedUrls.add,
+    ));
+    await driveMockPublicImageLoads(tester);
+    await flushMockPublicImageTimers(tester);
+
+    expect(failedUrls, isEmpty);
+    // 变体 500 后回退原图也 500：外层与回退层同时存在
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is CachedNetworkImage && w.imageUrl.contains('flaky_v1_medium.jpg')),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is CachedNetworkImage && w.imageUrl.contains('ok_v1_medium.jpg')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.cloud_off_rounded), findsOneWidget);
+  });
 }

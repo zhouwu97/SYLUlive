@@ -15,6 +15,7 @@ import '../../utils/app_navigator.dart';
 import '../ai_runtime/personal_data/gateway/personal_account_context.dart';
 import '../ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
 import '../physical/physical_data_sync_service.dart';
+import '../personal_data_sync/erke_snapshot_upload.dart';
 import '../personal_data_sync/personal_data_sync_coordinator.dart';
 import '../personal_data_sync/personal_data_sync_result.dart';
 import 'device_credential_prompt_sheet.dart';
@@ -24,6 +25,12 @@ import 'device_job_models.dart';
 import 'device_job_permission_sheet.dart';
 import 'device_automation_gateway.dart';
 import 'device_tool_worker.dart';
+
+/// 仅在 WebVPN 明确判定凭据错误时清除保存的二课密码；其余失败（网络、上游、
+/// 教务会话过期）保留密码，避免用户被误要求重输。
+@visibleForTesting
+bool shouldClearErkeCredential(PersonalSyncFailureReason? reason) =>
+    reason == PersonalSyncFailureReason.credentialUnavailable;
 
 /// 将设备 Worker 绑定到当前 Flutter 账号。账号或教务来源变化时，旧上下文不会继续回传结果。
 class DeviceToolBridgeHost extends StatefulWidget {
@@ -146,9 +153,10 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       refreshSchedule: () async => _toRefreshResult(
         await sync.syncSchedule(),
       ),
-      refreshErke: () => _refreshErke(
+      refreshErke: ({bool automationUpload = false}) => _refreshErke(
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
+        automationUpload: automationUpload,
       ),
       refreshPhysical: () => _refreshPhysical(
         appUserId: appUserId,
@@ -413,6 +421,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
   Future<RefreshResult> _refreshErke({
     required String appUserId,
     required String sourceAccountId,
+    bool automationUpload = false,
   }) async {
     final credentials = _sessionErkeCredentials ??
         await _credentialStore.readErke(sourceAccountId);
@@ -439,7 +448,11 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
           casPassword: credentials.casPassword,
           erkePassword: credentials.erkePassword,
         ),
-      ).syncErke();
+        snapshotUploader: ErkeSnapshotUploadGateway(_auth.dio),
+        uploadPolicyStore:
+            PreferenceErkeSnapshotUploadPolicyStore(appUserId: appUserId),
+        automationUploadAllowed: automationUpload,
+      ).syncErke(automationUpload: automationUpload);
       if (result.status == PersonalSyncItemStatus.success) {
         if (_saveErkeCredentials) {
           await _credentialStore.writeErke(sourceAccountId, credentials);
@@ -447,10 +460,8 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         }
         return const RefreshResult(performed: true);
       }
-      // 只有明确的凭据失败才删除密码
-      final shouldClearCredential = result.failureReason ==
-              PersonalSyncFailureReason.credentialUnavailable ||
-          result.failureReason == PersonalSyncFailureReason.eduSessionExpired;
+      final shouldClearCredential =
+          shouldClearErkeCredential(result.failureReason);
       if (shouldClearCredential) {
         _sessionErkeCredentials = null;
         await _credentialStore.deleteErke(sourceAccountId);

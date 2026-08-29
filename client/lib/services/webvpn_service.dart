@@ -9,6 +9,10 @@ import 'package:html/parser.dart' show parse;
 import 'webvpn_tls_config.dart'
     if (dart.library.io) 'webvpn_tls_config_io.dart';
 
+/// 登录失败的结构化分类。只有 [invalidCredentials] 有资格让调用方清除
+/// 已保存密码；其余都是链路或上游问题，清密码会导致用户被误要求重输。
+enum WebVpnLoginFailureType { invalidCredentials, unavailable, unknown }
+
 /// 网瑞达 WebVPN + CAS 统一认证登录
 ///
 /// 流程: VPN首页 → 302 → CAS登录页 → AES加密密码 → POST → 302 → VPN cookie
@@ -19,6 +23,7 @@ class WebVpnService {
   late final CookieJar _jar;
   String? _vpnCookie;
   String? _lastError;
+  WebVpnLoginFailureType? _lastFailureType;
 
   WebVpnService() {
     _jar = CookieJar();
@@ -46,6 +51,7 @@ class WebVpnService {
   Future<bool> login(String username, String password) async {
     try {
       _lastError = null;
+      _lastFailureType = null;
       // 清除旧会话 Cookie，防止残留 cookie 使服务器跳过 CAS 重定向
       await _jar.deleteAll();
       _vpnCookie = null;
@@ -67,6 +73,7 @@ class WebVpnService {
         } else {
           debugPrint('[VPN] VPN首页未重定向且无CAS链接');
           _lastError = 'WebVPN 未返回统一认证入口，请稍后重试';
+          _lastFailureType = WebVpnLoginFailureType.unavailable;
           return false;
         }
       }
@@ -104,6 +111,8 @@ class WebVpnService {
           if (ok) return true;
           debugPrint('[VPN] CAS 登录失败');
           _lastError ??= '统一认证登录失败，请检查密码';
+          // 密码错误已在 _submitCasLogin 内标记；其余失败按链路问题处理。
+          _lastFailureType ??= WebVpnLoginFailureType.unavailable;
           return false;
         }
 
@@ -128,13 +137,16 @@ class WebVpnService {
 
       debugPrint('[VPN] 未到达 CAS 登录页');
       _lastError = '未能连接到统一认证页面，请检查网络后重试';
+      _lastFailureType = WebVpnLoginFailureType.unavailable;
     } on DioException catch (e) {
       _lastError = _describeDioException(e);
+      _lastFailureType = WebVpnLoginFailureType.unavailable;
       debugPrint(
         '[VPN] 登录异常: type=${e.type} status=${e.response?.statusCode} cause=${e.error.runtimeType}',
       );
     } catch (e) {
       _lastError = '统一认证流程异常，请稍后重试';
+      _lastFailureType = WebVpnLoginFailureType.unknown;
       debugPrint('[VPN] 登录异常: ${e.runtimeType}');
     }
     return false;
@@ -268,6 +280,7 @@ class WebVpnService {
       final body = loginResp.data.toString();
       debugPrint('[CAS] 401! bodyLength=${body.length}');
       _lastError = '统一认证登录失败，请检查密码';
+      _lastFailureType = WebVpnLoginFailureType.invalidCredentials;
       return false;
     }
 
@@ -276,6 +289,7 @@ class WebVpnService {
       if (body.contains('认证失败') || body.contains('密码错误')) {
         debugPrint('[CAS] 密码错误');
         _lastError = '统一认证登录失败，请检查密码';
+        _lastFailureType = WebVpnLoginFailureType.invalidCredentials;
         return false;
       }
       // 某些情况下 200 页面里包含 JavaScript 跳转
@@ -295,6 +309,7 @@ class WebVpnService {
     }
 
     _lastError = '统一认证服务未完成登录，请稍后重试';
+    _lastFailureType = WebVpnLoginFailureType.unavailable;
     return false;
   }
 
@@ -397,6 +412,7 @@ class WebVpnService {
 
   String? get vpnCookie => _vpnCookie;
   String? get lastError => _lastError;
+  WebVpnLoginFailureType? get lastFailureType => _lastFailureType;
   CookieJar get cookieJar => _jar;
   Dio get dio => _dio;
 

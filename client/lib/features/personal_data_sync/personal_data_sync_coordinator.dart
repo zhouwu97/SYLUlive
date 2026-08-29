@@ -168,12 +168,14 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     ErkeSnapshotUploadGateway? snapshotUploader,
     ErkeSnapshotUploadPolicyStore? uploadPolicyStore,
     Future<ErkeSnapshotUploadPolicy?> Function()? requestUploadPolicy,
+    bool automationUploadAllowed = false,
     DateTime Function()? now,
   })  : _repository = repository,
         _requestCredentials = requestCredentials,
         _snapshotUploader = snapshotUploader,
         _uploadPolicyStore = uploadPolicyStore,
         _requestUploadPolicy = requestUploadPolicy,
+        _automationUploadAllowed = automationUploadAllowed,
         _now = now ?? DateTime.now;
 
   final ErkeRepository _repository;
@@ -181,10 +183,11 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
   final ErkeSnapshotUploadGateway? _snapshotUploader;
   final ErkeSnapshotUploadPolicyStore? _uploadPolicyStore;
   final Future<ErkeSnapshotUploadPolicy?> Function()? _requestUploadPolicy;
+  final bool _automationUploadAllowed;
   final DateTime Function() _now;
 
   @override
-  Future<PersonalSyncItemResult> syncErke() async {
+  Future<PersonalSyncItemResult> syncErke({bool automationUpload = false}) async {
     final credentials = await _requestCredentials();
     if (credentials == null) {
       return const PersonalSyncItemResult(
@@ -200,7 +203,8 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
       credentials.erkePassword,
     );
     if (updated) {
-      final uploadMessage = await _uploadAuthorizedSnapshot();
+      final uploadMessage =
+          await _uploadAuthorizedSnapshot(automation: automationUpload);
       return PersonalSyncItemResult(
         dataset: PersonalSyncDataset.erke,
         status: PersonalSyncItemStatus.success,
@@ -215,6 +219,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
         status: PersonalSyncItemStatus.usingOldCache,
         source: PersonalDataSource.deviceEncryptedCache,
         message: _repository.fetchError ?? '二课更新失败，继续使用已有缓存',
+        failureReason: _erkeFailureReason(_repository.failureCategory),
       );
     }
     return PersonalSyncItemResult(
@@ -222,21 +227,42 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
       status: PersonalSyncItemStatus.failed,
       source: PersonalDataSource.none,
       message: _repository.fetchError ?? '更新二课数据失败',
+      failureReason: _erkeFailureReason(_repository.failureCategory),
     );
   }
 
+  PersonalSyncFailureReason _erkeFailureReason(
+    ErkeFetchFailureCategory category,
+  ) {
+    switch (category) {
+      case ErkeFetchFailureCategory.credentialInvalid:
+        return PersonalSyncFailureReason.credentialUnavailable;
+      case ErkeFetchFailureCategory.networkUnavailable:
+        return PersonalSyncFailureReason.networkUnavailable;
+      case ErkeFetchFailureCategory.unknown:
+        return PersonalSyncFailureReason.unknown;
+    }
+  }
+
   /// 上传只发生在本地更新成功之后；上传错误不能影响本地缓存和本次二课更新结果。
-  Future<String?> _uploadAuthorizedSnapshot() async {
+  ///
+  /// [automation] 表示本次刷新来自校园 Agent 的设备任务，且服务端已确认用户
+  /// 授权 AI 使用二课快照；此时“每次询问”策略按单次上传处理，不弹出询问、
+  /// 也不改写用户保存的策略，“从不上传”仍然生效。
+  Future<String?> _uploadAuthorizedSnapshot({bool automation = false}) async {
     final uploader = _snapshotUploader;
     final policyStore = _uploadPolicyStore;
     if (uploader == null || policyStore == null) return null;
 
     var policy = await policyStore.read();
-    if (policy == ErkeSnapshotUploadPolicy.askEveryUpdate) {
+    final automationOverride =
+        automation && _automationUploadAllowed && _requestUploadPolicy == null;
+    if (policy == ErkeSnapshotUploadPolicy.askEveryUpdate && !automationOverride) {
       policy = await _requestUploadPolicy?.call() ?? policy;
     }
     switch (policy) {
       case ErkeSnapshotUploadPolicy.askEveryUpdate:
+        if (automationOverride) break;
         return '二课摘要未上传，下次更新时会再次询问';
       case ErkeSnapshotUploadPolicy.neverUpload:
         await policyStore.write(policy);

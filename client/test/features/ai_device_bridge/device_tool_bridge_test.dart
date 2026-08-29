@@ -343,6 +343,85 @@ void main() {
     expect(api.completedJobIDs, ['job-1', 'job-2']);
   });
 
+  test('凭据失败且暂时无法弹窗时转入 waiting_user，恢复后重新领取完成', () async {
+    final job = _ensureFreshJob(now);
+    final api = _FakeDeviceJobApi(pendingJobs: [job]);
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(now),
+    );
+    final automation = _FakeAutomationGateway(
+      gateway,
+      ensured: _ensured(now),
+      ensureFreshFailures: const [
+        DeviceAutomationException('credential_unavailable', '二课密码尚未填写'),
+      ],
+    );
+    final decisions = [
+      DeviceToolPermissionDecision.allow,
+      DeviceToolPermissionDecision.defer,
+      DeviceToolPermissionDecision.allow,
+    ];
+    final worker = DeviceToolWorker(
+      client: api,
+      installationIdProvider: () async => 'installation-1',
+      contextResolver: () async => _context(
+        gateway,
+        createAutomationGateway: () => automation,
+      ),
+      permissionResolver: (_) async => decisions.removeAt(0),
+    );
+
+    await worker.syncPending();
+
+    expect(api.waitedJobIDs, [job.id]);
+    expect(api.failed, isEmpty);
+    expect(api.completedJobIDs, isEmpty);
+
+    // 用户回到前台后，PendingJobs 重新带回 waiting_user 任务并继续完成。
+    api.pendingJobs
+      ..clear()
+      ..add(_ensureFreshJob(now, status: 'waiting_user', stateVersion: 5));
+    await worker.syncPending();
+
+    expect(api.claimedJobIDs, [job.id, job.id]);
+    expect(api.completedJobIDs, [job.id]);
+    expect(api.failed, isEmpty);
+  });
+
+  test('凭据失败后用户取消密码框时按用户拒绝收尾', () async {
+    final job = _ensureFreshJob(now);
+    final api = _FakeDeviceJobApi(pendingJobs: [job]);
+    final gateway = _FakeGateway(
+      academicOverview: _academicOverviewResult(now),
+    );
+    final automation = _FakeAutomationGateway(
+      gateway,
+      ensured: _ensured(now),
+      ensureFreshFailures: const [
+        DeviceAutomationException('credential_unavailable', '二课密码尚未填写'),
+      ],
+    );
+    final decisions = [
+      DeviceToolPermissionDecision.allow,
+      DeviceToolPermissionDecision.deny,
+    ];
+    final worker = DeviceToolWorker(
+      client: api,
+      installationIdProvider: () async => 'installation-1',
+      contextResolver: () async => _context(
+        gateway,
+        createAutomationGateway: () => automation,
+      ),
+      permissionResolver: (_) async => decisions.removeAt(0),
+    );
+
+    await worker.syncPending();
+
+    expect(api.failed, [(job.id, 'permission_denied')]);
+    expect(api.waitedJobIDs, isEmpty);
+    expect(api.completedJobIDs, isEmpty);
+  });
+
   test('WebVPN 判定密码错误时二课同步标记凭据失败并允许清除', () async {
     final result = await _syncErkeWithVpnFailure(
       WebVpnLoginFailureType.invalidCredentials,
@@ -446,12 +525,42 @@ DeviceToolJob _jobWithId(
 DeviceToolWorkerContext _context(
   PersonalDataGateway gateway, {
   Future<bool> Function()? isCurrent,
+  DeviceAutomationGateway Function()? createAutomationGateway,
 }) {
   return DeviceToolWorkerContext(
     appUserId: 'user-1',
     sourceAccountId: 'source-1',
     createGateway: () => gateway,
     isCurrent: isCurrent ?? () async => true,
+    createAutomationGateway: createAutomationGateway,
+  );
+}
+
+DeviceToolJob _ensureFreshJob(DateTime now, {String status = 'pending', int stateVersion = 0}) {
+  return DeviceToolJob(
+    id: 'job-1',
+    toolName: 'device.academic.ensure_fresh_overview',
+    arguments: const {'max_age_seconds': 300},
+    requiredDataTypes: const ['academic'],
+    status: status,
+    stateVersion: stateVersion,
+    expiresAt: now.add(const Duration(minutes: 1)),
+  );
+}
+
+EnsureFreshResult _ensured(DateTime now) {
+  return EnsureFreshResult(
+    before: FreshnessState(
+      fetchedAt: now.subtract(const Duration(hours: 2)),
+      expiresAt: now.subtract(const Duration(hours: 1)),
+      isStale: true,
+    ),
+    after: FreshnessState(
+      fetchedAt: now,
+      expiresAt: now.add(const Duration(minutes: 5)),
+      isStale: false,
+    ),
+    refreshPerformed: true,
   );
 }
 
@@ -479,9 +588,10 @@ GatewayResult<AcademicOverview> _academicOverviewResult(DateTime now) {
 class _FakeDeviceJobApi implements DeviceJobApi {
   _FakeDeviceJobApi({required this.pendingJobs});
 
-  final List<DeviceToolJob> pendingJobs;
+  List<DeviceToolJob> pendingJobs;
   final List<String> claimedJobIDs = [];
   final List<String> completedJobIDs = [];
+  final List<String> waitedJobIDs = [];
   final List<(String, String)> failed = [];
 
   @override
@@ -517,6 +627,25 @@ class _FakeDeviceJobApi implements DeviceJobApi {
       arguments: pending.arguments,
       requiredDataTypes: pending.requiredDataTypes,
       status: 'claimed',
+      stateVersion: stateVersion + 1,
+      expiresAt: pending.expiresAt,
+    );
+  }
+
+  @override
+  Future<DeviceToolJob> waitForUser(
+    String installationId,
+    String jobId,
+    int stateVersion,
+  ) async {
+    waitedJobIDs.add(jobId);
+    final pending = pendingJobs.singleWhere((job) => job.id == jobId);
+    return DeviceToolJob(
+      id: pending.id,
+      toolName: pending.toolName,
+      arguments: pending.arguments,
+      requiredDataTypes: pending.requiredDataTypes,
+      status: 'waiting_user',
       stateVersion: stateVersion + 1,
       expiresAt: pending.expiresAt,
     );
@@ -644,6 +773,14 @@ class _RacingDeviceJobApi implements DeviceJobApi {
       throw UnimplementedError();
 
   @override
+  Future<DeviceToolJob> waitForUser(
+    String installationId,
+    String jobId,
+    int stateVersion,
+  ) =>
+      throw UnimplementedError();
+
+  @override
   Future<DeviceToolJob> get(String installationId, String jobId) =>
       throw UnimplementedError();
 
@@ -713,11 +850,16 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
     this.gateway, {
     required this.ensured,
     this.academicDatasets = const {},
+    this.ensureFreshFailures = const [],
   });
 
   final PersonalDataGateway gateway;
   final EnsureFreshResult ensured;
   final Map<String, Map<String, dynamic>> academicDatasets;
+
+  /// 依次在 ensureFresh 调用时抛出的异常；脚本耗尽后恢复成功。
+  final List<DeviceAutomationException> ensureFreshFailures;
+  int _ensureFreshCalls = 0;
 
   @override
   Future<FreshnessState> inspect(PersonalDataType type) async => ensured.after;
@@ -763,8 +905,13 @@ class _FakeAutomationGateway implements DeviceAutomationGateway {
     PersonalDataType type, {
     required Duration maxAge,
     bool automationUpload = false,
-  }) async =>
-      ensured;
+  }) async {
+    if (_ensureFreshCalls < ensureFreshFailures.length) {
+      throw ensureFreshFailures[_ensureFreshCalls++];
+    }
+    _ensureFreshCalls += 1;
+    return ensured;
+  }
 
   @override
   Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({

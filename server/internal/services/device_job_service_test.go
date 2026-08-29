@@ -21,7 +21,7 @@ func newDeviceJobFixture(t *testing.T, now time.Time) (*gorm.DB, *DeviceJobServi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserDevice{}, &models.DeviceToolJob{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserDevice{}, &models.DeviceToolJob{}, &models.AIRun{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
@@ -364,5 +364,116 @@ func assertDeviceJobCode(t *testing.T, err error, expected string) {
 	var deviceErr *DeviceJobError
 	if !errors.As(err, &deviceErr) || deviceErr.Code != expected {
 		t.Fatalf("expected %s, got %v", expected, err)
+	}
+}
+
+func seedWaitForUserRun(t *testing.T, db *gorm.DB, runID string, userID uint, expiresAt time.Time) {
+	t.Helper()
+	if err := db.Create(&models.AIRun{
+		ID: runID, UserID: userID, ConversationID: "conv-" + runID, ClientRequestID: "req-" + runID,
+		State: models.AIRunStateWaitingDevice, Provider: "mock", Model: "mock",
+		MessageHash: "hash-" + runID, ExpiresAt: expiresAt,
+		AgentContext: datatypes.JSON("{}"), AgentStateJSON: datatypes.JSON("{}"),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeviceJobWaitForUserExtendsExpiryToRunBudget(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "wait-installation")
+	job := createTestDeviceJob(t, service, 1, now)
+	runExpiresAt := now.Add(10 * time.Minute)
+	seedWaitForUserRun(t, db, "run-1", 1, runExpiresAt)
+
+	claimed, err := service.ClaimJob(context.Background(), 1, "wait-installation", job.ID, job.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := service.WaitForUserJob(context.Background(), 1, "wait-installation", job.ID, claimed.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if waiting.Status != models.DeviceToolJobWaitingUser || waiting.StateVersion != claimed.StateVersion+1 {
+		t.Fatalf("unexpected waiting job: status=%s version=%d", waiting.Status, waiting.StateVersion)
+	}
+	if !waiting.ExpiresAt.Equal(runExpiresAt) {
+		t.Fatalf("expected expiry extended to run budget %v, got %v", runExpiresAt, waiting.ExpiresAt)
+	}
+
+	// 幂等：当前版本重复上报直接返回，不推进状态版本。
+	again, err := service.WaitForUserJob(context.Background(), 1, "wait-installation", job.ID, waiting.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.StateVersion != waiting.StateVersion {
+		t.Fatalf("expected idempotent state version %d, got %d", waiting.StateVersion, again.StateVersion)
+	}
+	// 响应丢失后的重试带着旧版本也能幂等取回当前任务。
+	retried, err := service.WaitForUserJob(context.Background(), 1, "wait-installation", job.ID, waiting.StateVersion-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.StateVersion != waiting.StateVersion || retried.Status != models.DeviceToolJobWaitingUser {
+		t.Fatalf("unexpected retry result: status=%s version=%d", retried.Status, retried.StateVersion)
+	}
+}
+
+func TestDeviceJobWaitForUserRejectsPendingJob(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "wait-pending")
+	job := createTestDeviceJob(t, service, 1, now)
+	seedWaitForUserRun(t, db, "run-1", 1, now.Add(10*time.Minute))
+
+	_, err := service.WaitForUserJob(context.Background(), 1, "wait-pending", job.ID, job.StateVersion)
+	assertDeviceJobCode(t, err, "invalid_job_state")
+}
+
+func TestDeviceJobWaitForUserExpiresWithRunBudget(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "wait-expired")
+	job := createTestDeviceJob(t, service, 1, now)
+	seedWaitForUserRun(t, db, "run-1", 1, now.Add(-time.Second))
+
+	claimed, err := service.ClaimJob(context.Background(), 1, "wait-expired", job.ID, job.StateVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.WaitForUserJob(context.Background(), 1, "wait-expired", job.ID, claimed.StateVersion)
+	assertDeviceJobCode(t, err, "job_expired")
+	// 事务回滚后任务保持原状，继续走自身 expires_at 的惰性过期。
+	var refreshed models.DeviceToolJob
+	if err := db.Where("id = ?", job.ID).First(&refreshed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != models.DeviceToolJobClaimed {
+		t.Fatalf("expected claimed job preserved, got %s", refreshed.Status)
+	}
+}
+
+func TestDeviceJobWaitForUserExpiresStaleJob(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registerTestDevice(t, service, 1, "wait-stale")
+	job := createTestDeviceJob(t, service, 1, now)
+	seedWaitForUserRun(t, db, "run-1", 1, now.Add(10*time.Minute))
+
+	later := now.Add(2 * time.Minute)
+	service.clock = func() time.Time { return later }
+	_, err := service.WaitForUserJob(context.Background(), 1, "wait-stale", job.ID, job.StateVersion)
+	assertDeviceJobCode(t, err, "job_expired")
+	// 持久化标记由 PendingJobs 的 expireDue 兜底完成。
+	if _, err := service.PendingJobs(context.Background(), 1, "wait-stale"); err != nil {
+		t.Fatal(err)
+	}
+	var refreshed models.DeviceToolJob
+	if err := db.Where("id = ?", job.ID).First(&refreshed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != models.DeviceToolJobExpired || refreshed.ErrorCode != "job_expired" {
+		t.Fatalf("expected lazily expired job, got status=%s code=%s", refreshed.Status, refreshed.ErrorCode)
 	}
 }

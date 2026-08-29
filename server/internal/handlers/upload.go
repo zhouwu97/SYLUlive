@@ -200,7 +200,7 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		return
 	}
 	var file models.File
-	variant, originalRelative := imageVariantRequest(relative)
+	variant, originalRelative, legacyVariant := imageVariantRequest(relative)
 	isPublic := true
 	if err := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPublic).First(&file).Error; err != nil {
 		// 如果不是公开文件，尝试检查是否为私有待审核文件并校验管理员/上传者身份
@@ -219,10 +219,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	mimeType := file.MimeType
 	if variant != "" {
 		expectedPath, ok := services.ImageVariantPath(file.Path, file.MimeType, variant)
-		if !ok || normalizeUploadPath(expectedPath) != normalizeUploadPath("/uploads/"+relative) {
+		if !ok || (!legacyVariant && normalizeUploadPath(expectedPath) != normalizeUploadPath("/uploads/"+relative)) {
 			servePublicNotFound(c)
 			return
 		}
+		variantPath := strings.TrimPrefix(normalizeUploadPath(expectedPath), "/uploads/")
 		var imageVariant models.ImageVariant
 		if err := h.db.Where(
 			"file_id = ? AND variant = ? AND recipe_version = ? AND status = ? AND path IN ?",
@@ -230,7 +231,7 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 			variant,
 			services.ImageVariantRecipeVersion,
 			models.ImageVariantStatusReady,
-			uploadPathCandidates(relative),
+			uploadPathCandidates(variantPath),
 		).First(&imageVariant).Error; err != nil {
 			servePublicNotFound(c)
 			return
@@ -249,7 +250,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", mimeType)
-	if isPublic {
+	if legacyVariant {
+		// 旧版 App 会请求不带配方版本的缩略图。兼容响应禁止缓存，
+		// 后续配方升级时客户端必须重新向当前版本解析，不能长期持有旧别名。
+		c.Header("Cache-Control", "no-store")
+	} else if isPublic {
 		c.Header("Cache-Control", "public, max-age=0, must-revalidate")
 	} else {
 		c.Header("Cache-Control", "private, no-store")
@@ -307,16 +312,20 @@ func uploadAccelRedirectPath(publicPath string) string {
 	return prefix + relative
 }
 
-func imageVariantRequest(relative string) (variant string, original string) {
+func imageVariantRequest(relative string) (variant string, original string, legacy bool) {
 	extension := filepath.Ext(relative)
 	base := strings.TrimSuffix(relative, extension)
 	for _, candidate := range []string{"thumb", "medium"} {
 		suffix := "_v1_" + candidate
 		if strings.HasSuffix(base, suffix) {
-			return candidate, strings.TrimSuffix(base, suffix) + extension
+			return candidate, strings.TrimSuffix(base, suffix) + extension, false
+		}
+		legacySuffix := "_" + candidate
+		if strings.HasSuffix(base, legacySuffix) {
+			return candidate, strings.TrimSuffix(base, legacySuffix) + extension, true
 		}
 	}
-	return "", relative
+	return "", relative, false
 }
 
 // Upload 上传文件

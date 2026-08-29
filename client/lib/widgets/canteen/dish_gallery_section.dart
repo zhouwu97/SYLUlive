@@ -50,6 +50,12 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   bool _loadFailed = false;
   String? _errorSubtitle;
   IconData _errorIcon = Icons.cloud_off_rounded;
+  final Set<String> _failedImageUrls = <String>{};
+
+  List<CanteenDish> get _visibleDishes => _dishes
+      .where((dish) =>
+          dish.hasDisplayImage && !_failedImageUrls.contains(dish.coverImage))
+      .toList(growable: false);
 
   @override
   void initState() {
@@ -144,9 +150,24 @@ class _DishGallerySectionState extends State<DishGallerySection> {
     ).then((_) => _load());
   }
 
+  void _hideFailedImage(String imageUrl) {
+    if (_failedImageUrls.contains(imageUrl)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _failedImageUrls.contains(imageUrl)) return;
+      setState(() => _failedImageUrls.add(imageUrl));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final visibleDishes = _visibleDishes;
+
+    // 图鉴是图片驱动模块。数据成功但没有可展示实拍时，整个模块收起，
+    // 不用餐具占位图制造“这里本应有图片”的错误预期。
+    if (!_isLoading && !_loadFailed && visibleDishes.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -195,21 +216,20 @@ class _DishGallerySectionState extends State<DishGallerySection> {
               actionLabel: '点击重试',
               onAction: _load,
             )
-          else if (_dishes.isEmpty)
-            _buildEmpty(isDark)
           else
             SizedBox(
               height: 150,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _dishes.length,
+                itemCount: visibleDishes.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
-                  final dish = _dishes[index];
+                  final dish = visibleDishes[index];
                   return _DishCard(
                     dish: dish,
                     isDark: isDark,
                     onTap: () => _openDish(dish),
+                    onImageError: () => _hideFailedImage(dish.coverImage),
                   );
                 },
               ),
@@ -240,25 +260,19 @@ class _DishGallerySectionState extends State<DishGallerySection> {
     );
   }
 
-  Widget _buildEmpty(bool isDark) {
-    return const CanteenEmptyState(
-      minHeight: 96,
-      icon: Icons.photo_camera_outlined,
-      title: '还没有菜品实拍',
-      subtitle: '来补充第一张真实照片吧\n可从底部「贡献内容」入口上传',
-    );
-  }
 }
 
 class _DishCard extends StatelessWidget {
   final CanteenDish dish;
   final bool isDark;
   final VoidCallback onTap;
+  final VoidCallback onImageError;
 
   const _DishCard({
     required this.dish,
     required this.isDark,
     required this.onTap,
+    required this.onImageError,
   });
 
   @override
@@ -282,10 +296,13 @@ class _DishCard extends StatelessWidget {
                         variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _placeholder(),
+                        errorWidget: (_, __, ___) {
+                          onImageError();
+                          return const SizedBox.shrink();
+                        },
                         placeholder: (_, __) => _placeholder(),
                       )
-                    : _placeholder(),
+                    : const SizedBox.shrink(),
               ),
             ),
             const SizedBox(height: 8),

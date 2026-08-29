@@ -478,7 +478,9 @@ class DeviceToolRegistry {
     _requireExactRequest(
       job,
       const <String>['erke'],
-      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+      freshness == null
+          ? const <String>{}
+          : const <String>{'max_age_seconds', 'allow_upload'},
     );
     final result = await _read(
       gateway,
@@ -592,9 +594,13 @@ class DeviceToolRegistry {
       PersonalDataType.physical => 24 * 60 * 60,
     };
     final seconds = requested.toInt().clamp(1, ceiling);
+    // allow_upload 只对二课任务有意义：服务端在用户已授权 AI 使用二课快照时
+    // 才会写入，设备侧据此把“每次询问”按单次上传处理。
+    final automationUpload = job.arguments['allow_upload'] == true;
     final ensured = await automationGateway.ensureFresh(
       type,
       maxAge: Duration(seconds: seconds),
+      automationUpload: automationUpload,
     );
     if (!ensured.after.isFreshAt(DateTime.now(), Duration(seconds: seconds))) {
       throw DeviceToolExecutionException(

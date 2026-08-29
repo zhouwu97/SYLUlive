@@ -51,6 +51,16 @@ const _homeWithoutDishesBody = '{"hero":null,'
     '{"id":"stable_choice:3","type":"stable_choice","canteen_id":3,"canteen_name":"旧 Feed 不应出现",'
     '"title":"想吃稳一点？"}]}';
 
+const _homePartialHotDishesBody = '{"hero":null,'
+    '"ranking_entry":{"top":{},"total":0},'
+    '"today_effective_reviewer_count":0,"recent_effective_review_count":0,'
+    '"hot_dishes":['
+    '{"id":11,"name":"麻辣拌","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"cover_image":"/uploads/a.jpg","average_score":4.8,"reviewer_count":21},'
+    '{"id":12,"name":"无图凉菜","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"cover_image":"","average_score":4.5,"reviewer_count":9}'
+    '],"recent_reviews":[],"feed":[]}';
+
 /// 构造一个返回食堂首页与全量食堂数据的 Dio Adapter。
 Dio _buildDio() {
   final dio = Dio(BaseOptions(baseUrl: 'http://test'));
@@ -234,6 +244,37 @@ void main() {
     expect(find.text('还没有菜品实拍'), findsOneWidget);
     expect(find.text('添加商家'), findsOneWidget);
     expect(find.text('旧 Feed 不应出现'), findsNothing);
+  });
+
+  testWidgets('热门菜品只渲染有实拍图的菜品', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/home' && options.method == 'GET') {
+        return _json(_homePartialHotDishesBody);
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_buildApp(dio: dio));
+    await tester.pumpAndSettle();
+
+    final listFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          widget.axisDirection == AxisDirection.down &&
+          widget.physics is AlwaysScrollableScrollPhysics,
+    );
+    await tester.scrollUntilVisible(
+      find.text('热门菜品'),
+      300,
+      scrollable: listFinder,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('热门菜品'), findsOneWidget);
+    expect(find.text('麻辣拌'), findsOneWidget);
+    expect(find.text('无图凉菜'), findsNothing);
+    expect(find.text('还没有菜品实拍'), findsNothing);
   });
 
   testWidgets('无 FAB', (tester) async {

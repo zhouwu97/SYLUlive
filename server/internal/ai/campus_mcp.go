@@ -1222,9 +1222,11 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	// 风险分析从设备任务恢复时，设备结果（即使仍不完整）就是本次 Tool Call
-	// 唯一允许使用的刷新尝试。这里必须短路，避免恢复后再次创建同一 bundle。
-	if request.Reason == "academic_risk_analysis" && hasResumedAcademicRiskBundle(ctx) {
-		return nil
+	// 唯一允许的核心数据刷新尝试。这里必须短路，避免恢复后再次创建同一
+	// bundle；二课作为可选覆盖由 waitForRiskErke 单独评估。
+	if request.Reason == "academic_risk_analysis" &&
+		(hasResumedAcademicRiskBundle(ctx) || hasResumedErkeOverview(ctx)) {
+		return mcp.waitForRiskErke(ctx, userID, request, results)
 	}
 	if mcp.deviceJobs == nil {
 		return nil
@@ -1242,6 +1244,11 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		}
 	}
 	if !needsDevice {
+		// 核心数据无需刷新时，风险分析仍可为缺失或过期的二课追加一次刷新。
+		// 严格新鲜度下核心数据新鲜说明手机刚刚在线，任务大概率会被认领。
+		if request.Reason == "academic_risk_analysis" {
+			return mcp.waitForRiskErke(ctx, userID, request, results)
+		}
 		return nil
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
@@ -1320,7 +1327,9 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			UserID: userID, RunID: call.RunID, ToolCallID: call.CallID,
 			ToolName: "device.academic.ensure_fresh_bundle", Arguments: arguments,
 			RequiredDataTypes: []string{"grades", "academic_situation", "credit_requirements"},
-			ExpiresAt:         time.Now().Add(2 * time.Minute),
+			// bundle 要逐学期刷新成绩再加学业情况和学分要求，学期多时两分钟
+			// 内爬不完教务，任务会白白超时；给到服务端允许的上限一半。
+			ExpiresAt: time.Now().Add(5 * time.Minute),
 		})
 		if err != nil || strings.TrimSpace(job.ID) == "" {
 			return nil
@@ -1342,9 +1351,14 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		if !ok {
 			continue
 		}
+		// 同一 Call 内每个设备工具只排队一次：任务过期或失败恢复后不再为
+		// 同一数据集创建新任务，否则设备离线时会循环排队直到 Run 过期。
+		if hasResumedDeviceTool(ctx, toolName) {
+			continue
+		}
 		job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
 			UserID: userID, RunID: call.RunID, ToolCallID: call.CallID, ToolName: toolName,
-			Arguments: arguments, RequiredDataTypes: required, ExpiresAt: time.Now().Add(2 * time.Minute),
+			Arguments: arguments, RequiredDataTypes: required, ExpiresAt: time.Now().Add(3 * time.Minute),
 		})
 		if err != nil || strings.TrimSpace(job.ID) == "" {
 			// 无在线设备时继续返回原结果，由模型据实说明，不伪造等待状态。
@@ -1400,6 +1414,70 @@ func hasResumedAcademicRiskBundle(ctx context.Context) bool {
 	resume, ok := currentDeviceJobResumeContext(ctx)
 	return ok && resume.ToolName == "device.academic.ensure_fresh_bundle" &&
 		resume.Dataset == "academic_bundle"
+}
+
+func hasResumedErkeOverview(ctx context.Context) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == "device.erke.ensure_fresh_overview"
+}
+
+func erkeOverviewUsable(result academic.ContextResult) bool {
+	if !usablePersonalResult(result) {
+		return false
+	}
+	return !result.IsStale &&
+		result.Status != academic.DataStatusStale &&
+		result.Status != academic.DataStatusNeedsRefresh &&
+		result.Status != academic.DataStatusPartial
+}
+
+// waitForRiskErke 为风险分析中缺失或过期的二课快照追加一次设备刷新。二课是
+// 可选覆盖数据：同一 Call 只排队一次（防环）；用户关闭上传授权时静默跳过；
+// ask 策略先走一次普通授权确认，授权恢复后才会真正排队。
+func (mcp *campusMCP) waitForRiskErke(ctx context.Context, userID uint, request academic.ResolveContextRequest, results map[academic.DatasetType]academic.ContextResult) *ToolWait {
+	if mcp.deviceJobs == nil {
+		return nil
+	}
+	if erkeOverviewUsable(results[academic.DatasetErke]) || hasResumedErkeOverview(ctx) {
+		return nil
+	}
+	// bundle 刷新失败或超时说明当前桥接不可靠，不得再叠加一段二课等待；
+	// 只有 bundle 成功（或本轮从未等待过设备）时才评估二课刷新。
+	if resume, ok := currentDeviceJobResumeContext(ctx); ok &&
+		resume.ToolName == "device.academic.ensure_fresh_bundle" &&
+		resume.Status != models.DeviceToolJobCompleted {
+		return nil
+	}
+	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionErkeSnapshotUpload, request.Reason)
+	if err != nil || denied {
+		return nil
+	}
+	if wait != nil {
+		return wait
+	}
+	call, hasCall := currentToolCallContext(ctx)
+	if !hasCall {
+		return nil
+	}
+	job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
+		UserID: userID, RunID: call.RunID, ToolCallID: call.CallID,
+		ToolName:          "device.erke.ensure_fresh_overview",
+		Arguments:         json.RawMessage(`{"max_age_seconds":1800,"allow_upload":true}`),
+		RequiredDataTypes: []string{"erke"},
+		ExpiresAt:         time.Now().Add(90 * time.Second),
+	})
+	if err != nil || strings.TrimSpace(job.ID) == "" {
+		return nil
+	}
+	return &ToolWait{
+		State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: job.ID,
+		Payload: map[string]interface{}{"datasets": []string{"erke"}, "reason": request.Reason},
+	}
+}
+
+func hasResumedDeviceTool(ctx context.Context, toolName string) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == toolName
 }
 
 // markAcademicRiskRefreshUnavailable 保留仍可解释的旧快照，避免一次权限或网络
@@ -1587,9 +1665,9 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		result := lookup.Result
 		if request.Freshness == academic.FreshnessRequireFresh && result.IsStale {
 			if request.Reason == "academic_risk_analysis" && hasResumedAcademicRiskBundle(ctx) {
-				// 本轮已刷新过但仍只能得到旧快照时，保留可解释的 stale 数据，
-				// 供风险工具给出覆盖边界；不能把它再次升级成等待刷新。
-				result.Warnings = append(result.Warnings, "本轮已尝试刷新，以下仅使用仍可读取的旧快照")
+				// 本轮已刷新过但仍只能得到旧快照：保留 stale 数据供风险工具给出
+				// 覆盖边界；刷新结果与失败原因由 appendAcademicRiskRefreshOutcome
+				// 统一写入，这里不再叠加同义过期提示。
 			} else {
 				result.Status = academic.DataStatusNeedsRefresh
 				result.Warnings = append(result.Warnings, "该问题要求最新数据，需要刷新后再分析")
@@ -2187,7 +2265,7 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 			}
 		}
 	} else {
-		toConfirm = append(toConfirm, "确认服务端是否有当前培养方案和学分要求快照")
+		toConfirm = append(toConfirm, "学分要求快照缺失，请在手机同步学业数据后重试")
 	}
 
 	erke := results[academic.DatasetErke]
@@ -2252,7 +2330,7 @@ func appendAcademicRiskRefreshOutcome(ctx context.Context, results map[academic.
 		if status == "" {
 			status = "device_job_failed"
 		}
-		message = "已尝试通过手机刷新学业数据，但未得到完整刷新结果；以下分析仅使用现有可用数据"
+		message = "已尝试通过手机刷新学业数据但" + deviceJobFailureReason(resume) + "；以下分析仅基于最近一次同步的数据"
 	} else if needsAcademicRiskRefresh(results) {
 		status = "refresh_incomplete"
 		message = "已尝试通过手机刷新学业数据，但学校返回的数据仍不完整；以下分析仅覆盖已取得部分"
@@ -2270,6 +2348,14 @@ func appendAcademicRiskRefreshOutcome(ctx context.Context, results map[academic.
 	}
 }
 
+// deviceJobFailureReason 把设备任务终态转成一句用户可读的原因。
+func deviceJobFailureReason(resume deviceJobResumeContext) string {
+	if resume.Status == models.DeviceToolJobExpired {
+		return "任务超时"
+	}
+	return "未成功"
+}
+
 func aggregatePersonalToolResult(data map[string]interface{}, results map[academic.DatasetType]academic.ContextResult, warnings []string) CampusToolResult {
 	combinedWarnings := append([]string{}, warnings...)
 	evidence := make([]CampusToolEvidence, 0)
@@ -2278,6 +2364,7 @@ func aggregatePersonalToolResult(data map[string]interface{}, results map[academ
 	status := academic.DataStatusMissing
 	stale := false
 	partial := false
+	now := time.Now()
 	for _, dataset := range []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke} {
 		result := results[dataset]
 		if source == academic.DataSourceNone && result.Source.Valid() {
@@ -2298,7 +2385,75 @@ func aggregatePersonalToolResult(data map[string]interface{}, results map[academ
 			evidence = append(evidence, CampusToolEvidence{Source: item.Source, Dataset: item.Dataset, FetchedAt: item.FetchedAt, ExpiresAt: item.ExpiresAt, IsStale: item.IsStale})
 		}
 	}
-	return CampusToolResult{Data: data, Status: status, Source: source, FetchedAt: fetchedAt, IsStale: stale, IsPartial: partial, Warnings: uniqueStrings(combinedWarnings), Evidence: evidence}
+	return CampusToolResult{Data: data, Status: status, Source: source, FetchedAt: fetchedAt, IsStale: stale, IsPartial: partial, Warnings: compactPersonalWarnings(results, combinedWarnings, now), Evidence: evidence}
+}
+
+// compactPersonalWarnings 把多个数据集的同义过期提示收敛为每数据集至多一条
+// 带数据年龄的说明。否则护栏和模型会把“已过期/需刷新”的三四种说法逐条复述，
+// 答案退化成确认清单。
+func compactPersonalWarnings(results map[academic.DatasetType]academic.ContextResult, warnings []string, now time.Time) []string {
+	compact := make([]string, 0, len(warnings)+2)
+	for _, dataset := range []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke} {
+		if note := personalDatasetFreshnessNote(personalDatasetLabel(dataset), results[dataset], now); note != "" {
+			compact = append(compact, note)
+		}
+	}
+	for _, warning := range warnings {
+		if isPureStalenessWarning(warning) {
+			continue
+		}
+		compact = append(compact, warning)
+	}
+	return uniqueStrings(compact)
+}
+
+func personalDatasetFreshnessNote(label string, result academic.ContextResult, now time.Time) string {
+	if label == "" || (!result.IsStale && result.Status != academic.DataStatusNeedsRefresh) {
+		return ""
+	}
+	age := "未知时间"
+	if result.FetchedAt != nil {
+		age = relativeAgeText(now.Sub(*result.FetchedAt))
+	}
+	return label + "数据为" + age + "同步，已超出本次实时分析要求"
+}
+
+// isPureStalenessWarning 命中的都是同一事实的不同措辞，压缩后由带年龄的
+// freshness note 代替；刷新失败原因等有独立信息的 warning 不在此列。
+func isPureStalenessWarning(warning string) bool {
+	return strings.Contains(warning, "已过期") ||
+		strings.Contains(warning, "需要刷新后再分析") ||
+		strings.Contains(warning, "本轮已尝试刷新")
+}
+
+func personalDatasetLabel(dataset academic.DatasetType) string {
+	switch dataset {
+	case academic.DatasetGrades:
+		return "成绩"
+	case academic.DatasetCreditRequirements:
+		return "学分要求"
+	case academic.DatasetAcademicSituation:
+		return "学业情况"
+	case academic.DatasetErke:
+		return "二课"
+	case academic.DatasetSchedule:
+		return "课表"
+	default:
+		return string(dataset)
+	}
+}
+
+func relativeAgeText(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "刚刚"
+	case d < time.Hour:
+		return fmt.Sprintf("%d分钟前", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d小时前", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d天前", int(d.Hours()/24))
+	}
 }
 
 func uniqueStrings(values []string) []string {

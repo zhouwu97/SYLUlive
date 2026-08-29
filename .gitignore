@@ -100,6 +100,7 @@ python-edu-service/tools/*/output/
 /ssh_run.py
 /step12.py
 /step4_7.py
+/.deploy_*.py
 /server/handler_test_output*.txt
 /server/tmp_server
 

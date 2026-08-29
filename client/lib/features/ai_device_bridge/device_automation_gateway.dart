@@ -78,13 +78,14 @@ abstract interface class DeviceAutomationGateway {
 
   Future<RefreshResult> refreshSchedule();
 
-  Future<RefreshResult> refreshErke();
+  Future<RefreshResult> refreshErke({bool automationUpload = false});
 
   Future<RefreshResult> refreshPhysical();
 
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+    bool automationUpload = false,
   });
 
   Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
@@ -103,7 +104,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
     Future<RefreshResult> Function()? refreshAcademicSituation,
     Future<RefreshResult> Function()? refreshCreditRequirements,
     Future<RefreshResult> Function()? refreshSchedule,
-    Future<RefreshResult> Function()? refreshErke,
+    Future<RefreshResult> Function({bool automationUpload})? refreshErke,
     Future<RefreshResult> Function()? refreshPhysical,
     Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
         readAcademicDataset,
@@ -123,7 +124,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   final Future<RefreshResult> Function()? _refreshAcademicSituation;
   final Future<RefreshResult> Function()? _refreshCreditRequirements;
   final Future<RefreshResult> Function()? _refreshSchedule;
-  final Future<RefreshResult> Function()? _refreshErke;
+  final Future<RefreshResult> Function({bool automationUpload})? _refreshErke;
   final Future<RefreshResult> Function()? _refreshPhysical;
   final Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
       _readAcademicDataset;
@@ -170,6 +171,7 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+    bool automationUpload = false,
   }) async {
     final before = await inspect(type);
     if (before.isFreshAt(_now(), maxAge)) {
@@ -187,7 +189,8 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
           '学分要求',
         ),
       PersonalDataType.schedule => await refreshSchedule(),
-      PersonalDataType.erke => await refreshErke(),
+      PersonalDataType.erke =>
+        await refreshErke(automationUpload: automationUpload),
       PersonalDataType.physical => await refreshPhysical(),
     };
     final after = await inspect(type);
@@ -265,9 +268,9 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   }
 
   @override
-  Future<RefreshResult> refreshErke() {
+  Future<RefreshResult> refreshErke({bool automationUpload = false}) {
     final refresh = _refreshErke;
-    if (refresh != null) return refresh();
+    if (refresh != null) return refresh(automationUpload: automationUpload);
     return Future.value(
       const RefreshResult(performed: false, message: '二课刷新需要单独的设备授权'),
     );

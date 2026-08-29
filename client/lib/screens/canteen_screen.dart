@@ -535,7 +535,11 @@ class _CanteenScreenState extends State<CanteenScreen> {
         }
 
         final showHero = !provider.home.hero.isEmpty;
-        final hotDishes = provider.home.hotDishes;
+        // 热门菜品是图片驱动模块：无有效图片地址的菜品不生成卡片，
+        // 全部无图时展示空态而不是占位图。
+        final hotDishes = provider.home.hotDishes
+            .where((dish) => dish.hasDisplayImage)
+            .toList(growable: false);
         final recentReviews = provider.home.recentReviews;
 
         final content = RefreshIndicator(

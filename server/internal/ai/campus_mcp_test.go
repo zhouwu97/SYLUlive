@@ -311,7 +311,71 @@ func TestCampusMCPRiskAnalysisPartialCoreDataSchedulesAcademicBundle(t *testing.
 	require.Equal(t, 1, deviceJobs)
 }
 
-func TestCampusMCPRiskAnalysisFreshCoreDataDoesNotScheduleDeviceJob(t *testing.T) {
+func TestCampusMCPRiskAnalysisFreshCoreDataSchedulesOnlyErkeRefresh(t *testing.T) {
+	now := time.Now()
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetCreditRequirements: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+		academic.DatasetAcademicSituation: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+		},
+	}}
+	var scheduled DeviceJobRequest
+	deviceJobs := 0
+	scheduler := DeviceJobSchedulerFunc(func(_ context.Context, request DeviceJobRequest) (DeviceJobReference, error) {
+		deviceJobs++
+		scheduled = request
+		return DeviceJobReference{ID: "erke-job"}, nil
+	})
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(scheduler),
+	)
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
+		withToolCallContext(context.Background(), "run-fresh", "call-fresh", 7, "academic.get_risk_analysis"),
+		7,
+		json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	_, ok := value.(ToolWait)
+	require.True(t, ok, "核心数据新鲜但二课缺失时应为二课排队一次")
+	require.Equal(t, "device.erke.ensure_fresh_overview", scheduled.ToolName)
+	require.Equal(t, 1, deviceJobs, "不得为已新鲜的核心数据重建 bundle")
+	require.JSONEq(t, `{"max_age_seconds":1800,"allow_upload":true}`, string(scheduled.Arguments))
+
+	// 二课已可用时不排任何设备任务。
+	erkeReader := fixedPersonalSnapshotReader{lookup: academic.SnapshotLookup{
+		Found: true,
+		Result: academic.ContextResult{
+			Data: json.RawMessage(`{"graduation":{"earned_total":42.5,"required_total":60}}`),
+			Status: academic.DataStatusAvailable, Source: academic.DataSourceUserUploadedSnapshot,
+			FetchedAt: &now,
+		},
+	}}
+	idleTools := NewCampusMCPTools(newRuntimeTestDB(t), reader, erkeReader,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			return DeviceJobReference{ID: "unexpected"}, nil
+		})),
+	)
+	value, err = campusToolByName(t, idleTools, "academic.get_risk_analysis").Execute(
+		withToolCallContext(context.Background(), "run-fresh-idle", "call-fresh-idle", 7, "academic.get_risk_analysis"),
+		7,
+		json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	_, waiting := value.(ToolWait)
+	require.False(t, waiting)
+	require.Equal(t, 1, deviceJobs, "二课可用时不得新增设备任务")
+}
+
+func TestCampusMCPRiskAnalysisErkePermissionNeverSkipsRefresh(t *testing.T) {
 	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
 		academic.DatasetGrades: {
 			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
@@ -325,7 +389,14 @@ func TestCampusMCPRiskAnalysisFreshCoreDataDoesNotScheduleDeviceJob(t *testing.T
 	}}
 	deviceJobs := 0
 	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
-		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusPersonalDataPermissionReader(fixedPersonalDataPermissionReader{
+			models.AIUserPermissionPersonalDataAccess:    models.AIUserPermissionAlways,
+			models.AIUserPermissionAcademicCloudStorage:  models.AIUserPermissionAlways,
+			models.AIUserPermissionDeviceCacheAccess:     models.AIUserPermissionAlways,
+			models.AIUserPermissionRemoteEduRefresh:      models.AIUserPermissionAlways,
+			models.AIUserPermissionExternalModelAnalysis: models.AIUserPermissionAlways,
+			models.AIUserPermissionErkeSnapshotUpload:    models.AIUserPermissionNever,
+		}),
 		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
 			deviceJobs++
 			return DeviceJobReference{ID: "unexpected"}, nil
@@ -333,24 +404,71 @@ func TestCampusMCPRiskAnalysisFreshCoreDataDoesNotScheduleDeviceJob(t *testing.T
 	)
 
 	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(
-		withToolCallContext(context.Background(), "run-fresh", "call-fresh", 7, "academic.get_risk_analysis"),
+		withToolCallContext(context.Background(), "run-never", "call-never", 7, "academic.get_risk_analysis"),
 		7,
 		json.RawMessage(`{}`),
 	)
 	require.NoError(t, err)
 	_, waiting := value.(ToolWait)
-	require.False(t, waiting)
+	require.False(t, waiting, "用户关闭二课上传授权时不得排队刷新")
 	require.Equal(t, 0, deviceJobs)
 }
 
-func TestCampusMCPRiskAnalysisResumedPartialBundleDoesNotScheduleAgain(t *testing.T) {
-	reader := academicAnalysisSnapshotReader{}
+func TestCampusMCPRiskAnalysisExpiredBundleExplainsTimeout(t *testing.T) {
+	fetched := time.Now().Add(-3 * time.Hour)
+	reader := academicAnalysisSnapshotReader{results: map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetGrades: {
+			Data: json.RawMessage(`{"grades":[{"course_name":"高等数学","fraction":92}]}`),
+			Status: academic.DataStatusStale, IsStale: true,
+			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
+			Warnings: []string{"该学业快照已过期"},
+		},
+		academic.DatasetCreditRequirements: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
+			Status: academic.DataStatusStale, IsStale: true,
+			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
+		},
+		academic.DatasetAcademicSituation: {
+			Data: json.RawMessage(`{"earned_credits":30,"required_credits":30}`),
+			Status: academic.DataStatusStale, IsStale: true,
+			Source: academic.DataSourceServerSnapshot, FetchedAt: &fetched,
+		},
+	}}
 	deviceJobs := 0
 	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
 		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
 		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
 			deviceJobs++
 			return DeviceJobReference{ID: "unexpected"}, nil
+		})),
+	)
+	ctx := withToolCallContext(context.Background(), "run-expired", "call-expired", 7, "academic.get_risk_analysis")
+	ctx = withDeviceJobResumeContext(ctx, deviceJobResumeContext{
+		JobID: "device-job", ToolName: "device.academic.ensure_fresh_bundle", Dataset: "academic_bundle",
+		Status: models.DeviceToolJobExpired,
+	})
+
+	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(ctx, 7, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	require.Equal(t, 0, deviceJobs, "bundle 超时后桥接不可靠，不得追加二课等待")
+	envelope := value.(CampusToolResult)
+	require.Contains(t, envelope.Warnings, "已尝试通过手机刷新学业数据但任务超时；以下分析仅基于最近一次同步的数据")
+	require.Contains(t, envelope.Warnings, "成绩数据为3小时前同步，已超出本次实时分析要求")
+	require.NotContains(t, envelope.Warnings, "该学业快照已过期")
+	refresh := envelope.Data.(map[string]interface{})["refresh"].(map[string]interface{})
+	require.Equal(t, "device_job_failed", refresh["status"])
+}
+
+func TestCampusMCPRiskAnalysisResumedPartialBundleSchedulesOnlyErke(t *testing.T) {
+	reader := academicAnalysisSnapshotReader{}
+	var scheduled DeviceJobRequest
+	deviceJobs := 0
+	tools := NewCampusMCPTools(newRuntimeTestDB(t), reader, nil,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}),
+		WithCampusDeviceJobScheduler(DeviceJobSchedulerFunc(func(_ context.Context, request DeviceJobRequest) (DeviceJobReference, error) {
+			deviceJobs++
+			scheduled = request
+			return DeviceJobReference{ID: "erke-job"}, nil
 		})),
 	)
 	resumeResult := json.RawMessage(`{
@@ -369,12 +487,20 @@ func TestCampusMCPRiskAnalysisResumedPartialBundleDoesNotScheduleAgain(t *testin
 	value, err := campusToolByName(t, tools, "academic.get_risk_analysis").Execute(ctx, 7, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, waiting := value.(ToolWait)
-	require.False(t, waiting, "恢复后的原 Tool Call 必须直接完成")
-	require.Equal(t, 0, deviceJobs, "partial 设备结果不得触发第二个 bundle")
-	data := value.(CampusToolResult).Data.(map[string]interface{})
-	refresh := data["refresh"].(map[string]interface{})
-	require.Equal(t, "refresh_incomplete", refresh["status"])
-	require.Equal(t, false, refresh["retry_scheduled"])
+	require.True(t, waiting, "bundle 完成后应为缺失的二课排队一次")
+	require.Equal(t, 1, deviceJobs, "partial 设备结果不得触发第二个 bundle")
+	require.Equal(t, "device.erke.ensure_fresh_overview", scheduled.ToolName)
+
+	// 二课任务终态后必须直接完成，不得再排队任何设备任务（防环）。
+	finalCtx := withDeviceJobResumeContext(ctx, deviceJobResumeContext{
+		JobID: "erke-job", ToolName: "device.erke.ensure_fresh_overview", Dataset: "erke",
+		Status: models.DeviceToolJobExpired,
+	})
+	value, err = campusToolByName(t, tools, "academic.get_risk_analysis").Execute(finalCtx, 7, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, waiting = value.(ToolWait)
+	require.False(t, waiting, "二课刷新失败后不得再次排队")
+	require.Equal(t, 1, deviceJobs)
 }
 
 func TestCampusMCPRiskAnalysisRefreshIncompleteKeepsExistingDataWithoutLoop(t *testing.T) {

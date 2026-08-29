@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -348,4 +349,59 @@ func TestListConversationsWithPreview(t *testing.T) {
 	body := response.Body.String()
 	require.Contains(t, body, `"last_message_preview":"Response C2"`)
 	require.Contains(t, body, `"last_message_preview":"Hello C1"`)
+}
+
+func TestAIEventsReplaysPersistedEventsAfterLastEventID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.AIRun{}, &models.AIEvent{}))
+	blocking := &handlerBlockingLangChain{cancelled: make(chan struct{})}
+	runtime, err := ai.NewRuntime(db, nil, nil, ai.NewEventBroker(), ai.RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 100,
+	}, ai.WithLangChainRAG(blocking))
+	require.NoError(t, err)
+
+	runID := uuid.NewString()
+	now := time.Now()
+	run := models.AIRun{
+		ID: runID, UserID: 27, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStateCompleted, Provider: "mock", Model: "mock",
+		MessageHash: "hash", MessageLength: 4, LastEventSeq: 4, ExpiresAt: now.Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&run).Error)
+	history := []models.AIEvent{
+		{RunID: runID, Seq: 1, Type: "run.created", Payload: datatypes.JSON(`{"state":"completed"}`), CreatedAt: now},
+		{RunID: runID, Seq: 2, Type: "answer.checkpoint", Payload: datatypes.JSON(`{"text":"部分"}`), CreatedAt: now},
+		{RunID: runID, Seq: 3, Type: "answer.delta", Payload: datatypes.JSON(`{"text":"最终全文"}`), CreatedAt: now},
+		{RunID: runID, Seq: 4, Type: "run.completed", Payload: datatypes.JSON(`{"answer":"最终全文"}`), CreatedAt: now},
+	}
+	for i := range history {
+		require.NoError(t, db.Create(&history[i]).Error)
+	}
+
+	router := gin.New()
+	router.GET("/events/:id", func(c *gin.Context) {
+		c.Set("user_id", uint(27))
+		NewAIRuntimeHandler(db, runtime).Events(c)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/events/"+runID, nil)
+	request.Header.Set("Last-Event-ID", "2")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Contains(t, response.Header().Get("Content-Type"), "text/event-stream")
+
+	body := response.Body.String()
+	require.Contains(t, body, "event: answer.delta", "Last-Event-ID 之后的持久化事件必须回放")
+	require.Contains(t, body, "event: run.completed", "终态事件必须回放，客户端才能收尾")
+	require.NotContains(t, body, "event: run.created", "Last-Event-ID 之前的事件不得重复回放")
+	require.NotContains(t, body, "event: answer.checkpoint", "Last-Event-ID 之前的事件不得重复回放")
+	require.Contains(t, body, "最终全文")
+	require.NotContains(t, body, "部分")
 }

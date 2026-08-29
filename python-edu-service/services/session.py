@@ -123,8 +123,26 @@ async def execute_with_session_refresh(
                 edu_user.user_id,
                 e.code,
             )
+            # 只有学校页面明确返回密码错误才允许表述为凭据问题；
+            # 其余（CSRF/公钥/CAS/会话建立失败）都是上游临时故障，绝不误导用户改密码。
+            if e.code == "INVALID_CREDENTIALS":
+                raise CookieLapseError(
+                    "教务账号或密码错误，请重新输入密码",
+                    "EDU_INVALID_CREDENTIALS",
+                ) from e
             raise CookieLapseError(
-                f"账号密码可能已变更: {e}"
+                "教务系统暂时无法完成自动登录，请稍后重试",
+                "EDU_UPSTREAM_UNAVAILABLE",
+            ) from e
+        except NetworkError as e:
+            logger.warning(
+                "[EDU-SESSION] re-login network error user_id=%s code=%s",
+                edu_user.user_id,
+                e.code,
+            )
+            raise CookieLapseError(
+                "教务系统网络异常，请稍后重试",
+                "EDU_NETWORK_ERROR",
             ) from e
 
         # 使用条件更新防止等待登录期间发生的退出或撤销被旧请求覆盖。

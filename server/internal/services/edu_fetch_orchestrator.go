@@ -276,7 +276,7 @@ func (orchestrator *EduFetchOrchestrator) remoteItemFailureResult(item clients.E
 
 func isEduAuthorizationFailure(code string) bool {
 	switch strings.ToUpper(strings.TrimSpace(code)) {
-	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_LOGIN_FAILED":
+	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_LOGIN_FAILED", "EDU_INVALID_CREDENTIALS":
 		return true
 	default:
 		return false

@@ -188,6 +188,32 @@ void main() {
     expect(find.textContaining('发表食堂评价时关联「锅包肉」'), findsOneWidget);
   });
 
+  testWidgets('实拍瞬时故障（500）不移除，保留图片位等待重试', (tester) async {
+    const detailJson = '''
+      {
+        "dish": {"id":12,"name":"锅包肉","canteen_id":1},
+        "photo_count": 1,
+        "photos": [{"id":1,"image":"/uploads/flaky.jpg","created_at":"2026-08-13"}]
+      }
+    ''';
+    await tester.runAsync(
+        () => installMockPublicImageHttp(apiHandler: _handlerFor(detailJson)));
+    addTearDown(uninstallMockPublicImageHttp);
+
+    await tester.pumpWidget(_buildApp(detailJson: detailJson));
+    await driveMockPublicImageLoads(tester);
+    await flushMockPublicImageTimers(tester);
+
+    // 计数不回落，图片位保留为瞬时故障占位（含变体→原图回退层）
+    expect(find.text('0 人评价中提到 · 1 张同学真实实拍'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is CachedNetworkImage && w.imageUrl.contains('flaky_v1_medium.jpg')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.cloud_off_rounded), findsOneWidget);
+  });
+
   testWidgets('无星级评分展示', (tester) async {
     await tester.pumpWidget(_buildApp(detailJson: '''
       {

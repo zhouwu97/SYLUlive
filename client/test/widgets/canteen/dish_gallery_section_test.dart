@@ -90,6 +90,22 @@ void main() {
     expect(find.text('商家菜品'), findsOneWidget);
   });
 
+  testWidgets('瞬时故障（500）菜品卡保留并展示重试占位', (tester) async {
+    await tester.runAsync(() => installMockPublicImageHttp());
+    addTearDown(uninstallMockPublicImageHttp);
+
+    await tester.pumpWidget(_wrap([
+      _dish(1, '抖动图菜', coverImage: '/uploads/flaky.jpg'),
+      _dish(2, '正常菜', coverImage: '/uploads/ok.jpg'),
+    ]));
+    await driveMockPublicImageLoads(tester);
+    await flushMockPublicImageTimers(tester);
+
+    expect(find.text('抖动图菜'), findsOneWidget);
+    expect(find.text('正常菜'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_off_rounded), findsOneWidget);
+  });
+
   testWidgets('统计回传排除评价图聚合且区分有实拍菜品数', (tester) async {
     int? realDishCount;
     int? withPhotoCount;

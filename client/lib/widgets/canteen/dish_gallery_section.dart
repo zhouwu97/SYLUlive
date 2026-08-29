@@ -5,6 +5,7 @@ import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/canteen_dish_detail_screen.dart';
 import '../../screens/image_viewer_screen.dart';
+import '../../utils/canteen_image_failure.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
@@ -296,9 +297,13 @@ class _DishCard extends StatelessWidget {
                         variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) {
-                          onImageError();
-                          return const SizedBox.shrink();
+                        errorWidget: (_, __, error) {
+                          if (isGoneImageFailure(error)) {
+                            onImageError();
+                            return const SizedBox.shrink();
+                          }
+                          // 瞬时故障：卡片保留，占位等待下次重试。
+                          return _placeholder(icon: Icons.cloud_off_rounded);
                         },
                         placeholder: (_, __) => _placeholder(),
                       )
@@ -331,12 +336,12 @@ class _DishCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder({IconData icon = Icons.restaurant_rounded}) {
     return Container(
       color: CanteenTheme.surfaceMutedBg(isDark),
       alignment: Alignment.center,
       child: Icon(
-        Icons.restaurant_rounded,
+        icon,
         size: 26,
         color: CanteenTheme.textTertiaryColor(isDark),
       ),

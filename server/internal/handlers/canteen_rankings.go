@@ -125,6 +125,7 @@ func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 }
 
 // GetRankings 食堂完整排行（sort=composite|rating|review_count；hot 暂不开放）。
+// rating 倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多。
 func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	sortMode := c.DefaultQuery("sort", "composite")
 	switch sortMode {

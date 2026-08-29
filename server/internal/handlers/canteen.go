@@ -238,6 +238,7 @@ func isCanteenReviewSchemaMissing(err error) bool {
 }
 
 // sortRanking 按 mode 策略排序并赋 rank，tie-break 稳定（都退到 rating_count → average → created_at → id）。
+// rating 模式倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多；composite / review_count 仍高分在前。
 func sortRanking(entries []canteenRankingEntry, mode string) {
 	less := func(a, b canteenRankingEntry) bool {
 		aActive, bActive := isCanteenOperatingActive(a.OperatingStatus), isCanteenOperatingActive(b.OperatingStatus)
@@ -246,6 +247,7 @@ func sortRanking(entries []canteenRankingEntry, mode string) {
 		}
 		var ka, kb float64
 		var na, nb int
+		ratingAsc := mode == "rating"
 		switch mode {
 		case "rating":
 			ka, kb = a.AverageStar, b.AverageStar
@@ -264,9 +266,15 @@ func sortRanking(entries []canteenRankingEntry, mode string) {
 			return aRated
 		}
 		if ka != kb {
+			if ratingAsc {
+				return ka < kb
+			}
 			return ka > kb
 		}
 		if na != nb {
+			if ratingAsc {
+				return na < nb
+			}
 			return na > nb
 		}
 		if a.AverageStar != b.AverageStar {

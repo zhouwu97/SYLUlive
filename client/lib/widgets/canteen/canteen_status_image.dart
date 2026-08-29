@@ -145,7 +145,11 @@ class CanteenStatusImage extends StatelessWidget {
     CanteenImageVariant variant,
   ) {
     final variantLimit = _diskWidth(variant);
-    if (logicalDimension == null || logicalDimension <= 0) {
+    // width/height 传 double.infinity（如 Expanded 内铺满）表示"跟随父约束"，
+    // 而非有限尺寸；infinity.round() 会抛异常，必须回落到变体上限。
+    if (logicalDimension == null ||
+        !logicalDimension.isFinite ||
+        logicalDimension <= 0) {
       return variantLimit;
     }
     final pixels = (logicalDimension * devicePixelRatio).round();

@@ -3,6 +3,8 @@ import 'dart:convert';
 class Canteen {
   final int id;
   final String name;
+  final String locationArea;
+  final String locationFloor;
   final String image;
   final bool verified;
   final String operatingStatus;
@@ -20,6 +22,8 @@ class Canteen {
   Canteen({
     required this.id,
     required this.name,
+    this.locationArea = '',
+    this.locationFloor = '',
     required this.image,
     required this.verified,
     this.operatingStatus = 'active',
@@ -39,6 +43,8 @@ class Canteen {
     return Canteen(
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
+      locationArea: json['location_area']?.toString() ?? '',
+      locationFloor: json['location_floor']?.toString() ?? '',
       image: json['image'] ?? '',
       verified: json['verified'] ?? false,
       operatingStatus: json['is_offline'] == true
@@ -63,6 +69,14 @@ class Canteen {
   }
 
   bool get isOffline => operatingStatus == 'offline';
+
+  /// 位置标签文案，如"一食堂·二楼"；未填写时为空。
+  String get locationLabel {
+    if (locationArea.isEmpty && locationFloor.isEmpty) return '';
+    if (locationArea.isEmpty) return locationFloor;
+    if (locationFloor.isEmpty) return locationArea;
+    return '$locationArea·$locationFloor';
+  }
 }
 
 class CanteenRating {

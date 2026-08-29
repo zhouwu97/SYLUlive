@@ -497,6 +497,70 @@ func strPtr(value string) *string {
 	return &value
 }
 
+func TestCanteenCreateWithLocationFields(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "提交者")
+	if err := db.Create(&models.File{
+		Hash:       "location-canteen-hash",
+		Path:       "/uploads/location-canteen.jpg",
+		Size:       1024,
+		MimeType:   "image/jpeg",
+		UploaderID: 1,
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	// 1. 携带合法位置字段提交成功并入库。
+	created := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"老麻抄手","image":"/uploads/location-canteen.jpg","location_area":"一食堂","location_floor":"二楼"}`,
+	)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var stored models.Canteen
+	if err := db.Where("name = ?", "老麻抄手").First(&stored).Error; err != nil {
+		t.Fatalf("load created canteen: %v", err)
+	}
+	if stored.LocationArea != models.CanteenLocationArea1 || stored.LocationFloor != models.CanteenLocationFloor2 {
+		t.Fatalf("location = %q %q", stored.LocationArea, stored.LocationFloor)
+	}
+
+	// 2. 非法位置取值被拒绝。
+	invalid := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"三食堂小吃","image":"/uploads/location-canteen.jpg","location_area":"三食堂","location_floor":"三楼"}`,
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid location should be rejected: %d %s", invalid.Code, invalid.Body.String())
+	}
+
+	// 3. 旧客户端不带位置字段仍可提交（向后兼容）。
+	legacy := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"兰州拉面","image":"/uploads/location-canteen.jpg"}`,
+	)
+	if legacy.Code != http.StatusCreated {
+		t.Fatalf("legacy submit status=%d body=%s", legacy.Code, legacy.Body.String())
+	}
+}
+
 func sameStringPtr(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -743,10 +807,7 @@ func setupCanteenTestRouter(db *gorm.DB) *gin.Engine {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
-		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
-		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 	}

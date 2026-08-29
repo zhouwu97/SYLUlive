@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'canteen_location_chip.dart';
 import 'canteen_theme.dart';
 
 /// 商家详情头部信息区：图片下方直接铺在页面上，不套外层白色 InfoCard。
 /// 店名 → ★评分 · 人数 → 菜品/实拍统计。
 class CanteenDetailHeader extends StatelessWidget {
   final String name;
+  final String locationLabel;
   final double rating;
   final int ratingCount;
   final int dishCount;
@@ -16,6 +18,7 @@ class CanteenDetailHeader extends StatelessWidget {
   const CanteenDetailHeader({
     super.key,
     required this.name,
+    this.locationLabel = '',
     required this.rating,
     required this.ratingCount,
     this.dishCount = 0,
@@ -46,6 +49,10 @@ class CanteenDetailHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              if (locationLabel.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                CanteenLocationChip(label: locationLabel),
+              ],
               if (offline)
                 Container(
                   padding:

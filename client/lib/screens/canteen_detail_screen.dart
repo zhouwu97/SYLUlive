@@ -96,6 +96,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     return raw['is_offline'] == true || raw['operating_status'] == 'offline';
   }
 
+  String _canteenLocationLabel() {
+    final raw = _canteenData?['canteen'];
+    if (raw is! Map) return '';
+    final area = raw['location_area']?.toString() ?? '';
+    final floor = raw['location_floor']?.toString() ?? '';
+    if (area.isEmpty && floor.isEmpty) return '';
+    if (area.isEmpty) return floor;
+    if (floor.isEmpty) return area;
+    return '$area·$floor';
+  }
+
   String get _heroTag {
     final tag = widget.heroTag;
     return tag == null || tag.isEmpty ? 'canteen-${widget.canteenId}' : tag;
@@ -307,6 +318,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             children: [
               CanteenDetailHeader(
                 name: _canteenData?['canteen']?['name']?.toString() ?? '',
+                locationLabel: _canteenLocationLabel(),
                 rating:
                     (_canteenData?['average_star'] as num?)?.toDouble() ?? 0,
                 ratingCount: ratingCount,

@@ -342,12 +342,14 @@ func (h *CanteenHandler) Search(c *gin.Context) {
 		Name                   string `json:"name"`
 		CanteenID              uint   `json:"canteen_id"`
 		CanteenName            string `json:"canteen_name"`
+		CanteenLocationArea    string `json:"canteen_location_area"`
+		CanteenLocationFloor   string `json:"canteen_location_floor"`
 		CanteenOperatingStatus string `json:"canteen_operating_status"`
 	}
 	var dishes []dishSearchRow
 	like := "%" + query + "%"
 	if err := h.db.Table("canteen_dishes AS d").
-		Select("d.id, d.name, d.canteen_id, c.name AS canteen_name, c.operating_status AS canteen_operating_status").
+		Select("d.id, d.name, d.canteen_id, c.name AS canteen_name, c.location_area AS canteen_location_area, c.location_floor AS canteen_location_floor, c.operating_status AS canteen_operating_status").
 		Joins("JOIN canteens c ON c.id = d.canteen_id").
 		Where("d.status = ? AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '') AND (d.name LIKE ? OR d.normalized_name LIKE ?)", models.DishStatusActive, true, models.CanteenOperatingActive, like, like).
 		Order("d.name ASC, d.id ASC").Limit(30).Find(&dishes).Error; err != nil {
@@ -874,8 +876,10 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	var input struct {
-		Name  string `json:"name" binding:"required"`
-		Image string `json:"image" binding:"required"`
+		Name          string `json:"name" binding:"required"`
+		Image         string `json:"image" binding:"required"`
+		LocationArea  string `json:"location_area"`
+		LocationFloor string `json:"location_floor"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -885,6 +889,16 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 	name := strings.TrimSpace(input.Name)
 	if len([]rune(name)) < 2 || len([]rune(name)) > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂名称长度需在 2 到 100 个字符之间"})
+		return
+	}
+	locationArea := strings.TrimSpace(input.LocationArea)
+	if !models.IsValidCanteenLocationArea(locationArea) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂位置区域只能是一食堂或二食堂"})
+		return
+	}
+	locationFloor := strings.TrimSpace(input.LocationFloor)
+	if !models.IsValidCanteenLocationFloor(locationFloor) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂楼层只能是一楼或二楼"})
 		return
 	}
 	image := strings.TrimSpace(input.Image)
@@ -906,6 +920,8 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 	canteen := models.Canteen{
 		Name:            name,
 		NormalizedName:  normalizeCanteenName(name),
+		LocationArea:    locationArea,
+		LocationFloor:   locationFloor,
 		Image:           image,
 		Verified:        false,
 		OperatingStatus: models.CanteenOperatingActive,

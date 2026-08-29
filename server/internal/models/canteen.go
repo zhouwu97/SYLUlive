@@ -13,11 +13,54 @@ const (
 	CanteenOperatingOffline = "offline"
 )
 
+// 食堂位置系统标签：区域（一食堂/二食堂）与楼层（一楼/二楼）。
+// 店铺名只保留纯店铺名，位置信息由这两个结构化字段表达。
+const (
+	CanteenLocationArea1  = "一食堂"
+	CanteenLocationArea2  = "二食堂"
+	CanteenLocationFloor1 = "一楼"
+	CanteenLocationFloor2 = "二楼"
+)
+
+// CanteenLocationAreas 区域标签可选值。新增食堂区域时在此扩展。
+var CanteenLocationAreas = []string{CanteenLocationArea1, CanteenLocationArea2}
+
+// CanteenLocationFloors 楼层标签可选值。新增楼层时在此扩展。
+var CanteenLocationFloors = []string{CanteenLocationFloor1, CanteenLocationFloor2}
+
+// IsValidCanteenLocationArea 校验区域标签是否为合法可选值（空值表示未填写）。
+func IsValidCanteenLocationArea(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, area := range CanteenLocationAreas {
+		if area == v {
+			return true
+		}
+	}
+	return false
+}
+
+// IsValidCanteenLocationFloor 校验楼层标签是否为合法可选值（空值表示未填写）。
+func IsValidCanteenLocationFloor(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, floor := range CanteenLocationFloors {
+		if floor == v {
+			return true
+		}
+	}
+	return false
+}
+
 // Canteen 食堂/店铺
 type Canteen struct {
 	ID              uint       `gorm:"primaryKey" json:"id"`
 	Name            string     `gorm:"size:100;not null;index" json:"name"`
 	NormalizedName  string     `gorm:"size:100;not null;default:''" json:"-"`
+	LocationArea    string     `gorm:"size:20;not null;default:''" json:"location_area"`
+	LocationFloor   string     `gorm:"size:20;not null;default:''" json:"location_floor"`
 	Image           string     `gorm:"size:500;not null" json:"image"` // 封面图
 	Verified        bool       `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
 	OperatingStatus string     `gorm:"size:20;not null;default:'active';index" json:"operating_status"`

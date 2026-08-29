@@ -208,6 +208,7 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.started:
       case AiRunEventType.status:
       case AiRunEventType.delta:
+      case AiRunEventType.rollback:
       case AiRunEventType.checkpoint:
       case AiRunEventType.sources:
       case AiRunEventType.completed:
@@ -891,6 +892,18 @@ class AiAssistantProvider extends ChangeNotifier {
           personalDataEvidence: _evidenceForRun(event.runId),
         );
         break;
+      case AiRunEventType.rollback:
+        // 工具轮开始前服务端撤销预工具文本；绝对文本，幂等应用。
+        // forceEmptyContent：空文本也要清掉已有气泡里未回滚的预工具内容。
+        _connectionState = AiConnectionState.streaming;
+        _streamedText = event.text;
+        _upsertAssistant(
+          _streamedText,
+          AiMessageStatus.streaming,
+          personalDataEvidence: _evidenceForRun(event.runId),
+          forceEmptyContent: true,
+        );
+        break;
       case AiRunEventType.checkpoint:
         _connectionState = AiConnectionState.streaming;
         if (event.text.isNotEmpty) {
@@ -1229,8 +1242,10 @@ class AiAssistantProvider extends ChangeNotifier {
     AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
     List<UserCalendarActionDraft>? calendarActionDrafts,
+    bool forceEmptyContent = false,
   }) {
-    if (text.isEmpty &&
+    final replacesContent = text.isNotEmpty || forceEmptyContent;
+    if (!replacesContent &&
         (sources == null || sources.isEmpty) &&
         (personalDataEvidence == null || personalDataEvidence.isEmpty) &&
         (calendarActionDrafts == null || calendarActionDrafts.isEmpty)) {
@@ -1242,7 +1257,7 @@ class AiAssistantProvider extends ChangeNotifier {
     );
     if (index >= 0) {
       _messages[index] = _messages[index].copyWith(
-        content: text.isEmpty ? _messages[index].content : text,
+        content: replacesContent ? text : _messages[index].content,
         status: status,
         sources: sources,
         sourceRecoveryState: sourceRecoveryState,
@@ -1251,6 +1266,7 @@ class AiAssistantProvider extends ChangeNotifier {
       );
       return;
     }
+    if (text.isEmpty) return;
     _messages.add(AiChatMessage(
       id: 'assistant-$runId',
       requestId: runId,

@@ -574,7 +574,10 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		"result": "answer", "duration_ms": time.Since(startedAt).Milliseconds(),
 	})
 	r.markQuotaConsumed(run.ID)
-	_, _ = r.appendEvent(ctx, run.ID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
+	// 与主路径一致：已实时广播增量时不再重复发送全量 answer.delta。
+	if !outcome.deltaEmitted {
+		_, _ = r.appendEvent(ctx, run.ID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
+	}
 	r.completeRun(run.ID, outcome.answer, nil, usage, time.Since(startedAt), false)
 }
 

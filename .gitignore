@@ -88,6 +88,8 @@ python-edu-service/tools/*/output/
 # 本地临时说明与误提交二进制
 /before-low-conflict-cleanup.txt
 /server/shenliyuan.new
+# 本地构建暂存目录曾被误提交为 gitlink，禁止再次入库
+/client-build-staging-*
 
 # Go 服务端本地构建产物，部署时重新构建或由 CI 发布
 /server/dist/*

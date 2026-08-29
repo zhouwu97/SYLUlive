@@ -518,7 +518,10 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
 		if !hasExactJSONKeys(data, []string{"earned_total", "required_total", "unmet_categories", "activity_count", "latest_activity_date"}) ||
 			!validOptionalJSONNumber(data["earned_total"]) || !validOptionalJSONNumber(data["required_total"]) ||
-			!validIntegerRange(data["activity_count"], 0, 100000) || !validOptionalString(data["latest_activity_date"], 10) {
+			!validIntegerRange(data["activity_count"], 0, 100000) ||
+			// 二课系统返回的日期是 "2026.05.26-05.27"、"2026.05.26 13:00" 这类
+			// 原文格式，不是 RFC3339；上限要容纳区间和时间，而不是 ISO 日期。
+			!validOptionalString(data["latest_activity_date"], 32) {
 			return false
 		}
 		return validErkeCategories(data["unmet_categories"])

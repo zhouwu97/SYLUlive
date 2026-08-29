@@ -151,12 +151,13 @@ func (image PostImage) MarshalJSON() ([]byte, error) {
 		File          File              `json:"file"`
 		ThumbURL      string            `json:"thumb_url,omitempty"`
 		MediumURL     string            `json:"medium_url,omitempty"`
+		ViewerURL     string            `json:"viewer_url,omitempty"`
 		OriginURL     string            `json:"origin_url,omitempty"`
 		VariantStatus map[string]string `json:"variant_status"`
 	}
 	variantStatus := make(map[string]string, len(image.Variants))
 	for _, variant := range image.Variants {
-		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium") {
+		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
 			continue
 		}
 		variantStatus[variant.Variant] = string(variant.Status)
@@ -166,6 +167,7 @@ func (image PostImage) MarshalJSON() ([]byte, error) {
 		SortOrder: image.SortOrder, File: image.File,
 		ThumbURL:      postImageVariantURL(image.File.Path, image.Variants, "thumb"),
 		MediumURL:     postImageVariantURL(image.File.Path, image.Variants, "medium"),
+		ViewerURL:     postImageVariantURL(image.File.Path, image.Variants, "viewer"),
 		OriginURL:     image.File.Path,
 		VariantStatus: variantStatus,
 	})

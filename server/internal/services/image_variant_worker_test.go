@@ -138,6 +138,76 @@ func TestImageVariantWorkerGeneratesJPEGVariantsAtomically(t *testing.T) {
 	}
 }
 
+func TestCreatePublicImageVariantTasksViewerTierOnlyForLargeImages(t *testing.T) {
+	db := newImageVariantTestDB(t)
+
+	large := models.File{
+		Hash:        "viewer-large",
+		Path:        "/uploads/viewer-large.jpg",
+		MimeType:    "image/jpeg",
+		Width:       3000,
+		Height:      2000,
+		AccessScope: models.FileAccessPublic,
+		Status:      "active",
+	}
+	small := models.File{
+		Hash:        "viewer-small",
+		Path:        "/uploads/viewer-small.jpg",
+		MimeType:    "image/jpeg",
+		Width:       800,
+		Height:      600,
+		AccessScope: models.FileAccessPublic,
+		Status:      "active",
+	}
+	unknown := models.File{
+		Hash:        "viewer-unknown",
+		Path:        "/uploads/viewer-unknown.jpg",
+		MimeType:    "image/jpeg",
+		Width:       0,
+		Height:      0,
+		AccessScope: models.FileAccessPublic,
+		Status:      "active",
+	}
+	if err := db.Create(&large).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&small).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&unknown).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := CreatePublicImageVariantTasks(db, []uint{large.ID, small.ID, unknown.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	countVariants := func(fileID uint) int {
+		var count int64
+		if err := db.Model(&models.ImageVariant{}).Where("file_id = ?", fileID).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		return int(count)
+	}
+	if got := countVariants(large.ID); got != 3 {
+		t.Fatalf("大图应创建 thumb/medium/viewer 三个任务，实际 %d", got)
+	}
+	if got := countVariants(small.ID); got != 2 {
+		t.Fatalf("小图只需 thumb/medium，实际 %d", got)
+	}
+	if got := countVariants(unknown.ID); got != 2 {
+		t.Fatalf("宽高未知时保守跳过 viewer，实际 %d", got)
+	}
+
+	var viewer models.ImageVariant
+	if err := db.Where("file_id = ? AND variant = ?", large.ID, ImageVariantViewer).First(&viewer).Error; err != nil {
+		t.Fatal(err)
+	}
+	expected, ok := ImageVariantPath(large.Path, large.MimeType, ImageVariantViewer)
+	if !ok || viewer.Path != expected || viewer.RecipeVersion != ImageVariantRecipeVersion {
+		t.Fatalf("viewer 任务路径错误: %+v expected=%s", viewer, expected)
+	}
+}
+
 func TestImageVariantWorkerPreservesTransparentPNG(t *testing.T) {
 	db := newImageVariantTestDB(t)
 	uploadDir := t.TempDir()

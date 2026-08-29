@@ -20,10 +20,15 @@ class ImageViewerItem {
   final String? localPath;
   final Uint8List? bytes;
 
+  /// 保存/下载用的原图地址；为空时回退到 [url]。
+  /// 显示档（如 viewer 2048 变体）与原图分离时必须提供。
+  final String? downloadUrl;
+
   const ImageViewerItem({
     this.url,
     this.localPath,
     this.bytes,
+    this.downloadUrl,
   });
 
   bool get isEmpty =>
@@ -47,6 +52,9 @@ class ImageViewerScreen extends StatefulWidget {
   /// 文件，让发送方与全屏查看共享同一 fallback 策略（本地 → 鉴权网络）。
   final List<String?>? localPaths;
 
+  /// 与 imageUrls 一一对应的保存/下载原图地址；为空时保存回退到 imageUrls。
+  final List<String?>? downloadUrls;
+
   /// 统一结构化列表（优先于 imageUrls/localPaths/imageBytes 解析）。
   final List<ImageViewerItem>? items;
 
@@ -64,6 +72,7 @@ class ImageViewerScreen extends StatefulWidget {
     this.httpHeaders = const {},
     this.imageBytes,
     this.localPaths,
+    this.downloadUrls,
     this.items,
     this.cacheManager,
     this.cacheKeyBuilder,
@@ -154,9 +163,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final int urlsLen = widget.imageUrls.length;
     final int bytesLen = widget.imageBytes?.length ?? 0;
     final int pathsLen = widget.localPaths?.length ?? 0;
+    final int downloadLen = widget.downloadUrls?.length ?? 0;
     int maxLen = urlsLen;
     if (bytesLen > maxLen) maxLen = bytesLen;
     if (pathsLen > maxLen) maxLen = pathsLen;
+    if (downloadLen > maxLen) maxLen = downloadLen;
     if (maxLen == 0) return const [];
 
     return List<ImageViewerItem>.generate(maxLen, (i) {
@@ -167,11 +178,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       final String? localPath = (widget.localPaths != null && i < pathsLen)
           ? widget.localPaths![i]
           : null;
+      final String? downloadUrl = (widget.downloadUrls != null && i < downloadLen)
+          ? widget.downloadUrls![i]
+          : null;
       return ImageViewerItem(
         url: (url != null && url.isNotEmpty) ? url : null,
         localPath:
             (localPath != null && localPath.isNotEmpty) ? localPath : null,
         bytes: (bytes != null && bytes.isNotEmpty) ? bytes : null,
+        downloadUrl:
+            (downloadUrl != null && downloadUrl.isNotEmpty) ? downloadUrl : null,
       );
     });
   }
@@ -211,9 +227,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       }
     }
 
-    // 3. 网络图或缓存读取
-    final url = item.url;
-    if (url == null || url.isEmpty) {
+    // 3. 网络图或缓存读取（保存必须取原图：显示档可能是 viewer 2048 变体）
+    final downloadUrl = (item.downloadUrl != null && item.downloadUrl!.isNotEmpty)
+        ? item.downloadUrl
+        : item.url;
+    if (downloadUrl == null || downloadUrl.isEmpty) {
       throw Exception('原图不可用，且本地文件不存在');
     }
 
@@ -227,7 +245,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           receiveTimeout: const Duration(seconds: 60),
         ),
       ).get<List<int>>(
-        url,
+        downloadUrl,
         options: Options(
           responseType: ResponseType.bytes,
           headers: widget.httpHeaders,
@@ -259,14 +277,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
 
     // 尝试本地缓存
-    final cached = await _readCachedImage(url);
+    final cached = await _readCachedImage(downloadUrl);
     if (cached != null) {
       final ext = _guessExtensionFromBytes(cached, 'png');
       return _ImageBytesResult(cached, '缓存原图', ext, _guessMimeType(ext));
     }
 
     // 最后才尝试渲染提取 (重编码为PNG)
-    final visible = await _readVisibleImage(url);
+    final visible = await _readVisibleImage(downloadUrl);
     if (visible != null) {
       return _ImageBytesResult(visible, '重新编码图片', 'png', 'image/png');
     }

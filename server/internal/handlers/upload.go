@@ -255,7 +255,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		// 后续配方升级时客户端必须重新向当前版本解析，不能长期持有旧别名。
 		c.Header("Cache-Control", "no-store")
 	} else if isPublic {
-		c.Header("Cache-Control", "public, max-age=0, must-revalidate")
+		// 内容不可变（SHA256 路径）不代表访问权限不可变：access_scope 是数据库动态
+		// 判断的，因此不能下发一年期 immutable。有界 TTL + SWR：消除每次浏览的
+		// revalidate 往返，被撤回的公开文件最多 24 小时从浏览器过期；SWR 仅允许
+		// 在 7 天内异步回源复验，撤回后不存在"缓存一年不可撤回"的问题。
+		c.Header("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800")
 	} else {
 		c.Header("Cache-Control", "private, no-store")
 	}
@@ -315,7 +319,7 @@ func uploadAccelRedirectPath(publicPath string) string {
 func imageVariantRequest(relative string) (variant string, original string, legacy bool) {
 	extension := filepath.Ext(relative)
 	base := strings.TrimSuffix(relative, extension)
-	for _, candidate := range []string{"thumb", "medium"} {
+	for _, candidate := range []string{"thumb", "medium", "viewer"} {
 		suffix := "_v1_" + candidate
 		if strings.HasSuffix(base, suffix) {
 			return candidate, strings.TrimSuffix(base, suffix) + extension, false

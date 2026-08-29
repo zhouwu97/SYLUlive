@@ -59,7 +59,7 @@ func TestServePublicProvidesReadyVersionedVariant(t *testing.T) {
 	if recorder.Header().Get("Content-Type") != "image/jpeg" {
 		t.Fatalf("Content-Type=%q", recorder.Header().Get("Content-Type"))
 	}
-	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=0, must-revalidate" {
+	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=86400, stale-while-revalidate=604800" {
 		t.Fatalf("Cache-Control=%q", got)
 	}
 	if got := recorder.Body.String(); got != "ready variant" {

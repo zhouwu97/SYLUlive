@@ -75,23 +75,27 @@ func (image ReplyImage) MarshalJSON() ([]byte, error) {
 		File          File              `json:"file"`
 		ThumbURL      string            `json:"thumb_url,omitempty"`
 		MediumURL     string            `json:"medium_url,omitempty"`
+		ViewerURL     string            `json:"viewer_url,omitempty"`
 		OriginURL     string            `json:"origin_url,omitempty"`
 		VariantStatus map[string]string `json:"variant_status"`
 	}
 	statuses := make(map[string]string, len(image.Variants))
-	thumbURL, mediumURL := image.File.Path, image.File.Path
+	thumbURL, mediumURL, viewerURL := image.File.Path, image.File.Path, image.File.Path
 	for _, variant := range image.Variants {
-		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium") {
+		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
 			continue
 		}
 		statuses[variant.Variant] = string(variant.Status)
 		if variant.Status == ImageVariantStatusReady && variant.Path != "" {
-			if variant.Variant == "thumb" {
+			switch variant.Variant {
+			case "thumb":
 				thumbURL = variant.Path
-			} else {
+			case "medium":
 				mediumURL = variant.Path
+			case "viewer":
+				viewerURL = variant.Path
 			}
 		}
 	}
-	return json.Marshal(replyImageJSON{ID: image.ID, ReplyID: image.ReplyID, FileID: image.FileID, SortOrder: image.SortOrder, File: image.File, ThumbURL: thumbURL, MediumURL: mediumURL, OriginURL: image.File.Path, VariantStatus: statuses})
+	return json.Marshal(replyImageJSON{ID: image.ID, ReplyID: image.ReplyID, FileID: image.FileID, SortOrder: image.SortOrder, File: image.File, ThumbURL: thumbURL, MediumURL: mediumURL, ViewerURL: viewerURL, OriginURL: image.File.Path, VariantStatus: statuses})
 }

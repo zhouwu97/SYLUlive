@@ -2231,6 +2231,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       target: target,
       thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
       mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
       originUrl: originUrl,
     );
     if (!selection.shouldResize || selection.url.isEmpty) return null;

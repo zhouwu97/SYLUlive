@@ -190,6 +190,21 @@ func (r *Runtime) ReconcileWaitingDeviceJobs(ctx context.Context, limit int) (in
 	if r == nil || r.db == nil {
 		return 0, nil
 	}
+	// 惰性过期只在任务被设备触碰时生效；没人认领的 pending 任务会永远停在
+	// pending，既不会被领取也不会变成终态，等待中的 Run 就永远等不到恢复。
+	// 先把超时任务统一收尾成终态，下面的扫描才能把它们接进恢复路径。
+	now := time.Now().UTC()
+	if err := r.db.WithContext(ctx).Model(&models.DeviceToolJob{}).
+		Where("expires_at <= ? AND status IN ?", now, []string{
+			models.DeviceToolJobPending, models.DeviceToolJobPushed, models.DeviceToolJobClaimed,
+			models.DeviceToolJobWaitingUser, models.DeviceToolJobRunning,
+		}).
+		Updates(map[string]interface{}{
+			"status": models.DeviceToolJobExpired, "completed_at": now, "error_code": "job_expired",
+			"state_version": gorm.Expr("state_version + 1"),
+		}).Error; err != nil {
+		return 0, err
+	}
 	if limit <= 0 {
 		limit = 50
 	}

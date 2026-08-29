@@ -72,6 +72,25 @@ func TestRequestTraceMiddlewareGeneratesRequestID(t *testing.T) {
 	}
 }
 
+func TestRequestTraceMiddlewareDoesNotMaskRouterLevel404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(RequestTraceMiddleware())
+	router.GET("/api/known", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/api/personal-snapshots/erke", nil))
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unmatched route status=%d, want %d", response.Code, http.StatusNotFound)
+	}
+	if body := response.Body.String(); body == "" {
+		t.Fatal("router-level 404 must keep gin default body")
+	}
+}
+
 func TestRequestTraceMiddlewarePreservesRedirectStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

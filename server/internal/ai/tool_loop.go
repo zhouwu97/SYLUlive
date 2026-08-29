@@ -31,12 +31,60 @@ type toolLoopOutcome struct {
 	failureCode      string
 	pause            *toolLoopPause
 	cost             AgentCostMetrics
+	deltaEmitted     bool
 }
 
 type collectedToolCall struct {
 	id        string
 	name      string
 	arguments strings.Builder
+}
+
+const (
+	answerStreamCheckpointChars    = 300
+	answerStreamCheckpointInterval = time.Second
+)
+
+// answerStreamEmitter 把模型文本增量即时广播给 SSE 订阅者，并周期性把累计
+// 文本写回 answer_checkpoint，让断线重连的客户端回放到接近实时位置。
+// 预工具文本会在工具轮开始前通过 rollback 撤销，保证与最终持久化回答一致。
+type answerStreamEmitter struct {
+	runtime      *Runtime
+	runID        string
+	buffer       strings.Builder
+	lastPersist  time.Time
+	deltaEmitted bool
+	everEmitted  bool
+}
+
+func (r *Runtime) newAnswerStreamEmitter(runID string) *answerStreamEmitter {
+	return &answerStreamEmitter{runtime: r, runID: runID, lastPersist: time.Now()}
+}
+
+func (e *answerStreamEmitter) onDelta(ctx context.Context, text string) {
+	if text == "" {
+		return
+	}
+	e.deltaEmitted = true
+	e.everEmitted = true
+	e.buffer.WriteString(text)
+	_, _ = e.runtime.appendEvent(ctx, e.runID, "answer.delta", map[string]interface{}{"text": text}, false)
+	if e.buffer.Len() >= answerStreamCheckpointChars && time.Since(e.lastPersist) >= answerStreamCheckpointInterval {
+		e.runtime.persistCheckpoint(ctx, e.runID, e.buffer.String())
+		e.lastPersist = time.Now()
+	}
+}
+
+// rollbackToBaseline 在工具轮执行前撤销已广播的预工具文本。基线为空：最终
+// 回答只由收尾轮生成，工具轮之间的文本不属于持久化结果。
+func (e *answerStreamEmitter) rollbackToBaseline(ctx context.Context) {
+	if !e.deltaEmitted {
+		return
+	}
+	_, _ = e.runtime.appendEvent(ctx, e.runID, "answer.rollback", map[string]interface{}{"text": ""}, true)
+	_ = e.runtime.db.WithContext(ctx).Model(&models.AIRun{}).Where("id = ?", e.runID).Update("answer_checkpoint", "").Error
+	e.buffer.Reset()
+	e.deltaEmitted = false
 }
 
 type pendingToolWait struct {
@@ -85,7 +133,9 @@ func contextResultsEvidence(results ...academic.ContextResult) []personalDataEvi
 // 模型只可提交声明中的参数，且每轮工具数量与总轮数均有硬限制。
 func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messages []Message, definitions []ToolDefinition, requiredTool string, requiredToolAlreadyCompleted bool, agentState *AgentRunState) (outcome toolLoopOutcome) {
 	startedAt := time.Now()
+	emitter := r.newAnswerStreamEmitter(run.ID)
 	defer func() {
+		outcome.deltaEmitted = emitter.everEmitted
 		outcome.cost.WallTimeMS = time.Since(startedAt).Milliseconds()
 		outcome.cost.ActiveComputeTimeMS = outcome.cost.WallTimeMS
 	}()
@@ -148,7 +198,7 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			return outcome
 		}
 
-		answer, calls, roundOutcome := r.collectProviderRound(ctx, run, stream, outcome.usage)
+		answer, calls, roundOutcome := r.collectProviderRound(ctx, run, stream, outcome.usage, emitter)
 		_ = stream.Close()
 		outcome.usage = roundOutcome.usage
 		outcome.cost.InputTokens += int64(roundOutcome.usage.InputTokens)
@@ -183,6 +233,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			return outcome
 		}
 
+		// 模型决定调用工具：本轮已广播的预工具文本不属于最终回答，
+		// 先撤销再执行，避免在线端和重连回放出现不一致的残留文本。
+		emitter.rollbackToBaseline(ctx)
 		toolRounds++
 		if toolRounds > r.config.MaxToolSteps {
 			outcome.failureCode = "tool_loop_limit"
@@ -416,6 +469,7 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 		Status   string                 `json:"status"`
 		Data     map[string]interface{} `json:"data"`
 		Warnings []string               `json:"warnings"`
+		IsStale  bool                   `json:"is_stale"`
 	}
 	if json.Unmarshal(result, &envelope) != nil || envelope.Status == "" || envelope.Status == "failed" {
 		return "", false
@@ -478,17 +532,19 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 			builder.WriteByte('\n')
 		}
 	}
-	if len(confirmations) > 0 || len(envelope.Warnings) > 0 {
-		builder.WriteString("仍需确认：\n")
-		for _, item := range append(confirmations, envelope.Warnings...) {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			builder.WriteString("- ")
-			builder.WriteString(item)
-			builder.WriteByte('\n')
-		}
+	// 数据缺口不再逐条罗列：warnings 已在服务端压缩，确认事项最多保留三条，
+	// 合并为一行数据说明，避免把同义的“已过期/需刷新”打成清单墙。
+	notes := append([]string{}, envelope.Warnings...)
+	if len(confirmations) > 3 {
+		notes = append(notes, confirmations[:3]...)
+	} else {
+		notes = append(notes, confirmations...)
+	}
+	if len(notes) > 0 {
+		builder.WriteString("数据说明：" + strings.Join(notes, "；") + "。\n")
+	}
+	if envelope.IsStale || len(confirmations) > 0 {
+		builder.WriteString("如需最新结论，请在手机刷新教务数据后重新提问，或让我按已有数据继续分析。\n")
 	}
 	return strings.TrimSpace(builder.String()), riskSeen
 }
@@ -791,7 +847,8 @@ func isPersonalDataSource(source string) bool {
 }
 
 // collectProviderRound 收集流式参数片段，在模型完成本轮后再执行工具。
-func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, stream ProviderStream, initialUsage ProviderEvent) (string, []collectedToolCall, toolLoopOutcome) {
+// 文本增量通过 emitter 即时广播给在线订阅者。
+func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, stream ProviderStream, initialUsage ProviderEvent, emitter *answerStreamEmitter) (string, []collectedToolCall, toolLoopOutcome) {
 	outcome := toolLoopOutcome{usage: initialUsage}
 	answer := strings.Builder{}
 	calls := make([]collectedToolCall, 0, maxToolsPerRound)
@@ -811,6 +868,7 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 		case ProviderEventTextDelta:
 			answer.WriteString(event.Text)
 			outcome.generated = outcome.generated || strings.TrimSpace(event.Text) != ""
+			emitter.onDelta(ctx, event.Text)
 		case ProviderEventUsage:
 			outcome.usage.InputTokens += event.InputTokens
 			outcome.usage.OutputTokens += event.OutputTokens

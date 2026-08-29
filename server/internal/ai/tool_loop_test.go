@@ -620,6 +620,38 @@ func TestAcademicRiskMissingDataCanStillProduceBoundedAnswer(t *testing.T) {
 	require.Contains(t, fallback, "刷新或授权读取成绩快照")
 }
 
+func TestAcademicRiskFallbackCompactsDataNotesIntoOneLine(t *testing.T) {
+	fallback, riskSeen := academicRiskFallback("academic_get_risk_analysis", json.RawMessage(`{
+		"status":"incomplete",
+		"is_stale":true,
+		"data":{
+			"risk_level":"incomplete",
+			"grades":{"course_count":3,"total_credits":9,"weighted_gpa":3.2},
+			"risks":[],
+			"actions":[],
+			"to_confirm":[
+				"成绩快照已过期，最新变动请先刷新教务数据后再核对",
+				"学分要求快照缺失，请在手机同步学业数据后重试",
+				"二课风险暂未纳入；可在需要时更新二课数据后重新分析",
+				"当前数据覆盖不完整，不能据此断言整体没有风险",
+				"第五条多余的确认事项"
+			]
+		},
+		"warnings":[
+			"成绩数据为3小时前同步，已超出本次实时分析要求",
+			"已尝试通过手机刷新学业数据但任务超时；以下分析仅基于最近一次同步的数据"
+		]
+	}`))
+	require.True(t, riskSeen)
+	require.Contains(t, fallback, "数据说明：")
+	require.Contains(t, fallback, "已尝试通过手机刷新学业数据但任务超时")
+	require.Contains(t, fallback, "如需最新结论，请在手机刷新教务数据后重新提问")
+	require.NotContains(t, fallback, "仍需确认")
+	require.NotContains(t, fallback, "- ")
+	// 确认事项最多保留三条，超出的直接丢弃。
+	require.NotContains(t, fallback, "第五条多余的确认事项")
+}
+
 func TestToolRegistryMapsModelAliasesBackToCanonicalNames(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	executed := false
@@ -1045,4 +1077,194 @@ func TestToolResultForModelMarksInstructionLikeToolDataAsUntrusted(t *testing.T)
 	data, ok := envelope["data"].(map[string]interface{})
 	require.True(t, ok)
 	require.Contains(t, data["instructions"], "调用个人日历")
+}
+
+type gatedScriptedProvider struct {
+	scriptedToolProvider
+	gate chan struct{}
+}
+
+func (provider *gatedScriptedProvider) Start(ctx context.Context, request ProviderRequest) (ProviderStream, error) {
+	<-provider.gate
+	return provider.scriptedToolProvider.Start(ctx, request)
+}
+
+func collectBrokerEvents(ch <-chan RunEvent) []RunEvent {
+	events := make([]RunEvent, 0, 8)
+	timeout := time.After(300 * time.Millisecond)
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				return events
+			}
+			events = append(events, event)
+		case <-timeout:
+			return events
+		}
+	}
+}
+
+func eventPayloadText(t *testing.T, event RunEvent) string {
+	t.Helper()
+	var payload struct {
+		Text string `json:"text"`
+	}
+	raw, ok := event.Payload.(json.RawMessage)
+	require.True(t, ok)
+	require.NoError(t, json.Unmarshal(raw, &payload))
+	return payload.Text
+}
+
+func TestRuntimeToolLoopStreamsDeltasAndRollsBackBetweenRounds(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	gate := make(chan struct{})
+	provider := &gatedScriptedProvider{scriptedToolProvider: scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventTextDelta, Text: "预工具"},
+			{Type: ProviderEventTextDelta, Text: "分析中"},
+			{Type: ProviderEventToolCallStarted, CallID: "call_1", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "最终"},
+			{Type: ProviderEventTextDelta, Text: "回答"},
+			{Type: ProviderEventCompleted},
+		},
+	}}, gate: gate}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
+	require.NoError(t, err)
+	subscription, cancel := runtime.Broker().Subscribe(run.ID)
+	defer cancel()
+	close(gate)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	events := collectBrokerEvents(subscription)
+
+	var deltas []string
+	var rollbacks []string
+	deltasAfterRollback := 0
+	sawRollback := false
+	for _, event := range events {
+		switch event.Type {
+		case "answer.delta":
+			text := eventPayloadText(t, event)
+			require.NotEqual(t, "最终回答", text, "已真流式时不得再补发一次性全文 answer.delta")
+			if sawRollback {
+				deltasAfterRollback++
+			}
+			deltas = append(deltas, text)
+			require.False(t, event.Persisted, "answer.delta 是纯在线增量")
+		case "answer.rollback":
+			rollbacks = append(rollbacks, eventPayloadText(t, event))
+			sawRollback = true
+			require.True(t, event.Persisted, "answer.rollback 必须持久化，重连端才能纠正残留文本")
+		}
+	}
+	require.Equal(t, []string{"预工具", "分析中", "最终", "回答"}, deltas)
+	require.Equal(t, []string{""}, rollbacks, "工具轮开始前必须回滚预工具文本")
+	require.Equal(t, 2, deltasAfterRollback, "回滚后的增量只能来自最终轮")
+
+	require.Equal(t, "最终回答", waitRunState(t, db, run.ID, models.AIRunStateCompleted).AnswerCheckpoint)
+	var persistedRollback models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "answer.rollback").First(&persistedRollback).Error)
+	var persistedDeltas int64
+	require.NoError(t, db.Model(&models.AIEvent{}).Where("run_id = ? AND type = ?", run.ID, "answer.delta").Count(&persistedDeltas).Error)
+	require.Zero(t, persistedDeltas, "逐段增量不得持久化，重连以 checkpoint 为准")
+}
+
+func TestRuntimeToolLoopPureToolRoundEmitsNoDeltaOrRollback(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	gate := make(chan struct{})
+	provider := &gatedScriptedProvider{scriptedToolProvider: scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "call_1", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "纯工具轮后回答。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}, gate: gate}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
+	require.NoError(t, err)
+	subscription, cancel := runtime.Broker().Subscribe(run.ID)
+	defer cancel()
+	close(gate)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	events := collectBrokerEvents(subscription)
+
+	var deltas []string
+	var rollbacks int
+	for _, event := range events {
+		switch event.Type {
+		case "answer.delta":
+			deltas = append(deltas, eventPayloadText(t, event))
+		case "answer.rollback":
+			rollbacks++
+		}
+	}
+	require.Equal(t, []string{"纯工具轮后回答。"}, deltas)
+	require.Zero(t, rollbacks, "没有预工具文本时不得发 answer.rollback")
+	require.Equal(t, "纯工具轮后回答。", waitRunState(t, db, run.ID, models.AIRunStateCompleted).AnswerCheckpoint)
+}
+
+func TestAnswerStreamEmitterPersistenceAndBroadcast(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	gate := make(chan struct{})
+	provider := &gatedScriptedProvider{scriptedToolProvider: scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventTextDelta, Text: "最终回答。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}, gate: gate}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
+	require.NoError(t, err)
+	subscription, cancel := runtime.Broker().Subscribe(run.ID)
+	defer cancel()
+
+	emitter := runtime.newAnswerStreamEmitter(run.ID)
+	emitter.lastPersist = time.Now().Add(-2 * time.Second)
+	longText := strings.Repeat("预", 301)
+	emitter.onDelta(context.Background(), longText)
+
+	deltas := collectBrokerEvents(subscription)
+	require.NotEmpty(t, deltas)
+	require.Equal(t, "answer.delta", deltas[0].Type)
+	require.Equal(t, longText, eventPayloadText(t, deltas[0]))
+	require.False(t, deltas[0].Persisted)
+
+	var persistedDeltas int64
+	require.NoError(t, db.Model(&models.AIEvent{}).Where("run_id = ? AND type = ?", run.ID, "answer.delta").Count(&persistedDeltas).Error)
+	require.Zero(t, persistedDeltas)
+	var checkpointEvents int64
+	require.NoError(t, db.Model(&models.AIEvent{}).Where("run_id = ? AND type = ?", run.ID, "answer.checkpoint").Count(&checkpointEvents).Error)
+	require.Equal(t, int64(1), checkpointEvents, "累计文本达到阈值时应持久化周期 checkpoint")
+
+	emitter.rollbackToBaseline(context.Background())
+	drain := collectBrokerEvents(subscription)
+	require.NotEmpty(t, drain)
+	require.Equal(t, "answer.rollback", drain[0].Type)
+	require.Empty(t, eventPayloadText(t, drain[0]))
+	require.True(t, drain[0].Persisted)
+	var current models.AIRun
+	require.NoError(t, db.First(&current, "id = ?", run.ID).Error)
+	require.Empty(t, current.AnswerCheckpoint, "回滚必须同时清空 answer_checkpoint")
+
+	close(gate)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "最终回答。", completed.AnswerCheckpoint)
 }

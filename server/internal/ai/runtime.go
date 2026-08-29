@@ -590,7 +590,11 @@ func (r *Runtime) Execute(runID, message string) {
 		// 个人数据依据由 personal_data.evidence 单独展示。
 		outcome.answer = stripUnbackedCitationMarkers(outcome.answer)
 	}
-	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
+	// 真流式路径下文本增量已实时广播；一次性全量 answer.delta 仅作为
+	// 非流式 Provider / 零增量路径的兜底，避免在线端重复收到全文。
+	if !outcome.deltaEmitted {
+		_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
+	}
 	procedureClaim := containsCampusProcedureClaim(outcome.answer)
 	// 学业风险回答的成绩事实和行动项来自已校验的个人工具结果；本轮没有
 	// 政策分块时，不应因为“补考/重修”等行动词触发无来源引用过滤。
@@ -1081,7 +1085,11 @@ func (r *Runtime) currentPublishedChunks(chunks []RetrievedChunk) []RetrievedChu
 }
 
 func (r *Runtime) persistCheckpoint(ctx context.Context, runID, answer string) {
-	if err := r.db.WithContext(ctx).Model(&models.AIRun{}).Where("id = ? AND state = ?", runID, models.AIRunStateGenerating).Update("answer_checkpoint", answer).Error; err == nil {
+	// 真流式的周期 checkpoint 在 planning/tool_requested 等中间态也会写入；
+	// 终态后不再覆盖，避免过期的部分文本替换最终回答。
+	if err := r.db.WithContext(ctx).Model(&models.AIRun{}).Where("id = ? AND state NOT IN ?", runID, []string{
+		models.AIRunStateCompleted, models.AIRunStateFailed, models.AIRunStateCancelled, models.AIRunStateExpired,
+	}).Update("answer_checkpoint", answer).Error; err == nil {
 		_, _ = r.appendEvent(ctx, runID, "answer.checkpoint", map[string]interface{}{"text": answer}, true)
 	}
 }

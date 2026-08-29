@@ -122,6 +122,7 @@ class ErkeSnapshotUploadPayload {
 }
 
 /// 调用已鉴权的服务端接口。Dio 由上层注入，复用当前用户的 JWT 请求头。
+/// 路径不带 `/api` 前缀：Dio baseUrl 已含该前缀，重复书写会拼出 /api/api/。
 class ErkeSnapshotUploadGateway {
   ErkeSnapshotUploadGateway(this._dio);
 
@@ -130,7 +131,7 @@ class ErkeSnapshotUploadGateway {
   Future<void> upload(ErkeSnapshot snapshot) async {
     try {
       final response = await _dio.put(
-        '/api/personal-snapshots/erke',
+        '/personal-snapshots/erke',
         data: ErkeSnapshotUploadPayload.fromSnapshot(snapshot).toJson(),
       );
       if (response.statusCode != 200 || response.data is! Map) {
@@ -145,7 +146,7 @@ class ErkeSnapshotUploadGateway {
 
   Future<void> delete() async {
     try {
-      final response = await _dio.delete('/api/personal-snapshots/erke');
+      final response = await _dio.delete('/personal-snapshots/erke');
       if (response.statusCode != 204) {
         throw const ErkeSnapshotUploadException('删除已上传二课快照失败');
       }

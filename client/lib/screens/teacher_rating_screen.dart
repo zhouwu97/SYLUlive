@@ -117,8 +117,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map)
-          ? (e.response!.data as Map)['error']?.toString() ?? '添加失败'
+      final data = e.response?.data;
+      final msg = data is Map
+          ? (data['message'] ?? data['error'])?.toString() ?? '添加失败'
           : '添加失败';
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -163,8 +164,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map)
-          ? (e.response!.data as Map)['error']?.toString() ?? '评价失败'
+      final data = e.response?.data;
+      final msg = data is Map
+          ? (data['message'] ?? data['error'])?.toString() ?? '评价失败'
           : '评价失败';
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(

@@ -149,7 +149,12 @@ void main() {
                 response: Response(
                   requestOptions: options,
                   statusCode: 400,
-                  data: <String, dynamic>{'error': 'already liked'},
+                  // 服务端统一错误格式 {code, message, request_id}
+                  data: <String, dynamic>{
+                    'code': 'post_like_conflict',
+                    'message': 'already liked',
+                    'request_id': 'req-test',
+                  },
                 ),
               ),
             );

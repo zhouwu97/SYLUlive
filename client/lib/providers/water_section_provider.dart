@@ -353,7 +353,7 @@ class WaterSectionProvider extends ChangeNotifier {
       final data = error.response?.data;
       String? message;
       if (data is Map) {
-        message = '${data['error'] ?? data['message'] ?? ''}'.trim();
+        message = '${data['message'] ?? data['error'] ?? ''}'.trim();
       }
       if (status == 403) return '没有该操作权限';
       if (status == 400 && message != null && message.isNotEmpty) {

@@ -250,7 +250,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       if (!mounted) return;
       String msg = '邀请失败';
       if (e.response?.data is Map) {
-        msg = (e.response!.data as Map)['error']?.toString() ?? msg;
+        final data = e.response!.data as Map;
+        msg = (data['message'] ?? data['error'])?.toString() ?? msg;
       }
       messenger.showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: Colors.red),

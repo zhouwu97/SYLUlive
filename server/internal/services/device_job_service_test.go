@@ -115,6 +115,82 @@ func TestDeviceJobBundleAcceptsFreshAcademicDatasets(t *testing.T) {
 	require.Equal(t, models.DeviceToolJobCompleted, completed.Status)
 }
 
+func TestDeviceJobErkeOverviewAcceptsNativeDateFormats(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	if _, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID:        "erke-refresh-installation",
+		ToolNames:             []string{"device.erke.ensure_fresh_overview"},
+		BridgeProtocolVersion: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-erke", ToolCallID: "call-erke",
+		ToolName:          "device.erke.ensure_fresh_overview",
+		Arguments:         json.RawMessage(`{"max_age_seconds":1800,"allow_upload":true}`),
+		RequiredDataTypes: []string{"erke"},
+		ExpiresAt:         now.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	claimed, err := service.ClaimJob(context.Background(), 1, "erke-refresh-installation", job.ID, 0)
+	require.NoError(t, err)
+
+	// 二课系统返回的日期是 "2026.05.26-05.27" / "2026.05.26 13:00" 原文，不是 ISO 日期。
+	refreshed := json.RawMessage(`{
+		"data":{"earned_total":40.75,"required_total":40,"unmet_categories":[{"name":"实践实习","gap":10.0}],"activity_count":50,"latest_activity_date":"2026.05.26-05.27"},
+		"source":"remote_edu_fetch",
+		"fetched_at":"2026-07-25T09:00:00Z",
+		"expires_at":"2026-07-25T09:30:00Z",
+		"is_stale":false,
+		"is_partial":false,
+		"warnings":["二课已更新，但摘要上传失败"],
+		"evidence":[{"source":"remote_edu_fetch","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-25T09:30:00Z","is_stale":false}],
+		"freshness":{"before":"stale","after":"fresh"},
+		"refresh_performed":true
+	}`)
+	completed, err := service.CompleteJob(context.Background(), 1, "erke-refresh-installation", job.ID, claimed.StateVersion, refreshed)
+	require.NoError(t, err)
+	require.Equal(t, models.DeviceToolJobCompleted, completed.Status)
+}
+
+func TestDeviceJobErkeOverviewRejectsOverlongActivityDate(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	if _, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID:        "erke-limit-installation",
+		ToolNames:             []string{"device.erke.ensure_fresh_overview"},
+		BridgeProtocolVersion: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-erke-limit", ToolCallID: "call-erke-limit",
+		ToolName:          "device.erke.ensure_fresh_overview",
+		Arguments:         json.RawMessage(`{"max_age_seconds":1800,"allow_upload":true}`),
+		RequiredDataTypes: []string{"erke"},
+		ExpiresAt:         now.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	claimed, err := service.ClaimJob(context.Background(), 1, "erke-limit-installation", job.ID, 0)
+	require.NoError(t, err)
+
+	overlong := json.RawMessage(`{
+		"data":{"earned_total":40.75,"required_total":40,"unmet_categories":[],"activity_count":50,"latest_activity_date":"2026.05.26-2026.05.27 补充说明超出限制"},
+		"source":"remote_edu_fetch",
+		"fetched_at":"2026-07-25T09:00:00Z",
+		"expires_at":"2026-07-25T09:30:00Z",
+		"is_stale":false,
+		"is_partial":false,
+		"warnings":[],
+		"evidence":[{"source":"remote_edu_fetch","fetched_at":"2026-07-25T09:00:00Z","expires_at":"2026-07-25T09:30:00Z","is_stale":false}],
+		"freshness":{"before":"stale","after":"fresh"},
+		"refresh_performed":true
+	}`)
+	_, err = service.CompleteJob(context.Background(), 1, "erke-limit-installation", job.ID, claimed.StateVersion, overlong)
+	assertDeviceJobCode(t, err, "invalid_tool_result")
+}
+
 func TestDeviceJobClaimAndCompleteRequireFreshStateVersion(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	_, service := newDeviceJobFixture(t, now)

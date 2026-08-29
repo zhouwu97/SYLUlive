@@ -90,6 +90,7 @@ class PostImage {
   final FileItem? file;
   final String thumbUrl;
   final String mediumUrl;
+  final String viewerUrl;
   final String originUrl;
 
   PostImage({
@@ -100,6 +101,7 @@ class PostImage {
     this.file,
     this.thumbUrl = '',
     this.mediumUrl = '',
+    this.viewerUrl = '',
     this.originUrl = '',
   });
 
@@ -117,6 +119,9 @@ class PostImage {
       mediumUrl: json['medium_url']?.toString() ??
           (fileJson is Map ? fileJson['medium_url']?.toString() : null) ??
           '',
+      viewerUrl: json['viewer_url']?.toString() ??
+          (fileJson is Map ? fileJson['viewer_url']?.toString() : null) ??
+          '',
       originUrl: json['origin_url']?.toString() ??
           (fileJson is Map ? fileJson['origin_url']?.toString() : null) ??
           '',
@@ -126,6 +131,7 @@ class PostImage {
   String get url => file?.url ?? '';
   String get resolvedThumbUrl => thumbUrl.isNotEmpty ? thumbUrl : url;
   String get resolvedMediumUrl => mediumUrl.isNotEmpty ? mediumUrl : url;
+  String get resolvedViewerUrl => viewerUrl.isNotEmpty ? viewerUrl : url;
   String get resolvedOriginUrl => originUrl.isNotEmpty ? originUrl : url;
 }
 

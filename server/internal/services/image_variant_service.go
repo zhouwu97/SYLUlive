@@ -16,11 +16,19 @@ const (
 	ImageVariantRecipeVersion = 1
 	ImageVariantThumb         = "thumb"
 	ImageVariantMedium        = "medium"
+	ImageVariantViewer        = "viewer"
+)
+
+// 变体长边上限，与 image_variant_worker.go 的 imageVariantRecipe 保持一致。
+const (
+	ImageVariantThumbMaxDimension  = 480
+	ImageVariantMediumMaxDimension = 1280
+	ImageVariantViewerMaxDimension = 2048
 )
 
 // ImageVariantPath 返回指定公开原图的版本化变体 URL。
 func ImageVariantPath(filePath, mimeType, variant string) (string, bool) {
-	if variant != ImageVariantThumb && variant != ImageVariantMedium {
+	if variant != ImageVariantThumb && variant != ImageVariantMedium && variant != ImageVariantViewer {
 		return "", false
 	}
 	extension, ok := imageVariantExtension(mimeType)
@@ -64,7 +72,13 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 		} else if _, ok := imageVariantExtension(file.MimeType); !ok {
 			continue
 		}
-		for _, variant := range []string{ImageVariantThumb, ImageVariantMedium} {
+		variants := []string{ImageVariantThumb, ImageVariantMedium}
+		// viewer 档只服务大图全屏浏览：小图的 medium 已是原图尺寸，再生成 viewer 只会重复存储。
+		// 宽高未知（历史数据 width/height=0）时保守跳过，等 backfill_image_metadata 补齐后自然覆盖。
+		if longEdge := max(file.Width, file.Height); longEdge > ImageVariantMediumMaxDimension {
+			variants = append(variants, ImageVariantViewer)
+		}
+		for _, variant := range variants {
 			variantPath, ok := ImageVariantPath(file.Path, file.MimeType, variant)
 			if !ok {
 				continue

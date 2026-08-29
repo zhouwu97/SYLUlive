@@ -35,27 +35,23 @@ class PostMediaView extends StatelessWidget {
         .toList(growable: false);
     if (validImages.isEmpty) return const SizedBox.shrink();
 
-    final previewUrls = validImages
-        .map((image) => ApiConstants.fullUrl(image.resolvedOriginUrl))
-        .toList(growable: false);
-
     if (validImages.length == 1) {
       return _SinglePostImage(
         image: validImages.first,
         variant: variant,
-        onTap: onTap ?? () => _openPreview(context, previewUrls, 0),
+        onTap: onTap ?? () => _openPreview(context, validImages, 0),
       );
     }
 
     final Widget multiChild;
     if (validImages.length == 2) {
-      multiChild = _twoImages(context, validImages, previewUrls, onTap);
+      multiChild = _twoImages(context, validImages, onTap);
     } else if (validImages.length == 3) {
-      multiChild = _threeImages(context, validImages, previewUrls, onTap);
+      multiChild = _threeImages(context, validImages, onTap);
     } else if (validImages.length == 4) {
-      multiChild = _fourImages(context, validImages, previewUrls, onTap);
+      multiChild = _fourImages(context, validImages, onTap);
     } else {
-      multiChild = _imageGrid(context, validImages, previewUrls, onTap);
+      multiChild = _imageGrid(context, validImages, onTap);
     }
 
     if (variant == PostMediaVariant.feed) {
@@ -77,16 +73,15 @@ class PostMediaView extends StatelessWidget {
   Widget _twoImages(
     BuildContext context,
     List<PostImage> images,
-    List<String> previewUrls,
     VoidCallback? onTap,
   ) {
     return AspectRatio(
       aspectRatio: 2,
       child: Row(
         children: [
-          Expanded(child: _tile(context, images, previewUrls, 0, onTap)),
+          Expanded(child: _tile(context, images, 0, onTap)),
           const SizedBox(width: 4),
-          Expanded(child: _tile(context, images, previewUrls, 1, onTap)),
+          Expanded(child: _tile(context, images, 1, onTap)),
         ],
       ),
     );
@@ -95,18 +90,17 @@ class PostMediaView extends StatelessWidget {
   Widget _threeImages(
     BuildContext context,
     List<PostImage> images,
-    List<String> previewUrls,
     VoidCallback? onTap,
   ) {
     return AspectRatio(
       aspectRatio: 3,
       child: Row(
         children: [
-          Expanded(child: _tile(context, images, previewUrls, 0, onTap)),
+          Expanded(child: _tile(context, images, 0, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, images, previewUrls, 1, onTap)),
+          Expanded(child: _tile(context, images, 1, onTap)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, images, previewUrls, 2, onTap)),
+          Expanded(child: _tile(context, images, 2, onTap)),
         ],
       ),
     );
@@ -115,7 +109,6 @@ class PostMediaView extends StatelessWidget {
   Widget _fourImages(
     BuildContext context,
     List<PostImage> images,
-    List<String> previewUrls,
     VoidCallback? onTap,
   ) {
     return AspectRatio(
@@ -129,8 +122,7 @@ class PostMediaView extends StatelessWidget {
           crossAxisSpacing: 6,
         ),
         itemCount: 4,
-        itemBuilder: (context, index) =>
-            _tile(context, images, previewUrls, index, onTap),
+        itemBuilder: (context, index) => _tile(context, images, index, onTap),
       ),
     );
   }
@@ -138,7 +130,6 @@ class PostMediaView extends StatelessWidget {
   Widget _imageGrid(
     BuildContext context,
     List<PostImage> images,
-    List<String> previewUrls,
     VoidCallback? onTap,
   ) {
     final visibleCount = images.length.clamp(5, 9);
@@ -159,7 +150,7 @@ class PostMediaView extends StatelessWidget {
           return Stack(
             fit: StackFit.expand,
             children: [
-              _tile(context, images, previewUrls, index, onTap),
+              _tile(context, images, index, onTap),
               if (index == visibleCount - 1 && hiddenCount > 0)
                 IgnorePointer(
                   child: ColoredBox(
@@ -186,7 +177,6 @@ class PostMediaView extends StatelessWidget {
   Widget _tile(
     BuildContext context,
     List<PostImage> images,
-    List<String> previewUrls,
     int index,
     VoidCallback? onTap,
   ) {
@@ -194,7 +184,7 @@ class PostMediaView extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap ?? () => _openPreview(context, previewUrls, index),
+        onTap: onTap ?? () => _openPreview(context, images, index),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final target = calculateImageDecodeTarget(
@@ -225,6 +215,7 @@ class PostMediaView extends StatelessWidget {
       target: target,
       thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
       mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
       originUrl: originUrl,
       isAnimatedGif: mimeType == 'image/gif' ||
           originUrl.toLowerCase().split('?').first.endsWith('.gif'),
@@ -257,15 +248,32 @@ class PostMediaView extends StatelessWidget {
     );
   }
 
+  /// 全屏预览显示优先使用 viewer 档（长边 2048），保存仍走原图。
   static void _openPreview(
     BuildContext context,
-    List<String> urls,
+    List<PostImage> images,
     int initialIndex,
   ) {
+    final displayUrls = <String>[];
+    final downloadUrls = <String?>[];
+    for (final image in images) {
+      final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+      final viewerUrl = ApiConstants.fullUrl(image.resolvedViewerUrl);
+      final mimeType = image.file?.mimeType.toLowerCase() ?? '';
+      final isAnimatedGif = mimeType == 'image/gif' ||
+          originUrl.toLowerCase().split('?').first.endsWith('.gif');
+      displayUrls.add(
+        !isAnimatedGif && viewerUrl.isNotEmpty && viewerUrl != originUrl
+            ? viewerUrl
+            : originUrl,
+      );
+      downloadUrls.add(originUrl);
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ImageViewerScreen(
-          imageUrls: urls,
+          imageUrls: displayUrls,
+          downloadUrls: downloadUrls,
           initialIndex: initialIndex,
         ),
       ),

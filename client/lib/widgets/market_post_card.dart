@@ -7,6 +7,7 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../screens/image_viewer_screen.dart';
 import '../screens/user_home_screen.dart';
+import '../utils/image_decode_size.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 
@@ -394,19 +395,29 @@ class MarketPostCard extends StatelessWidget {
   Widget _buildCover(BuildContext context, List<PostImage> images, double width,
       double? height, bool isDark,
       {required bool isGrid}) {
+    // 封面是列表/网格缩略图，按显示像素挑 thumb 档位；变体未就绪时回退原图。
+    final validImagesForCover = images
+        .where((image) => image.resolvedOriginUrl.trim().isNotEmpty)
+        .toList(growable: false);
     final count = images.length;
     final imageUrls = images
         .where((image) => image.url.trim().isNotEmpty)
         .map((image) => ApiConstants.fullUrl(image.url))
         .toList();
-    final imgUrl = imageUrls[0];
+    final cover = validImagesForCover.isEmpty
+        ? null
+        : _selectCoverResource(
+            context, validImagesForCover.first, width, height);
+    final imgUrl = imageUrls.isEmpty ? '' : imageUrls[0];
 
     Widget imageWidget = CachedNetworkImage(
       cacheManager: PostImageCache.manager,
-      imageUrl: imgUrl,
+      imageUrl: cover?.url ?? imgUrl,
       fit: BoxFit.cover,
       width: width,
       height: height,
+      memCacheWidth: cover?.decodeWidth,
+      memCacheHeight: cover?.decodeHeight,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (_, __) => _buildSkeleton(isDark),
       errorWidget: (context, url, error) {
@@ -452,6 +463,37 @@ class MarketPostCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// 封面档位选择：列表/网格封面只需要 thumb 档（480 长边）。
+  ///
+  /// 服务端未生成变体时 [selectImageResource] 会回退原图，不会让封面 404。
+  _CoverResource _selectCoverResource(
+    BuildContext context,
+    PostImage image,
+    double width,
+    double? height,
+  ) {
+    final target = calculateImageDecodeTarget(
+      logicalSize: Size(width, height ?? width),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageThumbLongEdge,
+      fallbackLogicalSize: const Size(96, 96),
+    );
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    final selection = selectImageResource(
+      target: target,
+      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
+      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      originUrl: originUrl,
+      isAnimatedGif:
+          originUrl.toLowerCase().split('?').first.endsWith('.gif'),
+    );
+    return _CoverResource(
+      url: selection.url,
+      decodeWidth: selection.shouldResize ? target.width : null,
+      decodeHeight: selection.shouldResize ? target.height : null,
     );
   }
 
@@ -761,4 +803,17 @@ class MarketPostCard extends StatelessWidget {
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dateTime.month}/${dateTime.day}';
   }
+}
+
+/// 封面图片资源选择结果。
+class _CoverResource {
+  const _CoverResource({
+    required this.url,
+    required this.decodeWidth,
+    required this.decodeHeight,
+  });
+
+  final String url;
+  final int? decodeWidth;
+  final int? decodeHeight;
 }

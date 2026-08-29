@@ -76,11 +76,13 @@ ImageDecodeTarget calculateImageDecodeTarget({
 ///
 /// 服务端未生成变体时会将变体 URL 回退为原图 URL；此处直接返回原图，
 /// 避免客户端把回退资源误判为可用的缩略图。GIF 必须保留原图动画。
+/// [viewerUrl] 服务全屏浏览档（长边 2048），原图仅在超过该档位时兜底。
 ImageResourceSelection selectImageResource({
   required ImageDecodeTarget target,
   required String thumbUrl,
   required String mediumUrl,
   required String originUrl,
+  String viewerUrl = '',
   bool isAnimatedGif = false,
 }) {
   if (isAnimatedGif || originUrl.isEmpty) {
@@ -107,6 +109,16 @@ ImageResourceSelection selectImageResource({
     return ImageResourceSelection(
       variant: ImageResourceVariant.medium,
       url: mediumUrl,
+      shouldResize: true,
+    );
+  }
+
+  if (target.longEdge <= imageViewerLongEdge &&
+      viewerUrl.isNotEmpty &&
+      viewerUrl != originUrl) {
+    return ImageResourceSelection(
+      variant: ImageResourceVariant.medium,
+      url: viewerUrl,
       shouldResize: true,
     );
   }

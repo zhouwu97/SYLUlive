@@ -204,12 +204,12 @@ func TestPublicUploadAccelDeploymentAssets(t *testing.T) {
 		t.Fatal("Nginx 不得挂载试卷或竞赛证明材料私有卷")
 	}
 	for _, expected := range []string{
-		"UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-false}",
+		"UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-true}",
 		"UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}",
-		"IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-false}",
+		"IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-true}",
 	} {
 		if !strings.Contains(serverBlock, expected) {
-			t.Errorf("Go 服务必须默认关闭公开上传 X-Accel 开关并固定内部前缀 %q", expected)
+			t.Errorf("Go 服务必须默认开启公开上传 X-Accel 与变体 worker 并固定内部前缀 %q", expected)
 		}
 	}
 	if !strings.Contains(mainSource, "if cfg.ImageVariantWorkerEnabled {") ||

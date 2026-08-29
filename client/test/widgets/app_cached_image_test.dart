@@ -39,6 +39,7 @@ void main() {
       find.byType(CachedNetworkImage),
     );
     expect(image.cacheManager, same(PostImageCache.manager));
+    expect(image.cacheManager, isA<ImageCacheManager>());
     expect(image.memCacheWidth, 320);
     expect(image.memCacheHeight, 240);
     expect(image.maxWidthDiskCache, 640);

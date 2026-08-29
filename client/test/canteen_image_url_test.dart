@@ -11,7 +11,7 @@ void main() {
       variant: CanteenImageVariant.thumb,
     );
 
-    expect(url, contains('/uploads/canteen/photo_thumb.jpg?version=2'));
+    expect(url, contains('/uploads/canteen/photo_v1_thumb.jpg?version=2'));
   });
 
   test('外部图片地址和原图请求不改写', () {
@@ -21,7 +21,8 @@ void main() {
       external,
     );
     expect(
-      canteenImageUrl('/uploads/photo.jpg', variant: CanteenImageVariant.original),
+      canteenImageUrl('/uploads/photo.jpg',
+          variant: CanteenImageVariant.original),
       contains('/uploads/photo.jpg'),
     );
   });
@@ -45,7 +46,7 @@ void main() {
     final image = tester.widget<CachedNetworkImage>(
       find.byType(CachedNetworkImage),
     );
-    expect(image.imageUrl, contains('/uploads/photo_thumb.jpg'));
+    expect(image.imageUrl, contains('/uploads/photo_v1_thumb.jpg'));
     expect(image.memCacheWidth, 444);
     expect(image.memCacheHeight, 312);
     expect(image.maxWidthDiskCache, 480);

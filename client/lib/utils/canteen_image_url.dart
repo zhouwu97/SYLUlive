@@ -10,8 +10,8 @@ enum CanteenImageVariant {
   original;
 
   String get suffix => switch (this) {
-        CanteenImageVariant.thumb => '_thumb',
-        CanteenImageVariant.medium => '_medium',
+        CanteenImageVariant.thumb => '_v1_thumb',
+        CanteenImageVariant.medium => '_v1_medium',
         CanteenImageVariant.original => '',
       };
 
@@ -28,7 +28,7 @@ enum CanteenImageVariant {
 /// 将食堂图片源地址解析为适合当前场景的 URL。
 ///
 /// 只有 /uploads/ 下的服务端资源会生成变体；外部 CDN、无扩展名资源和空地址
-/// 均保留原地址。已经带有 _thumb/_medium 后缀的历史地址会先剥离旧后缀。
+/// 均保留原地址。已经带有版本化或旧式变体后缀的地址会先剥离后缀。
 String canteenImageUrl(
   String source, {
   CanteenImageVariant variant = CanteenImageVariant.original,
@@ -49,7 +49,7 @@ String canteenImageUrl(
 
   final extension = uri.path.substring(dotIndex);
   final basePath = uri.path.substring(0, dotIndex).replaceFirst(
-        RegExp(r'_(thumb|medium)$'),
+        RegExp(r'_(?:v\d+_)?(?:thumb|medium)$'),
         '',
       );
   return ApiConstants.fullUrl(

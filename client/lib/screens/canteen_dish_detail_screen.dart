@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
-import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/canteen/canteen_theme.dart';
-import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
 
@@ -35,6 +33,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _reviews = [];
   bool _isLoading = true;
+  final Set<String> _failedPhotoImages = <String>{};
 
   @override
   void initState() {
@@ -63,14 +62,16 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     return (_data?['photos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
   }
 
-  List<String> get _photoImages {
-    return _photos
-        .map((p) => p['image']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toList();
-  }
+  List<Map<String, dynamic>> get _visiblePhotos => _photos.where((photo) {
+        final image = photo['image']?.toString().trim() ?? '';
+        return image.isNotEmpty && !_failedPhotoImages.contains(image);
+      }).toList(growable: false);
 
-  int get _photoCount => _data?['photo_count'] ?? _photoImages.length;
+  List<String> get _photoImages => _visiblePhotos
+      .map((photo) => photo['image'].toString().trim())
+      .toList(growable: false);
+
+  int get _photoCount => _photoImages.length;
 
   bool get _isOffline {
     final dish = _data?['dish'];
@@ -79,7 +80,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Future<void> _handleAdminManagePhoto(int index) async {
-    final photos = _photos;
+    final photos = _visiblePhotos;
     if (index < 0 || index >= photos.length) return;
     final photo = photos[index];
     final photoId = (photo['id'] as num?)?.toInt();
@@ -246,7 +247,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       ),
                     ),
                     if (_reviews.isNotEmpty) _buildReviewList(isDark),
-                    if (isAdmin && _photos.isNotEmpty)
+                    if (isAdmin && _visiblePhotos.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 4),
                         child: Text(
@@ -263,6 +264,10 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                       imageUrls: _photoImages,
                       offline: _isOffline,
                       onLongPress: isAdmin ? _handleAdminManagePhoto : null,
+                      onImageError: (imageUrl) {
+                        if (_failedPhotoImages.contains(imageUrl)) return;
+                        setState(() => _failedPhotoImages.add(imageUrl));
+                      },
                     ),
                     const SizedBox(height: 16),
                     if (_photoCount >= 3)

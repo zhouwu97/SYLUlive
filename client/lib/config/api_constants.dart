@@ -33,7 +33,7 @@ class ApiConstants {
   /// 为上传图片生成服务端支持的缩略图变体 URL。
   ///
   /// 变体只作用于文件名，不会丢失查询参数；传入已经带有变体后缀的
-  /// URL 时先剥离旧后缀，避免出现 `image_thumb_medium.jpg`。
+  /// URL 时先剥离旧后缀，避免出现 `image_thumb_v1_medium.jpg`。
   static String imageVariant(String path, String variant) {
     final normalizedPath = path.trim();
     final normalizedVariant = variant.trim().toLowerCase();
@@ -52,11 +52,11 @@ class ApiConstants {
     final extension = hasExtension ? sourcePath.substring(dotIndex) : '';
     final baseEnd = hasExtension ? dotIndex : sourcePath.length;
     final basePath = sourcePath.substring(0, baseEnd).replaceFirst(
-          RegExp(r'_(thumb|medium)$'),
+          RegExp(r'_(?:v\d+_)?(?:thumb|medium)$'),
           '',
         );
     return uri
-        .replace(path: '${basePath}_$normalizedVariant$extension')
+        .replace(path: '${basePath}_v1_$normalizedVariant$extension')
         .toString();
   }
 

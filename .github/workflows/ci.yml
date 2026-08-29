@@ -132,7 +132,9 @@ jobs:
       - run: python -m pytest -q
 
   client:
-    runs-on: ubuntu-latest
+    # Golden 平台可复现性：ubuntu-latest 镜像随 runner 更新漂移
+    # （freetype/fontconfig 变化会让 canonical golden 全线 0.x% 抖动）。
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: client

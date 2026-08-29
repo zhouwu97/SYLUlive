@@ -10,7 +10,8 @@ on:
 
 jobs:
   generate:
-    runs-on: ubuntu-latest
+    # 与 ci.yml 的 client job 使用同一钉住的镜像，生成与校验环境一致。
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: client

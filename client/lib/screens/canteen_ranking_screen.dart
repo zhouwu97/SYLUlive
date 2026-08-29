@@ -66,7 +66,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         content: const Text(
           '综合排序采用贝叶斯加权评分，既看平均星级、也看评价人数：评分越高、人数越多越靠前；'
           '评价很少的高分商家会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
-          '“评分优先”只按星级排，样本很少时会标注“样本较少”；'
+          '“评分优先”按星级从低到高倒序展示，样本很少时会标注“样本较少”；'
           '“评价人数”按参与评价的人数排序。\n\n'
           '菜品和实拍数量仅供参考，不参与综合分计算。',
           style: TextStyle(fontSize: 13, height: 1.6),

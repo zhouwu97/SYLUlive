@@ -17,6 +17,8 @@ class CanteenFeedItem {
   final String type;
   final int canteenId;
   final String canteenName;
+  final String locationArea;
+  final String locationFloor;
   final String operatingStatus;
   final int dishId;
   final String dishName;
@@ -38,6 +40,8 @@ class CanteenFeedItem {
     required this.type,
     this.canteenId = 0,
     this.canteenName = '',
+    this.locationArea = '',
+    this.locationFloor = '',
     this.operatingStatus = 'active',
     this.dishId = 0,
     this.dishName = '',
@@ -58,6 +62,8 @@ class CanteenFeedItem {
       type: json['type']?.toString() ?? '',
       canteenId: (json['canteen_id'] ?? 0).toInt(),
       canteenName: json['canteen_name']?.toString() ?? '',
+      locationArea: json['location_area']?.toString() ?? '',
+      locationFloor: json['location_floor']?.toString() ?? '',
       operatingStatus: json['operating_status']?.toString() ?? 'active',
       dishId: (json['dish_id'] ?? 0).toInt(),
       dishName: json['dish_name']?.toString() ?? '',
@@ -73,6 +79,14 @@ class CanteenFeedItem {
     );
   }
 
+  /// 位置标签文案，如"一食堂·二楼"；未填写时为空。
+  String get locationLabel {
+    if (locationArea.isEmpty && locationFloor.isEmpty) return '';
+    if (locationArea.isEmpty) return locationFloor;
+    if (locationFloor.isEmpty) return locationArea;
+    return '$locationArea·$locationFloor';
+  }
+
   bool get isRecommended => type == CanteenFeedType.recommendedStore;
   bool get isTrending => type == CanteenFeedType.trendingStore;
   bool get isRecentPhoto => type == CanteenFeedType.recentPhoto;
@@ -84,6 +98,8 @@ class CanteenFeedItem {
 class CanteenHero {
   final int canteenId;
   final String canteenName;
+  final String locationArea;
+  final String locationFloor;
   final String operatingStatus;
   final String image;
   final double rankingScore;
@@ -100,6 +116,8 @@ class CanteenHero {
   const CanteenHero({
     this.canteenId = 0,
     this.canteenName = '',
+    this.locationArea = '',
+    this.locationFloor = '',
     this.operatingStatus = 'active',
     this.image = '',
     this.rankingScore = 0,
@@ -119,6 +137,8 @@ class CanteenHero {
     return CanteenHero(
       canteenId: (json['canteen_id'] ?? 0).toInt(),
       canteenName: json['canteen_name']?.toString() ?? '',
+      locationArea: json['location_area']?.toString() ?? '',
+      locationFloor: json['location_floor']?.toString() ?? '',
       operatingStatus: json['operating_status']?.toString() ?? 'active',
       image: json['image']?.toString() ?? '',
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
@@ -135,6 +155,14 @@ class CanteenHero {
   }
 
   bool get isEmpty => canteenId == 0;
+
+  /// 位置标签文案，如"一食堂·二楼"；未填写时为空。
+  String get locationLabel {
+    if (locationArea.isEmpty && locationFloor.isEmpty) return '';
+    if (locationArea.isEmpty) return locationFloor;
+    if (locationFloor.isEmpty) return locationArea;
+    return '$locationArea·$locationFloor';
+  }
 }
 
 /// 排行入口：Top1 + 食堂总数。

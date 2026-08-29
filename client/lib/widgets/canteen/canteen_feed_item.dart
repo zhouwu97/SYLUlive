@@ -109,6 +109,19 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
                         color: CanteenTheme.textPrimaryColor(isDark),
                       ),
                     ),
+                    if (item.locationLabel.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.locationLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: CanteenTheme.textTertiaryColor(isDark),
+                        ),
+                      ),
+                    ],
                     if (item.averageStar > 0) ...[
                       const SizedBox(height: 5),
                       Row(

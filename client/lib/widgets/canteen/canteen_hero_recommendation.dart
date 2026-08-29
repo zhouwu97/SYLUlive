@@ -107,6 +107,19 @@ class _CanteenHeroRecommendationCardState
                                   ],
                                 ),
                               ),
+                              if (h.locationLabel.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  h.locationLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 3),
                               Text(
                                 _recentFeedbackLabel,

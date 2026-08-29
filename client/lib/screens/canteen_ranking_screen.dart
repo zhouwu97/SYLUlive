@@ -23,6 +23,17 @@ class CanteenRankingScreen extends StatefulWidget {
 
 class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _sort = CanteenRankingSort.composite;
+  String _locationFilter = '';
+
+  /// 位置筛选（'' = 全部）：区域命中区域字段，楼层命中楼层字段。
+  List<CanteenRankingItem> _applyLocationFilter(List<CanteenRankingItem> items) {
+    if (_locationFilter.isEmpty) return items;
+    return items
+        .where((item) =>
+            item.locationArea == _locationFilter ||
+            item.locationFloor == _locationFilter)
+        .toList();
+  }
 
   @override
   void initState() {
@@ -145,7 +156,13 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       ),
       body: Column(
         children: [
-          CanteenRankingFilterBar(selected: _sort, onChanged: _switchSort),
+          CanteenRankingFilterBar(
+            selected: _sort,
+            onChanged: _switchSort,
+            locationFilter: _locationFilter,
+            onLocationFilterChanged: (value) =>
+                setState(() => _locationFilter = value),
+          ),
           _buildExplanationLine(isDark),
           const SizedBox(height: 4),
           Expanded(child: _buildList(isDark)),
@@ -187,7 +204,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
 
     return Consumer<CanteenDiscoveryProvider>(
       builder: (_, provider, __) {
-        final items = provider.rankingItems;
+        final items = _applyLocationFilter(provider.rankingItems);
 
         if (provider.rankingLoading && items.isEmpty) {
           return _buildSkeleton(isDark);
@@ -203,6 +220,14 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           );
         }
         if (items.isEmpty) {
+          if (_locationFilter.isNotEmpty && provider.rankingItems.isNotEmpty) {
+            return CanteenEmptyState(
+              title: '该位置暂无商家',
+              subtitle: '试试切换其他食堂或楼层',
+              actionLabel: '查看全部商家',
+              onAction: () => setState(() => _locationFilter = ''),
+            );
+          }
           return CanteenEmptyState(
             title: '暂无商家',
             subtitle: '成为第一个收录商家的同学吧',

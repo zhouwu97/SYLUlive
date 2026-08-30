@@ -116,59 +116,70 @@ void main() {
       expect(size.height, closeTo(56.0, 0.01));
     });
 
-    test('homeFeed 方图铺满内容列，纵向上限为 300dp', () {
+    test('homeFeed 方图统一预览宽度并保持比例', () {
       final size = calculateSinglePostImageSize(
         availableWidth: 390,
         aspectRatio: 1.0,
         variant: PostMediaVariant.homeFeed,
       );
 
-      expect(size.width, closeTo(390.0, 0.01));
-      expect(size.height, closeTo(300.0, 0.01));
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(250.0, 0.01));
     });
 
-    test('homeFeed 横图仍然铺满内容列并保持比例', () {
+    test('homeFeed 16:9 横图统一预览宽度并保持比例', () {
       final size = calculateSinglePostImageSize(
         availableWidth: 390,
         aspectRatio: 16 / 9,
         variant: PostMediaVariant.homeFeed,
       );
 
-      expect(size.width, closeTo(390.0, 0.01));
-      expect(size.height, closeTo(219.375, 0.01));
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(140.625, 0.01));
     });
 
-    test('homeFeed 普通竖图不再缩窄，铺满内容列并限制到 300dp', () {
+    test('homeFeed 4:3 横图统一预览宽度并保持比例', () {
+      final size = calculateSinglePostImageSize(
+        availableWidth: 390,
+        aspectRatio: 4 / 3,
+        variant: PostMediaVariant.homeFeed,
+      );
+
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(187.5, 0.01));
+    });
+
+    test('homeFeed 3:4 竖图保持原比例，不再铺满内容列', () {
       final size = calculateSinglePostImageSize(
         availableWidth: 390,
         aspectRatio: 3 / 4,
         variant: PostMediaVariant.homeFeed,
       );
 
-      expect(size.width, closeTo(390.0, 0.01));
-      expect(size.height, closeTo(300.0, 0.01));
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(333.333, 0.01));
     });
 
-    test('homeFeed 长图铺满内容列，固定预览高度并保留顶部对齐契约', () {
+    test('homeFeed 长图封顶为 3:4 竖向预览框', () {
       final size = calculateSinglePostImageSize(
         availableWidth: 390,
         aspectRatio: 9 / 16,
         variant: PostMediaVariant.homeFeed,
       );
 
-      expect(size.width, closeTo(390.0, 0.01));
-      expect(size.height, closeTo(280.0, 0.01));
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(333.333, 0.01));
     });
 
-    test('sectionFeed 与首页共享全宽单图规则', () {
+    test('sectionFeed 与首页共享长图预览规则', () {
       final size = calculateSinglePostImageSize(
         availableWidth: 390,
         aspectRatio: 9 / 16,
         variant: PostMediaVariant.sectionFeed,
       );
 
-      expect(size.width, closeTo(390.0, 0.01));
-      expect(size.height, closeTo(280.0, 0.01));
+      expect(size.width, closeTo(250.0, 0.01));
+      expect(size.height, closeTo(333.333, 0.01));
     });
   });
 
@@ -286,8 +297,53 @@ void main() {
       find.byType(CachedNetworkImage),
     );
     expect(cached.imageUrl, contains('/uploads/medium.jpg'));
-    expect(cached.memCacheWidth, 1280);
-    expect(cached.memCacheHeight, 720);
+    expect(cached.memCacheWidth, 863);
+    expect(cached.memCacheHeight, 486);
+  });
+
+  testWidgets('3x 长图解码保持原图比例不压扁', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 900,
+        height: 1600,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.imageUrl, contains('/uploads/medium.jpg'));
+    // 250 宽按 9:16 展开 444.4 逻辑高，×3×1.15 后长边封顶 1280，比例保持 0.5625。
+    expect(cached.memCacheWidth, 720);
+    expect(cached.memCacheHeight, 1280);
   });
 
   testWidgets('长图在深色模式和 1.3x 文字缩放下不发生布局异常', (tester) async {
@@ -333,6 +389,297 @@ void main() {
     await tester.pump();
 
     expect(find.text('长图'), findsOneWidget);
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.alignment, Alignment.topCenter);
+    expect(cached.fit, BoxFit.cover);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('homeFeed 普通竖图居中显示且不出现长图角标', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 750,
+        height: 1000,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.alignment, Alignment.center);
+    expect(cached.fit, BoxFit.contain);
+    expect(find.text('长图'), findsNothing);
+  });
+
+  testWidgets('detail 保持 0.70 长图阈值，0.72 竖图仍居中裁剪', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 720,
+        height: 1000,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.detail,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.alignment, Alignment.center);
+    expect(cached.fit, BoxFit.cover);
+    expect(find.text('长图'), findsNothing);
+  });
+
+  testWidgets('homeFeed 多图瓦片顶部对齐并保持原图比例解码', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1080,
+          height: 1920,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: images,
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      expect(tile.alignment, Alignment.topCenter);
+      expect(tile.fit, BoxFit.cover);
+      // 193×195 瓦片按 9:16 源宽度占满展开 (193, 343.11)，×3×1.15 = 666×1184。
+      expect(tile.imageUrl, contains('-medium.jpg'));
+      expect(tile.memCacheWidth, 666);
+      expect(tile.memCacheHeight, 1184);
+    }
+  });
+
+  testWidgets('homeFeed 横图瓦片按高度占满解码保持比例', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: images,
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      // 16:9 源高度占满 195，展开 (346.67, 195)，×3×1.15 = 1196×673。
+      expect(tile.imageUrl, contains('-medium.jpg'));
+      expect(tile.memCacheWidth, 1196);
+      expect(tile.memCacheHeight, 673);
+    }
+  });
+
+  testWidgets('feed 多图瓦片保持居中对齐（防越界回归）', (tester) async {
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1080,
+          height: 1920,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: images),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      expect(tile.alignment, Alignment.center);
+      // feed 瓦片解码保持历史行为：138×140 框比例 ×3×1.15 封顶 480 → 474×480。
+      expect(tile.imageUrl, contains('-thumb.jpg'));
+      expect(tile.memCacheWidth, 474);
+      expect(tile.memCacheHeight, 480);
+    }
+  });
+
+  testWidgets('detail 多图瓦片解码保持历史行为（防越界回归）', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1080,
+          height: 1920,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: images,
+              variant: PostMediaVariant.detail,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      expect(tile.alignment, Alignment.center);
+      // detail 瓦片解码保持历史行为：193×195 框比例 ×3×1.15 封顶 480 → 475×480。
+      expect(tile.imageUrl, contains('-thumb.jpg'));
+      expect(tile.memCacheWidth, 475);
+      expect(tile.memCacheHeight, 480);
+    }
   });
 }

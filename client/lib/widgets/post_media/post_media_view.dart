@@ -13,6 +13,14 @@ import '../../utils/post_image_cache.dart';
 
 enum PostMediaVariant { feed, homeFeed, sectionFeed, detail }
 
+/// homeFeed/sectionFeed 单图统一预览规格：最大宽度、可用宽度系数、长图阈值（3:4）。
+const double _kFeedImageMaxWidth = 250.0;
+const double _kFeedImageWidthFactor = 0.70;
+const double _kLongImageRatio = 0.75;
+
+/// feed/detail 沿用历史长图阈值，行为保持不变。
+const double _kLegacyLongImageRatio = 0.70;
+
 /// 所有帖子类型共用的图片布局与预览入口。
 class PostMediaView extends StatelessWidget {
   const PostMediaView({
@@ -187,17 +195,43 @@ class PostMediaView extends StatelessWidget {
         onTap: onTap ?? () => _openPreview(context, images, index),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final isHomeSection = variant == PostMediaVariant.homeFeed ||
+                variant == PostMediaVariant.sectionFeed;
+            // cover 瓦片按原图比例解码：ResizeImage exact 会先把位图压扁到
+            // 瓦片比例，比例失真后 cover 裁剪无法恢复主体形状。
+            final image = images[index];
+            final sourceWidth = image.file?.width ?? 0;
+            final sourceHeight = image.file?.height ?? 0;
+            var decodeLogicalSize = Size(
+              constraints.maxWidth,
+              constraints.maxHeight,
+            );
+            if (isHomeSection && sourceWidth > 0 && sourceHeight > 0) {
+              final boxRatio = constraints.maxWidth / constraints.maxHeight;
+              final sourceRatio = sourceWidth / sourceHeight;
+              decodeLogicalSize = sourceRatio >= boxRatio
+                  ? Size(
+                      constraints.maxHeight * sourceRatio,
+                      constraints.maxHeight,
+                    )
+                  : Size(
+                      constraints.maxWidth,
+                      constraints.maxWidth / sourceRatio,
+                    );
+            }
             final target = calculateImageDecodeTarget(
-              logicalSize: Size(constraints.maxWidth, constraints.maxHeight),
+              logicalSize: decodeLogicalSize,
               devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-              maxLongEdge: imageThumbLongEdge,
+              maxLongEdge:
+                  isHomeSection ? imageMediumLongEdge : imageThumbLongEdge,
               fallbackLogicalSize: const Size(120, 120),
             );
-            final selection = _selectResource(images[index], target);
+            final selection = _selectResource(image, target);
             return _networkImage(
               selection: selection,
               target: target,
               fit: BoxFit.cover,
+              alignment: isHomeSection ? Alignment.topCenter : Alignment.center,
             );
           },
         ),
@@ -291,18 +325,16 @@ Size calculateSinglePostImageSize({
 
   if (variant == PostMediaVariant.homeFeed ||
       variant == PostMediaVariant.sectionFeed) {
-    // 首页与版块 Feed 单图始终铺满内容列，避免窄竖图把卡片撑成“左图右空白”。
-    // 超长图固定预览高度，点击后仍打开原图查看器。
-    final clampedRatio = safeAspectRatio.clamp(0.55, 1.8).toDouble();
-    final maxHeight =
-        clampedRatio < 0.7 ? 280.0 : (clampedRatio < 1.2 ? 300.0 : 280.0);
-    if (clampedRatio < 0.7) {
-      return Size(availableWidth, maxHeight);
-    }
-    return Size(
-      availableWidth,
-      math.min(availableWidth / clampedRatio, maxHeight),
+    // 单图统一预览宽度并完全保持原比例；长图（< 3:4）封顶为 3:4 竖向预览框，
+    // 渲染层 cover + topCenter 露出顶部主体。
+    final previewWidth = math.min(
+      availableWidth * _kFeedImageWidthFactor,
+      _kFeedImageMaxWidth,
     );
+    if (safeAspectRatio < _kLongImageRatio) {
+      return Size(previewWidth, previewWidth / _kLongImageRatio);
+    }
+    return Size(previewWidth, previewWidth / safeAspectRatio);
   }
 
   if (variant == PostMediaVariant.feed) {
@@ -456,6 +488,11 @@ class _SinglePostImageState extends State<_SinglePostImage> {
 
   @override
   Widget build(BuildContext context) {
+    final isHomeSection = widget.variant == PostMediaVariant.homeFeed ||
+        widget.variant == PostMediaVariant.sectionFeed;
+    final longImageThreshold =
+        isHomeSection ? _kLongImageRatio : _kLegacyLongImageRatio;
+    final isLongImage = _aspectRatio < longImageThreshold;
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth =
@@ -467,8 +504,14 @@ class _SinglePostImageState extends State<_SinglePostImage> {
           aspectRatio: _aspectRatio,
           variant: widget.variant,
         );
+        // memCacheWidth/Height 走 ResizeImage 精确缩放，目标比例必须与原图一致，
+        // 否则长图位图会先被压扁再进入预览框。
+        final decodeLogicalSize = Size(
+          imageSize.width,
+          imageSize.width / _aspectRatio,
+        );
         final target = calculateImageDecodeTarget(
-          logicalSize: imageSize,
+          logicalSize: decodeLogicalSize,
           devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
           maxLongEdge: imageMediumLongEdge,
           fallbackLogicalSize: const Size(250, 220),
@@ -495,14 +538,15 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                       PostMediaView._networkImage(
                         selection: selection,
                         target: target,
-                        fit: BoxFit.cover,
-                        alignment: _aspectRatio < 0.7
+                        // 普通图用 contain 兑现“不裁剪”契约；仅长图 cover 裁剪。
+                        fit: isHomeSection && !isLongImage
+                            ? BoxFit.contain
+                            : BoxFit.cover,
+                        alignment: isLongImage
                             ? Alignment.topCenter
                             : Alignment.center,
                       ),
-                      if ((widget.variant == PostMediaVariant.homeFeed ||
-                              widget.variant == PostMediaVariant.sectionFeed) &&
-                          _aspectRatio < 0.7)
+                      if (isHomeSection && _aspectRatio < _kLongImageRatio)
                         Positioned(
                           right: AppSpacing.sm,
                           bottom: AppSpacing.sm,

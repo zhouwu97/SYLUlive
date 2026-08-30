@@ -31,6 +31,8 @@ func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("GIN_MODE", "release")
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
+	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
 	t.Setenv("EXAM_PAPER_DIR", "")
 	production := Load()
 	if production.ExamPaperDir != "/opt/shenliyuan/private/exam-papers" {
@@ -62,6 +64,21 @@ func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) 
 
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
 	require.True(t, Load().ImageVariantWorkerEnabled)
+}
+
+func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
+	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "true")
+	require.NotPanics(t, func() { _ = Load() })
+
+	// 空值视同缺失：envBool 对空串静默回退，release 下会形成假显式配置。
+	os.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "")
+	assertLoadPanics(t)
+
+	os.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
+	os.Unsetenv("UPLOAD_USE_ACCEL_REDIRECT")
+	assertLoadPanics(t)
 }
 
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
@@ -229,6 +246,8 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
 	t.Setenv("EXAM_PAPER_DIR", "/opt/shenliyuan/private/exam-papers")
 	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/opt/shenliyuan/private/competition-award-evidence")
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
+	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")

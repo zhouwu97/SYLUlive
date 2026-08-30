@@ -180,6 +180,16 @@ func Load() *Config {
 
 	releaseMode := os.Getenv("GIN_MODE") == "release"
 
+	// 图片管线两个开关直接影响生产资源链路（worker 写盘、Nginx 直传）。release 模式
+	// 必须显式设置，空值视同缺失（envBool 对空串静默回退，会形成假显式配置）。
+	if releaseMode {
+		for _, key := range []string{"IMAGE_VARIANT_WORKER_ENABLED", "UPLOAD_USE_ACCEL_REDIRECT"} {
+			if value, ok := os.LookupEnv(key); !ok || strings.TrimSpace(value) == "" {
+				panic(fmt.Errorf("release 模式必须显式设置 %s（true/false，生产目标值见 .env.example）", key))
+			}
+		}
+	}
+
 	examPaperStorageMode := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_MODE"))
 	if examPaperStorageMode == "" {
 		examPaperStorageMode = ExamPaperStorageModeLocal

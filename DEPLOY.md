@@ -51,13 +51,14 @@ readlink -f /proc/$(pgrep -o shenliyuan)/exe
 ## 图片公开上传的授权静态传输（Docker P3）
 
 Docker 部署中的 `/uploads/` 仍然先反代到 Go 的 `ServePublic`。图片变体 worker 与
-X-Accel 静态直传现已默认开启：Go 启动时会自动为历史公开图片执行补偿任务（补建
-变体任务），worker 仅在 `IMAGE_VARIANT_WORKER_ENABLED=true` 时启动并消化 pending
-任务；变体就绪前客户端继续回退原图，不会出现长期 404。只有 Go 根据
-`files.access_scope = public` 完成授权、通过 `ResolveUploadPath` 路径校验并确认文件存在后，
-才会返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能直接请求它。
+X-Accel 静态直传由 `.env` 显式配置，生产目标值均为 `true`：Go 启动时会自动为历史公开
+图片执行补偿任务（补建变体任务），worker 仅在 `IMAGE_VARIANT_WORKER_ENABLED=true`
+时启动并消化 pending 任务；变体就绪前客户端继续回退原图，不会出现长期 404。只有 Go
+根据 `files.access_scope = public` 完成授权、通过 `ResolveUploadPath` 路径校验并确认
+文件存在后，才会返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能
+直接请求它。`GIN_MODE=release` 时两个开关缺失或为空会直接拒绝启动，避免漏配静默回退。
 
-当前默认值：
+生产 `.env` 目标值（compose 对两者使用 `:?` 强制显式提供）：
 
 ```env
 UPLOAD_DIR=/app/uploads
@@ -66,7 +67,7 @@ UPLOAD_USE_ACCEL_REDIRECT=true
 UPLOAD_ACCEL_PREFIX=/_internal/uploads/
 ```
 
-回退开关（worker 异常或传输链路异常时使用）：
+回退开关（worker 异常或传输链路异常时使用；改为 false 后仍必须显式保留在 `.env` 中）：
 
 ```env
 IMAGE_VARIANT_WORKER_ENABLED=false

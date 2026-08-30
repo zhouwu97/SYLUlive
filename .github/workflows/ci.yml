@@ -176,10 +176,12 @@ jobs:
         working-directory: client/android/app
         env:
           ANDROID_STORE_PASSWORD: codex-ci-store
-          ANDROID_KEY_PASSWORD: codex-ci-key
+          # PKCS12（keytool 现代默认格式）不支持独立 key 密码，必须与 store 密码一致。
+          ANDROID_KEY_PASSWORD: codex-ci-store
         run: >-
           keytool -genkeypair -v
           -keystore xiaoyuan.jks
+          -storetype PKCS12
           -storepass "$ANDROID_STORE_PASSWORD"
           -keypass "$ANDROID_KEY_PASSWORD"
           -alias xiaoyuan
@@ -190,7 +192,7 @@ jobs:
       - name: Build release APK smoke
         env:
           ANDROID_STORE_PASSWORD: codex-ci-store
-          ANDROID_KEY_PASSWORD: codex-ci-key
+          ANDROID_KEY_PASSWORD: codex-ci-store
         run: >-
           flutter build apk --release
           --dart-define=APP_API_URL=https://example.invalid/api

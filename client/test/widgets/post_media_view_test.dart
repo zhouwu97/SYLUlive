@@ -481,7 +481,10 @@ void main() {
     expect(find.text('长图'), findsNothing);
   });
 
-  testWidgets('homeFeed 多图瓦片顶部对齐', (tester) async {
+  testWidgets('homeFeed 多图瓦片顶部对齐并保持原图比例解码', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final images = List.generate(2, (index) {
       return PostImage(
         id: index + 1,
@@ -524,6 +527,61 @@ void main() {
     for (final tile in tiles) {
       expect(tile.alignment, Alignment.topCenter);
       expect(tile.fit, BoxFit.cover);
+      // 193×195 瓦片按 9:16 源宽度占满展开 (193, 343.11)，×3×1.15 = 666×1184。
+      expect(tile.imageUrl, contains('-medium.jpg'));
+      expect(tile.memCacheWidth, 666);
+      expect(tile.memCacheHeight, 1184);
+    }
+  });
+
+  testWidgets('homeFeed 横图瓦片按高度占满解码保持比例', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: images,
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      // 16:9 源高度占满 195，展开 (346.67, 195)，×3×1.15 = 1196×673。
+      expect(tile.imageUrl, contains('-medium.jpg'));
+      expect(tile.memCacheWidth, 1196);
+      expect(tile.memCacheHeight, 673);
     }
   });
 
@@ -566,6 +624,62 @@ void main() {
     expect(tiles, isNotEmpty);
     for (final tile in tiles) {
       expect(tile.alignment, Alignment.center);
+      // feed 瓦片解码保持历史行为：138×140 框比例 ×3×1.15 封顶 480 → 474×480。
+      expect(tile.imageUrl, contains('-thumb.jpg'));
+      expect(tile.memCacheWidth, 474);
+      expect(tile.memCacheHeight, 480);
+    }
+  });
+
+  testWidgets('detail 多图瓦片解码保持历史行为（防越界回归）', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final images = List.generate(2, (index) {
+      return PostImage(
+        id: index + 1,
+        postId: 1,
+        fileId: index + 1,
+        file: FileItem(
+          id: index + 1,
+          hash: 'hash$index',
+          path: '/uploads/img$index.jpg',
+          size: 1,
+          mimeType: 'image/jpeg',
+          width: 1080,
+          height: 1920,
+        ),
+        originUrl: '/uploads/img$index.jpg',
+        thumbUrl: '/uploads/img$index-thumb.jpg',
+        mediumUrl: '/uploads/img$index-medium.jpg',
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: images,
+              variant: PostMediaVariant.detail,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final tiles = tester.widgetList<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(tiles, isNotEmpty);
+    for (final tile in tiles) {
+      expect(tile.alignment, Alignment.center);
+      // detail 瓦片解码保持历史行为：193×195 框比例 ×3×1.15 封顶 480 → 475×480。
+      expect(tile.imageUrl, contains('-thumb.jpg'));
+      expect(tile.memCacheWidth, 475);
+      expect(tile.memCacheHeight, 480);
     }
   });
 }

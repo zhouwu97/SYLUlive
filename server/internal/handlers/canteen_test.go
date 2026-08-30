@@ -23,10 +23,11 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
+	if err := db.AutoMigrate(&models.Notification{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
@@ -385,10 +386,179 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 	if ratingAfterApproval.Code != http.StatusOK {
 		t.Fatalf("verified canteen should accept ratings: %d %s", ratingAfterApproval.Code, ratingAfterApproval.Body.String())
 	}
+
+	var resultNotification models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND related_id = ?", 2, NotificationTypeCanteenReviewResult, canteen.ID).First(&resultNotification).Error; err != nil {
+		t.Fatalf("submitter should receive review result notification: %v", err)
+	}
+	if !strings.Contains(resultNotification.Content, "审核已通过") {
+		t.Fatalf("approve notification content=%s", resultNotification.Content)
+	}
+}
+
+func TestCanteenSubmissionNotifiesAdmins(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "管理员")
+	createCanteenTestUser(t, db, 2, "提交者")
+	if err := db.Model(&models.User{}).Where("id = ?", 1).Update("role", models.RoleAdmin).Error; err != nil {
+		t.Fatalf("set admin role: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	submitted := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		2,
+		`{"name":"新食堂","image":"/uploads/test-canteen.jpg"}`,
+	)
+	if submitted.Code != http.StatusBadRequest {
+		t.Fatalf("submit with unregistered image should be rejected: %d %s", submitted.Code, submitted.Body.String())
+	}
+
+	if err := db.Create(&models.File{
+		Hash:       "test-canteen-hash",
+		Path:       "/uploads/test-canteen.jpg",
+		Size:       1024,
+		MimeType:   "image/jpeg",
+		UploaderID: 2,
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+
+	submitted = performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		2,
+		`{"name":"新食堂","image":"/uploads/test-canteen.jpg"}`,
+	)
+	if submitted.Code != http.StatusCreated {
+		t.Fatalf("submit status=%d body=%s", submitted.Code, submitted.Body.String())
+	}
+
+	var adminNotification models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND related_id = ?", 1, NotificationTypeCanteenPending, 1).First(&adminNotification).Error; err != nil {
+		t.Fatalf("admin should receive pending notification: %v", err)
+	}
+	if !strings.Contains(adminNotification.Content, "新食堂") {
+		t.Fatalf("pending notification content=%s", adminNotification.Content)
+	}
+
+	// 重复提交同一记录不应产生重复通知（DedupKey）
+	var count int64
+	if err := db.Model(&models.Notification{}).
+		Where("user_id = ? AND type = ? AND related_id = ?", 1, NotificationTypeCanteenPending, 1).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count admin notifications: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 admin notification, got %d", count)
+	}
+}
+
+func TestCanteenRejectNotifiesSubmitter(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "管理员")
+	createCanteenTestUser(t, db, 2, "提交者")
+	canteen := models.Canteen{Name: "重复食堂", Image: "/uploads/canteen.png", CreatedBy: 2, Verified: false}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	rejected := performCanteenRequest(
+		t,
+		handler.RejectCanteen,
+		http.MethodDelete,
+		fmt.Sprintf("/api/canteens/%d/pending", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		1,
+		`{"reason":"重复提交"}`,
+	)
+	if rejected.Code != http.StatusOK {
+		t.Fatalf("reject status=%d body=%s", rejected.Code, rejected.Body.String())
+	}
+
+	var notification models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND related_id = ?", 2, NotificationTypeCanteenReviewResult, canteen.ID).First(&notification).Error; err != nil {
+		t.Fatalf("submitter should receive reject notification: %v", err)
+	}
+	if !strings.Contains(notification.Content, "未能通过审核") || !strings.Contains(notification.Content, "重复提交") {
+		t.Fatalf("reject notification content=%s", notification.Content)
+	}
 }
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func TestCanteenCreateWithLocationFields(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "提交者")
+	if err := db.Create(&models.File{
+		Hash:       "location-canteen-hash",
+		Path:       "/uploads/location-canteen.jpg",
+		Size:       1024,
+		MimeType:   "image/jpeg",
+		UploaderID: 1,
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	// 1. 携带合法位置字段提交成功并入库。
+	created := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"老麻抄手","image":"/uploads/location-canteen.jpg","location_area":"一食堂","location_floor":"二楼"}`,
+	)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var stored models.Canteen
+	if err := db.Where("name = ?", "老麻抄手").First(&stored).Error; err != nil {
+		t.Fatalf("load created canteen: %v", err)
+	}
+	if stored.LocationArea != models.CanteenLocationArea1 || stored.LocationFloor != models.CanteenLocationFloor2 {
+		t.Fatalf("location = %q %q", stored.LocationArea, stored.LocationFloor)
+	}
+
+	// 2. 非法位置取值被拒绝。
+	invalid := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"三食堂小吃","image":"/uploads/location-canteen.jpg","location_area":"三食堂","location_floor":"三楼"}`,
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid location should be rejected: %d %s", invalid.Code, invalid.Body.String())
+	}
+
+	// 3. 旧客户端不带位置字段仍可提交（向后兼容）。
+	legacy := performCanteenRequest(
+		t,
+		handler.Create,
+		http.MethodPost,
+		"/api/canteens",
+		nil,
+		1,
+		`{"name":"兰州拉面","image":"/uploads/location-canteen.jpg"}`,
+	)
+	if legacy.Code != http.StatusCreated {
+		t.Fatalf("legacy submit status=%d body=%s", legacy.Code, legacy.Body.String())
+	}
 }
 
 func sameStringPtr(a, b *string) bool {
@@ -637,10 +807,7 @@ func setupCanteenTestRouter(db *gorm.DB) *gin.Engine {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
-		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
-		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 	}

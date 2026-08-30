@@ -7,6 +7,7 @@ import '../../models/user.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../cached_avatar.dart';
 import '../emoji/sticker_catalog.dart';
+import '../post_content_link_text.dart';
 
 class PostReplyList extends StatelessWidget {
   const PostReplyList({
@@ -172,12 +173,11 @@ class PostReplyItem extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                SelectionContainer.disabled(
-                  child: _ReplyContent(
-                    reply: reply,
-                    onStickerLongPress: onStickerLongPress,
-                    onImageLongPress: onImageLongPress,
-                  ),
+                _ReplyContent(
+                  reply: reply,
+                  onStickerLongPress: onStickerLongPress,
+                  onImageLongPress: onImageLongPress,
+                  onTextTap: onReply,
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -196,11 +196,12 @@ class PostReplyItem extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    if (onLike != null) _ReplyLikeButton(
-                      reply: reply,
-                      pending: likePending,
-                      onTap: onLike!,
-                    ),
+                    if (onLike != null)
+                      _ReplyLikeButton(
+                        reply: reply,
+                        pending: likePending,
+                        onTap: onLike!,
+                      ),
                     if (onMore != null)
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
@@ -240,11 +241,13 @@ class _ReplyContent extends StatelessWidget {
     required this.reply,
     this.onStickerLongPress,
     this.onImageLongPress,
+    this.onTextTap,
   });
 
   final Reply reply;
   final ValueChanged<AppSticker>? onStickerLongPress;
   final ValueChanged<String>? onImageLongPress;
+  final VoidCallback? onTextTap;
 
   @override
   Widget build(BuildContext context) {
@@ -252,8 +255,10 @@ class _ReplyContent extends StatelessWidget {
     final content = <Widget>[];
     if (reply.hasTextContent) {
       content.add(
-        Text(
-          reply.content,
+        PostContentLinkText(
+          text: reply.content,
+          selectable: true,
+          onPlainTextTap: onTextTap,
           style: TextStyle(
             fontSize: 14,
             height: 1.55,
@@ -351,8 +356,10 @@ class _ReplyContent extends StatelessWidget {
     }
 
     if (content.isEmpty) {
-      return Text(
-        reply.content,
+      return PostContentLinkText(
+        text: reply.content,
+        selectable: true,
+        onPlainTextTap: onTextTap,
         style: TextStyle(
           fontSize: 14,
           height: 1.55,

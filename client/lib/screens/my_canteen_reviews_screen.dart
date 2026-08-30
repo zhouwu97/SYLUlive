@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +13,7 @@ import 'canteen_detail_screen.dart';
 import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import 'canteen_screen.dart';
+import 'my_canteen_contributions_screen.dart';
 
 class MyCanteenReviewsScreen extends StatefulWidget {
   const MyCanteenReviewsScreen({super.key});
@@ -150,6 +150,13 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   Future<void> _edit(CanteenReviewEvent item) async {
     final canteen = item.canteen;
     if (!item.canEdit || canteen == null) return;
+    final contextData =
+        await context.read<CanteenProvider>().loadReviewEditContext(item.id);
+    if (!mounted) return;
+    if (contextData == null) {
+      AppFeedback.error('评价编辑内容加载失败，请刷新后重试', context: context);
+      return;
+    }
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CanteenReviewEditorScreen(
@@ -157,21 +164,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
           canteenName: canteen.name,
           canteenImage: canteen.image,
           mode: CanteenReviewEditorMode.edit,
-          existingReview: {
-            'review_event_id': item.id,
-            'score_version': item.scoreVersion,
-            'taste_score': item.dimensions.taste,
-            'value_score': item.dimensions.value,
-            'queue_score': item.dimensions.queue,
-            'hygiene_score': item.dimensions.hygiene,
-            'service_score': item.dimensions.service,
-            'overall_score': item.overallScore,
-            'comment': item.comment,
-            'images': item.images,
-            'tags': item.tags,
-            'recommended_dishes': item.recommendedDishes,
-            'updated_at': item.updatedAt?.toIso8601String(),
-          },
+          existingReview: contextData,
         ),
       ),
     );
@@ -186,7 +179,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除这条评价？',
-      message: '删除后将从食堂评价中移除，历史记录不会再参与评分统计。',
+      message: '删除后将从菜品评价中移除，历史记录不会再参与评分统计。',
       confirmText: '删除',
     );
     if (!confirmed || !mounted) return;
@@ -215,7 +208,20 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: CanteenTheme.pageBg(isDark),
-      appBar: const AppPageAppBar(title: Text('我的食堂评价')),
+      appBar: AppPageAppBar(
+        title: const Text('我的菜品评价'),
+        actions: [
+          IconButton(
+            tooltip: '我的食堂贡献',
+            icon: const Icon(Icons.inventory_2_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const MyCanteenContributionsScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: _buildBody(isDark),
@@ -261,7 +267,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         size: 42,
                         color: CanteenTheme.textTertiaryColor(isDark)),
                     const SizedBox(height: 16),
-                    Text('还没有食堂评价',
+                    Text('还没有菜品评价',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -269,7 +275,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         )),
                     const SizedBox(height: 8),
                     Text(
-                      '吃过学校食堂后，\n可以留下真实体验给其他同学参考。',
+                      '体验过学校商家后，\n可以留下真实感受给其他同学参考。',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         height: 1.5,
@@ -282,7 +288,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                         MaterialPageRoute(
                             builder: (_) => const CanteenScreen()),
                       ),
-                      child: const Text('去看看食堂'),
+                      child: const Text('去看看商家'),
                     ),
                   ],
                 ),
@@ -389,6 +395,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                       height: 52,
                       child: CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(canteen.image),
+                        variant: 'thumb',
                         offline: canteen.isOffline,
                         errorWidget: (_, __, ___) => ColoredBox(
                           color: CanteenTheme.surfaceMutedBg(isDark),
@@ -403,7 +410,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(canteen?.name ?? '未知食堂',
+                      Text(canteen?.name ?? '未知商家',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -479,8 +486,9 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, index) => ClipRRect(
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-                  child: CachedNetworkImage(
-                    imageUrl: ApiConstants.fullUrl(item.images[index]),
+                  child: CanteenStatusImage(
+                    imageUrl: item.images[index],
+                    variant: 'thumb',
                     width: 68,
                     height: 68,
                     fit: BoxFit.cover,

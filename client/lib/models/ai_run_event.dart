@@ -8,6 +8,7 @@ enum AiRunEventType {
   started,
   status,
   delta,
+  rollback,
   checkpoint,
   sources,
   toolRequested,
@@ -15,6 +16,12 @@ enum AiRunEventType {
   deviceWaiting,
   deviceClaimed,
   agentActivity,
+  goalUpdated,
+  contextResolved,
+  planRevised,
+  approvalRequired,
+  actionCommitted,
+  actionFailed,
   consentRequired,
   eduFetching,
   toolCompleted,
@@ -49,6 +56,7 @@ class AiRunEvent {
   final String dataset;
   final String freshnessBefore;
   final String freshnessAfter;
+  final List<String> optionalActions;
   final bool success;
 
   const AiRunEvent({
@@ -74,6 +82,7 @@ class AiRunEvent {
     this.dataset = '',
     this.freshnessBefore = '',
     this.freshnessAfter = '',
+    this.optionalActions = const [],
     this.success = false,
   });
 
@@ -99,6 +108,7 @@ class AiRunEvent {
         payload['activity_code'],
         payload['code'],
         payload['stage'],
+        _activityCodeForType(rawType),
       ),
       dataset: _firstString(
         payload['dataset'],
@@ -109,6 +119,7 @@ class AiRunEvent {
       ),
       freshnessBefore: payload['freshness_before']?.toString() ?? '',
       freshnessAfter: payload['freshness_after']?.toString() ?? '',
+      optionalActions: _strings(payload['optional_actions']),
       success: payload['success'] == true,
       sources: rawSources is List
           ? rawSources
@@ -120,7 +131,12 @@ class AiRunEvent {
       datasets: _strings(payload['datasets']),
       consentScope: payload['scope']?.toString() ?? '',
       consentReason: payload['reason']?.toString() ?? '',
-      errorCode: payload['code']?.toString() ?? '',
+      errorCode: _firstString(
+        payload['error_code'],
+        payload['code'],
+        json['error_code'],
+        json['code'],
+      ),
       retryable: payload['retryable'] == true,
       calendarActionDraft: payload['action_draft'] is Map
           ? UserCalendarActionDraft.fromJson(
@@ -151,6 +167,8 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.status;
     case 'answer.delta':
       return AiRunEventType.delta;
+    case 'answer.rollback':
+      return AiRunEventType.rollback;
     case 'answer.checkpoint':
     case 'answer.completed':
       return AiRunEventType.checkpoint;
@@ -166,6 +184,31 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.deviceClaimed;
     case 'agent.activity':
       return AiRunEventType.agentActivity;
+    case 'ai.device.job.completed':
+    case 'ai.device.job.succeeded':
+    case 'ai.device.job.failed':
+    case 'ai.device.job.cancelled':
+    case 'ai.device.job.expired':
+    case 'ai.device.resume.claimed':
+    case 'ai.device.result.consumed':
+    case 'ai.tool.retry.waiting_again':
+    case 'ai.tool.retry.completed':
+    case 'ai.provider.started':
+    case 'ai.provider.completed':
+    case 'ai.provider.failed':
+      return AiRunEventType.agentActivity;
+    case 'goal.updated':
+      return AiRunEventType.goalUpdated;
+    case 'context.resolved':
+      return AiRunEventType.contextResolved;
+    case 'plan.revised':
+      return AiRunEventType.planRevised;
+    case 'approval.required':
+      return AiRunEventType.approvalRequired;
+    case 'action.committed':
+      return AiRunEventType.actionCommitted;
+    case 'action.failed':
+      return AiRunEventType.actionFailed;
     case 'consent.required':
       return AiRunEventType.consentRequired;
     case 'edu.fetching':
@@ -184,6 +227,44 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.heartbeat;
     default:
       return AiRunEventType.unknown;
+  }
+}
+
+String _activityCodeForType(String type) {
+  switch (type) {
+    case 'goal.updated':
+    case 'context.resolved':
+    case 'plan.revised':
+    case 'approval.required':
+    case 'action.committed':
+    case 'action.failed':
+      return type;
+    case 'ai.device.job.completed':
+      return 'device_job_completed';
+    case 'ai.device.job.succeeded':
+      return 'device_job_succeeded';
+    case 'ai.device.job.failed':
+      return 'device_job_failed';
+    case 'ai.device.job.cancelled':
+      return 'device_job_cancelled';
+    case 'ai.device.job.expired':
+      return 'device_job_expired';
+    case 'ai.device.resume.claimed':
+      return 'device_resume_claimed';
+    case 'ai.device.result.consumed':
+      return 'device_result_consumed';
+    case 'ai.tool.retry.waiting_again':
+      return 'tool_retry_waiting';
+    case 'ai.tool.retry.completed':
+      return 'tool_retry_completed';
+    case 'ai.provider.started':
+      return 'provider_started';
+    case 'ai.provider.completed':
+      return 'provider_completed';
+    case 'ai.provider.failed':
+      return 'provider_failed';
+    default:
+      return '';
   }
 }
 
@@ -211,8 +292,9 @@ List<String> _strings(Object? value) {
       .toList(growable: false);
 }
 
-String _firstString(Object? first, [Object? second, Object? third]) {
-  for (final value in <Object?>[first, second, third]) {
+String _firstString(Object? first,
+    [Object? second, Object? third, Object? fourth]) {
+  for (final value in <Object?>[first, second, third, fourth]) {
     final text = value?.toString().trim() ?? '';
     if (text.isNotEmpty) return text;
   }

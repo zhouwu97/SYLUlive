@@ -49,25 +49,31 @@ class CanteenReviewDimensions {
 
 class CanteenDishReviewInput {
   final int dishId;
+  final String dishName;
   final int taste;
   final int value;
   final int portion;
   final String comment;
+  final List<int> photoFileIds;
 
   const CanteenDishReviewInput({
     required this.dishId,
+    this.dishName = '',
     required this.taste,
     required this.value,
     required this.portion,
     this.comment = '',
+    this.photoFileIds = const [],
   });
 
   Map<String, dynamic> toJson() => {
         'dish_id': dishId,
+        if (dishName.trim().isNotEmpty) 'dish_name': dishName.trim(),
         'taste_score': taste,
         'value_score': value,
         'portion_score': portion,
         if (comment.trim().isNotEmpty) 'comment': comment.trim(),
+        if (photoFileIds.isNotEmpty) 'photo_file_ids': photoFileIds,
       };
 }
 
@@ -91,6 +97,9 @@ class CanteenReviewEvent {
   final List<String> images;
   final List<String> tags;
   final List<String> recommendedDishes;
+  final List<Map<String, dynamic>> recommendedDishDetails;
+  final List<Map<String, dynamic>> dishReviews;
+  final List<Map<String, dynamic>> dishPhotos;
   final String source;
   final CanteenReviewCanteen? canteen;
   final bool canEdit;
@@ -117,6 +126,9 @@ class CanteenReviewEvent {
     this.images = const [],
     this.tags = const [],
     this.recommendedDishes = const [],
+    this.recommendedDishDetails = const [],
+    this.dishReviews = const [],
+    this.dishPhotos = const [],
     this.source = 'v2',
     this.canteen,
     this.canEdit = false,
@@ -151,6 +163,9 @@ class CanteenReviewEvent {
       images: _stringList(json['images']),
       tags: _stringList(json['tags']),
       recommendedDishes: _recommendedDishNames(json['recommended_dishes']),
+      recommendedDishDetails: _mapList(json['recommended_dish_details']),
+      dishReviews: _mapList(json['dish_reviews']),
+      dishPhotos: _mapList(json['dish_photos']),
       source: json['source']?.toString() ??
           json['review_source']?.toString() ??
           'v2',
@@ -166,6 +181,14 @@ class CanteenReviewEvent {
           : _int(json['legacy_rating_id']),
     );
   }
+}
+
+List<Map<String, dynamic>> _mapList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList(growable: false);
 }
 
 class CanteenReviewCanteen {

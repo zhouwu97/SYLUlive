@@ -43,7 +43,7 @@ class SettingsAccountHeader extends StatelessWidget {
       } else if (user.eduCollege.trim().isNotEmpty) {
         details.add(user.eduCollege.trim());
       } else {
-        details.add('计算机科学与技术');
+        details.add('未绑定教务');
       }
 
       subtitle = details.join(' · ');

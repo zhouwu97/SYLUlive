@@ -1,0 +1,87 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/widgets/market_post_card.dart';
+
+class _FakeAuthProvider extends Fake
+    with ChangeNotifier
+    implements AuthProvider {
+  @override
+  User? get user => null;
+}
+
+PostImage _image({required String thumbUrl}) {
+  return PostImage(
+    id: 1,
+    postId: 1,
+    fileId: 1,
+    file: FileItem(
+      id: 1,
+      hash: 'hash',
+      path: '/uploads/ab/hash.jpg',
+      size: 1024,
+      mimeType: 'image/jpeg',
+      width: 4000,
+      height: 3000,
+    ),
+    thumbUrl: thumbUrl,
+  );
+}
+
+Widget _host(Post post) {
+  return ChangeNotifierProvider<AuthProvider>(
+    create: (_) => _FakeAuthProvider(),
+    child: MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: Scaffold(body: MarketPostCard(post: post)),
+    ),
+  );
+}
+
+Post _post(List<PostImage> images) {
+  return Post(
+    id: 1,
+    title: '显示器',
+    content: '成色很好',
+    boardId: 2,
+    authorId: 1,
+    postType: 'sell',
+    price: 99,
+    images: images,
+    createdAt: DateTime(2026, 7, 3),
+  );
+}
+
+void main() {
+  testWidgets('封面使用 thumb 变体，避免列表加载原图', (tester) async {
+    await tester.pumpWidget(
+      _host(_post([_image(thumbUrl: '/uploads/ab/hash_v1_thumb.jpg')])),
+    );
+
+    final images = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .toList();
+    expect(images, isNotEmpty);
+    expect(
+      images.any((image) => image.imageUrl.endsWith('_v1_thumb.jpg')),
+      isTrue,
+    );
+  });
+
+  testWidgets('变体未就绪时封面回退原图，不出现空图', (tester) async {
+    await tester.pumpWidget(_host(_post([_image(thumbUrl: '')])));
+
+    final images = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .toList();
+    expect(images, isNotEmpty);
+    expect(
+      images.any((image) => image.imageUrl.endsWith('/uploads/ab/hash.jpg')),
+      isTrue,
+    );
+  });
+}

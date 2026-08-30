@@ -4,31 +4,41 @@ import '../../config/api_constants.dart';
 import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/canteen_dish_detail_screen.dart';
+import '../../screens/image_viewer_screen.dart';
+import '../../utils/canteen_image_failure.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
 
-/// 食堂详情页「大家都在吃」菜品图鉴区。
-/// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供上传 CTA。
+/// 商家详情页菜品图鉴区。
+/// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供补充说明。
 ///
 /// 职责分离：
 /// - [onViewAll]：「查看全部」→ 菜品列表页
-/// - [onUpload]：空态「上传菜品实拍」→ 直接打开上传 Sheet（dish_name 模式）
 /// - [onStatsChanged]：图鉴加载后回传真实菜品/实拍统计，供详情头刷新
+/// - [onStatsDetailedChanged]：额外回传“有实拍的菜品数”，与图片总数分开统计
 class DishGallerySection extends StatefulWidget {
   final int canteenId;
   final String canteenName;
   final VoidCallback? onViewAll;
-  final VoidCallback? onUpload;
   final void Function(int dishCount, int dishPhotoCount)? onStatsChanged;
+  final void Function(
+          int dishCount, int dishWithPhotoCount, int dishPhotoCount)?
+      onStatsDetailedChanged;
+  final List<CanteenDish>? initialDishes;
+  final bool initialDishesLoadFailed;
+  final String? initialDishesErrorMessage;
 
   const DishGallerySection({
     super.key,
     required this.canteenId,
     required this.canteenName,
     this.onViewAll,
-    this.onUpload,
     this.onStatsChanged,
+    this.onStatsDetailedChanged,
+    this.initialDishes,
+    this.initialDishesLoadFailed = false,
+    this.initialDishesErrorMessage,
   });
 
   @override
@@ -41,11 +51,29 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   bool _loadFailed = false;
   String? _errorSubtitle;
   IconData _errorIcon = Icons.cloud_off_rounded;
+  final Set<String> _failedImageUrls = <String>{};
+
+  List<CanteenDish> get _visibleDishes => _dishes
+      .where((dish) =>
+          dish.hasDisplayImage && !_failedImageUrls.contains(dish.coverImage))
+      .toList(growable: false);
 
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialDishes != null || widget.initialDishesLoadFailed) {
+      _dishes = widget.initialDishes ?? [];
+      _isLoading = false;
+      _loadFailed = widget.initialDishesLoadFailed;
+      _errorSubtitle = widget.initialDishesErrorMessage;
+      if (!_loadFailed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _notifyStats(_dishes);
+        });
+      }
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -75,16 +103,72 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       _isLoading = false;
       _loadFailed = false;
     });
-    // 回传真实统计：/dishes 只返回有 approved 实拍的公开菜，photoCount 即实拍数
+    _notifyStats(dishes);
+  }
+
+  void _notifyStats(List<CanteenDish> dishes) {
+    // 聚合评价图片不是一道可评分菜品；菜品数/有实拍菜品数只统计真实菜品，
+    // 但图片总数包含评价实拍，保证详情头部不会漏报用户贡献的图片。
+    final realDishes = dishes.where((dish) => !dish.isReviewGallery).toList();
     widget.onStatsChanged?.call(
-      dishes.length,
+      realDishes.length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
+    widget.onStatsDetailedChanged?.call(
+      realDishes.length,
+      realDishes.where((dish) => dish.photoCount > 0).length,
+      dishes.fold(0, (sum, d) => sum + d.photoCount),
+    );
+  }
+
+  void _openDish(CanteenDish dish) {
+    if (dish.isReviewGallery) {
+      final images =
+          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
+      final urls = images
+          .where((image) => image.trim().isNotEmpty)
+          .map(ApiConstants.fullUrl)
+          .toList(growable: false);
+      if (urls.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(imageUrls: urls),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishDetailScreen(
+          canteenId: widget.canteenId,
+          dishId: dish.id,
+          dishName: dish.name,
+          canteenName: widget.canteenName,
+        ),
+      ),
+    ).then((_) => _load());
+  }
+
+  void _hideFailedImage(String imageUrl) {
+    if (_failedImageUrls.contains(imageUrl)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _failedImageUrls.contains(imageUrl)) return;
+      setState(() => _failedImageUrls.add(imageUrl));
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final visibleDishes = _visibleDishes;
+
+    // 图鉴是图片驱动模块。数据成功但没有可展示实拍时，整个模块收起，
+    // 不用餐具占位图制造“这里本应有图片”的错误预期。
+    if (!_isLoading && !_loadFailed && visibleDishes.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -94,7 +178,7 @@ class _DishGallerySectionState extends State<DishGallerySection> {
           Row(
             children: [
               Text(
-                '大家都在吃',
+                '商家菜品',
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
@@ -133,33 +217,20 @@ class _DishGallerySectionState extends State<DishGallerySection> {
               actionLabel: '点击重试',
               onAction: _load,
             )
-          else if (_dishes.isEmpty)
-            _buildEmpty(isDark)
           else
             SizedBox(
               height: 150,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _dishes.length,
+                itemCount: visibleDishes.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
-                  final dish = _dishes[index];
+                  final dish = visibleDishes[index];
                   return _DishCard(
                     dish: dish,
                     isDark: isDark,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CanteenDishDetailScreen(
-                            canteenId: widget.canteenId,
-                            dishId: dish.id,
-                            dishName: dish.name,
-                            canteenName: widget.canteenName,
-                          ),
-                        ),
-                      ).then((_) => _load());
-                    },
+                    onTap: () => _openDish(dish),
+                    onImageError: () => _hideFailedImage(dish.coverImage),
                   );
                 },
               ),
@@ -190,27 +261,19 @@ class _DishGallerySectionState extends State<DishGallerySection> {
     );
   }
 
-  Widget _buildEmpty(bool isDark) {
-    return CanteenEmptyState(
-      minHeight: 96,
-      icon: Icons.photo_camera_outlined,
-      title: '还没有同学上传菜品实拍',
-      subtitle: '来补充第一张真实照片吧',
-      actionLabel: '上传菜品实拍',
-      onAction: widget.onUpload,
-    );
-  }
 }
 
 class _DishCard extends StatelessWidget {
   final CanteenDish dish;
   final bool isDark;
   final VoidCallback onTap;
+  final VoidCallback onImageError;
 
   const _DishCard({
     required this.dish,
     required this.isDark,
     required this.onTap,
+    required this.onImageError,
   });
 
   @override
@@ -231,12 +294,20 @@ class _DishCard extends StatelessWidget {
                 child: dish.coverImage.isNotEmpty
                     ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _placeholder(),
+                        errorWidget: (_, __, error) {
+                          if (isGoneImageFailure(error)) {
+                            onImageError();
+                            return const SizedBox.shrink();
+                          }
+                          // 瞬时故障：卡片保留，占位等待下次重试。
+                          return _placeholder(icon: Icons.cloud_off_rounded);
+                        },
                         placeholder: (_, __) => _placeholder(),
                       )
-                    : _placeholder(),
+                    : const SizedBox.shrink(),
               ),
             ),
             const SizedBox(height: 8),
@@ -265,12 +336,12 @@ class _DishCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder({IconData icon = Icons.restaurant_rounded}) {
     return Container(
       color: CanteenTheme.surfaceMutedBg(isDark),
       alignment: Alignment.center,
       child: Icon(
-        Icons.restaurant_rounded,
+        icon,
         size: 26,
         color: CanteenTheme.textTertiaryColor(isDark),
       ),

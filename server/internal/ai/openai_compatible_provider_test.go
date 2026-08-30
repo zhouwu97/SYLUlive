@@ -96,7 +96,7 @@ func TestOpenAICompatibleProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 }
 
 func TestOpenAICompatibleProviderDoesNotTreatRequestErrorAsContentRejection(t *testing.T) {
-	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity} {
 		err := providerHTTPError(status)
 		if class := providerErrorClass(err); class != ProviderErrorRequestRejected {
 			t.Fatalf("HTTP %d class = %s", status, class)
@@ -104,6 +104,17 @@ func TestOpenAICompatibleProviderDoesNotTreatRequestErrorAsContentRejection(t *t
 		if strings.Contains(err.Error(), ProviderErrorRejected) {
 			t.Fatalf("HTTP %d 不应被标记为内容拦截: %v", status, err)
 		}
+	}
+}
+
+func TestOpenAICompatibleProviderClassifiesMissingModelWithoutLeakingBody(t *testing.T) {
+	body := []byte(`{"error":{"message":"Model secret-model is not supported by any configured account in this group","type":"model_not_found"}}`)
+	err := providerHTTPError(http.StatusNotFound, body)
+	if class := providerErrorClass(err); class != ProviderErrorModelUnavailable {
+		t.Fatalf("missing model class = %s", class)
+	}
+	if strings.Contains(err.Error(), "secret-model") {
+		t.Fatalf("错误不应泄露远端响应体: %v", err)
 	}
 }
 

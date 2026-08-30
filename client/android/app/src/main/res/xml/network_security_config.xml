@@ -5,4 +5,8 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <!-- 体测上游目前只开放 HTTP；仅对白名单主机放行，其他流量仍强制 HTTPS。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">47.92.231.221</domain>
+    </domain-config>
 </network-security-config>

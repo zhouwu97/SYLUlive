@@ -56,6 +56,8 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
   late String _selectedYear;
   late int _selectedSemester;
   bool _isFetching = false;
+  String _statusText = '正在连接教务系统…';
+  Timer? _statusTimer;
 
   @override
   void initState() {
@@ -78,15 +80,51 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
     }
   }
 
+  @override
+  void dispose() {
+    _statusTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startStatusTimer() {
+    _statusTimer?.cancel();
+    int seconds = 0;
+    _statusText = '正在连接教务系统…';
+    _statusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      seconds++;
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (seconds == 3) {
+        setState(() {
+          _statusText = '教务系统响应较慢，正在抓取中…';
+        });
+      } else if (seconds == 7) {
+        setState(() {
+          _statusText = '正在校验会话状态与解析课表…';
+        });
+      } else if (seconds == 15) {
+        setState(() {
+          _statusText = '教务系统处理中，请稍候…';
+        });
+      }
+    });
+  }
+
   Future<void> _fetchCourses() async {
-    setState(() => _isFetching = true);
+    setState(() {
+      _isFetching = true;
+    });
+    _startStatusTimer();
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navContext = context;
 
     try {
       final result = await widget.eduProvider
-          .getCourses(_selectedYear, _selectedSemester)
-          .timeout(const Duration(seconds: 25));
+          .getCourses(_selectedYear, _selectedSemester);
+
+      _statusTimer?.cancel();
 
       if (mounted) {
         if (result != null && result.success && result.data != null) {
@@ -111,16 +149,18 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
         }
       }
     } on TimeoutException {
+      _statusTimer?.cancel();
       if (mounted) {
         Navigator.pop(navContext);
         scaffoldMessenger.showSnackBar(
           const SnackBar(
-            content: Text('获取课表超过 25 秒，请稍后重试'),
+            content: Text('教务响应超时，请稍后重试'),
             backgroundColor: CampusTheme.red,
           ),
         );
       }
     } catch (e) {
+      _statusTimer?.cancel();
       if (mounted) {
         Navigator.pop(navContext);
         scaffoldMessenger.showSnackBar(
@@ -247,6 +287,8 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: CampusTheme.primary,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: CampusTheme.primary.withValues(alpha: 0.8),
+                  disabledForegroundColor: Colors.white,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(
@@ -254,13 +296,27 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                   ),
                 ),
                 child: _isFetching
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _statusText,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       )
                     : const Text(
                         '拉取课表',

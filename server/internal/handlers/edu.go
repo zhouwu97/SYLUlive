@@ -111,7 +111,7 @@ func (e *eduServiceRequestError) Error() string {
 // pythonEduRequest 是 Go 到国内教务服务的唯一调用出口。
 // 用户身份只从已认证的 Gin 上下文推导，并通过内部请求头传递。
 func pythonEduRequest(method, path string, userID *uint, body interface{}) (*resty.Response, error) {
-	client := resty.New().SetTimeout(30 * time.Second)
+	client := resty.New().SetTimeout(25 * time.Second)
 	req := client.R().SetHeader("Content-Type", "application/json").
 		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token)
 	if userID != nil {
@@ -724,7 +724,8 @@ func localEduStatusPayload(user models.User) gin.H {
 
 func isStableEduStateErrorCode(code string) bool {
 	switch code {
-	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE":
+	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE",
+		"EDU_INVALID_CREDENTIALS", "EDU_UPSTREAM_UNAVAILABLE", "EDU_NETWORK_ERROR":
 		return true
 	default:
 		return false

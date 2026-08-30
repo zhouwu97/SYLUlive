@@ -77,6 +77,9 @@ class CampusPublicProvider implements AIModelProvider {
           case AiRunEventType.checkpoint:
             if (event.text.isNotEmpty) answer = event.text;
             break;
+          case AiRunEventType.rollback:
+            answer = event.text;
+            break;
           case AiRunEventType.completed:
             return _completedAnswer(
               answer,
@@ -100,6 +103,12 @@ class CampusPublicProvider implements AIModelProvider {
           case AiRunEventType.toolCompleted:
           case AiRunEventType.personalDataEvidence:
           case AiRunEventType.agentActivity:
+          case AiRunEventType.goalUpdated:
+          case AiRunEventType.contextResolved:
+          case AiRunEventType.planRevised:
+          case AiRunEventType.approvalRequired:
+          case AiRunEventType.actionCommitted:
+          case AiRunEventType.actionFailed:
           case AiRunEventType.unknown:
             break;
         }

@@ -92,8 +92,15 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   }
 
   Future<void> _loadFavorites() async {
-    final favorites = await _favoriteService.load();
-    if (mounted) setState(() => _favorites = favorites);
+    try {
+      final favorites = await _favoriteService.load();
+      if (mounted) setState(() => _favorites = favorites);
+    } catch (error) {
+      // 平台偏好存储不可用时（例如桌面/纯 Flutter 测试环境），
+      // 表情面板仍应可用，只降级为空收藏，不让异步异常污染页面。
+      debugPrint('读取表情收藏失败，使用空收藏: $error');
+      if (mounted) setState(() => _favorites = const []);
+    }
   }
 
   void _selectTab(int index) {
@@ -210,8 +217,10 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final surface = isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
-    final muted = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final surface =
+        isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
+    final muted =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Material(
       color: surface,
@@ -411,8 +420,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                         ApiConstants.fullUrl(_favoriteImagePath(item));
                     return CachedNetworkImage(
                       imageUrl: imageUrl,
-                      cacheKey:
-                          PrivateMessageMediaCache.cacheKeyFor(imageUrl),
+                      cacheKey: PrivateMessageMediaCache.cacheKeyFor(imageUrl),
                       cacheManager: PrivateMessageMediaCache.instance.manager,
                       httpHeaders: widget.favoriteImageHeaders,
                       fit: BoxFit.cover,
@@ -583,7 +591,9 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     return Container(
       height: 56,
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
+        color: isDark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         border: Border(top: BorderSide(color: divider)),
       ),
       child: Row(

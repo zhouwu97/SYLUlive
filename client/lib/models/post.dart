@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'user.dart';
 import 'poll.dart';
+import 'topic.dart';
 
 // 水帖版块内作者称号及等级
 class WaterSectionAuthorMeta {
@@ -89,6 +90,7 @@ class PostImage {
   final FileItem? file;
   final String thumbUrl;
   final String mediumUrl;
+  final String viewerUrl;
   final String originUrl;
 
   PostImage({
@@ -99,6 +101,7 @@ class PostImage {
     this.file,
     this.thumbUrl = '',
     this.mediumUrl = '',
+    this.viewerUrl = '',
     this.originUrl = '',
   });
 
@@ -116,6 +119,9 @@ class PostImage {
       mediumUrl: json['medium_url']?.toString() ??
           (fileJson is Map ? fileJson['medium_url']?.toString() : null) ??
           '',
+      viewerUrl: json['viewer_url']?.toString() ??
+          (fileJson is Map ? fileJson['viewer_url']?.toString() : null) ??
+          '',
       originUrl: json['origin_url']?.toString() ??
           (fileJson is Map ? fileJson['origin_url']?.toString() : null) ??
           '',
@@ -125,6 +131,7 @@ class PostImage {
   String get url => file?.url ?? '';
   String get resolvedThumbUrl => thumbUrl.isNotEmpty ? thumbUrl : url;
   String get resolvedMediumUrl => mediumUrl.isNotEmpty ? mediumUrl : url;
+  String get resolvedViewerUrl => viewerUrl.isNotEmpty ? viewerUrl : url;
   String get resolvedOriginUrl => originUrl.isNotEmpty ? originUrl : url;
 }
 
@@ -135,6 +142,8 @@ class FileItem {
   final String path;
   final int size;
   final String mimeType;
+  final int width;
+  final int height;
 
   FileItem({
     required this.id,
@@ -142,6 +151,8 @@ class FileItem {
     required this.path,
     required this.size,
     required this.mimeType,
+    this.width = 0,
+    this.height = 0,
   });
 
   factory FileItem.fromJson(Map<String, dynamic> json) {
@@ -151,6 +162,8 @@ class FileItem {
       path: json['path'] ?? '',
       size: json['size'] ?? 0,
       mimeType: json['mime_type'] ?? '',
+      width: (json['width'] as num?)?.toInt() ?? 0,
+      height: (json['height'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -277,6 +290,7 @@ class Post {
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
   final TeamRecruitmentMeta? teamRecruitment;
   final PollMeta? pollMeta;
+  final List<Topic> topics;
   final int? expEarned; // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
   final List<ExpAward> expAwards;
   final List<PostImage> images;
@@ -321,6 +335,7 @@ class Post {
     this.waterSectionAuthorMeta,
     this.teamRecruitment,
     this.pollMeta,
+    this.topics = const [],
     this.expEarned,
     this.expAwards = const [],
     this.images = const [],
@@ -380,6 +395,11 @@ class Post {
       pollMeta: json['poll_meta'] != null
           ? PollMeta.fromJson(json['poll_meta'] as Map<String, dynamic>)
           : null,
+      topics: (json['topics'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((e) => Topic.fromJson(Map<String, dynamic>.from(e)))
+              .toList(growable: false) ??
+          const [],
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
           : null,
@@ -475,6 +495,7 @@ class Post {
     WaterSectionAuthorMeta? waterSectionAuthorMeta,
     TeamRecruitmentMeta? teamRecruitment,
     PollMeta? pollMeta,
+    List<Topic>? topics,
     bool clearPollMeta = false,
     bool clearTeamRecruitment = false,
     bool clearTeamRecruitmentMeta = false,
@@ -526,6 +547,7 @@ class Post {
           ? null
           : (teamRecruitment ?? this.teamRecruitment),
       pollMeta: clearPollMeta ? null : (pollMeta ?? this.pollMeta),
+      topics: topics ?? this.topics,
       expEarned: expEarned ?? this.expEarned,
       expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,

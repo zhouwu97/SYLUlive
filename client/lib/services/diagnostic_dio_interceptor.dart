@@ -16,6 +16,7 @@ class DiagnosticNetworkEvent {
     required this.durationMs,
     required this.dioType,
     required this.retryCount,
+    required this.requestId,
     this.httpStatus,
   });
 
@@ -26,10 +27,11 @@ class DiagnosticNetworkEvent {
   final int? httpStatus;
   final String dioType;
   final int retryCount;
+  final String requestId;
 
   @override
   String toString() =>
-      'DiagnosticNetworkEvent($result $method $route $httpStatus $dioType)';
+      'DiagnosticNetworkEvent($result $method $route $httpStatus $dioType $requestId)';
 }
 
 class DiagnosticDioInterceptor extends Interceptor {
@@ -63,6 +65,7 @@ class DiagnosticDioInterceptor extends Interceptor {
           httpStatus: response.statusCode,
           dioType: '',
           retryCount: _retryCount(response.requestOptions),
+          requestId: _requestId(response.requestOptions),
         ),
       );
     }
@@ -80,6 +83,7 @@ class DiagnosticDioInterceptor extends Interceptor {
         httpStatus: err.response?.statusCode,
         dioType: err.type.name,
         retryCount: _retryCount(err.requestOptions),
+        requestId: _requestId(err.requestOptions),
       ),
     );
     super.onError(err, handler);
@@ -99,6 +103,10 @@ class DiagnosticDioInterceptor extends Interceptor {
   int _retryCount(RequestOptions options) {
     final value = options.extra[retryCountKey];
     return value is num ? value.toInt().clamp(0, 100) : 0;
+  }
+
+  String _requestId(RequestOptions options) {
+    return options.headers['X-Request-ID']?.toString() ?? '';
   }
 }
 
@@ -128,6 +136,7 @@ Future<void> _writeNetworkDiagnostic(DiagnosticNetworkEvent event) {
       '耗时: ${event.durationMs}ms',
       if (event.dioType.isNotEmpty) 'Dio 类型: ${event.dioType}',
       '重试次数: ${event.retryCount}',
+      if (event.requestId.isNotEmpty) '请求 ID: ${event.requestId}',
     ].join('\n'),
     eventCode: failed ? 'network_request_failed' : 'network_request_slow',
     category: 'network',
@@ -139,6 +148,7 @@ Future<void> _writeNetworkDiagnostic(DiagnosticNetworkEvent event) {
     route: event.route,
     metadata: <String, Object?>{
       'method': event.method,
+      if (event.requestId.isNotEmpty) 'requestId': event.requestId,
       if (event.dioType.isNotEmpty) 'dioType': event.dioType,
     },
   );

@@ -39,7 +39,7 @@ abstract interface class AppPreferencesStore {
       store = ohosStore;
     } else {
       final prefs = await SharedPreferences.getInstance();
-      store = AndroidPreferencesStore(prefs);
+      store = SharedPreferencesStore(prefs);
     }
     _instance = store;
     return store;
@@ -47,21 +47,26 @@ abstract interface class AppPreferencesStore {
 
   /// 供测试使用：设置模拟的初始值
   static void setMockInitialValues(Map<String, Object> values) {
+    // 该入口只服务于测试基线；SharedPreferences 将其标记为测试可见 API。
+    // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(values);
     _instance = null;
     _loading = null;
   }
 }
 
-class AndroidPreferencesStore implements AppPreferencesStore {
+/// shared_preferences 在 Android、iOS、macOS 和 Windows 都提供同一套
+/// key-value 语义；这里不再把跨平台实现命名为 Android 专属。
+class SharedPreferencesStore implements AppPreferencesStore {
   final SharedPreferences _prefs;
-  const AndroidPreferencesStore(this._prefs);
+  const SharedPreferencesStore(this._prefs);
 
   @override
   String? getString(String key) => _prefs.getString(key);
 
   @override
-  Future<bool> setString(String key, String value) => _prefs.setString(key, value);
+  Future<bool> setString(String key, String value) =>
+      _prefs.setString(key, value);
 
   @override
   bool? getBool(String key) => _prefs.getBool(key);
@@ -79,13 +84,15 @@ class AndroidPreferencesStore implements AppPreferencesStore {
   double? getDouble(String key) => _prefs.getDouble(key);
 
   @override
-  Future<bool> setDouble(String key, double value) => _prefs.setDouble(key, value);
+  Future<bool> setDouble(String key, double value) =>
+      _prefs.setDouble(key, value);
 
   @override
   List<String>? getStringList(String key) => _prefs.getStringList(key);
 
   @override
-  Future<bool> setStringList(String key, List<String> value) => _prefs.setStringList(key, value);
+  Future<bool> setStringList(String key, List<String> value) =>
+      _prefs.setStringList(key, value);
 
   @override
   Future<bool> remove(String key) => _prefs.remove(key);
@@ -100,6 +107,9 @@ class AndroidPreferencesStore implements AppPreferencesStore {
   Set<String> getKeys() => _prefs.getKeys();
 }
 
+@Deprecated('Use SharedPreferencesStore')
+typedef AndroidPreferencesStore = SharedPreferencesStore;
+
 class OhosPreferencesStore implements AppPreferencesStore {
   static const _channel = MethodChannel('shenliyuan/preferences');
   final Map<String, dynamic> _cache = {};
@@ -113,13 +123,15 @@ class OhosPreferencesStore implements AppPreferencesStore {
       for (final entry in all.entries) {
         final value = entry.value;
         if (value is List) {
-          _cache[entry.key as String] = List<String>.unmodifiable(value.cast<String>());
+          _cache[entry.key as String] =
+              List<String>.unmodifiable(value.cast<String>());
         } else {
           _cache[entry.key as String] = value;
         }
       }
     } else {
-      throw StateError('Failed to initialize OhosPreferencesStore: getAll returned null');
+      throw StateError(
+          'Failed to initialize OhosPreferencesStore: getAll returned null');
     }
   }
 
@@ -129,7 +141,8 @@ class OhosPreferencesStore implements AppPreferencesStore {
   @override
   Future<bool> setString(String key, String value) async {
     try {
-      await _channel.invokeMethod<void>('setString', {'key': key, 'value': value});
+      await _channel
+          .invokeMethod<void>('setString', {'key': key, 'value': value});
       _cache[key] = value;
       return true;
     } catch (_) {
@@ -143,7 +156,8 @@ class OhosPreferencesStore implements AppPreferencesStore {
   @override
   Future<bool> setBool(String key, bool value) async {
     try {
-      await _channel.invokeMethod<void>('setBool', {'key': key, 'value': value});
+      await _channel
+          .invokeMethod<void>('setBool', {'key': key, 'value': value});
       _cache[key] = value;
       return true;
     } catch (_) {
@@ -177,7 +191,8 @@ class OhosPreferencesStore implements AppPreferencesStore {
   @override
   Future<bool> setDouble(String key, double value) async {
     try {
-      await _channel.invokeMethod<void>('setDouble', {'key': key, 'value': value});
+      await _channel
+          .invokeMethod<void>('setDouble', {'key': key, 'value': value});
       _cache[key] = value;
       return true;
     } catch (_) {
@@ -194,7 +209,8 @@ class OhosPreferencesStore implements AppPreferencesStore {
   @override
   Future<bool> setStringList(String key, List<String> value) async {
     try {
-      await _channel.invokeMethod<void>('setStringList', {'key': key, 'value': value});
+      await _channel
+          .invokeMethod<void>('setStringList', {'key': key, 'value': value});
       _cache[key] = List<String>.unmodifiable(value);
       return true;
     } catch (_) {

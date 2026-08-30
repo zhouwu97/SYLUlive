@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
+import '../widgets/app_cached_image.dart';
 import 'post_detail_screen.dart';
 import 'dart:io' show File;
 
@@ -116,8 +117,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map)
-          ? (e.response!.data as Map)['error']?.toString() ?? '添加失败'
+      final data = e.response?.data;
+      final msg = data is Map
+          ? (data['message'] ?? data['error'])?.toString() ?? '添加失败'
           : '添加失败';
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -162,8 +164,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map)
-          ? (e.response!.data as Map)['error']?.toString() ?? '评价失败'
+      final data = e.response?.data;
+      final msg = data is Map
+          ? (data['message'] ?? data['error'])?.toString() ?? '评价失败'
           : '评价失败';
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -265,10 +268,12 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _gradient(d),
                     )
-                  : Image.network(
-                      bg,
+                  : AppCachedImage.public(
+                      imageUrl: bg,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _gradient(d),
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) => _gradient(d),
                     ),
           Container(
             color: d

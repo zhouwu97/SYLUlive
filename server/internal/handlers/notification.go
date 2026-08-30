@@ -21,6 +21,11 @@ const (
 	notificationPageSize       = 30
 	notificationMaxPageSize    = 50
 	legacyNotificationPageSize = 100
+
+	// NotificationTypeCanteenPending 食堂提交待审核（通知管理员）
+	NotificationTypeCanteenPending = "canteen_pending"
+	// NotificationTypeCanteenReviewResult 食堂审核结果（通知提交者）
+	NotificationTypeCanteenReviewResult = "canteen_review_result"
 )
 
 type notificationCursor struct {
@@ -443,7 +448,12 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 	if err := db.Where("id = ?", toUserID).Select("id, nickname, device_token").First(&user).Error; err != nil {
 		return
 	}
-	if user.DeviceToken == "" {
+	var devices []models.PushDevice
+	if err := db.Where("user_id = ? AND enabled = ? AND registration_id <> ''", toUserID, true).
+		Find(&devices).Error; err != nil {
+		return
+	}
+	if len(devices) == 0 && user.DeviceToken == "" {
 		return
 	}
 
@@ -454,15 +464,24 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 
 	contentPreview := textutils.TruncateGraphemes(content, 50)
 
-	go func() {
+	legacyToken := user.DeviceToken
+	go func(devices []models.PushDevice, legacyToken string) {
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
 		extras := replyPushExtras(toUserID, replyID, postID)
 		title := "您有新的回复"
 		alert := fmt.Sprintf("%s: %s", fromUser.Nickname, contentPreview)
-		if err := jpush.SendNotification(user.DeviceToken, title, alert, extras); err != nil {
-			fmt.Printf("JPush send failed: %v\n", err)
+		if len(devices) == 0 {
+			if err := jpush.SendNotification(legacyToken, title, alert, extras); err != nil {
+				fmt.Printf("JPush send failed: %v\n", err)
+			}
+			return
 		}
-	}()
+		for _, device := range devices {
+			if err := jpush.SendRegistrationNotification(device.RegistrationID, device.Platform, title, alert, extras); err != nil {
+				fmt.Printf("JPush send failed for %s: %v\n", device.Platform, err)
+			}
+		}
+	}(devices, legacyToken)
 }
 
 func replyPushExtras(toUserID, replyID, postID uint) map[string]interface{} {
@@ -516,6 +535,62 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 	}
 }
 
+// CreateCanteenPendingNotification 食堂提交后通知所有管理员审核（仅写库）。
+func CreateCanteenPendingNotification(db *gorm.DB, canteenID uint, canteenName string, submitterID uint) {
+	var admins []models.User
+	if err := db.Select("id").Where("role IN ?", []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).Find(&admins).Error; err != nil {
+		log.Printf("[DB_WARN] CreateCanteenPendingNotification Find admins failed: %v", err)
+		return
+	}
+	content := fmt.Sprintf("有新的食堂提交待审核：「%s」", textutils.TruncateGraphemes(canteenName, 50))
+	notifications := make([]models.Notification, 0, len(admins))
+	for _, admin := range admins {
+		notifications = append(notifications, models.Notification{
+			UserID:    admin.ID,
+			Type:      NotificationTypeCanteenPending,
+			Content:   content,
+			RelatedID: canteenID,
+			FromUID:   submitterID,
+			IsRead:    false,
+			DedupKey:  fmt.Sprintf("canteen_pending:%d", canteenID),
+		})
+	}
+	if len(notifications) == 0 {
+		return
+	}
+	if err := db.CreateInBatches(&notifications, 200).Error; err != nil {
+		log.Printf("[DB_ERROR] CreateCanteenPendingNotification batch insert failed: %v", err)
+		return
+	}
+	// 管理端待办与角标依赖未读通知，推送仅在站内，避免重复打扰。
+}
+
+// CreateCanteenReviewResultNotification 审核通过/驳回后通知提交者（仅写库）。
+func CreateCanteenReviewResultNotification(db *gorm.DB, canteenID, submitterID uint, canteenName string, approved bool, reason string) {
+	if submitterID == 0 {
+		return
+	}
+	content := fmt.Sprintf("你提交的食堂「%s」审核已通过，现已显示在商家列表", textutils.TruncateGraphemes(canteenName, 50))
+	if !approved {
+		content = fmt.Sprintf("你提交的食堂「%s」未能通过审核", textutils.TruncateGraphemes(canteenName, 50))
+		if reason != "" {
+			content = fmt.Sprintf("你提交的食堂「%s」未能通过审核：%s", textutils.TruncateGraphemes(canteenName, 50), textutils.TruncateGraphemes(reason, 80))
+		}
+	}
+	notification := models.Notification{
+		UserID:    submitterID,
+		Type:      NotificationTypeCanteenReviewResult,
+		Content:   content,
+		RelatedID: canteenID,
+		FromUID:   0, // System
+		IsRead:    false,
+		DedupKey:  fmt.Sprintf("canteen_review_result:%d:%t", canteenID, approved),
+	}
+	if err := db.Create(&notification).Error; err != nil {
+		log.Printf("[DB_ERROR] CreateCanteenReviewResultNotification failed: %v", err)
+	}
+}
+
 // CreateFeaturedApplicationResultNotification 创建精华申请结果通知
 func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID uint, postID, appID uint, status, title, reason string, points int) {
 	content := fmt.Sprintf("你的精华申请已通过：《%s》", title)
@@ -542,8 +617,16 @@ func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret 
 
 	if jpushAppKey != "" && jpushMasterSecret != "" {
 		var user models.User
-		if err := db.Where("id = ?", toUserID).Select("device_token").First(&user).Error; err == nil && user.DeviceToken != "" {
-			go func() {
+		if err := db.Where("id = ?", toUserID).Select("device_token").First(&user).Error; err == nil {
+			var devices []models.PushDevice
+			if err := db.Where("user_id = ? AND enabled = ? AND registration_id <> ''", toUserID, true).Find(&devices).Error; err != nil {
+				return
+			}
+			if len(devices) == 0 && user.DeviceToken == "" {
+				return
+			}
+			legacyToken := user.DeviceToken
+			go func(devices []models.PushDevice, legacyToken string) {
 				jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
 				extras := map[string]interface{}{
 					"type":           "featured_application",
@@ -551,10 +634,18 @@ func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret 
 					"application_id": appID,
 					"status":         status,
 				}
-				if err := jpush.SendNotification(user.DeviceToken, "系统通知", content, extras); err != nil {
-					fmt.Printf("JPush send failed: %v\n", err)
+				if len(devices) == 0 {
+					if err := jpush.SendNotification(legacyToken, "系统通知", content, extras); err != nil {
+						fmt.Printf("JPush send failed: %v\n", err)
+					}
+					return
 				}
-			}()
+				for _, device := range devices {
+					if err := jpush.SendRegistrationNotification(device.RegistrationID, device.Platform, "系统通知", content, extras); err != nil {
+						fmt.Printf("JPush send failed for %s: %v\n", device.Platform, err)
+					}
+				}
+			}(devices, legacyToken)
 		}
 	}
 }

@@ -172,6 +172,7 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"academic.get_risk_analysis", "基于已授权成绩、学分和二课快照生成有边界的确定性风险与行动项。", emptySchema(), mcp.getRiskAnalysis},
 		campusMCPTool{"schedule.get_availability", "根据已授权课表快照计算指定教学周的空闲节次。", availabilitySchema(), mcp.getScheduleAvailability},
 		campusMCPTool{"erke.get_overview", "读取用户已授权上传的二课概览；没有上传时明确说明缺失。", emptySchema(), mcp.getErkeOverview},
+		campusMCPTool{"physical.get_overview", "从用户当前手机读取最近一次体测概览；不作医疗诊断。", emptySchema(), mcp.getPhysicalOverview},
 		campusMCPTool{"profile.get_academic_identity", "读取当前用户已授权的年级、学院和专业，不返回学号或账号信息。", emptySchema(), mcp.getAcademicIdentity},
 		campusMCPTool{"personal_calendar.get_events", "读取当前用户自己的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
 		campusMCPTool{"personal_calendar.get_range", "读取当前用户日期范围内的个人日历事件。", calendarRangeSchema(), mcp.getPersonalCalendarRange},
@@ -311,7 +312,7 @@ func compareSchema() map[string]interface{} {
 func resolveContextSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
-			"datasets":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 6, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke"}}},
+			"datasets":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 7, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke", "physical"}}},
 			"freshness":                map[string]interface{}{"type": "string", "enum": []string{"prefer_recent", "require_fresh", "allow_stale"}},
 			"reason":                   map[string]interface{}{"type": "string", "maxLength": 120},
 			"schedule_week_containing": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
@@ -1220,23 +1221,43 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if !hasCall {
 		return nil
 	}
+	// 风险分析从设备任务恢复时，设备结果（即使仍不完整）就是本次 Tool Call
+	// 唯一允许的核心数据刷新尝试。这里必须短路，避免恢复后再次创建同一
+	// bundle；二课作为可选覆盖由 waitForRiskErke 单独评估。
+	if request.Reason == "academic_risk_analysis" &&
+		(hasResumedAcademicRiskBundle(ctx) || hasResumedErkeOverview(ctx)) {
+		return mcp.waitForRiskErke(ctx, userID, request, results)
+	}
 	if mcp.deviceJobs == nil {
 		return nil
 	}
-	needsDevice := false
-	for _, dataset := range request.Datasets {
-		result := results[dataset]
-		if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
-			needsDevice = true
-			break
+	waitDatasets := deviceWaitDatasets(request)
+	needsDevice := request.Reason == "academic_risk_analysis" &&
+		needsAcademicRiskRefresh(results)
+	if !needsDevice {
+		for _, dataset := range waitDatasets {
+			result := results[dataset]
+			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+				needsDevice = true
+				break
+			}
 		}
 	}
 	if !needsDevice {
+		// 核心数据无需刷新时，风险分析仍可为缺失或过期的二课追加一次刷新。
+		// 严格新鲜度下核心数据新鲜说明手机刚刚在线，任务大概率会被认领。
+		if request.Reason == "academic_risk_analysis" {
+			return mcp.waitForRiskErke(ctx, userID, request, results)
+		}
 		return nil
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
 	if err != nil {
-		for _, dataset := range request.Datasets {
+		if request.Reason == "academic_risk_analysis" {
+			markAcademicRiskRefreshUnavailable(results, academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
+			return nil
+		}
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
@@ -1245,7 +1266,11 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	if denied {
-		for _, dataset := range request.Datasets {
+		if request.Reason == "academic_risk_analysis" {
+			markAcademicRiskRefreshUnavailable(results, academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
+			return nil
+		}
+		for _, dataset := range waitDatasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 				results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
@@ -1267,7 +1292,11 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			request.Reason,
 		)
 		if refreshErr != nil {
-			for _, dataset := range request.Datasets {
+			if request.Reason == "academic_risk_analysis" {
+				markAcademicRiskRefreshUnavailable(results, academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
+				return nil
+			}
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "联网刷新权限服务暂时不可用，请稍后重试")
@@ -1276,7 +1305,11 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return nil
 		}
 		if refreshDenied {
-			for _, dataset := range request.Datasets {
+			if request.Reason == "academic_risk_analysis" {
+				markAcademicRiskRefreshUnavailable(results, academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
+				return nil
+			}
+			for _, dataset := range waitDatasets {
 				result := results[dataset]
 				if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
 					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 联网刷新教务数据")
@@ -1288,7 +1321,28 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			return refreshWait
 		}
 	}
-	for _, dataset := range request.Datasets {
+	if request.Reason == "academic_risk_analysis" {
+		arguments := json.RawMessage(`{"max_age_seconds":{"grades":300,"academic_situation":21600,"credit_requirements":86400}}`)
+		job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
+			UserID: userID, RunID: call.RunID, ToolCallID: call.CallID,
+			ToolName: "device.academic.ensure_fresh_bundle", Arguments: arguments,
+			RequiredDataTypes: []string{"grades", "academic_situation", "credit_requirements"},
+			// bundle 要逐学期刷新成绩再加学业情况和学分要求，学期多时两分钟
+			// 内爬不完教务，任务会白白超时；给到服务端允许的上限一半。
+			ExpiresAt: time.Now().Add(5 * time.Minute),
+		})
+		if err != nil || strings.TrimSpace(job.ID) == "" {
+			return nil
+		}
+		return &ToolWait{
+			State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: job.ID,
+			Payload: map[string]interface{}{
+				"datasets": []string{"grades", "academic_situation", "credit_requirements"},
+				"reason":   request.Reason,
+			},
+		}
+	}
+	for _, dataset := range waitDatasets {
 		result := results[dataset]
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
 			continue
@@ -1297,9 +1351,14 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		if !ok {
 			continue
 		}
+		// 同一 Call 内每个设备工具只排队一次：任务过期或失败恢复后不再为
+		// 同一数据集创建新任务，否则设备离线时会循环排队直到 Run 过期。
+		if hasResumedDeviceTool(ctx, toolName) {
+			continue
+		}
 		job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
 			UserID: userID, RunID: call.RunID, ToolCallID: call.CallID, ToolName: toolName,
-			Arguments: arguments, RequiredDataTypes: required, ExpiresAt: time.Now().Add(2 * time.Minute),
+			Arguments: arguments, RequiredDataTypes: required, ExpiresAt: time.Now().Add(3 * time.Minute),
 		})
 		if err != nil || strings.TrimSpace(job.ID) == "" {
 			// 无在线设备时继续返回原结果，由模型据实说明，不伪造等待状态。
@@ -1311,6 +1370,131 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		}
 	}
 	return nil
+}
+
+func deviceWaitDatasets(request academic.ResolveContextRequest) []academic.DatasetType {
+	if request.Reason == "academic_risk_analysis" {
+		return []academic.DatasetType{
+			academic.DatasetGrades,
+			academic.DatasetCreditRequirements,
+			academic.DatasetAcademicSituation,
+		}
+	}
+	return request.Datasets
+}
+
+// academicRiskCoreDatasets 是风险分析的阻断数据；二课缺失只会减少覆盖范围，
+// 不得阻断成绩、学分和学业情况的核心分析。
+func academicRiskCoreDatasets() []academic.DatasetType {
+	return []academic.DatasetType{
+		academic.DatasetGrades,
+		academic.DatasetCreditRequirements,
+		academic.DatasetAcademicSituation,
+	}
+}
+
+func academicRiskDatasetNeedsRefresh(result academic.ContextResult) bool {
+	return result.Status == academic.DataStatusMissing ||
+		result.Status == academic.DataStatusNeedsRefresh ||
+		result.Status == academic.DataStatusStale ||
+		result.Status == academic.DataStatusPartial ||
+		result.IsStale || result.IsPartial
+}
+
+func needsAcademicRiskRefresh(results map[academic.DatasetType]academic.ContextResult) bool {
+	for _, dataset := range academicRiskCoreDatasets() {
+		if academicRiskDatasetNeedsRefresh(results[dataset]) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasResumedAcademicRiskBundle(ctx context.Context) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == "device.academic.ensure_fresh_bundle" &&
+		resume.Dataset == "academic_bundle"
+}
+
+func hasResumedErkeOverview(ctx context.Context) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == "device.erke.ensure_fresh_overview"
+}
+
+func erkeOverviewUsable(result academic.ContextResult) bool {
+	if !usablePersonalResult(result) {
+		return false
+	}
+	return !result.IsStale &&
+		result.Status != academic.DataStatusStale &&
+		result.Status != academic.DataStatusNeedsRefresh &&
+		result.Status != academic.DataStatusPartial
+}
+
+// waitForRiskErke 为风险分析中缺失或过期的二课快照追加一次设备刷新。二课是
+// 可选覆盖数据：同一 Call 只排队一次（防环）；用户关闭上传授权时静默跳过；
+// ask 策略先走一次普通授权确认，授权恢复后才会真正排队。
+func (mcp *campusMCP) waitForRiskErke(ctx context.Context, userID uint, request academic.ResolveContextRequest, results map[academic.DatasetType]academic.ContextResult) *ToolWait {
+	if mcp.deviceJobs == nil {
+		return nil
+	}
+	if erkeOverviewUsable(results[academic.DatasetErke]) || hasResumedErkeOverview(ctx) {
+		return nil
+	}
+	// bundle 刷新失败或超时说明当前桥接不可靠，不得再叠加一段二课等待；
+	// 只有 bundle 成功（或本轮从未等待过设备）时才评估二课刷新。
+	if resume, ok := currentDeviceJobResumeContext(ctx); ok &&
+		resume.ToolName == "device.academic.ensure_fresh_bundle" &&
+		resume.Status != models.DeviceToolJobCompleted {
+		return nil
+	}
+	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionErkeSnapshotUpload, request.Reason)
+	if err != nil || denied {
+		return nil
+	}
+	if wait != nil {
+		return wait
+	}
+	call, hasCall := currentToolCallContext(ctx)
+	if !hasCall {
+		return nil
+	}
+	job, err := mcp.deviceJobs.ScheduleDeviceJob(ctx, DeviceJobRequest{
+		UserID: userID, RunID: call.RunID, ToolCallID: call.CallID,
+		ToolName:          "device.erke.ensure_fresh_overview",
+		Arguments:         json.RawMessage(`{"max_age_seconds":1800,"allow_upload":true}`),
+		RequiredDataTypes: []string{"erke"},
+		ExpiresAt:         time.Now().Add(90 * time.Second),
+	})
+	if err != nil || strings.TrimSpace(job.ID) == "" {
+		return nil
+	}
+	return &ToolWait{
+		State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: job.ID,
+		Payload: map[string]interface{}{"datasets": []string{"erke"}, "reason": request.Reason},
+	}
+}
+
+func hasResumedDeviceTool(ctx context.Context, toolName string) bool {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	return ok && resume.ToolName == toolName
+}
+
+// markAcademicRiskRefreshUnavailable 保留仍可解释的旧快照，避免一次权限或网络
+// 故障抹掉已有事实；只有原本没有可用数据的数据集才替换为不可用状态。
+func markAcademicRiskRefreshUnavailable(results map[academic.DatasetType]academic.ContextResult, status academic.DataStatus, warning string) {
+	for _, dataset := range academicRiskCoreDatasets() {
+		result := results[dataset]
+		if !academicRiskDatasetNeedsRefresh(result) {
+			continue
+		}
+		if usablePersonalResult(result) {
+			result.Warnings = uniqueStrings(append(result.Warnings, warning))
+			results[dataset] = result
+			continue
+		}
+		results[dataset] = personalContextUnavailable(status, warning)
+	}
 }
 
 func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
@@ -1352,6 +1536,11 @@ func deviceRequestForDataset(dataset academic.DatasetType, request academic.Reso
 			return "device.erke.ensure_fresh_overview", []string{"erke"}, json.RawMessage(`{"max_age_seconds":1800}`), true
 		}
 		return "device.erke.get_cached_overview", []string{"erke"}, json.RawMessage(`{}`), true
+	case academic.DatasetPhysical:
+		if ensureFresh {
+			return "device.physical.ensure_fresh_overview", []string{"physical"}, json.RawMessage(`{"max_age_seconds":86400}`), true
+		}
+		return "device.physical.get_cached_overview", []string{"physical"}, json.RawMessage(`{}`), true
 	default:
 		return "", nil, nil, false
 	}
@@ -1366,15 +1555,29 @@ func deviceDatasetForTool(toolName string) string {
 		return string(academic.DatasetGrades)
 	case "device.academic.get_cached_risk_context", "device.academic.ensure_fresh_risk_context":
 		return string(academic.DatasetAcademicSituation)
+	case "device.academic.ensure_fresh_bundle":
+		return "academic_bundle"
 	case "device.schedule.get_cached_week", "device.schedule.ensure_fresh_week":
 		return string(academic.DatasetSchedule)
 	case "device.academic.get_credit_summary", "device.academic.ensure_fresh_credit_summary":
 		return string(academic.DatasetCreditRequirements)
 	case "device.erke.get_cached_overview", "device.erke.ensure_fresh_overview":
 		return string(academic.DatasetErke)
+	case "device.physical.get_cached_overview", "device.physical.ensure_fresh_overview":
+		return string(academic.DatasetPhysical)
 	default:
 		return ""
 	}
+}
+
+func deviceDatasetsForTool(toolName string) []string {
+	if toolName == "device.academic.ensure_fresh_bundle" {
+		return []string{"grades", "academic_situation", "credit_requirements"}
+	}
+	if dataset := deviceDatasetForTool(toolName); dataset != "" && dataset != "academic_bundle" {
+		return []string{dataset}
+	}
+	return nil
 }
 
 func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request academic.ResolveContextRequest) (map[academic.DatasetType]academic.ContextResult, *ToolWait, error) {
@@ -1400,7 +1603,7 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 	}
 	needsAcademicSnapshot := false
 	for _, dataset := range request.Datasets {
-		if dataset != academic.DatasetErke {
+		if dataset != academic.DatasetErke && dataset != academic.DatasetPhysical {
 			needsAcademicSnapshot = true
 			break
 		}
@@ -1439,6 +1642,13 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
 			continue
 		}
+		if dataset == academic.DatasetPhysical {
+			results[dataset] = personalContextUnavailable(
+				academic.DataStatusMissing,
+				"体测数据只保存在手机本地；需要向当前手机请求最小化概览",
+			)
+			continue
+		}
 		if generationErr != nil {
 			results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "教务授权不可用，无法读取个人数据")
 			continue
@@ -1454,8 +1664,14 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		}
 		result := lookup.Result
 		if request.Freshness == academic.FreshnessRequireFresh && result.IsStale {
-			result.Status = academic.DataStatusNeedsRefresh
-			result.Warnings = append(result.Warnings, "该问题要求最新数据，需要刷新后再分析")
+			if request.Reason == "academic_risk_analysis" && hasResumedAcademicRiskBundle(ctx) {
+				// 本轮已刷新过但仍只能得到旧快照：保留 stale 数据供风险工具给出
+				// 覆盖边界；刷新结果与失败原因由 appendAcademicRiskRefreshOutcome
+				// 统一写入，这里不再叠加同义过期提示。
+			} else {
+				result.Status = academic.DataStatusNeedsRefresh
+				result.Warnings = append(result.Warnings, "该问题要求最新数据，需要刷新后再分析")
+			}
 		}
 		results[dataset] = result
 	}
@@ -1486,15 +1702,38 @@ func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, fres
 // 下一次完整工具执行仍会重新构建分析输入并产出自己的 Tool Result。
 func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetType) (academic.ContextResult, bool) {
 	resume, ok := currentDeviceJobResumeContext(ctx)
-	if !ok || resume.Dataset != string(dataset) {
+	if !ok {
 		return academic.ContextResult{}, false
 	}
 	if resume.Status != models.DeviceToolJobCompleted || !json.Valid(resume.Result) {
-		return personalContextUnavailable(academic.DataStatusFailed, "手机未能获取可用于本次分析的最新数据"), true
+		// 失败的刷新不覆盖服务端已有快照。调用方会通过 refresh 状态向模型
+		// 明确说明边界，并且 waitForPersonalContext 会阻止同一 Call 重复排队。
+		return academic.ContextResult{}, false
 	}
+	if resume.Dataset == "academic_bundle" {
+		var bundle struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(resume.Result, &bundle); err != nil {
+			return personalContextUnavailable(academic.DataStatusFailed, "手机返回的学业数据 bundle 格式无法用于本次分析"), true
+		}
+		item, exists := bundle.Data[string(dataset)]
+		if !exists {
+			return personalContextUnavailable(academic.DataStatusFailed, "手机未返回本次分析所需的学业数据"), true
+		}
+		return decodeDeviceContextEnvelope(dataset, item)
+	}
+	if resume.Dataset != string(dataset) {
+		return academic.ContextResult{}, false
+	}
+	return decodeDeviceContextEnvelope(dataset, resume.Result)
+}
+
+func decodeDeviceContextEnvelope(dataset academic.DatasetType, raw json.RawMessage) (academic.ContextResult, bool) {
 	var envelope struct {
 		Data      json.RawMessage     `json:"data"`
 		Source    academic.DataSource `json:"source"`
+		ErrorCode string              `json:"error_code"`
 		FetchedAt *time.Time          `json:"fetched_at"`
 		ExpiresAt *time.Time          `json:"expires_at"`
 		IsStale   bool                `json:"is_stale"`
@@ -1502,7 +1741,7 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 		Warnings  []string            `json:"warnings"`
 		Evidence  []academic.Evidence `json:"evidence"`
 	}
-	if err := json.Unmarshal(resume.Result, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Data) == 0 || !json.Valid(envelope.Data) {
 		return personalContextUnavailable(academic.DataStatusFailed, "手机返回的数据格式无法用于本次分析"), true
 	}
 	source := envelope.Source
@@ -1523,7 +1762,7 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 		}}
 	}
 	return academic.ContextResult{
-		Data: envelope.Data, Status: status, Source: source,
+		Data: envelope.Data, Status: status, Source: source, ErrorCode: envelope.ErrorCode,
 		FetchedAt: envelope.FetchedAt, ExpiresAt: envelope.ExpiresAt,
 		IsStale: envelope.IsStale, IsPartial: envelope.IsPartial,
 		Warnings: envelope.Warnings, Evidence: evidence,
@@ -1531,7 +1770,16 @@ func resumedDeviceContextResult(ctx context.Context, dataset academic.DatasetTyp
 }
 
 func personalContextUnavailable(status academic.DataStatus, warning string) academic.ContextResult {
-	return academic.ContextResult{Data: json.RawMessage(`{"error_code":"personal_context_unavailable"}`), Status: status, Source: academic.DataSourceNone, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
+	return personalContextUnavailableWithCode(status, warning, "personal_context_unavailable")
+}
+
+func personalContextUnavailableWithCode(status academic.DataStatus, warning, code string) academic.ContextResult {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "personal_context_unavailable"
+	}
+	payload, _ := json.Marshal(map[string]string{"error_code": code})
+	return academic.ContextResult{Data: payload, Status: status, Source: academic.DataSourceNone, ErrorCode: code, Warnings: []string{warning}, Evidence: make([]academic.Evidence, 0)}
 }
 
 func (mcp *campusMCP) getGradeSummary(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
@@ -1619,6 +1867,7 @@ func (mcp *campusMCP) getRiskAnalysis(ctx context.Context, userID uint, argument
 		return *wait, nil
 	}
 	data, warnings := buildAcademicRiskAnalysis(results, requested)
+	appendAcademicRiskRefreshOutcome(ctx, results, data, &warnings)
 	return aggregatePersonalToolResult(data, results, warnings), nil
 }
 
@@ -1663,7 +1912,7 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessPreferRecent, Reason: "erke_overview"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessRequireFresh, Reason: "erke_overview"})
 	if err != nil {
 		return nil, err
 	}
@@ -1676,6 +1925,29 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 		return result, nil
 	}
 	return personalToolResult(extractErkeOverview(result.Data), result), nil
+}
+
+func (mcp *campusMCP) getPhysicalOverview(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+	if err := requireEmptyArguments(arguments); err != nil {
+		return nil, err
+	}
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
+		Datasets:  []academic.DatasetType{academic.DatasetPhysical},
+		Freshness: academic.FreshnessRequireFresh,
+		Reason:    "physical_overview",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	result := results[academic.DatasetPhysical]
+	if !usablePersonalResult(result) {
+		result.Warnings = append(result.Warnings, "体测数据只保存在当前手机的加密保险箱中")
+		return result, nil
+	}
+	return personalToolResult(result.Data, result), nil
 }
 
 func (mcp *campusMCP) getAcademicIdentity(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
@@ -1907,31 +2179,35 @@ func academicGradeText(item map[string]interface{}) string {
 
 func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.ContextResult, requested []academic.DatasetType) (map[string]interface{}, []string) {
 	data := map[string]interface{}{
-		"coverage":   make(map[string]string, len(requested)),
-		"risks":      make([]string, 0),
-		"actions":    make([]string, 0),
-		"to_confirm": make([]string, 0),
+		"coverage":         make(map[string]string, len(requested)),
+		"risks":            make([]string, 0),
+		"actions":          make([]string, 0),
+		"to_confirm":       make([]string, 0),
+		"optional_missing": make([]string, 0),
 	}
 	warnings := make([]string, 0)
 	coverage := data["coverage"].(map[string]string)
 	risks := data["risks"].([]string)
 	actions := data["actions"].([]string)
 	toConfirm := data["to_confirm"].([]string)
+	optionalMissing := data["optional_missing"].([]string)
 	usableCount := 0
-	incompleteData := false
+	coreUsableCount := 0
+	coreIncomplete := false
 
 	grades := results[academic.DatasetGrades]
 	coverage[string(academic.DatasetGrades)] = string(grades.Status)
 	if usablePersonalResult(grades) {
 		usableCount++
+		coreUsableCount++
 		summary := summarizeGrades(grades.Data)
 		data["grades"] = summary
-		if grades.IsStale {
-			incompleteData = true
+		if grades.Status == academic.DataStatusStale || grades.IsStale {
+			coreIncomplete = true
 			toConfirm = append(toConfirm, "成绩快照已过期，最新变动请先刷新教务数据后再核对")
 		}
-		if grades.IsPartial {
-			incompleteData = true
+		if grades.Status == academic.DataStatusPartial || grades.IsPartial {
+			coreIncomplete = true
 			toConfirm = append(toConfirm, "成绩快照覆盖不完整，不能据此断言全部学期没有风险")
 		}
 		if summary.FailedCourseCount > 0 {
@@ -1947,6 +2223,7 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 			toConfirm = append(toConfirm, "补齐未知成绩课程的最终成绩和通过状态")
 		}
 	} else {
+		coreIncomplete = true
 		warnings = append(warnings, grades.Warnings...)
 		toConfirm = append(toConfirm, "刷新或授权读取成绩快照后再判断挂科风险")
 	}
@@ -1959,14 +2236,18 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		coverage[string(dataset)] = string(result.Status)
 		if usablePersonalResult(result) {
 			usableCount++
-			if result.IsStale || result.IsPartial {
-				incompleteData = true
+			coreUsableCount++
+			if result.Status == academic.DataStatusStale ||
+				result.Status == academic.DataStatusPartial ||
+				result.IsStale || result.IsPartial {
+				coreIncomplete = true
 			}
 			if len(credit) == 0 || (len(credit) == 1 && credit["available"] == true) {
 				credit = extractCreditFields(result.Data)
 			}
 			creditAvailable = true
 		} else {
+			coreIncomplete = true
 			warnings = append(warnings, result.Warnings...)
 		}
 	}
@@ -1984,15 +2265,16 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 			}
 		}
 	} else {
-		toConfirm = append(toConfirm, "确认服务端是否有当前培养方案和学分要求快照")
+		toConfirm = append(toConfirm, "学分要求快照缺失，请在手机同步学业数据后重试")
 	}
 
 	erke := results[academic.DatasetErke]
 	coverage[string(academic.DatasetErke)] = string(erke.Status)
 	if usablePersonalResult(erke) {
 		usableCount++
-		if erke.IsStale || erke.IsPartial {
-			incompleteData = true
+		if erke.Status == academic.DataStatusStale ||
+			erke.Status == academic.DataStatusPartial || erke.IsStale || erke.IsPartial {
+			toConfirm = append(toConfirm, "二课快照覆盖不完整或已过期，二课风险仅供参考")
 		}
 		overview := extractErkeOverview(erke.Data)
 		data["erke"] = overview
@@ -2002,15 +2284,27 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 		}
 	} else {
 		warnings = append(warnings, erke.Warnings...)
-		toConfirm = append(toConfirm, "确认二课快照是否已上传及其认定口径")
+		optionalMissing = append(optionalMissing, string(academic.DatasetErke))
+		toConfirm = append(toConfirm, "二课风险暂未纳入；可在需要时更新二课数据后重新分析")
 	}
 
 	data["available_dataset_count"] = usableCount
 	data["requested_dataset_count"] = len(requested)
-	if len(risks) == 0 && !incompleteData && usableCount >= len(requested) {
+	data["core_available_dataset_count"] = coreUsableCount
+	data["core_requested_dataset_count"] = len(academicRiskCoreDatasets())
+	data["optional_missing"] = uniqueStrings(optionalMissing)
+	if len(optionalMissing) > 0 {
+		// 这是显式的后续入口描述，不触发后台请求，也不会索取或上传二课密码。
+		data["optional_actions"] = []map[string]interface{}{{
+			"id":                        "update_erke",
+			"label":                     "更新二课数据",
+			"requires_user_credentials": true,
+		}}
+	}
+	if len(risks) == 0 && !coreIncomplete && coreUsableCount >= len(academicRiskCoreDatasets()) {
 		data["risk_level"] = "no_observed_risk"
 		toConfirm = append(toConfirm, "毕业学分、必修课和二课要求以学校当期培养方案及教务审核为准")
-	} else if incompleteData || usableCount < len(requested) {
+	} else if coreIncomplete || coreUsableCount < len(academicRiskCoreDatasets()) {
 		data["risk_level"] = "incomplete"
 		toConfirm = append(toConfirm, "当前数据覆盖不完整，不能据此断言整体没有风险")
 	} else {
@@ -2022,6 +2316,46 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	return data, uniqueStrings(warnings)
 }
 
+// appendAcademicRiskRefreshOutcome 将本轮设备刷新尝试写入工具结果。设备任务只在
+// 同一个 Tool Call 中消费一次；刷新后仍不完整时，模型可据此使用已有数据有限分析。
+func appendAcademicRiskRefreshOutcome(ctx context.Context, results map[academic.DatasetType]academic.ContextResult, data map[string]interface{}, warnings *[]string) {
+	resume, ok := currentDeviceJobResumeContext(ctx)
+	if !ok || resume.ToolName != "device.academic.ensure_fresh_bundle" || resume.Dataset != "academic_bundle" {
+		return
+	}
+	status := "refreshed"
+	message := "已使用手机刚刚刷新并回传的学业数据"
+	if resume.Status != models.DeviceToolJobCompleted {
+		status = strings.TrimSpace(resume.ErrorCode)
+		if status == "" {
+			status = "device_job_failed"
+		}
+		message = "已尝试通过手机刷新学业数据但" + deviceJobFailureReason(resume) + "；以下分析仅基于最近一次同步的数据"
+	} else if needsAcademicRiskRefresh(results) {
+		status = "refresh_incomplete"
+		message = "已尝试通过手机刷新学业数据，但学校返回的数据仍不完整；以下分析仅覆盖已取得部分"
+	}
+	data["refresh"] = map[string]interface{}{
+		"attempted":       true,
+		"status":          status,
+		"retry_scheduled": false,
+		"datasets":        []string{"grades", "academic_situation", "credit_requirements"},
+	}
+	if status != "refreshed" {
+		*warnings = append(*warnings, message)
+		toConfirm, _ := data["to_confirm"].([]string)
+		data["to_confirm"] = uniqueStrings(append(toConfirm, message))
+	}
+}
+
+// deviceJobFailureReason 把设备任务终态转成一句用户可读的原因。
+func deviceJobFailureReason(resume deviceJobResumeContext) string {
+	if resume.Status == models.DeviceToolJobExpired {
+		return "任务超时"
+	}
+	return "未成功"
+}
+
 func aggregatePersonalToolResult(data map[string]interface{}, results map[academic.DatasetType]academic.ContextResult, warnings []string) CampusToolResult {
 	combinedWarnings := append([]string{}, warnings...)
 	evidence := make([]CampusToolEvidence, 0)
@@ -2030,6 +2364,7 @@ func aggregatePersonalToolResult(data map[string]interface{}, results map[academ
 	status := academic.DataStatusMissing
 	stale := false
 	partial := false
+	now := time.Now()
 	for _, dataset := range []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke} {
 		result := results[dataset]
 		if source == academic.DataSourceNone && result.Source.Valid() {
@@ -2050,7 +2385,75 @@ func aggregatePersonalToolResult(data map[string]interface{}, results map[academ
 			evidence = append(evidence, CampusToolEvidence{Source: item.Source, Dataset: item.Dataset, FetchedAt: item.FetchedAt, ExpiresAt: item.ExpiresAt, IsStale: item.IsStale})
 		}
 	}
-	return CampusToolResult{Data: data, Status: status, Source: source, FetchedAt: fetchedAt, IsStale: stale, IsPartial: partial, Warnings: uniqueStrings(combinedWarnings), Evidence: evidence}
+	return CampusToolResult{Data: data, Status: status, Source: source, FetchedAt: fetchedAt, IsStale: stale, IsPartial: partial, Warnings: compactPersonalWarnings(results, combinedWarnings, now), Evidence: evidence}
+}
+
+// compactPersonalWarnings 把多个数据集的同义过期提示收敛为每数据集至多一条
+// 带数据年龄的说明。否则护栏和模型会把“已过期/需刷新”的三四种说法逐条复述，
+// 答案退化成确认清单。
+func compactPersonalWarnings(results map[academic.DatasetType]academic.ContextResult, warnings []string, now time.Time) []string {
+	compact := make([]string, 0, len(warnings)+2)
+	for _, dataset := range []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke} {
+		if note := personalDatasetFreshnessNote(personalDatasetLabel(dataset), results[dataset], now); note != "" {
+			compact = append(compact, note)
+		}
+	}
+	for _, warning := range warnings {
+		if isPureStalenessWarning(warning) {
+			continue
+		}
+		compact = append(compact, warning)
+	}
+	return uniqueStrings(compact)
+}
+
+func personalDatasetFreshnessNote(label string, result academic.ContextResult, now time.Time) string {
+	if label == "" || (!result.IsStale && result.Status != academic.DataStatusNeedsRefresh) {
+		return ""
+	}
+	age := "未知时间"
+	if result.FetchedAt != nil {
+		age = relativeAgeText(now.Sub(*result.FetchedAt))
+	}
+	return label + "数据为" + age + "同步，已超出本次实时分析要求"
+}
+
+// isPureStalenessWarning 命中的都是同一事实的不同措辞，压缩后由带年龄的
+// freshness note 代替；刷新失败原因等有独立信息的 warning 不在此列。
+func isPureStalenessWarning(warning string) bool {
+	return strings.Contains(warning, "已过期") ||
+		strings.Contains(warning, "需要刷新后再分析") ||
+		strings.Contains(warning, "本轮已尝试刷新")
+}
+
+func personalDatasetLabel(dataset academic.DatasetType) string {
+	switch dataset {
+	case academic.DatasetGrades:
+		return "成绩"
+	case academic.DatasetCreditRequirements:
+		return "学分要求"
+	case academic.DatasetAcademicSituation:
+		return "学业情况"
+	case academic.DatasetErke:
+		return "二课"
+	case academic.DatasetSchedule:
+		return "课表"
+	default:
+		return string(dataset)
+	}
+}
+
+func relativeAgeText(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "刚刚"
+	case d < time.Hour:
+		return fmt.Sprintf("%d分钟前", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d小时前", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d天前", int(d.Hours()/24))
+	}
 }
 
 func uniqueStrings(values []string) []string {

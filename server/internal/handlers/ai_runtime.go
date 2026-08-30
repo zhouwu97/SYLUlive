@@ -32,6 +32,7 @@ type createAIRunRequest struct {
 	ConversationID  string                   `json:"conversation_id"`
 	ClientRequestID string                   `json:"client_request_id"`
 	Message         string                   `json:"message"`
+	AppVersion      string                   `json:"app_version"`
 	AgentContext    *ai.AgentContextEnvelope `json:"context"`
 }
 
@@ -40,14 +41,24 @@ type submitAIRunConsentRequest struct {
 	Granted *bool                        `json:"granted"`
 }
 
+type submitAIRunFeedbackRequest struct {
+	Signal        string `json:"signal"`
+	FailureReason string `json:"failure_reason"`
+	Note          string `json:"note"`
+}
+
 func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	var request createAIRunRequest
 	if err := decodeStrictJSON(c, &request, 16<<10); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "请求格式错误"})
 		return
 	}
+	if strings.TrimSpace(request.AppVersion) == "" {
+		request.AppVersion = strings.TrimSpace(c.GetHeader("X-App-Version"))
+	}
 	run, duplicate, err := h.runtime.CreateRun(c.Request.Context(), c.GetUint("user_id"), ai.CreateRunRequest{
 		ConversationID: request.ConversationID, ClientRequestID: request.ClientRequestID, Message: request.Message,
+		AppVersion:   request.AppVersion,
 		AgentContext: request.AgentContext,
 	})
 	if err != nil {
@@ -245,6 +256,74 @@ func (h *AIRuntimeHandler) CancelRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"run": run})
 }
 
+// SubmitRunFeedback 接收有限枚举的用户信号和失败归因，不接受纠正正文或诊断备注。
+func (h *AIRuntimeHandler) SubmitRunFeedback(c *gin.Context) {
+	var request submitAIRunFeedbackRequest
+	if err := decodeStrictJSON(c, &request, 2<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "请求格式错误"})
+		return
+	}
+	userID, runID := c.GetUint("user_id"), c.Param("id")
+	result := gin.H{"run_id": runID}
+	signal := ai.AgentUserSignal(strings.TrimSpace(request.Signal))
+	reason := ai.AgentFailureReason(strings.TrimSpace(request.FailureReason))
+	if request.Signal != "" && !signal.Valid() {
+		writeAIRuntimeError(c, &ai.RuntimeError{Code: "invalid_agent_user_signal", Message: "反馈信号无效"})
+		return
+	}
+	if request.FailureReason != "" && !reason.Valid() {
+		writeAIRuntimeError(c, &ai.RuntimeError{Code: "invalid_agent_failure_reason", Message: "失败分类无效"})
+		return
+	}
+	if strings.TrimSpace(request.Signal) != "" {
+		if err := h.runtime.RecordUserSignal(c.Request.Context(), userID, runID, signal, request.Note); err != nil {
+			writeAIRuntimeError(c, err)
+			return
+		}
+		result["signal"] = signal
+	}
+	if strings.TrimSpace(request.FailureReason) != "" {
+		candidate, err := h.runtime.ClassifyFailure(c.Request.Context(), userID, runID, reason, request.Note)
+		if err != nil {
+			writeAIRuntimeError(c, err)
+			return
+		}
+		result["scenario_candidate"] = candidate
+	}
+	if len(result) == 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_agent_feedback", "message": "至少提供一个有效反馈信号或失败分类"})
+		return
+	}
+	c.JSON(http.StatusAccepted, result)
+}
+
+func (h *AIRuntimeHandler) GetRunMetrics(c *gin.Context) {
+	metrics, err := h.runtime.TraceMetrics(c.Request.Context(), c.GetUint("user_id"), c.Param("id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"run_id": c.Param("id"), "metrics": metrics})
+}
+
+func (h *AIRuntimeHandler) DeleteRunObservability(c *gin.Context) {
+	result, err := h.runtime.DeleteRunObservability(c.Request.Context(), c.GetUint("user_id"), c.Param("id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": result})
+}
+
+func (h *AIRuntimeHandler) DeleteUserObservability(c *gin.Context) {
+	result, err := h.runtime.DeleteUserObservability(c.Request.Context(), c.GetUint("user_id"))
+	if err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": result})
+}
+
 func (h *AIRuntimeHandler) Events(c *gin.Context) {
 	runID := c.Param("id")
 	userID := c.GetUint("user_id")
@@ -279,7 +358,6 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 			RunID: event.RunID, Seq: event.Seq, Type: event.Type,
 			Timestamp: event.CreatedAt, Payload: json.RawMessage(event.Payload),
 		}); err != nil {
-			h.cancelDisconnectedRun(userID, runID)
 			return
 		}
 		lastSent = event.Seq
@@ -290,12 +368,14 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 		return
 	}
 
+	// 客户端断开只结束本次订阅：AI Run 继续运行，断线续传由
+	// Last-Event-ID 回放与 answer.checkpoint 兜底。取消必须来自
+	// 用户主动调用的 POST /runs/:id/cancel。
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	for {
 		select {
 		case <-c.Request.Context().Done():
-			h.cancelDisconnectedRun(userID, runID)
 			return
 		case event, open := <-live:
 			if !open {
@@ -305,7 +385,6 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 				continue
 			}
 			if err := writeSSE(c.Writer, event); err != nil {
-				h.cancelDisconnectedRun(userID, runID)
 				return
 			}
 			lastSent = event.Seq
@@ -316,20 +395,11 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 		case timestamp := <-heartbeat.C:
 			payload, _ := json.Marshal(gin.H{"run_id": runID, "type": "heartbeat", "timestamp": timestamp})
 			if _, err := fmt.Fprintf(c.Writer, "event: heartbeat\ndata: %s\n\n", payload); err != nil {
-				h.cancelDisconnectedRun(userID, runID)
 				return
 			}
 			flusher.Flush()
 		}
 	}
-}
-
-// cancelDisconnectedRun 使用独立短 Context 更新状态；HTTP Context 在客户端断开时已经取消。
-// Runtime 随后会取消同一个 Python 请求 Context，实现从客户端到模型的取消传播。
-func (h *AIRuntimeHandler) cancelDisconnectedRun(userID uint, runID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = h.runtime.Cancel(ctx, userID, runID)
 }
 
 func writeSSE(writer http.ResponseWriter, event ai.RunEvent) error {
@@ -515,12 +585,14 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 		case "ai_quota_exceeded":
 			status = http.StatusTooManyRequests
 		case "ai_budget_exceeded":
-			status = http.StatusPaymentRequired
+			status = http.StatusServiceUnavailable
 		case "idempotency_key_conflict":
 			status = http.StatusConflict
 		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":
 			status = http.StatusConflict
 		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
+			status = http.StatusBadRequest
+		case "invalid_agent_user_signal", "invalid_agent_failure_reason", "invalid_agent_feedback":
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"code": runtimeErr.Code, "message": runtimeErr.Message, "retryable": runtimeErr.Retryable})

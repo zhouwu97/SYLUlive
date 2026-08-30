@@ -10,6 +10,7 @@ import '../../providers/poll_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../services/poll_service.dart';
 import '../../services/post_reply_service.dart';
+import '../../services/idempotency_key.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/app_action_popup_menu.dart';
 import '../../widgets/post_reply/post_reply_list.dart';
@@ -54,6 +55,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   bool _loadingMoreReplies = false;
   int _replyRequestVersion = 0;
   bool _sending = false;
+  String? _replyIdempotencyKey;
+  String? _replyIdempotencyFingerprint;
   late final PollService _service;
   late final PostReplyService _replyService;
 
@@ -250,9 +253,18 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         !context.read<AuthProvider>().isLoggedIn) {
       return false;
     }
+    final fingerprint = _replyFingerprint(_post!.id, draft);
+    if (_replyIdempotencyFingerprint != fingerprint) {
+      _replyIdempotencyFingerprint = fingerprint;
+      _replyIdempotencyKey = newIdempotencyKey('reply');
+    }
     setState(() => _sending = true);
     try {
-      final reply = await _replyService.submit(_post!.id, draft);
+      final reply = await _replyService.submit(
+        _post!.id,
+        draft,
+        idempotencyKey: _replyIdempotencyKey,
+      );
       if (!mounted) return false;
       setState(() {
         _replies.insert(0, reply);
@@ -261,6 +273,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       });
       context.read<PostProvider>().applyExternalPostUpdate(_post!);
       context.read<PollProvider>().applyExternalPostUpdate(_post!);
+      _replyIdempotencyKey = null;
+      _replyIdempotencyFingerprint = null;
       return true;
     } on DioException catch (error) {
       if (mounted) {
@@ -280,6 +294,11 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       if (mounted) setState(() => _sending = false);
     }
   }
+
+  String _replyFingerprint(int postId, PostReplyDraft draft) =>
+      '$postId|${draft.text}|${draft.parentReplyId}|${draft.replyToUserId}|'
+      '${draft.replyToReplyId}|${draft.sticker?.id}|${draft.favoriteImage?.key}|'
+      '${draft.localImage?.path}';
 
   void _openLogin() {
     Navigator.of(context).pushNamed('/login');

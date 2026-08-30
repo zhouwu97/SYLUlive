@@ -16,6 +16,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/campus_screen.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
 import 'package:shenliyuan/screens/exam_schedule_screen.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 
 /// 可控课表 Provider：直接注入课程与学期起点，避免走真实保险箱/网络。
 class _FakeCourseScheduleProvider extends CourseScheduleProvider {
@@ -158,9 +159,10 @@ Future<void> _pumpCampus(
   bool dark = false,
   double textScale = 1.0,
   bool navHarness = false,
+  Size viewport = const Size(400, 800),
 }) async {
   AppPreferencesStore.setMockInitialValues(initialPrefs ?? const {});
-  tester.view.physicalSize = const Size(400, 800);
+  tester.view.physicalSize = viewport;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -175,10 +177,12 @@ Future<void> _pumpCampus(
     });
   }
 
+  final themeProvider = ThemeProvider(loadOnStart: false);
+  await themeProvider.loadThemeForTesting();
+  addTearDown(themeProvider.dispose);
+
   final providers = <SingleChildWidget>[
-    ChangeNotifierProvider<ThemeProvider>.value(
-      value: ThemeProvider(loadOnStart: false),
-    ),
+    ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
     if (scheduleProvider != null)
       ChangeNotifierProvider<CourseScheduleProvider>.value(
         value: scheduleProvider,
@@ -291,6 +295,61 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(CourseScheduleScreen), findsOneWidget);
+    expect(find.byType(PredictiveBackGate), findsOneWidget);
+    expect(find.byType(GlobalBackgroundWrapper), findsOneWidget);
+  });
+
+  testWidgets('Campus 课表入口连续进出十次都复用背景壳', (tester) async {
+    final schedule = _FakeCourseScheduleProvider(
+      seededCourses: [_courseFor(now)],
+      seededSemesterStart: semesterStart,
+    );
+    await _pumpCampus(
+      tester,
+      now: now,
+      scheduleProvider: schedule,
+      navHarness: true,
+    );
+
+    for (var i = 0; i < 10; i++) {
+      await tester.tap(find.textContaining('下一节课 · 高等数学'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(CourseScheduleScreen), findsOneWidget);
+      expect(find.byType(GlobalBackgroundWrapper), findsOneWidget);
+
+      Navigator.of(tester.element(find.byType(CourseScheduleScreen))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusScreen), findsOneWidget);
+    }
+  });
+
+  testWidgets('自定义背景与横屏尺寸下进入课表不丢失背景壳', (tester) async {
+    final schedule = _FakeCourseScheduleProvider(
+      seededCourses: [_courseFor(now)],
+      seededSemesterStart: semesterStart,
+    );
+    await _pumpCampus(
+      tester,
+      now: now,
+      scheduleProvider: schedule,
+      navHarness: true,
+      dark: true,
+      viewport: const Size(800, 400),
+      initialPrefs: const {
+        'background_mode': 'custom',
+        'background_image': 'morenbeijing.jpeg',
+        'background_fill_screen': true,
+      },
+    );
+
+    await tester.tap(find.textContaining('下一节课 · 高等数学'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(GlobalBackgroundWrapper), findsOneWidget);
+    expect(find.byType(PredictiveBackGate), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('点击考试项进入考试页', (tester) async {
@@ -333,7 +392,9 @@ void main() {
       tester,
       now: now,
       scheduleProvider: schedule,
-      initialPrefs: {'local_exams': jsonEncode([_examJson(now)])},
+      initialPrefs: {
+        'local_exams': jsonEncode([_examJson(now)])
+      },
       dark: true,
     );
     expect(tester.takeException(), isNull);

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,7 +13,10 @@ import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
+import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
+import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
+import 'bottom_navigation_settings_screen.dart';
 
 /// 外观与显示二级设置页
 class AppearanceSettingsScreen extends StatelessWidget {
@@ -108,26 +112,33 @@ class AppearanceSettingsScreen extends StatelessWidget {
         !themeProvider.isCleanBackgroundMode) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
       final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-      final imageProvider = isAsset
-          ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
-              as ImageProvider
-          : isLocalFile
-              ? FileImage(File(bgPath)) as ImageProvider
-              : NetworkImage(bgPath) as ImageProvider;
-
-      backgroundWidget = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
-        errorBuilder: (_, __, ___) => Container(color: pageBgColor),
-      );
+      if (isAsset || isLocalFile) {
+        final imageProvider = isAsset
+            ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
+                as ImageProvider
+            : FileImage(File(bgPath)) as ImageProvider;
+        backgroundWidget = Image(
+          image: imageProvider,
+          fit: BoxFit.cover,
+          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          errorBuilder: (_, __, ___) => Container(color: pageBgColor),
+        );
+      } else {
+        backgroundWidget = AppCachedImage.public(
+          imageUrl: bgPath,
+          fit: BoxFit.cover,
+          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          memCacheWidth: 1024,
+          memCacheHeight: 1024,
+          errorWidget: (_, __, ___) => Container(color: pageBgColor),
+        );
+      }
 
       // 微缩预览按实际显示比例缩小模糊值，避免小预览糊成一整块。
       final customBackgroundActive =
           themeProvider.isCustomBackgroundMode && bgPath.isNotEmpty;
 
-      if (customBackgroundActive &&
-          themeProvider.backgroundBlur > 0.01) {
+      if (customBackgroundActive && themeProvider.backgroundBlur > 0.01) {
         final previewBlur =
             (themeProvider.backgroundBlur * 0.3).clamp(0.0, 9.0);
 
@@ -314,8 +325,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     final customBackgroundActive =
-        themeProvider.isCustomBackgroundMode &&
-        themeProvider.hasAnyBackground;
+        themeProvider.isCustomBackgroundMode && themeProvider.hasAnyBackground;
 
     return SettingsPageScaffold(
       title: '外观与显示',
@@ -403,8 +413,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
               value: themeProvider.componentOpacity,
               min: 0.1,
               max: 1.0,
-              valueLabel:
-                  '${(themeProvider.componentOpacity * 100).toInt()}%',
+              valueLabel: '${(themeProvider.componentOpacity * 100).toInt()}%',
               enabled: customBackgroundActive,
               onChanged: (val) => themeProvider.setComponentOpacity(val),
             ),
@@ -432,6 +441,35 @@ class AppearanceSettingsScreen extends StatelessWidget {
               trailing: SettingsSwitch(
                 value: themeProvider.floatingNavBar,
                 onChanged: (val) => themeProvider.setFloatingNavBar(val),
+              ),
+            ),
+            if (kDebugMode)
+              SettingsTile(
+                icon: Icons.tune_rounded,
+                title: 'Liquid Glass Reference QA',
+                subtitle: '开发专用参考参数、纹理与光学对照页',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LiquidGlassReferenceParityScreen(),
+                  ),
+                ),
+              ),
+          ],
+        ),
+
+        // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
+        SettingsSection(
+          title: '底部导航栏',
+          children: [
+            SettingsTile(
+              icon: Icons.navigation_outlined,
+              title: '底部导航栏',
+              subtitle:
+                  '${themeProvider.bottomNavStyle.label} · 动画 ${(themeProvider.bottomNavAnimationIntensity * 100).round()}%',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const BottomNavigationSettingsScreen(),
+                ),
               ),
             ),
           ],

@@ -4,6 +4,9 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../providers/ai_assistant_provider.dart';
+import '../../features/ai_device_bridge/device_tool_worker.dart';
+
+enum AgentPermissionLoadState { loading, ask, trusted, unavailable }
 
 class AiInputComposer extends StatefulWidget {
   final TextEditingController controller;
@@ -16,7 +19,10 @@ class AiInputComposer extends StatefulWidget {
   final String hintText;
   final bool showAgentPermissionMode;
   final bool agentTrusted;
+  final AgentPermissionLoadState agentPermissionState;
+  final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onAgentPermissionTap;
+  final VoidCallback? onBridgeRetry;
 
   const AiInputComposer({
     super.key,
@@ -30,7 +36,10 @@ class AiInputComposer extends StatefulWidget {
     required this.hintText,
     this.showAgentPermissionMode = false,
     this.agentTrusted = false,
+    this.agentPermissionState = AgentPermissionLoadState.ask,
+    this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onAgentPermissionTap,
+    this.onBridgeRetry,
   });
 
   @override
@@ -110,7 +119,10 @@ class _AiInputComposerState extends State<AiInputComposer> {
                 padding: const EdgeInsets.only(bottom: 2),
                 child: AiAgentPermissionModeBar(
                   trusted: widget.agentTrusted,
+                  permissionState: widget.agentPermissionState,
+                  bridgeStatus: widget.bridgeStatus,
                   onTap: widget.onAgentPermissionTap,
+                  onBridgeRetry: widget.onBridgeRetry,
                 ),
               ),
             Container(
@@ -209,72 +221,123 @@ class AiAgentPermissionModeBar extends StatelessWidget {
   const AiAgentPermissionModeBar({
     super.key,
     required this.trusted,
+    this.permissionState,
+    this.bridgeStatus = DeviceBridgeStatus.unknown,
     this.onTap,
+    this.onBridgeRetry,
   });
 
   final bool trusted;
+  final AgentPermissionLoadState? permissionState;
+  final DeviceBridgeStatus bridgeStatus;
   final VoidCallback? onTap;
+  final VoidCallback? onBridgeRetry;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colors = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      label: trusted ? '校园 Agent 权限：完全信任' : '校园 Agent 权限：每次询问',
-      hint: '点击打开 Agent 权限设置',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          child: SizedBox(
-            height: 44,
-            child: Center(
-              child: SizedBox(
-                height: 25,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.shield_outlined,
-                      size: 14,
-                      color: isDark ? colors.primary : AppColors.brandPrimary,
+    final state = permissionState ??
+        (trusted
+            ? AgentPermissionLoadState.trusted
+            : AgentPermissionLoadState.ask);
+    final permissionLabel = switch (state) {
+      AgentPermissionLoadState.loading => '正在同步权限状态',
+      AgentPermissionLoadState.trusted => '完全信任',
+      AgentPermissionLoadState.ask => '每次询问',
+      AgentPermissionLoadState.unavailable => '权限状态暂不可同步',
+    };
+    final bridgeLabel = switch (bridgeStatus) {
+      DeviceBridgeStatus.connected => '设备桥接在线',
+      DeviceBridgeStatus.syncing => '设备桥接同步中',
+      DeviceBridgeStatus.degraded => '设备桥接异常',
+      DeviceBridgeStatus.offline => '设备桥接离线',
+      DeviceBridgeStatus.unknown => '设备桥接状态未知',
+    };
+    final bridgeColor = switch (bridgeStatus) {
+      DeviceBridgeStatus.connected => AppColors.success,
+      DeviceBridgeStatus.syncing ||
+      DeviceBridgeStatus.degraded =>
+        AppColors.warning,
+      DeviceBridgeStatus.offline => AppColors.danger,
+      DeviceBridgeStatus.unknown => colors.outline,
+    };
+    final canRetryBridge = bridgeStatus == DeviceBridgeStatus.degraded ||
+        bridgeStatus == DeviceBridgeStatus.offline;
+    return Material(
+      color: Colors.transparent,
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Expanded(
+              child: Semantics(
+                button: true,
+                label: '校园 Agent 权限：$permissionLabel',
+                hint: '点击打开 Agent 权限设置',
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          size: 14,
+                          color:
+                              isDark ? colors.primary : AppColors.brandPrimary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          permissionLabel,
+                          style: TextStyle(
+                            color: isDark
+                                ? colors.onSurfaceVariant
+                                : AppColors.textSecondaryLight,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      trusted ? '完全信任' : '每次询问',
-                      style: TextStyle(
-                        color: isDark
-                            ? colors.onSurfaceVariant
-                            : AppColors.textSecondaryLight,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppColors.success,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '设备桥接在线',
-                      style: TextStyle(
-                        color: isDark
-                            ? colors.onSurfaceVariant
-                            : AppColors.textSecondaryLight,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+            Semantics(
+              button: canRetryBridge,
+              label: bridgeLabel,
+              hint: canRetryBridge ? '点击重试设备桥接' : null,
+              child: InkWell(
+                onTap: canRetryBridge ? onBridgeRetry : null,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        canRetryBridge ? Icons.refresh_rounded : Icons.circle,
+                        size: canRetryBridge ? 16 : 6,
+                        color: bridgeColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        bridgeLabel,
+                        style: TextStyle(
+                          color: isDark
+                              ? colors.onSurfaceVariant
+                              : AppColors.textSecondaryLight,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

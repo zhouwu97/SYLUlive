@@ -87,6 +87,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
+      # 变体 worker 默认开启：启动时自动为历史公开图片补建任务并生成 thumb/medium。
+      # 异常回退：将 IMAGE_VARIANT_WORKER_ENABLED 改回 false 并重启 Go（保留已生成变体）。
+      - IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-true}
+      # 公开上传默认走 Nginx internal 直传（共享卷与 internal location 已验收）。
+      # 异常回退：将 UPLOAD_USE_ACCEL_REDIRECT 改回 false 并重启 Go。
+      - UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-true}
+      - UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
       - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
@@ -99,10 +106,10 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-openai-compatible}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
-      - AI_CHAT_MODEL=${AI_CHAT_MODEL:-gpt-5.4-mini}
+      - AI_CHAT_MODEL=${AI_CHAT_MODEL:-gpt-5.4}
       - AI_REQUEST_TIMEOUT_SECONDS=${AI_REQUEST_TIMEOUT_SECONDS:-60}
       - AI_LEGACY_MAX_OUTPUT_TOKENS=${AI_LEGACY_MAX_OUTPUT_TOKENS:-4096}
-      - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-3}
+      - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-7}
       - AI_MAX_MESSAGE_CHARS=${AI_MAX_MESSAGE_CHARS:-500}
       - AI_HOURLY_MESSAGE_LIMIT=${AI_HOURLY_MESSAGE_LIMIT:-3}
       - AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}
@@ -110,6 +117,18 @@ services:
       - AI_RESERVE_MICRO_YUAN=${AI_RESERVE_MICRO_YUAN:-20000}
       - AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-4000000}
       - AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-16000000}
+      # Agent 灰测默认关闭；恢复时必须显式配置并经过发布审批。
+      - AI_AGENT_ENABLED=${AI_AGENT_ENABLED:-false}
+      - AI_AGENT_ROLLOUT_PERCENT=${AI_AGENT_ROLLOUT_PERCENT:-0}
+      - AI_AGENT_ROLLOUT_USER_IDS=${AI_AGENT_ROLLOUT_USER_IDS:-}
+      - AI_AGENT_APP_VERSIONS=${AI_AGENT_APP_VERSIONS:-}
+      - AI_AGENT_CAPABILITIES=${AI_AGENT_CAPABILITIES:-}
+      - AI_AGENT_MODES=${AI_AGENT_MODES:-}
+      - AI_AGENT_SHADOW_ENABLED=${AI_AGENT_SHADOW_ENABLED:-false}
+      - AI_AGENT_SHADOW_PERCENT=${AI_AGENT_SHADOW_PERCENT:-0}
+      - AI_AGENT_ACTIONS_ENABLED=${AI_AGENT_ACTIONS_ENABLED:-true}
+      - AI_AGENT_PERSONAL_DATA_ENABLED=${AI_AGENT_PERSONAL_DATA_ENABLED:-true}
+      - AI_AGENT_DEEP_MODE_ENABLED=${AI_AGENT_DEEP_MODE_ENABLED:-true}
       - AI_EXTERNAL_MCP_ENABLED=${AI_EXTERNAL_MCP_ENABLED:-false}
       - AI_EXTERNAL_MCP_TRANSPORT=${AI_EXTERNAL_MCP_TRANSPORT:-ssh_stdio}
       - AI_EXTERNAL_MCP_COMMAND=${AI_EXTERNAL_MCP_COMMAND:-}
@@ -120,6 +139,7 @@ services:
       - AI_EXTERNAL_MCP_SSH_USER=${AI_EXTERNAL_MCP_SSH_USER:-mcp-runner}
       - AI_EXTERNAL_MCP_SSH_KEY_PATH=/run/secrets/mcp_ed25519
       - AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/run/secrets/mcp_known_hosts
+      - AI_UNIFIED_MCP_URL=${AI_UNIFIED_MCP_URL:-http://pure-capability-mcp:8091}
       - AI_POLICY_RAG_ENABLED=${AI_POLICY_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ENABLED=${AI_LANGCHAIN_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ROLLOUT_PERCENT=${AI_LANGCHAIN_RAG_ROLLOUT_PERCENT:-0}
@@ -146,6 +166,21 @@ services:
     networks:
       - shenliyuan_network
 
+  # Agent Contract v5 纯能力层：无数据库、无身份存储、无 LLM，只转发到 Go 内部事实接口。
+  pure-capability-mcp:
+    build:
+      context: ./_mcp
+      dockerfile: Dockerfile
+    environment:
+      - SYLULIVE_INTERNAL_URL=${SYLULIVE_INTERNAL_URL:-http://server:8080}
+    expose:
+      - "8091"
+    depends_on:
+      - server
+    restart: unless-stopped
+    networks:
+      - shenliyuan_network
+
 
   nginx:
     image: nginx:alpine
@@ -154,6 +189,8 @@ services:
     volumes:
       - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
       - ./client/build/web:/usr/share/nginx/html:ro
+      # 与 server_data 使用同一命名卷，仅以只读方式提供给 internal location。
+      - server_data:/var/lib/sylulive/uploads:ro
     depends_on:
       - server
     networks:

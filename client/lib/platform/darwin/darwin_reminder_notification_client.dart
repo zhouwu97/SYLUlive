@@ -40,10 +40,8 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
   @override
   Future<bool> requestCourseReminderPermissions() async {
     await initializeCourseReminders();
-    final macOSPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-          MacOSFlutterLocalNotificationsPlugin
-        >();
+    final macOSPlugin = _plugin.resolvePlatformSpecificImplementation<
+        MacOSFlutterLocalNotificationsPlugin>();
     if (macOSPlugin == null) return false;
 
     final granted = await macOSPlugin.requestPermissions(
@@ -88,6 +86,48 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
 
   @override
   Future<void> cancelCourseReminder(int id) async {
+    await _plugin.cancel(id);
+  }
+
+  @override
+  Future<bool> scheduleCalendarReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String payload,
+  }) async {
+    await initializeCourseReminders();
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        const NotificationDetails(
+          macOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentList: true,
+            presentSound: false,
+            interruptionLevel: InterruptionLevel.active,
+            threadIdentifier: 'calendar_reminders',
+          ),
+        ),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+      return true;
+    } catch (error) {
+      debugPrint('macOS 日历提醒排程失败: $error');
+      return false;
+    }
+  }
+
+  @override
+  Future<void> cancelCalendarReminder(int id) async {
     await _plugin.cancel(id);
   }
 

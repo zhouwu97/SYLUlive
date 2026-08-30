@@ -39,3 +39,15 @@ func TestBuildCanteenDisplayReviewsPrefersV2ForSameUser(t *testing.T) {
 		t.Fatalf("same user was not deduplicated: %v", items)
 	}
 }
+
+func TestBuildCanteenDisplayReviewsWithImageIncludesApprovedDishPhoto(t *testing.T) {
+	items := buildCanteenDisplayReviews("一食堂", []models.CanteenReviewEvent{
+		{
+			ID: 1, UserID: 1, CanteenID: 1, OverallScore: 4,
+			Images: `[]`, DishPhotos: []map[string]interface{}{{"status": "approved", "image": "/uploads/dish.jpg"}},
+		},
+	}, nil, "latest", "with_image")
+	if len(items) != 1 {
+		t.Fatalf("dish photo review filtered out: %#v", items)
+	}
+}

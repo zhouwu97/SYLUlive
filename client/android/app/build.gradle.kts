@@ -104,6 +104,12 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("cn.jiguang.sdk:jpush:6.1.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+}
+
+
+tasks.withType<Test> {
+    jvmArgs("-noverify")
 }

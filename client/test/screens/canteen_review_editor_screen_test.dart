@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -55,9 +56,27 @@ class _FakeAuthProvider extends AuthProvider {
   Dio get dio => fakeDio;
 }
 
+/// 让指定内容的自动保存停在写入中，覆盖发布删除与自动保存的竞态窗口。
+class _BlockingPreferencesStore extends MemoryPreferencesStore {
+  final Completer<void> firstMatchingWriteStarted = Completer<void>();
+  final Completer<void> releaseFirstMatchingWrite = Completer<void>();
+  bool _blocked = false;
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (!_blocked && value.contains('非常好吃，强烈推荐！')) {
+      _blocked = true;
+      firstMatchingWriteStarted.complete();
+      await releaseFirstMatchingWrite.future;
+    }
+    return super.setString(key, value);
+  }
+}
+
 Widget _buildEditorTestApp({
   required Dio dio,
   required CanteenReviewDraftRepository draftRepository,
+  User? user,
   int canteenId = 1,
   String canteenName = '我家有面(一楼)',
   double averageStar = 5.0,
@@ -66,14 +85,15 @@ Widget _buildEditorTestApp({
   int dishPhotoCount = 18,
   Map<String, dynamic>? existingRating,
 }) {
-  final user = User(
-    id: 101,
-    studentId: '2023001',
-    studentVerified: true,
-    nickname: '测试小周',
-    createdAt: DateTime.now(),
-  );
-  final authProvider = _FakeAuthProvider(user, dio);
+  final currentUser = user ??
+      User(
+        id: 101,
+        studentId: '2023001',
+        studentVerified: true,
+        nickname: '测试小周',
+        createdAt: DateTime.now(),
+      );
+  final authProvider = _FakeAuthProvider(currentUser, dio);
 
   return MultiProvider(
     providers: [
@@ -184,7 +204,7 @@ void main() {
     }
 
     // 五个维度未完成时，发布按钮不可点击
-    final publishButtonFinder = find.widgetWithText(FilledButton, '发布评价');
+    final publishButtonFinder = find.widgetWithText(FilledButton, '发布食堂评价');
     expect(publishButtonFinder, findsOneWidget);
     final filledBtn = tester.widget<FilledButton>(publishButtonFinder);
     expect(filledBtn.onPressed, isNull);
@@ -271,8 +291,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 1. 验证初始状态：0 / 3，展示快捷推荐
-    expect(find.text('0 / 3'), findsOneWidget);
+    // 1. 验证初始状态：0 / 1，展示快捷推荐
+    expect(find.text('0 / 1'), findsOneWidget);
     expect(find.text('已有菜品（点击快速填入）：'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
 
@@ -284,31 +304,36 @@ void main() {
     await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
     await tester.pumpAndSettle();
 
-    // 未收录的自由输入不会被静默写入评价，而是引导先提交菜品实拍审核。
-    expect(find.text('上传菜品实拍'), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+    // 新输入的菜名在本次评价中保留，作为本次菜品随评价一次提交。
+    expect(find.text('自创麻辣烫'), findsWidgets);
+    expect(find.text('1 / 1'), findsOneWidget);
 
-    // 3. 点击快捷推荐中的“牛肉面”
+    // 3. 删除后再从已有菜品中选择“牛肉面”
+    var closeIcons = find.byIcon(Icons.close_rounded);
+    expect(closeIcons, findsOneWidget);
+    await tester.ensureVisible(closeIcons.first);
+    await tester.tap(closeIcons.first);
+    await tester.pumpAndSettle();
     final beefNoodleFinder = find.text('牛肉面').first;
     await tester.ensureVisible(beefNoodleFinder);
     await tester.pumpAndSettle();
     await tester.tap(beefNoodleFinder);
     await tester.pumpAndSettle();
 
-    // 验证已收录菜品可以建立推荐关系
-    expect(find.text('1 / 3'), findsOneWidget);
+    // 单条评价只能保留一道菜
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(find.text('牛肉面'), findsWidgets);
 
-    // 4. 删除已选择的推荐菜品
-    final closeIcons = find.byIcon(Icons.close_rounded);
+    // 4. 删除已选择的推荐菜品后恢复为空
+    closeIcons = find.byIcon(Icons.close_rounded);
     expect(closeIcons, findsOneWidget);
     await tester.ensureVisible(closeIcons.first);
     await tester.pumpAndSettle();
     await tester.tap(closeIcons.first);
     await tester.pumpAndSettle();
 
-    // 验证删除后恢复为空
-    expect(find.text('0 / 3'), findsOneWidget);
+    // 验证删除后恢复为空，快捷推荐仍可再次选择已有菜品
+    expect(find.text('0 / 1'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
   });
 
@@ -340,7 +365,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('修改评价'), findsOneWidget);
+    expect(find.text('修改食堂评价'), findsOneWidget);
     expect(find.text('老评价内容'), findsOneWidget);
     expect(find.text('4.30'), findsOneWidget);
     expect(find.text('2/6'), findsOneWidget);
@@ -411,7 +436,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
     await tester.pumpAndSettle();
 
     expect(reviewCalled, isTrue);
@@ -419,6 +444,66 @@ void main() {
     final draftAfter =
         await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(draftAfter, isNull);
+  });
+
+  testWidgets('发布时正在进行的自动保存不会在发布后重新写回草稿', (tester) async {
+    var reviewCalled = false;
+    final blockingStore = _BlockingPreferencesStore();
+    final blockingRepository = CanteenReviewDraftRepository(
+      storeOverride: blockingStore,
+      baseDirOverride: tempDir,
+    );
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        reviewCalled = true;
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
+      }
+      if (options.path == '/canteens/1/dishes') {
+        return _json('[]', 200);
+      }
+      return _json('{}', 200);
+    });
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: blockingRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _completeDimensions(tester);
+    await tester.enterText(find.byType(TextField).last, '非常好吃，强烈推荐！');
+    await tester.pump(const Duration(milliseconds: 700));
+    await blockingStore.firstMatchingWriteStarted.future;
+
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(reviewCalled, isTrue);
+
+    // 先释放被挂起的自动保存，验证生产代码会等待它完成后再删除草稿。
+    blockingStore.releaseFirstMatchingWrite.complete();
+    await tester.pumpAndSettle();
+
+    final draftAfter = await blockingRepository.loadDraft(
+      userId: 101,
+      canteenId: 1,
+    );
+    expect(draftAfter, isNull);
+
+    // 模拟下一次重新进入创建评价，旧内容不应再次出现。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: blockingRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('非常好吃，强烈推荐！'), findsNothing);
   });
 
   testWidgets('草稿中的本地图片丢失时阻止发布并保留草稿', (tester) async {
@@ -463,7 +548,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点击发布评价
-    await tester.tap(find.widgetWithText(FilledButton, '发布评价'));
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 500));
@@ -564,5 +649,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('冲突测试中的独家评价'), findsOneWidget);
+  });
+
+  testWidgets('诚信度与权重根据当前登录用户信息动态展示', (tester) async {
+    final dio = Dio();
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      return _json('{}', 200);
+    });
+    final draftRepository = CanteenReviewDraftRepository(
+      storeOverride: MemoryPreferencesStore(),
+    );
+
+    final user = User(
+      id: 101,
+      studentId: '2023001',
+      studentVerified: true,
+      nickname: '测试小周',
+      creditScore: 100,
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(
+      _buildEditorTestApp(
+        dio: dio,
+        draftRepository: draftRepository,
+        user: user,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('你的诚信度 100 · 权重约 1.0'), findsOneWidget);
   });
 }

@@ -149,3 +149,91 @@ def sanitize_html(html: str, base_url: str = "https://jwc.sylu.edu.cn") -> str:
     out = str(soup)
     out = out.strip()
     return out
+
+
+# 仅这些标签表达正文的结构边界。inline 标签（尤其是 Visual SiteBuilder
+# 为了设置字体而生成的大量 span）不能被当作换行处理。
+_SEMANTIC_BLOCK_TAGS: frozenset[str] = frozenset({
+    "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
+    "li", "tr", "blockquote", "pre",
+})
+
+
+def extract_semantic_text(html: str | Tag) -> str:
+    """从安全 HTML 中提取适合搜索/AI 的语义纯文本。
+
+    与 ``Tag.get_text("\\n")`` 不同，这里只在块级语义节点之间产生段落边界。
+    ``span``、``strong``、``em``、``a`` 等 inline 节点的边界只拼接内容，避免
+    学校官网常见的 ``<span>竞</span><span>赛名称</span>`` 被错误拆成两行。
+
+    表格行使用 `` | `` 分隔单元格，既保留可检索性，也避免把单元格内容黏在
+    一起；图片的 alt 文本会保留到纯文本中。
+    """
+    if isinstance(html, Tag):
+        roots = [html]
+    else:
+        if not html:
+            return ""
+        roots = list(BeautifulSoup(html, "html.parser").contents)
+
+    def render(node: object) -> str:
+        if isinstance(node, NavigableString):
+            value = str(node).replace("\u00a0", " ")
+            if not value:
+                return ""
+            # HTML 源码中的换行/缩进仍然是 inline 空白，保留为空格后在
+            # 最终归一化阶段按相邻字符类型处理，而不是直接制造换行。
+            return re.sub(r"[ \t\r\n\f\v]+", " ", value)
+
+        if not isinstance(node, Tag):
+            return ""
+
+        name = (node.name or "").lower()
+        if name in {
+            "script", "style", "iframe", "object", "embed", "noscript",
+            "form", "input", "button", "select", "option", "textarea",
+        }:
+            return ""
+
+        if name == "br":
+            return "\n"
+
+        if name == "img":
+            alt = re.sub(r"\s+", " ", str(node.get("alt", ""))).strip()
+            return f"[图片：{alt}]" if alt else ""
+
+        if name == "tr":
+            cells: list[str] = []
+            for child in node.children:
+                if not isinstance(child, Tag):
+                    continue
+                child_name = (child.name or "").lower()
+                if child_name not in {"td", "th"}:
+                    continue
+                cell = render_children(child)
+                cell = re.sub(r"\s*\n\s*", " ", cell)
+                cell = re.sub(r"[ \t]+", " ", cell).strip()
+                cells.append(cell)
+            return " | ".join(cell for cell in cells if cell) + "\n\n"
+
+        content = render_children(node)
+        if name in _SEMANTIC_BLOCK_TAGS:
+            return content + "\n\n" if content.strip() else ""
+        return content
+
+    def render_children(node: Tag) -> str:
+        return "".join(render(child) for child in node.children)
+
+    text = "".join(render(root) for root in roots)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r"[ ]*\n[ ]*", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # 中文正文中，编辑器为了排版产生的 inline 空白不应改变词语本身；
+    # 英文/数字之间的正常空格仍然保留。
+    text = re.sub(
+        r"(?<=[\u3400-\u9fff\uf900-\ufaff]) +(?=[\u3400-\u9fff\uf900-\ufaff])",
+        "",
+        text,
+    )
+    return text.strip()

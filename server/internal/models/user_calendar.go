@@ -113,3 +113,19 @@ type UserCalendarActionAudit struct {
 }
 
 func (UserCalendarActionAudit) TableName() string { return "user_calendar_action_audits" }
+
+// UserCalendarActionMigrationConflict 记录唯一索引上线前发现的历史重复，
+// 迁移不会擅自删除任何事件；冲突必须由运维按业务规则显式处理。
+type UserCalendarActionMigrationConflict struct {
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	UserID         uint       `gorm:"not null;uniqueIndex:idx_user_calendar_action_migration_conflict,priority:1" json:"user_id"`
+	SourceType     string     `gorm:"size:32;not null;uniqueIndex:idx_user_calendar_action_migration_conflict,priority:2" json:"source_type"`
+	SourceID       string     `gorm:"size:128;not null;uniqueIndex:idx_user_calendar_action_migration_conflict,priority:3" json:"source_id"`
+	DuplicateCount int        `gorm:"not null" json:"duplicate_count"`
+	DetectedAt     time.Time  `gorm:"not null;index" json:"detected_at"`
+	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+}
+
+func (UserCalendarActionMigrationConflict) TableName() string {
+	return "user_calendar_action_migration_conflicts"
+}

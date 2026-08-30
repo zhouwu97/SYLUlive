@@ -18,9 +18,9 @@ void main() {
           home: Scaffold(
             body: ListView(
               padding: const EdgeInsets.all(16),
-              children: [
+              children: const [
                 AiAgentExecutionCard(
-                  event: const AiRunEvent(
+                  event: AiRunEvent(
                     type: AiRunEventType.eduFetching,
                     datasets: ['grades'],
                   ),
@@ -36,6 +36,70 @@ void main() {
         find.byKey(const ValueKey('ai-agent-execution-card')), findsOneWidget);
     expect(find.text('正在获取最新成绩…'), findsNWidgets(2));
     expect(find.text('检查成绩更新时间'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-static')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-animated')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('运行中的 Agent 状态使用轻量动态指示器', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            event: AiRunEvent(
+              type: AiRunEventType.eduFetching,
+              datasets: ['grades'],
+            ),
+            running: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AiThinkingIndicator), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('ai-thinking-indicator-animated')),
+      findsNWidgets(2),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('深色与大字号下运行态不溢出', (tester) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(360, 800),
+          textScaler: TextScaler.linear(1.5),
+        ),
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: ListView(
+              padding: const EdgeInsets.all(16),
+              children: const [
+                AiAgentExecutionCard(
+                  event: AiRunEvent(
+                    type: AiRunEventType.agentActivity,
+                    activityCode: 'provider_started',
+                    status: 'running',
+                  ),
+                  running: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('正在继续分析…'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 
@@ -132,6 +196,93 @@ void main() {
     await tester.tap(find.text('使用已有数据'));
     expect(retryCount, 1);
     expect(staleCount, 1);
+  });
+
+  testWidgets('二课可选入口由用户主动打开', (tester) async {
+    var updateCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            running: true,
+            onUpdateErke: () => updateCount++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('更新二课数据'), findsOneWidget);
+    await tester.tap(find.text('更新二课数据'));
+    expect(updateCount, 1);
+  });
+
+  testWidgets('完成后显示摘要，并可查看未合并的完整审计过程', (tester) async {
+    final summary = AiAgentActivity(
+      id: 'summary',
+      runId: 'run-audit',
+      code: 'tool.completed',
+      dataset: 'academic',
+      status: AiAgentActivityStatus.success,
+      title: '已读取学业数据',
+      detail: '',
+      timestamp: DateTime.utc(2026, 8, 25),
+    );
+    const rawEvents = [
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 1,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_job_completed',
+      ),
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 2,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_resume_claimed',
+      ),
+      AiRunEvent(
+        runId: 'run-audit',
+        seq: 3,
+        type: AiRunEventType.agentActivity,
+        activityCode: 'device_result_consumed',
+      ),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            activities: [summary],
+            rawEvents: rawEvents,
+            running: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiAgentExecutionCard(
+            activities: [summary],
+            rawEvents: rawEvents,
+            completed: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已完成分析'), findsOneWidget);
+    expect(find.text('查看完整过程'), findsOneWidget);
+    expect(find.text('设备任务已完成'), findsNothing);
+
+    await tester.tap(find.text('查看完整过程'));
+    await tester.pumpAndSettle();
+    expect(find.text('查看技术详情'), findsOneWidget);
+    await tester.tap(find.text('查看技术详情'));
+    await tester.pumpAndSettle();
+    expect(find.text('设备任务已完成'), findsOneWidget);
+    expect(find.text('已接收设备结果'), findsOneWidget);
+    expect(find.text('已读取设备更新结果'), findsOneWidget);
   });
 
   testWidgets('单次授权独立于 Process Card 且不出现长期授权文案', (tester) async {

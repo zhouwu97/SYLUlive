@@ -67,7 +67,8 @@ func TestAuthMiddlewareErrorIncludesMachineCode(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["error"] == "" || body["code"] != "authentication_required" {
+	if body["message"] == "" || body["code"] != "authentication_required" ||
+		body["request_id"] == "" {
 		t.Fatalf("unexpected auth error body: %#v", body)
 	}
 }
@@ -91,7 +92,8 @@ func TestAdminMiddlewareErrorIncludesMachineCode(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body["error"] == "" || body["code"] != "admin_required" {
+	if body["message"] == "" || body["code"] != "admin_required" ||
+		body["request_id"] == "" {
 		t.Fatalf("unexpected admin error body: %#v", body)
 	}
 }

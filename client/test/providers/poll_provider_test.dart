@@ -71,7 +71,8 @@ class FakePollService extends PollService {
   }
 
   @override
-  Future<Post> putBallot(int pollId, List<int> optionIds) async {
+  Future<Post> putBallot(int pollId, List<int> optionIds,
+      {String? idempotencyKey}) async {
     ballotCalls++;
     if (failBallot) {
       throw const PollApiException('poll_ended', '投票已结束');
@@ -90,7 +91,7 @@ class FakePollService extends PollService {
   }
 
   @override
-  Future<void> deletePoll(int pollId) async {}
+  Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {}
 }
 
 class RecordingPostProvider extends PostProvider {

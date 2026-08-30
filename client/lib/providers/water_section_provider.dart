@@ -20,6 +20,10 @@ class WaterSectionProvider extends ChangeNotifier {
   String? _error;
   DateTime? _lastLoadedAt;
   bool _usingFallback = false;
+  int? _sessionAccountId;
+  int _authSessionEpoch = 0;
+  int _sessionGeneration = 0;
+  bool _hasSessionContext = false;
 
   WaterSectionProvider(Dio? dio)
       : _service = dio != null ? WaterSectionService(dio) : null,
@@ -35,6 +39,28 @@ class WaterSectionProvider extends ChangeNotifier {
   WaterSectionService? get service => _service;
   WaterSectionIconReviewService? get iconReviewService => _iconReviewService;
 
+  /// 版块 DTO 含关注状态和当前用户等级，因此账号变化时不能复用旧缓存。
+  void syncSessionUser(int? accountId, [int authSessionEpoch = 0]) {
+    final normalizedAccountId =
+        accountId != null && accountId > 0 ? accountId : null;
+    if (_hasSessionContext &&
+        _sessionAccountId == normalizedAccountId &&
+        _authSessionEpoch == authSessionEpoch) {
+      return;
+    }
+    _hasSessionContext = true;
+    _sessionAccountId = normalizedAccountId;
+    _authSessionEpoch = authSessionEpoch;
+    _sessionGeneration++;
+    _sections = const [];
+    _isLoading = false;
+    _isSaving = false;
+    _error = null;
+    _lastLoadedAt = null;
+    _usingFallback = false;
+    notifyListeners();
+  }
+
   /// active 状态版块（接口数据或 fallback）
   List<WaterSection> get activeSections =>
       _sections.where((s) => s.status == 'active').toList();
@@ -48,14 +74,17 @@ class WaterSectionProvider extends ChangeNotifier {
       return;
     }
     if (_isLoading) return;
+    final session = _captureSession();
     _isLoading = true;
     notifyListeners();
     try {
       if (_service != null) {
         final fresh = await _service!.fetchSections();
+        if (!_ownsSession(session)) return;
         _sections = fresh;
         _usingFallback = false;
       } else {
+        if (!_ownsSession(session)) return;
         // 无网络层（测试环境）：直接 fallback
         _sections =
             kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
@@ -64,6 +93,7 @@ class WaterSectionProvider extends ChangeNotifier {
       _error = null;
       _lastLoadedAt = DateTime.now();
     } catch (e) {
+      if (!_ownsSession(session)) return;
       // fallback：本地 taxonomy 转成 WaterSection
       _sections =
           kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
@@ -71,8 +101,10 @@ class WaterSectionProvider extends ChangeNotifier {
       _error = e.toString();
       debugPrint('WaterSectionProvider fallback: $_error');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (_ownsSession(session)) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -112,16 +144,19 @@ class WaterSectionProvider extends ChangeNotifier {
     bool includeDisabledTags = false,
   }) async {
     if (_service == null) return getBySlug(slug);
+    final session = _captureSession();
     try {
       final fresh = await _service!.fetchSection(
         slug,
         includeDisabledTags: includeDisabledTags,
       );
+      if (!_ownsSession(session)) return null;
       _upsertSection(fresh);
       _error = null;
       notifyListeners();
       return fresh;
     } catch (e) {
+      if (!_ownsSession(session)) return null;
       _error = _mapError(e);
       notifyListeners();
       return getBySlug(slug);
@@ -132,11 +167,12 @@ class WaterSectionProvider extends ChangeNotifier {
     required String slug,
     required Map<String, dynamic> fields,
   }) async {
-    return _save(() async {
+    return _save((session) async {
       final fresh = await _service!.updateSectionDisplay(
         slug: slug,
         fields: fields,
       );
+      if (!_ownsSession(session)) return;
       _upsertSection(fresh);
     });
   }
@@ -146,10 +182,11 @@ class WaterSectionProvider extends ChangeNotifier {
     required Map<String, dynamic> fields,
     bool includeDisabledTags = false,
   }) async {
-    return _save(() async {
+    return _save((session) async {
       await _service!.createTag(sectionSlug: sectionSlug, fields: fields);
       await _refreshSectionAfterMutation(
         sectionSlug,
+        session: session,
         includeDisabledTags: includeDisabledTags,
       );
     });
@@ -161,7 +198,7 @@ class WaterSectionProvider extends ChangeNotifier {
     required Map<String, dynamic> fields,
     bool includeDisabledTags = false,
   }) async {
-    return _save(() async {
+    return _save((session) async {
       await _service!.updateTag(
         sectionSlug: sectionSlug,
         tagId: tagId,
@@ -169,6 +206,7 @@ class WaterSectionProvider extends ChangeNotifier {
       );
       await _refreshSectionAfterMutation(
         sectionSlug,
+        session: session,
         includeDisabledTags: includeDisabledTags,
       );
     });
@@ -211,7 +249,7 @@ class WaterSectionProvider extends ChangeNotifier {
     String? reason,
     bool includeDisabledTags = false,
   }) async {
-    return _save(() async {
+    return _save((session) async {
       await _service!.updateTagStatus(
         sectionSlug: sectionSlug,
         tagId: tagId,
@@ -220,6 +258,7 @@ class WaterSectionProvider extends ChangeNotifier {
       );
       await _refreshSectionAfterMutation(
         sectionSlug,
+        session: session,
         includeDisabledTags: includeDisabledTags,
       );
     });
@@ -227,47 +266,71 @@ class WaterSectionProvider extends ChangeNotifier {
 
   Future<bool> toggleFollow(String slug, bool follow) async {
     if (_service == null) return false;
-    return _save(() async {
+    return _save((session) async {
       if (follow) {
         await _service!.followSection(slug);
       } else {
         await _service!.unfollowSection(slug);
       }
-      await _refreshSectionAfterMutation(slug);
+      if (!_ownsSession(session)) return;
+      await _refreshSectionAfterMutation(slug, session: session);
     });
   }
 
-  Future<bool> _save(Future<void> Function() action) async {
+  Future<bool> _save(
+    Future<void> Function(_WaterSectionSession session) action,
+  ) async {
+    final session = _captureSession();
     if (_service == null) {
-      _error = '网络异常，请稍后重试';
-      notifyListeners();
+      if (_ownsSession(session)) {
+        _error = '网络异常，请稍后重试';
+        notifyListeners();
+      }
       return false;
     }
     _isSaving = true;
     _error = null;
     notifyListeners();
     try {
-      await action();
+      await action(session);
+      if (!_ownsSession(session)) return false;
       _error = null;
       return true;
     } catch (e) {
+      if (!_ownsSession(session)) return false;
       _error = _mapError(e);
       return false;
     } finally {
-      _isSaving = false;
-      notifyListeners();
+      if (_ownsSession(session)) {
+        _isSaving = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> _refreshSectionAfterMutation(
     String slug, {
+    required _WaterSectionSession session,
     bool includeDisabledTags = false,
   }) async {
     final fresh = await _service!.fetchSection(
       slug,
       includeDisabledTags: includeDisabledTags,
     );
+    if (!_ownsSession(session)) return;
     _upsertSection(fresh);
+  }
+
+  _WaterSectionSession _captureSession() => _WaterSectionSession(
+        generation: _sessionGeneration,
+        accountId: _sessionAccountId,
+        authSessionEpoch: _authSessionEpoch,
+      );
+
+  bool _ownsSession(_WaterSectionSession session) {
+    return session.generation == _sessionGeneration &&
+        session.accountId == _sessionAccountId &&
+        session.authSessionEpoch == _authSessionEpoch;
   }
 
   void _upsertSection(WaterSection section) {
@@ -290,7 +353,7 @@ class WaterSectionProvider extends ChangeNotifier {
       final data = error.response?.data;
       String? message;
       if (data is Map) {
-        message = '${data['error'] ?? data['message'] ?? ''}'.trim();
+        message = '${data['message'] ?? data['error'] ?? ''}'.trim();
       }
       if (status == 403) return '没有该操作权限';
       if (status == 400 && message != null && message.isNotEmpty) {
@@ -308,4 +371,16 @@ class WaterSectionProvider extends ChangeNotifier {
     }
     return '操作失败，请稍后重试';
   }
+}
+
+class _WaterSectionSession {
+  const _WaterSectionSession({
+    required this.generation,
+    required this.accountId,
+    required this.authSessionEpoch,
+  });
+
+  final int generation;
+  final int? accountId;
+  final int authSessionEpoch;
 }

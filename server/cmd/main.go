@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +22,7 @@ import (
 	"gorm.io/driver/postgres"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
@@ -193,6 +196,7 @@ func main() {
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
+		&models.IdempotencyRecord{},
 
 		&models.UserLegalConsent{},
 
@@ -201,11 +205,15 @@ func main() {
 		&models.AcademicSnapshot{},
 		&models.PersonalUploadedSnapshot{},
 		&models.AIUserPermission{},
+		&models.AIScopedGrant{},
 		&models.AIRunConsent{},
 		&models.UserDevice{},
+		&models.PushDevice{},
 		&models.DeviceToolJob{},
 
 		&models.Post{},
+		&models.Topic{},
+		&models.PostTopic{},
 		&models.Poll{},
 		&models.PollOption{},
 		&models.PollBallot{},
@@ -249,6 +257,7 @@ func main() {
 
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.UserEmojiAsset{},
 		&models.UserEmojiFavorite{},
 
@@ -354,6 +363,7 @@ func main() {
 		&models.UserCalendarReminder{},
 		&models.UserCalendarActionDraft{},
 		&models.UserCalendarActionAudit{},
+		&models.UserCalendarActionMigrationConflict{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},
@@ -370,8 +380,29 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.EnsureCanteenDishSchema(db); err != nil {
+		log.Fatal("食堂菜品索引迁移失败:", err)
+	}
+	if err := models.MigratePendingDishesAndPhotos(db); err != nil {
+		log.Fatal("食堂菜品与实拍历史数据迁移失败:", err)
+	}
+	if err := models.MigrateCanteenLocations(db); err != nil {
+		log.Fatal("食堂位置标签历史数据迁移失败:", err)
+	}
+	if err := models.ValidateAIUserPermissionSchema(db); err != nil {
+		log.Fatal("AI_PERMISSION_SCHEMA_INVALID:", err)
+	}
+	if err := models.EnsureDeviceToolJobIndexes(db); err != nil {
+		log.Fatal("设备 Agent 任务索引迁移失败:", err)
+	}
 	if err := ensureUserCalendarReminderLiveUniqueIndex(db); err != nil {
 		log.Fatal("个人日历提醒唯一索引迁移失败:", err)
+	}
+	if err := models.EnsurePushDeviceIndexes(db); err != nil {
+		log.Fatal("推送设备唯一索引迁移失败:", err)
+	}
+	if err := ensureUserCalendarAgentActionUniqueIndex(db); err != nil {
+		log.Fatal("个人日历 Agent 动作幂等索引迁移失败:", err)
 	}
 	if err := ensureSecurityHardeningSchema(db); err != nil {
 		log.Fatal("安全加固数据库迁移失败:", err)
@@ -510,7 +541,11 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-	r := gin.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	r := gin.New()
+	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
 
 	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
 	allowedOrigins := make(map[string]struct{})
@@ -540,7 +575,8 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
 
@@ -568,6 +604,8 @@ func main() {
 		cfg.AppUpdateEnforcementEnabled,
 		cfg.AllowMissingVersionHeaders,
 	))
+	// 只有显式携带 Idempotency-Key 的写请求才会建立记录；无键旧客户端保持兼容。
+	r.Use(middleware.IdempotencyMiddlewareWithJWT(db, cfg.JWTSecret))
 
 	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -608,6 +646,7 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	topicHandler := handlers.NewTopicHandler(db)
 	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
 	postHandler.SetFeedPersonalizationV5(cfg.HomeFeedV5PersonalizationShadow, cfg.HomeFeedV5PersonalizationPercent)
 	feedHandler := handlers.NewFeedHandler(db)
@@ -651,7 +690,7 @@ func main() {
 
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
-	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db, cfg.JWTSecret)
 
 	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
 	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
@@ -742,8 +781,9 @@ func main() {
 
 		// JWC sync (教务通知 + 教务公告)
 		jwcSpec := services.CrawlSourceSpec{
-			Source:     "jwc",
-			Categories: []string{"jwtz", "jwgg"},
+			Source:        "jwc",
+			Categories:    []string{"jwtz", "jwgg"},
+			ParserVersion: "jwc-v2",
 			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
 				return jwcClient.Crawl(ctx, &clients.CrawlRequest{
 					Categories:      []string{"jwtz", "jwgg"},
@@ -757,8 +797,9 @@ func main() {
 
 		// Competition sync (创新创业学院比赛通知)
 		competitionSpec := services.CrawlSourceSpec{
-			Source:     "cxcy",
-			Categories: []string{"competition"},
+			Source:        "cxcy",
+			Categories:    []string{"competition"},
+			ParserVersion: "competition-v2",
 			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
 				// 合并所有已知 URL 为扁平列表（Python competition 端接收 list）
 				var allURLs []string
@@ -789,6 +830,12 @@ func main() {
 	var externalMCPClient *mcpclient.Client
 	var toolRegistry *ai.ToolRegistry
 	var capabilityRegistry *ai.AgentCapabilityRegistry
+	var unifiedMCPGateway *ai.MCPV5Gateway
+	// Run Scoped Grant 由 Go Control Plane 创建，MCP 只通过 Authorization 接收 opaque token。
+	scopedGrantManager := ai.NewScopedGrantManager(time.Now,
+		ai.WithScopedGrantDB(db),
+		ai.WithScopedGrantPermissionVersionReader(aiUserPermissionService),
+	)
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -802,13 +849,14 @@ func main() {
 		var provider ai.AIProvider
 		var retriever ai.PolicyRetriever
 		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
+		runtimeOptions = append(runtimeOptions, ai.WithScopedGrantManager(scopedGrantManager))
 		providerName, modelName := cfg.AIProvider, cfg.AIChatModel
 		if cfg.AILangChainRAGEnabled {
 			providerName, modelName = "rag-rollout", "policy-rag"
 			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
 		}
-		if cfg.AILegacyRAGEnabled {
-			// 灰度期只为分配到旧路径的请求调用这些依赖，同一请求不会双重检索或生成。
+		if cfg.AILegacyRAGEnabled || cfg.AILangChainRAGEnabled {
+			// 统一 Agent 路径也需要模型 Provider；Retriever 仅在确有政策召回依赖时启用。
 			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
 			if cfg.AIProvider == "mock" {
 				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
@@ -840,6 +888,21 @@ func main() {
 		)
 		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
 		tools = append(tools, handlers.NewCampusCalendarActionProposalTool(userCalendarHandler))
+		if strings.TrimSpace(cfg.AIUnifiedMCPURL) != "" {
+			var gatewayErr error
+			unifiedMCPGateway, gatewayErr = ai.NewMCPV5Gateway(cfg.AIUnifiedMCPURL, &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second})
+			if gatewayErr != nil {
+				log.Printf("[AI_UNIFIED_MCP_CONFIGURATION_INVALID] %v", gatewayErr)
+			} else {
+				tools = append(tools, ai.NewMCPV5Tools(
+					unifiedMCPGateway,
+					scopedGrantManager,
+					ai.WithMCPV5PersonalDataPermissionReader(aiUserPermissionService),
+					ai.WithMCPV5PermissionDB(db),
+				)...)
+				log.Printf("Agent Contract v5 MCP Gateway 已配置 endpoint=%s", cfg.AIUnifiedMCPURL)
+			}
+		}
 		if cfg.AIExternalMCPEnabled {
 			var externalMCPErr error
 			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{
@@ -940,6 +1003,23 @@ func main() {
 				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
 				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
 				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
+				UnifiedAgentEnabled:            cfg.AIAgentEnabled,
+				FeatureFlagsConfigured:         true,
+				ShadowTraceRetention:           time.Duration(cfg.AIShadowTraceRetentionDays) * 24 * time.Hour,
+				FailureTraceRetention:          time.Duration(cfg.AIFailureTraceRetentionDays) * 24 * time.Hour,
+				FeatureFlags: ai.AgentFeatureFlags{
+					Enabled:             cfg.AIAgentEnabled,
+					RolloutPercent:      cfg.AIAgentRolloutPercent,
+					RolloutUserIDs:      cfg.AIAgentRolloutUserIDs,
+					AppVersionAllowlist: cfg.AIAgentAppVersionAllowlist,
+					CapabilityAllowlist: cfg.AIAgentCapabilityAllowlist,
+					ModeAllowlist:       cfg.AIAgentModeAllowlist,
+					ShadowEnabled:       cfg.AIAgentShadowEnabled,
+					ShadowPercent:       cfg.AIAgentShadowPercent,
+					ActionsEnabled:      cfg.AIAgentActionsEnabled,
+					PersonalDataEnabled: cfg.AIAgentPersonalDataEnabled,
+					DeepModeEnabled:     cfg.AIAgentDeepModeEnabled,
+				},
 			},
 			runtimeOptions...,
 		)
@@ -948,9 +1028,46 @@ func main() {
 		}
 		deviceJobHandler.SetRunResumer(aiRuntime)
 		eduHandler.SetUserConsentRunResumer(aiRuntime)
+		go func() {
+			reconcile := func() {
+				count, err := aiRuntime.ReconcileWaitingDeviceJobs(appCtx, 50)
+				if err != nil {
+					log.Printf("[AI_DEVICE_RECONCILE_FAILED] %v", err)
+				} else if count > 0 {
+					log.Printf("[AI_DEVICE_RECONCILE] resumed=%d", count)
+				}
+			}
+			reconcile()
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case <-ticker.C:
+					reconcile()
+				}
+			}
+		}()
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}
+		go func() {
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case now := <-ticker.C:
+					if deleted, cleanupErr := aiRuntime.ReclaimObservabilityData(appCtx, now.UTC()); cleanupErr != nil {
+						log.Printf("[AI_OBSERVABILITY_CLEANUP_FAILED] %v", cleanupErr)
+					} else if deleted > 0 {
+						log.Printf("[AI_OBSERVABILITY_CLEANUP] events=%d", deleted)
+					}
+				}
+			}
+		}()
 		ingestionWorker := services.NewKnowledgeIngestionWorker(db, ragClient, cfg.RAGEmbeddingModelVersion)
 		go ingestionWorker.Start(appCtx)
 		go func() {
@@ -989,6 +1106,10 @@ func main() {
 
 	// 启动后台定时任务
 
+	if cfg.ImageVariantWorkerEnabled {
+		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
+		log.Println("图片变体 worker 已启用")
+	}
 	tasks.StartLotteryCron(db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
@@ -997,6 +1118,7 @@ func main() {
 	}
 	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
 	eduBindingRecoveryCron := tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
+	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -1065,6 +1187,7 @@ func main() {
 		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
 		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
 		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
 		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
 		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
 		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
@@ -1143,6 +1266,7 @@ func main() {
 
 		user.GET("/profile", userHandler.GetProfile)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
+		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -1280,13 +1404,20 @@ func main() {
 	}
 
 	internalMCP := r.Group("/internal/mcp")
-	internalMCP.Use(handlers.InternalMCPGrantMiddleware(cfg.SyluliveMCPGrant))
+	internalMCP.Use(handlers.InternalMCPGrantOrScopedGrantMiddleware(cfg.SyluliveMCPGrant, scopedGrantManager))
 	{
 		internalMCP.POST("/competition/search", competitionHandler.InternalMCPCompetitionSearch)
 		internalMCP.POST("/competition/details", competitionHandler.InternalMCPCompetitionDetails)
 		internalMCP.POST("/competition/compare", competitionHandler.InternalMCPCompetitionCompare)
 		internalMCP.POST("/competition/candidate-context", competitionHandler.InternalMCPCompetitionCandidateContext)
 		internalMCP.POST("/competition/verify-records", competitionHandler.InternalMCPCompetitionVerifyRecords)
+		internalMCPV5 := handlers.NewInternalMCPV5Handler(db)
+		internalMCP.POST("/system/status", internalMCPV5.SystemStatus)
+		internalMCP.POST("/policy/search", internalMCPV5.PolicySearch)
+		internalMCP.POST("/policy/sources", internalMCPV5.PolicySources)
+		internalMCP.POST("/academic/summary", internalMCPV5.AcademicSummary)
+		internalMCP.POST("/schedule/free-windows", internalMCPV5.ScheduleFreeWindows)
+		internalMCP.POST("/schedule/validate-plan", internalMCPV5.ScheduleValidatePlan)
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
@@ -1297,6 +1428,11 @@ func main() {
 	r.POST("/api/notifications/read-selected", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkSelectedRead)
 
 	// 帖子路由
+	topics := r.Group("/api/topics")
+	{
+		topics.GET("/search", topicHandler.Search)
+		topics.GET("/recommend", topicHandler.Recommend)
+	}
 
 	posts := r.Group("/api/posts")
 
@@ -1949,13 +2085,14 @@ func main() {
 
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
+		canteen.GET("/:id/detail", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
 
 		// 菜品图库公开接口
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
 		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
-		canteen.GET("/:id/reviews", canteenHandler.GetReviews)
-		canteen.GET("/:id/reviews/history/:userId", canteenHandler.GetReviewHistory)
-		canteen.GET("/:id/reviewers/:userId/history", canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviews)
+		canteen.GET("/:id/reviews/history/:userId", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
+		canteen.GET("/:id/reviewers/:userId/history", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/dish-suggestions", canteenHandler.GetDishSuggestions)
 		canteen.GET("/dishes/:dishId/reviews", canteenHandler.GetDishReviews)
 
@@ -1980,11 +2117,8 @@ func main() {
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
-		// 菜品实拍审核与菜品管理
-		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
+		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
-		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
@@ -2002,6 +2136,7 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 		canteenAuth.POST("/:id/reviews", canteenHandler.CreateReview)
 		canteenAuth.PATCH("/reviews/:reviewId", canteenHandler.UpdateReview)
+		canteenAuth.GET("/reviews/:reviewId/edit-context", canteenHandler.GetReviewEditContext)
 		canteenAuth.DELETE("/reviews/:reviewId", canteenHandler.DeleteReview)
 		canteenAuth.DELETE("/ratings/:ratingId", canteenHandler.DeleteLegacyRating)
 		canteenAuth.PUT("/reviews/:reviewId/vote", canteenHandler.VoteReview)
@@ -2012,6 +2147,7 @@ func main() {
 		// 学生上传菜品实拍
 		canteenAuth.POST("/:id/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
 		canteenAuth.POST("/:id/dish-submissions", canteenDishPhotoHandler.SubmitDishPhotoV2)
+		canteenAuth.POST("/dishes/:dishId/resubmit", canteenHandler.ResubmitDish)
 
 	}
 
@@ -2128,6 +2264,16 @@ func main() {
 	adminAI := r.Group("/api/admin/ai")
 	adminAI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	adminAI.GET("/metrics", adminAIHandler.GetMetrics)
+	adminAI.GET("/gray-dashboard", adminAIHandler.GetGrayDashboard)
+	adminAI.GET("/regression-candidates", adminAIHandler.ListRegressionCandidates)
+	adminAI.POST("/regression-candidates/:run_id/review", func(c *gin.Context) {
+		if aiRuntime == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "ai_runtime_unavailable"})
+			return
+		}
+		c.Set("ai_runtime", aiRuntime)
+		adminAIHandler.ReviewRegressionCandidate(c)
+	})
 
 	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
@@ -2146,12 +2292,16 @@ func main() {
 			middleware.AIAccessMiddleware(cfg.AIEnabled),
 		)
 		{
+			aiProtected.DELETE("/observability", aiRuntimeHandler.DeleteUserObservability)
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
+			aiProtected.GET("/runs/:id/metrics", aiRuntimeHandler.GetRunMetrics)
+			aiProtected.DELETE("/runs/:id/observability", aiRuntimeHandler.DeleteRunObservability)
 			aiProtected.GET("/runs/:id/sources", aiRuntimeHandler.GetRunSources)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
 			aiProtected.POST("/runs/:id/consent", aiRuntimeHandler.SubmitRunConsent)
+			aiProtected.POST("/runs/:id/feedback", aiRuntimeHandler.SubmitRunFeedback)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)
@@ -2212,6 +2362,7 @@ func main() {
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
 	eduBindingRecoveryCron.Wait()
+	idempotencyCleanupCron.Wait()
 	feedMetricsCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
@@ -2290,12 +2441,15 @@ func ensureSecurityHardeningSchema(db *gorm.DB) error {
 		`ALTER TABLE files ADD COLUMN IF NOT EXISTS access_scope VARCHAR(16) NOT NULL DEFAULT 'private'`,
 		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
 		`UPDATE files SET access_scope = 'private' WHERE access_scope IS NULL OR access_scope = ''`,
+		`UPDATE files SET access_scope = 'private' WHERE access_scope = 'public'`,
 		`UPDATE files
 SET status = 'active', claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
 WHERE EXISTS (SELECT 1 FROM messages WHERE messages.file_id = files.id)`,
 		`UPDATE files SET access_scope = 'public'
-WHERE EXISTS (SELECT 1 FROM post_images WHERE post_images.file_id = files.id)
-   OR EXISTS (SELECT 1 FROM reply_images WHERE reply_images.file_id = files.id)
+WHERE EXISTS (SELECT 1 FROM post_images JOIN posts ON posts.id = post_images.post_id
+              WHERE post_images.file_id = files.id AND posts.status IN ('normal','sold','closed'))
+   OR EXISTS (SELECT 1 FROM reply_images JOIN replies ON replies.id = reply_images.reply_id
+              WHERE reply_images.file_id = files.id AND replies.status = 'normal')
    OR EXISTS (SELECT 1 FROM users WHERE users.avatar = files.path OR users.avatar LIKE files.path || '?%')
    OR EXISTS (SELECT 1 FROM users WHERE users.background = files.path OR users.background LIKE files.path || '?%')
    OR EXISTS (SELECT 1 FROM water_sections
@@ -2325,7 +2479,7 @@ WHERE EXISTS (SELECT 1 FROM canteens
 			return err
 		}
 	}
-	return nil
+	return services.BackfillPublicImageVariantTasks(db)
 }
 
 // ensureUserCalendarReminderLiveUniqueIndex 将提醒唯一性限定在未软删除记录。
@@ -2351,26 +2505,75 @@ func ensureUserCalendarReminderLiveUniqueIndex(db *gorm.DB) error {
 	return nil
 }
 
+// ensureUserCalendarAgentActionUniqueIndex 以草稿 ID 作为 Agent 写入的幂等键，
+// 即使确认请求并发到达，也不允许同一草稿落出两条创建事件。
+func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("数据库连接为空")
+	}
+	var conflicts []struct {
+		UserID         uint
+		SourceType     string
+		SourceID       string
+		DuplicateCount int
+	}
+	if err := db.Table("user_calendar_events").
+		Select("user_id, source_type, source_id, COUNT(*) AS duplicate_count").
+		Where("source_type = ? AND NULLIF(TRIM(source_id), '') IS NOT NULL", models.UserCalendarSourceAgentAction).
+		Group("user_id, source_type, source_id").Having("COUNT(*) > 1").Scan(&conflicts).Error; err != nil {
+		return fmt.Errorf("个人日历 Agent 动作幂等预检失败: %w", err)
+	}
+	for _, conflict := range conflicts {
+		row := models.UserCalendarActionMigrationConflict{
+			UserID: conflict.UserID, SourceType: conflict.SourceType, SourceID: conflict.SourceID,
+			DuplicateCount: conflict.DuplicateCount, DetectedAt: time.Now(),
+		}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return fmt.Errorf("记录个人日历 Agent 动作幂等冲突失败: %w", err)
+		}
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("发现 %d 组个人日历 Agent 动作历史重复，已记录到 user_calendar_action_migration_conflicts；请先显式去重", len(conflicts))
+	}
+	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_user_calendar_events_agent_action
+ ON user_calendar_events (user_id, source_type, source_id)
+ WHERE source_type = 'agent_action' AND source_id <> ''`).Error
+}
+
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
 func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	var canteens []models.Canteen
-	if err := db.Select("id", "name", "normalized_name").Find(&canteens).Error; err != nil {
+	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor").Find(&canteens).Error; err != nil {
 		return err
 	}
-	seen := make(map[string]uint, len(canteens))
+	type locationKey struct {
+		normalized string
+		area       string
+		floor      string
+	}
+	seen := make(map[locationKey]uint, len(canteens))
 	for _, canteen := range canteens {
 		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
-		if previousID, exists := seen[normalized]; exists {
+		key := locationKey{
+			normalized: normalized,
+			area:       canteen.LocationArea,
+			floor:      canteen.LocationFloor,
+		}
+		if previousID, exists := seen[key]; exists {
 			return errors.New("食堂名称规范化后重复: id=" + strconv.FormatUint(uint64(previousID), 10) + ", id=" + strconv.FormatUint(uint64(canteen.ID), 10))
 		}
-		seen[normalized] = canteen.ID
+		seen[key] = canteen.ID
 		if canteen.NormalizedName != normalized {
 			if err := db.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Update("normalized_name", normalized).Error; err != nil {
 				return err
 			}
 		}
 	}
-	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name)").Error
+	// 位置字段加入唯一约束：同名店铺允许存在于不同食堂区域/楼层。
+	if err := db.Exec("DROP INDEX IF EXISTS idx_canteens_normalized_name").Error; err != nil {
+		return err
+	}
+	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name, location_area, location_floor)").Error
 }
 
 func ensureFeatureCollaborationIndexes(db *gorm.DB) error {

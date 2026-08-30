@@ -319,7 +319,7 @@ void main() {
         jsonDecode(box.get('board_777_time__')!) as Map<String, dynamic>;
     final cachedAuthor = ((stored['posts'] as List).single
         as Map<String, dynamic>)['author'] as Map<String, dynamic>;
-    expect(stored['schema_version'], 6);
+    expect(stored['schema_version'], PostCacheService.cacheSchemaVersion);
     expect(cachedAuthor.containsKey('student_id'), isFalse);
     expect(cachedAuthor['credit_score'], 88);
     expect(cachedAuthor.containsKey('report_count'), isFalse);
@@ -382,7 +382,8 @@ void main() {
     expect(expired.isActivePinned, isFalse);
   });
 
-  test('invalidateHomeFeedCaches clears board-1 state and cache only', () async {
+  test('invalidateHomeFeedCaches clears board-1 state and cache only',
+      () async {
     await PostCacheService.savePosts(
       1,
       CachedPostFeed(
@@ -396,8 +397,8 @@ void main() {
             createdAt: DateTime.utc(2026, 6, 14, 8),
           ),
         ],
-        algorithmVersion: PostCacheService.expectedAlgorithmVersion(
-            boardId: 1, sort: 'all'),
+        algorithmVersion:
+            PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: 'all'),
       ),
       sort: 'all',
     );
@@ -421,8 +422,7 @@ void main() {
     final dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) =>
-            handler.resolve(_response(options, 1)),
+        onRequest: (options, handler) => handler.resolve(_response(options, 1)),
       ),
     );
     final provider = PostProvider(dio);
@@ -434,7 +434,8 @@ void main() {
     await provider.invalidateHomeFeedCaches();
 
     expect(provider.postsFor(1, sort: 'all'), isEmpty, reason: 'board 1 状态已清');
-    expect(provider.postsFor(2, sort: 'all'), isNotEmpty, reason: '仅失效首页 board 1');
+    expect(provider.postsFor(2, sort: 'all'), isNotEmpty,
+        reason: '仅失效首页 board 1');
     expect(await PostCacheService.loadPosts(1, sort: 'all'), isNull,
         reason: 'board 1 Hive 缓存已清');
     expect(await PostCacheService.loadPosts(2, sort: 'all'), isNotNull,
@@ -1027,7 +1028,7 @@ void main() {
   });
 
   test(
-      'clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 6',
+      'clearLegacyCache removes schema 3, empty string, and corrupt json but keeps current schema',
       () async {
     final box = await Hive.openBox<String>('post_cache');
 
@@ -1047,11 +1048,11 @@ void main() {
           'posts': [],
         }));
 
-    // Insert valid schema 6 data
+    // Insert valid current-schema data
     await box.put(
-      'schema6',
+        'schema6',
         jsonEncode({
-          'schema_version': 6,
+          'schema_version': PostCacheService.cacheSchemaVersion,
           'algorithm_version': 'home_time_v2',
           'saved_at': DateTime.now().toUtc().toIso8601String(),
           'posts': [],

@@ -22,6 +22,7 @@ type ContextResult struct {
 	Data      json.RawMessage `json:"data"`
 	Status    DataStatus      `json:"status"`
 	Source    DataSource      `json:"source"`
+	ErrorCode string          `json:"error_code,omitempty"`
 	FetchedAt *time.Time      `json:"fetched_at,omitempty"`
 	ExpiresAt *time.Time      `json:"expires_at,omitempty"`
 	IsStale   bool            `json:"is_stale"`

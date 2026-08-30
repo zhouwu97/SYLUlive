@@ -17,7 +17,23 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      - run: gofmt -d $(find . -name '*.go') | (! grep .)
+      - name: Check changed Go files are formatted
+        working-directory: .
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}"..."$GITHUB_SHA" -- '*.go')
+          elif [[ -n "$GITHUB_EVENT_BEFORE" && "$GITHUB_EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            files=$(git diff --name-only "$GITHUB_EVENT_BEFORE" "$GITHUB_SHA" -- '*.go')
+          else
+            files=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- '*.go')
+          fi
+          if [[ -z "$files" ]]; then
+            echo "No changed Go files to format-check."
+            exit 0
+          fi
+          printf '%s\n' "$files" | xargs gofmt -d | (! grep .)
+      - run: go vet ./...
       - run: go test ./...
 
   postgres-integration:
@@ -46,9 +62,42 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      - name: Run PostgreSQL concurrency integration tests
+      - name: Run PostgreSQL idempotency integration tests
         working-directory: server
-        run: go test -tags=integration ./internal/handlers -count=1
+        run: >-
+          go test -tags=integration ./internal/middleware
+          -run '^TestIdempotencyMiddlewarePostgres' -count=1
+
+  migration-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sylulive_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sylulive_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_DSN: postgres://postgres:postgres@127.0.0.1:5432/sylulive_migration_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Upgrade legacy and current-minus-one fixtures twice
+        working-directory: server
+        run: >-
+          go test -tags=integration ./internal/models
+          -run TestIdempotencySchemaUpgradeFromLegacyFixtures -count=1
 
   edu-service:
     runs-on: ubuntu-latest
@@ -83,7 +132,9 @@ jobs:
       - run: python -m pytest -q
 
   client:
-    runs-on: ubuntu-latest
+    # Golden 平台可复现性：ubuntu-latest 镜像随 runner 更新漂移
+    # （freetype/fontconfig 变化会让 canonical golden 全线 0.x% 抖动）。
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: client

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/services/forbidden_recovery_router.dart';
 
 /// 按序返回预设响应的 HttpClientAdapter。
 class _QueuedAuthAdapter implements HttpClientAdapter {
@@ -208,7 +209,11 @@ void main() {
   });
 
   group('终结 401 才退出，且必须绑定当前会话', () {
-    for (final code in ['invalid_token', 'token_version_expired', 'role_changed']) {
+    for (final code in [
+      'invalid_token',
+      'token_version_expired',
+      'role_changed'
+    ]) {
       test('当前会话收到 $code 正确退出', () async {
         final adapter = _QueuedAuthAdapter()
           ..enqueue(401, {'code': code, 'error': '凭据失效'});
@@ -309,6 +314,65 @@ void main() {
       expect(provider.token, 'new-token');
       expect(provider.user?.id, 2);
       expect(provider.authState, AuthState.authenticated);
+    });
+  });
+
+  group('统一 403 恢复路由', () {
+    test('community_rules_required 进入协议限制但不退出登录', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(403, {
+          'code': 'community_rules_required',
+          'error': '请先确认社区规则',
+        });
+      final store = _FakeAuthCredentialStore();
+      ForbiddenRecoveryRoute? route;
+      final dio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = adapter;
+      final provider = AuthProvider(
+        dio,
+        credentialStore: store,
+        loadStoredAuth: false,
+        onAuthenticated: () {},
+        onForbiddenRecovery: (value) => route = value,
+      );
+      await provider.applyAuthPayload('token', _userJson(1));
+      final generation = provider.sessionGeneration;
+
+      await _ignoreError(provider.dio.get('/community/posts'));
+      await pumpEventQueue(times: 30);
+
+      expect(route?.kind, ForbiddenRecoveryKind.communityRulesRequired);
+      expect(provider.token, 'token');
+      expect(provider.user?.legalConsentsActive, isFalse);
+      expect(provider.user?.legalConsentsRequired, isTrue);
+      expect(provider.authState, AuthState.authenticated);
+      expect(provider.sessionGeneration, generation + 1);
+      expect(store.clearCount, 0);
+    });
+
+    test('admin_required 只标记管理员 UI 受限，不退出登录', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(403, {'code': 'admin_required'});
+      ForbiddenRecoveryRoute? route;
+      final provider = AuthProvider(
+        Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+          ..httpClientAdapter = adapter,
+        credentialStore: _FakeAuthCredentialStore(),
+        loadStoredAuth: false,
+        onAuthenticated: () {},
+        onForbiddenRecovery: (value) => route = value,
+      );
+      await provider.applyAuthPayload('token', _userJson(1));
+      final generation = provider.sessionGeneration;
+
+      await _ignoreError(provider.dio.get('/admin/pending'));
+      await pumpEventQueue(times: 20);
+
+      expect(route?.kind, ForbiddenRecoveryKind.adminRequired);
+      expect(provider.lastForbiddenRecovery?.requiresAdminUiShutdown, isTrue);
+      expect(provider.token, 'token');
+      expect(provider.user?.id, 1);
+      expect(provider.sessionGeneration, generation);
     });
   });
 }

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +24,7 @@ import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/app_cached_image.dart';
 import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
@@ -1016,26 +1016,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: AppColors.brandPrimary, size: 20)
                     : null,
                 onTap: () async {
-                  final provider = context.read<ThemeProvider>();
-                  await provider.setStartupDestination(mode);
-                  if (mode == StartupDestinationMode.lastPage) {
-                    final userId = context.read<AuthProvider>().user?.id;
-                    if (userId != null && userId > 0) {
-                      await RootPageStateStore.instance.saveLastPage(
-                        RestorablePageState(
-                          type: RestorablePageType.rootTab,
-                          arguments: <String, dynamic>{
-                            'index': currentHomeTabIndex.value
-                          },
-                          accountId: userId,
-                        ),
-                      );
+                  try {
+                    final provider = context.read<ThemeProvider>();
+                    await provider.setStartupDestination(mode);
+                    if (mode == StartupDestinationMode.lastPage) {
+                      final userId = context.read<AuthProvider>().user?.id;
+                      if (userId != null && userId > 0) {
+                        await RootPageStateStore.instance.saveLastPage(
+                          RestorablePageState(
+                            type: RestorablePageType.rootTab,
+                            arguments: <String, dynamic>{
+                              'index': currentHomeTabIndex.value,
+                            },
+                            accountId: userId,
+                          ),
+                        );
+                      }
+                    }
+                    if (!mounted) return;
+                    setSheetState(() {});
+                    setState(() => _startupDestination = mode);
+                    Navigator.pop(sheetContext);
+                    AppFeedback.success('修改成功', context: context);
+                  } catch (_) {
+                    if (mounted) {
+                      AppFeedback.error('修改失败，请重试', context: context);
                     }
                   }
-                  if (!mounted) return;
-                  setSheetState(() {});
-                  setState(() => _startupDestination = mode);
-                  Navigator.pop(sheetContext);
                 },
               );
             }
@@ -1203,7 +1210,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
-            child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
+            child: AppCachedImage.public(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              memCacheWidth: 2048,
+              memCacheHeight: 2048,
+            ),
           ),
         ),
       ),
@@ -1346,7 +1358,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           backgroundColor: Colors.black,
           appBar: AppBar(backgroundColor: Colors.transparent),
           body: Center(
-            child: InteractiveViewer(child: Image.network(avatarUrl)),
+            child: InteractiveViewer(
+              child: AppCachedImage.public(
+                imageUrl: avatarUrl,
+                fit: BoxFit.contain,
+                memCacheWidth: 2048,
+                memCacheHeight: 2048,
+              ),
+            ),
           ),
         ),
       ),
@@ -1385,7 +1404,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   leading: const Icon(Icons.person_add, color: Colors.blue),
                   title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
                   subtitle: Text(
-                    '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员代办，满 3 票后生效'}',
+                    '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员待办，满 3 票后生效'}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

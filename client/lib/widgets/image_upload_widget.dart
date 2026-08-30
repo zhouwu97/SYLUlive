@@ -163,12 +163,13 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       debugPrint('Dio上传图片出错: ${e.type} status=${e.response?.statusCode}');
       if (mounted) {
         String errMsg = '网络异常或超时';
-        if (e.response != null && e.response?.data != null) {
-          if (e.response?.data is Map && e.response?.data['error'] != null) {
-            errMsg = e.response?.data['error'];
-          } else {
-            errMsg = '服务器错误 ${e.response?.statusCode}';
-          }
+        final data = e.response?.data;
+        if (data is Map) {
+          // 服务端统一错误格式为 {code, message, request_id}，error 仅旧接口兜底。
+          final message = data['message'] ?? data['error'];
+          errMsg = message?.toString() ?? '服务器错误 ${e.response?.statusCode}';
+        } else if (e.response != null && e.response?.data != null) {
+          errMsg = '服务器错误 ${e.response?.statusCode}';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('上传失败: $errMsg'), backgroundColor: Colors.red),

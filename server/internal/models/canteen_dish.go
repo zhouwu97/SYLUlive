@@ -12,13 +12,18 @@ import (
 
 // DishStatus 菜品状态
 const (
-	DishStatusPending = "pending"
-	DishStatusActive  = "active"
-	DishStatusHidden  = "hidden"
+	// Deprecated: DishStatusPending 历史待审状态，新流程直接创建 active
+	DishStatusPending  = "pending"
+	DishStatusActive   = "active"
+	DishStatusHidden   = "hidden"
+	DishStatusRejected = "rejected"
+	DishStatusArchived = "archived"
+	DishStatusMerged   = "merged"
 )
 
 // DishPhotoStatus 菜品实拍状态
 const (
+	// Deprecated: DishPhotoStatusPending 历史待审实拍状态，新流程直接进入 approved
 	DishPhotoStatusPending  = "pending"
 	DishPhotoStatusApproved = "approved"
 	DishPhotoStatusRejected = "rejected"
@@ -27,29 +32,34 @@ const (
 
 // CanteenDish 食堂菜品
 type CanteenDish struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	CanteenID      uint      `gorm:"not null;index" json:"canteen_id"`
-	Name           string    `gorm:"size:100;not null" json:"name"`
-	NormalizedName string    `gorm:"size:100;not null" json:"-"`
-	Status         string    `gorm:"size:20;not null;default:'active';index" json:"status"`
-	CreatedBy      uint      `gorm:"not null;index" json:"created_by"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	CanteenID        uint       `gorm:"not null;index" json:"canteen_id"`
+	Name             string     `gorm:"size:100;not null" json:"name"`
+	NormalizedName   string     `gorm:"size:100;not null" json:"-"`
+	Status           string     `gorm:"size:20;not null;default:'active';index" json:"status"`
+	MergedIntoDishID *uint      `gorm:"index" json:"merged_into_dish_id,omitempty"`
+	CreatedBy        uint       `gorm:"not null;index" json:"created_by"`
+	RejectReason     string     `gorm:"size:200" json:"reject_reason,omitempty"`
+	ReviewedBy       *uint      `json:"reviewed_by,omitempty"`
+	ReviewedAt       *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // CanteenDishPhoto 菜品实拍（最多 3 张 approved）
 type CanteenDishPhoto struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	DishID       uint       `gorm:"not null;index" json:"dish_id"`
-	FileID       uint       `gorm:"not null;index" json:"file_id"`
-	UserID       uint       `gorm:"not null;index" json:"user_id"`
-	Status       string     `gorm:"size:20;not null;default:'approved';index" json:"status"`
-	SortOrder    int        `gorm:"not null;default:0" json:"sort_order"`
-	ReviewedBy   *uint      `json:"reviewed_by"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-	RejectReason string     `gorm:"size:200" json:"reject_reason"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	DishID        uint       `gorm:"not null;index" json:"dish_id"`
+	FileID        uint       `gorm:"not null;index" json:"file_id"`
+	UserID        uint       `gorm:"not null;index" json:"user_id"`
+	Status        string     `gorm:"size:20;not null;default:'approved';index" json:"status"`
+	SortOrder     int        `gorm:"not null;default:0" json:"sort_order"`
+	ReviewedBy    *uint      `json:"reviewed_by"`
+	ReviewedAt    *time.Time `json:"reviewed_at"`
+	RejectReason  string     `gorm:"size:200" json:"reject_reason"`
+	ReviewEventID *uint      `gorm:"index" json:"review_event_id,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // EnsureCanteenDishSchema 建立菜品图库的数据库级唯一约束（幂等）。
@@ -88,15 +98,37 @@ func validatePhotoFileOnDisk(f File) bool {
 	return err == nil && !info.IsDir()
 }
 
-// MigratePendingCanteenDishPhotos 迁移现存 pending 实拍图片：
-// 对于每道菜：
+const (
+	CanteenPendingDishMigrationVersion    = "20260825_01_canteen_pending_dish_migration"
+	CanteenPendingCleanupMigrationVersion = "20260829_01_canteen_pending_cleanup"
+)
+
+// MigratePendingDishesAndPhotos 迁移历史 pending 菜品和实拍（一次性迁移）：
+// 1. 将所有 status = 'pending' 的 CanteenDish 自动转为 'active'；
+// 2. 将合法且文件存在的 pending 实拍转为 'approved' 并将 File 设为 public；
+// 3. 历史 rejected / hidden / archived 状态保持不变。
 //
-//	已有 approved 数 = N
-//	剩余容量 = 3 - N (若 N >= 3 则容量为 0)
-//	按 created_at ASC 取最多剩余容量个合法且文件存在 pending -> approved，并将其对应 File 设为 public
-//	超出容量或文件非法/缺失的 pending -> archived
-func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
+// 此迁移只运行一次。运行后不再自动处理新产生的 pending 数据。
+func MigratePendingDishesAndPhotos(db *gorm.DB) error {
+	if err := db.AutoMigrate(&AppSchemaMigration{}); err != nil {
+		return err
+	}
+
+	var existing AppSchemaMigration
+	if err := db.Where("version = ?", CanteenPendingCleanupMigrationVersion).First(&existing).Error; err == nil {
+		// 已经运行过，跳过
+		return nil
+	}
+
 	return db.Transaction(func(tx *gorm.DB) error {
+		// 1. 将所有 pending 状态的菜品迁移为 active
+		if err := tx.Model(&CanteenDish{}).
+			Where("status = ?", DishStatusPending).
+			Update("status", DishStatusActive).Error; err != nil {
+			return err
+		}
+
+		// 2. 迁移实拍图片
 		var dishIDs []uint
 		if err := tx.Model(&CanteenDishPhoto{}).
 			Where("status = ?", DishPhotoStatusPending).
@@ -105,7 +137,11 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 			return err
 		}
 		if len(dishIDs) == 0 {
-			return nil
+			// 记录迁移完成
+			return tx.Create(&AppSchemaMigration{
+				Version:   CanteenPendingCleanupMigrationVersion,
+				AppliedAt: time.Now().UTC(),
+			}).Error
 		}
 
 		for _, dishID := range dishIDs {
@@ -113,7 +149,7 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 			if err := tx.First(&dish, dishID).Error; err != nil {
 				return err
 			}
-			if dish.Status == DishStatusHidden {
+			if dish.Status == DishStatusHidden || dish.Status == DishStatusArchived || dish.Status == DishStatusRejected {
 				if err := tx.Model(&CanteenDishPhoto{}).
 					Where("dish_id = ? AND status = ?", dishID, DishPhotoStatusPending).
 					Update("status", DishPhotoStatusArchived).Error; err != nil {
@@ -178,6 +214,16 @@ func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
 				}
 			}
 		}
-		return nil
+
+		// 记录迁移完成
+		return tx.Create(&AppSchemaMigration{
+			Version:   CanteenPendingCleanupMigrationVersion,
+			AppliedAt: time.Now().UTC(),
+		}).Error
 	})
+}
+
+// MigratePendingCanteenDishPhotos 保留历史函数名向后兼容
+func MigratePendingCanteenDishPhotos(db *gorm.DB) error {
+	return MigratePendingDishesAndPhotos(db)
 }

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
 import 'package:shenliyuan/services/ai_personal_data_permission_service.dart';
 
 void main() {
@@ -34,4 +35,172 @@ void main() {
       },
     );
   });
+
+  test('setMode 按 HTTP 状态码解析后端错误并记录脱敏诊断', () async {
+    final cases = <int, String>{
+      400: 'Agent 权限模式参数无效',
+      401: '请先登录后再设置 Agent 权限',
+      403: '当前账号没有修改 Agent 权限的权限',
+      404: 'Agent 权限服务版本不匹配，请更新服务器后重试',
+      409: '权限模式冲突',
+      500: '个人数据权限服务暂时不可用',
+    };
+
+    for (final entry in cases.entries) {
+      final diagnostics = <Map<String, Object?>>[];
+      final exception = await _setModeFailure(
+        statusCode: entry.key,
+        message: entry.key == 409 || entry.key == 500 ? entry.value : null,
+        diagnostics: diagnostics,
+      );
+
+      expect(exception.message, entry.value);
+      expect(exception.httpStatus, entry.key);
+      expect(exception.code, 'server_error_${entry.key}');
+      expect(diagnostics, hasLength(1));
+      expect(diagnostics.single['route'], '/ai/permissions/mode');
+      expect(diagnostics.single['httpStatus'], entry.key);
+      expect(diagnostics.single['errorCode'], 'server_error_${entry.key}');
+      expect(diagnostics.single['requestId'], 'server-request-id');
+    }
+  });
+
+  test('setMode 将无响应错误归类为网络错误且不记录请求体', () async {
+    final diagnostics = <Map<String, Object?>>[];
+    final exception = await _setModeFailure(
+      networkError: true,
+      diagnostics: diagnostics,
+    );
+
+    expect(exception.message, '网络连接失败，请检查网络后重试');
+    expect(exception.httpStatus, isNull);
+    expect(diagnostics, hasLength(1));
+    expect(diagnostics.single['errorCode'], 'network_error');
+    expect(diagnostics.single['route'], '/ai/permissions/mode');
+    expect(diagnostics.single.containsKey('body'), isFalse);
+    expect(diagnostics.single.containsKey('token'), isFalse);
+  });
+
+  test('setMode 成功后回读目标模式才返回成功', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    var putCalls = 0;
+    var getCalls = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'PUT') {
+            putCalls++;
+          } else {
+            getCalls++;
+          }
+          handler.resolve(
+            Response<dynamic>(
+              requestOptions: options,
+              statusCode: 200,
+              data: const <String, String>{'mode': 'trusted'},
+            ),
+          );
+        },
+      ),
+    );
+
+    final mode = await AiPersonalDataPermissionService(dio).setMode(
+      AiAgentPermissionMode.trusted,
+    );
+
+    expect(mode, AiAgentPermissionMode.trusted);
+    expect(putCalls, 1);
+    expect(getCalls, 1);
+  });
+
+  test('setMode 回读不一致时保留原设置并返回同步错误', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) => handler.resolve(
+          Response<dynamic>(
+            requestOptions: options,
+            statusCode: 200,
+            data: const <String, String>{'mode': 'ask'},
+          ),
+        ),
+      ),
+    );
+
+    await expectLater(
+      AiPersonalDataPermissionService(dio).setMode(
+        AiAgentPermissionMode.trusted,
+      ),
+      throwsA(
+        isA<AiPersonalDataPermissionException>()
+            .having((error) => error.code, 'code', 'ai_permission_mode_sync_mismatch')
+            .having((error) => error.message, 'message', '权限状态同步失败，已保留原设置，请重试'),
+      ),
+    );
+  });
+}
+
+Future<AiPersonalDataPermissionException> _setModeFailure({
+  int? statusCode,
+  String? message,
+  bool networkError = false,
+  required List<Map<String, Object?>> diagnostics,
+}) async {
+  final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) {
+        options.headers['X-Request-ID'] = 'client-request-id';
+        final response = networkError
+            ? null
+            : Response<dynamic>(
+                requestOptions: options,
+                statusCode: statusCode,
+                data: <String, String>{
+                  'code': 'server_error_$statusCode',
+                  if (message != null) 'message': message,
+                  'request_id': 'server-request-id',
+                },
+              );
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            response: response,
+            type: networkError
+                ? DioExceptionType.connectionError
+                : DioExceptionType.badResponse,
+            error: networkError ? 'offline' : null,
+          ),
+        );
+      },
+    ),
+  );
+
+  final service = AiPersonalDataPermissionService(
+    dio,
+    diagnosticWriter: ({
+      required route,
+      required durationMs,
+      required httpStatus,
+      required errorCode,
+      required requestId,
+    }) async {
+      diagnostics.add({
+        'route': route,
+        'durationMs': durationMs,
+        'httpStatus': httpStatus,
+        'errorCode': errorCode,
+        'requestId': requestId,
+      });
+    },
+  );
+
+  try {
+    await service.setMode(AiAgentPermissionMode.trusted);
+  } on AiPersonalDataPermissionException catch (error) {
+    // setMode 的诊断写入是 fire-and-forget，给微任务队列一个机会完成。
+    await Future<void>.delayed(Duration.zero);
+    return error;
+  }
+  fail('setMode 应该返回 AiPersonalDataPermissionException');
 }

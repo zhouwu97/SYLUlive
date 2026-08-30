@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_route.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/poll/poll_post_card.dart';
 import 'create_post_screen.dart';
@@ -376,10 +377,12 @@ class _MyContentScreenState extends State<MyContentScreen>
                       errorBuilder: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     )
-                  : Image.network(
-                      bgPath,
+                  : AppCachedImage.public(
+                      imageUrl: bgPath,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     ),
           Container(
@@ -631,12 +634,18 @@ class _MyContentScreenState extends State<MyContentScreen>
           if (post.images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                ApiConstants.fullUrl(post.images.first.url),
+              child: AppCachedImage.public(
+                // 60dp 缩略图走 thumb 档（480 长边）；变体未就绪时回退原图，不会 404。
+                imageUrl:
+                    ApiConstants.fullUrl(post.images.first.resolvedThumbUrl),
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                memCacheWidth: 120,
+                memCacheHeight: 120,
+                maxWidthDiskCache: 480,
+                maxHeightDiskCache: 480,
+                errorWidget: (_, __, ___) => Container(
                   width: 60,
                   height: 60,
                   color: isDark ? Colors.white12 : Colors.grey[200],

@@ -42,7 +42,10 @@ linear-gradient(180deg,#f4faff 0%,#fbfdff 54%,#f7fbff 100%)}
 .toast{position:fixed;left:50%;bottom:24px;z-index:100;padding:12px 16px;border-radius:13px;background:rgba(28,38,58,.94);color:#fff;font-size:11px;font-weight:760;box-shadow:0 18px 44px rgba(28,40,67,.22);opacity:0;transform:translate(-50%,14px);pointer-events:none;transition:.25s var(--ease)}.toast.show{opacity:1;transform:translate(-50%,0)}
 @media(max-width:820px){.shell{width:min(100% - 28px,var(--max))}.nav-wrap{padding:10px 10px 0}.nav{height:58px}.nav-actions .nav-btn:first-child{display:none}.hero{padding:56px 0 24px}.hero-mark{width:108px;height:92px;margin-bottom:16px}.hero h1{font-size:51px;letter-spacing:.006em}.hero p{font-size:13px;margin-top:18px}.platforms{grid-template-columns:1fr;gap:16px;padding-top:8px}.platform{padding:25px;min-height:0;border-radius:24px}.platform:hover{transform:none}.version-box{grid-template-columns:1fr 1fr;gap:16px}.metric:nth-child(3){grid-column:1/-1}.dev-copy{margin-top:36px}.details-card{grid-template-columns:1fr;gap:18px}.orbit{width:390px;height:180px;top:25%}.grid{background-size:44px 44px}}
 @media(max-width:460px){.brand-name small{display:none}.nav-btn{padding:0 12px}.nav-btn.dark{display:none}.platform-top{align-items:center}.platform-title h2{font-size:24px}.platform-glyph{width:48px;height:48px;border-radius:15px}.platform{padding:22px}.actions{align-items:stretch}.download-btn{width:100%;justify-content:center}.text-link{text-align:center;width:100%}.details{padding-bottom:44px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.orbit,.hero-mark,.loading-dot{animation:none!important}.platform,.download-btn,.nav-btn{transition:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.orbit,.hero-mark,.loading-dot{animation:none!important}.platform,.download-btn,.nav-btn,.text-link,.toast{transition:none}}
+/* 下载页动效 token */
+.nav{transition:background .24s var(--ease),box-shadow .24s var(--ease)}
+.nav-btn,.platform,.download-btn,.text-link,.toast{transition-property:transform,background,border-color,box-shadow,color,opacity;transition-duration:.24s;transition-timing-function:var(--ease)}
 </style>
 </head>
 <body>

@@ -7,6 +7,7 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
+import '../widgets/canteen/canteen_pending_card.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -30,6 +31,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingMajors = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
+  List<dynamic> _pendingCanteens = [];
   bool _isLoading = true;
   String? _fatalError;
   String? _warningMessage;
@@ -54,6 +56,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _loadOptionalList(dio, '/majors/pending'),
         _loadOptionalList(dio, '/admin/invitations/pending'),
         _loadOptionalList(dio, '/admin/removals/pending'),
+        _loadOptionalCanteens(dio),
       ]);
 
       if (!mounted) return;
@@ -65,14 +68,16 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _pendingMajors = results[1].items;
         _pendingInvitations = results[2].items;
         _pendingRemovals = results[3].items;
+        _pendingCanteens = results[4].items;
         _isLoading = false;
 
-        if (failedCount == 4) {
+        if (failedCount == results.length) {
           _fatalError = '加载审核任务失败';
         } else if (failedCount > 0) {
           _warningMessage = '部分数据加载失败，下拉或点击可重试';
         }
       });
+      await _resolveCanteenCreators();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -80,6 +85,42 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _fatalError = '加载审核任务失败';
       });
     }
+  }
+
+  /// 兼容未上线 creator_name 的服务端：用 /user/:id 补全提交人昵称。
+  Future<void> _resolveCanteenCreators() async {
+    final missingIds = <int>{};
+    for (final c in _pendingCanteens) {
+      final name = (c['creator_name'] ?? '').toString();
+      final createdBy = (c['created_by'] as num?)?.toInt() ?? 0;
+      if (name.isEmpty && createdBy != 0) missingIds.add(createdBy);
+    }
+    if (missingIds.isEmpty) return;
+
+    final dio = context.read<AuthProvider>().dio;
+    final names = <int, String>{};
+    await Future.wait(missingIds.map((id) async {
+      try {
+        final res = await dio.get('/user/$id');
+        final data = res.data;
+        final nickname = (data is Map ? data['nickname']?.toString() : null);
+        if (nickname != null && nickname.isNotEmpty) {
+          names[id] = nickname;
+        }
+      } catch (_) {
+        // 单个用户解析失败不影响列表展示
+      }
+    }));
+    if (!mounted || names.isEmpty) return;
+    setState(() {
+      for (final c in _pendingCanteens) {
+        final createdBy = (c['created_by'] as num?)?.toInt() ?? 0;
+        final name = (c['creator_name'] ?? '').toString();
+        if (name.isEmpty && names.containsKey(createdBy)) {
+          c['creator_name'] = names[createdBy];
+        }
+      }
+    });
   }
 
   Future<OptionalListResult> _loadOptionalList(Dio dio, String path) async {
@@ -95,6 +136,28 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       return OptionalListResult(
         items: (response.data as List?) ?? [],
         failed: false,
+      );
+    } catch (_) {
+      return const OptionalListResult(items: [], failed: true);
+    }
+  }
+
+  /// 食堂待审接口返回 {items: [...]}，与其他列表接口的裸数组不同。
+  Future<OptionalListResult> _loadOptionalCanteens(Dio dio) async {
+    try {
+      final response = await dio.get(
+        '/canteens/pending',
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = response.data;
+      final items = (data is Map) ? data['items'] : null;
+      return OptionalListResult(
+        items: (items as List?) ?? [],
+        failed: items == null,
       );
     } catch (_) {
       return const OptionalListResult(items: [], failed: true);
@@ -223,6 +286,94 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
   }
 
+  Future<void> _approveCanteen(dynamic canteen) async {
+    final id = canteen['id'] as int?;
+    if (id == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final res = await dio.post('/canteens/$id/approve');
+      if (!mounted) return;
+      final message = (res.data is Map && res.data['message'] != null)
+          ? res.data['message'].toString()
+          : '审核已通过';
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.green),
+      );
+      setState(() => _pendingCanteens.removeWhere((c) => c['id'] == id));
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _rejectCanteen(dynamic canteen) async {
+    final id = canteen['id'] as int?;
+    if (id == null) return;
+    final name = (canteen['name'] ?? '').toString();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final reason = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (ctx) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: Text('驳回「$name」？'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('驳回后该食堂提交将被删除，提交者会收到通知。'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '驳回原因（选填）',
+                  hintText: '例如：名称重复、信息不完整',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () =>
+                  Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('确认驳回'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted) return;
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.delete(
+        '/canteens/$id/pending',
+        data: {'reason': reason ?? ''},
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已驳回'), backgroundColor: Colors.green),
+      );
+      setState(() => _pendingCanteens.removeWhere((c) => c['id'] == id));
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<String?> _showReasonDialog({
     required String title,
     required String label,
@@ -309,7 +460,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
 
     return Scaffold(
-      appBar: const AppPageAppBar(title: Text('审核代办')),
+      appBar: const AppPageAppBar(title: Text('审核待办')),
       body: SafeArea(
         top: false,
         child: body,
@@ -359,7 +510,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            '当前没有需要你处理的教师、专业或管理员协作事项。',
+            '当前没有需要你处理的教师、专业、食堂提交或管理员协作事项。',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
               color: isDark
@@ -558,6 +709,16 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               ],
             ),
           ),
+        ),
+      );
+    }
+    for (final c in _pendingCanteens) {
+      items.add(
+        CanteenPendingCard(
+          canteen: (c as Map).cast<String, dynamic>(),
+          isDark: isDark,
+          onApprove: () => _approveCanteen(c),
+          onReject: () => _rejectCanteen(c),
         ),
       );
     }

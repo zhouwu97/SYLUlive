@@ -25,7 +25,7 @@ type fakeEduContextFetcher struct {
 	release chan struct{}
 }
 
-func (fetcher *fakeEduContextFetcher) FetchContextBundle(_ context.Context, _ uint, datasets []clients.EduContextDataset) (clients.EduContextBundle, error) {
+func (fetcher *fakeEduContextFetcher) FetchContextBundle(ctx context.Context, _ uint, datasets []clients.EduContextDataset) (clients.EduContextBundle, error) {
 	fetcher.mu.Lock()
 	fetcher.calls++
 	started := fetcher.started
@@ -40,7 +40,11 @@ func (fetcher *fakeEduContextFetcher) FetchContextBundle(_ context.Context, _ ui
 		}
 	}
 	if release != nil {
-		<-release
+		select {
+		case <-ctx.Done():
+			return clients.EduContextBundle{}, ctx.Err()
+		case <-release:
+		}
 	}
 	if err != nil {
 		return clients.EduContextBundle{}, err
@@ -289,3 +293,219 @@ func TestEduFetchDoesNotHideAuthorizationFailureBehindStaleSnapshot(t *testing.T
 		t.Fatalf("authorization failure must not use stale snapshot: source=%s status=%s", result.Source, result.Status)
 	}
 }
+
+func TestEduFetchInvalidCredentialsRequiresReauthorizationDespiteStaleSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	fetcher := &fakeEduContextFetcher{bundle: clients.EduContextBundle{Results: map[string]clients.EduContextItem{
+		"grades:2025-2026:3": {Status: "failed", ErrorCode: "EDU_INVALID_CREDENTIALS", Message: "教务账号或密码错误，请重新输入密码"},
+	}}}
+	_, snapshots, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+	if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+		UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+		Source: academic.DataSourceRemoteEduFetch, Payload: json.RawMessage(`{"success":true,"grades":["old"]}`),
+		FetchedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour), CredentialGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := orchestrator.Fetch(context.Background(), 1, gradesRequest(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != academic.DataStatusPermissionRequired || result.Source != academic.DataSourceNone {
+		t.Fatalf("invalid credentials must request re-entry instead of stale fallback: source=%s status=%s", result.Source, result.Status)
+	}
+}
+
+func TestEduFetchUpstreamUnavailableKeepsStaleSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	for _, code := range []string{"EDU_UPSTREAM_UNAVAILABLE", "EDU_NETWORK_ERROR"} {
+		t.Run(code, func(t *testing.T) {
+			fetcher := &fakeEduContextFetcher{bundle: clients.EduContextBundle{Results: map[string]clients.EduContextItem{
+				"grades:2025-2026:3": {Status: "failed", ErrorCode: code, Message: "教务系统暂时无法完成自动登录，请稍后重试"},
+			}}}
+			_, snapshots, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+			if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+				UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+				Source: academic.DataSourceRemoteEduFetch, Payload: json.RawMessage(`{"success":true,"grades":["old"]}`),
+				FetchedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour), CredentialGeneration: 1,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			result, err := orchestrator.Fetch(context.Background(), 1, gradesRequest(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != academic.DataStatusStale || !result.IsStale {
+				t.Fatalf("%s must fall back to stale snapshot instead of requiring reauthorization: status=%s stale=%v", code, result.Status, result.IsStale)
+			}
+		})
+	}
+}
+
+func TestEduFetchContextCancellationReleasesWorker(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	resultCh := make(chan academic.ContextResult, 1)
+
+	go func() {
+		res, err := orchestrator.Fetch(ctx, 1, gradesRequest(true))
+		resultCh <- res
+		errCh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	// 仅取消 ctx，不主动 close(release)，验证取消后能立即返回并释放 worker
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fetch did not return after cancellation")
+	}
+
+	// 确认 worker 已经被释放（容量为2，能成功塞入2个）
+	orchestrator.workers <- struct{}{}
+	orchestrator.workers <- struct{}{}
+	<-orchestrator.workers
+	<-orchestrator.workers
+}
+
+func TestEduFetchSingleflightLeaderCancelDoesNotFailFollower(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+
+	resACh := make(chan academic.ContextResult, 1)
+	errACh := make(chan error, 1)
+	resBCh := make(chan academic.ContextResult, 1)
+	errBCh := make(chan error, 1)
+
+	// A 作为 Leader 发起
+	go func() {
+		res, err := orchestrator.Fetch(ctxA, 1, gradesRequest(true))
+		resACh <- res
+		errACh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	// B 作为 Follower 加入同一 flight
+	go func() {
+		res, err := orchestrator.Fetch(ctxB, 1, gradesRequest(true))
+		resBCh <- res
+		errBCh <- err
+	}()
+
+	// 等待 B 挂入 flight
+	time.Sleep(20 * time.Millisecond)
+
+	// Leader A 取消请求
+	cancelA()
+
+	select {
+	case err := <-errACh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected Leader A to get context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Leader A did not return after cancellation")
+	}
+
+	// 此时 release 仍未释放，远端请求并未被取消（因为 B 仍在等待）
+	close(release)
+
+	select {
+	case err := <-errBCh:
+		if err != nil {
+			t.Fatalf("Follower B should succeed, got error: %v", err)
+		}
+		res := <-resBCh
+		if res.Source != academic.DataSourceRemoteEduFetch {
+			t.Fatalf("Follower B expected remote success result, got: %s", res.Source)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Follower B did not receive result after release")
+	}
+}
+
+func TestEduFetchSingleflightAllWaitersCancelAbortsRemoteFetch(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	fetcher := &fakeEduContextFetcher{started: started, release: release}
+	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+
+	errACh := make(chan error, 1)
+	errBCh := make(chan error, 1)
+
+	go func() {
+		_, err := orchestrator.Fetch(ctxA, 1, gradesRequest(true))
+		errACh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("remote fetch did not start")
+	}
+
+	go func() {
+		_, err := orchestrator.Fetch(ctxB, 1, gradesRequest(true))
+		errBCh <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// A 和 B 均取消请求
+	cancelA()
+	cancelB()
+
+	for _, ch := range []chan error{errACh, errBCh} {
+		select {
+		case err := <-ch:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context.Canceled, got %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("waiter did not return after cancellation")
+		}
+	}
+
+	// 确认 worker 在未 close(release) 的情况下已被底层取消并释放
+	time.Sleep(20 * time.Millisecond)
+	orchestrator.workers <- struct{}{}
+	orchestrator.workers <- struct{}{}
+	<-orchestrator.workers
+	<-orchestrator.workers
+}
+
+

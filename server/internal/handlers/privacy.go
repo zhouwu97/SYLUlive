@@ -245,6 +245,9 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&models.UserLegalConsent{}).
 			Where("user_id = ? AND revoked_at IS NULL", userID).
 			Update("revoked_at", &now).Error; err != nil {
@@ -442,6 +445,9 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 			"edu_major":                    "",
 			"token_version":                gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {

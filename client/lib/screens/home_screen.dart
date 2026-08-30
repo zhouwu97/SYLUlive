@@ -19,6 +19,7 @@ import '../services/app_update_coordinator.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_colors.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
@@ -117,7 +118,7 @@ class StartupNavigationGate extends StatelessWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
+    with TickerProviderStateMixin, RouteAware {
   late final TabTransitionLedger _mainTabLedger;
   PageRoute<dynamic>? _subscribedRoute;
   bool _publishOpening = false;
@@ -135,6 +136,8 @@ class _HomeScreenState extends State<HomeScreen>
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
+  bool _isRouteVisible = true;
+  bool _announcementPollingStarting = false;
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
@@ -146,6 +149,7 @@ class _HomeScreenState extends State<HomeScreen>
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
   VoidCallback? _unregisterResumeRefresh;
+  bool _feedFabVisible = true;
 
   int get _currentIndex => _mainTabLedger.currentIndex;
   set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
@@ -182,12 +186,20 @@ class _HomeScreenState extends State<HomeScreen>
         .toList();
     if (lists.any((data) => data is! List)) return;
 
+    final canteenRes = await safeGet('/canteens/pending');
+    if (canteenRes == null) return;
+    final canteenItems = canteenRes.data is Map
+        ? (canteenRes.data as Map)['items']
+        : null;
+    if (canteenItems is! List) return;
+
     try {
       int count = 0;
       count += (lists[0] as List).length;
       count += (lists[1] as List).length;
       count += (lists[2] as List).where((i) => i['my_vote'] != true).length;
       count += (lists[3] as List).where((r) => r['can_vote'] == true).length;
+      count += canteenItems.length;
 
       if (auth.user?.isSuperAdmin == true) {
         final superRes = await safeGet('/super/invitations/pending');
@@ -246,10 +258,10 @@ class _HomeScreenState extends State<HomeScreen>
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
-    WidgetsBinding.instance.addObserver(this);
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       () => _checkUnreadAnnouncements(),
+      isVisible: () => _isRouteVisible,
     );
     // 冷启动打底 tab 由启动计划（_AuthWrapperState）决定；
     // 明确导航意图（桌面小组件/通知/深链）由 widgetTabSwitch 与后续深链回调处理。
@@ -408,7 +420,6 @@ class _HomeScreenState extends State<HomeScreen>
     _announcementRetryTimer?.cancel();
     _initialUpdateFallbackTimer?.cancel();
     _unregisterResumeRefresh?.call();
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -433,10 +444,43 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   @override
+  void didPush() {
+    _setRouteVisibility(true);
+  }
+
+  @override
   void didPopNext() {
     // 从深层页面（私信/帖子/通知）返回：底层 root tab 重新可见，
     // 由它自己保存「上次退出页面」，替代私信里硬编码的课表 index。
+    _setRouteVisibility(true);
     _saveCurrentTabAsLastPage();
+    unawaited(_checkUnreadAnnouncements());
+  }
+
+  @override
+  void didPushNext() {
+    _setRouteVisibility(false);
+  }
+
+  @override
+  void didPop() {
+    _setRouteVisibility(false);
+  }
+
+  void _setRouteVisibility(bool visible) {
+    if (_isRouteVisible == visible) return;
+    _isRouteVisible = visible;
+    if (!visible) {
+      _announcementTimer?.cancel();
+      _announcementTimer = null;
+      _announcementRetryTimer?.cancel();
+      _announcementRetryTimer = null;
+      return;
+    }
+
+    if (_announcementAuthKey != null) {
+      unawaited(_initializeAnnouncementPolling());
+    }
   }
 
   /// 仅在 `lastPage` 启动模式下，把当前 root tab 保存为 lastPage。
@@ -458,13 +502,6 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (_) {
       // 忽略：不影响 Tab 切换。
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkUnreadAnnouncements();
     }
   }
 
@@ -491,14 +528,21 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _initializeAnnouncementPolling(
       {bool skipAdminTasks = false}) async {
-    await _loadSeenAnnouncements();
-    if (!mounted) return;
-    await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);
-    if (!mounted) return;
-    _announcementTimer = Timer.periodic(
-      _announcementPollInterval,
-      (_) => _checkUnreadAnnouncements(),
-    );
+    if (!mounted || !_isRouteVisible || _announcementPollingStarting) return;
+    if (_announcementTimer != null) return;
+    _announcementPollingStarting = true;
+    try {
+      await _loadSeenAnnouncements();
+      if (!mounted || !_isRouteVisible) return;
+      await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);
+      if (!mounted || !_isRouteVisible) return;
+      _announcementTimer = Timer.periodic(
+        _announcementPollInterval,
+        (_) => _checkUnreadAnnouncements(),
+      );
+    } finally {
+      _announcementPollingStarting = false;
+    }
   }
 
   Future<void> _loadSeenAnnouncements() async {
@@ -567,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen>
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
-          (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
+          e.response!.data['code'] == 'announcement_id_invalid';
       if (isBadUnreadRoute) {
         debugPrint('未读公告接口异常，降级到 ${ApiConstants.noticesPath}');
         return _fetchAnnouncementsFallback(auth);
@@ -577,7 +621,10 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _checkUnreadAnnouncements({bool skipAdminTasks = false}) async {
-    if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) {
+    if (!mounted ||
+        !_isRouteVisible ||
+        _isCheckingAnnouncements ||
+        _announcementDialogOpen) {
       return;
     }
 
@@ -1597,6 +1644,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabTapped(int index) {
+    if (index == 0 && !_feedFabVisible) {
+      setState(() => _feedFabVisible = true);
+    }
     final useSideRail = ResponsiveUtil.useDesktopShell(context) &&
         !context.read<ThemeProvider>().floatingNavBar;
     if (useSideRail) {
@@ -1606,10 +1656,56 @@ class _HomeScreenState extends State<HomeScreen>
     unawaited(_animateMainTabTo(index));
   }
 
+  /// 拖拽接管时只取消 HomeScreen 自己的页面转场，不让每个 pointer move
+  /// 触发 Scaffold rebuild。连续位置由 BottomNavWrapper 直接写入 notifier。
+  void _handleLiquidInteractionStart() {
+    final hadPendingTransition = _mainTargetIndex != null;
+    if (!hadPendingTransition) return;
+
+    final visualPosition = _mainVisualIndexListenable.value;
+    _mainTabController.stop();
+    _contentTabController.stop();
+    _mainTabLedger.cancel(resetVisual: false);
+    _mainVisualIndex = visualPosition;
+    _mainVisualIndexListenable.value = visualPosition;
+    _updateBackgroundForTab(_currentIndex);
+
+    if (!mounted) return;
+    setState(() {
+      _mainAnimationStartVisualIndex = visualPosition;
+      _mainAnimationEndVisualIndex = visualPosition;
+    });
+  }
+
+  void _handleLiquidVisualPositionChanged(double position) {
+    _mainVisualIndex = position;
+  }
+
+  void _handleLiquidNavigationCommitted(int index) {
+    if (!mounted) return;
+    if (index == 0 && !_feedFabVisible) {
+      setState(() => _feedFabVisible = true);
+    }
+    if (index == _currentIndex) {
+      _mainVisualIndex = index.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
+      return;
+    }
+
+    // BottomNav 已在指针释放时提交离散 Tab；这里启动页面和首次
+    // reveal，避免把页面生命周期绑定到拖动中的连续位置。
+    unawaited(_settleMainTab(
+      targetIndex: index,
+      duration: AppMotion.tab,
+      commit: true,
+    ));
+  }
+
   Future<void> _animateMainTabTo(int index) async {
     final targetIndex = index.clamp(0, 4);
     if (targetIndex == _currentIndex) {
-      if (_mainTargetIndex != null) {
+      if (_mainTargetIndex != null ||
+          (_mainVisualIndex - _currentIndex).abs() > 0.001) {
         await _settleMainTab(
           targetIndex: targetIndex,
           duration: AppMotion.tab,
@@ -1630,7 +1726,9 @@ class _HomeScreenState extends State<HomeScreen>
     return _tabPages.putIfAbsent(index, () {
       switch (index) {
         case 0:
-          return const ShuitieScreen();
+          return ShuitieScreen(
+            onFabVisibilityChanged: _handleFeedFabVisibility,
+          );
         case 1:
           return const MarketScreen();
         case 2:
@@ -1643,6 +1741,13 @@ class _HomeScreenState extends State<HomeScreen>
           return const SizedBox.shrink();
       }
     });
+  }
+
+  void _handleFeedFabVisibility(bool visible) {
+    if (!mounted || _currentIndex != 0 || _feedFabVisible == visible) {
+      return;
+    }
+    setState(() => _feedFabVisible = visible);
   }
 
   List<Widget> _buildLazyTabChildren() {
@@ -1806,7 +1911,6 @@ class _HomeScreenState extends State<HomeScreen>
     // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
     final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
     final useBottomNav = !useSideRail;
-    final showFloatingNavBar = themeProvider.floatingNavBar;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1832,23 +1936,52 @@ class _HomeScreenState extends State<HomeScreen>
               currentIndex: _currentIndex,
               visualIndexListenable: _mainVisualIndexListenable,
               onTap: _onTabTapped,
+              onNavigationCommitted: _handleLiquidNavigationCommitted,
+              onVisualPositionChanged: _handleLiquidVisualPositionChanged,
+              onInteractionStart: _handleLiquidInteractionStart,
               authProvider: authProvider,
               badges: {
                 4: _hasAdminTasks,
               },
             ),
       floatingActionButton: _currentIndex == 0 && useBottomNav
-          ? Padding(
-              padding: EdgeInsets.only(
-                bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
-              ),
-              child: FloatingActionButton(
-                heroTag: 'home_fab',
-                onPressed: () => _showPublishTypeSheet(context),
-                backgroundColor: const Color(0xFF16A34A),
-                elevation: 4,
-                shape: const CircleBorder(),
-                child: const Icon(Icons.add, color: Colors.white, size: 32),
+          ? ExcludeSemantics(
+              excluding: !_feedFabVisible,
+              child: IgnorePointer(
+                ignoring: !_feedFabVisible,
+                child: AnimatedOpacity(
+                  opacity: _feedFabVisible ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : AppMotion.micro,
+                  child: AnimatedScale(
+                    scale: _feedFabVisible ? 1 : 0.92,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : AppMotion.micro,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        floatingActionButtonTheme: Theme.of(context)
+                            .floatingActionButtonTheme
+                            .copyWith(
+                              sizeConstraints: const BoxConstraints.tightFor(
+                                width: 52,
+                                height: 52,
+                              ),
+                            ),
+                      ),
+                      child: FloatingActionButton(
+                        heroTag: 'home_fab',
+                        onPressed: () => _showPublishTypeSheet(context),
+                        backgroundColor: AppColors.brandPrimary,
+                        elevation: 2,
+                        shape: const CircleBorder(),
+                        child: const Icon(Icons.edit_rounded,
+                            color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             )
           : null,

@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
 import '../utils/post_route.dart';
 import 'user_home_screen.dart';
@@ -377,7 +378,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildPostItem(Post post) {
     return CommunityPostCard(
       post: post,
-      onTap: () => Navigator.push(context, buildPostDetailRoute(post, isMarket: post.boardId == 2)),
+      onTap: () => Navigator.push(
+          context, buildPostDetailRoute(post, isMarket: post.boardId == 2)),
     );
   }
 
@@ -466,10 +468,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                       errorBuilder: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     )
-                  : Image.network(
-                      path,
+                  : AppCachedImage.public(
+                      imageUrl: path,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     ),
           Container(

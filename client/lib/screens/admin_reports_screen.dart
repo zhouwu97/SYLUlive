@@ -224,7 +224,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     } on DioException catch (e) {
       String msg = '操作失败';
       if (e.response?.data is Map) {
-        msg = (e.response!.data as Map)['error']?.toString() ?? msg;
+        final data = e.response!.data as Map;
+        msg = (data['message'] ?? data['error'])?.toString() ?? msg;
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

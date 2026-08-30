@@ -163,4 +163,136 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(seconds: 3));
   });
+
+  testWidgets('修改启动页面只影响下一次启动，不改变当前根 Tab', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final fakeStore = _FakeRootPageStateStore();
+    fakeStore.handlers[1] = () async => const RestorablePageState(
+          type: RestorablePageType.rootTab,
+          arguments: <String, dynamic>{'index': 2},
+          accountId: 1,
+        );
+    RootPageStateStore.instance = fakeStore;
+
+    final themeProvider = ThemeProvider(loadOnStart: false);
+    await themeProvider.loadThemeForTesting();
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    final authProvider = _TestAuthProvider(dio);
+    authProvider.setUser(
+      User(
+        id: 1,
+        studentId: 'user1',
+        nickname: '用户A',
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final postProvider = PostProvider(dio, enableCache: false);
+    final messageProvider = MessageProvider(Dio());
+    final canteenProvider = CanteenProvider(dio);
+    final eduProvider = EduProvider(Dio());
+    final courseProvider = CourseScheduleProvider(dio);
+    final waterModeratorProvider = WaterModeratorProvider(dio);
+    final waterModerationProvider = WaterModerationProvider(dio);
+    final teacherProvider = TeacherProvider(dio);
+    final majorProvider = MajorProvider(dio);
+    final socialProvider = SocialProvider(dio);
+    final waterSectionProvider = WaterSectionProvider(null);
+    final teamRecruitmentProvider = TeamRecruitmentProvider(dio);
+    final canteenDiscoveryProvider = CanteenDiscoveryProvider(dio);
+    final updateCoordinator = AppUpdateCoordinator();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+          ChangeNotifierProvider<AppUpdateCoordinator>.value(
+            value: updateCoordinator,
+          ),
+          ChangeNotifierProvider<PostProvider>.value(value: postProvider),
+          ChangeNotifierProvider<MessageProvider>.value(
+            value: messageProvider,
+          ),
+          ChangeNotifierProvider<CanteenProvider>.value(
+            value: canteenProvider,
+          ),
+          ChangeNotifierProvider<EduProvider>.value(value: eduProvider),
+          ChangeNotifierProvider<CourseScheduleProvider>.value(
+            value: courseProvider,
+          ),
+          ChangeNotifierProvider<WaterModeratorProvider>.value(
+            value: waterModeratorProvider,
+          ),
+          ChangeNotifierProvider<WaterModerationProvider>.value(
+            value: waterModerationProvider,
+          ),
+          ChangeNotifierProvider<TeacherProvider>.value(
+            value: teacherProvider,
+          ),
+          ChangeNotifierProvider<MajorProvider>.value(value: majorProvider),
+          ChangeNotifierProvider<SocialProvider>.value(value: socialProvider),
+          ChangeNotifierProvider<WaterSectionProvider>.value(
+            value: waterSectionProvider,
+          ),
+          ChangeNotifierProvider<TeamRecruitmentProvider>.value(
+            value: teamRecruitmentProvider,
+          ),
+          ChangeNotifierProvider<CanteenDiscoveryProvider>.value(
+            value: canteenDiscoveryProvider,
+          ),
+        ],
+        child: const MaterialApp(home: AuthWrapper()),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(_rootTabIndex(tester), 0);
+
+    await themeProvider.setStartupDestination(StartupDestinationMode.home);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_rootTabIndex(tester), 0);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await themeProvider.setStartupDestination(StartupDestinationMode.timetable);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_rootTabIndex(tester), 0);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await themeProvider.setStartupDestination(StartupDestinationMode.lastPage);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_rootTabIndex(tester), 0);
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+    authProvider.dispose();
+    postProvider.dispose();
+    messageProvider.dispose();
+    canteenProvider.dispose();
+    eduProvider.dispose();
+    courseProvider.dispose();
+    waterModeratorProvider.dispose();
+    waterModerationProvider.dispose();
+    teacherProvider.dispose();
+    majorProvider.dispose();
+    socialProvider.dispose();
+    waterSectionProvider.dispose();
+    teamRecruitmentProvider.dispose();
+    canteenDiscoveryProvider.dispose();
+    themeProvider.dispose();
+    updateCoordinator.dispose();
+  });
+}
+
+int _rootTabIndex(WidgetTester tester) {
+  return tester
+      .widget<HomeTabKeepAliveStage>(find.byType(HomeTabKeepAliveStage))
+      .index;
 }

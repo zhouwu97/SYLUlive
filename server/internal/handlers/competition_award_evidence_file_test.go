@@ -63,7 +63,7 @@ func TestCompetitionAwardEvidenceStorageIsolatedFromPublicFiles(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("public %s status=%d body=%s", method, response.Code, response.Body.String())
 		}
-		if response.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
+		if response.Header().Get("Cache-Control") != "public, max-age=86400, stale-while-revalidate=604800" {
 			t.Fatalf("public cache header=%q", response.Header().Get("Cache-Control"))
 		}
 		if method == http.MethodHead && response.Body.Len() != 0 {

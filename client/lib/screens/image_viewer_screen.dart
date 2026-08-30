@@ -1,39 +1,134 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../utils/post_image_cache.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/image_prefetch_coordinator.dart';
+import '../utils/post_image_cache.dart';
+
+/// 小于此大小的原图下载成本很低，进入查看器时直接使用原图。
+///
+/// 使用二进制 KB（1024 字节）与应用其他文件大小展示保持一致；边界值本身
+/// 不自动加载，只有严格小于 600KB 才命中策略。
+const int imageOriginalAutoLoadThresholdBytes = 600 * 1024;
+
+/// 判断图片是否应该在进入全屏查看器时直接使用原图。
+@visibleForTesting
+bool shouldAutoLoadOriginalByDefault({
+  required int originalSizeBytes,
+  bool isAnimatedGif = false,
+}) {
+  return isAnimatedGif ||
+      (originalSizeBytes > 0 &&
+          originalSizeBytes < imageOriginalAutoLoadThresholdBytes);
+}
+
+/// 将原图字节数格式化为查看器按钮文案。
+@visibleForTesting
+String formatImageFileSize(int bytes) {
+  if (bytes <= 0) return '';
+  if (bytes < 1024 * 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+}
+
+String? _optionalString(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
 
 /// 全屏图片查看单项数据模型。
 class ImageViewerItem {
+  /// 旧调用方使用的显示地址。新图片链路请使用分层 URL 字段。
   final String? url;
+
+  /// 预览占位档（通常为 thumb 480）。
+  final String? thumbUrl;
+
+  /// 全屏默认显示档（通常为 medium 1280）。
+  final String? previewUrl;
+
+  /// 可选的全屏预览档（通常为 viewer 2048），只在 previewUrl 不可用时使用。
+  final String? viewerUrl;
+
+  /// 用户主动查看/保存时使用的原图地址。
+  final String? originalUrl;
+
   final String? localPath;
   final Uint8List? bytes;
 
-  /// 保存/下载用的原图地址；为空时回退到 [url]。
-  /// 显示档（如 viewer 2048 变体）与原图分离时必须提供。
+  /// 旧接口的保存地址别名，保留以兼容私信等调用方。
+  @Deprecated('Use originalUrl instead.')
   final String? downloadUrl;
+
+  /// 服务端返回的原图大小。未知时为 0。
+  final int originalSizeBytes;
+
+  /// 服务端原图尺寸，供上层后续扩展使用；查看器本身不按它拉取原图。
+  final int width;
+  final int height;
+
+  /// 服务端原图 MIME 类型。
+  final String mimeType;
+
+  /// 是否启用分层资源语义。启用后没有 ready 变体时绝不自动回退原图。
+  final bool useProgressiveLoading;
 
   const ImageViewerItem({
     this.url,
+    this.thumbUrl,
+    this.previewUrl,
+    this.viewerUrl,
+    this.originalUrl,
     this.localPath,
     this.bytes,
     this.downloadUrl,
+    this.originalSizeBytes = 0,
+    this.width = 0,
+    this.height = 0,
+    this.mimeType = '',
+    this.useProgressiveLoading = false,
   });
 
+  String? get resolvedOriginalUrl =>
+      _optionalString(originalUrl) ??
+      _optionalString(downloadUrl) ??
+      _optionalString(url);
+
+  bool get isAnimatedGif {
+    if (mimeType.toLowerCase() == 'image/gif') return true;
+    return <String?>[
+      resolvedOriginalUrl,
+      viewerUrl,
+      previewUrl,
+      thumbUrl,
+      url,
+    ].whereType<String>().any(_isGifUrl);
+  }
+
+  bool get shouldUseOriginalByDefault =>
+      resolvedOriginalUrl != null &&
+      shouldAutoLoadOriginalByDefault(
+        originalSizeBytes: originalSizeBytes,
+        isAnimatedGif: isAnimatedGif,
+      );
+
   bool get isEmpty =>
-      (url == null || url!.trim().isEmpty) &&
-      (localPath == null || localPath!.trim().isEmpty) &&
+      _optionalString(url) == null &&
+      _optionalString(thumbUrl) == null &&
+      _optionalString(previewUrl) == null &&
+      _optionalString(viewerUrl) == null &&
+      _optionalString(originalUrl) == null &&
+      _optionalString(downloadUrl) == null &&
+      _optionalString(localPath) == null &&
       (bytes == null || bytes!.isEmpty);
 
   bool get isNotEmpty => !isEmpty;
@@ -65,6 +160,10 @@ class ImageViewerScreen extends StatefulWidget {
   /// 针对私有图片等需要自定义账号隔离 cacheKey 的构建器；为空时使用 url 作为 cacheKey。
   final String Function(String url)? cacheKeyBuilder;
 
+  /// 下载原图的 Dio 客户端。生产环境使用内置客户端，测试可注入适配器。
+  @visibleForTesting
+  final Dio? downloadClient;
+
   const ImageViewerScreen({
     super.key,
     this.imageUrls = const <String>[],
@@ -76,27 +175,33 @@ class ImageViewerScreen extends StatefulWidget {
     this.items,
     this.cacheManager,
     this.cacheKeyBuilder,
+    this.downloadClient,
   });
 
   @override
   State<ImageViewerScreen> createState() => _ImageViewerScreenState();
 }
 
-class _ImageBytesResult {
-  final Uint8List bytes;
+/// 原图下载状态。预览图片始终独立于此状态渲染。
+enum OriginalLoadState { idle, loading, ready, error }
+
+class _ImageFileResult {
+  final File file;
   final String sourceLabel;
   final String extension;
   final String mimeType;
 
-  const _ImageBytesResult(
-      this.bytes, this.sourceLabel, this.extension, this.mimeType);
+  const _ImageFileResult(
+    this.file,
+    this.sourceLabel,
+    this.extension,
+    this.mimeType,
+  );
 }
 
 String _guessExtensionFromBytes(List<int> bytes, String fallbackExt) {
   if (bytes.length >= 4) {
-    if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
-      return 'jpg';
-    }
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) return 'jpg';
     if (bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
@@ -118,7 +223,7 @@ String _guessExtensionFromBytes(List<int> bytes, String fallbackExt) {
 }
 
 String _guessMimeType(String ext) {
-  switch (ext) {
+  switch (ext.toLowerCase()) {
     case 'jpg':
     case 'jpeg':
       return 'image/jpeg';
@@ -133,15 +238,49 @@ String _guessMimeType(String ext) {
   }
 }
 
+String _extensionForImage({
+  required String url,
+  required String mimeType,
+  String? contentType,
+}) {
+  final declaredMime = (contentType ?? mimeType).toLowerCase();
+  if (declaredMime.contains('jpeg') || declaredMime.contains('jpg')) {
+    return 'jpg';
+  }
+  if (declaredMime.contains('png')) return 'png';
+  if (declaredMime.contains('gif')) return 'gif';
+  if (declaredMime.contains('webp')) return 'webp';
+
+  final path = Uri.tryParse(url)?.path ?? url;
+  final dotIndex = path.lastIndexOf('.');
+  if (dotIndex >= 0 && dotIndex + 1 < path.length) {
+    final ext = path.substring(dotIndex + 1).toLowerCase();
+    if (const {'jpg', 'jpeg', 'png', 'gif', 'webp'}.contains(ext)) {
+      return ext == 'jpeg' ? 'jpg' : ext;
+    }
+  }
+  return 'jpg';
+}
+
+bool _isGifUrl(String url) =>
+    url.toLowerCase().split('?').first.endsWith('.gif');
+
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
-  static const int _maxDownloadedImageEntries = 3;
+  static const int _maxOriginalFileEntries = 3;
 
   late PageController _pageController;
   late int _currentIndex;
   late final List<ImageViewerItem> _resolvedItems;
   late final ImagePrefetchCoordinator _prefetchCoordinator;
+
   bool _isSaving = false;
-  final Map<int, _ImageBytesResult> _downloadedImages = {};
+  final Map<int, _ImageFileResult> _originalFiles = {};
+  final Map<int, OriginalLoadState> _originalStates = {};
+  final Map<int, double> _originalProgress = {};
+  final Map<int, Object> _originalErrors = {};
+  final Map<int, Future<_ImageFileResult>> _originalLoads = {};
+  final Map<int, CancelToken> _originalCancelTokens = {};
+  final Set<String> _ownedTemporaryFiles = <String>{};
 
   @override
   void initState() {
@@ -158,36 +297,37 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   List<ImageViewerItem> _computeResolvedItems() {
     if (widget.items != null && widget.items!.isNotEmpty) {
-      return widget.items!;
+      return List<ImageViewerItem>.unmodifiable(widget.items!);
     }
-    final int urlsLen = widget.imageUrls.length;
-    final int bytesLen = widget.imageBytes?.length ?? 0;
-    final int pathsLen = widget.localPaths?.length ?? 0;
-    final int downloadLen = widget.downloadUrls?.length ?? 0;
-    int maxLen = urlsLen;
+
+    final urlsLen = widget.imageUrls.length;
+    final bytesLen = widget.imageBytes?.length ?? 0;
+    final pathsLen = widget.localPaths?.length ?? 0;
+    final downloadLen = widget.downloadUrls?.length ?? 0;
+    var maxLen = urlsLen;
     if (bytesLen > maxLen) maxLen = bytesLen;
     if (pathsLen > maxLen) maxLen = pathsLen;
     if (downloadLen > maxLen) maxLen = downloadLen;
-    if (maxLen == 0) return const [];
+    if (maxLen == 0) return const <ImageViewerItem>[];
 
-    return List<ImageViewerItem>.generate(maxLen, (i) {
-      final String? url = i < urlsLen ? widget.imageUrls[i] : null;
-      final Uint8List? bytes = (widget.imageBytes != null && i < bytesLen)
-          ? widget.imageBytes![i]
+    return List<ImageViewerItem>.generate(maxLen, (index) {
+      final url =
+          index < urlsLen ? _optionalString(widget.imageUrls[index]) : null;
+      final bytes = widget.imageBytes != null && index < bytesLen
+          ? widget.imageBytes![index]
           : null;
-      final String? localPath = (widget.localPaths != null && i < pathsLen)
-          ? widget.localPaths![i]
+      final localPath = widget.localPaths != null && index < pathsLen
+          ? _optionalString(widget.localPaths![index])
           : null;
-      final String? downloadUrl = (widget.downloadUrls != null && i < downloadLen)
-          ? widget.downloadUrls![i]
+      final downloadUrl = widget.downloadUrls != null && index < downloadLen
+          ? _optionalString(widget.downloadUrls![index])
           : null;
       return ImageViewerItem(
-        url: (url != null && url.isNotEmpty) ? url : null,
-        localPath:
-            (localPath != null && localPath.isNotEmpty) ? localPath : null,
-        bytes: (bytes != null && bytes.isNotEmpty) ? bytes : null,
-        downloadUrl:
-            (downloadUrl != null && downloadUrl.isNotEmpty) ? downloadUrl : null,
+        url: url,
+        localPath: localPath,
+        bytes: bytes != null && bytes.isNotEmpty ? bytes : null,
+        originalUrl: downloadUrl,
+        downloadUrl: downloadUrl,
       );
     });
   }
@@ -195,277 +335,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   @override
   void dispose() {
     _prefetchCoordinator.invalidate();
+    for (final token in _originalCancelTokens.values) {
+      if (!token.isCancelled) token.cancel('查看器已关闭');
+    }
+    for (final path in _ownedTemporaryFiles) {
+      unawaited(_deleteFileIfExists(File(path)));
+    }
     _pageController.dispose();
     super.dispose();
-  }
-
-  Future<_ImageBytesResult> _loadImageBytesForSaving(int index) async {
-    final alreadyDownloaded = _downloadedImages[index];
-    if (alreadyDownloaded != null) {
-      return alreadyDownloaded;
-    }
-    if (index < 0 || index >= _resolvedItems.length) {
-      throw Exception('图片不存在');
-    }
-    final item = _resolvedItems[index];
-
-    // 1. 优先从内存字节读取
-    if (item.bytes != null && item.bytes!.isNotEmpty) {
-      final ext = _guessExtensionFromBytes(item.bytes!, 'png');
-      return _ImageBytesResult(item.bytes!, '原图', ext, _guessMimeType(ext));
-    }
-
-    // 2. 优先从本地文件读取
-    if (item.localPath != null && item.localPath!.isNotEmpty) {
-      final file = File(item.localPath!);
-      if (await file.exists()) {
-        final fileBytes = await file.readAsBytes();
-        if (fileBytes.isNotEmpty) {
-          final ext = _guessExtensionFromBytes(fileBytes, 'png');
-          return _ImageBytesResult(fileBytes, '原图', ext, _guessMimeType(ext));
-        }
-      }
-    }
-
-    // 3. 网络图或缓存读取（保存必须取原图：显示档可能是 viewer 2048 变体）
-    final downloadUrl = (item.downloadUrl != null && item.downloadUrl!.isNotEmpty)
-        ? item.downloadUrl
-        : item.url;
-    if (downloadUrl == null || downloadUrl.isEmpty) {
-      throw Exception('原图不可用，且本地文件不存在');
-    }
-
-    // 尝试直接下载原始字节
-    try {
-      // 保存原图允许更长的接收时间，但仍设置明确超时，避免弱网无限挂起。
-      final response = await Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 10),
-          sendTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 60),
-        ),
-      ).get<List<int>>(
-        downloadUrl,
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: widget.httpHeaders,
-        ),
-      );
-      final data = response.data;
-      if (data != null && data.isNotEmpty) {
-        // 解析格式
-        String ext = 'png'; // 默认
-        final contentType = response.headers.value('content-type');
-        if (contentType != null) {
-          if (contentType.contains('jpeg') || contentType.contains('jpg')) {
-            ext = 'jpg';
-          } else if (contentType.contains('png')) {
-            ext = 'png';
-          } else if (contentType.contains('webp')) {
-            ext = 'webp';
-          } else if (contentType.contains('gif')) {
-            ext = 'gif';
-          }
-        }
-        ext = _guessExtensionFromBytes(data, ext);
-
-        final bytes = Uint8List.fromList(data);
-        return _ImageBytesResult(bytes, '原图', ext, _guessMimeType(ext));
-      }
-    } catch (_) {
-      // 网络不可用
-    }
-
-    // 尝试本地缓存
-    final cached = await _readCachedImage(downloadUrl);
-    if (cached != null) {
-      final ext = _guessExtensionFromBytes(cached, 'png');
-      return _ImageBytesResult(cached, '缓存原图', ext, _guessMimeType(ext));
-    }
-
-    // 最后才尝试渲染提取 (重编码为PNG)
-    final visible = await _readVisibleImage(downloadUrl);
-    if (visible != null) {
-      return _ImageBytesResult(visible, '重新编码图片', 'png', 'image/png');
-    }
-
-    throw Exception('原图不可用，且本机没有找到缓存');
-  }
-
-  Future<Uint8List?> _readVisibleImage(String url) async {
-    final cacheKey =
-        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
-    final provider = CachedNetworkImageProvider(
-      url,
-      headers: widget.httpHeaders,
-      cacheManager: widget.cacheManager ?? PostImageCache.manager,
-      cacheKey: cacheKey,
-    );
-    // fallback 同样等比限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
-    final constrainedProvider = ResizeImage(
-      provider,
-      width: imageViewerLongEdge,
-      height: imageViewerLongEdge,
-      policy: ResizeImagePolicy.fit,
-    );
-    final stream = constrainedProvider.resolve(const ImageConfiguration());
-    final completer = Completer<ui.Image?>();
-    late ImageStreamListener listener;
-    listener = ImageStreamListener(
-      (info, _) {
-        stream.removeListener(listener);
-        completer.complete(info.image);
-      },
-      onError: (error, stackTrace) {
-        stream.removeListener(listener);
-        completer.complete(null);
-      },
-    );
-    stream.addListener(listener);
-
-    final image = await completer.future.timeout(
-      const Duration(seconds: 2),
-      onTimeout: () {
-        stream.removeListener(listener);
-        return null;
-      },
-    );
-    if (image == null) return null;
-    return _encodeImageForGallery(image);
-  }
-
-  Future<Uint8List> _encodeImageForGallery(ui.Image image) async {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    final scale = math.min(
-      1.0,
-      imageViewerLongEdge /
-          math.max(image.width.toDouble(), image.height.toDouble()),
-    );
-    final targetWidth = math.max(1, (image.width * scale).round());
-    final targetHeight = math.max(1, (image.height * scale).round());
-    final sourceRect = Rect.fromLTWH(
-      0,
-      0,
-      image.width.toDouble(),
-      image.height.toDouble(),
-    );
-    final targetRect = Rect.fromLTWH(
-      0,
-      0,
-      targetWidth.toDouble(),
-      targetHeight.toDouble(),
-    );
-    canvas.drawColor(Colors.white, BlendMode.src);
-    canvas.drawImageRect(
-      image,
-      sourceRect,
-      targetRect,
-      Paint()..filterQuality = FilterQuality.medium,
-    );
-    final picture = recorder.endRecording();
-    final flattened = await picture.toImage(targetWidth, targetHeight);
-    final byteData = await flattened.toByteData(format: ui.ImageByteFormat.png);
-    flattened.dispose();
-    picture.dispose();
-    if (byteData == null) {
-      throw Exception('图片编码失败');
-    }
-    return byteData.buffer.asUint8List();
-  }
-
-  Future<Uint8List?> _readCachedImage(String url) async {
-    final cacheKey =
-        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : url;
-
-    // 如果指定了私有/自定义 cacheManager，则严格只从该管理器按 cacheKey 读取，
-    // 绝不回退到 PostImageCache 或 DefaultCacheManager，防止私信账号隔离被旁路。
-    if (widget.cacheManager != null) {
-      final fileInfo = await widget.cacheManager!.getFileFromCache(cacheKey);
-      final file = fileInfo?.file;
-      if (file != null && await file.exists()) {
-        final bytes = await file.readAsBytes();
-        if (bytes.isNotEmpty) return bytes;
-      }
-      return null;
-    }
-
-    // 未指定 cacheManager（公开帖子/公开图片），使用公开缓存与默认缓存回退
-    final cacheManagers = <BaseCacheManager>[
-      PostImageCache.manager,
-      DefaultCacheManager(),
-    ];
-
-    for (final cacheManager in cacheManagers) {
-      final fileInfo = await cacheManager.getFileFromCache(cacheKey);
-      final file = fileInfo?.file;
-      if (file != null && await file.exists()) {
-        final bytes = await file.readAsBytes();
-        if (bytes.isNotEmpty) return bytes;
-      }
-    }
-    return null;
-  }
-
-  Future<void> _saveImage() async {
-    if (_isSaving || _resolvedItems.isEmpty) return;
-    if (mounted) setState(() => _isSaving = true);
-
-    try {
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        final request = await Gal.requestAccess();
-        if (!request) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('需要相册权限才能保存图片')));
-          if (mounted) setState(() => _isSaving = false);
-          return;
-        }
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')));
-
-      final image = await _loadImageBytesForSaving(_currentIndex);
-      final extension = switch (image.extension.toLowerCase()) {
-        'jpg' || 'jpeg' => 'jpg',
-        'png' => 'png',
-        'webp' => 'webp',
-        'gif' => 'gif',
-        _ => 'png',
-      };
-
-      final String filename =
-          'sylulive_${DateTime.now().millisecondsSinceEpoch}.$extension';
-
-      final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/$filename';
-      final file = File(tempPath);
-      await file.writeAsBytes(image.bytes, flush: true);
-
-      await Gal.putImage(tempPath, album: '沈理');
-
-      if (!mounted) return;
-      setState(() {
-        _rememberDownloadedImage(_currentIndex, image);
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
   }
 
   @override
@@ -483,6 +360,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _isSaving ? '正在保存原图' : '保存原图',
             icon: _isSaving
                 ? const SizedBox(
                     width: 20,
@@ -504,106 +382,213 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                 style: TextStyle(color: Colors.white70),
               ),
             )
-          : PageView.builder(
-              controller: _pageController,
-              itemCount: total,
-              onPageChanged: (index) {
-                if (mounted) {
-                  setState(() {
-                    _currentIndex = index;
-                  });
-                  _prefetchCoordinator.invalidate();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _prefetchAdjacentImages();
-                  });
-                }
-              },
-              itemBuilder: (context, index) {
-                return GestureDetector(
-                  onLongPress: () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Material(
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? const Color(0xFF1E1E1E)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ListTile(
-                                leading: const Icon(Icons.download),
-                                title: const Text('保存原图'),
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  _saveImage();
-                                },
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.close),
-                                title: const Text('取消'),
-                                onTap: () => Navigator.pop(context),
-                              ),
-                            ],
-                          ),
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                PageView.builder(
+                  controller: _pageController,
+                  itemCount: total,
+                  onPageChanged: (index) {
+                    if (!mounted) return;
+                    setState(() => _currentIndex = index);
+                    _prefetchCoordinator.invalidate();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _prefetchAdjacentImages();
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    return GestureDetector(
+                      onLongPress: () => _showLongPressMenu(context),
+                      child: InteractiveViewer(
+                        child: Center(
+                          child: _buildPageImage(index),
                         ),
                       ),
                     );
                   },
-                  child: InteractiveViewer(
-                    child: Center(
-                      child: _buildPageImage(index),
-                    ),
+                ),
+                Positioned(
+                  left: 16,
+                  bottom: 16,
+                  child: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    child: _buildOriginalAction(_currentIndex),
                   ),
-                );
-              },
+                ),
+              ],
             ),
     );
   }
 
-  /// 单页图片来源优先级：内存字节 → 本地文件 → 已下载内存 → 鉴权网络。
+  void _showLongPressMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Material(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF1E1E1E)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.download),
+                title: const Text('保存原图'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _saveImage();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.close),
+                title: const Text('取消'),
+                onTap: () => Navigator.pop(sheetContext),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPageImage(int index) {
     if (index < 0 || index >= _resolvedItems.length) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
     final item = _resolvedItems[index];
 
-    // 优先级 1：内存字节
     if (item.bytes != null && item.bytes!.isNotEmpty) {
       return Image(
+        key: ValueKey('viewer-memory-image-$index'),
         image: _decodeConstrained(MemoryImage(item.bytes!)),
         fit: BoxFit.contain,
       );
     }
 
-    // 优先级 2：本地文件
-    final localPath = item.localPath;
-    if (localPath != null && localPath.isNotEmpty) {
+    final localPath = _optionalString(item.localPath);
+    if (localPath != null) {
       return Image(
+        key: ValueKey('viewer-local-image-$index'),
         image: _decodeConstrained(FileImage(File(localPath))),
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _networkImageView(item.url),
+        errorBuilder: (_, __, ___) => _buildPreviewImage(item, index),
       );
     }
 
-    // 优先级 3：已下载内存
-    if (_downloadedImages.containsKey(index)) {
+    final originalFile = _originalFiles[index];
+    if (originalFile != null) {
       return Image(
-        image: _decodeConstrained(MemoryImage(_downloadedImages[index]!.bytes)),
+        key: ValueKey('viewer-original-file-$index'),
+        image: _imageProviderForFile(originalFile.file, item),
         fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _buildPreviewImage(item, index),
       );
     }
 
-    // 优先级 4：网络
-    return _networkImageView(item.url);
+    if (_shouldAutoLoadOriginalLayer(item)) {
+      return _buildAutoOriginalImage(item, index);
+    }
+
+    return _buildPreviewImage(item, index);
   }
 
-  /// 查看器统一解码规则：等比装进 viewer 长边上限，小图不放大。
-  /// 禁止按屏幕比例做双轴精确解码——那会把任意比例的位图压扁成屏幕形状。
+  Widget _buildAutoOriginalImage(ImageViewerItem item, int index) {
+    final originalUrl = item.resolvedOriginalUrl;
+    if (originalUrl == null) return _buildPreviewImage(item, index);
+
+    final hasPreview = _hasPreview(item);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (hasPreview) _buildPreviewImage(item, index),
+        _buildNetworkImage(
+          originalUrl,
+          index: index,
+          key: ValueKey('viewer-original-image-$index'),
+          isAnimated: item.isAnimatedGif,
+          showLoadingIndicator: !hasPreview,
+          fallbackUrls: _previewCandidates(item),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviewImage(ImageViewerItem item, int index) {
+    final candidates = _previewCandidates(item);
+    if (candidates.isEmpty) {
+      return const Center(
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          color: Colors.white54,
+          size: 40,
+        ),
+      );
+    }
+
+    final primary = candidates.first;
+    final fallbackUrls = candidates.skip(1).toList(growable: false);
+    final thumb = _optionalString(item.thumbUrl);
+    final showThumbUnderlay = thumb != null && thumb != primary;
+    final primaryWidget = _buildNetworkImage(
+      primary,
+      index: index,
+      isAnimated: item.isAnimatedGif && _isGifUrl(primary),
+      showLoadingIndicator: !showThumbUnderlay,
+      fallbackUrls: [
+        ...fallbackUrls,
+        if (showThumbUnderlay) thumb,
+      ],
+    );
+
+    if (!showThumbUnderlay) return primaryWidget;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildNetworkImage(
+          thumb,
+          index: index,
+          isAnimated: item.isAnimatedGif && _isGifUrl(thumb),
+          showLoadingIndicator: false,
+        ),
+        primaryWidget,
+      ],
+    );
+  }
+
+  List<String> _previewCandidates(ImageViewerItem item) {
+    final candidates = <String>[];
+    void add(String? raw) {
+      final value = _optionalString(raw);
+      if (value == null || candidates.contains(value)) return;
+      candidates.add(value);
+    }
+
+    if (item.useProgressiveLoading) {
+      // 结构化帖子图片只允许使用已由入口筛选过的 ready 变体；原图不在候选内。
+      add(item.previewUrl);
+      add(item.viewerUrl);
+      add(item.url);
+      add(item.thumbUrl);
+      return candidates;
+    }
+
+    // 兼容旧的 imageUrls/downloadUrls 调用：url 仍是默认显示档。
+    add(item.url);
+    add(item.previewUrl);
+    add(item.viewerUrl);
+    if (candidates.isEmpty) add(item.originalUrl);
+    if (candidates.isEmpty) add(item.downloadUrl);
+    return candidates;
+  }
+
+  bool _hasPreview(ImageViewerItem item) => _previewCandidates(item).isNotEmpty;
+
   ImageProvider _decodeConstrained(ImageProvider provider) {
     return ResizeImage(
       provider,
@@ -613,75 +598,552 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
   }
 
-  Widget _networkImageView(String? url) {
-    if (url == null || url.isEmpty) {
-      return const Icon(Icons.error, color: Colors.white, size: 48);
-    }
-    final cacheKey =
-        widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
-    final isGif = url.toLowerCase().split('?').first.endsWith('.gif');
+  ImageProvider _imageProviderForFile(File file, ImageViewerItem item) {
+    final provider = FileImage(file);
+    return item.isAnimatedGif ? provider : _decodeConstrained(provider);
+  }
+
+  ImageProvider _imageProviderForUrl(
+    String url, {
+    bool isAnimated = false,
+  }) {
     final provider = CachedNetworkImageProvider(
       url,
       headers: widget.httpHeaders,
-      cacheManager: widget.cacheManager ?? PostImageCache.manager,
-      cacheKey: cacheKey,
+      cacheManager: _cacheManager,
+      cacheKey: _providerCacheKey(url),
     );
+    return isAnimated || _isGifUrl(url)
+        ? provider
+        : _decodeConstrained(provider);
+  }
+
+  Widget _buildNetworkImage(
+    String url, {
+    required int index,
+    Key? key,
+    bool isAnimated = false,
+    bool showLoadingIndicator = true,
+    List<String> fallbackUrls = const <String>[],
+  }) {
+    final nextFallback = fallbackUrls.isEmpty
+        ? const <String>[]
+        : fallbackUrls.skip(1).toList(growable: false);
+    final errorWidget = fallbackUrls.isEmpty
+        ? const Icon(Icons.error, color: Colors.white, size: 48)
+        : _buildNetworkImage(
+            fallbackUrls.first,
+            index: index,
+            isAnimated: isAnimated && _isGifUrl(fallbackUrls.first),
+            showLoadingIndicator: false,
+            fallbackUrls: nextFallback,
+          );
+
     return Image(
-      image: isGif ? provider : _decodeConstrained(provider),
+      key: key,
+      image: _imageProviderForUrl(url, isAnimated: isAnimated),
       fit: BoxFit.contain,
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
+        if (!showLoadingIndicator) return const SizedBox.expand();
         return const Center(
           child: CircularProgressIndicator(color: Colors.white),
         );
       },
-      errorBuilder: (_, __, ___) => const Icon(
-        Icons.error,
+      errorBuilder: (_, __, ___) => errorWidget,
+    );
+  }
+
+  Widget _buildOriginalAction(int index) {
+    if (index < 0 || index >= _resolvedItems.length) {
+      return const SizedBox.shrink();
+    }
+    final item = _resolvedItems[index];
+    if (!_canOfferOriginal(item)) return const SizedBox.shrink();
+
+    final state = _originalStates[index] ?? OriginalLoadState.idle;
+    if (state == OriginalLoadState.ready) return const SizedBox.shrink();
+
+    final sizeLabel = formatImageFileSize(item.originalSizeBytes);
+    final sizeSuffix = sizeLabel.isEmpty ? '' : ' $sizeLabel';
+    final isLoading = state == OriginalLoadState.loading;
+    final percent = ((_originalProgress[index] ?? 0) * 100).round();
+    final title = isLoading
+        ? (percent > 0 ? '$percent%' : '加载中…')
+        : state == OriginalLoadState.error
+            ? '重试原图$sizeSuffix'
+            : '查看原图$sizeSuffix';
+    final semanticLabel = isLoading
+        ? '正在加载原图，$title，点击取消'
+        : state == OriginalLoadState.error
+            ? '原图加载失败，点击重试$sizeSuffix'
+            : '查看原图$sizeSuffix';
+
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: Material(
         color: Colors.white,
-        size: 48,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: isLoading
+              ? () => _cancelOriginalLoad(index)
+              : () => _requestOriginal(index),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: Icon(Icons.close, size: 18, color: Colors.black87),
+                    ),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
+  bool _canOfferOriginal(ImageViewerItem item) {
+    final originalUrl = item.resolvedOriginalUrl;
+    if (originalUrl == null || _shouldAutoLoadOriginalLayer(item)) return false;
+    if (item.useProgressiveLoading) return true;
+
+    final displayUrl = _optionalString(item.url);
+    final explicitOriginal = _optionalString(item.originalUrl);
+    final legacyDownload = _optionalString(item.downloadUrl);
+    return (explicitOriginal != null && explicitOriginal != displayUrl) ||
+        (legacyDownload != null && legacyDownload != displayUrl);
+  }
+
+  bool _shouldAutoLoadOriginalLayer(ImageViewerItem item) {
+    if (!item.shouldUseOriginalByDefault) return false;
+    // 旧 imageUrls 调用没有大小/分层元数据；GIF 在该路径本来就只有一个
+    // 原图显示，避免为了兼容性额外叠一层相同的 Image widget。
+    return item.useProgressiveLoading ||
+        item.originalSizeBytes > 0 ||
+        item.originalUrl != null ||
+        item.downloadUrl != null;
+  }
+
+  void _requestOriginal(int index) {
+    if (index < 0 || index >= _resolvedItems.length) return;
+    final state = _originalStates[index] ?? OriginalLoadState.idle;
+    if (state == OriginalLoadState.loading ||
+        state == OriginalLoadState.ready) {
+      return;
+    }
+    final future = _loadOriginalFile(index);
+    unawaited(future.then<void>((_) {}, onError: (_, __) {}));
+  }
+
+  void _cancelOriginalLoad(int index) {
+    final token = _originalCancelTokens[index];
+    if (token != null && !token.isCancelled) {
+      token.cancel('用户取消原图下载');
+    }
+  }
+
+  Future<_ImageFileResult> _loadImageFileForSaving(int index) async {
+    if (index < 0 || index >= _resolvedItems.length) {
+      throw Exception('图片不存在');
+    }
+    final existing = _originalFiles[index];
+    if (existing != null) return existing;
+
+    final item = _resolvedItems[index];
+    if (item.bytes != null && item.bytes!.isNotEmpty) {
+      final ext = _guessExtensionFromBytes(item.bytes!, 'png');
+      final file = await _writeBytesToTemporaryFile(
+        item.bytes!,
+        'sylulive_memory_$index.$ext',
+      );
+      final result = _ImageFileResult(
+        file,
+        '原图',
+        ext,
+        _guessMimeType(ext),
+      );
+      _rememberOriginalFile(index, result);
+      return result;
+    }
+
+    final localPath = _optionalString(item.localPath);
+    if (localPath != null) {
+      final file = File(localPath);
+      if (await file.exists() && await file.length() > 0) {
+        final ext = _extensionForImage(
+          url: localPath,
+          mimeType: item.mimeType,
+        );
+        final result = _ImageFileResult(
+          file,
+          '原图',
+          ext,
+          _guessMimeType(ext),
+        );
+        _rememberOriginalFile(index, result);
+        return result;
+      }
+    }
+
+    final originalUrl = item.resolvedOriginalUrl;
+    if (originalUrl == null) {
+      throw Exception('原图不可用，且本地文件不存在');
+    }
+    return _loadOriginalFile(index);
+  }
+
+  Future<File> _writeBytesToTemporaryFile(
+    Uint8List bytes,
+    String filename,
+  ) async {
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/$filename');
+    await file.writeAsBytes(bytes, flush: true);
+    _ownedTemporaryFiles.add(file.path);
+    return file;
+  }
+
+  Future<_ImageFileResult> _loadOriginalFile(int index) {
+    if (index < 0 || index >= _resolvedItems.length) {
+      return Future<_ImageFileResult>.error(Exception('图片不存在'));
+    }
+    final existing = _originalFiles[index];
+    if (existing != null) return Future<_ImageFileResult>.value(existing);
+    final inFlight = _originalLoads[index];
+    if (inFlight != null) return inFlight;
+
+    if (mounted) {
+      setState(() {
+        _originalStates[index] = OriginalLoadState.loading;
+        _originalProgress[index] = 0;
+        _originalErrors.remove(index);
+      });
+    }
+
+    late final Future<_ImageFileResult> future;
+    future = _loadOriginalFileInternal(index);
+    _originalLoads[index] = future;
+    future.then<void>(
+      (result) {
+        if (identical(_originalLoads[index], future)) {
+          _originalLoads.remove(index);
+        }
+        _rememberOriginalFile(index, result);
+        if (!mounted) return;
+        setState(() {
+          _originalStates[index] = OriginalLoadState.ready;
+          _originalProgress[index] = 1;
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (identical(_originalLoads[index], future)) {
+          _originalLoads.remove(index);
+        }
+        final isCancelled =
+            error is DioException && CancelToken.isCancel(error);
+        if (!mounted) return;
+        setState(() {
+          _originalStates[index] =
+              isCancelled ? OriginalLoadState.idle : OriginalLoadState.error;
+          if (isCancelled) {
+            _originalProgress.remove(index);
+          } else {
+            _originalErrors[index] = error;
+          }
+        });
+      },
+    );
+    return future;
+  }
+
+  Future<_ImageFileResult> _loadOriginalFileInternal(int index) async {
+    final item = _resolvedItems[index];
+    final originalUrl = item.resolvedOriginalUrl;
+    if (originalUrl == null) {
+      throw Exception('原图地址为空');
+    }
+
+    final cancelToken = CancelToken();
+    _originalCancelTokens[index] = cancelToken;
+    File? temporaryFile;
+    try {
+      // 先查与显示一致的磁盘缓存，命中时不发送 origin 请求。
+      final cachedFile = await _readCachedFile(originalUrl);
+      if (cachedFile != null) {
+        final ext = _extensionForImage(
+          url: originalUrl,
+          mimeType: item.mimeType,
+        );
+        return _ImageFileResult(
+          cachedFile,
+          '缓存原图',
+          ext,
+          _guessMimeType(ext),
+        );
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final ext = _extensionForImage(
+        url: originalUrl,
+        mimeType: item.mimeType,
+      );
+      temporaryFile = File(
+        '${tempDir.path}/sylulive_original_${DateTime.now().microsecondsSinceEpoch}_$index.$ext.part',
+      );
+
+      final response = await _downloadClient().download(
+        originalUrl,
+        temporaryFile.path,
+        cancelToken: cancelToken,
+        deleteOnError: true,
+        onReceiveProgress: (received, total) {
+          _updateOriginalProgress(index, received, total);
+        },
+        options: Options(headers: widget.httpHeaders),
+      );
+
+      if (!await temporaryFile.exists() || await temporaryFile.length() <= 0) {
+        throw Exception('原图下载结果为空');
+      }
+
+      final responseExt = _extensionForImage(
+        url: originalUrl,
+        mimeType: item.mimeType,
+        contentType: response.headers.value('content-type'),
+      );
+      final cached = await _putDownloadedFileInCache(
+        originalUrl,
+        temporaryFile,
+        responseExt,
+      );
+      final file = cached ?? temporaryFile;
+      if (cached == null) {
+        _ownedTemporaryFiles.add(file.path);
+      } else if (cached.path != temporaryFile.path) {
+        await _deleteFileIfExists(temporaryFile);
+      }
+
+      return _ImageFileResult(
+        file,
+        '原图',
+        responseExt,
+        _guessMimeType(responseExt),
+      );
+    } catch (_) {
+      if (temporaryFile != null) {
+        await _deleteFileIfExists(temporaryFile);
+        _ownedTemporaryFiles.remove(temporaryFile.path);
+      }
+      rethrow;
+    } finally {
+      if (identical(_originalCancelTokens[index], cancelToken)) {
+        _originalCancelTokens.remove(index);
+      }
+    }
+  }
+
+  void _updateOriginalProgress(int index, int received, int total) {
+    if (!mounted || index < 0 || index >= _resolvedItems.length) return;
+    final fallbackTotal = _resolvedItems[index].originalSizeBytes;
+    final expectedTotal = total > 0 ? total : fallbackTotal;
+    if (expectedTotal <= 0) return;
+    final next = (received / expectedTotal).clamp(0.0, 1.0).toDouble();
+    final previous = _originalProgress[index];
+    if (previous != null && (next - previous).abs() < 0.01 && next < 1) {
+      return;
+    }
+    setState(() => _originalProgress[index] = next);
+  }
+
+  Dio _downloadClient() {
+    return widget.downloadClient ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 10),
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 60),
+          ),
+        );
+  }
+
+  BaseCacheManager get _cacheManager =>
+      widget.cacheManager ?? PostImageCache.manager;
+
+  String _cacheKeyFor(String url) {
+    final custom = widget.cacheKeyBuilder?.call(url);
+    return custom == null || custom.isEmpty ? url : custom;
+  }
+
+  String? _providerCacheKey(String url) {
+    return widget.cacheKeyBuilder == null ? null : _cacheKeyFor(url);
+  }
+
+  Future<File?> _readCachedFile(String url) async {
+    final managers = widget.cacheManager != null
+        ? <BaseCacheManager>[widget.cacheManager!]
+        : <BaseCacheManager>[
+            PostImageCache.manager,
+            DefaultCacheManager(),
+          ];
+    final key = _cacheKeyFor(url);
+
+    for (final manager in managers) {
+      try {
+        final info = await manager.getFileFromCache(key);
+        final path = info?.file.path;
+        if (path == null || path.isEmpty) continue;
+        final file = File(path);
+        if (await file.exists() && await file.length() > 0) return file;
+      } catch (_) {
+        // 某个缓存目录不可读时继续尝试下一个公开缓存；私有缓存不会旁路。
+      }
+    }
+    return null;
+  }
+
+  Future<File?> _putDownloadedFileInCache(
+    String url,
+    File downloaded,
+    String extension,
+  ) async {
+    try {
+      final cached = await _cacheManager.putFileStream(
+        url,
+        downloaded.openRead(),
+        key: _cacheKeyFor(url),
+        maxAge: PostImageCache.stalePeriod,
+        fileExtension: extension,
+      );
+      final file = File(cached.path);
+      if (await file.exists() && await file.length() > 0) return file;
+    } catch (_) {
+      // 缓存失败不影响本次查看，保留临时文件作为当前会话的原图。
+    }
+    return null;
+  }
+
+  Future<void> _saveImage() async {
+    if (_isSaving || _resolvedItems.isEmpty) return;
+    if (mounted) setState(() => _isSaving = true);
+
+    try {
+      final hasAccess = await Gal.hasAccess();
+      if (!hasAccess) {
+        final request = await Gal.requestAccess();
+        if (!request) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('需要相册权限才能保存图片')),
+          );
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('正在准备原图...')),
+      );
+
+      final image = await _loadImageFileForSaving(_currentIndex);
+      await Gal.putImage(image.file.path, album: '沈理');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _rememberOriginalFile(int index, _ImageFileResult result) {
+    _originalFiles[index] = result;
+    while (_originalFiles.length > _maxOriginalFileEntries) {
+      final oldestIndex = _originalFiles.keys.first;
+      final removed = _originalFiles.remove(oldestIndex);
+      if (removed == null) continue;
+      final path = removed.file.path;
+      if (_ownedTemporaryFiles.remove(path)) {
+        unawaited(_deleteFileIfExists(removed.file));
+      }
+    }
+  }
+
+  Future<void> _deleteFileIfExists(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // 临时文件清理失败不能影响查看器退出或主流程。
+    }
+  }
+
   void _prefetchAdjacentImages() {
-    final manager = widget.cacheManager ?? PostImageCache.manager;
     final tasks = adjacentImageIndexes(
       currentIndex: _currentIndex,
       itemCount: _resolvedItems.length,
     ).map((index) {
       final item = _resolvedItems[index];
-      final url = item.url;
-      if (url == null || url.isEmpty || _isGifUrl(url)) return null;
-      final cacheKey =
-          widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : url;
+      final url = _prefetchUrl(item);
+      if (url == null || _isGifUrl(url)) return null;
+
+      final cacheKey = _cacheKeyFor(url);
       return ImagePrefetchTask(
         cacheKey: cacheKey,
-        isCached: () async => await manager.getFileFromCache(cacheKey) != null,
+        isCached: () async =>
+            await _cacheManager.getFileFromCache(cacheKey) != null,
         preload: () {
           if (!mounted) return Future<void>.value();
-          final provider = CachedNetworkImageProvider(
-            url,
-            headers: widget.httpHeaders,
-            cacheManager: manager,
-            cacheKey: widget.cacheKeyBuilder != null ? cacheKey : null,
+          return precacheImage(
+            _imageProviderForUrl(url),
+            context,
           );
-          // 与展示分支使用同一解码参数，保证预取命中图片缓存。
-          final resizedProvider = _decodeConstrained(provider);
-          return precacheImage(resizedProvider, context);
         },
       );
     }).whereType<ImagePrefetchTask>();
 
-    unawaited(_prefetchCoordinator.enqueue(tasks, limit: 2));
+    // 只串行预取一张相邻预览，避免与当前页竞争带宽；结构化图片永不预取原图。
+    unawaited(_prefetchCoordinator.enqueue(tasks, limit: 1));
   }
 
-  bool _isGifUrl(String url) =>
-      url.toLowerCase().split('?').first.endsWith('.gif');
-
-  void _rememberDownloadedImage(int index, _ImageBytesResult image) {
-    _downloadedImages[index] = image;
-    while (_downloadedImages.length > _maxDownloadedImageEntries) {
-      _downloadedImages.remove(_downloadedImages.keys.first);
+  String? _prefetchUrl(ImageViewerItem item) {
+    final original = item.resolvedOriginalUrl;
+    if (item.useProgressiveLoading) {
+      for (final candidate in <String?>[
+        item.previewUrl,
+        item.viewerUrl,
+        item.thumbUrl,
+      ]) {
+        final url = _optionalString(candidate);
+        if (url != null && url != original) return url;
+      }
+      return null;
     }
+
+    final legacy = _optionalString(item.url);
+    if (legacy == null) return null;
+    if (item.originalUrl != null && legacy == original) return null;
+    return legacy;
   }
 }

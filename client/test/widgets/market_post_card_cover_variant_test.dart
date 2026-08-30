@@ -84,4 +84,20 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('商品卡片进入查看器时保留原图大小策略', (tester) async {
+    await tester.pumpWidget(
+      _host(_post([_image(thumbUrl: '/uploads/ab/hash_v1_thumb.jpg')])),
+    );
+
+    await tester.tap(find.byType(CachedNetworkImage));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('viewer-original-image-0')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('查看原图'), findsNothing);
+  });
 }

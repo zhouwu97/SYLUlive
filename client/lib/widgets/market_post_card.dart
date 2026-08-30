@@ -10,6 +10,7 @@ import '../screens/user_home_screen.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
+import 'post_media/post_media_view.dart';
 
 final class _CardTokens {
   static Color cardBg(bool isDark) =>
@@ -432,7 +433,7 @@ class MarketPostCard extends StatelessWidget {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openImageViewer(context, imageUrls, 0),
+      onTap: () => _openImageViewer(context, images, 0),
       child: ClipRRect(
         borderRadius: isGrid
             ? const BorderRadius.vertical(
@@ -487,8 +488,7 @@ class MarketPostCard extends StatelessWidget {
       thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
       mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
       originUrl: originUrl,
-      isAnimatedGif:
-          originUrl.toLowerCase().split('?').first.endsWith('.gif'),
+      isAnimatedGif: originUrl.toLowerCase().split('?').first.endsWith('.gif'),
     );
     return _CoverResource(
       url: selection.url,
@@ -779,15 +779,17 @@ class MarketPostCard extends StatelessWidget {
 
   void _openImageViewer(
     BuildContext context,
-    List<String> imageUrls,
+    List<PostImage> images,
     int initialIndex,
   ) {
-    if (imageUrls.isEmpty) return;
+    if (images.isEmpty) return;
+    final items =
+        images.map(PostMediaView.viewerItemFor).toList(growable: false);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ImageViewerScreen(
-          imageUrls: imageUrls,
+          items: items,
           initialIndex: initialIndex,
         ),
       ),

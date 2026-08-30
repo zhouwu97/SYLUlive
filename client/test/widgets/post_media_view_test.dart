@@ -301,6 +301,51 @@ void main() {
     expect(cached.memCacheHeight, 486);
   });
 
+  testWidgets('3x 长图解码保持原图比例不压扁', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1,
+        mimeType: 'image/jpeg',
+        width: 900,
+        height: 1600,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(
+              images: [image],
+              variant: PostMediaVariant.homeFeed,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final cached = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(cached.imageUrl, contains('/uploads/medium.jpg'));
+    // 250 宽按 9:16 展开 444.4 逻辑高，×3×1.15 后长边封顶 1280，比例保持 0.5625。
+    expect(cached.memCacheWidth, 720);
+    expect(cached.memCacheHeight, 1280);
+  });
+
   testWidgets('长图在深色模式和 1.3x 文字缩放下不发生布局异常', (tester) async {
     final image = PostImage(
       id: 1,

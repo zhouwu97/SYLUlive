@@ -195,21 +195,43 @@ class PostMediaView extends StatelessWidget {
         onTap: onTap ?? () => _openPreview(context, images, index),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final isHomeSection = variant == PostMediaVariant.homeFeed ||
+                variant == PostMediaVariant.sectionFeed;
+            // cover 瓦片按原图比例解码：ResizeImage exact 会先把位图压扁到
+            // 瓦片比例，比例失真后 cover 裁剪无法恢复主体形状。
+            final image = images[index];
+            final sourceWidth = image.file?.width ?? 0;
+            final sourceHeight = image.file?.height ?? 0;
+            var decodeLogicalSize = Size(
+              constraints.maxWidth,
+              constraints.maxHeight,
+            );
+            if (isHomeSection && sourceWidth > 0 && sourceHeight > 0) {
+              final boxRatio = constraints.maxWidth / constraints.maxHeight;
+              final sourceRatio = sourceWidth / sourceHeight;
+              decodeLogicalSize = sourceRatio >= boxRatio
+                  ? Size(
+                      constraints.maxHeight * sourceRatio,
+                      constraints.maxHeight,
+                    )
+                  : Size(
+                      constraints.maxWidth,
+                      constraints.maxWidth / sourceRatio,
+                    );
+            }
             final target = calculateImageDecodeTarget(
-              logicalSize: Size(constraints.maxWidth, constraints.maxHeight),
+              logicalSize: decodeLogicalSize,
               devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-              maxLongEdge: imageThumbLongEdge,
+              maxLongEdge:
+                  isHomeSection ? imageMediumLongEdge : imageThumbLongEdge,
               fallbackLogicalSize: const Size(120, 120),
             );
-            final selection = _selectResource(images[index], target);
+            final selection = _selectResource(image, target);
             return _networkImage(
               selection: selection,
               target: target,
               fit: BoxFit.cover,
-              alignment: variant == PostMediaVariant.homeFeed ||
-                      variant == PostMediaVariant.sectionFeed
-                  ? Alignment.topCenter
-                  : Alignment.center,
+              alignment: isHomeSection ? Alignment.topCenter : Alignment.center,
             );
           },
         ),

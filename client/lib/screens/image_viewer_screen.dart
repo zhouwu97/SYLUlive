@@ -301,11 +301,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       cacheManager: widget.cacheManager ?? PostImageCache.manager,
       cacheKey: cacheKey,
     );
-    // fallback 也限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
-    final constrainedProvider = ResizeImage.resizeIfNeeded(
-      imageViewerLongEdge,
-      imageViewerLongEdge,
+    // fallback 同样等比限制解码尺寸，避免超大原图先按 8000×6000 完整解码后才缩放。
+    final constrainedProvider = ResizeImage(
       provider,
+      width: imageViewerLongEdge,
+      height: imageViewerLongEdge,
+      policy: ResizeImagePolicy.fit,
     );
     final stream = constrainedProvider.resolve(const ImageConfiguration());
     final completer = Completer<ui.Image?>();
@@ -570,37 +571,30 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
     final item = _resolvedItems[index];
-    final decodeTarget = _viewerDecodeTarget();
 
     // 优先级 1：内存字节
     if (item.bytes != null && item.bytes!.isNotEmpty) {
-      return Image.memory(
-        item.bytes!,
+      return Image(
+        image: _decodeConstrained(MemoryImage(item.bytes!)),
         fit: BoxFit.contain,
-        cacheWidth: decodeTarget.width,
-        cacheHeight: decodeTarget.height,
       );
     }
 
     // 优先级 2：本地文件
     final localPath = item.localPath;
     if (localPath != null && localPath.isNotEmpty) {
-      return Image.file(
-        File(localPath),
+      return Image(
+        image: _decodeConstrained(FileImage(File(localPath))),
         fit: BoxFit.contain,
-        cacheWidth: decodeTarget.width,
-        cacheHeight: decodeTarget.height,
         errorBuilder: (_, __, ___) => _networkImageView(item.url),
       );
     }
 
     // 优先级 3：已下载内存
     if (_downloadedImages.containsKey(index)) {
-      return Image.memory(
-        _downloadedImages[index]!.bytes,
+      return Image(
+        image: _decodeConstrained(MemoryImage(_downloadedImages[index]!.bytes)),
         fit: BoxFit.contain,
-        cacheWidth: decodeTarget.width,
-        cacheHeight: decodeTarget.height,
       );
     }
 
@@ -608,26 +602,40 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     return _networkImageView(item.url);
   }
 
+  /// 查看器统一解码规则：等比装进 viewer 长边上限，小图不放大。
+  /// 禁止按屏幕比例做双轴精确解码——那会把任意比例的位图压扁成屏幕形状。
+  ImageProvider _decodeConstrained(ImageProvider provider) {
+    return ResizeImage(
+      provider,
+      width: imageViewerLongEdge,
+      height: imageViewerLongEdge,
+      policy: ResizeImagePolicy.fit,
+    );
+  }
+
   Widget _networkImageView(String? url) {
     if (url == null || url.isEmpty) {
       return const Icon(Icons.error, color: Colors.white, size: 48);
     }
-    final decodeTarget = _viewerDecodeTarget();
     final cacheKey =
         widget.cacheKeyBuilder != null ? widget.cacheKeyBuilder!(url) : null;
     final isGif = url.toLowerCase().split('?').first.endsWith('.gif');
-    return CachedNetworkImage(
+    final provider = CachedNetworkImageProvider(
+      url,
+      headers: widget.httpHeaders,
       cacheManager: widget.cacheManager ?? PostImageCache.manager,
-      imageUrl: url,
       cacheKey: cacheKey,
-      httpHeaders: widget.httpHeaders,
+    );
+    return Image(
+      image: isGif ? provider : _decodeConstrained(provider),
       fit: BoxFit.contain,
-      memCacheWidth: isGif ? null : decodeTarget.width,
-      memCacheHeight: isGif ? null : decodeTarget.height,
-      placeholder: (context, url) => const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      ),
-      errorWidget: (context, url, error) => const Icon(
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        );
+      },
+      errorBuilder: (_, __, ___) => const Icon(
         Icons.error,
         color: Colors.white,
         size: 48,
@@ -635,19 +643,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
   }
 
-  ImageDecodeTarget _viewerDecodeTarget() {
-    final size = MediaQuery.sizeOf(context);
-    return calculateImageDecodeTarget(
-      logicalSize: size,
-      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      maxLongEdge: imageViewerLongEdge,
-      fallbackLogicalSize: const Size(360, 800),
-    );
-  }
-
   void _prefetchAdjacentImages() {
     final manager = widget.cacheManager ?? PostImageCache.manager;
-    final target = _viewerDecodeTarget();
     final tasks = adjacentImageIndexes(
       currentIndex: _currentIndex,
       itemCount: _resolvedItems.length,
@@ -668,11 +665,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
             cacheManager: manager,
             cacheKey: widget.cacheKeyBuilder != null ? cacheKey : null,
           );
-          final resizedProvider = ResizeImage.resizeIfNeeded(
-            target.width,
-            target.height,
-            provider,
-          );
+          // 与展示分支使用同一解码参数，保证预取命中图片缓存。
+          final resizedProvider = _decodeConstrained(provider);
           return precacheImage(resizedProvider, context);
         },
       );

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/screens/image_viewer_screen.dart';
+import 'package:shenliyuan/utils/image_decode_size.dart';
 import 'package:shenliyuan/utils/private_message_media_cache.dart';
 
 class _TrackingFakeCacheManager extends Fake implements BaseCacheManager {
@@ -87,15 +88,15 @@ void main() {
     );
     await tester.pump();
 
-    final image = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
-    expect(image.httpHeaders, {'Authorization': 'Bearer viewer-token'});
-    expect(image.cacheManager, equals(fakePrivateCache));
-    expect(image.cacheKey, equals('pm:42:$testUrl'));
+    final image = tester.widget<Image>(find.byType(Image));
+    final resize = image.image as ResizeImage;
+    final provider = resize.imageProvider as CachedNetworkImageProvider;
+    expect(provider.headers, {'Authorization': 'Bearer viewer-token'});
+    expect(provider.cacheManager, equals(fakePrivateCache));
+    expect(provider.cacheKey, equals('pm:42:$testUrl'));
   });
 
-  testWidgets('查看器按屏幕尺寸等比限制网络图片解码', (tester) async {
+  testWidgets('查看器等比限制解码长边，不按屏幕比例压扁位图', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -110,11 +111,26 @@ void main() {
     );
     await tester.pump();
 
-    final image = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.fit, BoxFit.contain);
+    final resize = image.image as ResizeImage;
+    expect(resize.policy, ResizeImagePolicy.fit);
+    expect(resize.width, imageViewerLongEdge);
+    expect(resize.height, imageViewerLongEdge);
+  });
+
+  testWidgets('GIF 查看不套用解码缩放，保留动画帧', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          imageUrls: ['https://example.test/anim.gif'],
+        ),
+      ),
     );
-    expect(image.memCacheWidth, 922);
-    expect(image.memCacheHeight, 2048);
+    await tester.pump();
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.image, isA<CachedNetworkImageProvider>());
   });
 
   testWidgets('全屏私信图片长按保存时，私有缓存未命中严禁回退到公开/默认缓存', (tester) async {

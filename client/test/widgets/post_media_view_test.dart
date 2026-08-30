@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
 
 void main() {
@@ -214,6 +215,110 @@ void main() {
 
     expect(tapped, isTrue);
     expect(find.byType(PostMediaView), findsOneWidget);
+  });
+
+  testWidgets('帖子图片进入查看器时传递分层资源和原图大小', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+      viewerUrl: '/uploads/viewer.jpg',
+      variantStatus: const {
+        'thumb': 'ready',
+        'medium': 'ready',
+        'viewer': 'ready',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('single-post-image-tap-target')),
+    );
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    final item = viewer.items!.single;
+    expect(item.useProgressiveLoading, isTrue);
+    expect(item.previewUrl, contains('/uploads/medium.jpg'));
+    expect(item.viewerUrl, contains('/uploads/viewer.jpg'));
+    expect(item.originalUrl, contains('/uploads/origin.jpg'));
+    expect(item.originalSizeBytes, 1024 * 1024);
+  });
+
+  testWidgets('变体未就绪时进入查看器不把回退 origin 当预览', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/origin.jpg',
+      mediumUrl: '/uploads/origin.jpg',
+      viewerUrl: '/uploads/origin.jpg',
+      variantStatus: const {
+        'thumb': 'pending',
+        'medium': 'pending',
+        'viewer': 'pending',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('single-post-image-tap-target')),
+    );
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    final item = viewer.items!.single;
+    expect(item.previewUrl, isNull);
+    expect(item.viewerUrl, isNull);
+    expect(item.thumbUrl, isNull);
+    expect(item.originalUrl, contains('/uploads/origin.jpg'));
   });
 
   testWidgets('低分辨率 Feed 单图使用 thumb 并限制解码尺寸', (tester) async {

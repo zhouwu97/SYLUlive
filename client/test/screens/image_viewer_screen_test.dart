@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:file/file.dart' as pkg_file;
 import 'package:file/memory.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,30 @@ class _TrackingFakeCacheManager extends Fake implements BaseCacheManager {
     );
     return file;
   }
+}
+
+class _TrackingDownloadAdapter implements HttpClientAdapter {
+  final List<String> requestedUrls = [];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requestedUrls.add(options.uri.toString());
+    return ResponseBody.fromBytes(
+      Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xD9]),
+      200,
+      headers: {
+        'content-length': ['4'],
+        'content-type': ['image/jpeg'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 void main() {
@@ -302,5 +327,125 @@ void main() {
 
     expect(find.text('1 / 1'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
+  });
+
+  test('小于600KB的图片默认使用原图，边界值不自动加载', () {
+    expect(
+      shouldAutoLoadOriginalByDefault(
+        originalSizeBytes: imageOriginalAutoLoadThresholdBytes - 1,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldAutoLoadOriginalByDefault(
+        originalSizeBytes: imageOriginalAutoLoadThresholdBytes,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldAutoLoadOriginalByDefault(originalSizeBytes: 0),
+      isFalse,
+    );
+  });
+
+  testWidgets('小于600KB的结构化图片进入查看器直接请求原图', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          items: [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/image-thumb.jpg',
+              previewUrl: 'https://example.test/image-medium.jpg',
+              originalUrl: 'https://example.test/image-origin.jpg',
+              originalSizeBytes: imageOriginalAutoLoadThresholdBytes - 1,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final original = tester.widget<Image>(
+      find.byKey(const ValueKey('viewer-original-image-0')),
+    );
+    final resize = original.image as ResizeImage;
+    final provider = resize.imageProvider as CachedNetworkImageProvider;
+    expect(provider.url, 'https://example.test/image-origin.jpg');
+    expect(find.textContaining('查看原图'), findsNothing);
+  });
+
+  testWidgets('600KB 及以上的结构化图片只显示预览并提供手动查看原图', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          items: [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/image-thumb.jpg',
+              previewUrl: 'https://example.test/image-medium.jpg',
+              viewerUrl: 'https://example.test/image-viewer.jpg',
+              originalUrl: 'https://example.test/image-origin.jpg',
+              originalSizeBytes: imageOriginalAutoLoadThresholdBytes,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('查看原图 600.0 KB'), findsOneWidget);
+    final imageProviders = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((image) => image.image)
+        .whereType<ResizeImage>()
+        .map((image) => image.imageProvider)
+        .whereType<CachedNetworkImageProvider>()
+        .map((provider) => provider.url)
+        .toList();
+    expect(imageProviders,
+        isNot(contains('https://example.test/image-origin.jpg')));
+    expect(imageProviders, contains('https://example.test/image-medium.jpg'));
+    expect(imageProviders, contains('https://example.test/image-thumb.jpg'));
+  });
+
+  testWidgets('查看原图使用 Dio 磁盘下载并在完成后复用文件保存', (tester) async {
+    final cache = _TrackingFakeCacheManager();
+    final adapter = _TrackingDownloadAdapter();
+    final client = Dio()..httpClientAdapter = adapter;
+    const originalUrl = 'https://example.test/large-origin.jpg';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageViewerScreen(
+          cacheManager: cache,
+          downloadClient: client,
+          items: const [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/large-thumb.jpg',
+              previewUrl: 'https://example.test/large-medium.jpg',
+              originalUrl: originalUrl,
+              originalSizeBytes: 1024 * 1024,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('查看原图 1.0 MB'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(adapter.requestedUrls, [originalUrl]);
+    expect(find.text('查看原图 1.0 MB'), findsNothing);
+
+    final requestCount = adapter.requestedUrls.length;
+    await tester.tap(find.byTooltip('保存原图'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(adapter.requestedUrls.length, requestCount);
   });
 }

@@ -87,12 +87,10 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
-      # 变体 worker 默认开启：启动时自动为历史公开图片补建任务并生成 thumb/medium。
-      # 异常回退：将 IMAGE_VARIANT_WORKER_ENABLED 改回 false 并重启 Go（保留已生成变体）。
-      - IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:-true}
-      # 公开上传默认走 Nginx internal 直传（共享卷与 internal location 已验收）。
-      # 异常回退：将 UPLOAD_USE_ACCEL_REDIRECT 改回 false 并重启 Go。
-      - UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:-true}
+      # release 模式下 Go 拒绝在缺失或空置这两个开关时启动，必须由 .env 显式提供（生产目标值均为 true）。
+      # 异常回退：在 .env 改为 false 并重启 Go（保留已生成变体 / 改回 Go 直接投递）。
+      - IMAGE_VARIANT_WORKER_ENABLED=${IMAGE_VARIANT_WORKER_ENABLED:?set IMAGE_VARIANT_WORKER_ENABLED in .env}
+      - UPLOAD_USE_ACCEL_REDIRECT=${UPLOAD_USE_ACCEL_REDIRECT:?set UPLOAD_USE_ACCEL_REDIRECT in .env}
       - UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
       - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}

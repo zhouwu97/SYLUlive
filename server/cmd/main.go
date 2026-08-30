@@ -1106,9 +1106,11 @@ func main() {
 
 	// 启动后台定时任务
 
+	// 图片管线开关直接影响生产资源链路，启动时打印实际取值便于部署核对。
+	log.Printf("[IMAGE_PIPELINE] worker=%t accel_redirect=%s upload_dir=%s workers=1 recipe=v%d",
+		cfg.ImageVariantWorkerEnabled, os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"), cfg.UploadDir, services.ImageVariantRecipeVersion)
 	if cfg.ImageVariantWorkerEnabled {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
-		log.Println("图片变体 worker 已启用")
 	}
 	tasks.StartLotteryCron(db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))

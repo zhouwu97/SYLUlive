@@ -62,8 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _getAppearanceSummary(ThemeProvider theme) {
     final modeText = theme.isCleanBackgroundMode ? '简洁模式' : '自定义背景';
     final brightnessText = theme.isDarkMode ? '深色' : '浅色';
-    final cardText = theme.liquidGlass ? '液态玻璃' : '标准卡片';
-    return '$modeText · $brightnessText · $cardText';
+    return '$modeText · $brightnessText · ${theme.bottomNavStyle.label}';
   }
 
   String _getNotificationSummary() {

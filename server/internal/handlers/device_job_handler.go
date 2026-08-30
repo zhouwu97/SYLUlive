@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/services"
 )
 
@@ -109,7 +111,7 @@ func (h *DeviceJobHandler) Progress(c *gin.Context) {
 		_ = h.progressReporter.PublishDeviceJobProgress(c.Request.Context(), job.ID, request.Stage)
 	}
 	if job.Status == "failed" && h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -121,6 +123,22 @@ func (h *DeviceJobHandler) Claim(c *gin.Context) {
 		return
 	}
 	job, err := h.service.ClaimJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+// WaitForUser 记录设备任务进入等待用户凭据状态；不触发 Run resume，
+// 由用户完成凭据输入后的 Complete/Fail 流程继续驱动。
+func (h *DeviceJobHandler) WaitForUser(c *gin.Context) {
+	var request deviceJobStateRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "等待请求无效"})
+		return
+	}
+	job, err := h.service.WaitForUserJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion)
 	if err != nil {
 		writeDeviceJobError(c, err)
 		return
@@ -145,7 +163,7 @@ func (h *DeviceJobHandler) Complete(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -167,7 +185,7 @@ func (h *DeviceJobHandler) Fail(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
 }
@@ -184,9 +202,19 @@ func (h *DeviceJobHandler) Cancel(c *gin.Context) {
 		return
 	}
 	if h.resumer != nil {
-		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+		h.resumeDeviceJobAsync(job.ID, middleware.DetachedRequestContext(c.Request.Context()))
 	}
 	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+func (h *DeviceJobHandler) resumeDeviceJobAsync(jobID string, ctx context.Context) {
+	go func() {
+		if err := h.resumer.ResumeDeviceJob(ctx, jobID); err != nil {
+			// 设备任务已经完成，不能把 HTTP 响应改成 500；记录错误交给
+			// Runtime 的 reconciler 继续恢复，避免客户端重复提交同一结果。
+			log.Printf("[AI_DEVICE_RESUME_FAILED] job_id=%s err=%v", jobID, err)
+		}
+	}()
 }
 
 func deviceInstallationID(c *gin.Context) string {

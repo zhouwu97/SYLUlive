@@ -37,18 +37,20 @@ type CanteenReviewEvent struct {
 	HelpfulCount   int       `gorm:"not null;default:0" json:"helpful_count"`
 	UnhelpfulCount int       `gorm:"not null;default:0" json:"unhelpful_count"`
 
-	User                 *User    `gorm:"foreignKey:UserID" json:"-"`
-	UserName             string   `gorm:"-" json:"user_name,omitempty"`
-	UserAvatar           string   `gorm:"-" json:"user_avatar,omitempty"`
-	CreditScore          int      `gorm:"-" json:"credit_score,omitempty"`
-	CreditWeight         float64  `gorm:"-" json:"credit_weight,omitempty"`
-	HistoryCount         int      `gorm:"-" json:"history_count,omitempty"`
-	RecommendedDishNames []string `gorm:"-" json:"recommended_dishes,omitempty"`
-	MyVote               *string  `gorm:"-" json:"my_vote,omitempty"`
-	Source               string   `gorm:"-" json:"source,omitempty"`
-	LegacyRatingID       *uint    `gorm:"-" json:"legacy_rating_id,omitempty"`
-	CanEdit              bool     `gorm:"-" json:"can_edit,omitempty"`
-	CanDelete            bool     `gorm:"-" json:"can_delete,omitempty"`
+	User                   *User                    `gorm:"foreignKey:UserID" json:"-"`
+	UserName               string                   `gorm:"-" json:"user_name,omitempty"`
+	UserAvatar             string                   `gorm:"-" json:"user_avatar,omitempty"`
+	CreditScore            int                      `gorm:"-" json:"credit_score,omitempty"`
+	CreditWeight           float64                  `gorm:"-" json:"credit_weight,omitempty"`
+	HistoryCount           int                      `gorm:"-" json:"history_count,omitempty"`
+	RecommendedDishNames   []string                 `gorm:"-" json:"recommended_dishes,omitempty"`
+	RecommendedDishDetails []map[string]interface{} `gorm:"-" json:"recommended_dish_details,omitempty"`
+	DishPhotos             []map[string]interface{} `gorm:"-" json:"dish_photos,omitempty"`
+	MyVote                 *string                  `gorm:"-" json:"my_vote,omitempty"`
+	Source                 string                   `gorm:"-" json:"source,omitempty"`
+	LegacyRatingID         *uint                    `gorm:"-" json:"legacy_rating_id,omitempty"`
+	CanEdit                bool                     `gorm:"-" json:"can_edit,omitempty"`
+	CanDelete              bool                     `gorm:"-" json:"can_delete,omitempty"`
 }
 
 // CanteenReviewEventVote 保留 V2 评价的有用/无用投票，并用数据库唯一约束保证一人一票。

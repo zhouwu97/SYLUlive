@@ -10,6 +10,7 @@ import '../models/agent_context.dart';
 import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
+import '../models/ai_run_feedback.dart';
 import '../models/ai_source.dart';
 
 const int _maxCreateRunAttempts = 2;
@@ -247,41 +248,81 @@ class AiAssistantService {
     _expectStatus(response, 202);
   }
 
-  /// 读取 SSE，并将 Last-Event-ID 交给服务端完成历史事件回放。
-  Stream<AiRunEvent> streamRunEvents(String runId,
-      {int lastEventId = 0}) async* {
-    final response = await _dio.get<ResponseBody>(
-      '/ai/runs/$runId/events',
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: {if (lastEventId > 0) 'Last-Event-ID': '$lastEventId'},
-      ),
-    );
-    if (response.statusCode != 200 || response.data == null) {
-      throw _exceptionFromResponse(response, fallback: '连接 AI 事件流失败');
+  /// 只上传结构化反馈与受限说明；服务端只保留说明的摘要，不保存原文。
+  Future<void> submitRunFeedback({
+    required String runId,
+    required AiRunFeedback feedback,
+  }) async {
+    final data = <String, dynamic>{
+      'signal':
+          feedback.rating == AiFeedbackRating.positive ? 'answer.useful' : null,
+      'failure_reason': feedback.rating == AiFeedbackRating.negative
+          ? (feedback.reason ?? AiFeedbackReason.other).failureReasonValue
+          : null,
+      if (feedback.note.trim().isNotEmpty) 'note': feedback.note.trim(),
+    }..removeWhere((_, value) => value == null);
+    late Response<dynamic> response;
+    try {
+      response = await _dio.post('/ai/runs/$runId/feedback', data: data);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error, fallback: '提交反馈失败');
     }
+    _expectStatus(response, 202);
+  }
+
+  /// 用户行为信号是 best effort，不应阻断回答或重连流程。
+  Future<void> recordRunSignal({
+    required String runId,
+    required String signal,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/ai/runs/$runId/feedback',
+        data: <String, dynamic>{'signal': signal},
+      );
+      _expectStatus(response, 202);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error, fallback: '记录 AI 行为信号失败');
+    }
+  }
+
+  /// 读取 SSE，并将 Last-Event-ID 交给服务端完成历史事件回放。
+  Stream<AiRunEvent> streamRunEvents(String runId, {int lastEventId = 0}) {
+    final cancelToken = CancelToken();
+    StreamSubscription<String>? lineSubscription;
+    var cancelled = false;
     var eventName = '';
     var eventId = '';
     final dataLines = <String>[];
-    final lines = utf8.decoder
-        .bind(response.data!.stream)
-        .transform(const LineSplitter());
-    await for (final line in lines) {
+
+    late final StreamController<AiRunEvent> controller;
+
+    void closeController() {
+      if (!cancelled && !controller.isClosed) {
+        unawaited(controller.close());
+      }
+    }
+
+    void handleLine(String line) {
       if (line.isEmpty) {
         if (dataLines.isNotEmpty) {
           final data = dataLines.join('\n');
           try {
             final parsed = AiRunEvent.parseSse(data,
                 eventName: eventName.isEmpty ? null : eventName);
-            yield parsed.seq > 0 || eventId.isEmpty
-                ? parsed
-                : AiRunEvent.fromJson(
-                    {
-                      ...jsonDecode(data) as Map<String, dynamic>,
-                      'seq': int.tryParse(eventId) ?? 0
-                    },
-                    eventName: eventName.isEmpty ? null : eventName,
-                  );
+            if (!cancelled) {
+              controller.add(
+                parsed.seq > 0 || eventId.isEmpty
+                    ? parsed
+                    : AiRunEvent.fromJson(
+                        {
+                          ...jsonDecode(data) as Map<String, dynamic>,
+                          'seq': int.tryParse(eventId) ?? 0
+                        },
+                        eventName: eventName.isEmpty ? null : eventName,
+                      ),
+              );
+            }
           } on FormatException {
             // 心跳或代理插入的非 JSON 数据不应中断后续回放。
           }
@@ -289,9 +330,9 @@ class AiAssistantService {
         eventName = '';
         eventId = '';
         dataLines.clear();
-        continue;
+        return;
       }
-      if (line.startsWith(':')) continue;
+      if (line.startsWith(':')) return;
       final separator = line.indexOf(':');
       final field = separator < 0 ? line : line.substring(0, separator);
       var value = separator < 0 ? '' : line.substring(separator + 1);
@@ -308,6 +349,59 @@ class AiAssistantService {
           break;
       }
     }
+
+    Future<void> start() async {
+      try {
+        final response = await _dio.get<ResponseBody>(
+          '/ai/runs/$runId/events',
+          options: Options(
+            responseType: ResponseType.stream,
+            // 服务端事件流会在没有新事件时保持连接约 60 秒；不能沿用
+            // 普通接口的 20 秒接收超时，否则页面会丢失后续回答事件。
+            receiveTimeout: Duration.zero,
+            headers: {if (lastEventId > 0) 'Last-Event-ID': '$lastEventId'},
+          ),
+          cancelToken: cancelToken,
+        );
+        if (cancelled) return;
+        if (response.statusCode != 200 || response.data == null) {
+          throw _exceptionFromResponse(response, fallback: '连接 AI 事件流失败');
+        }
+
+        final lines = utf8.decoder
+            .bind(response.data!.stream)
+            .transform(const LineSplitter());
+        lineSubscription = lines.listen(
+          handleLine,
+          onError: (Object error, StackTrace stackTrace) {
+            if (!cancelled && !controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+            closeController();
+          },
+          onDone: closeController,
+          cancelOnError: false,
+        );
+        if (cancelled) await lineSubscription?.cancel();
+      } catch (error, stackTrace) {
+        if (!cancelled && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+          await controller.close();
+        }
+      }
+    }
+
+    controller = StreamController<AiRunEvent>(
+      onListen: () => unawaited(start()),
+      onPause: () => lineSubscription?.pause(),
+      onResume: () => lineSubscription?.resume(),
+      onCancel: () async {
+        cancelled = true;
+        if (!cancelToken.isCancelled) cancelToken.cancel('AI SSE 已取消');
+        await lineSubscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   void _expectStatus(Response<dynamic> response, int expected) {

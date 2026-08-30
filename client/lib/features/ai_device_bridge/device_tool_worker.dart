@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
 import 'device_job_client.dart';
@@ -28,6 +30,8 @@ enum DeviceToolPermissionDecision { allow, deny, defer }
 typedef DeviceToolPermissionResolver = Future<DeviceToolPermissionDecision>
     Function(DeviceToolJob job);
 
+enum DeviceBridgeStatus { connected, syncing, degraded, offline, unknown }
+
 /// 设备侧轮询和推送入口。只在当前账号上下文仍有效时读取 AES-GCM 本地缓存。
 class DeviceToolWorker {
   static const bridgeProtocolVersion = 2;
@@ -51,11 +55,19 @@ class DeviceToolWorker {
   final DeviceToolRegistry _registry;
 
   Future<void>? _syncing;
+  bool _syncAgain = false;
+
+  void _setBridgeStatus(DeviceBridgeStatus value) {
+    DeviceToolBridge._setBridgeStatus(value);
+  }
 
   Future<void> syncPending() {
     final active = _syncing;
-    if (active != null) return active;
-    final future = _syncAll();
+    if (active != null) {
+      _syncAgain = true;
+      return active;
+    }
+    final future = _drainPending();
     _syncing = future;
     future.whenComplete(() {
       if (identical(_syncing, future)) _syncing = null;
@@ -63,35 +75,72 @@ class DeviceToolWorker {
     return future;
   }
 
+  Future<void> _drainPending() async {
+    do {
+      _syncAgain = false;
+      await _syncAll();
+    } while (_syncAgain);
+  }
+
   /// 推送正文只允许传入任务 ID；实际参数仍通过 JWT 拉取。
   Future<void> handlePush(String jobId) async {
     if (!_isValidJobId(jobId)) return;
-    final context = await _contextResolver();
-    if (context == null || !await context.isCurrent()) return;
-    final installationId = await _installationIdProvider();
-    await _register(installationId);
+    _setBridgeStatus(DeviceBridgeStatus.syncing);
     try {
+      final context = await _contextResolver();
+      if (context == null) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
+      if (!await context.isCurrent()) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
+      final installationId = await _installationIdProvider();
+      await _register(installationId);
       final job = await _client.get(installationId, jobId);
       await _processJob(job, installationId, context);
+      _setBridgeStatus(DeviceBridgeStatus.connected);
     } on DeviceJobApiException catch (error) {
-      // 已过期、已取消和账号切换后的任务无需在客户端重试。
-      if (error.code != 'job_expired' &&
-          error.code != 'device_job_not_found' &&
-          error.code != 'device_not_registered') {
-        rethrow;
+      // 已过期、已取消和账号切换后的任务无需在客户端重试；设备未注册则说明桥接状态已降级。
+      if (error.code == 'job_expired' || error.code == 'device_job_not_found') {
+        _setBridgeStatus(DeviceBridgeStatus.connected);
+        return;
       }
+      _setBridgeStatus(DeviceBridgeStatus.degraded);
+      rethrow;
+    } catch (_) {
+      _setBridgeStatus(DeviceBridgeStatus.degraded);
+      rethrow;
     }
   }
 
   Future<void> _syncAll() async {
-    final context = await _contextResolver();
-    if (context == null || !await context.isCurrent()) return;
-    final installationId = await _installationIdProvider();
-    await _register(installationId);
-    final jobs = await _client.pending(installationId);
-    for (final job in jobs) {
-      if (!await context.isCurrent()) return;
-      await _processJob(job, installationId, context);
+    _setBridgeStatus(DeviceBridgeStatus.syncing);
+    try {
+      final context = await _contextResolver();
+      if (context == null) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
+      if (!await context.isCurrent()) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
+      final installationId = await _installationIdProvider();
+      await _register(installationId);
+      final jobs = await _client.pending(installationId);
+      for (final job in jobs) {
+        if (!await context.isCurrent()) {
+          _setBridgeStatus(DeviceBridgeStatus.offline);
+          return;
+        }
+        await _processJob(job, installationId, context);
+      }
+      _setBridgeStatus(DeviceBridgeStatus.connected);
+    } catch (_) {
+      _setBridgeStatus(DeviceBridgeStatus.degraded);
+      rethrow;
     }
   }
 
@@ -183,6 +232,114 @@ class DeviceToolWorker {
         current.stateVersion,
         result.value,
       );
+    } on DeviceAutomationException catch (error) {
+      // 凭据失败时，尝试本地重试一次：弹窗输入密码后重新执行
+      if (error.code == 'credential_unavailable' && await context.isCurrent()) {
+        final retryDecision = await resolver.call(job);
+        if (retryDecision == DeviceToolPermissionDecision.allow &&
+            await context.isCurrent()) {
+          // 密码已更新，在同一个 claimed job 上重试
+          try {
+            final retryResult = await _registry.execute(
+              current,
+              gateway,
+              automationGateway: automation,
+            );
+            if (!await context.isCurrent()) return;
+            if (refreshing) {
+              current = await _reportProgress(
+                installationId,
+                current,
+                'refresh_completed',
+              );
+            }
+            current = await _reportProgress(
+              installationId,
+              current,
+              'reading_result',
+            );
+            await _client.complete(
+              installationId,
+              current.id,
+              current.stateVersion,
+              retryResult.value,
+            );
+            return;
+          } on DeviceAutomationException catch (retryError) {
+            // 重试失败，正常走 fail 流程
+            if (await context.isCurrent()) {
+              if (refreshing) {
+                current = await _reportProgress(
+                  installationId,
+                  current,
+                  'refresh_failed',
+                );
+              }
+              await _client.fail(
+                installationId,
+                current.id,
+                current.stateVersion,
+                retryError.code,
+              );
+            }
+            return;
+          } on DeviceToolExecutionException catch (retryError) {
+            if (await context.isCurrent()) {
+              if (refreshing) {
+                current = await _reportProgress(
+                  installationId,
+                  current,
+                  'refresh_failed',
+                );
+              }
+              await _client.fail(
+                installationId,
+                current.id,
+                current.stateVersion,
+                retryError.code,
+              );
+            }
+            return;
+          }
+        }
+        if (retryDecision == DeviceToolPermissionDecision.deny &&
+            await context.isCurrent()) {
+          // 用户主动取消密码框：按用户拒绝收尾，Run 得到明确结果。
+          await _client.fail(
+            installationId,
+            current.id,
+            current.stateVersion,
+            'permission_denied',
+          );
+          return;
+        }
+        if (retryDecision == DeviceToolPermissionDecision.defer) {
+          // 非前台等不适合弹窗的场景：任务持久化为 waiting_user 且不 fail，
+          // Run 保持存活；用户回来后 PendingJobs 会重新带回该任务继续执行。
+          await _client.waitForUser(
+            installationId,
+            current.id,
+            current.stateVersion,
+          );
+          return;
+        }
+      }
+
+      if (await context.isCurrent()) {
+        if (refreshing) {
+          current = await _reportProgress(
+            installationId,
+            current,
+            'refresh_failed',
+          );
+        }
+        await _client.fail(
+          installationId,
+          current.id,
+          current.stateVersion,
+          error.code,
+        );
+      }
     } on DeviceToolExecutionException catch (error) {
       if (await context.isCurrent()) {
         if (refreshing) {
@@ -251,13 +408,21 @@ class DeviceToolBridge {
   DeviceToolBridge._();
 
   static DeviceToolWorker? _activeWorker;
+  static final ValueNotifier<DeviceBridgeStatus> statusNotifier =
+      ValueNotifier<DeviceBridgeStatus>(DeviceBridgeStatus.unknown);
+
+  static DeviceBridgeStatus get status => statusNotifier.value;
 
   static void install(DeviceToolWorker worker) {
     _activeWorker = worker;
+    statusNotifier.value = DeviceBridgeStatus.unknown;
   }
 
   static void uninstall(DeviceToolWorker worker) {
-    if (identical(_activeWorker, worker)) _activeWorker = null;
+    if (identical(_activeWorker, worker)) {
+      _activeWorker = null;
+      statusNotifier.value = DeviceBridgeStatus.offline;
+    }
   }
 
   static Future<void> syncPending() =>
@@ -265,4 +430,8 @@ class DeviceToolBridge {
 
   static Future<void> handlePush(String jobId) =>
       _activeWorker?.handlePush(jobId) ?? Future.value();
+
+  static void _setBridgeStatus(DeviceBridgeStatus value) {
+    statusNotifier.value = value;
+  }
 }

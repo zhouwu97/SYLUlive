@@ -20,11 +20,13 @@ from services.competition_public_crawler import (
     _extract_article_id,
     _resolve,
     _compute_content_hash,
+    PARSER_VERSION,
     COMPETITION_BASE_URL,
     COMPETITION_LIST_URL,
     COMPETITION_ALLOWED_HOST,
     ARTICLE_PATH_PREFIX,
 )
+from services.html_sanitizer import extract_semantic_text
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "competition"
 
@@ -191,6 +193,43 @@ class TestParseDetail:
         assert len(detail.content_text) > 100, \
             "富文本页面正文应较长"
 
+    def test_3317_preserves_inline_text_and_source_metadata(self):
+        """真实 3317 通知不能因 span 拆分文本，且来源必须来自页面元数据。"""
+        html = _load_fixture("detail_3317.html")
+        source_url = f"{COMPETITION_BASE_URL}/info/1089/3317.htm"
+
+        detail = parse_competition_detail(
+            html,
+            source_url,
+            list_title="关于组织参加2026年辽宁省大学生“体育+”创新创业大赛的通知",
+            list_date="2026-08-25",
+        )
+
+        assert detail is not None
+        assert detail.author_department == "体育部"
+        assert detail.publish_date == "2026-08-25"
+        assert detail.content_text.startswith(
+            "一、竞赛规程\n\n（一）竞赛名称\n\n"
+            "2026年辽宁省大学生“体育+”创新创业大赛\n\n"
+            "（二）参赛对象与赛道设置\n\n"
+            "1.参赛对象：沈阳理工大学在籍在校本科生、研究生。"
+        )
+        assert "竞\n赛" not in detail.content_text
+        assert "参赛对象\n：" not in detail.content_text
+
+    def test_semantic_text_only_breaks_at_block_nodes(self):
+        html = """
+        <div>
+          <p><span>一、</span><strong><span>竞</span><span>赛规程</span></strong></p>
+          <p><span>（一）</span><strong>竞赛名称</strong></p>
+        </div>
+        """
+        assert extract_semantic_text(html) == "一、竞赛规程\n\n（一）竞赛名称"
+
+    def test_semantic_text_separates_table_cells(self):
+        html = "<table><tr><th>项目名称</th><th>负责人</th></tr></table>"
+        assert extract_semantic_text(html) == "项目名称 | 负责人"
+
     def test_detail_with_attachment(self):
         """带附件详情页（detail_with_attachment.html）正常解析附件。"""
         html = _load_fixture("detail_with_attachment.html")
@@ -345,3 +384,13 @@ class TestContentHash:
         )
         assert len(h) == 64
         assert re.match(r"^[a-f0-9]{64}$", h)
+
+    def test_hash_includes_parser_version_and_content_text(self):
+        h1 = _compute_content_hash(
+            "标题", "2026-06-28", "部门", "<p>正文</p>", [], "正文"
+        )
+        h2 = _compute_content_hash(
+            "标题", "2026-06-28", "部门", "<p>正文</p>", [], "正文更新"
+        )
+        assert h1 != h2
+        assert PARSER_VERSION == "competition-v2"

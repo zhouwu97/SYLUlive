@@ -8,6 +8,8 @@ import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../config/api_constants.dart';
 import '../widgets/cached_avatar.dart';
+import '../services/async_action_guard.dart';
+import '../services/idempotency_key.dart';
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -26,6 +28,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
   bool _isSubmitting = false;
   bool _postDrawRefreshInFlight = false;
   DateTime? _lastPostDrawRefreshAt;
+  String? _joinIdempotencyKey;
+  String? _drawIdempotencyKey;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
 
   late Dio _dio;
   Timer? _countdownTimer;
@@ -152,9 +157,23 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Future<void> _joinLottery() async {
     if (_event == null || _isSubmitting) return;
+    final eventId = _event!.id;
+    await _actionGuard.run<void>(
+      'lottery-join:$eventId',
+      () => _joinLotteryOnce(eventId),
+    );
+  }
+
+  Future<void> _joinLotteryOnce(int eventId) async {
     if (mounted) setState(() => _isSubmitting = true);
     try {
-      final response = await _dio.post('/lottery/${_event!.id}/join');
+      final response = await _dio.post(
+        '/lottery/$eventId/join',
+        options: Options(headers: <String, dynamic>{
+          'Idempotency-Key': _joinIdempotencyKey ??=
+              newIdempotencyKey('lottery-join'),
+        }),
+      );
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '参与成功！');
       setState(() {
@@ -163,6 +182,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
         _participantCount++;
         _isSubmitting = false;
       });
+      _joinIdempotencyKey = null;
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -183,13 +203,27 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
     if (!mounted) return;
     if (!confirm) return;
+    final eventId = _event!.id;
+    await _actionGuard.run<void>(
+      'lottery-draw:$eventId',
+      () => _adminDrawOnce(eventId),
+    );
+  }
 
+  Future<void> _adminDrawOnce(int eventId) async {
     if (mounted) setState(() => _isSubmitting = true);
     try {
-      await _dio.post('/admin/lottery/${_event!.id}/draw');
+      await _dio.post(
+        '/admin/lottery/$eventId/draw',
+        options: Options(headers: <String, dynamic>{
+          'Idempotency-Key': _drawIdempotencyKey ??=
+              newIdempotencyKey('lottery-draw'),
+        }),
+      );
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '开奖成功！');
       _fetchLottery();
+      _drawIdempotencyKey = null;
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -201,8 +235,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
     }
   }
 
-  BoxDecoration _softCardDecoration(bool isDark,
-      {Color? border, bool warm = false}) {
+  BoxDecoration _softCardDecoration(bool isDark, {Color? border}) {
     return BoxDecoration(
       color: isDark ? const Color(0xFF1E2226) : Colors.white,
       borderRadius: BorderRadius.circular(20),
@@ -226,7 +259,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = const Color(0xFFF59E0B);
+    const primary = Color(0xFFF59E0B);
     final user = context.watch<AuthProvider>().user;
     final isSuperAdmin = user?.isSuperAdmin == true;
 

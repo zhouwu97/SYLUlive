@@ -23,6 +23,16 @@ class CanteenRankingScreen extends StatefulWidget {
 
 class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _sort = CanteenRankingSort.composite;
+  String _locationArea = '';
+  String _locationFloor = '';
+
+  /// 位置筛选（'' = 不限）：区域与楼层组合生效。
+  List<CanteenRankingItem> _applyLocationFilter(List<CanteenRankingItem> items) {
+    return items
+        .where((item) => canteenRankingItemMatchesLocation(
+            item, _locationArea, _locationFloor))
+        .toList();
+  }
 
   @override
   void initState() {
@@ -55,8 +65,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         ),
         content: const Text(
           '综合排序采用贝叶斯加权评分，既看平均星级、也看评价人数：评分越高、人数越多越靠前；'
-          '评价很少的高分店会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
-          '“评分优先”只按星级排，样本很少时会标注“样本较少”；'
+          '评价很少的高分商家会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
+          '“评分优先”按星级从低到高倒序展示，样本很少时会标注“样本较少”；'
           '“评价人数”按参与评价的人数排序。\n\n'
           '菜品和实拍数量仅供参考，不参与综合分计算。',
           style: TextStyle(fontSize: 13, height: 1.6),
@@ -85,7 +95,11 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           canteenId: item.id,
           canteenName: item.name,
           dishCount: item.dishCount,
+          dishWithPhotoCount: item.dishWithPhotoCount,
           dishPhotoCount: item.dishPhotoCount,
+          initialImage: item.image,
+          initialOffline: item.isOffline,
+          heroTag: 'canteen-ranking-${item.id}',
         ),
       ),
     );
@@ -95,8 +109,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除店铺'),
-        content: Text('确定要删除食堂/店铺 "${item.name}" 吗？'),
+        title: const Text('删除商家'),
+        content: Text('确定要删除商家 "${item.name}" 吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -129,7 +143,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
-          '食堂综合排行',
+          '商家排行',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -141,7 +155,17 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       ),
       body: Column(
         children: [
-          CanteenRankingFilterBar(selected: _sort, onChanged: _switchSort),
+          CanteenRankingFilterBar(
+            selected: _sort,
+            onChanged: _switchSort,
+            locationArea: _locationArea,
+            locationFloor: _locationFloor,
+            onLocationFilterChanged: (area, floor) =>
+                setState(() {
+                  _locationArea = area;
+                  _locationFloor = floor;
+                }),
+          ),
           _buildExplanationLine(isDark),
           const SizedBox(height: 4),
           Expanded(child: _buildList(isDark)),
@@ -183,12 +207,14 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
 
     return Consumer<CanteenDiscoveryProvider>(
       builder: (_, provider, __) {
-        final items = provider.rankingItems;
+        final items = _applyLocationFilter(provider.rankingItems);
 
         if (provider.rankingLoading && items.isEmpty) {
           return _buildSkeleton(isDark);
         }
-        if (!provider.rankingLoading && items.isEmpty && provider.rankingError != null) {
+        if (!provider.rankingLoading &&
+            items.isEmpty &&
+            provider.rankingError != null) {
           return CanteenEmptyState(
             title: '加载失败',
             subtitle: provider.rankingError,
@@ -197,10 +223,23 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           );
         }
         if (items.isEmpty) {
+          final hasLocationFilter =
+              _locationArea.isNotEmpty || _locationFloor.isNotEmpty;
+          if (hasLocationFilter && provider.rankingItems.isNotEmpty) {
+            return CanteenEmptyState(
+              title: '该位置暂无商家',
+              subtitle: '试试切换其他食堂或楼层',
+              actionLabel: '查看全部商家',
+              onAction: () => setState(() {
+                _locationArea = '';
+                _locationFloor = '';
+              }),
+            );
+          }
           return CanteenEmptyState(
-            title: '暂无食堂',
-            subtitle: '成为第一个收录食堂的同学吧',
-            actionLabel: '返回食堂页提交',
+            title: '暂无商家',
+            subtitle: '成为第一个收录商家的同学吧',
+            actionLabel: '返回餐饮页添加',
             onAction: () => Navigator.pop(context),
           );
         }

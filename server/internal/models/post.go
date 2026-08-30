@@ -2,8 +2,6 @@ package models
 
 import (
 	"encoding/json"
-	"path"
-	"strings"
 	"time"
 )
 
@@ -93,6 +91,7 @@ type Post struct {
 	WaterSectionAuthorMeta *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
 	TeamRecruitmentMeta    *TeamRecruitmentMeta    `gorm:"-" json:"team_recruitment_meta,omitempty"`
 	PollMeta               *PollSummaryDTO         `gorm:"-" json:"poll_meta,omitempty"`
+	Topics                 []TopicBrief            `gorm:"-" json:"topics"`
 	Images                 []PostImage             `gorm:"foreignKey:PostID" json:"images"`
 	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt              time.Time               `json:"created_at"`
@@ -137,38 +136,51 @@ type PostImage struct {
 	FileID    uint `gorm:"not null" json:"file_id"`
 	SortOrder int  `gorm:"default:0" json:"sort_order"`
 	File      File `gorm:"foreignKey:FileID" json:"file"`
+	// 这是跨 PostImage/ReplyImage 共用 FileID 的逻辑关联，不能让 GORM 为其创建
+	// 外键，否则 image_variants.file_id 会被错误地同时指向两个父表。
+	Variants []ImageVariant `gorm:"foreignKey:FileID;references:FileID;-:migration" json:"-"`
 }
 
 // MarshalJSON 为客户端提供统一的三档图片地址契约。
 func (image PostImage) MarshalJSON() ([]byte, error) {
 	type postImageJSON struct {
-		ID        uint   `json:"id"`
-		PostID    uint   `json:"post_id"`
-		FileID    uint   `json:"file_id"`
-		SortOrder int    `json:"sort_order"`
-		File      File   `json:"file"`
-		ThumbURL  string `json:"thumb_url,omitempty"`
-		MediumURL string `json:"medium_url,omitempty"`
-		OriginURL string `json:"origin_url,omitempty"`
+		ID            uint              `json:"id"`
+		PostID        uint              `json:"post_id"`
+		FileID        uint              `json:"file_id"`
+		SortOrder     int               `json:"sort_order"`
+		File          File              `json:"file"`
+		ThumbURL      string            `json:"thumb_url,omitempty"`
+		MediumURL     string            `json:"medium_url,omitempty"`
+		ViewerURL     string            `json:"viewer_url,omitempty"`
+		OriginURL     string            `json:"origin_url,omitempty"`
+		VariantStatus map[string]string `json:"variant_status"`
+	}
+	variantStatus := make(map[string]string, len(image.Variants))
+	for _, variant := range image.Variants {
+		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
+			continue
+		}
+		variantStatus[variant.Variant] = string(variant.Status)
 	}
 	return json.Marshal(postImageJSON{
 		ID: image.ID, PostID: image.PostID, FileID: image.FileID,
 		SortOrder: image.SortOrder, File: image.File,
-		ThumbURL:  postImageVariantURL(image.File, "thumb"),
-		MediumURL: postImageVariantURL(image.File, "medium"),
-		OriginURL: image.File.Path,
+		ThumbURL:      postImageVariantURL(image.File.Path, image.Variants, "thumb"),
+		MediumURL:     postImageVariantURL(image.File.Path, image.Variants, "medium"),
+		ViewerURL:     postImageVariantURL(image.File.Path, image.Variants, "viewer"),
+		OriginURL:     image.File.Path,
+		VariantStatus: variantStatus,
 	})
 }
 
-func postImageVariantURL(file File, variant string) string {
-	if file.Path == "" || file.MimeType == "image/gif" {
-		return file.Path
+func postImageVariantURL(originURL string, variants []ImageVariant, variantName string) string {
+	for _, variant := range variants {
+		if variant.Variant == variantName && variant.RecipeVersion == 1 &&
+			variant.Status == ImageVariantStatusReady && variant.Path != "" {
+			return variant.Path
+		}
 	}
-	extension := path.Ext(file.Path)
-	if extension == "" {
-		return file.Path
-	}
-	return strings.TrimSuffix(file.Path, extension) + "_" + variant + extension
+	return originURL
 }
 
 type FeaturedApplication struct {

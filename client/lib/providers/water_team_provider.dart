@@ -266,8 +266,12 @@ class WaterTeamProvider extends ChangeNotifier {
   }
 
   static String? _extractError(DioException error) {
+    // 服务端统一错误格式为 {code, message, request_id}，error 仅旧接口兜底。
     return error.response?.data is Map
-        ? (error.response!.data['error'] ?? error.message).toString()
+        ? (error.response!.data['message'] ??
+                error.response!.data['error'] ??
+                error.message)
+            .toString()
         : error.message ?? '网络请求失败';
   }
 }

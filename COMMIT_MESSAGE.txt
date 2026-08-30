@@ -1,0 +1,98 @@
+fix: 修复小组件、AI freshness、食堂投稿等 6 个 P0 级问题
+
+## 🔴 P0-1: 修复考试小组件 schema 版本冲突
+
+**问题**：Flutter 统一使用 widgetSchemaVersion=2，导致考试数据也携带 schema_version: 2，
+但 Android 和 iOS 的考试小组件只接受 schema_version: 1，造成考试小组件显示为空。
+
+**修复**：
+- Flutter 分离版本常量：courseWidgetSchemaVersion=2, examWidgetSchemaVersion=2
+- iOS/Android 更新验证逻辑，接受 schema 1-2
+
+**影响文件**：
+- client/lib/services/home_widget_service.dart
+- client/ios/CourseScheduleWidget/CourseScheduleWidget.swift
+- client/android/app/src/main/kotlin/com/example/shenliyuan/ExamData.kt
+
+---
+
+## 🔴 P0-2: 修复 AI freshness 上限逻辑写反
+
+**问题**：客户端和服务端的 clamp 逻辑将 ceiling（上限）实现成了 floor（下限），
+导致 AI 请求 60 秒新鲜度被强制改成 300 秒，完全反了。
+
+**修复**：
+- 客户端：final seconds = requested.toInt().clamp(1, ceiling);
+- 服务端：if requested > maximum { ... }
+
+**影响文件**：
+- client/lib/features/ai_device_bridge/device_tool_registry.dart
+- server/internal/services/device_job_service.go
+
+---
+
+## 🔴 P0-3: 修复二课密码失败后错误分类
+
+**问题**：任何二课刷新失败（网络断开、WebVPN 超时、页面解析失败）都会删除用户保存的密码。
+
+**修复**：只在明确的凭据失败时删除密码，网络/解析失败保留密码并返回正确的错误码。
+
+**影响文件**：
+- client/lib/features/ai_device_bridge/device_tool_bridge_host.dart
+
+---
+
+## 🔴 P0-4: 关闭旧菜品投稿 API 死链
+
+**问题**：新评价流程已改为"评论直接产生 active 菜品"，但旧的独立投稿 API 仍开放，
+继续产生 pending 菜品，但管理端已无审核入口，形成死链。
+
+**修复**：旧投稿 API 返回 410 Gone，明确告知客户端更新。
+
+**影响 API**：
+- POST /canteens/:id/dish-photos
+- POST /canteens/:id/dish-submissions
+- POST /canteens/dishes/:dishId/resubmit
+
+**影响文件**：
+- server/internal/handlers/canteen_dish_photo.go
+- server/internal/handlers/canteen_dish_submission.go
+
+---
+
+## 🔴 P0-5: 修复 MigratePendingDishesAndPhotos 重复运行
+
+**问题**：MigratePendingDishesAndPhotos 设计为"一次性迁移历史数据"，
+但每次服务器启动都会执行，可能自动批准新产生的 pending 数据。
+
+**修复**：使用 AppSchemaMigration 记录迁移版本（20260825_01），只运行一次。
+
+**影响文件**：
+- server/internal/models/canteen_dish.go
+
+---
+
+## 🔴 P0-6: 修复密码过期后 Device Job 本地重试
+
+**问题**：当使用保存的旧密码刷新二课失败后，Device Job 直接 failed，
+用户需要重新发起 AI 请求才能输入新密码。
+
+**修复**：在客户端 _processJob 中，当捕获到 credential_unavailable 时，
+弹出密码输入框，用户输入新密码后在同一个 claimed job 上重试，
+保持 job_id 和 run_id 不变，AI Run 可以继续。
+
+**影响文件**：
+- client/lib/features/ai_device_bridge/device_tool_worker.dart
+
+---
+
+## 验收建议
+
+1. **考试小组件**：Android/iOS 添加考试小组件，确认显示正常
+2. **AI freshness**：验证 academic max_age=60 实际为 60 秒，max_age=86400 被限制为 300 秒
+3. **二课密码**：模拟网络失败，密码应保留；模拟密码错误，密码应删除
+4. **密码过期重试**：使用旧密码触发二课刷新，确认弹窗后同一 AI 请求继续
+5. **旧投稿 API**：确认返回 410 Gone
+6. **迁移幂等性**：重启服务器多次，确认迁移只运行一次
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

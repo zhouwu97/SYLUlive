@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.TypedValue
 import android.widget.RemoteViews
 
 object HomeWidgetRenderer {
@@ -16,15 +17,31 @@ object HomeWidgetRenderer {
         val views = RemoteViews(context.packageName, variant.layoutResource)
         val appearance = HomeWidgetAppearanceStore.read(context, variant.kind)
         val theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
+        val typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
 
         views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource)
         views.setTextViewText(R.id.tv_widget_title, appearance.title)
+        views.setTextViewTextSize(
+            R.id.tv_widget_title,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.titleSp,
+        )
         views.setTextColor(R.id.tv_widget_title, theme.primaryTextColor)
+        views.setTextViewTextSize(
+            R.id.empty_view,
+            TypedValue.COMPLEX_UNIT_SP,
+            typography.emptySp,
+        )
         views.setTextColor(R.id.empty_view, theme.mutedTextColor)
 
         if (variant.kind == NativeHomeWidgetKind.COURSE) {
             val data = CourseDataReader.read(context)
             views.setTextViewText(R.id.tv_widget_date, data.date)
+            views.setTextViewTextSize(
+                R.id.tv_widget_date,
+                TypedValue.COMPLEX_UNIT_SP,
+                typography.subtitleSp,
+            )
             views.setTextColor(R.id.tv_widget_date, theme.secondaryTextColor)
         }
 

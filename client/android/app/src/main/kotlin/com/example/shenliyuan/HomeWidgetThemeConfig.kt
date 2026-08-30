@@ -24,10 +24,22 @@ enum class NativeHomeWidgetTheme(val storageName: String) {
     }
 }
 
+enum class NativeHomeWidgetFontSize(val storageName: String) {
+    SMALL("small"),
+    STANDARD("standard"),
+    LARGE("large");
+
+    companion object {
+        fun fromStorage(value: String?): NativeHomeWidgetFontSize =
+            entries.firstOrNull { it.storageName == value } ?: STANDARD
+    }
+}
+
 data class NativeHomeWidgetAppearance(
     val kind: NativeHomeWidgetKind,
     val theme: NativeHomeWidgetTheme,
     val title: String,
+    val fontSize: NativeHomeWidgetFontSize,
 )
 
 data class HomeWidgetThemeConfig(
@@ -85,6 +97,8 @@ object HomeWidgetAppearanceStore {
     private const val EXAM_THEME = "flutter.widget_exam_theme"
     private const val COURSE_TITLE = "flutter.widget_course_title"
     private const val EXAM_TITLE = "flutter.widget_exam_title"
+    private const val COURSE_FONT_SIZE = "flutter.widget_course_font_size"
+    private const val EXAM_FONT_SIZE = "flutter.widget_exam_font_size"
     private const val LEGACY_TEXT_COLOR = "flutter.widget_text_color"
     private const val LEGACY_TITLE = "flutter.widget_title"
 
@@ -93,6 +107,7 @@ object HomeWidgetAppearanceStore {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val themeKey = if (kind == NativeHomeWidgetKind.COURSE) COURSE_THEME else EXAM_THEME
         val titleKey = if (kind == NativeHomeWidgetKind.COURSE) COURSE_TITLE else EXAM_TITLE
+        val fontSizeKey = fontSizeStorageKey(kind)
         return NativeHomeWidgetAppearance(
             kind = kind,
             theme = NativeHomeWidgetTheme.fromStorage(prefs.getString(themeKey, null)),
@@ -100,8 +115,15 @@ object HomeWidgetAppearanceStore {
                 ?.trim()
                 ?.ifBlank { kind.defaultTitle }
                 ?: kind.defaultTitle,
+            fontSize = NativeHomeWidgetFontSize.fromStorage(
+                prefs.getString(fontSizeKey, null),
+            ),
         )
     }
+
+    /** 暴露纯字符串映射，便于在不启动 Android/Launcher 环境时做契约测试。 */
+    fun fontSizeStorageKey(kind: NativeHomeWidgetKind): String =
+        if (kind == NativeHomeWidgetKind.COURSE) COURSE_FONT_SIZE else EXAM_FONT_SIZE
 
     fun migrateLegacy(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -119,6 +141,12 @@ object HomeWidgetAppearanceStore {
         }
         if (!prefs.contains(EXAM_TITLE)) {
             editor.putString(EXAM_TITLE, legacyTitle ?: NativeHomeWidgetKind.EXAM.defaultTitle)
+        }
+        if (!prefs.contains(COURSE_FONT_SIZE)) {
+            editor.putString(COURSE_FONT_SIZE, NativeHomeWidgetFontSize.STANDARD.storageName)
+        }
+        if (!prefs.contains(EXAM_FONT_SIZE)) {
+            editor.putString(EXAM_FONT_SIZE, NativeHomeWidgetFontSize.STANDARD.storageName)
         }
         editor.apply()
     }

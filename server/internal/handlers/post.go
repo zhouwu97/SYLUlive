@@ -53,6 +53,11 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHan
 	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret}
 }
 
+// withPostImageVariants 以一条关联查询加载 v1 状态，避免 JSON 序列化逐图访问数据库。
+func withPostImageVariants(db *gorm.DB) *gorm.DB {
+	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion)
+}
+
 // Snapshot 帖子快照
 type Snapshot struct {
 	// UserID 快照归属用户。userID > 0 时快照已应用该用户的负反馈过滤，
@@ -372,6 +377,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	isHomeFeedV2 := boardIDStr == "1" &&
 		strings.TrimSpace(postType) == "" &&
 		c.Query("tag_id") == "" &&
+		c.Query("topic_id") == "" &&
 		feedVersion >= 2 &&
 		(sort == "all" || sort == "time") &&
 		searchQuery == "" &&
@@ -385,6 +391,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	isLegacyHomeFeed := boardIDStr == "1" &&
 		strings.TrimSpace(postType) == "" &&
 		c.Query("tag_id") == "" &&
+		c.Query("topic_id") == "" &&
 		feedVersion < 2 &&
 		sort == "all" &&
 		searchQuery == "" &&
@@ -410,7 +417,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 					if len(targetIDs) > 0 {
 						var rawPosts []models.Post
-						if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
+						if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&rawPosts).Error; err != nil {
 							log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", err)
 							c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 							return
@@ -452,7 +459,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	query := h.db.Model(&models.Post{}).
 		Where("posts.status != ?", models.PostStatusDeleted).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
-		Preload("Author").Preload("Images").Preload("Images.File")
+		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
 	if !supportsPoll {
 		query = query.Where("posts.content_kind <> ?", models.PostContentKindPoll)
 	}
@@ -517,12 +524,27 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("water_tag_id = ?", tagID)
 	}
 
+	// topic_id 过滤使用 EXISTS，避免关联表导致帖子重复。
+	topicIDStr := strings.TrimSpace(c.Query("topic_id"))
+	topicIDProvided := topicIDStr != ""
+	var topicID uint
+	if topicIDProvided {
+		parsed, parseErr := strconv.ParseUint(topicIDStr, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的话题ID"})
+			return
+		}
+		topicID = uint(parsed)
+		query = query.Where("EXISTS (SELECT 1 FROM post_topics JOIN topics ON topics.id = post_topics.topic_id WHERE post_topics.post_id = posts.id AND post_topics.topic_id = ? AND topics.status = ?)", topicID, models.TopicStatusActive)
+	}
+
 	// 版块“推荐”使用独立快照算法；带标签、搜索或增量条件的请求继续走通用查询。
 	isSectionRecommend := requestedBoardID != nil &&
 		*requestedBoardID == models.BoardShuitie &&
 		postType != "" &&
 		waterSectionFeedID > 0 &&
 		!tagIDProvided &&
+		!topicIDProvided &&
 		sort == "all" &&
 		searchQuery == "" &&
 		sinceStr == ""
@@ -704,6 +726,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			if tagIDProvided {
 				snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
 			}
+			if topicIDProvided {
+				snapshotQuery = snapshotQuery.Where("EXISTS (SELECT 1 FROM post_topics JOIN topics ON topics.id = post_topics.topic_id WHERE post_topics.post_id = posts.id AND post_topics.topic_id = ? AND topics.status = ?)", topicID, models.TopicStatusActive)
+			}
 			if sort == "all" {
 				snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
 				snapshotQuery = applyPinnedOrder(snapshotQuery, now)
@@ -756,7 +781,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if len(allIDs) > 0 {
 			targetIDs := allIDs[:end]
 			var rawPosts []models.Post
-			if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
+			if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&rawPosts).Error; err != nil {
 				log.Printf("[DB_ERROR] GetList common feed Find failed: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 				return
@@ -1293,7 +1318,7 @@ func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
 		return []models.Post{}, nil
 	}
 	var raw []models.Post
-	if err := h.db.Where("id IN ?", ids).Preload("Author").Preload("Images").Preload("Images.File").Find(&raw).Error; err != nil {
+	if err := h.db.Where("id IN ?", ids).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&raw).Error; err != nil {
 		return nil, err
 	}
 	byID := make(map[uint]models.Post, len(raw))
@@ -1434,6 +1459,12 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	topicsRaw, topicsProvided := c.GetPostForm("topics_json")
+	topicSelections, err := services.ParseTopicSelections(topicsRaw, topicsProvided)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "invalid_topics"})
+		return
+	}
 	if models.BoardID(input.BoardID) == models.BoardShuitie && strings.TrimSpace(input.PostType) == "poll" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "请使用投票发布接口"})
 		return
@@ -1545,6 +1576,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 		if err := tx.Create(&post).Error; err != nil {
 			return err
 		}
+		if err := services.ReplacePostTopics(tx, post.ID, topicSelections, topicsProvided); err != nil {
+			return err
+		}
 
 		if isTeamRecruitment && sectionIDPtr != nil {
 			recruitment := models.WaterTeamRecruitment{
@@ -1579,6 +1613,11 @@ func (h *PostHandler) Create(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidImageFileReference) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		var topicErr *services.TopicInputError
+		if errors.As(err, &topicErr) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": topicErr.Error(), "code": "invalid_topics"})
 			return
 		}
 		log.Printf("创建帖子失败: %v (user_id=%v, board_id=%v)", err, userID, input.BoardID)
@@ -1618,7 +1657,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 
 	// 图片处理已移至事务内
 
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).First(&post, post.ID).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after create: %v", err)
 	}
 
@@ -1638,7 +1677,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	}
 
 	var post models.Post
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).First(&post, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
@@ -1700,6 +1739,12 @@ func (h *PostHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	topicsRaw, topicsProvided := c.GetPostForm("topics_json")
+	topicSelections, err := services.ParseTopicSelections(topicsRaw, topicsProvided)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": "invalid_topics"})
+		return
 	}
 
 	var post models.Post
@@ -1866,8 +1911,15 @@ func (h *PostHandler) Update(c *gin.Context) {
 		if err := tx.Model(&post).Updates(updates).Error; err != nil {
 			return fmt.Errorf("update_post_failed")
 		}
+		if err := services.ReplacePostTopics(tx, post.ID, topicSelections, topicsProvided); err != nil {
+			return err
+		}
 
 		if replaceImages {
+			var oldImageRows []models.PostImage
+			if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&oldImageRows).Error; err != nil {
+				return fmt.Errorf("update_images_failed")
+			}
 			if err := tx.Where("post_id = ?", post.ID).Delete(&models.PostImage{}).Error; err != nil {
 				return fmt.Errorf("update_images_failed")
 			}
@@ -1883,6 +1935,13 @@ func (h *PostHandler) Update(c *gin.Context) {
 						return fmt.Errorf("update_images_failed")
 					}
 				}
+			}
+			oldIDs := make([]uint, 0, len(oldImageRows))
+			for _, row := range oldImageRows {
+				oldIDs = append(oldIDs, row.FileID)
+			}
+			if err := services.ReconcileFilePublicAccess(tx, oldIDs...); err != nil {
+				return fmt.Errorf("update_images_failed")
 			}
 		}
 
@@ -1923,13 +1982,18 @@ func (h *PostHandler) Update(c *gin.Context) {
 			log.Printf("[TEAM_RECRUITMENT] post_id=%d missing recruitment record", post.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "组队招募数据异常，请稍后重试"})
 		default:
+			var topicErr *services.TopicInputError
+			if errors.As(err, &topicErr) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": topicErr.Error(), "code": "invalid_topics"})
+				return
+			}
 			// Let validation errors pass through
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 		return
 	}
 
-	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).First(&post, post.ID).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after update: %v", err)
 	}
 
@@ -1996,10 +2060,14 @@ func (h *PostHandler) UpdateStatus(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
+		Scopes(withPostImageVariants).
 		First(&post, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新获取帖子失败"})
 		return
 	}
+	responsePosts := []models.Post{post}
+	_ = services.LoadTopicsForPosts(h.db, responsePosts)
+	post = responsePosts[0]
 
 	c.JSON(http.StatusOK, post)
 }
@@ -2031,7 +2099,20 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+			return err
+		}
+		var rows []models.PostImage
+		if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&rows).Error; err != nil {
+			return err
+		}
+		ids := make([]uint, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.FileID)
+		}
+		return services.ReconcileFilePublicAccess(tx, ids...)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -2061,6 +2142,13 @@ func (h *PostHandler) hydratePosts(c *gin.Context, posts []models.Post, now time
 		return
 	}
 
+	if err := services.LoadTopicsForPosts(h.db, posts); err != nil {
+		// Topic 表由独立 SQL/AutoMigrate 建立；兼容尚未执行迁移的旧环境，
+		// 不让新增的旁路 hydration 阻断原有帖子读取。
+		if !services.TopicSchemaUnavailable(err) {
+			log.Printf("加载帖子话题失败: %v", err)
+		}
+	}
 	h.fillLikes(c, posts)
 	h.fillWaterSectionPinState(posts, now)
 	h.fillWaterSectionFeaturedState(posts)

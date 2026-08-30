@@ -1,9 +1,12 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import '../platform/contracts/external_navigator.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
+import '../platform/contracts/external_navigator.dart';
 import '../services/campus_article_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
@@ -11,6 +14,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_page_app_bar.dart';
+import '../widgets/campus/campus_article_html.dart';
 import '../widgets/campus/campus_theme.dart';
 
 /// 文章详情页。
@@ -85,7 +89,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   ///
   /// 仅允许白名单域名的 HTTPS 链接。
   Future<void> _openExternalUrl(String url, {String? errorText}) async {
-    if (!isSafeCampusUrl(url)) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !isSafeCampusUri(uri)) {
       AppFeedback.showSnackBar(
         context,
         errorText ?? '附件地址无效',
@@ -95,7 +100,6 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      final uri = Uri.parse(url);
       final opened = await ExternalNavigator.current().open(uri);
       if (!opened && messenger?.mounted == true) {
         messenger!.showSnackBar(
@@ -108,6 +112,105 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         const SnackBar(content: Text('无法打开浏览器')),
       );
     }
+  }
+
+  /// 打开正文中的链接：校内链接直达，外部 HTTPS 链接先提示用户确认。
+  Future<void> _openArticleLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !isSafeCampusUri(uri, allowExternalHost: true)) {
+      AppFeedback.showSnackBar(context, '链接地址无效', isError: true);
+      return;
+    }
+
+    final isOfficial = isSafeCampusUri(uri);
+    if (!isOfficial) {
+      final shouldOpen = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('打开外部链接？'),
+              content: Text(
+                '该链接不属于学校官网，将交给系统浏览器打开：\n${uri.host}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('继续打开'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!mounted || !shouldOpen) return;
+    }
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final opened = await ExternalNavigator.current().open(uri);
+      if (!opened && messenger?.mounted == true) {
+        messenger!.showSnackBar(
+          const SnackBar(content: Text('无法打开浏览器')),
+        );
+      }
+    } catch (_) {
+      if (messenger?.mounted != true) return;
+      messenger!.showSnackBar(
+        const SnackBar(content: Text('无法打开浏览器')),
+      );
+    }
+  }
+
+  /// 在应用内查看正文图片，避免用户离开详情页后无法回看上下文。
+  Future<void> _openArticleImage(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !isSafeCampusUri(uri, allowExternalHost: true)) {
+      AppFeedback.showSnackBar(context, '图片地址无效', isError: true);
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: uri.toString(),
+                  fit: BoxFit.contain,
+                  placeholder: (context, url) =>
+                      const CircularProgressIndicator.adaptive(),
+                  errorWidget: (context, url, error) => const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white70,
+                    size: 48,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                child: IconButton(
+                  tooltip: '关闭图片',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -348,6 +451,16 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   Widget _buildContentSection(bool isDark, CampusArticleDetail detail) {
     final hasAttachments = detail.attachments.isNotEmpty;
 
+    // HTML 是正文的权威展示源，优先保留段落、列表、表格、图片和链接语义。
+    if (detail.contentHtml.trim().isNotEmpty) {
+      return CampusArticleHtmlView(
+        html: detail.contentHtml,
+        baseUrl: detail.sourceUrl,
+        onOpenLink: (url) => unawaited(_openArticleLink(url)),
+        onOpenImage: (url) => unawaited(_openArticleImage(url)),
+      );
+    }
+
     // 弱正文且有附件 → 显示附件提示
     if (detail.isWeakContent && hasAttachments) {
       return Container(
@@ -377,11 +490,10 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       );
     }
 
-    // 有正文 → 显示正文
+    // 仅有纯文本正文时直接展示，避免给整篇文章套一张大卡片。
     if (detail.contentText.trim().isNotEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: _surfaceDecoration(isDark),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
         child: SelectableText(
           detail.contentText,
           style: AppTextStyles.bodyMedium.copyWith(

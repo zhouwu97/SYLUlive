@@ -13,30 +13,31 @@ import (
 
 // Config 应用配置
 type Config struct {
-	JWTSecret                      string // JWT密钥
-	DSN                            string // 数据库连接字符串
-	UploadDir                      string // 文件上传目录
-	HomeFeedPersonalizationShadow  bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
-	HomeFeedPersonalizationPercent int    // FEED-5 个性化 active rollout 百分比（0~100）
-	HomeFeedV5PersonalizationShadow  bool // FEED-V5 个性化 shadow
-	HomeFeedV5PersonalizationPercent int // FEED-V5 个性化 active rollout 百分比（0~100）
-	CompetitionAwardEvidenceDir    string // 竞赛证明材料私有目录
-	ExamPaperDir                   string // 试卷私有文件目录
-	ExamPaperStorageMode           string // 试卷文件存储模式
-	ExamPaperStorageBaseURL        string // 试卷文件服务地址
-	ExamPaperStorageSigningSecret  string // 试卷文件签名密钥
-	ExamPaperStorageReceiptSecret  string // 试卷上传回执密钥
-	MaxFileSize                    int64  // 最大文件大小(字节)
-	EduServiceURL                  string // Python教务服务地址
-	SMTPHost                       string // SMTP 地址
-	SMTPPort                       string // SMTP 端口
-	SMTPUser                       string // SMTP 用户名
-	SMTPPass                       string // SMTP 密码/授权码
-	SMTPFrom                       string // 发件人邮箱
-	JPushAppKey                    string // 极光推送 AppKey
-	JPushMasterSecret              string // 极光推送 MasterSecret
-	SuperAdminID                   string // 超级管理员账号
-	SuperAdminPass                 string // 超级管理员密码
+	JWTSecret                        string // JWT密钥
+	DSN                              string // 数据库连接字符串
+	UploadDir                        string // 文件上传目录
+	ImageVariantWorkerEnabled        bool   // 是否启动异步图片变体 worker
+	HomeFeedPersonalizationShadow    bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
+	HomeFeedPersonalizationPercent   int    // FEED-5 个性化 active rollout 百分比（0~100）
+	HomeFeedV5PersonalizationShadow  bool   // FEED-V5 个性化 shadow
+	HomeFeedV5PersonalizationPercent int    // FEED-V5 个性化 active rollout 百分比（0~100）
+	CompetitionAwardEvidenceDir      string // 竞赛证明材料私有目录
+	ExamPaperDir                     string // 试卷私有文件目录
+	ExamPaperStorageMode             string // 试卷文件存储模式
+	ExamPaperStorageBaseURL          string // 试卷文件服务地址
+	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
+	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
+	MaxFileSize                      int64  // 最大文件大小(字节)
+	EduServiceURL                    string // Python教务服务地址
+	SMTPHost                         string // SMTP 地址
+	SMTPPort                         string // SMTP 端口
+	SMTPUser                         string // SMTP 用户名
+	SMTPPass                         string // SMTP 密码/授权码
+	SMTPFrom                         string // 发件人邮箱
+	JPushAppKey                      string // 极光推送 AppKey
+	JPushMasterSecret                string // 极光推送 MasterSecret
+	SuperAdminID                     string // 超级管理员账号
+	SuperAdminPass                   string // 超级管理员密码
 
 	AIEnabled                              bool     // AI 总开关
 	AIProvider                             string   // AI Provider 名称
@@ -54,23 +55,37 @@ type Config struct {
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
 	AIOutputPriceMicroYuanPerMillionTokens int64
-	AIPolicyRAGEnabled                     bool   // 政策知识库能力独立开关
-	AILangChainRAGEnabled                  bool   // 政策请求改由 Python LCEL 完整编排
-	AILangChainRAGRolloutPercent           int    // 稳定分配给 LangChain 的账号比例
-	AILegacyRAGEnabled                     bool   // 旧 Go 检索与生成路径独立回滚开关
-	RAGServiceURL                          string // 独立 Embedding/分词服务地址
-	RAGServiceToken                        string // 内部服务鉴权令牌
-	RAGEmbeddingModelVersion               string // 当前写入和查询使用的模型版本
-	AIExternalMCPEnabled                   bool   // 是否启用独立 Hy3 MCP 包装工具
-	AIExternalMCPTransport                 string // local_stdio 或 ssh_stdio
-	AIExternalMCPCommand                   string // 本机 MCP 固定启动包装器的绝对路径
-	AIExternalMCPToolTimeoutSeconds        int    // 单次 MCP 调用硬超时
-	AIExternalMCPMaxCallsPerRun            int    // 每个 AI Run 允许的外部 MCP 调用数
-	AIExternalMCPSshHost                   string // 受限 MCP SSH 主机
-	AIExternalMCPSshPort                   int    // 受限 MCP SSH 端口
-	AIExternalMCPSshUser                   string // 受限 MCP SSH 用户
-	AIExternalMCPSshKeyPath                string // Go 服务读取的专用 SSH 私钥绝对路径
-	AIExternalMCPKnownHostsPath            string // 专用 known_hosts 绝对路径
+	AIPolicyRAGEnabled                     bool     // 政策知识库能力独立开关
+	AILangChainRAGEnabled                  bool     // 政策请求改由 Python LCEL 完整编排
+	AILangChainRAGRolloutPercent           int      // 稳定分配给 LangChain 的账号比例
+	AILegacyRAGEnabled                     bool     // 旧 Go 检索与生成路径独立回滚开关
+	AIAgentEnabled                         bool     // Agent Kernel v5 总开关
+	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
+	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
+	AIAgentAppVersionAllowlist             []string // Agent v5 客户端版本白名单
+	AIAgentCapabilityAllowlist             []string // Agent v5 能力白名单
+	AIAgentModeAllowlist                   []string // Agent v5 执行模式白名单
+	AIAgentShadowEnabled                   bool     // Shadow 观察开关
+	AIAgentShadowPercent                   int      // Shadow 观察比例
+	AIAgentActionsEnabled                  bool     // Agent Action 提案开关
+	AIAgentPersonalDataEnabled             bool     // Agent 个人数据能力开关
+	AIAgentDeepModeEnabled                 bool     // Agent deep 模式开关
+	AIShadowTraceRetentionDays             int      // Shadow 观测事件保留天数
+	AIFailureTraceRetentionDays            int      // 用户反馈/失败分类事件保留天数
+	RAGServiceURL                          string   // 独立 Embedding/分词服务地址
+	RAGServiceToken                        string   // 内部服务鉴权令牌
+	RAGEmbeddingModelVersion               string   // 当前写入和查询使用的模型版本
+	AIExternalMCPEnabled                   bool     // 是否启用独立 Hy3 MCP 包装工具
+	AIExternalMCPTransport                 string   // local_stdio 或 ssh_stdio
+	AIExternalMCPCommand                   string   // 本机 MCP 固定启动包装器的绝对路径
+	AIExternalMCPToolTimeoutSeconds        int      // 单次 MCP 调用硬超时
+	AIExternalMCPMaxCallsPerRun            int      // 每个 AI Run 允许的外部 MCP 调用数
+	AIExternalMCPSshHost                   string   // 受限 MCP SSH 主机
+	AIExternalMCPSshPort                   int      // 受限 MCP SSH 端口
+	AIExternalMCPSshUser                   string   // 受限 MCP SSH 用户
+	AIExternalMCPSshKeyPath                string   // Go 服务读取的专用 SSH 私钥绝对路径
+	AIExternalMCPKnownHostsPath            string   // 专用 known_hosts 绝对路径
+	AIUnifiedMCPURL                        string   // Agent Contract v5 纯能力 MCP Streamable HTTP 地址
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
@@ -146,6 +161,7 @@ func Load() *Config {
 	if uploadDir == "" {
 		uploadDir = "./uploads"
 	}
+	imageVariantWorkerEnabled := envBool("IMAGE_VARIANT_WORKER_ENABLED", false)
 
 	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
 	if examPaperDir == "" {
@@ -299,11 +315,11 @@ func Load() *Config {
 	}
 	aiChatModel := firstNonEmptyEnv("AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
 	if aiChatModel == "" {
-		aiChatModel = "gpt-5.4-mini"
+		aiChatModel = "gpt-5.4"
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
-	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
+	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 7, 1, 12)
 	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 500, 1, 500)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
 	aiUnlimitedStudentIDs := splitNonEmpty(os.Getenv("AI_UNLIMITED_STUDENT_IDS"))
@@ -324,6 +340,24 @@ func Load() *Config {
 	aiLangChainRAGRolloutPercent := envIntInRange(
 		"AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", rolloutDefault, 0, 100,
 	)
+	// Agent 灰测必须显式开启，避免仅启用普通校园 AI 时意外进入全量 Agent 路径。
+	aiAgentEnabled := envBool("AI_AGENT_ENABLED", false)
+	aiAgentRolloutDefault := 0
+	if aiAgentEnabled {
+		aiAgentRolloutDefault = 100
+	}
+	aiAgentRolloutPercent := envIntInRange("AI_AGENT_ROLLOUT_PERCENT", aiAgentRolloutDefault, 0, 100)
+	aiAgentRolloutUserIDs := envPositiveUintList("AI_AGENT_ROLLOUT_USER_IDS")
+	aiAgentAppVersionAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_APP_VERSIONS"))
+	aiAgentCapabilityAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_CAPABILITIES"))
+	aiAgentModeAllowlist := splitNonEmpty(os.Getenv("AI_AGENT_MODES"))
+	aiAgentShadowEnabled := envBool("AI_AGENT_SHADOW_ENABLED", false)
+	aiAgentShadowPercent := envIntInRange("AI_AGENT_SHADOW_PERCENT", 0, 0, 100)
+	aiAgentActionsEnabled := envBool("AI_AGENT_ACTIONS_ENABLED", true)
+	aiAgentPersonalDataEnabled := envBool("AI_AGENT_PERSONAL_DATA_ENABLED", true)
+	aiAgentDeepModeEnabled := envBool("AI_AGENT_DEEP_MODE_ENABLED", true)
+	aiShadowTraceRetentionDays := envIntInRange("AI_SHADOW_TRACE_RETENTION_DAYS", 14, 1, 90)
+	aiFailureTraceRetentionDays := envIntInRange("AI_FAILURE_TRACE_RETENTION_DAYS", 60, 7, 180)
 	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
 	if ragServiceURL == "" {
 		ragServiceURL = "http://127.0.0.1:18001"
@@ -346,6 +380,7 @@ func Load() *Config {
 	aiExternalMCPSshUser := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_USER"))
 	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
+	aiUnifiedMCPURL := strings.TrimSpace(os.Getenv("AI_UNIFIED_MCP_URL"))
 	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
 	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
 	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
@@ -368,30 +403,31 @@ func Load() *Config {
 	}
 
 	return &Config{
-	JWTSecret:                      jwtSecret,
-	DSN:                            dsn,
-	UploadDir:                      uploadDir,
-	HomeFeedPersonalizationShadow:  homeFeedShadow(),
-	HomeFeedPersonalizationPercent: homeFeedPercent(),
-	HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
-	HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
-		CompetitionAwardEvidenceDir:    competitionAwardEvidenceDir,
-		ExamPaperDir:                   examPaperDir,
-		ExamPaperStorageMode:           examPaperStorageMode,
-		ExamPaperStorageBaseURL:        examPaperStorageBaseURL,
-		ExamPaperStorageSigningSecret:  examPaperStorageSigningSecret,
-		ExamPaperStorageReceiptSecret:  examPaperStorageReceiptSecret,
-		MaxFileSize:                    10 * 1024 * 1024, // 10MB
-		EduServiceURL:                  eduServiceURL,
-		SMTPHost:                       smtpHost,
-		SMTPPort:                       smtpPort,
-		SMTPUser:                       smtpUser,
-		SMTPPass:                       smtpPass,
-		SMTPFrom:                       smtpFrom,
-		JPushAppKey:                    jpushAppKey,
-		JPushMasterSecret:              jpushMasterSecret,
-		SuperAdminID:                   superAdminID,
-		SuperAdminPass:                 superAdminPass,
+		JWTSecret:                        jwtSecret,
+		DSN:                              dsn,
+		UploadDir:                        uploadDir,
+		ImageVariantWorkerEnabled:        imageVariantWorkerEnabled,
+		HomeFeedPersonalizationShadow:    homeFeedShadow(),
+		HomeFeedPersonalizationPercent:   homeFeedPercent(),
+		HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
+		HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
+		CompetitionAwardEvidenceDir:      competitionAwardEvidenceDir,
+		ExamPaperDir:                     examPaperDir,
+		ExamPaperStorageMode:             examPaperStorageMode,
+		ExamPaperStorageBaseURL:          examPaperStorageBaseURL,
+		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
+		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
+		MaxFileSize:                      10 * 1024 * 1024, // 10MB
+		EduServiceURL:                    eduServiceURL,
+		SMTPHost:                         smtpHost,
+		SMTPPort:                         smtpPort,
+		SMTPUser:                         smtpUser,
+		SMTPPass:                         smtpPass,
+		SMTPFrom:                         smtpFrom,
+		JPushAppKey:                      jpushAppKey,
+		JPushMasterSecret:                jpushMasterSecret,
+		SuperAdminID:                     superAdminID,
+		SuperAdminPass:                   superAdminPass,
 
 		AIEnabled:                              aiEnabled,
 		AIProvider:                             aiProvider,
@@ -413,6 +449,19 @@ func Load() *Config {
 		AILangChainRAGEnabled:                  aiLangChainRAGEnabled,
 		AILangChainRAGRolloutPercent:           aiLangChainRAGRolloutPercent,
 		AILegacyRAGEnabled:                     aiLegacyRAGEnabled,
+		AIAgentEnabled:                         aiAgentEnabled,
+		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
+		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,
+		AIAgentAppVersionAllowlist:             aiAgentAppVersionAllowlist,
+		AIAgentCapabilityAllowlist:             aiAgentCapabilityAllowlist,
+		AIAgentModeAllowlist:                   aiAgentModeAllowlist,
+		AIAgentShadowEnabled:                   aiAgentShadowEnabled,
+		AIAgentShadowPercent:                   aiAgentShadowPercent,
+		AIAgentActionsEnabled:                  aiAgentActionsEnabled,
+		AIAgentPersonalDataEnabled:             aiAgentPersonalDataEnabled,
+		AIAgentDeepModeEnabled:                 aiAgentDeepModeEnabled,
+		AIShadowTraceRetentionDays:             aiShadowTraceRetentionDays,
+		AIFailureTraceRetentionDays:            aiFailureTraceRetentionDays,
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,
@@ -426,6 +475,7 @@ func Load() *Config {
 		AIExternalMCPSshUser:                   aiExternalMCPSshUser,
 		AIExternalMCPSshKeyPath:                aiExternalMCPSshKeyPath,
 		AIExternalMCPKnownHostsPath:            aiExternalMCPKnownHostsPath,
+		AIUnifiedMCPURL:                        aiUnifiedMCPURL,
 
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
@@ -541,8 +591,8 @@ func validateAIConfig(
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
-	if model != "gpt-5.4-mini" {
-		return fmt.Errorf("AI_CHAT_MODEL 必须是 gpt-5.4-mini")
+	if model != "gpt-5.4" && model != "gpt-5.4-mini" {
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4 或 gpt-5.4-mini")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {

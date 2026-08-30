@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/app_colors.dart';
+import '../../../theme/app_radius.dart';
+import '../../../theme/app_spacing.dart';
+
+/// 发布页底部动作区。图片计数属于媒体区，底部只保留字数和主动作。
 class WaterPostBottomBar extends StatelessWidget {
   final bool isLoading;
-  final int imageCount;
-  final int maxImages;
   final int charCount;
   final int maxContentLength;
   final String publishLabel;
@@ -12,87 +15,87 @@ class WaterPostBottomBar extends StatelessWidget {
   const WaterPostBottomBar({
     super.key,
     required this.isLoading,
-    required this.imageCount,
-    required this.maxImages,
     required this.charCount,
     required this.maxContentLength,
     required this.publishLabel,
     required this.onPublish,
   });
 
-  static const Color _publishColor = Color(0xFF5861F2);
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFEDEFF3);
-    final textColor = isDark ? Colors.white54 : const Color(0xFF9AA0A6);
+    final compact = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final counter = Text(
+      '$charCount/$maxContentLength字',
+      style: TextStyle(
+        fontSize: 12,
+        color:
+            isDark ? AppColors.textTertiaryDark : AppColors.textTertiaryLight,
+      ),
+    );
+    final button = SizedBox(
+      height: compact ? 44 : 48,
+      width: compact ? 132 : double.infinity,
+      child: FilledButton(
+        onPressed: isLoading ? null : onPublish,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.brandPrimary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor:
+              AppColors.brandPrimary.withValues(alpha: 0.48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                publishLabel,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+              ),
+      ),
+    );
 
     return SafeArea(
       top: false,
       child: Container(
-        color: isDark ? const Color(0xFF0D1117) : Colors.white,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: borderColor)),
-              ),
-              child: Row(
+        color: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          compact ? AppSpacing.xs : AppSpacing.sm,
+          AppSpacing.lg,
+          compact ? AppSpacing.xs : AppSpacing.sm,
+        ),
+        child: compact
+            ? Row(
                 children: [
-                  Text(
-                    '图片 $imageCount/$maxImages',
-                    style: TextStyle(fontSize: 13, color: textColor),
-                  ),
+                  counter,
                   const Spacer(),
-                  Text(
-                    '$charCount/$maxContentLength字',
-                    style: TextStyle(fontSize: 13, color: textColor),
-                  ),
+                  button,
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  counter,
+                  const SizedBox(height: AppSpacing.xs),
+                  button,
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton(
-                  onPressed: isLoading ? null : onPublish,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _publishColor,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: _publishColor.withValues(
-                      alpha: 0.48,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          publishLabel,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

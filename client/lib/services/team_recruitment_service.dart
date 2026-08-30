@@ -48,16 +48,19 @@ class TeamRecruitmentService {
     required List<String> roles,
     DateTime? deadline,
     List<int> imageFileIds = const [],
+    String? idempotencyKey,
   }) async {
-    final response = await _dio.post('/team/recruitments', data: {
-      'category': category,
-      'title': title,
-      'description': description,
-      'needed_count': neededCount,
-      'roles': roles,
-      if (deadline != null) 'deadline': deadline.toUtc().toIso8601String(),
-      'image_file_ids': imageFileIds,
-    });
+    final response = await _dio.post('/team/recruitments',
+        data: {
+          'category': category,
+          'title': title,
+          'description': description,
+          'needed_count': neededCount,
+          'roles': roles,
+          if (deadline != null) 'deadline': deadline.toUtc().toIso8601String(),
+          'image_file_ids': imageFileIds,
+        },
+        options: _writeOptions(idempotencyKey));
     final data = _map(response.data);
     final recruitment = data['recruitment'];
     return TeamRecruitment.fromJson(
@@ -74,16 +77,19 @@ class TeamRecruitmentService {
     required List<String> roles,
     DateTime? deadline,
     List<int>? imageFileIds,
+    String? idempotencyKey,
   }) async {
-    await _dio.patch('/team/recruitments/$recruitmentId', data: {
-      'category': category,
-      'title': title,
-      'description': description,
-      'needed_count': neededCount,
-      'roles': roles,
-      'deadline': deadline?.toUtc().toIso8601String() ?? '',
-      if (imageFileIds != null) 'image_file_ids': imageFileIds,
-    });
+    await _dio.patch('/team/recruitments/$recruitmentId',
+        data: {
+          'category': category,
+          'title': title,
+          'description': description,
+          'needed_count': neededCount,
+          'roles': roles,
+          'deadline': deadline?.toUtc().toIso8601String() ?? '',
+          if (imageFileIds != null) 'image_file_ids': imageFileIds,
+        },
+        options: _writeOptions(idempotencyKey));
     // 更新接口只返回确认消息，随后读取权威详情以同步派生状态和计数。
     return detail(recruitmentId);
   }
@@ -98,12 +104,14 @@ class TeamRecruitmentService {
     required int recruitmentId,
     required String message,
     String availability = '',
+    String? idempotencyKey,
   }) async {
-    final response =
-        await _dio.post('/team/recruitments/$recruitmentId/apply', data: {
-      'message': message,
-      'availability': availability,
-    });
+    final response = await _dio.post('/team/recruitments/$recruitmentId/apply',
+        data: {
+          'message': message,
+          'availability': availability,
+        },
+        options: _writeOptions(idempotencyKey));
     return WaterTeamApplication.fromJson(_map(response.data));
   }
 
@@ -120,22 +128,37 @@ class TeamRecruitmentService {
     return _applications(response.data);
   }
 
-  Future<void> cancel(int applicationId) =>
-      _dio.post('/team/applications/$applicationId/cancel');
-  Future<void> leave(int applicationId) =>
-      _dio.post('/team/applications/$applicationId/leave');
-  Future<void> remove(int applicationId) =>
-      _dio.post('/team/applications/$applicationId/remove');
-  Future<void> accept(int applicationId, {String reply = ''}) => _dio
-      .post('/team/applications/$applicationId/accept', data: {'reply': reply});
-  Future<void> reject(int applicationId, {String reply = ''}) => _dio
-      .post('/team/applications/$applicationId/reject', data: {'reply': reply});
-  Future<void> updateStatus(int recruitmentId, String status) =>
+  Future<void> cancel(int applicationId, {String? idempotencyKey}) =>
+      _dio.post('/team/applications/$applicationId/cancel',
+          options: _writeOptions(idempotencyKey));
+  Future<void> leave(int applicationId, {String? idempotencyKey}) =>
+      _dio.post('/team/applications/$applicationId/leave',
+          options: _writeOptions(idempotencyKey));
+  Future<void> remove(int applicationId, {String? idempotencyKey}) =>
+      _dio.post('/team/applications/$applicationId/remove',
+          options: _writeOptions(idempotencyKey));
+  Future<void> accept(int applicationId,
+          {String reply = '', String? idempotencyKey}) =>
+      _dio.post('/team/applications/$applicationId/accept',
+          data: {'reply': reply}, options: _writeOptions(idempotencyKey));
+  Future<void> reject(int applicationId,
+          {String reply = '', String? idempotencyKey}) =>
+      _dio.post('/team/applications/$applicationId/reject',
+          data: {'reply': reply}, options: _writeOptions(idempotencyKey));
+  Future<void> updateStatus(int recruitmentId, String status,
+          {String? idempotencyKey}) =>
       _dio.patch('/team/recruitments/$recruitmentId/status',
-          data: {'status': status});
+          data: {'status': status}, options: _writeOptions(idempotencyKey));
 
-  Future<void> delete(int recruitmentId) =>
-      _dio.delete('/team/recruitments/$recruitmentId');
+  Future<void> delete(int recruitmentId, {String? idempotencyKey}) =>
+      _dio.delete('/team/recruitments/$recruitmentId',
+          options: _writeOptions(idempotencyKey));
+
+  Options? _writeOptions(String? idempotencyKey) {
+    final key = idempotencyKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
+  }
 
   static Map<String, dynamic> _map(dynamic value) =>
       value is Map ? value.cast<String, dynamic>() : <String, dynamic>{};

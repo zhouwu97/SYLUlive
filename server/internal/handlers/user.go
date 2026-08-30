@@ -571,6 +571,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
+		Scopes(withPostImageVariants).
 		Where("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusNormal, models.BoardMarket).
 		Order("created_at DESC").
 		Offset(offset).
@@ -579,6 +580,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子失败"})
 		return
 	}
+	_ = services.LoadTopicsForPosts(h.db, posts)
 
 	c.JSON(http.StatusOK, posts)
 }
@@ -624,6 +626,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
+		Scopes(withPostImageVariants).
 		Order("created_at DESC").
 		Offset(offset).
 		Limit(limit).
@@ -634,6 +637,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	if posts == nil {
 		posts = []models.Post{}
 	}
+	_ = services.LoadTopicsForPosts(h.db, posts)
 
 	c.JSON(http.StatusOK, gin.H{
 		"items": posts,
@@ -672,6 +676,7 @@ type UpdatePushSettingsInput struct {
 	InstallationID string `json:"installation_id"`
 	RegistrationID string `json:"registration_id"`
 	NoticeVersion  string `json:"notice_version"`
+	Platform       string `json:"platform"`
 }
 
 // UpdateDeviceToken 更新极光设备Token（用户登录时前端调用）
@@ -705,7 +710,7 @@ func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "设备Token更新成功"})
 }
 
-// UpdatePushSettings 原子更新单活跃设备推送状态，避免多设备开启和关闭相互覆盖。
+// UpdatePushSettings 原子更新单个安装实例的推送状态，不影响同一用户的其他设备。
 func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var input UpdatePushSettingsInput
@@ -717,6 +722,14 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 	input.InstallationID = strings.TrimSpace(input.InstallationID)
 	input.RegistrationID = strings.TrimSpace(input.RegistrationID)
 	input.NoticeVersion = strings.TrimSpace(input.NoticeVersion)
+	input.Platform = strings.ToLower(strings.TrimSpace(input.Platform))
+	if input.Platform == "" {
+		input.Platform = "android"
+	}
+	if input.Platform != "android" && input.Platform != "ios" && input.Platform != "ohos" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "platform 无效"})
+		return
+	}
 	if input.InstallationID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "installation_id 不能为空"})
 		return
@@ -737,18 +750,48 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 		}
 
 		if input.Enabled {
-			if err := tx.Model(&models.User{}).
-				Where("device_token = ? AND id <> ?", input.RegistrationID, userID).
-				Updates(map[string]interface{}{
-					"device_token":                 "",
-					"push_data_processing_enabled": false,
-					"push_installation_id":         "",
-					"push_notice_version":          "",
-					"push_enabled_at":              nil,
-				}).Error; err != nil {
+			if err := tx.Model(&models.PushDevice{}).
+				Where("registration_id = ? AND device_id <> ?", input.RegistrationID, input.InstallationID).
+				Update("enabled", false).Error; err != nil {
 				return err
 			}
+			var device models.PushDevice
+			findErr := tx.Where("device_id = ?", input.InstallationID).First(&device).Error
+			if findErr != nil && findErr != gorm.ErrRecordNotFound {
+				return findErr
+			}
 			now := time.Now()
+			if findErr == gorm.ErrRecordNotFound {
+				device = models.PushDevice{
+					UserID: userID, DeviceID: input.InstallationID,
+					Platform: input.Platform, PushProvider: "jpush",
+					RegistrationID: input.RegistrationID, Enabled: true,
+					LastSeenAt: now,
+				}
+				if err := tx.Create(&device).Error; err != nil {
+					return err
+				}
+			} else if err := tx.Model(&models.PushDevice{}).Where("id = ?", device.ID).Updates(map[string]interface{}{
+				"user_id": userID, "platform": input.Platform, "push_provider": "jpush",
+				"registration_id": input.RegistrationID, "enabled": true, "last_seen_at": now,
+			}).Error; err != nil {
+				return err
+			}
+			if device.UserID != userID {
+				// 同一安装切换账号时，除了转移 PushDevice，还要清理旧版
+				// User 聚合字段，避免通知查询 fallback 到旧账号 RID。
+				if err := tx.Model(&models.User{}).
+					Where("id = ? AND push_installation_id = ?", device.UserID, input.InstallationID).
+					Updates(map[string]interface{}{
+						"push_data_processing_enabled": false,
+						"push_installation_id":         "",
+						"push_notice_version":          "",
+						"push_enabled_at":              nil,
+						"device_token":                 "",
+					}).Error; err != nil {
+					return err
+				}
+			}
 			return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 				"push_data_processing_enabled": true,
 				"push_installation_id":         input.InstallationID,
@@ -758,6 +801,12 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 			}).Error
 		}
 
+		// 新模型按 installation_id 独立关闭，不能因为旧版 User 聚合字段
+		// 当前指向另一台设备，就跳过这条 PushDevice 记录。
+		if err := tx.Model(&models.PushDevice{}).Where("user_id = ? AND device_id = ?", userID, input.InstallationID).
+			Updates(map[string]interface{}{"enabled": false, "last_seen_at": time.Now()}).Error; err != nil {
+			return err
+		}
 		if user.PushInstallationID != "" && user.PushInstallationID != input.InstallationID {
 			ignored = true
 			return nil

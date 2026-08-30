@@ -32,7 +32,7 @@ class CampusMapCard extends StatelessWidget {
                     height: 180,
                     width: double.infinity,
                     child: Image.asset(
-                      'assets/images/map.jpg',
+                      'assets/images/map.png',
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -224,7 +224,7 @@ class _MapControlFullscreenOverlayState
                 boundaryMargin: const EdgeInsets.all(double.infinity),
                 child: Center(
                   child: Image.asset(
-                    'assets/images/map.jpg',
+                    'assets/images/map.png',
                     fit: BoxFit.contain,
                   ),
                 ),

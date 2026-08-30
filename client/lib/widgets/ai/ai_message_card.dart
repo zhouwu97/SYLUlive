@@ -5,12 +5,14 @@ import '../../models/ai_chat_message.dart';
 import '../../models/competition_action_draft.dart';
 import '../../models/ai_source.dart';
 import '../../models/user_calendar.dart';
+import '../../models/ai_run_feedback.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/ai_citation_mapper.dart';
 import 'ai_calendar_action_draft_card.dart';
 import 'ai_competition_plan_draft_card.dart';
 import 'ai_source_chips.dart';
+import 'ai_run_feedback.dart' as feedback_widgets;
 
 class AiMessageCard extends StatelessWidget {
   const AiMessageCard({
@@ -22,6 +24,7 @@ class AiMessageCard extends StatelessWidget {
     this.onViewCompetition,
     this.loadSourceContent,
     this.onRetrySources,
+    this.onFeedback,
     this.assistantLabel = '校园 Agent',
   });
 
@@ -34,6 +37,7 @@ class AiMessageCard extends StatelessWidget {
   final void Function(int eventId)? onViewCompetition;
   final Future<AiSourceContent> Function(int chunkId)? loadSourceContent;
   final VoidCallback? onRetrySources;
+  final Future<void> Function(AiRunFeedback feedback)? onFeedback;
   final String assistantLabel;
 
   @override
@@ -142,6 +146,14 @@ class AiMessageCard extends StatelessWidget {
             evidence: message.personalDataEvidence,
             loadSourceContent: loadSourceContent,
           ),
+          if (onFeedback != null &&
+              message.status == AiMessageStatus.completed &&
+              message.content.trim().isNotEmpty)
+            feedback_widgets.AiRunFeedbackButtons(
+              status: message.feedbackStatus,
+              errorMessage: message.feedbackError,
+              onSubmit: onFeedback!,
+            ),
           if (message.sourceRecoveryState == AiSourceRecoveryState.failed &&
               citation.hasUnresolvedChunks)
             Padding(

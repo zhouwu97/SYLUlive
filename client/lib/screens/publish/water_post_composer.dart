@@ -15,15 +15,22 @@ import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_spacing.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/water_section/section_avatar.dart';
-import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
+import 'widgets/publish_media_section.dart';
+import 'widgets/publish_section_selector.dart';
 import 'widgets/water_post_bottom_bar.dart';
+
+class _PublishSessionChanged implements Exception {
+  const _PublishSessionChanged();
+}
 
 /// 水帖发布/编辑页（boardId == 1）。
 ///
-/// 采用全屏编辑布局：顶部标题，中间正文自适应填充，底部保留图片和发布工具栏。
+/// 采用整体滚动编辑布局：顶部标题、正文与媒体顺序自然延展。
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
   final String? initialPostType;
@@ -38,13 +45,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
   static const _maxContentLength = 2000;
-  static const Color _teal = Color(0xFF12B8A6);
-  static const Color _softTeal = Color(0xFFEAFBF8);
   static const Color _hintLight = Color(0xFFA7ABB2);
-  static const Color _dividerLight = Color(0xFFE1E4E8);
   static const Color _titleWarning = Color(0xFFE5484D);
-  static const double _titleFontSize = 18.5;
-  static const double _contentFontSize = 14.5;
+  static const double _titleFontSize = 18;
+  static const double _contentFontSize = 15;
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
@@ -55,6 +59,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
   int? _selectedTagId;
+  bool _hasExplicitInitialPostType = false;
 
   // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
   final List<PublishImageItem> _images = [];
@@ -118,23 +123,56 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
   /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试）。
-  Future<bool> _uploadLocalImages(PostProvider postProvider) {
+  Future<bool> _uploadLocalImages(
+    PostProvider postProvider, {
+    required AuthProvider auth,
+    required int accountId,
+    required int accountSessionEpoch,
+  }) {
     return uploadImagesConcurrently(
       _images,
       maxConcurrent: 3,
-      upload: (item) => postProvider.uploadImage(
-        item.localFile!,
-        onProgress: (sent, total) {
-          if (total > 0) {
-            item.progress = sent / total;
-            if (mounted) setState(() {});
-          }
-        },
-      ),
+      upload: (item) async {
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        final fileId = await postProvider.uploadImage(
+          item.localFile!,
+          onProgress: (sent, total) {
+            if (total > 0 &&
+                _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+              item.progress = sent / total;
+              if (mounted) setState(() {});
+            }
+          },
+        );
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        return fileId;
+      },
       onStateChanged: () {
-        if (mounted) setState(() {});
+        if (mounted &&
+            _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+          setState(() {});
+        }
       },
     );
+  }
+
+  bool _ownsPublishSession(
+    AuthProvider auth,
+    int accountId,
+    int accountSessionEpoch,
+  ) {
+    return auth.user?.id == accountId &&
+        auth.accountSessionEpoch == accountSessionEpoch;
+  }
+
+  void _ensurePublishSession(
+    AuthProvider auth,
+    int accountId,
+    int accountSessionEpoch,
+  ) {
+    if (!_ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+      throw const _PublishSessionChanged();
+    }
   }
 
   /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
@@ -165,8 +203,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   int get _charCount => _contentController.text.length;
-
-  bool get _hasImages => _totalImageCount > 0 || canAddMoreImages;
 
   String get _pageTitle => _isEditing ? '编辑水帖' : '发布水帖';
 
@@ -207,11 +243,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         }
       });
     final post = widget.editingPost;
+    _hasExplicitInitialPostType =
+        post != null || (widget.initialPostType?.trim().isNotEmpty ?? false);
     if (post != null) {
       _titleController.text = post.title;
       _contentController.text = post.content;
       _images.addAll(post.images.map(PublishImageItem.existing));
-      _selectedTagId = post.waterTagId;
+      // 普通 Composer 不再暴露 legacy WaterTag；编辑旧帖时一并清空。
+      _selectedTagId = null;
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
     _selectedPostType = rawPostType != null && rawPostType.trim().isNotEmpty
@@ -270,10 +309,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (_contentController.text.isEmpty) {
       _contentController.text = draft.content;
     }
-    if (_selectedPostType == 'campus_life' && draft.postType.isNotEmpty) {
+    if (!_hasExplicitInitialPostType && draft.postType.isNotEmpty) {
       _selectedPostType = draft.postType;
     }
-    _selectedTagId ??= draft.waterTagId;
+    // 兼容旧草稿结构，但不把普通 WaterTag 恢复到新 Composer。
+    _selectedTagId = null;
     for (final path in draft.draftImagePaths) {
       final file = File(path);
       if (await file.exists()) {
@@ -301,6 +341,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         _draftWriteInFlight = null;
       }
     }
+  }
+
+  Future<void> _handleBack() async {
+    if (_isLoading) return;
+    _draftDebounce?.cancel();
+    await _persistDraft();
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   Future<void> _writeDraft() async {
@@ -353,6 +400,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (_isLoading) return;
     if (!_validate()) return;
 
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null || accountId <= 0) {
+      AppFeedback.error('请先登录后再发布', context: context);
+      return;
+    }
+    final accountSessionEpoch = auth.accountSessionEpoch;
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
 
@@ -362,12 +416,18 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       final postProvider = context.read<PostProvider>();
 
       // C-3：并发上传本地图（失败项可重试，不提交）。
-      if (!await _uploadLocalImages(postProvider)) {
+      if (!await _uploadLocalImages(
+        postProvider,
+        auth: auth,
+        accountId: accountId,
+        accountSessionEpoch: accountSessionEpoch,
+      )) {
         if (mounted) {
           AppFeedback.error('图片上传失败，请点击图片重试', context: context);
         }
         return;
       }
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
 
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
       final fileIds = _orderedFileIds();
@@ -381,6 +441,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         return;
       }
 
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -392,6 +453,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               price: 0,
               contact: '',
               fileIds: fileIds,
+              sendWaterTagField: true,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -404,10 +466,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               fileIds: fileIds.isNotEmpty ? fileIds : null,
             );
 
+      _ensurePublishSession(auth, accountId, accountSessionEpoch);
       if (!mounted) return;
       if (result.success) {
         _draftDebounce?.cancel();
-        _draftPersistenceDisabled = true;
 
         final pendingWrite = _draftWriteInFlight;
         if (pendingWrite != null) {
@@ -417,14 +479,27 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             // 草稿写入失败不应阻断已成功的帖子发布；下面仍执行清理。
           }
         }
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _draftPersistenceDisabled = true;
         await _draftService.clear();
 
-        _showSubmitSuccessFeedback(result.post);
+        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        final successMessage = _submitSuccessMessage(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          AppFeedback.success(successMessage);
+        });
       } else {
         AppFeedback.error(
           _userFacingPostError(result.errorMessage),
+          context: context,
+        );
+      }
+    } on _PublishSessionChanged {
+      if (mounted) {
+        AppFeedback.error(
+          '登录状态已变化，本次发布已取消，请重新确认',
           context: context,
         );
       }
@@ -447,7 +522,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     return null;
   }
 
-  void _showSubmitSuccessFeedback(Post? post) {
+  String _submitSuccessMessage(Post? post) {
     final awards = post?.expAwards ?? const <ExpAward>[];
     final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
     final sectionAward =
@@ -479,7 +554,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
     }
 
-    AppFeedback.success(lines.join('\n'), context: context);
+    return lines.join('\n');
   }
 
   // ---------------------------------------------------------------------------
@@ -587,162 +662,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         _selectedPostType = selected;
         _selectedTagId = null;
       });
+      _scheduleDraftSave();
     }
   }
 
-  Widget _buildCategorySelector(bool isDark) {
-    final section = _selectedSection;
-    final color =
-        section.colorHex.isNotEmpty ? colorHexToColor(section.colorHex) : _teal;
-    final tags = section.enabledTags
-        .where((tag) => !tag.isTeamRecruitment)
-        .toList(growable: false);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: _showCategorySheet,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    '版块',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : _teal,
-                    ),
-                  ),
-                  const Spacer(),
-                  SectionAvatar(
-                    section: section,
-                    size: 24,
-                    radius: 8,
-                    accentColor: color,
-                    isDark: isDark,
-                    showBorder: true,
-                    borderColor: color.withValues(alpha: 0.15),
-                    borderWidth: 1,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    section.title,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : const Color(0xFF20232A),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 22,
-                    color: _teal,
-                  ),
-                ],
-              ),
-              if (tags.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: tags.map((tag) {
-                    final selected = _selectedTagId == tag.id;
-                    return GestureDetector(
-                      onTap: () {
-                        setState(
-                            () => _selectedTagId = selected ? null : tag.id);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? color.withValues(alpha: 0.2)
-                              : color.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(999),
-                          border: selected
-                              ? Border.all(color: color.withValues(alpha: 0.4))
-                              : null,
-                        ),
-                        child: Text(
-                          tag.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight:
-                                selected ? FontWeight.w800 : FontWeight.w500,
-                            color: selected
-                                ? color
-                                : (isDark
-                                    ? Colors.white60
-                                    : const Color(0xFF667085)),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-              if (section.noticeText.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 14,
-                        color: section.isSensitive
-                            ? Colors.orange.shade600
-                            : color),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        section.noticeText,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.3,
-                          color:
-                              isDark ? Colors.white60 : const Color(0xFF7B818C),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (section.isSensitive) ...[
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.privacy_tip_outlined,
-                        size: 14, color: Colors.orange.shade600),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        '该版块内容更容易触发管理审核，请避免泄露隐私、攻击他人或发布无法核实的信息。',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.3,
-                          color: isDark
-                              ? Colors.orange.shade200
-                              : Colors.orange.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+  Widget _buildCategorySelector() {
+    return PublishSectionSelector(
+      section: _selectedSection,
+      onTap: _showCategorySheet,
     );
   }
 
@@ -751,83 +678,104 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0D1117) : Colors.white,
+      backgroundColor:
+          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        toolbarHeight: 58,
+        toolbarHeight: 56,
         leading: IconButton(
+          tooltip: '返回',
           icon: const Icon(Icons.arrow_back_rounded),
-          color: _teal,
-          iconSize: 28,
-          onPressed: () => Navigator.of(context).maybePop(),
+          color: AppColors.brandPrimary,
+          iconSize: 26,
+          onPressed: _handleBack,
         ),
         title: Text(
           _pageTitle,
           style: TextStyle(
-            color: isDark ? Colors.white : Colors.black,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
+            color:
+                isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
       ),
-      bottomNavigationBar: _buildBottomArea(isDark),
+      bottomNavigationBar: _buildBottomArea(),
       body: SafeArea(
         bottom: false,
         child: Form(
           key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildCategorySelector(isDark),
-              AnimatedBuilder(
-                animation: _titleWarningController,
-                builder: (context, child) {
-                  final offset = _titleNeedsAttention
-                      ? math.sin(_titleWarningController.value * math.pi * 6) *
-                          6
-                      : 0.0;
-                  return Transform.translate(
-                    offset: Offset(offset, 0),
-                    child: child,
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-                  child: TextFormField(
-                    controller: _titleController,
-                    focusNode: _titleFocusNode,
-                    decoration: InputDecoration(
-                      hintText: '添加标题',
-                      hintStyle: TextStyle(
-                        color:
-                            _titleNeedsAttention ? _titleWarning : _hintLight,
-                        fontSize: _titleFontSize,
-                        fontWeight: FontWeight.w500,
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildCategorySelector(),
+                AnimatedBuilder(
+                  animation: _titleWarningController,
+                  builder: (context, child) {
+                    final offset = _titleNeedsAttention
+                        ? math.sin(
+                                _titleWarningController.value * math.pi * 6) *
+                            6
+                        : 0.0;
+                    return Transform.translate(
+                      offset: Offset(offset, 0),
+                      child: child,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.xl,
+                      AppSpacing.lg,
+                      0,
+                    ),
+                    child: TextFormField(
+                      controller: _titleController,
+                      focusNode: _titleFocusNode,
+                      decoration: InputDecoration(
+                        hintText: '添加标题（选填）',
+                        hintStyle: TextStyle(
+                          color:
+                              _titleNeedsAttention ? _titleWarning : _hintLight,
+                          fontSize: _titleFontSize,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                       ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      style: TextStyle(
+                        fontSize: _titleFontSize,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                      maxLines: 1,
                     ),
-                    style: TextStyle(
-                      fontSize: _titleFontSize,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                    maxLines: 1,
                   ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Divider(height: 1, color: _dividerLight),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: Divider(
+                    height: 1,
+                    color: isDark
+                        ? AppColors.composerDividerDark
+                        : AppColors.composerDividerLight,
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                   child: TextFormField(
                     controller: _contentController,
                     inputFormatters: [
@@ -843,47 +791,41 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.only(top: 28),
+                      contentPadding: EdgeInsets.only(top: AppSpacing.lg),
                       errorStyle: TextStyle(fontSize: 13),
                     ),
                     style: TextStyle(
                       fontSize: _contentFontSize,
                       height: 1.55,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : const Color(0xFF333333),
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
                     ),
-                    expands: true,
+                    minLines: 6,
                     maxLines: null,
                     textAlignVertical: TextAlignVertical.top,
                   ),
                 ),
-              ),
-              if (_hasImages)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                  child: PublishImageGrid(
-                    images: _images,
-                    canAddMore: canAddMoreImages,
-                    onAdd: showImageSourceDialog,
-                    onRemove: _removeImage,
-                    onReorder: _moveImage,
-                    onRetry: _retryImage,
-                    compact: true,
-                  ),
+                PublishMediaSection(
+                  images: _images,
+                  canAddMore: canAddMoreImages,
+                  maxImages: _maxImages,
+                  onAdd: showImageSourceDialog,
+                  onRemove: _removeImage,
+                  onReorder: _moveImage,
+                  onRetry: _retryImage,
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBottomArea(bool isDark) {
+  Widget _buildBottomArea() {
     return WaterPostBottomBar(
       isLoading: _isLoading,
-      imageCount: _totalImageCount,
-      maxImages: _maxImages,
       charCount: _charCount,
       maxContentLength: _maxContentLength,
       publishLabel: _isEditing ? '保存修改' : '发布',

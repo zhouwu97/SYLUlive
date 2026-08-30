@@ -125,6 +125,7 @@ func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 }
 
 // GetRankings 食堂完整排行（sort=composite|rating|review_count；hot 暂不开放）。
+// rating 倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多。
 func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	sortMode := c.DefaultQuery("sort", "composite")
 	switch sortMode {
@@ -157,32 +158,38 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	tagMap := h.batchAggregateSummaryTags(summaryTagDays, 3)
 
 	type item struct {
-		Rank           int                   `json:"rank"`
-		ID             uint                  `json:"id"`
-		Name           string                `json:"name"`
-		Image          string                `json:"image"`
-		AverageStar    float64               `json:"average_star"`
-		RatingCount    int                   `json:"rating_count"`
-		RankingScore   float64               `json:"ranking_score"`
-		Confidence     string                `json:"confidence"`
-		DishCount      int                   `json:"dish_count"`
-		DishPhotoCount int                   `json:"dish_photo_count"`
-		SummaryTags    []services.SummaryTag `json:"summary_tags"`
+		Rank               int                   `json:"rank"`
+		ID                 uint                  `json:"id"`
+		Name               string                `json:"name"`
+		LocationArea       string                `json:"location_area"`
+		LocationFloor      string                `json:"location_floor"`
+		Image              string                `json:"image"`
+		AverageStar        float64               `json:"average_star"`
+		RatingCount        int                   `json:"rating_count"`
+		RankingScore       float64               `json:"ranking_score"`
+		Confidence         string                `json:"confidence"`
+		DishCount          int                   `json:"dish_count"`
+		DishWithPhotoCount int                   `json:"dish_with_photo_count"`
+		DishPhotoCount     int                   `json:"dish_photo_count"`
+		SummaryTags        []services.SummaryTag `json:"summary_tags"`
 	}
 	items := make([]item, 0, len(entries))
 	for _, e := range entries {
 		items = append(items, item{
-			Rank:           e.Rank,
-			ID:             e.ID,
-			Name:           e.Name,
-			Image:          e.Image,
-			AverageStar:    e.AverageStar,
-			RatingCount:    e.RatingCount,
-			RankingScore:   services.BayesianScoreTo100(e.RankingScore),
-			Confidence:     services.RatingConfidenceEffective(e.EffectiveSample),
-			DishCount:      e.DishCount,
-			DishPhotoCount: e.DishPhotoCount,
-			SummaryTags:    tagMap[e.ID],
+			Rank:               e.Rank,
+			ID:                 e.ID,
+			Name:               e.Name,
+			LocationArea:       e.LocationArea,
+			LocationFloor:      e.LocationFloor,
+			Image:              e.Image,
+			AverageStar:        e.AverageStar,
+			RatingCount:        e.RatingCount,
+			RankingScore:       services.BayesianScoreTo100(e.RankingScore),
+			Confidence:         services.RatingConfidenceEffective(e.EffectiveSample),
+			DishCount:          e.DishCount,
+			DishWithPhotoCount: e.DishWithPhotoCount,
+			DishPhotoCount:     e.DishPhotoCount,
+			SummaryTags:        tagMap[e.ID],
 		})
 	}
 
@@ -217,6 +224,8 @@ type canteenFeedItem struct {
 	Type              string             `json:"type"`
 	CanteenID         uint               `json:"canteen_id"`
 	CanteenName       string             `json:"canteen_name"`
+	LocationArea      string             `json:"location_area,omitempty"`
+	LocationFloor     string             `json:"location_floor,omitempty"`
 	OperatingStatus   string             `json:"operating_status"`
 	Image             string             `json:"image,omitempty"`
 	DishID            uint               `json:"dish_id,omitempty"`
@@ -386,6 +395,8 @@ func (h *CanteenHandler) pickRecommendation(pool []canteenRankingEntry, seen map
 			Type:            "recommended_store",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			// Title 仅保留兼容字段；首页客户端使用 Type 映射轻量标签，
@@ -418,6 +429,8 @@ func (h *CanteenHandler) pickStable(pool []canteenRankingEntry, seen map[uint]in
 			Type:            "stable_choice",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			Title:           "评价稳定",
@@ -449,6 +462,8 @@ func (h *CanteenHandler) pickTrending(pool []canteenRankingEntry, seen map[uint]
 			Type:            "trending",
 			CanteenID:       e.ID,
 			CanteenName:     e.Name,
+			LocationArea:    e.LocationArea,
+			LocationFloor:   e.LocationFloor,
 			OperatingStatus: e.OperatingStatus,
 			Image:           e.Image,
 			Title:           "近期热门",
@@ -707,6 +722,8 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			Type:              "recommended_store",
 			CanteenID:         e.ID,
 			CanteenName:       e.Name,
+			LocationArea:      e.LocationArea,
+			LocationFloor:     e.LocationFloor,
 			OperatingStatus:   e.OperatingStatus,
 			Image:             e.Image,
 			Title:             "综合推荐",

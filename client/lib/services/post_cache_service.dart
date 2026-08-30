@@ -24,7 +24,7 @@ class CachedPostFeed {
 
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
-  static const int cacheSchemaVersion = 6;
+  static const int cacheSchemaVersion = 7;
   static const String homeAllAlgorithmVersion = 'home_all_v3_poll';
   static const String homeTimeAlgorithmVersion = 'home_time_v3_poll';
   static const String fallbackAlgorithmVersion = 'feed_v1';
@@ -250,6 +250,14 @@ class PostCacheService {
     return deletedCount;
   }
 
+  /// 清理帖子缓存，不触碰认证凭据和其它用户数据。
+  ///
+  /// 仅由启动恢复等明确的非敏感缓存恢复路径调用。
+  static Future<void> clearAllCache() async {
+    final box = await _openBox();
+    await box.clear();
+  }
+
   /// 清除指定板块缓存
   static Future<void> clearBoard(int boardId) async {
     final box = await _openBox();
@@ -304,6 +312,7 @@ class PostCacheService {
           : null,
       'team_recruitment_meta': post.teamRecruitment?.toJson(),
       'poll_meta': post.pollMeta?.toJson(),
+      'topics': post.topics.map((topic) => topic.toJson()).toList(),
       'images': post.images
           .map(
             (img) => {

@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../../../models/user_calendar.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
+import '../../../services/async_action_guard.dart';
 import 'personal_skill.dart';
 import 'skill_execution_context.dart';
 
@@ -73,6 +74,7 @@ class DioCalendarActionSource implements CalendarActionSource {
   DioCalendarActionSource(this._dio);
 
   final Dio _dio;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
 
   @override
   Future<UserCalendarActionDraft> create(CalendarActionInput input) async {
@@ -94,30 +96,44 @@ class DioCalendarActionSource implements CalendarActionSource {
   }
 
   @override
-  Future<UserCalendarActionDraft> confirm(int draftId) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        '/user/calendar-action-drafts/$draftId/confirm',
-        data: const <String, dynamic>{},
+  Future<UserCalendarActionDraft> confirm(int draftId) =>
+      _actionGuard.run<UserCalendarActionDraft>(
+        'calendar-confirm:$draftId',
+        () async {
+          try {
+            final response = await _dio.post<dynamic>(
+              '/user/calendar-action-drafts/$draftId/confirm',
+              data: const <String, dynamic>{},
+              options: Options(headers: <String, dynamic>{
+                'Idempotency-Key': 'agent-calendar-confirm-$draftId',
+              }),
+            );
+            return _parse(response.data);
+          } on DioException catch (error) {
+            throw _actionError(error);
+          }
+        },
       );
-      return _parse(response.data);
-    } on DioException catch (error) {
-      throw _actionError(error);
-    }
-  }
 
   @override
-  Future<UserCalendarActionDraft> cancel(int draftId) async {
-    try {
-      final response = await _dio.post<dynamic>(
-        '/user/calendar-action-drafts/$draftId/cancel',
-        data: const <String, dynamic>{},
+  Future<UserCalendarActionDraft> cancel(int draftId) =>
+      _actionGuard.run<UserCalendarActionDraft>(
+        'calendar-cancel:$draftId',
+        () async {
+          try {
+            final response = await _dio.post<dynamic>(
+              '/user/calendar-action-drafts/$draftId/cancel',
+              data: const <String, dynamic>{},
+              options: Options(headers: <String, dynamic>{
+                'Idempotency-Key': 'agent-calendar-cancel-$draftId',
+              }),
+            );
+            return _parse(response.data);
+          } on DioException catch (error) {
+            throw _actionError(error);
+          }
+        },
       );
-      return _parse(response.data);
-    } on DioException catch (error) {
-      throw _actionError(error);
-    }
-  }
 
   UserCalendarActionDraft _parse(Object? value) {
     if (value is! Map) {

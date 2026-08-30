@@ -67,6 +67,7 @@ func (p *OpenAICompatibleProvider) Chat(ctx context.Context, request ChatRequest
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := p.httpClient.Do(httpRequest)
 	if err != nil {
 		return ChatResponse{}, err
@@ -80,7 +81,7 @@ func (p *OpenAICompatibleProvider) Chat(ctx context.Context, request ChatRequest
 		return ChatResponse{}, fmt.Errorf("provider response exceeds limit")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return ChatResponse{}, fmt.Errorf("provider returned HTTP %d", response.StatusCode)
+		return ChatResponse{}, providerHTTPError(response.StatusCode, responseBody)
 	}
 	var decoded struct {
 		Choices []struct {
@@ -151,14 +152,15 @@ func (p *OpenAICompatibleProvider) Start(ctx context.Context, request ProviderRe
 	httpRequest.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Accept", "text/event-stream")
+	httpRequest.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := p.httpClient.Do(httpRequest)
 	if err != nil {
 		return nil, classifyProviderTransportError(ctx, err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 32<<10))
+		responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 32<<10))
 		_ = response.Body.Close()
-		return nil, providerHTTPError(response.StatusCode)
+		return nil, providerHTTPError(response.StatusCode, responseBody)
 	}
 	return &openAICompatibleStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall)}, nil
 }
@@ -228,7 +230,7 @@ func (s *openAICompatibleStream) Next(ctx context.Context) (ProviderEvent, error
 			return ProviderEvent{}, &ProviderError{Class: ProviderErrorInvalid, Err: err}
 		}
 		if chunk.Usage != nil {
-			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens})
+			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens, UsageAvailable: true})
 		}
 		for _, choice := range chunk.Choices {
 			if choice.FinishReason != nil {
@@ -275,8 +277,12 @@ func (s *openAICompatibleStream) Close() error {
 	return s.body.Close()
 }
 
-func providerHTTPError(status int) error {
+func providerHTTPError(status int, responseBody ...[]byte) error {
 	class := ProviderErrorUnknown
+	if len(responseBody) > 0 && providerReportsMissingModel(responseBody[0]) {
+		class = ProviderErrorModelUnavailable
+		return &ProviderError{Class: class, Err: fmt.Errorf("provider HTTP %d", status)}
+	}
 	switch {
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		class = ProviderErrorAuthentication
@@ -288,8 +294,32 @@ func providerHTTPError(status int) error {
 		class = ProviderErrorUnavailable
 	case status == http.StatusBadRequest || status == http.StatusUnprocessableEntity:
 		class = ProviderErrorRequestRejected
+	case status == http.StatusNotFound:
+		class = ProviderErrorRequestRejected
 	}
 	return &ProviderError{Class: class, Err: fmt.Errorf("provider HTTP %d", status)}
+}
+
+func providerReportsMissingModel(body []byte) bool {
+	var envelope struct {
+		Error struct {
+			Code    string `json:"code"`
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	searchable := strings.ToLower(strings.Join([]string{
+		envelope.Error.Code,
+		envelope.Error.Type,
+		envelope.Error.Message,
+	}, " "))
+	return strings.Contains(searchable, "model_not_found") ||
+		strings.Contains(searchable, "model not found") ||
+		strings.Contains(searchable, "model is not supported") ||
+		strings.Contains(searchable, "not supported by any configured account")
 }
 
 func classifyProviderTransportError(ctx context.Context, err error) error {

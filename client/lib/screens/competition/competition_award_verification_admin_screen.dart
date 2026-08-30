@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/competition_award.dart';
 import '../../utils/app_feedback.dart';
+import '../../services/async_action_guard.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../services/idempotency_key.dart';
 
 class CompetitionAwardVerificationAdminScreen extends StatefulWidget {
   final Dio dio;
@@ -272,6 +274,9 @@ class _CompetitionAwardVerificationDetailScreenState
   String _nickname = '';
   bool _loading = true;
   bool _submitting = false;
+  final AsyncActionGuard _actionGuard = AsyncActionGuard();
+  String? _verificationIdempotencyKey;
+  String? _verificationIdempotencyFingerprint;
   final Set<int> _loadingEvidence = {};
   String? _error;
 
@@ -379,12 +384,30 @@ class _CompetitionAwardVerificationDetailScreenState
       ),
     );
     if (confirmed != true || !mounted) return;
+    await _actionGuard.run<void>(
+      'award-verification:${widget.awardId}:$approve',
+      () => _reviewOnce(approve: approve, note: note),
+    );
+  }
+
+  Future<void> _reviewOnce(
+      {required bool approve, required String note}) async {
+    final fingerprint = '$approve:$note';
+    if (_verificationIdempotencyFingerprint != fingerprint) {
+      _verificationIdempotencyFingerprint = fingerprint;
+      _verificationIdempotencyKey = null;
+    }
     setState(() => _submitting = true);
     try {
       await widget.dio.post(
         '/admin/competition-awards/verifications/${widget.awardId}/${approve ? 'approve' : 'reject'}',
         data: approve ? {'note': note} : {'reason': note},
+        options: Options(headers: <String, dynamic>{
+          'Idempotency-Key': _verificationIdempotencyKey ??=
+              newIdempotencyKey('award-verification'),
+        }),
       );
+      _verificationIdempotencyKey = null;
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (error) {

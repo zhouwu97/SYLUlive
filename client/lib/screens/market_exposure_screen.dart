@@ -6,6 +6,7 @@ import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
+import '../widgets/app_cached_image.dart';
 import 'post_detail_screen.dart';
 
 class MarketExposureScreen extends StatelessWidget {
@@ -142,10 +143,12 @@ class MarketExposureScreen extends StatelessWidget {
                       errorBuilder: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     )
-                  : Image.network(
-                      bgPath,
+                  : AppCachedImage.public(
+                      imageUrl: bgPath,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
+                      memCacheWidth: 2048,
+                      memCacheHeight: 2048,
+                      errorWidget: (_, __, ___) =>
                           _buildDefaultBackground(isDark),
                     ),
           Container(

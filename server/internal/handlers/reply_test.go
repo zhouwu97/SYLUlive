@@ -32,6 +32,7 @@ func newReplyTestDB(t *testing.T) *gorm.DB {
 		&models.ReplyImage{},
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.ExpLog{},
 		&models.Notification{},
 		&models.Like{},

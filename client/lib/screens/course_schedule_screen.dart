@@ -114,6 +114,41 @@ const _ends = [
 /// 格式化月/日
 String _md(DateTime d) => '${d.month}/${d.day}';
 
+/// 课表页的终态判定。
+///
+/// `empty` 只表示已经确认当前教务会话、保险箱和缓存恢复完成后仍没有课程。
+/// 任何身份、存储或异步加载状态未知的阶段都必须停留在 `restoring`，不能
+/// 把尚未得到答案的空列表误当成“还没有课表”。
+enum ScheduleViewState {
+  restoring,
+  unbound,
+  empty,
+  needsSemesterStart,
+  ready,
+}
+
+@visibleForTesting
+ScheduleViewState resolveScheduleViewState({
+  required bool eduStatusLoaded,
+  required bool eduBound,
+  required ScheduleSessionPhase sessionPhase,
+  required bool isLoading,
+  required bool isInitializing,
+  required bool hasCourses,
+  required bool hasSemesterStart,
+}) {
+  if (!eduStatusLoaded) return ScheduleViewState.restoring;
+  if (!eduBound) return ScheduleViewState.unbound;
+  if (sessionPhase != ScheduleSessionPhase.ready ||
+      isLoading ||
+      isInitializing) {
+    return ScheduleViewState.restoring;
+  }
+  if (!hasCourses) return ScheduleViewState.empty;
+  if (!hasSemesterStart) return ScheduleViewState.needsSemesterStart;
+  return ScheduleViewState.ready;
+}
+
 class CourseScheduleScreen extends StatefulWidget {
   const CourseScheduleScreen({super.key});
 
@@ -128,7 +163,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _initializing = true;
   bool _hasCache = false;
   bool _settingsLoaded = false;
-  String? _preparedUserId;
+  String? _loadedSessionKey;
+  int? _primedGeneration;
+  Future<bool>? _cachePrimeFuture;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
   bool _courseReminderEnabled = false;
@@ -185,20 +222,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _refreshAfterResume,
       isVisible: () => currentHomeTabIndex.value == 2,
     );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final auth = context.read<AuthProvider>();
-      if (auth.user == null) return;
-      final uid = auth.user!.id.toString();
-      context.read<EduProvider>().setUserId(uid);
-      context.read<CourseScheduleProvider>().setUserId(uid);
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _prepareProviders();
   }
 
   @override
@@ -209,33 +232,64 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
+    _resetLoadStateIfSessionChanged(sc);
     if (_isFetchingCourses || _isImportingCourses) return;
-    if (_didLoad) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     if (!edu.isStatusLoaded) return;
+    if (_didLoad &&
+        _loadedSessionKey == sc.sessionKey &&
+        _primedGeneration == sc.contextGeneration) {
+      return;
+    }
     if (!edu.isBound) {
       _didLoad = true;
-      if (mounted) setState(() => _initializing = false);
+      _loadedSessionKey = sc.sessionKey;
+      _primedGeneration = sc.contextGeneration;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _initializing = false);
+      });
+      return;
+    }
+    // 教务状态已绑定不代表来源学号已经同步到课表会话。此时不能把空缓存
+    // 判定为“暂无课表”，应等待 Provider 完成正确 namespace 的恢复。
+    if (!sc.isSessionReady) {
+      if (!_initializing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _initializing = true);
+        });
+      }
       return;
     }
     if (sc.isLoading) return;
-    _didLoad = true;
 
-    // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中。
+    final sessionKey = sc.sessionKey;
+    final generation = sc.contextGeneration;
+    _didLoad = true;
+    _loadedSessionKey = sessionKey;
+    _primedGeneration = generation;
+
+    // Provider 是 session 的唯一所有者；页面只在 ready 阶段补一次幂等缓存读，
+    // 用于覆盖“缓存刚写入、Provider 的首次 restore 已经结束”的正常路径。
+    // Future 与 generation 成对失效，不能跨账号或来源账号复用。
     final hasCache = sc.courses.isNotEmpty ||
-        await sc.loadCachedCoursesIfAvailable().timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => false,
-            );
+        await _primeCachedCourses(sc).timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => false,
+        );
 
     await _syncCourseReminders(sc);
-    if (mounted) {
-      setState(() {
-        _hasCache = hasCache || sc.courses.isNotEmpty;
-        _initializing = false;
-      });
+    if (sessionKey != sc.sessionKey || generation != sc.contextGeneration) {
+      return;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _hasCache = hasCache || sc.courses.isNotEmpty;
+          _initializing = false;
+        });
+      }
+    });
 
     if (hasCache) {
       _silentSync(sc);
@@ -265,8 +319,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     // 恢复前台只做本地状态同步，不自动访问教务系统。教务课表是低频数据，
     // 用户需要新数据时仍通过“从教务刷新”主动拉取，避免短暂切后台造成重复请求。
-    schedule.setUserId(user.id.toString());
-
     if (mounted) {
       final anchor = _pageAnchorDate(schedule);
       if (!_weekStart.isAtSameMomentAs(anchor)) {
@@ -313,21 +365,40 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  Future<void> _prepareProviders() async {
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-    if (user == null) return;
-    final uid = user.id.toString();
-    if (_preparedUserId == uid) return;
-    _preparedUserId = uid;
+  void _resetLoadStateIfSessionChanged(CourseScheduleProvider sc) {
+    if (_loadedSessionKey == sc.sessionKey &&
+        _primedGeneration == sc.contextGeneration) {
+      return;
+    }
+    _loadedSessionKey = null;
+    _primedGeneration = null;
+    _didLoad = false;
+    _hasCache = false;
+    _cachePrimeFuture = null;
+    _initializing = true;
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final edu = context.read<EduProvider>();
-      final sc = context.read<CourseScheduleProvider>();
-      edu.setUserId(uid);
-      sc.setUserId(uid);
-    });
+  Future<bool> _primeCachedCourses(CourseScheduleProvider sc) {
+    final generation = sc.contextGeneration;
+    if (_primedGeneration == generation && _cachePrimeFuture != null) {
+      return _cachePrimeFuture!;
+    }
+    _primedGeneration = generation;
+    return _cachePrimeFuture = _loadCachedCoursesForSession(sc, generation);
+  }
+
+  Future<bool> _loadCachedCoursesForSession(
+    CourseScheduleProvider sc,
+    int generation,
+  ) async {
+    try {
+      final loaded = await sc.loadCachedCoursesIfAvailable();
+      if (generation != sc.contextGeneration) return false;
+      return loaded;
+    } catch (error) {
+      debugPrint('课表会话缓存恢复失败: ${error.runtimeType}');
+      return false;
+    }
   }
 
   int _pageForWeekStart(CourseScheduleProvider sc, DateTime weekStart) {
@@ -397,10 +468,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
 
     if (!_settingsLoaded) {
-      return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: overlayStyle,
-        child: const Scaffold(backgroundColor: Colors.transparent),
-      );
+      return _buildStableScheduleShell(overlayStyle, isDark);
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -439,45 +507,40 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     }
                   }
 
-                  // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
-                  if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
-                      sc.courses.isEmpty) {
-                    return _buildLoadingOverlay(sc);
-                  }
-
-                  if (!edu.isBound) {
-                    return _buildBindView(context, edu, sc, isDark);
-                  }
-
-                  final hasAnyCourses = sc.courses.isNotEmpty;
-                  final hasSemesterStart = sc.semesterStart != null;
-
-                  if (!hasAnyCourses) {
-                    return Column(
-                      children: [
-                        _buildDateHeader(sc),
-                        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-                        Expanded(
-                          child: _buildNoScheduleState(context, isDark),
-                        ),
-                      ],
-                    );
-                  }
-
-                  if (!hasSemesterStart) {
-                    return Column(
-                      children: [
-                        _buildDateHeader(sc),
-                        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-                        Expanded(
-                          child: _buildSemesterStartRequiredState(
-                            context,
-                            sc,
-                            isDark,
+                  // 空课表是 terminal state：只有所有身份、本地会话和课程读取
+                  // 都确认完成后，才能向用户展示“还没有课表”。
+                  final viewState = resolveScheduleViewState(
+                    eduStatusLoaded: edu.isStatusLoaded,
+                    eduBound: edu.isBound,
+                    sessionPhase: sc.sessionPhase,
+                    isLoading: sc.isLoading,
+                    isInitializing: _initializing && sc.courses.isEmpty,
+                    hasCourses: sc.courses.isNotEmpty,
+                    hasSemesterStart: sc.semesterStart != null,
+                  );
+                  switch (viewState) {
+                    case ScheduleViewState.restoring:
+                      return _buildScheduleSessionRestoringState(sc, isDark);
+                    case ScheduleViewState.unbound:
+                      return _buildBindView(context, edu, sc, isDark);
+                    case ScheduleViewState.empty:
+                      return _buildStableEmptySchedule(sc, isDark);
+                    case ScheduleViewState.needsSemesterStart:
+                      return Column(
+                        children: [
+                          _buildDateHeader(sc),
+                          _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+                          Expanded(
+                            child: _buildSemesterStartRequiredState(
+                              context,
+                              sc,
+                              isDark,
+                            ),
                           ),
-                        ),
-                      ],
-                    );
+                        ],
+                      );
+                    case ScheduleViewState.ready:
+                      break;
                   }
 
                   final mainContent = Column(
@@ -507,6 +570,161 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ),
     );
+  }
+
+  /// 设置读取期间也保持正式课表的空间结构，避免 GlobalBackgroundWrapper
+  /// 下面出现透明空 Scaffold。状态仍统一经过 [resolveScheduleViewState] 判定，
+  /// 不在设置加载期间把未知状态降级成空课表。
+  Widget _buildStableScheduleShell(
+    SystemUiOverlayStyle overlayStyle,
+    bool isDark,
+  ) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          bottom: false,
+          child: Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              if (!auth.isLoggedIn) {
+                return _buildLoginPrompt(context, isDark);
+              }
+              return Consumer2<EduProvider, CourseScheduleProvider>(
+                builder: (context, edu, sc, _) {
+                  _autoLoad(edu, sc);
+                  final viewState = resolveScheduleViewState(
+                    eduStatusLoaded: edu.isStatusLoaded,
+                    eduBound: edu.isBound,
+                    sessionPhase: sc.sessionPhase,
+                    isLoading: sc.isLoading,
+                    isInitializing: _initializing && sc.courses.isEmpty,
+                    hasCourses: sc.courses.isNotEmpty,
+                    hasSemesterStart: sc.semesterStart != null,
+                  );
+                  switch (viewState) {
+                    case ScheduleViewState.restoring:
+                      return _buildScheduleSessionRestoringState(sc, isDark);
+                    case ScheduleViewState.unbound:
+                      return _buildBindView(context, edu, sc, isDark);
+                    case ScheduleViewState.empty:
+                      return _buildStableEmptySchedule(sc, isDark);
+                    case ScheduleViewState.needsSemesterStart:
+                      return _buildStableSemesterStartState(
+                          context, sc, isDark);
+                    case ScheduleViewState.ready:
+                      return _buildStableCourseSurface(sc, isDark);
+                  }
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStableEmptySchedule(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(child: _buildNoScheduleState(context, isDark)),
+      ],
+    );
+  }
+
+  /// 认证用户已绑定教务，但来源账号或本地快照仍在恢复时的正式框架。
+  ///
+  /// 这里不放“课表拉取”CTA：在 session ready 之前，空列表只是中间态，
+  /// 不能向用户暗示当前学期确实没有课表。
+  Widget _buildScheduleSessionRestoringState(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      key: const ValueKey('schedule-session-restoring'),
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sync_rounded,
+                    size: 32,
+                    color: isDark ? Colors.white54 : CampusTheme.subText,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '正在恢复本机课表状态',
+                    style: TextStyle(
+                      color: isDark ? Colors.white : CampusTheme.text,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '正在确认当前教务账号并读取本机课表',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isDark ? Colors.white60 : CampusTheme.subText,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStableSemesterStartState(
+    BuildContext context,
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Column(
+      children: [
+        _buildDateHeader(sc),
+        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
+        Expanded(
+          child: _buildSemesterStartRequiredState(context, sc, isDark),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStableCourseSurface(
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    final mainContent = Column(
+      children: [
+        _buildDateHeader(sc),
+        Expanded(child: _buildCourseGrid(sc)),
+      ],
+    );
+    if (ResponsiveUtil.isDesktop(context)) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTodayOverview(sc, isDark),
+          Expanded(child: mainContent),
+        ],
+      );
+    }
+    return mainContent;
   }
 
   Widget _buildTodayOverview(CourseScheduleProvider sc, bool isDark) {
@@ -707,35 +925,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  // ====== 加载覆盖层 ======
-  Widget _buildLoadingOverlay(CourseScheduleProvider sc) {
-    return Column(
-      children: [
-        _buildDateHeader(sc),
-        _buildWeekdayHeader(_weekStart, withTimeGutter: true),
-        const Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(strokeWidth: 3),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  '正在加载课表…',
-                  style: TextStyle(fontSize: 13, color: Colors.white54),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 

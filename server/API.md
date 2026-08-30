@@ -129,6 +129,7 @@
 | `GET` | `/api/feed/hidden-authors` | 获取已隐藏作者列表（含昵称/头像，按隐藏时间倒序） |
 
 语义说明：
+
 - `HideFromFeed != BlockUser`：隐藏只影响 Feed 列表，不影响搜索、主页、直接帖子 URL、评论区与私信。
 - 「不看TA」与关注关系（`UserFollow`）无关：隐藏不取消关注，恢复后作者自然重新出现在关注流。
 
@@ -187,6 +188,10 @@ FEED-H1 加固：
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
+| `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
+| `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
+| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者 |
+| `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
 
 ### 食堂评价投票
 
@@ -230,30 +235,18 @@ FEED-H1 加固：
 |---|---|---|
 | `GET` | `/api/canteens/:id/dishes` | 公开菜品列表（approved-only），返回 `id/name/cover_image/photo_count/last_photo_at` |
 | `GET` | `/api/canteens/:canteenId/dishes/:dishId` | 公开菜品详情 + approved 实拍列表 |
-| `POST` | `/api/canteens/:canteenId/dish-photos` | (需登录+绑定教务) 投稿实拍，单图 |
-| `GET` | `/api/canteens/dish-photos/pending` | (管理员) 待审核实拍列表 |
-| `POST` | `/api/canteens/dish-photos/:photoId/approve` | (管理员) 通过实拍，文件转 public |
-| `POST` | `/api/canteens/dish-photos/:photoId/reject` | (管理员) 驳回实拍，文件保持 private |
-| `POST` | `/api/canteens/dish-photos/:photoId/archive` | (管理员) 下架实拍（业务隐藏，不 revoke 文件） |
+| `POST` | `/api/canteens/:canteenId/dish-photos` | 已退休，返回 `410 dish_submission_retired`；请改用食堂评价关联菜品实拍 |
+| `GET` | `/api/canteens/dish-photos/:photoId` | (管理员) 查看实拍详情（含上传者信息） |
+| `POST` | `/api/canteens/dish-photos/:photoId/archive` | (管理员) 下架实拍（事后治理，业务隐藏，回收孤儿文件公开权限） |
 | `PATCH` | `/api/canteens/dishes/:dishId` | (管理员) 重命名或隐藏菜品 |
+| `POST` | `/api/canteens/dishes/:dishId/merge` | (管理员) 合并疑似重复菜品到已有菜品并创建 alias |
 
-**投稿**
+**实拍提交迁移**
 
-`POST /api/canteens/:canteenId/dish-photos`，Body 二选一：
-
-```json
-{ "dish_id": 12, "file_id": 9527 }
-```
-
-或（未找到菜品时按名称创建/复用）：
-
-```json
-{ "dish_name": "锅包肉", "file_id": 9527 }
-```
-
-- 菜名归一化：trim、合并并删除内部空白、兼容全角空格、转小写（`"锅 包 肉"` → `"锅包肉"`），同食堂归一化菜名唯一。
-- 一次投稿严格一张图片（服务端 `maxCount=1` 硬限制）。
-- 投稿后 `DishPhoto.status = pending`，文件保持 `active/private`，公共接口不可见。
+独立菜品投稿接口 `/dish-photos`、`/dish-submissions` 和菜品 `resubmit` 已退休，统一返回
+`410` 与 `code=dish_submission_retired`。客户端应通过 `POST /api/canteens/:id/reviews`
+提交食堂评价，在 `dishes[].dish_name` 中关联菜品，并在 `dishes[].photo_file_ids` 中绑定实拍文件；
+评价提交流程负责菜品归一化、直接创建 active 菜品和 approved 实拍。
 
 错误码：
 

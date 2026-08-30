@@ -75,21 +75,23 @@ type CalendarActionDraftRequest struct {
 }
 
 type calendarActionResponse struct {
-	ID              uint                      `json:"id"`
-	ActionType      string                    `json:"action_type"`
-	Status          string                    `json:"status"`
-	Title           string                    `json:"title"`
-	Description     string                    `json:"description"`
-	StartAt         time.Time                 `json:"start_at"`
-	EndAt           time.Time                 `json:"end_at"`
-	AllDay          bool                      `json:"all_day"`
-	Location        string                    `json:"location"`
-	Timezone        string                    `json:"timezone"`
-	ExpiresAt       time.Time                 `json:"expires_at"`
-	TargetEventID   *uint                     `json:"target_event_id,omitempty"`
-	ReminderMinutes *int                      `json:"reminder_minutes_before,omitempty"`
-	CalendarEventID *uint                     `json:"calendar_event_id,omitempty"`
-	Event           *models.UserCalendarEvent `json:"event,omitempty"`
+	ID                    uint                      `json:"id"`
+	ActionType            string                    `json:"action_type"`
+	Status                string                    `json:"status"`
+	Title                 string                    `json:"title"`
+	Description           string                    `json:"description"`
+	StartAt               time.Time                 `json:"start_at"`
+	EndAt                 time.Time                 `json:"end_at"`
+	AllDay                bool                      `json:"all_day"`
+	Location              string                    `json:"location"`
+	Timezone              string                    `json:"timezone"`
+	ExpiresAt             time.Time                 `json:"expires_at"`
+	TargetEventID         *uint                     `json:"target_event_id,omitempty"`
+	ReminderMinutes       *int                      `json:"reminder_minutes_before,omitempty"`
+	CalendarEventID       *uint                     `json:"calendar_event_id,omitempty"`
+	Event                 *models.UserCalendarEvent `json:"event,omitempty"`
+	PostconditionVerified *bool                     `json:"postcondition_verified,omitempty"`
+	PostconditionError    string                    `json:"postcondition_error,omitempty"`
 }
 
 func (h *UserCalendarHandler) ListEvents(c *gin.Context) {
@@ -805,7 +807,76 @@ func (h *UserCalendarHandler) ConfirmCalendarEventDraft(c *gin.Context) {
 		}
 		return
 	}
+	if response.Status == "executed" {
+		verified, reason, verifyErr := h.verifyCalendarActionPostcondition(c.Request.Context(), userID, response)
+		response.PostconditionVerified = &verified
+		if verifyErr != nil {
+			response.PostconditionError = "postcondition_read_failed"
+		} else if !verified {
+			response.PostconditionError = reason
+		}
+	}
 	c.JSON(http.StatusOK, response)
+}
+
+// verifyCalendarActionPostcondition 在确认写入事务提交后重新读取真实记录。
+// 写接口成功但回读失败时，响应明确标记为未确认，调用方不能把它展示成“已生效”。
+func (h *UserCalendarHandler) verifyCalendarActionPostcondition(ctx context.Context, userID uint, response calendarActionResponse) (bool, string, error) {
+	if h == nil || h.db == nil || userID == 0 {
+		return false, "postcondition_unavailable", errors.New("calendar_postcondition_unavailable")
+	}
+	switch response.ActionType {
+	case models.UserCalendarActionCreate, models.UserCalendarActionUpdate, models.UserCalendarActionReminderCreate:
+		if response.ActionType == models.UserCalendarActionReminderCreate {
+			if response.TargetEventID == nil || response.ReminderMinutes == nil {
+				return false, "postcondition_not_confirmed", nil
+			}
+			var reminder models.UserCalendarReminder
+			err := h.db.WithContext(ctx).Where(
+				"user_id = ? AND event_id = ? AND minutes_before = ? AND deleted_at IS NULL",
+				userID, *response.TargetEventID, *response.ReminderMinutes,
+			).First(&reminder).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return false, "postcondition_not_confirmed", nil
+			}
+			return err == nil, "postcondition_not_confirmed", err
+		}
+		eventID := response.CalendarEventID
+		if eventID == nil {
+			eventID = response.TargetEventID
+		}
+		if eventID == nil {
+			return false, "postcondition_not_confirmed", nil
+		}
+		var event models.UserCalendarEvent
+		if err := h.db.WithContext(ctx).Where("id = ? AND user_id = ?", *eventID, userID).First(&event).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return false, "postcondition_not_confirmed", nil
+			}
+			return false, "postcondition_not_confirmed", err
+		}
+		if response.ActionType == models.UserCalendarActionUpdate && response.Event != nil {
+			if event.Title != response.Event.Title || !event.StartAt.Equal(response.Event.StartAt) || !event.EndAt.Equal(response.Event.EndAt) {
+				return false, "postcondition_mismatch", nil
+			}
+		}
+		return true, "", nil
+	case models.UserCalendarActionDelete:
+		if response.TargetEventID == nil {
+			return false, "postcondition_not_confirmed", nil
+		}
+		var event models.UserCalendarEvent
+		err := h.db.WithContext(ctx).Unscoped().Where("id = ? AND user_id = ?", *response.TargetEventID, userID).First(&event).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, "postcondition_not_confirmed", nil
+		}
+		if err != nil {
+			return false, "postcondition_not_confirmed", err
+		}
+		return event.DeletedAt.Valid, "postcondition_mismatch", nil
+	default:
+		return false, "postcondition_unsupported", nil
+	}
 }
 
 func (h *UserCalendarHandler) CancelCalendarEventDraft(c *gin.Context) {

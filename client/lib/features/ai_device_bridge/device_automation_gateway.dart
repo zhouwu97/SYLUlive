@@ -4,8 +4,11 @@ import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 /// 设备侧可自动化的数据类型。该枚举只描述数据类别，不包含账号、凭据或原始页面。
 enum PersonalDataType {
   academic,
+  academicSituation,
+  creditRequirements,
   schedule,
   erke,
+  physical,
 }
 
 /// 只暴露新鲜度元数据，避免 freshness 检查越过 PersonalDataGateway 读取原始快照。
@@ -32,12 +35,24 @@ class RefreshResult {
   const RefreshResult({
     required this.performed,
     this.message,
+    this.errorCode,
   });
 
   final bool performed;
   final String? message;
+  final String? errorCode;
 
   bool get succeeded => message == null;
+}
+
+class DeviceAutomationException implements Exception {
+  const DeviceAutomationException(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => 'DeviceAutomationException($code)';
 }
 
 typedef DeviceDataQuery<T> = Future<GatewayResult<T>> Function(
@@ -51,15 +66,30 @@ typedef DeviceDataQuery<T> = Future<GatewayResult<T>> Function(
 abstract interface class DeviceAutomationGateway {
   Future<FreshnessState> inspect(PersonalDataType type);
 
+  Future<GatewayResult<Map<String, dynamic>>> readAcademicDataset(
+    String dataset,
+  );
+
   Future<RefreshResult> refreshAcademic();
+
+  Future<RefreshResult> refreshAcademicSituation();
+
+  Future<RefreshResult> refreshCreditRequirements();
 
   Future<RefreshResult> refreshSchedule();
 
-  Future<RefreshResult> refreshErke();
+  Future<RefreshResult> refreshErke({bool automationUpload = false});
+
+  Future<RefreshResult> refreshPhysical();
 
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+    bool automationUpload = false,
+  });
+
+  Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
+    required Map<String, Duration> maxAges,
   });
 
   Future<GatewayResult<T>> read<T>(DeviceDataQuery<T> query);
@@ -71,30 +101,49 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   PersonalDataDeviceAutomationGateway({
     required PersonalDataGateway reader,
     Future<RefreshResult> Function()? refreshAcademic,
+    Future<RefreshResult> Function()? refreshAcademicSituation,
+    Future<RefreshResult> Function()? refreshCreditRequirements,
     Future<RefreshResult> Function()? refreshSchedule,
-    Future<RefreshResult> Function()? refreshErke,
+    Future<RefreshResult> Function({bool automationUpload})? refreshErke,
+    Future<RefreshResult> Function()? refreshPhysical,
+    Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
+        readAcademicDataset,
     DateTime Function()? now,
   })  : _reader = reader,
         _refreshAcademic = refreshAcademic,
+        _refreshAcademicSituation = refreshAcademicSituation,
+        _refreshCreditRequirements = refreshCreditRequirements,
         _refreshSchedule = refreshSchedule,
         _refreshErke = refreshErke,
+        _refreshPhysical = refreshPhysical,
+        _readAcademicDataset = readAcademicDataset,
         _now = now ?? DateTime.now;
 
   final PersonalDataGateway _reader;
   final Future<RefreshResult> Function()? _refreshAcademic;
+  final Future<RefreshResult> Function()? _refreshAcademicSituation;
+  final Future<RefreshResult> Function()? _refreshCreditRequirements;
   final Future<RefreshResult> Function()? _refreshSchedule;
-  final Future<RefreshResult> Function()? _refreshErke;
+  final Future<RefreshResult> Function({bool automationUpload})? _refreshErke;
+  final Future<RefreshResult> Function()? _refreshPhysical;
+  final Future<GatewayResult<Map<String, dynamic>>> Function(String dataset)?
+      _readAcademicDataset;
   final DateTime Function() _now;
 
   @override
   Future<FreshnessState> inspect(PersonalDataType type) async {
     final result = switch (type) {
       PersonalDataType.academic => await _reader.getAcademicOverview(),
+      PersonalDataType.academicSituation =>
+        await readAcademicDataset('academic_situation'),
+      PersonalDataType.creditRequirements =>
+        await readAcademicDataset('credit_requirements'),
       PersonalDataType.schedule => await _reader.getScheduleOverview(
           start: _startOfWeek(_now()),
           end: _startOfWeek(_now()).add(const Duration(days: 6)),
         ),
       PersonalDataType.erke => await _reader.getErkeOverview(),
+      PersonalDataType.physical => await _reader.getPhysicalOverview(),
     };
     return FreshnessState(
       fetchedAt: result.fetchedAt,
@@ -103,11 +152,26 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
     );
   }
 
+  @override
+  Future<GatewayResult<Map<String, dynamic>>> readAcademicDataset(
+    String dataset,
+  ) async {
+    final reader = _readAcademicDataset;
+    if (reader == null) {
+      return GatewayResult<Map<String, dynamic>>(
+        status: GatewayStatus.missing,
+        source: PersonalDataSource.none,
+      );
+    }
+    return reader(dataset);
+  }
+
   /// 设备在执行前再次判断 freshness，服务器传入的 maxAge 只能被本地策略收窄。
   @override
   Future<EnsureFreshResult> ensureFresh(
     PersonalDataType type, {
     required Duration maxAge,
+    bool automationUpload = false,
   }) async {
     final before = await inspect(type);
     if (before.isFreshAt(_now(), maxAge)) {
@@ -116,8 +180,18 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
 
     final refresh = switch (type) {
       PersonalDataType.academic => await refreshAcademic(),
+      PersonalDataType.academicSituation => await _refreshDataset(
+          _refreshAcademicSituation,
+          '学业情况',
+        ),
+      PersonalDataType.creditRequirements => await _refreshDataset(
+          _refreshCreditRequirements,
+          '学分要求',
+        ),
       PersonalDataType.schedule => await refreshSchedule(),
-      PersonalDataType.erke => await refreshErke(),
+      PersonalDataType.erke =>
+        await refreshErke(automationUpload: automationUpload),
+      PersonalDataType.physical => await refreshPhysical(),
     };
     final after = await inspect(type);
     return EnsureFreshResult(
@@ -125,7 +199,32 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
       after: after,
       refreshPerformed: refresh.performed,
       warning: refresh.message,
+      errorCode: refresh.errorCode,
     );
+  }
+
+  @override
+  Future<AcademicBundleEnsureResult> ensureFreshAcademicBundle({
+    required Map<String, Duration> maxAges,
+  }) async {
+    final items = <String, EnsureFreshResult>{};
+    for (final entry in maxAges.entries) {
+      final type = switch (entry.key) {
+        'grades' => PersonalDataType.academic,
+        'academic_situation' => PersonalDataType.academicSituation,
+        'credit_requirements' => PersonalDataType.creditRequirements,
+        _ => throw ArgumentError('不支持的学业数据集: ${entry.key}'),
+      };
+      final item = await ensureFresh(type, maxAge: entry.value);
+      if (!item.after.isFreshAt(_now(), entry.value)) {
+        throw DeviceAutomationException(
+          item.errorCode ?? 'refresh_incomplete',
+          item.warning ?? '${entry.key}刷新后仍未达到新鲜度要求',
+        );
+      }
+      items[entry.key] = item;
+    }
+    return AcademicBundleEnsureResult(items: items);
   }
 
   @override
@@ -134,6 +233,28 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
     if (refresh != null) return refresh();
     return Future.value(
       const RefreshResult(performed: false, message: '设备暂未配置成绩刷新能力'),
+    );
+  }
+
+  @override
+  Future<RefreshResult> refreshAcademicSituation() => _refreshDataset(
+        _refreshAcademicSituation,
+        '学业情况',
+      );
+
+  @override
+  Future<RefreshResult> refreshCreditRequirements() => _refreshDataset(
+        _refreshCreditRequirements,
+        '学分要求',
+      );
+
+  Future<RefreshResult> _refreshDataset(
+    Future<RefreshResult> Function()? refresh,
+    String label,
+  ) {
+    if (refresh != null) return refresh();
+    return Future.value(
+      RefreshResult(performed: false, message: '$label刷新能力未配置'),
     );
   }
 
@@ -147,11 +268,20 @@ class PersonalDataDeviceAutomationGateway implements DeviceAutomationGateway {
   }
 
   @override
-  Future<RefreshResult> refreshErke() {
+  Future<RefreshResult> refreshErke({bool automationUpload = false}) {
     final refresh = _refreshErke;
-    if (refresh != null) return refresh();
+    if (refresh != null) return refresh(automationUpload: automationUpload);
     return Future.value(
       const RefreshResult(performed: false, message: '二课刷新需要单独的设备授权'),
+    );
+  }
+
+  @override
+  Future<RefreshResult> refreshPhysical() {
+    final refresh = _refreshPhysical;
+    if (refresh != null) return refresh();
+    return Future.value(
+      const RefreshResult(performed: false, message: '体测刷新需要设备密码'),
     );
   }
 
@@ -173,10 +303,18 @@ class EnsureFreshResult {
     required this.after,
     this.refreshPerformed = false,
     this.warning,
+    this.errorCode,
   });
 
   final FreshnessState before;
   final FreshnessState after;
   final bool refreshPerformed;
   final String? warning;
+  final String? errorCode;
+}
+
+class AcademicBundleEnsureResult {
+  const AcademicBundleEnsureResult({required this.items});
+
+  final Map<String, EnsureFreshResult> items;
 }

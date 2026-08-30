@@ -9,7 +9,6 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -45,6 +44,37 @@ void main() {
     expect(provider.isLoading, isFalse);
     expect(provider.courses, isEmpty);
     expect(provider.gridData, isEmpty);
+  });
+
+  test('来源账号延迟恢复后自动进入 ready 并读取对应会话缓存', () async {
+    final seed = createProvider()..syncSessionContext('1001', '2403130233');
+    await seed.applyFetchedCourses([
+      {
+        'name': '线性代数',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 2,
+        'weeks': [1, 2, 3],
+      },
+    ]);
+
+    final provider = createProvider()..syncSessionContext('1001', '');
+    expect(provider.sessionPhase, ScheduleSessionPhase.resolvingIdentity);
+    expect(provider.isSessionReady, isFalse);
+
+    final generationBeforeSource = provider.contextGeneration;
+    provider.syncSessionContext('1001', '2403130233');
+    expect(provider.contextGeneration, greaterThan(generationBeforeSource));
+    expect(provider.sessionKey, '1001::2403130233');
+
+    for (var i = 0; i < 20 && !provider.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(provider.isSessionReady, isTrue);
+    expect(provider.sessionPhase, ScheduleSessionPhase.ready);
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.single.name, '线性代数');
   });
 
   test(
@@ -97,6 +127,7 @@ void main() {
     final requestStarted = Completer<void>();
     final releaseResponse = Completer<void>();
     var requestedServerCourseCache = false;
+    Duration? requestedReceiveTimeout;
     final dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -113,6 +144,7 @@ void main() {
             return;
           }
           if (options.path == '/edu/courses') {
+            requestedReceiveTimeout = options.receiveTimeout;
             requestStarted.complete();
             releaseResponse.future.then((_) {
               handler.resolve(
@@ -163,6 +195,7 @@ void main() {
     expect(await oldStore.readTerm(year: '2025', semester: 12), isNull);
     expect(await newStore.readTerm(year: '2025', semester: 12), isNull);
     expect(requestedServerCourseCache, isFalse);
+    expect(requestedReceiveTimeout, const Duration(seconds: 25));
   });
 
   test('课程获取成功但保险箱写入失败时明确提示未持久化', () async {

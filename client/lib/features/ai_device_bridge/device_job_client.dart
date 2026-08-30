@@ -26,6 +26,12 @@ abstract interface class DeviceJobApi {
     int stateVersion,
   );
 
+  Future<DeviceToolJob> waitForUser(
+    String installationId,
+    String jobId,
+    int stateVersion,
+  );
+
   Future<DeviceToolJob> progress(
     String installationId,
     String jobId,
@@ -145,6 +151,25 @@ class DioDeviceJobClient implements DeviceJobApi {
       ),
       operation: 'claim',
       route: '/device/jobs/:jobId/claim',
+      method: 'POST',
+    );
+  }
+
+  @override
+  Future<DeviceToolJob> waitForUser(
+    String installationId,
+    String jobId,
+    int stateVersion,
+  ) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}/waiting_user';
+    return _jobRequest(
+      () => _dio.post<Map<String, dynamic>>(
+        route,
+        data: <String, dynamic>{'state_version': stateVersion},
+        options: _options(installationId),
+      ),
+      operation: 'waiting_user',
+      route: '/device/jobs/:jobId/waiting_user',
       method: 'POST',
     );
   }
@@ -342,6 +367,7 @@ String _operationLabel(String operation) => switch (operation) {
       'pending' => '拉取待处理任务',
       'get' => '读取任务',
       'claim' => '领取任务',
+      'waiting_user' => '等待用户输入',
       'complete' => '提交任务结果',
       'fail' => '上报任务失败',
       _ => '执行设备任务请求',

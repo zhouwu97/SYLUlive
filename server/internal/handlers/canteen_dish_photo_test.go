@@ -33,9 +33,11 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.File{},
 		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.CanteenReviewEvent{},
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.AdminLog{},
@@ -46,6 +48,66 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure schema: %v", err)
 	}
 	return db
+}
+
+func TestListDishesAddsActiveReviewImageGallery(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	canteen := models.Canteen{Name: "评价图片食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 1, Status: models.ReviewEventStatusActive,
+		Images: `[{"not":"a string"}]`, CreatedAt: now.Add(-2 * time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 2, Status: models.ReviewEventStatusActive,
+		Images: `[/uploads/bad.json]`, CreatedAt: now.Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 3, Status: models.ReviewEventStatusActive,
+		Images: `["/uploads/review-new.jpg","/uploads/review-duplicate.jpg"]`, CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: 4, Status: models.ReviewEventStatusHidden,
+		Images: `["/uploads/hidden.jpg"]`, CreatedAt: now.Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.CanteenRating{
+		CanteenID: canteen.ID, UserID: 5, Star: 5, Status: models.ReviewEventStatusActive,
+		Images: `["/uploads/review-duplicate.jpg","/uploads/legacy.jpg"]`, CreatedAt: now.Add(-30 * time.Minute),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	resp := performDishPhotoRequest(t, NewCanteenDishHandler(db).ListDishes, http.MethodGet,
+		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 0, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var rows []map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["source"] != "review_images" {
+		t.Fatalf("review image gallery missing: %#v", rows)
+	}
+	images, ok := rows[0]["photo_images"].([]interface{})
+	if !ok || len(images) != 3 || images[0] != "/uploads/review-new.jpg" || images[1] != "/uploads/review-duplicate.jpg" || images[2] != "/uploads/legacy.jpg" {
+		t.Fatalf("unexpected gallery images: %#v", rows[0]["photo_images"])
+	}
+	if strings.Contains(resp.Body.String(), "hidden.jpg") {
+		t.Fatalf("hidden review image must not be public: %s", resp.Body.String())
+	}
 }
 
 func createVerifiedUser(t *testing.T, db *gorm.DB, id uint, nickname string) models.User {
@@ -115,200 +177,85 @@ func performDishPhotoRequest(
 	return recorder
 }
 
-func TestDishPhotoSubmissionUsesPendingReviewAndGalleryLimit(t *testing.T) {
+func TestRetiredDishSubmissionEndpointsReturnMigrationContract(t *testing.T) {
 	db := newDishPhotoTestDB(t)
-	createVerifiedUser(t, db, 1, "管理员")
-	createVerifiedUser(t, db, 2, "学生")
-	canteen := models.Canteen{Name: "一食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
-	if err := db.Create(&canteen).Error; err != nil {
-		t.Fatalf("create canteen: %v", err)
-	}
-	file := createTestFile(t, db, 10, 2, models.FileAccessPrivate)
-	submit := NewCanteenDishPhotoHandler(db)
-
-	// 1. 学生投稿第一张 → pending，不能绕过管理员审核公开
-	resp := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2,
-		fmt.Sprintf(`{"dish_name":"锅包肉","file_id":%d}`, file.ID))
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("submit status=%d body=%s", resp.Code, resp.Body.String())
-	}
-	var photo models.CanteenDishPhoto
-	if err := db.First(&photo).Error; err != nil {
-		t.Fatalf("get photo: %v", err)
-	}
-	if photo.Status != models.DishPhotoStatusPending {
-		t.Fatalf("photo status=%s want pending", photo.Status)
-	}
-	// pending 文件保持 private
-	var storedFile models.File
-	db.First(&storedFile, file.ID)
-	if storedFile.AccessScope != models.FileAccessPrivate {
-		t.Fatalf("file scope=%s want private after submission", storedFile.AccessScope)
-	}
-
-	// 2. 审核前公开列表不可见
-	dishHandler := NewCanteenDishHandler(db)
-	listResp := performDishPhotoRequest(t, dishHandler.ListDishes, http.MethodGet,
-		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
-		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
-		0, "")
-	if listResp.Code != http.StatusOK {
-		t.Fatalf("list status=%d", listResp.Code)
-	}
-	if strings.Contains(listResp.Body.String(), "锅包肉") {
-		t.Fatalf("pending dish must not be visible: %s", listResp.Body.String())
-	}
-
-	// 3. 继续上传第 2、3 张实拍 → 均 pending (待审核总数 3 张)
-	for i := 0; i < 2; i++ {
-		f := createTestFile(t, db, uint(20+i), 2, models.FileAccessPrivate)
-		r := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-			fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-			gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-			2,
-			fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, photo.DishID, f.ID))
-		if r.Code != http.StatusCreated {
-			t.Fatalf("submit %d status=%d body=%s", i, r.Code, r.Body.String())
-		}
-	}
-
-	var totalPending int64
-	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ? AND status = ?", photo.DishID, models.DishPhotoStatusPending).Count(&totalPending)
-	if totalPending != 3 {
-		t.Fatalf("pending count=%d want 3", totalPending)
-	}
-
-	// 4. 3/3 后再投稿第 4 张 → 409 dish_gallery_full 拦截
-	f4 := createTestFile(t, db, 40, 2, models.FileAccessPrivate)
-	r4 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2,
-		fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, photo.DishID, f4.ID))
-	if r4.Code != http.StatusConflict || !strings.Contains(r4.Body.String(), "dish_gallery_full") {
-		t.Fatalf("submit 4th status=%d body=%s want 409 gallery_full", r4.Code, r4.Body.String())
+	photoHandler := NewCanteenDishPhotoHandler(db)
+	for _, tc := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		path    string
+		params  gin.Params
+	}{
+		{
+			name:    "legacy dish photos",
+			handler: photoHandler.SubmitDishPhoto,
+			path:    "/api/canteens/1/dish-photos",
+			params:  gin.Params{{Key: "canteenId", Value: "1"}},
+		},
+		{
+			name:    "v2 dish submissions",
+			handler: photoHandler.SubmitDishPhotoV2,
+			path:    "/api/canteens/1/dish-submissions",
+			params:  gin.Params{{Key: "id", Value: "1"}},
+		},
+		{
+			name:    "dish resubmit",
+			handler: NewCanteenHandler(db).ResubmitDish,
+			path:    "/api/canteens/dishes/1/resubmit",
+			params:  gin.Params{{Key: "dishId", Value: "1"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := performDishPhotoRequest(t, tc.handler, http.MethodPost,
+				tc.path, tc.params, 1, `{"dish_name":"锅包肉","file_id":1}`)
+			if response.Code != http.StatusGone ||
+				!strings.Contains(response.Body.String(), `"code":"dish_submission_retired"`) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
-func TestHiddenDishCannotBeReusedOrApprovedThroughPhotoSubmission(t *testing.T) {
-	db := newDishPhotoTestDB(t)
-	createVerifiedUser(t, db, 1, "管理员")
-	student := createVerifiedUser(t, db, 2, "学生")
-	canteen := models.Canteen{Name: "隐藏菜测试店", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
-	if err := db.Create(&canteen).Error; err != nil {
-		t.Fatal(err)
-	}
-	dish := models.CanteenDish{
-		CanteenID: canteen.ID, Name: "隐藏鸡排", NormalizedName: "隐藏鸡排",
-		Status: models.DishStatusHidden, CreatedBy: student.ID,
-	}
-	if err := db.Create(&dish).Error; err != nil {
-		t.Fatal(err)
-	}
-	file := createTestFile(t, db, 901, student.ID, models.FileAccessPrivate)
-	submit := NewCanteenDishPhotoHandler(db)
-	response := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}}, student.ID,
-		fmt.Sprintf(`{"dish_name":"隐藏鸡排","file_id":%d}`, file.ID))
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "dish_name_hidden_conflict") {
-		t.Fatalf("hidden name reuse status=%d body=%s", response.Code, response.Body.String())
-	}
-
-	pending := models.CanteenDishPhoto{DishID: dish.ID, FileID: file.ID, UserID: student.ID, Status: models.DishPhotoStatusPending}
-	if err := db.Create(&pending).Error; err != nil {
-		t.Fatal(err)
-	}
-	admin := NewCanteenDishPhotoAdminHandler(db)
-	approved := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", pending.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(pending.ID)}}, 1, "")
-	if approved.Code != http.StatusConflict || !strings.Contains(approved.Body.String(), "dish_hidden_requires_restore") {
-		t.Fatalf("hidden approval status=%d body=%s", approved.Code, approved.Body.String())
-	}
-	if err := db.First(&pending, pending.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if pending.Status != models.DishPhotoStatusPending {
-		t.Fatalf("hidden photo status=%s want pending", pending.Status)
-	}
-}
-
-func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
+func TestDishPhotoArchiveHidesAndReconciles(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	createVerifiedUser(t, db, 1, "管理员")
 	createVerifiedUser(t, db, 2, "学生")
 	canteen := models.Canteen{Name: "二食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	db.Create(&canteen)
-	submit := NewCanteenDishPhotoHandler(db)
 	admin := NewCanteenDishPhotoAdminHandler(db)
 	dishHandler := NewCanteenDishHandler(db)
 
-	// reject 场景（直接对已入库图片或历史 pending 图片执行驳回）
-	fileR := createTestFile(t, db, 50, 2, models.FileAccessPrivate)
-	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "麻辣香锅", NormalizedName: "麻辣香锅", Status: models.DishStatusActive, CreatedBy: 2}
-	db.Create(&dish)
-	pR := models.CanteenDishPhoto{DishID: dish.ID, FileID: fileR.ID, UserID: 2, Status: models.DishPhotoStatusPending}
-	db.Create(&pR)
-
-	rejResp := performDishPhotoRequest(t, admin.RejectDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/reject", pR.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(pR.ID)}}, 1,
-		`{"reason":"blurry"}`)
-	if rejResp.Code != http.StatusOK {
-		t.Fatalf("reject status=%d body=%s", rejResp.Code, rejResp.Body.String())
+	// archive 场景：实拍下架
+	fileA := createTestFile(t, db, 60, 2, models.FileAccessPublic)
+	dishA := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "鸡腿饭", NormalizedName: "鸡腿饭",
+		Status: models.DishStatusActive, CreatedBy: 2,
 	}
-	db.First(&pR)
-	if pR.Status != models.DishPhotoStatusRejected || pR.RejectReason != "blurry" {
-		t.Fatalf("photo=%+v", pR)
+	if err := db.Create(&dishA).Error; err != nil {
+		t.Fatal(err)
 	}
-	var fileAfterReject models.File
-	db.First(&fileAfterReject, fileR.ID)
-	if fileAfterReject.AccessScope != models.FileAccessPrivate {
-		t.Fatalf("rejected file scope=%s want private", fileAfterReject.AccessScope)
+	pA := models.CanteenDishPhoto{
+		DishID: dishA.ID, FileID: fileA.ID, UserID: 2,
+		Status: models.DishPhotoStatusApproved,
+	}
+	if err := db.Create(&pA).Error; err != nil {
+		t.Fatal(err)
 	}
 
-	// 非法 reason → 400
-	badReason := performDishPhotoRequest(t, admin.RejectDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/reject", pR.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(pR.ID)}}, 1,
-		`{"reason":"hate"}`)
-	if badReason.Code != http.StatusBadRequest {
-		t.Fatalf("bad reason status=%d", badReason.Code)
-	}
-
-	// archive 场景：上传后 archive
-	fileA := createTestFile(t, db, 60, 2, models.FileAccessPrivate)
-	rA := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":"鸡腿饭","file_id":%d}`, fileA.ID))
-	if rA.Code != http.StatusCreated {
-		t.Fatalf("submit archive case status=%d", rA.Code)
-	}
-	var pA models.CanteenDishPhoto
-	db.Where("file_id = ?", fileA.ID).First(&pA)
-	approve := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", pA.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(pA.ID)}}, 1, "")
-	if approve.Code != http.StatusOK {
-		t.Fatalf("approve archive case status=%d body=%s", approve.Code, approve.Body.String())
-	}
 	arch := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
 		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", pA.ID),
 		gin.Params{{Key: "photoId", Value: fmt.Sprint(pA.ID)}}, 1, "")
 	if arch.Code != http.StatusOK {
 		t.Fatalf("archive status=%d body=%s", arch.Code, arch.Body.String())
 	}
-	// archived 后公共列表不可见；孤立文件无其他公开引用应被回收为 private
+	// archived 后实拍不可见，但 active 菜品本身仍保留在公共菜品库；
+	// 孤立文件无其他公开引用应被回收为 private。
 	listResp := performDishPhotoRequest(t, dishHandler.ListDishes, http.MethodGet,
 		fmt.Sprintf("/api/canteens/%d/dishes", canteen.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 0, "")
-	if strings.Contains(listResp.Body.String(), "鸡腿饭") {
-		t.Fatalf("archived dish must not be visible: %s", listResp.Body.String())
+	if !strings.Contains(listResp.Body.String(), "鸡腿饭") ||
+		!strings.Contains(listResp.Body.String(), `"photo_count":0`) {
+		t.Fatalf("active dish should remain visible without approved photo: %s", listResp.Body.String())
 	}
 	var fileAfterArchive models.File
 	db.First(&fileAfterArchive, fileA.ID)
@@ -317,142 +264,13 @@ func TestDishPhotoRejectKeepsPrivateAndArchiveHides(t *testing.T) {
 	}
 }
 
-func TestDishPhotoValidationErrors(t *testing.T) {
-	db := newDishPhotoTestDB(t)
-	createVerifiedUser(t, db, 1, "管理员")
-	createVerifiedUser(t, db, 2, "学生")
-	createVerifiedUser(t, db, 3, "他人")
-	canteen := models.Canteen{Name: "三食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
-	db.Create(&canteen)
-	submit := NewCanteenDishPhotoHandler(db)
-
-	// 未绑定教务 → 403
-	unbound := models.User{
-		ID:        4,
-		StudentID: "stu-4",
-		Nickname:  "未绑定",
-		EduBound:  false,
-	}
-	db.Create(&unbound)
-	fileForUnbound := createTestFile(t, db, 70, 4, models.FileAccessPrivate)
-	resp := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		4, fmt.Sprintf(`{"dish_name":"蛋炒饭","file_id":%d}`, fileForUnbound.ID))
-	if resp.Code != http.StatusForbidden || !strings.Contains(resp.Body.String(), "edu_binding_required") {
-		t.Fatalf("unbound status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 空菜名 → 400
-	fileE := createTestFile(t, db, 71, 2, models.FileAccessPrivate)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":"  ","file_id":%d}`, fileE.ID))
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("empty dish name status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 菜名超过 40 个可见字符 → 400（而非数据库 size:100 错误）
-	longName := strings.Repeat("长", MaxDishNameLength+1)
-	fileLong := createTestFile(t, db, 75, 2, models.FileAccessPrivate)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":%q,"file_id":%d}`, longName, fileLong.ID))
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("long dish name status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 恰好 40 个字符 → 40 字应成功
-	boundaryName := strings.Repeat("短", MaxDishNameLength)
-	fileOk := createTestFile(t, db, 76, 2, models.FileAccessPrivate)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":%q,"file_id":%d}`, boundaryName, fileOk.ID))
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("40-char dish name status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 引用他人 private File → 400（owner 校验）
-	fileOther := createTestFile(t, db, 72, 3, models.FileAccessPrivate)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":"蛋炒饭","file_id":%d}`, fileOther.ID))
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("other private file status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 非图片 File → 400
-	uploadDir := os.Getenv("UPLOAD_DIR")
-	if uploadDir != "" {
-		_ = os.WriteFile(filepath.Join(uploadDir, "doc.pdf"), []byte("pdf"), 0o600)
-	}
-	nonImage := models.File{
-		ID: 73, Hash: "h73", Path: "/uploads/doc.pdf", Size: 10,
-		MimeType: "application/pdf", UploaderID: 2, Status: "temporary", AccessScope: models.FileAccessPrivate,
-	}
-	db.Create(&nonImage)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, `{"dish_name":"蛋炒饭","file_id":73}`)
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("non-image file status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	// 未验证食堂 → 404
-	unverified := models.Canteen{Name: "未审核食堂", Image: "/uploads/x.png", CreatedBy: 2, Verified: false}
-	db.Create(&unverified)
-	fileU := createTestFile(t, db, 74, 2, models.FileAccessPrivate)
-	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", unverified.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(unverified.ID)}},
-		2, fmt.Sprintf(`{"dish_name":"蛋炒饭","file_id":%d}`, fileU.ID))
-	if resp.Code != http.StatusNotFound {
-		t.Fatalf("unverified canteen status=%d body=%s", resp.Code, resp.Body.String())
-	}
-}
-
-func TestDishPhotoNormalizedNameReuse(t *testing.T) {
-	db := newDishPhotoTestDB(t)
-	createVerifiedUser(t, db, 1, "管理员")
-	createVerifiedUser(t, db, 2, "学生二")
-	createVerifiedUser(t, db, 3, "学生三")
-	canteen := models.Canteen{Name: "四食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
-	db.Create(&canteen)
-	submit := NewCanteenDishPhotoHandler(db)
-
-	f1 := createTestFile(t, db, 80, 2, models.FileAccessPrivate)
-	r1 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_name":" 锅 包 肉 ","file_id":%d}`, f1.ID))
-	if r1.Code != http.StatusCreated {
-		t.Fatalf("first submit status=%d body=%s", r1.Code, r1.Body.String())
-	}
-
-	f2 := createTestFile(t, db, 81, 3, models.FileAccessPrivate)
-	r2 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		3, fmt.Sprintf(`{"dish_name":"锅包肉","file_id":%d}`, f2.ID))
-	if r2.Code != http.StatusCreated {
-		t.Fatalf("second submit status=%d body=%s", r2.Code, r2.Body.String())
-	}
-
-	var dishCount int64
-	db.Model(&models.CanteenDish{}).Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "锅包肉").Count(&dishCount)
-	if dishCount != 1 {
-		t.Fatalf("normalized dish count=%d want 1 (reuse)", dishCount)
-	}
-
-	var pendingCount int64
-	db.Model(&models.CanteenDishPhoto{}).Where("status = ?", models.DishPhotoStatusPending).Count(&pendingCount)
-	if pendingCount != 2 {
-		t.Fatalf("pending count=%d want 2", pendingCount)
+func TestRetiredDishPhotoEndpointContract(t *testing.T) {
+	response := performDishPhotoRequest(t, NewCanteenDishPhotoHandler(newDishPhotoTestDB(t)).SubmitDishPhoto,
+		http.MethodPost, "/api/canteens/1/dish-photos",
+		gin.Params{{Key: "canteenId", Value: "1"}}, 1,
+		`{"dish_name":"锅包肉","file_id":1}`)
+	if response.Code != http.StatusGone || !strings.Contains(response.Body.String(), "dish_submission_retired") {
+		t.Fatalf("retired submission status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -699,74 +517,3 @@ func TestAdminGetDishPhotoDetail(t *testing.T) {
 	}
 }
 
-func TestDishGalleryCapacityReopensAfterArchive(t *testing.T) {
-	db := newDishPhotoTestDB(t)
-	createVerifiedUser(t, db, 1, "管理员")
-	createVerifiedUser(t, db, 2, "学生A")
-	createVerifiedUser(t, db, 3, "学生B")
-	createVerifiedUser(t, db, 4, "学生C")
-	createVerifiedUser(t, db, 5, "学生D")
-
-	canteen := models.Canteen{Name: "十食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
-	db.Create(&canteen)
-	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "麻婆豆腐", NormalizedName: "麻婆豆腐", Status: models.DishStatusActive, CreatedBy: 2}
-	db.Create(&dish)
-
-	f1 := createTestFile(t, db, 301, 2, models.FileAccessPrivate)
-	f2 := createTestFile(t, db, 302, 3, models.FileAccessPrivate)
-	f3 := createTestFile(t, db, 303, 4, models.FileAccessPrivate)
-
-	submit := NewCanteenDishPhotoHandler(db)
-	r1 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		2, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f1.ID))
-	r2 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		3, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f2.ID))
-	r3 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		4, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f3.ID))
-	if r1.Code != http.StatusCreated || r2.Code != http.StatusCreated || r3.Code != http.StatusCreated {
-		t.Fatalf("setup 3 photos failed: r1=%d r2=%d r3=%d", r1.Code, r2.Code, r3.Code)
-	}
-
-	// 尝试上传第 4 张 → 409
-	f4 := createTestFile(t, db, 304, 5, models.FileAccessPrivate)
-	r4 := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		5, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f4.ID))
-	if r4.Code != http.StatusConflict {
-		t.Fatalf("4th photo want 409 got %d", r4.Code)
-	}
-
-	// 管理员下架第 1 张
-	var photo1 models.CanteenDishPhoto
-	db.Where("dish_id = ? AND file_id = ?", dish.ID, f1.ID).First(&photo1)
-
-	admin := NewCanteenDishPhotoAdminHandler(db)
-	approve1 := performDishPhotoRequest(t, admin.ApproveDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/approve", photo1.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo1.ID)}}, 1, "")
-	if approve1.Code != http.StatusOK {
-		t.Fatalf("approve photo1 status=%d body=%s", approve1.Code, approve1.Body.String())
-	}
-	archResp := performDishPhotoRequest(t, admin.ArchiveDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/dish-photos/%d/archive", photo1.ID),
-		gin.Params{{Key: "photoId", Value: fmt.Sprint(photo1.ID)}}, 1, "")
-	if archResp.Code != http.StatusOK {
-		t.Fatalf("archive status=%d", archResp.Code)
-	}
-
-	// 再次上传第 4 张 → 应该成功 201！
-	r4Retry := performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
-		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
-		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
-		5, fmt.Sprintf(`{"dish_id":%d,"file_id":%d}`, dish.ID, f4.ID))
-	if r4Retry.Code != http.StatusCreated {
-		t.Fatalf("retry 4th photo want 201 got %d body=%s", r4Retry.Code, r4Retry.Body.String())
-	}
-}

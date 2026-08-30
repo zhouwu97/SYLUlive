@@ -7,7 +7,6 @@ import '../models/home_widget_config.dart';
 import '../providers/course_schedule_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 class HomeWidgetExamEntry {
   const HomeWidgetExamEntry({
     required this.name,
@@ -96,13 +95,15 @@ class HomeWidgetPinResult {
   bool get requestSent => status == HomeWidgetPinStatus.requested;
 }
 
-/// Flutter 与 Android RemoteViews 之间唯一的数据、外观和操作同步入口。
+/// Flutter 与 Android RemoteViews / iOS WidgetKit 之间唯一的数据同步入口。
 class HomeWidgetService {
   HomeWidgetService._();
 
   static const _channel = MethodChannel('shenliyuan/widget');
   static const _courseDataKey = 'widget_course_data';
   static const _examDataKey = 'widget_exam_data';
+  static const courseWidgetSchemaVersion = 2;
+  static const examWidgetSchemaVersion = 2;
 
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
@@ -120,6 +121,7 @@ class HomeWidgetService {
     for (final kind in HomeWidgetKind.values) {
       final themeKey = HomeWidgetPreferenceKeys.theme(kind);
       final titleKey = HomeWidgetPreferenceKeys.title(kind);
+      final fontSizeKey = HomeWidgetPreferenceKeys.fontSize(kind);
       if (!prefs.containsKey(themeKey)) {
         await prefs.setString(themeKey, legacyTheme.storageName);
       }
@@ -128,6 +130,12 @@ class HomeWidgetService {
         await prefs.setString(
           titleKey,
           title == null || title.isEmpty ? kind.defaultTitle : title,
+        );
+      }
+      if (!prefs.containsKey(fontSizeKey)) {
+        await prefs.setString(
+          fontSizeKey,
+          HomeWidgetFontSize.standard.storageName,
         );
       }
     }
@@ -145,22 +153,34 @@ class HomeWidgetService {
       ),
       title: prefs.getString(HomeWidgetPreferenceKeys.title(kind)) ??
           kind.defaultTitle,
+      fontSize: HomeWidgetFontSize.fromStorage(
+        prefs.getString(HomeWidgetPreferenceKeys.fontSize(kind)),
+      ),
     );
   }
 
   static Future<void> updateAppearance(HomeWidgetAppearance appearance) async {
     await migrateLegacyAppearance();
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(
-      HomeWidgetPreferenceKeys.theme(appearance.kind),
-      appearance.theme.storageName,
-    );
-    await prefs.setString(
-      HomeWidgetPreferenceKeys.title(appearance.kind),
-      appearance.title.trim().isEmpty
-          ? appearance.kind.defaultTitle
-          : appearance.title.trim(),
-    );
+    final results = await Future.wait([
+      prefs.setString(
+        HomeWidgetPreferenceKeys.theme(appearance.kind),
+        appearance.theme.storageName,
+      ),
+      prefs.setString(
+        HomeWidgetPreferenceKeys.title(appearance.kind),
+        appearance.title.trim().isEmpty
+            ? appearance.kind.defaultTitle
+            : appearance.title.trim(),
+      ),
+      prefs.setString(
+        HomeWidgetPreferenceKeys.fontSize(appearance.kind),
+        appearance.fontSize.storageName,
+      ),
+    ]);
+    if (results.any((saved) => !saved)) {
+      throw StateError('桌面小组件外观保存失败');
+    }
     await _refreshNative();
   }
 
@@ -168,67 +188,37 @@ class HomeWidgetService {
     _lastCourseProvider = provider;
     try {
       final now = DateTime.now();
-      final weekday = now.weekday;
-      final academicWeek = provider.getAcademicWeek(now);
-      final weekName = ['', '一', '二', '三', '四', '五', '六', '日'][weekday];
-      final weekText = academicWeek == null ? '' : '第$academicWeek周';
-      final date = '${now.month}.${now.day} $weekText 周$weekName';
+      final semesterStartStr = provider.semesterStart != null
+          ? _date(provider.semesterStart!)
+          : null;
 
-      final todayCourses = provider.courses.where((course) {
-        if (course.weekday != weekday) return false;
-        return academicWeek == null ||
-            provider.isCourseActive(course, academicWeek);
-      }).toList()
-        ..sort((a, b) => a.startSection.compareTo(b.startSection));
-
-      const starts = [
-        '08:00',
-        '08:55',
-        '10:00',
-        '10:55',
-        '13:00',
-        '13:55',
-        '14:50',
-        '15:45',
-        '16:40',
-        '17:35',
-        '18:30',
-        '19:25',
-      ];
-      const ends = [
-        '08:45',
-        '09:40',
-        '10:45',
-        '11:40',
-        '13:45',
-        '14:40',
-        '15:35',
-        '16:30',
-        '17:25',
-        '18:20',
-        '19:15',
-        '20:10',
-      ];
-
-      final courses = todayCourses.map((course) {
-        final startIndex = (course.startSection - 1).clamp(0, 11);
-        final endIndex = (course.endSection - 1).clamp(0, 11);
+      final courses = provider.courses.map((course) {
         return {
           'name': course.name,
-          'time': '${starts[startIndex]}-${ends[endIndex]}',
+          'weekday': course.weekday,
+          'start_section': course.startSection,
+          'end_section': course.endSection,
+          'weeks': course.weeks,
           'location': course.location ?? '',
           'teacher': course.teacher ?? '',
           'color': course.color,
         };
       }).toList();
 
+      final payload = {
+        'schema_version': courseWidgetSchemaVersion,
+        'updated_at': now.toIso8601String(),
+        'title': '沈理院课表',
+        'semester_start': semesterStartStr,
+        'academic_year': provider.selectedYear,
+        'semester': provider.selectedSemester,
+        'courses': courses,
+      };
+
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(
-        _courseDataKey,
-        jsonEncode({'title': '沈理院课表', 'date': date, 'courses': courses}),
-      );
+      await prefs.setString(_courseDataKey, jsonEncode(payload));
       await _refreshNative();
-      debugPrint('课表小组件已同步：${courses.length} 门课，日期 $date');
+      debugPrint('课表小组件已全量同步 (Schema v$courseWidgetSchemaVersion)：${courses.length} 门课');
     } catch (error) {
       debugPrint('课表小组件同步失败：$error');
     }
@@ -255,7 +245,14 @@ class HomeWidgetService {
       }).toList();
 
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(_examDataKey, jsonEncode(exams));
+      await prefs.setString(
+        _examDataKey,
+        jsonEncode({
+          'schema_version': examWidgetSchemaVersion,
+          'updated_at': now.toIso8601String(),
+          'exams': exams,
+        }),
+      );
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
     } catch (error) {
@@ -335,28 +332,135 @@ class HomeWidgetService {
         final raw = prefs.getString(_courseDataKey);
         if (raw == null) return const HomeWidgetPreviewData();
         final data = jsonDecode(raw) as Map<String, dynamic>;
-        final courses = (data['courses'] as List<dynamic>? ?? const []);
-        return HomeWidgetPreviewData(
-          subtitle: data['date']?.toString() ?? '',
-          items: courses.map((item) {
-            final course = item as Map<String, dynamic>;
-            final location = course['location']?.toString() ?? '';
-            final teacher = course['teacher']?.toString() ?? '';
-            return HomeWidgetPreviewItem(
-              title: course['name']?.toString() ?? '',
-              primaryDetail: course['time']?.toString() ?? '',
-              secondaryDetail: [location, teacher]
-                  .where((value) => value.isNotEmpty)
-                  .join(' · '),
-              color: course['color']?.toString() ?? '#3B82F6',
-            );
-          }).toList(),
-        );
+        final version = data['schema_version'];
+        if (version == 2) {
+          final now = DateTime.now();
+          final weekday = now.weekday;
+          final semesterStartStr = data['semester_start']?.toString();
+          int? academicWeek;
+          if (semesterStartStr != null && semesterStartStr.isNotEmpty) {
+            final parts =
+                semesterStartStr.split('-').map(int.tryParse).toList();
+            if (parts.length == 3 && parts.every((p) => p != null)) {
+              final start = DateTime(parts[0]!, parts[1]!, parts[2]!);
+              final today = DateTime(now.year, now.month, now.day);
+              final diff = today.difference(start).inDays;
+              if (diff >= 0) {
+                academicWeek = (diff ~/ 7) + 1;
+              }
+            }
+          }
+          final weekName = ['', '一', '二', '三', '四', '五', '六', '日'][weekday];
+          final weekText = academicWeek == null ? '' : '第$academicWeek周 ';
+          final date = '${now.month}.${now.day} ${weekText}周$weekName';
+
+          const starts = [
+            '08:00',
+            '08:55',
+            '10:00',
+            '10:55',
+            '13:00',
+            '13:55',
+            '14:50',
+            '15:45',
+            '16:40',
+            '17:35',
+            '18:30',
+            '19:25',
+          ];
+          const ends = [
+            '08:45',
+            '09:40',
+            '10:45',
+            '11:40',
+            '13:45',
+            '14:40',
+            '15:35',
+            '16:30',
+            '17:25',
+            '18:20',
+            '19:15',
+            '20:10',
+          ];
+
+          final rawCourses = (data['courses'] as List<dynamic>? ?? const []);
+          final matchingCourses = <Map<String, dynamic>>[];
+          for (final item in rawCourses) {
+            if (item is! Map<String, dynamic>) continue;
+            final courseWeekday = (item['weekday'] as num?)?.toInt() ?? 0;
+            if (courseWeekday != weekday) continue;
+            final weeks = (item['weeks'] as List<dynamic>?)
+                    ?.map((e) => (e as num?)?.toInt() ?? 0)
+                    .where((w) => w > 0)
+                    .toList() ??
+                const <int>[];
+            if (academicWeek != null &&
+                weeks.isNotEmpty &&
+                !weeks.contains(academicWeek)) {
+              continue;
+            }
+            matchingCourses.add(item);
+          }
+          matchingCourses.sort((a, b) {
+            final startA = (a['start_section'] as num?)?.toInt() ?? 0;
+            final startB = (b['start_section'] as num?)?.toInt() ?? 0;
+            return startA.compareTo(startB);
+          });
+
+          return HomeWidgetPreviewData(
+            subtitle: date,
+            items: matchingCourses.map((course) {
+              final startSection =
+                  (course['start_section'] as num?)?.toInt() ?? 1;
+              final endSection =
+                  (course['end_section'] as num?)?.toInt() ?? startSection;
+              final startIndex = (startSection - 1).clamp(0, 11);
+              final endIndex = (endSection - 1).clamp(0, 11);
+              final time = '${starts[startIndex]}-${ends[endIndex]}';
+              final location = course['location']?.toString() ?? '';
+              final teacher = course['teacher']?.toString() ?? '';
+              return HomeWidgetPreviewItem(
+                title: course['name']?.toString() ?? '',
+                primaryDetail: time,
+                secondaryDetail: [location, teacher]
+                    .where((value) => value.isNotEmpty)
+                    .join(' · '),
+                color: course['color']?.toString() ?? '#3B82F6',
+              );
+            }).toList(),
+          );
+        }
+        if (version == 1) {
+          final courses = (data['courses'] as List<dynamic>? ?? const []);
+          return HomeWidgetPreviewData(
+            subtitle: data['date']?.toString() ?? '',
+            items: courses.map((item) {
+              final course = item as Map<String, dynamic>;
+              final location = course['location']?.toString() ?? '';
+              final teacher = course['teacher']?.toString() ?? '';
+              return HomeWidgetPreviewItem(
+                title: course['name']?.toString() ?? '',
+                primaryDetail: course['time']?.toString() ?? '',
+                secondaryDetail: [location, teacher]
+                    .where((value) => value.isNotEmpty)
+                    .join(' · '),
+                color: course['color']?.toString() ?? '#3B82F6',
+              );
+            }).toList(),
+          );
+        }
+        return const HomeWidgetPreviewData();
       }
 
       final raw = prefs.getString(_examDataKey);
       if (raw == null) return const HomeWidgetPreviewData();
-      final exams = jsonDecode(raw) as List<dynamic>;
+      final decoded = jsonDecode(raw);
+      final exams = decoded is Map<String, dynamic>
+          ? (decoded['schema_version'] is int &&
+                  (decoded['schema_version'] as int) <= 2)
+              ? (decoded['exams'] as List<dynamic>? ?? const [])
+              : const <dynamic>[]
+          : decoded as List<dynamic>;
       return HomeWidgetPreviewData(
         items: exams.map((item) {
           final exam = item as Map<String, dynamic>;
@@ -378,7 +482,11 @@ class HomeWidgetService {
 
   static Future<void> _refreshNative() async {
     try {
-      await _channel.invokeMethod<void>('updateWidget');
+      final prefs = await AppPreferencesStore.getInstance();
+      await _channel.invokeMethod<void>('updateWidget', {
+        'course_data': prefs.getString(_courseDataKey),
+        'exam_data': prefs.getString(_examDataKey),
+      });
     } on MissingPluginException {
       // 桌面端和单元测试没有 Android 通道，数据仍会正常写入。
     } catch (error) {

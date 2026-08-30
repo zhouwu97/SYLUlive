@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.6.10+1610
+version: 1.6.11+1611
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -53,6 +53,7 @@ dependencies:
   add_2_calendar: 3.0.1
   flutter_staggered_grid_view: ^0.7.0
   gal: ^2.3.2
+  image: ^4.9.2
 
 dev_dependencies:
   flutter_test:
@@ -60,12 +61,16 @@ dev_dependencies:
   flutter_lints: ^3.0.1
   file: ^7.0.0
   image_picker_platform_interface: ^2.11.1
+  path_provider_platform_interface: ^2.1.2
 
 flutter:
   uses-material-design: true
+  shaders:
+    - shaders/liquid_nav_lens.frag
+    - shaders/liquid_nav_dock.frag
   assets:
     - assets/images/bg-mobile.png
-    - assets/images/map.jpg
+    - assets/images/map.png
     - assets/images/mingfeng.png
     - assets/images/morenbeijing.jpeg
     - assets/images/wallpaper_custom_01.png

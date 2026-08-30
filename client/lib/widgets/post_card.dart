@@ -9,16 +9,32 @@ import '../providers/water_section_provider.dart';
 import '../screens/post_detail_screen.dart';
 import '../screens/user_home_screen.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_motion.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
+import '../utils/post_clipboard.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
+import 'post_content_link_text.dart';
 import 'post_media/post_media_view.dart';
 import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
+
+bool _isMeaningfulLegacyTopicLabel(String label) =>
+    label.trim().isNotEmpty &&
+    !_ignoredLegacyTopicLabels.contains(label.trim());
+
+enum PostCardVariant { standard, homeFeed }
 
 class PostCard extends StatefulWidget {
   final Post post;
+  final PostCardVariant variant;
   final VoidCallback? onTap;
   final bool showPrice;
   final bool showWarning;
@@ -26,7 +42,7 @@ class PostCard extends StatefulWidget {
   final bool disableAuthorNavigation;
   final ValueChanged<int>? onAuthorTap;
 
-  /// 评论按钮点击回调；为空时默认进入详情并聚焦评论输入框。
+  /// 评论按钮点击回调；为空时默认进入详情并滚到评论区，不自动聚焦输入框。
   final ValueChanged<Post>? onCommentTap;
 
   /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
@@ -38,6 +54,7 @@ class PostCard extends StatefulWidget {
   const PostCard({
     super.key,
     required this.post,
+    this.variant = PostCardVariant.standard,
     this.onTap,
     this.showPrice = false,
     this.showWarning = false,
@@ -57,6 +74,7 @@ class PostCard extends StatefulWidget {
 
 class _PostCardState extends State<PostCard>
     with AutomaticKeepAliveClientMixin {
+  bool _likePressed = false;
   @override
   bool get wantKeepAlive => true;
 
@@ -80,6 +98,12 @@ class _PostCardState extends State<PostCard>
     final provider = context.read<PostProvider>();
     final current = _readDisplayPost(context);
     if (provider.isLikePending(current.id)) return;
+    if (widget.variant == PostCardVariant.homeFeed && mounted) {
+      setState(() => _likePressed = true);
+      Future<void>.delayed(AppMotion.micro, () {
+        if (mounted) setState(() => _likePressed = false);
+      });
+    }
     await provider.toggleLikeOptimistic(current);
   }
 
@@ -102,10 +126,16 @@ class _PostCardState extends State<PostCard>
           postId: post.id,
           isMarket: post.boardId == 2,
           initialPost: post,
-          focusReplyComposer: true,
+          scrollToReplies: true,
         ),
       ),
     );
+  }
+
+  Future<void> _copyPostContent() async {
+    final copied = await PostClipboard.copy(_readDisplayPost(context));
+    if (!mounted || !copied) return;
+    AppFeedback.success('帖子正文已复制', context: context);
   }
 
   @override
@@ -125,8 +155,9 @@ class _PostCardState extends State<PostCard>
         isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
 
     // 只统计真正具有有效地址的图片
-    final validImageCount =
-        post.images.where((image) => image.url.trim().isNotEmpty).length;
+    final validImageCount = post.images
+        .where((image) => image.resolvedOriginUrl.trim().isNotEmpty)
+        .length;
 
     // 有图片时标题统一只显示一行
     final titleMaxLines = validImageCount > 0 ? 1 : 2;
@@ -138,6 +169,17 @@ class _PostCardState extends State<PostCard>
             ? 2
             : 4;
 
+    if (widget.variant == PostCardVariant.homeFeed) {
+      return _buildHomeFeedCard(
+        context,
+        post: post,
+        isDark: isDark,
+        displayAvatar: displayAvatar,
+        displayNickname: displayNickname,
+        validImageCount: validImageCount,
+      );
+    }
+
     return GlassContainer(
       margin: EdgeInsets.only(bottom: isDesktop ? 14 : 8),
       borderRadius: isDesktop ? 16 : 12,
@@ -146,9 +188,8 @@ class _PostCardState extends State<PostCard>
       backgroundColor: isDark
           ? AppColors.surfaceSecondaryDark
           : AppColors.surfaceSecondaryLight,
-      borderColor: isDark
-          ? AppColors.borderNormalDark
-          : AppColors.borderNormalLight,
+      borderColor:
+          isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight,
       onTap: widget.onTap,
       child: Padding(
         padding: EdgeInsets.all(isDesktop ? 16 : 12),
@@ -273,16 +314,20 @@ class _PostCardState extends State<PostCard>
               ),
             ],
             if (post.title.isNotEmpty) SizedBox(height: isDesktop ? 8 : 4),
-            Text(
-              post.content,
-              maxLines: contentMaxLines,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isDark
-                    ? AppColors.textPrimaryDark
-                    : AppColors.textPrimaryLight,
-                height: isDesktop ? 1.4 : 1.3,
-                fontSize: isDesktop ? 15 : 13,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: _copyPostContent,
+              child: PostContentLinkText(
+                text: post.content,
+                maxLines: contentMaxLines,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
+                  height: isDesktop ? 1.4 : 1.3,
+                  fontSize: isDesktop ? 15 : 13,
+                ),
               ),
             ),
             if (validImageCount > 0) ...[
@@ -315,10 +360,368 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  /// 首页专用信息流外观。标准卡片继续保留给个人主页、搜索和其他复用位置。
+  Widget _buildHomeFeedCard(
+    BuildContext context, {
+    required Post post,
+    required bool isDark,
+    required String displayAvatar,
+    required String displayNickname,
+    required int validImageCount,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final labels = _waterLabels(context, post);
+    final surface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final border =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+    final secondary =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final contentMaxLines = validImageCount == 0 ? 3 : 2;
+    final hasUsefulTag = _isMeaningfulLegacyTopicLabel(labels.tagLabel);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: border.withValues(alpha: isDark ? 0.82 : 0.52),
+          width: 0.8,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              0,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHomeAuthorRow(
+                  context,
+                  post: post,
+                  isDark: isDark,
+                  displayAvatar: displayAvatar,
+                  displayNickname: displayNickname,
+                  labels: labels,
+                  secondary: secondary,
+                ),
+                if (post.title.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (post.isActivePinned) ...[
+                        _buildPinnedBadge(false),
+                        const SizedBox(width: AppSpacing.xs),
+                      ],
+                      if (post.isFeatured) ...[
+                        _buildFeaturedBadge(
+                          false,
+                          label: '精华',
+                          subtle: true,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                      ] else if (post.waterSectionFeatured) ...[
+                        _buildFeaturedBadge(
+                          false,
+                          label: '版块精华',
+                          subtle: true,
+                          isDark: isDark,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                      ],
+                      Expanded(
+                        child: Text(
+                          post.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.feedTitle.copyWith(
+                            color: colors.onSurface,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (post.content.trim().isNotEmpty) ...[
+                  SizedBox(
+                    height: post.title.isEmpty ? 0 : AppSpacing.xs,
+                  ),
+                  PostContentLinkText(
+                    text: post.content,
+                    maxLines: contentMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.feedBody.copyWith(
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : const Color(0xFF4E565A),
+                    ),
+                  ),
+                ],
+                if (hasUsefulTag) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '#${labels.tagLabel}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.feedTag.copyWith(
+                      color: AppColors.brandPrimary,
+                    ),
+                  ),
+                ],
+                if (validImageCount > 0) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  PostMediaView(
+                    images: post.images,
+                    variant: PostMediaVariant.homeFeed,
+                    onTap: widget.onTap,
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.xs),
+                _buildHomeBottomMeta(context, post: post, secondary: secondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeAuthorRow(
+    BuildContext context, {
+    required Post post,
+    required bool isDark,
+    required String displayAvatar,
+    required String displayNickname,
+    required _WaterPostLabels labels,
+    required Color secondary,
+  }) {
+    final isMine = context.read<AuthProvider>().user?.id == post.authorId;
+    final sectionLabel = labels.sectionLabel;
+    return Row(
+      children: [
+        SizedBox(
+          width: 44,
+          height: 44,
+          child: InkWell(
+            onTap: widget.disableAuthorNavigation
+                ? null
+                : () => _openAuthor(context),
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: CachedAvatar(
+                radius: 18,
+                imageUrl: displayAvatar.isNotEmpty
+                    ? ApiConstants.fullUrl(displayAvatar)
+                    : null,
+                fallbackText: displayNickname,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: InkWell(
+            onTap: widget.disableAuthorNavigation
+                ? null
+                : () => _openAuthor(context),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          displayNickname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.feedAuthor.copyWith(
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
+                          ),
+                        ),
+                      ),
+                      if (sectionLabel.isNotEmpty) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        Flexible(
+                          child: _buildHomeSectionBadge(
+                            sectionLabel,
+                            isDark: isDark,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatTime(post.createdAt),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.feedTime.copyWith(
+                      color: isDark
+                          ? AppColors.textTertiaryDark
+                          : AppColors.textTertiaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (widget.onPostAction != null)
+          FeedPostActionMenu(
+            isMine: isMine,
+            isDark: isDark,
+            onAction: widget.onPostAction!,
+            allowNotInterested: widget.allowNotInterested,
+            allowHideAuthor: widget.allowHideAuthor,
+            allowReport: widget.allowReport,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHomeSectionBadge(String label, {required bool isDark}) {
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.brandSurfaceDark
+            : AppColors.feedSectionSurfaceLight,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.feedBadge.copyWith(
+          color: AppColors.brandPrimary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeBottomMeta(
+    BuildContext context, {
+    required Post post,
+    required Color secondary,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildHomeMetaAction(
+            icon: Icons.visibility_outlined,
+            label: '${post.viewCount}',
+            color: secondary,
+          ),
+        ),
+        Expanded(
+          child: _buildHomeMetaAction(
+            key: const ValueKey('post-card-comment'),
+            icon: Icons.chat_bubble_outline_rounded,
+            label: '${post.replyCount}',
+            color: secondary,
+            onTap: _handleCommentTap,
+          ),
+        ),
+        Expanded(
+          child: _buildHomeMetaAction(
+            key: const ValueKey('post-card-like'),
+            icon: post.isLiked
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            label: '${post.likeCount}',
+            color: post.isLiked ? AppColors.brandPrimary : secondary,
+            onTap: _toggleLike,
+            scale: _likePressed ? 0.92 : 1,
+          ),
+        ),
+        Expanded(
+          child: _buildHomeMetaAction(
+            icon: Icons.ios_share_outlined,
+            label: '',
+            color: secondary,
+            onTap: () => _sharePost(post),
+            alignEnd: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHomeMetaAction({
+    Key? key,
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onTap,
+    double scale = 1,
+    bool alignEnd = false,
+  }) {
+    return Align(
+      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedScale(
+                  scale: scale,
+                  duration: AppMotion.micro,
+                  curve: AppMotion.standard,
+                  child: Icon(icon, size: 17, color: color),
+                ),
+                if (label.isNotEmpty) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    label,
+                    style: AppTextStyles.feedMeta.copyWith(color: color),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sharePost(Post post) async {
+    final text = [
+      if (post.title.trim().isNotEmpty) post.title.trim(),
+      post.content.trim(),
+    ].where((item) => item.isNotEmpty).join('\n');
+    await Share.share(text.isEmpty ? '分享一条校园帖子' : text, subject: 'SYLUlive 帖子');
+  }
+
   Widget _buildCategoryTag(BuildContext context, bool isDark, Post post) {
     final labels = _waterLabels(context, post);
-    final text = labels.sectionLabel.isNotEmpty && labels.tagLabel.isNotEmpty
-        ? '${labels.sectionLabel} · ${labels.tagLabel}'
+    final legacyTag =
+        _isMeaningfulLegacyTopicLabel(labels.tagLabel) ? labels.tagLabel : '';
+    final text = labels.sectionLabel.isNotEmpty && legacyTag.isNotEmpty
+        ? '${labels.sectionLabel} · $legacyTag'
         : labels.sectionLabel;
     if (text.isEmpty) return const SizedBox.shrink();
     return Container(
@@ -326,9 +729,8 @@ class _PostCardState extends State<PostCard>
       padding: const EdgeInsets.symmetric(horizontal: 7),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceMutedDark
-            : AppColors.surfaceMutedLight,
+        color:
+            isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -347,15 +749,16 @@ class _PostCardState extends State<PostCard>
 
   Widget _buildWaterInlineTag(BuildContext context, bool isDark, Post post) {
     final tagLabel = _waterLabels(context, post).tagLabel;
-    if (tagLabel.isEmpty) return const SizedBox.shrink();
+    if (!_isMeaningfulLegacyTopicLabel(tagLabel)) {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.surfaceMutedDark
-              : AppColors.surfaceMutedLight,
+          color:
+              isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
@@ -565,7 +968,34 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildFeaturedBadge(bool isDesktop, {String label = '精华'}) {
+  Widget _buildFeaturedBadge(
+    bool isDesktop, {
+    String label = '精华',
+    bool subtle = false,
+    bool isDark = false,
+  }) {
+    if (subtle) {
+      return Container(
+        height: 20,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.feedFeaturedSurfaceDark
+              : AppColors.feedFeaturedSurfaceLight,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.feedBadge.copyWith(
+            color: isDark
+                ? AppColors.feedFeaturedTextDark
+                : AppColors.feedFeaturedTextLight,
+          ),
+        ),
+      );
+    }
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 7 : 6,
@@ -636,7 +1066,12 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
-    return PostMediaView(images: images);
+    return PostMediaView(
+      images: images,
+      variant: widget.variant == PostCardVariant.homeFeed
+          ? PostMediaVariant.homeFeed
+          : PostMediaVariant.feed,
+    );
     /*
     final validImages =
         images.where((image) => image.url.trim().isNotEmpty).toList();
@@ -810,7 +1245,9 @@ class _PostCardState extends State<PostCard>
                   size: 16,
                   color: post.isLiked
                       ? const Color(0xFFFF6B6B)
-                      : (isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
+                      : (isDark
+                          ? AppColors.iconMutedDark
+                          : AppColors.iconMutedLight),
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -819,7 +1256,9 @@ class _PostCardState extends State<PostCard>
                     fontSize: 12,
                     color: post.isLiked
                         ? const Color(0xFFFF6B6B)
-                        : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                        : (isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight),
                   ),
                 ),
               ],
@@ -840,14 +1279,18 @@ class _PostCardState extends State<PostCard>
                 Icon(
                   Icons.chat_bubble_outline,
                   size: 16,
-                  color: isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight,
+                  color: isDark
+                      ? AppColors.iconMutedDark
+                      : AppColors.iconMutedLight,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '${post.replyCount}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                   ),
                 ),
               ],

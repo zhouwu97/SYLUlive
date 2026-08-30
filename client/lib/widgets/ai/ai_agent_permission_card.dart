@@ -100,9 +100,13 @@ class AiAgentPermissionCard extends StatelessWidget {
   }
 
   static String _datasetLabel(List<String> datasets) {
-    if (datasets.contains('grades') || datasets.contains('academic')) {
-      return '成绩';
+    if (datasets.contains('grades')) return '成绩';
+    if (datasets.contains('credit_requirements') ||
+        datasets.contains('credit_summary')) {
+      return '学分要求';
     }
+    if (datasets.contains('academic_situation')) return '学业情况';
+    if (datasets.contains('academic')) return '学业数据';
     if (datasets.contains('schedule')) return '课表';
     if (datasets.contains('erke')) return '二课';
     return '校园数据';

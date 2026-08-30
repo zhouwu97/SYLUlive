@@ -19,7 +19,8 @@ class AppFeedback {
   }) {
     final data = e.response?.data;
     if (data is Map) {
-      final detail = data['detail'] ?? data['error'] ?? data['message'];
+      final detail =
+          data['message'] ?? data['details'] ?? data['detail'] ?? data['error'];
       if (detail is Map) {
         final nestedMessage =
             detail['message'] ?? detail['error'] ?? detail['detail'];

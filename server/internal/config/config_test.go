@@ -55,6 +55,15 @@ func TestLoadCompetitionAwardEvidenceDirDefaultsByEnvironmentAndAllowsOverride(t
 	require.Equal(t, "/srv/private/competition-evidence", overridden.CompetitionAwardEvidenceDir)
 }
 
+func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "")
+	require.False(t, Load().ImageVariantWorkerEnabled)
+
+	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
+	require.True(t, Load().ImageVariantWorkerEnabled)
+}
+
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("JWT_SECRET", "your-super-secret-jwt-key-change-this")
@@ -244,9 +253,21 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	cfg := Load()
 	require.False(t, cfg.AIEnabled)
 	require.Empty(t, cfg.AIAPIKey)
-	require.Equal(t, "gpt-5.4-mini", cfg.AIChatModel)
+	require.Equal(t, "gpt-5.4", cfg.AIChatModel)
 	require.Equal(t, "openai-compatible", cfg.AIProvider)
 	require.False(t, cfg.AILangChainRAGEnabled)
+}
+
+func TestLoadAgentDefaultsDisabledWhenLegacyAIIsEnabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_API_KEY", "server-only-key")
+
+	cfg := Load()
+
+	require.True(t, cfg.AIEnabled)
+	require.False(t, cfg.AIAgentEnabled)
+	require.Equal(t, 0, cfg.AIAgentRolloutPercent)
 }
 
 func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
@@ -254,7 +275,7 @@ func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 	t.Setenv("AI_ENABLED", "true")
 	t.Setenv("AI_API_KEY", "generic-key")
 	t.Setenv("AI_BASE_URL", "https://gateway.example.test/v1")
-	t.Setenv("AI_CHAT_MODEL", "gpt-5.4-mini")
+	t.Setenv("AI_CHAT_MODEL", "gpt-5.4")
 	t.Setenv("DEEPSEEK_API_KEY", "legacy-key")
 	t.Setenv("DEEPSEEK_BASE_URL", "https://legacy.example.test")
 	t.Setenv("DEEPSEEK_CHAT_MODEL", "legacy-model")
@@ -263,10 +284,20 @@ func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 	require.Equal(t, "openai-compatible", cfg.AIProvider)
 	require.Equal(t, "generic-key", cfg.AIAPIKey)
 	require.Equal(t, "https://gateway.example.test/v1", cfg.AIBaseURL)
-	require.Equal(t, "gpt-5.4-mini", cfg.AIChatModel)
+	require.Equal(t, "gpt-5.4", cfg.AIChatModel)
 }
 
-func TestLoadAIRejectsModelsOtherThanGPT54Mini(t *testing.T) {
+func TestLoadAIAllowsApprovedChatModels(t *testing.T) {
+	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini"} {
+		setBaseConfigEnv(t, "debug")
+		t.Setenv("AI_ENABLED", "true")
+		t.Setenv("AI_API_KEY", "server-only-key")
+		t.Setenv("AI_CHAT_MODEL", model)
+		require.Equal(t, model, Load().AIChatModel)
+	}
+}
+
+func TestLoadAIRejectsUnapprovedChatModel(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")
 	t.Setenv("AI_API_KEY", "server-only-key")

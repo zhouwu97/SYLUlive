@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
+import 'package:shenliyuan/models/ai_conversation.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
+import 'package:shenliyuan/models/ai_run.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
+import 'package:shenliyuan/models/agent_context.dart';
 import 'package:shenliyuan/providers/ai_assistant_provider.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
@@ -17,6 +22,19 @@ AiCapabilities _p0Capabilities() {
     chatEnabled: false,
     phase: 'p0',
     features: AiFeatures(policyRag: false, scheduleWindows: false),
+    quota: AiQuota(limit: 3, remaining: 3, windowSeconds: 3600),
+    maxMessageChars: 20,
+  );
+}
+
+AiCapabilities _availableCapabilities() {
+  return const AiCapabilities(
+    enabled: true,
+    accessAllowed: true,
+    internalTestOnly: false,
+    chatEnabled: true,
+    phase: 'p2',
+    features: AiFeatures(policyRag: true, scheduleWindows: false),
     quota: AiQuota(limit: 3, remaining: 3, windowSeconds: 3600),
     maxMessageChars: 20,
   );
@@ -153,6 +171,216 @@ void main() {
       const ['/ai/capabilities', '/ai/conversations'],
     );
     expect(provider.error, isNull);
+  });
+
+  test('账号 A 的会话列表迟到时不覆盖账号 B 的状态', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final firstListStarted = Completer<void>();
+    final secondListStarted = Completer<void>();
+    final firstListGate = Completer<void>();
+    final secondListGate = Completer<void>();
+    var listIndex = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/ai/capabilities') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'enabled': true,
+                  'access_allowed': true,
+                  'chat_enabled': true,
+                  'phase': 'p2',
+                  'features': {'policy_rag': true},
+                  'quota': {
+                    'limit': 3,
+                    'remaining': 3,
+                    'window_seconds': 3600,
+                  },
+                  'max_message_chars': 20,
+                },
+              ),
+            );
+            return;
+          }
+          if (options.path != '/ai/conversations') {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                message: 'unexpected ${options.path}',
+              ),
+            );
+            return;
+          }
+          final index = ++listIndex;
+          final gate = index == 1 ? firstListGate : secondListGate;
+          if (index == 1) {
+            firstListStarted.complete();
+          } else {
+            secondListStarted.complete();
+          }
+          gate.future.then((_) {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'conversations': [
+                    {
+                      'id': index == 1 ? 'account-a' : 'account-b',
+                      'title': index == 1 ? 'A 的会话' : 'B 的会话',
+                    },
+                  ],
+                },
+              ),
+            );
+          });
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    final staleBootstrap = provider.retryBootstrap();
+    await firstListStarted.future;
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    final currentBootstrap = provider.retryBootstrap();
+    await secondListStarted.future;
+    firstListGate.complete();
+    await staleBootstrap;
+
+    expect(provider.loading, isTrue);
+    expect(provider.loadingConversations, isTrue);
+    expect(provider.conversations, isEmpty);
+    expect(provider.error, isNull);
+
+    secondListGate.complete();
+    await currentBootstrap;
+
+    expect(provider.loading, isFalse);
+    expect(provider.loadingConversations, isFalse);
+    expect(provider.conversations.single.id, 'account-b');
+    expect(provider.error, isNull);
+  });
+
+  test('账号 A 的会话详情错误不会写入账号 B', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final requestStarted = Completer<void>();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestStarted.complete();
+          responseGate.future.then((_) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: 'account A offline',
+              ),
+            );
+          });
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    final staleOpen = provider.openConversation('account-a-conversation');
+    await requestStarted.future;
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    responseGate.complete();
+    await staleOpen;
+
+    expect(provider.loading, isFalse);
+    expect(provider.conversationId, isNull);
+    expect(provider.messages, isEmpty);
+    expect(provider.conversations, isEmpty);
+    expect(provider.error, isNull);
+  });
+
+  test('账号切换会主动取消服务器 Agent SSE 并清空 Run', () async {
+    final events = StreamController<Uint8List>();
+    addTearDown(events.close);
+    final eventRequestStarted = Completer<void>();
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/ai/runs') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 202,
+                data: const {
+                  'run': {
+                    'id': 'run-a',
+                    'conversation_id': 'conversation-a',
+                    'state': 'created',
+                  },
+                  'duplicate': false,
+                },
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/ai/runs/run-a/events') {
+            eventRequestStarted.complete();
+            handler.resolve(
+              Response<ResponseBody>(
+                requestOptions: options,
+                statusCode: 200,
+                data: ResponseBody(events.stream, 200),
+              ),
+            );
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'unexpected ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.resetForAccountChange(accountId: 1, sessionGeneration: 1);
+    expect(provider.submit('奖学金'), AiSubmitResult.accepted);
+    await eventRequestStarted.future;
+    for (var index = 0; index < 10 && !events.hasListener; index++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(events.hasListener, isTrue);
+
+    provider.resetForAccountChange(accountId: 2, sessionGeneration: 2);
+    for (var index = 0; index < 100 && events.hasListener; index++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(events.hasListener, isFalse);
+    expect(provider.messages, isEmpty);
+    expect(provider.conversationId, isNull);
+    expect(provider.currentRun, isNull);
+    expect(provider.connectionState, AiConnectionState.idle);
   });
 
   test('换行归一为空格并按 grapheme cluster 计数', () {
@@ -309,6 +537,90 @@ void main() {
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 
+  test('工具轮 rollback 撤销预工具文本，最终 checkpoint 重新对齐', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '我先查看',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 2,
+      type: AiRunEventType.delta,
+      text: '成绩数据…',
+    ));
+    expect(provider.streamedText, '我先查看成绩数据…');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 3,
+      type: AiRunEventType.rollback,
+      text: '',
+    ));
+    expect(provider.streamedText, '');
+    expect(provider.messages.single.content, '');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 4,
+      type: AiRunEventType.delta,
+      text: '最终答案',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-stream',
+      seq: 5,
+      type: AiRunEventType.checkpoint,
+      text: '最终答案：绩点 3.6。',
+    ));
+
+    expect(provider.streamedText, '最终答案：绩点 3.6。');
+    expect(provider.messages.single.content, '最终答案：绩点 3.6。');
+  });
+
+  test('checkpoint 绝对替换后再追加 delta 保持序列一致', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '正在',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 2,
+      type: AiRunEventType.delta,
+      text: '生成',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 3,
+      type: AiRunEventType.checkpoint,
+      text: '正在生成回答',
+    ));
+    expect(provider.streamedText, '正在生成回答');
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-cp',
+      seq: 4,
+      type: AiRunEventType.delta,
+      text: '正文。',
+    ));
+    expect(provider.streamedText, '正在生成回答正文。');
+    expect(provider.messages.single.content, '正在生成回答正文。');
+  });
+
   test('普通 Tool 事件不会伪造授权卡，真实授权事件才设置 pendingConsent', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
@@ -339,6 +651,50 @@ void main() {
       consentScope: 'ai_device_cache_access',
     ));
     expect(provider.pendingConsent?.consentScope, 'ai_device_cache_access');
+  });
+
+  test('deviceWaiting SSE 立即主动补拉设备任务且 Run 保持运行中', () async {
+    var syncCalls = 0;
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+      deviceToolSync: () async {
+        syncCalls++;
+      },
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-device',
+      seq: 1,
+      type: AiRunEventType.deviceWaiting,
+      datasets: ['grades', 'academic_situation', 'credit_requirements'],
+    ));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(syncCalls, 1);
+    expect(provider.isRunning, isTrue);
+    expect(provider.agentFlowCompleted, isFalse);
+  });
+
+  test('风险分析的二课可选动作会保留为客户端入口', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _availableCapabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(AiRunEvent.fromJson({
+      'run_id': 'run-erke',
+      'seq': 1,
+      'type': 'tool.completed',
+      'payload': {
+        'tool_name': 'academic.get_risk_analysis',
+        'optional_actions': ['update_erke'],
+      },
+    }));
+
+    expect(provider.hasOptionalErkeUpdate, isTrue);
   });
 
   test('完成事件中的笼统来源标记会从 Run 来源接口恢复引用', () async {
@@ -540,6 +896,7 @@ void main() {
       'external_mcp_invalid_result': '学业分析结果校验失败，请稍后重试',
       'provider_unavailable': '回答服务暂时不可用，请稍后重试',
       'provider_request_rejected': '回答服务暂时未接受本次请求，请重试',
+      'provider_model_unavailable': '当前回答模型暂不可用，管理员需要检查服务配置',
       'rate_limited': '当前请求较多，请稍后重试',
     };
 
@@ -569,4 +926,206 @@ void main() {
       expect(provider.error, entry.value, reason: entry.key);
     }
   });
+
+  test('SSE 断流且 Run 生成中时进入恢复态并继续回放', () async {
+    final service = _FakeStreamingAiService();
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 1,
+        type: AiRunEventType.started,
+      ));
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 2,
+        type: AiRunEventType.delta,
+        text: '根据',
+      ));
+      controller.addError(StateError('sse reset'));
+      unawaited(controller.close());
+    });
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 3,
+        type: AiRunEventType.delta,
+        text: '成绩',
+      ));
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 4,
+        type: AiRunEventType.completed,
+      ));
+      unawaited(controller.close());
+    });
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(() => provider.isReconnecting);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '根据');
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.completed);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '根据成绩');
+    expect(service.lastEventIds, const [0, 2]);
+  });
+
+  test('Run 已失败时恢复循环直接落败且不提示连接中断', () async {
+    final service = _FakeStreamingAiService();
+    service.streamScripts.add((controller) {
+      controller.addError(StateError('sse reset'));
+      unawaited(controller.close());
+    });
+    service.getRunOverride = const AiRun(
+      id: 'run-recovery',
+      conversationId: 'conversation-1',
+      state: 'failed',
+      lastEventSeq: 0,
+      errorCode: 'provider_unavailable',
+    );
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.failed);
+    expect(provider.error, '回答服务暂时不可用，请稍后重试');
+    expect(service.lastEventIds, hasLength(1));
+  });
+
+  test('多次断流期间非终态永不显示连接中断', () async {
+    final service = _FakeStreamingAiService();
+    for (var i = 0; i < 3; i++) {
+      service.streamScripts.add((controller) {
+        controller.add(AiRunEvent(
+          runId: 'run-recovery',
+          seq: i * 2 + 1,
+          type: AiRunEventType.delta,
+          text: '段$i',
+        ));
+        controller.addError(StateError('reset $i'));
+        unawaited(controller.close());
+      });
+    }
+    service.streamScripts.add((controller) {
+      controller.add(const AiRunEvent(
+        runId: 'run-recovery',
+        seq: 7,
+        type: AiRunEventType.completed,
+      ));
+      unawaited(controller.close());
+    });
+    final provider = AiAssistantProvider(
+      service,
+      initialCapabilities: _availableCapabilities(),
+      reconnectBackoff: const [Duration(milliseconds: 1)],
+      random: Random(7),
+    );
+    addTearDown(provider.dispose);
+    final observedErrors = <List<String?>>[];
+    provider.addListener(() => observedErrors.add(<String?>[provider.error]));
+
+    expect(provider.submit('我现在的成绩如何'), AiSubmitResult.accepted);
+
+    await _waitUntil(
+        () => provider.connectionState == AiConnectionState.completed);
+    expect(provider.error, isNull);
+    expect(provider.streamedText, '段0段1段2');
+    expect(service.lastEventIds, const [0, 1, 3, 5]);
+    expect(
+      observedErrors
+          .expand((element) => element)
+          .whereType<String>()
+          .where((text) => text.contains('连接已中断')),
+      isEmpty,
+    );
+  });
+}
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('等待状态超时');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+}
+
+class _FakeStreamingAiService extends AiAssistantService {
+  _FakeStreamingAiService() : super(Dio());
+
+  AiRun run = const AiRun(
+    id: 'run-recovery',
+    conversationId: 'conversation-1',
+    state: 'generating',
+    lastEventSeq: 0,
+  );
+  AiRun? getRunOverride;
+  final List<void Function(StreamController<AiRunEvent>)> streamScripts = [];
+  final List<int> lastEventIds = <int>[];
+
+  @override
+  Future<AiRunCreation> createRun({
+    required String conversationId,
+    required String clientRequestId,
+    required String message,
+    AgentLaunchContext? launchContext,
+  }) async {
+    return AiRunCreation(run: run, duplicate: false);
+  }
+
+  @override
+  Future<AiRun> getRun(String runId) async {
+    return getRunOverride ?? run;
+  }
+
+  @override
+  Stream<AiRunEvent> streamRunEvents(String runId, {int lastEventId = 0}) {
+    lastEventIds.add(lastEventId);
+    final controller = StreamController<AiRunEvent>();
+    if (streamScripts.isNotEmpty) {
+      streamScripts.removeAt(0)(controller);
+    }
+    return controller.stream;
+  }
+
+  @override
+  Future<AiRunSources> getRunSources(String runId) async {
+    return const AiRunSources();
+  }
+
+  @override
+  Future<AiCapabilities> getCapabilities() async {
+    return _availableCapabilities();
+  }
+
+  @override
+  Future<List<AiConversation>> listConversations() async {
+    return const [];
+  }
+
+  @override
+  Future<void> recordRunSignal({
+    required String runId,
+    required String signal,
+  }) async {}
 }

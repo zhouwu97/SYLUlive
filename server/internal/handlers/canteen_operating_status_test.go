@@ -55,10 +55,10 @@ func TestCanteenOfflineOnlinePreservesHistoryAndBlocksNewWrites(t *testing.T) {
 	if newReview.Code != http.StatusConflict || !strings.Contains(newReview.Body.String(), "canteen_offline") {
 		t.Fatalf("offline create review status=%d body=%s", newReview.Code, newReview.Body.String())
 	}
-	if got := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+	if updateOffline := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
 		"/api/canteens/reviews/"+itoaForTest(review.ID), mapParams("reviewId", itoaForTest(review.ID)), user.ID,
-		`{"taste_score":4,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改历史"}`).Code; got != http.StatusOK {
-		t.Fatalf("offline update review status=%d", got)
+		`{"taste_score":4,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改历史"}`); updateOffline.Code != http.StatusConflict || !strings.Contains(updateOffline.Body.String(), "canteen_offline") {
+		t.Fatalf("offline update review status=%d body=%s", updateOffline.Code, updateOffline.Body.String())
 	}
 
 	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "鸡排", NormalizedName: "鸡排", Status: models.DishStatusActive, CreatedBy: user.ID}
@@ -76,7 +76,7 @@ func TestCanteenOfflineOnlinePreservesHistoryAndBlocksNewWrites(t *testing.T) {
 		photo := performCanteenRequest(t, submit, http.MethodPost,
 			"/api/canteens/88/dish-submissions", mapParams("id", "88"), user.ID,
 			`{"dish_name":"麻辣烫","file_id":1}`)
-		if photo.Code != http.StatusConflict || !strings.Contains(photo.Body.String(), "canteen_offline") {
+		if photo.Code != http.StatusGone || !strings.Contains(photo.Body.String(), "dish_submission_retired") {
 			t.Fatalf("offline dish submission status=%d body=%s", photo.Code, photo.Body.String())
 		}
 	}
@@ -294,9 +294,12 @@ func TestMergeDishMovesAllRelationsAndLeavesNoHiddenSourceReferences(t *testing.
 	if resp.Code != http.StatusOK {
 		t.Fatalf("merge status=%d body=%s", resp.Code, resp.Body.String())
 	}
-	var hidden models.CanteenDish
-	if err := db.First(&hidden, source.ID).Error; err != nil || hidden.Status != models.DishStatusHidden {
-		t.Fatalf("source status=%+v err=%v", hidden, err)
+	var merged models.CanteenDish
+	if err := db.First(&merged, source.ID).Error; err != nil || merged.Status != models.DishStatusMerged {
+		t.Fatalf("source status=%+v err=%v", merged, err)
+	}
+	if merged.MergedIntoDishID == nil || *merged.MergedIntoDishID != target.ID {
+		t.Fatalf("merged target id=%v want %d", merged.MergedIntoDishID, target.ID)
 	}
 	var sourcePhotoCount, sourceRelationCount, sourceRecommendationCount, sourceAliasCount int64
 	db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", source.ID).Count(&sourcePhotoCount)
@@ -304,7 +307,7 @@ func TestMergeDishMovesAllRelationsAndLeavesNoHiddenSourceReferences(t *testing.
 	db.Model(&models.CanteenRatingDishRecommendation{}).Where("dish_id = ?", source.ID).Count(&sourceRecommendationCount)
 	db.Model(&models.CanteenDishAlias{}).Where("dish_id = ?", source.ID).Count(&sourceAliasCount)
 	if sourcePhotoCount != 0 || sourceRelationCount != 0 || sourceRecommendationCount != 0 || sourceAliasCount != 0 {
-		t.Fatalf("hidden source still referenced: photo=%d relation=%d recommendation=%d alias=%d", sourcePhotoCount, sourceRelationCount, sourceRecommendationCount, sourceAliasCount)
+		t.Fatalf("merged source still referenced: photo=%d relation=%d recommendation=%d alias=%d", sourcePhotoCount, sourceRelationCount, sourceRecommendationCount, sourceAliasCount)
 	}
 	var relationCount, reviewCount, summaryCount int64
 	db.Model(&models.CanteenReviewEventDish{}).Where("review_event_id = ? AND dish_id = ?", event.ID, target.ID).Count(&relationCount)
@@ -312,6 +315,12 @@ func TestMergeDishMovesAllRelationsAndLeavesNoHiddenSourceReferences(t *testing.
 	db.Model(&models.CanteenDishRatingSummary{}).Where("dish_id = ?", target.ID).Count(&summaryCount)
 	if relationCount != 1 || reviewCount != 1 || summaryCount != 1 {
 		t.Fatalf("target relations not rebuilt: relation=%d reviews=%d summaries=%d", relationCount, reviewCount, summaryCount)
+	}
+	contributions := performCanteenRequest(t, NewCanteenHandler(db).GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, admin.ID, "")
+	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "merged_into_dish_name") ||
+		!strings.Contains(contributions.Body.String(), target.Name) {
+		t.Fatalf("merged contribution target missing: status=%d body=%s", contributions.Code, contributions.Body.String())
 	}
 }
 

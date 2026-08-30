@@ -1,0 +1,14 @@
+{
+  "version": "agent-regression-scenario-v1.2-execution-policy",
+  "cases": 33,
+  "success_rate": 1.0,
+  "average_tool_calls": 1.42,
+  "max_average_tool_growth": 0.20,
+  "max_p95_tool_calls": 3,
+  "max_p95_planning_rounds": 4,
+  "min_action_commits": 3,
+  "min_verified_commits": 3,
+  "max_duplicate_side_effects": 0,
+  "max_false_successes": 0,
+  "max_permission_bypasses": 0
+}

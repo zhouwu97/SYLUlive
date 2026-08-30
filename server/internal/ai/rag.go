@@ -17,6 +17,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"shenliyuan/internal/middleware"
+
 	"gorm.io/gorm"
 )
 
@@ -232,6 +234,7 @@ func (c *RAGClient) Health(ctx context.Context) error {
 		return err
 	}
 	request.Header.Set("X-Internal-Service-Token", c.serviceToken)
+	request.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return err
@@ -258,6 +261,7 @@ func (c *RAGClient) postWithLimit(ctx context.Context, path string, payload inte
 	}
 	request.Header.Set("X-Internal-Service-Token", c.serviceToken)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Request-ID", requestIDForContext(ctx))
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return err
@@ -277,6 +281,14 @@ func (c *RAGClient) postWithLimit(ctx context.Context, path string, payload inte
 		return fmt.Errorf("decode RAG response: %w", err)
 	}
 	return nil
+}
+
+func requestIDForContext(ctx context.Context) string {
+	requestID := middleware.RequestIDFromContext(ctx)
+	if requestID == "" {
+		return middleware.NewRequestID()
+	}
+	return requestID
 }
 
 type RetrievedChunk struct {

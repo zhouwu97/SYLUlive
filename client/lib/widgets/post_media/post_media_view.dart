@@ -482,8 +482,14 @@ class _SinglePostImageState extends State<_SinglePostImage> {
           aspectRatio: _aspectRatio,
           variant: widget.variant,
         );
+        // memCacheWidth/Height 走 ResizeImage 精确缩放，目标比例必须与原图一致，
+        // 否则长图位图会先被压扁再进入预览框。
+        final decodeLogicalSize = Size(
+          imageSize.width,
+          imageSize.width / _aspectRatio,
+        );
         final target = calculateImageDecodeTarget(
-          logicalSize: imageSize,
+          logicalSize: decodeLogicalSize,
           devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
           maxLongEdge: imageMediumLongEdge,
           fallbackLogicalSize: const Size(250, 220),

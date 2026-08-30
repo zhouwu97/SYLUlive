@@ -84,21 +84,27 @@ UPLOAD_USE_ACCEL_REDIRECT=false
 按以下顺序执行，任一步失败都不要发布新默认值：
 
 1. 确认 P2 worker 和 API 的原图回退逻辑已发布，pending、failed、unsupported 不会让客户端请求长期 404。
-2. 确认 Go 与 Nginx 使用同一公开上传共享卷，且 Nginx 对该卷只读挂载；目录中的路径只能由服务端生成。
-3. 渲染 Compose 配置并检查挂载：
+2. 历史公开图片缺宽高时（`image_pipeline_stats.sql` 的 `public_missing_dimensions` 不为 0），
+   先跑 `server/cmd/backfill_image_metadata --dry-run` 预览、去掉参数实跑，再重启 Go，
+   让启动期 `BackfillPublicImageVariantTasks` 按补齐后的宽高为长边 >1280 的图片补建 viewer 任务。
+3. 运行 `bash scripts/image_pipeline_verify.sh` 硬门禁：`PUBLIC_URL` 与 `PRIVATE_URL` 必填；
+   thumb/medium/viewer 轮询超时、数据库统计失败、pending 未下降、failed 超阈值、
+   `public_without_any_variant > 0` 任一命中都会以非零退出，未通过不得发布。
+4. 确认 Go 与 Nginx 使用同一公开上传共享卷，且 Nginx 对该卷只读挂载；目录中的路径只能由服务端生成。
+5. 渲染 Compose 配置并检查挂载：
 
 ```bash
 docker compose config
 docker compose config | grep -E 'server_data:/app/uploads|server_data:/var/lib/sylulive/uploads:ro'
 ```
 
-4. 校验 Nginx 配置：
+6. 校验 Nginx 配置：
 
 ```bash
 docker compose run --rm --no-deps nginx nginx -t
 ```
 
-5. 用测试图片验证：公开图片必须在 Go 允许后正常返回；私有图片、包含 `..` 的路径和
+7. 用测试图片验证：公开图片必须在 Go 允许后正常返回；私有图片、包含 `..` 的路径和
    `/_internal/uploads/` 的外部请求都必须被拒绝。Go 拒绝时 Nginx 不得回退为静态文件。
 
 检查通过后重新创建 Go 和 Nginx 容器，并再次执行 `nginx -t`。开关只改变已通过 Go 授权的

@@ -77,8 +77,20 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   }
 
   Future<void> _updateAppearance(HomeWidgetAppearance next) async {
+    final previous = _appearances[next.kind];
     setState(() => _appearances[next.kind] = next);
-    await HomeWidgetService.updateAppearance(next);
+    try {
+      await HomeWidgetService.updateAppearance(next);
+    } catch (_) {
+      if (!mounted) return;
+      if (previous != null) {
+        setState(() => _appearances[next.kind] = previous);
+      }
+      final message = previous != null && previous.fontSize != next.fontSize
+          ? '字号设置失败，请重试'
+          : '小组件设置保存失败，请重试';
+      AppFeedback.error(message, context: context);
+    }
   }
 
   Future<void> _editTitle(HomeWidgetKind kind) async {
@@ -222,7 +234,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -323,6 +335,28 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               ],
             ),
             const SizedBox(height: 12),
+            const Text('字号', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final fontSize in HomeWidgetFontSize.values)
+                  ChoiceChip(
+                    label: Text(fontSize.label),
+                    selected: appearance.fontSize == fontSize,
+                    onSelected: (_) => _updateAppearance(
+                      appearance.copyWith(fontSize: fontSize),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '仅调整文字大小，不改变小组件结构、信息顺序、色条位置和课程数量。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
             _WidgetSettingRow(
               title: '标题设置',
               subtitle: appearance.title,
@@ -352,7 +386,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
             const Divider(height: 1),
             _WidgetSettingRow(
               title: '立即同步',
-              subtitle: '刷新数据、主题、标题和倒计时',
+              subtitle: '刷新数据、主题、标题、字号和倒计时',
               trailing: TextButton.icon(
                 onPressed: () => _syncKind(kind),
                 icon: const Icon(Icons.sync, size: 18),
@@ -386,8 +420,9 @@ class _HomeWidgetPreview extends StatelessWidget {
       appearance.theme,
       systemBrightness: Theme.of(context).brightness,
     );
+    final typography = HomeWidgetTypography.resolve(size, appearance.fontSize);
     final isWide = size == HomeWidgetSize.size4x2;
-    final maxItems = 2; // 无论是 2x2 还是 4x2，因为高度都是 2，最多只显示 2 条内容
+    const maxItems = 2; // 无论是 2x2 还是 4x2，因为高度都是 2，最多只显示 2 条内容
     final items = data.items.take(maxItems).toList();
 
     return Container(
@@ -416,7 +451,7 @@ class _HomeWidgetPreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 15,
                 offset: const Offset(0, 5),
               ),
@@ -435,16 +470,23 @@ class _HomeWidgetPreview extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.primaryText,
-                        fontSize: 13,
+                        fontSize: typography.title,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
                   if (kind == HomeWidgetKind.course)
-                    Text(
-                      data.subtitle,
-                      style:
-                          TextStyle(color: palette.secondaryText, fontSize: 9),
+                    Flexible(
+                      child: Text(
+                        data.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: typography.subtitle,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -454,8 +496,10 @@ class _HomeWidgetPreview extends StatelessWidget {
                     ? Center(
                         child: Text(
                           kind == HomeWidgetKind.course ? '今天没有课' : '近期暂无考试',
-                          style:
-                              TextStyle(color: palette.mutedText, fontSize: 11),
+                          style: TextStyle(
+                            color: palette.mutedText,
+                            fontSize: typography.empty,
+                          ),
                         ),
                       )
                     : ListView.separated(
@@ -469,6 +513,7 @@ class _HomeWidgetPreview extends StatelessWidget {
                             kind: kind,
                             detailed: isWide,
                             palette: palette,
+                            typography: typography,
                           );
                         },
                       ),
@@ -487,12 +532,14 @@ class _PreviewItem extends StatelessWidget {
     required this.kind,
     required this.detailed,
     required this.palette,
+    required this.typography,
   });
 
   final HomeWidgetPreviewItem item;
   final HomeWidgetKind kind;
   final bool detailed;
   final HomeWidgetThemePalette palette;
+  final HomeWidgetTypography typography;
 
   @override
   Widget build(BuildContext context) {
@@ -530,7 +577,7 @@ class _PreviewItem extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.primaryText,
-                          fontSize: 11,
+                          fontSize: typography.primary,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -540,7 +587,7 @@ class _PreviewItem extends StatelessWidget {
                         item.badge,
                         style: TextStyle(
                           color: palette.accent,
-                          fontSize: 8,
+                          fontSize: typography.badge,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -550,14 +597,20 @@ class _PreviewItem extends StatelessWidget {
                   item.primaryDetail,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: palette.secondaryText, fontSize: 9),
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: typography.secondary,
+                  ),
                 ),
                 if (detailed && item.secondaryDetail.isNotEmpty)
                   Text(
                     item.secondaryDetail,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: palette.mutedText, fontSize: 8),
+                    style: TextStyle(
+                      color: palette.mutedText,
+                      fontSize: typography.tertiary,
+                    ),
                   ),
               ],
             ),

@@ -7,13 +7,15 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 
-/// 只展示 SSE 真实产生的 Agent activity，默认收敛到最近三条。
+/// 展示 SSE 真实产生的 Agent activity；收起态是摘要，展开态保留完整审计过程。
 class AiAgentExecutionCard extends StatefulWidget {
   const AiAgentExecutionCard({
     super.key,
     this.activities = const <AiAgentActivity>[],
+    this.rawEvents = const <AiRunEvent>[],
     this.event,
     this.running = false,
+    this.reconnecting = false,
     this.completed = false,
     this.onOpenPermissions,
     this.onAllowOnce,
@@ -21,12 +23,16 @@ class AiAgentExecutionCard extends StatefulWidget {
     this.onDeny,
     this.onRetryRefresh,
     this.onUseExistingData,
+    this.onReauthorizeEdu,
+    this.onUpdateErke,
   });
 
   final List<AiAgentActivity> activities;
+  final List<AiRunEvent> rawEvents;
   // 兼容旧调用面；新页面应传 activities。
   final AiRunEvent? event;
   final bool running;
+  final bool reconnecting;
   final bool completed;
   final VoidCallback? onOpenPermissions;
   final VoidCallback? onAllowOnce;
@@ -34,6 +40,8 @@ class AiAgentExecutionCard extends StatefulWidget {
   final VoidCallback? onDeny;
   final VoidCallback? onRetryRefresh;
   final VoidCallback? onUseExistingData;
+  final VoidCallback? onReauthorizeEdu;
+  final VoidCallback? onUpdateErke;
 
   @override
   State<AiAgentExecutionCard> createState() => _AiAgentExecutionCardState();
@@ -41,6 +49,7 @@ class AiAgentExecutionCard extends StatefulWidget {
 
 class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
   bool _expanded = true;
+  bool _showTechnicalDetails = false;
 
   List<AiAgentActivity> get _activities {
     if (widget.activities.isNotEmpty) return widget.activities;
@@ -50,12 +59,20 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
         completed: widget.completed);
   }
 
+  List<AiAgentActivity> get _rawActivities {
+    if (widget.rawEvents.isNotEmpty) {
+      return AiAgentActivityReducer.reduceRaw(widget.rawEvents);
+    }
+    return _activities;
+  }
+
   @override
   void didUpdateWidget(covariant AiAgentExecutionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     final newRun = widget.event?.runId != oldWidget.event?.runId;
     if (newRun || (widget.running && !oldWidget.running)) {
       _expanded = true;
+      _showTechnicalDetails = false;
     } else if (widget.completed && !oldWidget.completed) {
       _expanded = false;
     }
@@ -68,6 +85,7 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
   @override
   Widget build(BuildContext context) {
     final activities = _activities;
+    final rawActivities = _rawActivities;
     if (!widget.running && !widget.completed && activities.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -75,14 +93,31 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     final latest = activities.isEmpty ? null : activities.last;
     final title = widget.completed
         ? '已完成分析'
-        : latest?.title ?? (widget.running ? '正在处理当前问题…' : 'Agent 过程');
+        : widget.reconnecting
+            ? '连接波动，正在恢复…'
+            : latest?.title ??
+                (widget.running ? '正在处理当前问题…' : 'Agent 过程');
     final detail = latest?.detail ?? '';
     final isError = latest?.status == AiAgentActivityStatus.failed;
-    final refreshFailed =
-        activities.any((item) => item.code == 'refresh_failed');
-    final visible = _expanded || activities.length <= 3
+    final refreshFailed = activities.any(
+      (item) =>
+          item.code == 'refresh_failed' ||
+          item.code == 'device_job_failed' ||
+          item.errorCode == 'refresh_incomplete' ||
+          item.errorCode == 'device_refresh_not_fresh' ||
+          item.errorCode == 'network_unavailable' ||
+          _isEduRecoveryCode(item.errorCode, item.toolName),
+    );
+    final needsEduRecovery = activities.any(
+      (item) => _isEduRecoveryCode(item.errorCode, item.toolName),
+    );
+    final compactActivities = activities.length <= 3
         ? activities
         : activities.sublist(activities.length - 3);
+    final showFullProcessButton =
+        !_expanded && widget.rawEvents.isNotEmpty && rawActivities.isNotEmpty;
+    final showTechnicalDetailsButton =
+        _expanded && widget.rawEvents.isNotEmpty && rawActivities.isNotEmpty;
 
     return AnimatedSize(
       duration: AppMotion.duration(context, AppMotion.fast),
@@ -107,7 +142,11 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
             Semantics(
               button: true,
               label: '$title。$detail',
-              hint: _expanded ? '点击收起 Agent 过程' : '点击展开 Agent 过程',
+              hint: _expanded
+                  ? '点击收起 Agent 过程'
+                  : showFullProcessButton
+                      ? '点击查看完整过程'
+                      : '点击展开 Agent 过程',
               child: InkWell(
                 onTap: () => setState(() => _expanded = !_expanded),
                 child: Padding(
@@ -115,7 +154,10 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                   child: Row(
                     children: [
                       _ActivityMark(
-                          activity: latest, completed: widget.completed),
+                        activity: latest,
+                        completed: widget.completed,
+                        running: widget.running,
+                      ),
                       const SizedBox(width: 9),
                       Expanded(
                         child: Column(
@@ -140,7 +182,9 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                       ),
                       Icon(
                         _expanded
-                            ? Icons.keyboard_arrow_up_rounded
+                            ? (_showTechnicalDetails
+                                ? Icons.subject_rounded
+                                : Icons.keyboard_arrow_up_rounded)
                             : Icons.keyboard_arrow_down_rounded,
                         color: colors.onSurfaceVariant,
                       ),
@@ -149,28 +193,51 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                 ),
               ),
             ),
-            if (_expanded || activities.length <= 3)
+            if (activities.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: _ActivityList(activities: visible),
+                child: _ActivityList(
+                  activities: _showTechnicalDetails
+                      ? rawActivities
+                      : _expanded
+                          ? activities
+                          : compactActivities,
+                ),
               ),
-            if (!_expanded && activities.length > 3)
+            if (showFullProcessButton || (!_expanded && activities.length > 3))
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => setState(() => _expanded = true),
-                  child: const Text('展开全部过程'),
+                  child: const Text('查看完整过程'),
+                ),
+              ),
+            if (showTechnicalDetailsButton)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => setState(
+                      () => _showTechnicalDetails = !_showTechnicalDetails),
+                  child: Text(
+                    _showTechnicalDetails ? '收起技术详情' : '查看技术详情',
+                  ),
                 ),
               ),
             if (refreshFailed &&
                 isError &&
                 (widget.onRetryRefresh != null ||
-                    widget.onUseExistingData != null))
+                    widget.onUseExistingData != null ||
+                    widget.onReauthorizeEdu != null))
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (needsEduRecovery && widget.onReauthorizeEdu != null)
+                      TextButton(
+                        onPressed: widget.onReauthorizeEdu,
+                        child: const Text('重新验证教务'),
+                      ),
                     if (widget.onUseExistingData != null)
                       TextButton(
                         onPressed: widget.onUseExistingData,
@@ -184,22 +251,55 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
                   ],
                 ),
               ),
+            if (widget.onUpdateErke != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: widget.onUpdateErke,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('更新二课数据'),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
+
+  static bool _isEduRecoveryCode(String code, String toolName) {
+    switch (code.trim().toLowerCase()) {
+      case 'edu_authorization_revoked':
+      case 'edu_session_logged_out':
+      case 'edu_session_expired':
+      case 'edu_credential_unavailable':
+      case 'credential_unavailable':
+        return toolName.contains('academic') || toolName.contains('schedule');
+      default:
+        return false;
+    }
+  }
 }
 
 class _ActivityMark extends StatelessWidget {
-  const _ActivityMark({this.activity, required this.completed});
+  const _ActivityMark({
+    this.activity,
+    required this.completed,
+    required this.running,
+  });
 
   final AiAgentActivity? activity;
   final bool completed;
+  final bool running;
 
   @override
   Widget build(BuildContext context) {
     final status = activity?.status;
+    if (running && !completed && status != AiAgentActivityStatus.failed) {
+      return const AiThinkingIndicator(size: 20);
+    }
     final icon = completed || status == AiAgentActivityStatus.success
         ? Icons.check_circle_outline_rounded
         : status == AiAgentActivityStatus.failed
@@ -211,6 +311,89 @@ class _ActivityMark extends StatelessWidget {
             ? AppColors.success
             : AppColors.brandPrimary;
     return Icon(icon, size: 20, color: color);
+  }
+}
+
+/// 低频的 Agent 运行反馈。它只改变图标的透明度和缩放，不参与布局，
+/// 并在系统关闭动画时退化为静态图标。
+class AiThinkingIndicator extends StatefulWidget {
+  const AiThinkingIndicator({
+    super.key,
+    this.size = 16,
+    this.color = AppColors.brandPrimary,
+  });
+
+  final double size;
+  final Color color;
+
+  @override
+  State<AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
+}
+
+class _AiThinkingIndicatorState extends State<AiThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool? _reducedMotion;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: AppMotion.normal);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reducedMotion == reducedMotion) return;
+    _reducedMotion = reducedMotion;
+    if (reducedMotion) {
+      _controller
+        ..stop()
+        ..value = 1;
+    } else {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = ExcludeSemantics(
+      child: Icon(
+        Icons.auto_awesome_rounded,
+        size: widget.size,
+        color: widget.color,
+      ),
+    );
+    if (_reducedMotion ?? MediaQuery.disableAnimationsOf(context)) {
+      return KeyedSubtree(
+        key: const ValueKey('ai-thinking-indicator-static'),
+        child: icon,
+      );
+    }
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = Curves.easeInOut.transform(_controller.value);
+        return Opacity(
+          opacity: 0.58 + 0.42 * value,
+          child: Transform.scale(
+            scale: 0.9 + 0.1 * value,
+            child: child,
+          ),
+        );
+      },
+      child: KeyedSubtree(
+        key: const ValueKey('ai-thinking-indicator-animated'),
+        child: icon,
+      ),
+    );
   }
 }
 
@@ -242,12 +425,6 @@ class _ActivityRow extends StatelessWidget {
       AiAgentActivityStatus.running => AppColors.brandPrimary,
       AiAgentActivityStatus.pending => Theme.of(context).colorScheme.outline,
     };
-    final icon = switch (activity.status) {
-      AiAgentActivityStatus.success => Icons.check_rounded,
-      AiAgentActivityStatus.failed => Icons.priority_high_rounded,
-      AiAgentActivityStatus.running => Icons.circle,
-      AiAgentActivityStatus.pending => Icons.radio_button_unchecked,
-    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -257,11 +434,20 @@ class _ActivityRow extends StatelessWidget {
             width: 20,
             height: 20,
             child: Center(
-              child: Icon(
-                icon,
-                size: activity.status == AiAgentActivityStatus.running ? 8 : 16,
-                color: color,
-              ),
+              child: activity.status == AiAgentActivityStatus.running
+                  ? AiThinkingIndicator(size: 16, color: color)
+                  : Icon(
+                      switch (activity.status) {
+                        AiAgentActivityStatus.success => Icons.check_rounded,
+                        AiAgentActivityStatus.failed =>
+                          Icons.priority_high_rounded,
+                        AiAgentActivityStatus.pending =>
+                          Icons.radio_button_unchecked,
+                        AiAgentActivityStatus.running => Icons.circle,
+                      },
+                      size: 16,
+                      color: color,
+                    ),
             ),
           ),
           const SizedBox(width: 9),

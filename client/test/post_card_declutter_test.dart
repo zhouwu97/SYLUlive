@@ -144,7 +144,9 @@ class _PollService extends PollService {
   _PollService() : super(Dio());
 
   @override
-  Future<Post> putBallot(int pollId, List<int> optionIds) async => _pollPost();
+  Future<Post> putBallot(int pollId, List<int> optionIds,
+          {String? idempotencyKey}) async =>
+      _pollPost();
 }
 
 void main() {

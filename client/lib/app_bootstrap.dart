@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ui';
-import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
@@ -38,7 +37,6 @@ import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/privacy_center_screen.dart';
-import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
@@ -47,12 +45,14 @@ import 'services/course_reminder_service.dart';
 import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
+import 'utils/app_navigation.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
+import 'services/request_id.dart';
 import 'services/root_page_state_service.dart';
 import 'services/retry_interceptor.dart';
 import 'services/app_resume_coordinator.dart';
@@ -60,6 +60,7 @@ import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/user_calendar_service.dart';
 import 'services/post_cache_service.dart';
+import 'services/forbidden_recovery_router.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
@@ -70,9 +71,19 @@ import 'features/ai_device_bridge/device_tool_worker.dart';
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
+import 'widgets/app_crash_fallback.dart';
+import 'widgets/global_background_wrapper.dart';
+import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+
+export 'widgets/global_background_wrapper.dart'
+    show BackgroundWrapperState,
+        GlobalBackgroundWrapper,
+        PredictiveBackGate,
+        backgroundWrapperKey;
 
 String _hashError(
   String level,
@@ -155,6 +166,7 @@ _FlutterErrorLogInfo _classifyFlutterError(FlutterErrorDetails details) {
 }
 
 final Map<String, int> _dedupTimes = {};
+VoidCallback? _appRecoveryRetry;
 
 void _safeRecord({
   required String level,
@@ -204,10 +216,58 @@ String _diagnosticCategoryFor(String source) => switch (source) {
       _ => 'app',
     };
 
+String _startupDiagnosticText(Object error, StackTrace stackTrace) {
+  return [
+    'SYLUlive 启动诊断',
+    '时间：${DateTime.now().toIso8601String()}',
+    '错误：$error',
+    '',
+    stackTrace.toString(),
+  ].join('\n');
+}
+
+Future<void> _clearNonSensitiveStartupCache() async {
+  Object? firstError;
+  StackTrace? firstStackTrace;
+
+  try {
+    await PostCacheService.clearAllCache();
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+
+  try {
+    final preferences = await AppPreferencesStore.getInstance();
+    await Future.wait([
+      preferences.remove(RootPageStateStore.communityFeedModeKey),
+      preferences.remove(RootPageStateStore.communityFeedScrollKey),
+      preferences.remove(RootPageStateStore.lastPageKey),
+    ]);
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+
+  if (firstError != null) {
+    Error.throwWithStackTrace(
+        firstError, firstStackTrace ?? StackTrace.current);
+  }
+}
+
+Future<void> _retryAppBootstrap() async {
+  await appBootstrap();
+}
+
 Future<void> appBootstrap() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      _appRecoveryRetry = null;
+      // 在任何本地数据库或平台服务初始化前先挂载最小壳，确保失败时有可见 UI。
+      runApp(
+        const StartupRecoveryApp(child: StartupRecoveryScreen()),
+      );
       await _initializeNativeNotificationOpenBridge();
 
       FlutterError.onError = (FlutterErrorDetails details) {
@@ -274,6 +334,21 @@ Future<void> appBootstrap() async {
         return true;
       };
 
+      ErrorWidget.builder = (details) {
+        final diagnosticId = _hashError(
+          'error',
+          'Flutter',
+          details.exception.runtimeType.toString(),
+          details.exceptionAsString(),
+          details.toString(),
+        );
+        return AppCrashFallback(
+          details: details,
+          diagnosticId: diagnosticId,
+          onRetry: _appRecoveryRetry,
+        );
+      };
+
       // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setSystemUIOverlayStyle(
@@ -296,7 +371,21 @@ Future<void> appBootstrap() async {
           operation: 'initialize',
           result: 'failure',
         );
-        rethrow;
+        runApp(
+          StartupRecoveryApp(
+            child: StartupRecoveryScreen(
+              error: error,
+              stackTrace: stackTrace,
+              diagnosticText: _startupDiagnosticText(error, stackTrace),
+              onRetry: _retryAppBootstrap,
+              onClearNonSensitiveCache: () async {
+                await _clearNonSensitiveStartupCache();
+                await _retryAppBootstrap();
+              },
+            ),
+          ),
+        );
+        return;
       }
 
       PushSettingsService.configureRemoteRegistration(setupPush);
@@ -322,6 +411,7 @@ Future<void> appBootstrap() async {
         );
       }
 
+      _appRecoveryRetry = () => runApp(const MyApp());
       runApp(const MyApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -733,7 +823,10 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   pushClient.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: true,
+    production: const bool.fromEnvironment(
+      'JPUSH_PRODUCTION',
+      defaultValue: !kDebugMode,
+    ),
     debug: kDebugMode,
   );
 
@@ -771,6 +864,14 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   }
 
   final userIdStr = userId.toString();
+
+  // JPush 的 Alias 在 Android/iOS 都由同一个 Dart 适配器维护；原生通道
+  // 仅作为旧 Android 状态协调兼容层，不能成为 iOS 登记的硬依赖。
+  try {
+    await pushClient.setAlias(userIdStr);
+  } catch (e) {
+    debugPrint('JPush Alias 设置失败: $e');
+  }
 
   // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
   // KeepAliveForegroundService 的 reconcileAliasState 机制接管
@@ -1209,6 +1310,11 @@ Dio getSharedDio() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final requestId = options.headers['X-Request-ID']?.toString().trim();
+          options.headers['X-Request-ID'] =
+              requestId == null || requestId.isEmpty
+                  ? RequestId.newId()
+                  : requestId;
           if (options.extra['skip_app_version_interceptor'] == true) {
             handler.next(options);
             return;
@@ -1254,7 +1360,12 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
-        ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(
+            dio,
+            onForbiddenRecovery: _handleForbiddenRecovery,
+          ),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {
             final service = EmojiFavoriteService(
@@ -1296,8 +1407,8 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<AuthProvider, MessageProvider>(
           create: (_) => MessageProvider(dio),
-          update: (_, auth, provider) =>
-              provider!..syncSessionUser(auth.user?.id),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
           create: (_) => EduProvider(dio),
@@ -1334,7 +1445,11 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
-        ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, WaterSectionProvider>(
+          create: (_) => WaterSectionProvider(dio),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
+        ),
         ChangeNotifierProvider(
           create: (_) =>
               CampusCalendarProvider(CampusCalendarService(dio))..load(),
@@ -1470,12 +1585,14 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       );
       return false;
     }
-    if (uri == 'widget_timetable' || uri == 'campus://timetable') {
+    if (uri == 'widget_timetable' ||
+        uri == 'campus://timetable' ||
+        uri.startsWith('sylulive://schedule')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
       return true;
     }
-    if (uri.startsWith('widget_exam')) {
+    if (uri.startsWith('widget_exam') || uri.startsWith('sylulive://exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
@@ -1533,6 +1650,19 @@ String _safeDeepLinkRoute(Uri? uri) {
   return '${uri.scheme}:$authority${uri.path}';
 }
 
+void _handleForbiddenRecovery(ForbiddenRecoveryRoute route) {
+  if (!route.requiresAdminUiShutdown) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (appNavigatorKey.currentState != null) {
+      // 管理员权限撤回时退出当前管理操作，避免旧页面继续提交操作。
+      appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+    }
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('账号权限已更新，管理员操作已关闭')),
+    );
+  });
+}
+
 /// 抽离 MaterialApp 构建，避免 Consumer 嵌套层级过深
 class _AppContent extends StatelessWidget {
   const _AppContent();
@@ -1586,182 +1716,10 @@ class _AppContent extends StatelessWidget {
       ),
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/timetable': (context) => const PredictiveBackGate(
-              child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
-            ),
+        '/timetable': (context) => AppNavigation.buildTimetablePage(),
       },
       home: const PredictiveBackGate(
         child: GlobalBackgroundWrapper(child: AuthWrapper()),
-      ),
-    );
-  }
-}
-
-final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
-    GlobalKey<BackgroundWrapperState>();
-
-class GlobalBackgroundWrapper extends StatefulWidget {
-  final Widget child;
-
-  const GlobalBackgroundWrapper({super.key, required this.child});
-
-  @override
-  State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
-}
-
-class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
-  String _currentScreen = 'shuitie';
-
-  void updateScreen(String screen) {
-    if (_currentScreen != screen) {
-      if (mounted) {
-        setState(() {
-          _currentScreen = screen;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Always render background in consistent structure
-        _buildBackgroundLayer(themeProvider, isDark),
-        // Child content
-        widget.child,
-      ],
-    );
-  }
-
-  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.shouldShowCustomBackground) {
-      return _buildBackgroundImageLayer(themeProvider, isDark);
-    }
-    return _buildCleanBackground(isDark);
-  }
-
-  Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.getCustomBackgroundImageFor(context);
-    if (bgPath == null || bgPath.isEmpty) return _buildCleanBackground(isDark);
-    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
-    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-    final resolvedPath =
-        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
-
-    const alignment = Alignment.center;
-    final fillScreen =
-        themeProvider.getCustomBackgroundFillScreenFor(context) ||
-            _isUsingFallbackDirection(themeProvider);
-
-    final imageProvider = isAsset
-        ? AssetImage(resolvedPath) as ImageProvider
-        : isLocalFile
-            ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundImage(
-          imageProvider: imageProvider,
-          alignment: alignment,
-          isDark: isDark,
-          fillScreen: fillScreen,
-          blur: themeProvider.backgroundBlur,
-        ),
-        // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
-    );
-  }
-
-  bool _isUsingFallbackDirection(ThemeProvider themeProvider) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    return (isWide && !themeProvider.hasLandscapeBackground) ||
-        (!isWide && !themeProvider.hasBackground);
-  }
-
-  Widget _buildBackgroundImage({
-    required ImageProvider imageProvider,
-    required Alignment alignment,
-    required bool isDark,
-    required bool fillScreen,
-    required double blur,
-  }) {
-    Widget imageLayer;
-
-    if (fillScreen) {
-      imageLayer = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: alignment,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Container(
-          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-        ),
-      );
-    } else {
-      imageLayer = Stack(
-        fit: StackFit.expand,
-        children: [
-          // 补齐屏幕空白区域
-          Image(
-            image: imageProvider,
-            fit: BoxFit.cover,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => Container(
-              color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-            ),
-          ),
-          // 保留完整背景主体
-          Image(
-            image: imageProvider,
-            fit: BoxFit.contain,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
-        ],
-      );
-    }
-
-    final effectiveBlur = blur.clamp(0.0, 30.0);
-
-    if (effectiveBlur <= 0.01) {
-      return imageLayer;
-    }
-
-    // 模糊会从图片边缘采样，略微放大，避免四周出现透明边或暗边。
-    final scale = 1.0 + effectiveBlur / 300.0;
-
-    return ClipRect(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: effectiveBlur,
-          sigmaY: effectiveBlur,
-        ),
-        child: Transform.scale(
-          scale: scale,
-          child: imageLayer,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCleanBackground(bool isDark) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }
@@ -1853,6 +1811,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   /// `lastPage` 模式下解析出的启动计划。账号变化或首帧前未解析时为 null。
   StartupNavigationPlan? _startupPlan;
   int? _planUserId;
+  bool _startupPlanReady = false;
   int? _resolvingUserId;
   int _startupResolveGeneration = 0;
 
@@ -1988,9 +1947,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         }
 
         final userId = authProvider.user?.id;
-        // lastPage 模式需要先异步解析启动计划，期间显示加载门禁，
-        // 避免 HomeScreen 先以错误的 root tab 构建、再闪成目标页面。
-        if (tp.startupDestination == StartupDestinationMode.lastPage &&
+        if (_startupPlanReady && _planUserId != userId) {
+          // 账号变化才允许重新计算启动计划；同一账号修改“启动页面”只
+          // 影响下一次启动，不能重建当前会话已经展示的根页面。
+          _startupPlanReady = false;
+          _startupPlan = null;
+          _planUserId = null;
+          _startupResolveGeneration++;
+          _homeInitialTabResolver.reset();
+        }
+
+        // 启动计划只在当前 AuthWrapper 会话解析一次。尤其是 lastPage 的
+        // 异步读取完成后，ThemeProvider 再次通知也不能触发当前页面跳转。
+        if (!_startupPlanReady &&
+            tp.startupDestination == StartupDestinationMode.lastPage &&
             userId != null &&
             userId > 0) {
           if (_startupPlan == null || _planUserId != userId) {
@@ -1999,22 +1969,20 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return HomeScreen(
-            initialTab: _startupPlan!.rootTabIndex,
-            initialDeepPage: _startupPlan!.deepPage,
-          );
         }
 
-        // home / timetable（或 lastPage 但无有效用户）：同步可解，不设门禁。
-        // 同时丢弃已解析的 lastPage 计划，避免日后切回 lastPage 时复活旧深层页。
-        _startupPlan = null;
-        _planUserId = null;
-        final resolvedPlan = StartupNavigationPlan(
-          rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
-        );
+        if (!_startupPlanReady) {
+          // home / timetable（或 lastPage 但无有效用户）同步可解，不设门禁。
+          _startupPlan = StartupNavigationPlan(
+            rootTabIndex: _homeInitialTabResolver.resolve(tp, userId: userId),
+          );
+          _planUserId = userId;
+          _startupPlanReady = true;
+        }
+
         return HomeScreen(
-          initialTab: resolvedPlan.rootTabIndex,
-          initialDeepPage: resolvedPlan.deepPage,
+          initialTab: _startupPlan!.rootTabIndex,
+          initialDeepPage: _startupPlan!.deepPage,
         );
       },
     );
@@ -2073,24 +2041,12 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               ? null
               : state,
         );
+        _startupPlanReady = true;
       });
     } finally {
       if (_resolvingUserId == userId) {
         _resolvingUserId = null;
       }
     }
-  }
-}
-
-/// 预测性返回手势开关门控
-/// 通过 ThemeProvider.predictiveBack 控制，默认开启
-class PredictiveBackGate extends StatelessWidget {
-  final Widget child;
-  const PredictiveBackGate({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    // 这里不再由全局接管拦截逻辑，而是由子页面按需拦截
-    return child;
   }
 }

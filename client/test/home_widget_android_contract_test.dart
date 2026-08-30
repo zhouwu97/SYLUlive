@@ -34,6 +34,17 @@ void main() {
     expect(registry, contains('R.layout.widget_course_item_detailed'));
   });
 
+  test('课表标题和日期的 RelativeLayout 约束不能形成双向依赖', () {
+    for (final path in const [
+      'android/app/src/main/res/layout/widget_course_2x2.xml',
+      'android/app/src/main/res/layout/widget_course_4x2.xml',
+    ]) {
+      final layout = source(path);
+      expect(layout, contains('android:layout_toStartOf="@id/tv_widget_date"'));
+      expect(layout, isNot(contains('android:layout_toEndOf="@id/tv_widget_title"')));
+    }
+  });
+
   test('空状态颜色由主题 mutedTextColor 统一控制', () {
     final renderer = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRenderer.kt',
@@ -73,5 +84,36 @@ void main() {
     expect(schedule, isNot(contains('_showOpacitySheet')));
     expect(schedule, contains('_scheduleCardOpacity'));
     expect(schedule, contains('_scheduleSlotHeight'));
+  });
+
+  test('WidgetDateChangeReceiver 注册系统日期/时间变更广播', () {
+    final manifest = source('android/app/src/main/AndroidManifest.xml');
+    expect(manifest, contains('.WidgetDateChangeReceiver'));
+    expect(manifest, contains('android.intent.action.DATE_CHANGED'));
+    expect(manifest, contains('android.intent.action.TIME_SET'));
+    expect(manifest, contains('android.intent.action.TIMEZONE_CHANGED'));
+
+    final receiver = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/WidgetDateChangeReceiver.kt',
+    );
+    expect(receiver, contains('HomeWidgetRegistry.refreshAll(context)'));
+  });
+
+  test('CourseDataReader 原生实现 Schema v2 全量课表动态计算与过期节次过滤', () {
+    final reader = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/CourseData.kt',
+    );
+    expect(reader, contains('parseV2'));
+    expect(reader, contains('parseV1'));
+    expect(reader, contains('semester_start'));
+    expect(reader, contains('currentWeekday'));
+    expect(reader, contains('academicWeek'));
+  });
+
+  test('MainActivity onResume 触发桌面小组件全量刷新', () {
+    final mainActivity = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/MainActivity.kt',
+    );
+    expect(mainActivity, contains('HomeWidgetRegistry.refreshAll(this)'));
   });
 }

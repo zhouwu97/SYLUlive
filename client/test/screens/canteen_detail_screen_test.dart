@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_detail_screen.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_detail_skeleton.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_status_image.dart';
 
 class FakeAdapter implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions options) _handler;
@@ -34,8 +36,7 @@ String _detailJson({
   int ratingCount = 0,
 }) {
   final ratingsJson = ratings
-      .map((r) =>
-          '{"id":${r['id'] ?? 1},"user_id":2,"user_name":"同学A",'
+      .map((r) => '{"id":${r['id'] ?? 1},"user_id":2,"user_name":"同学A",'
           '"comment":"${r['comment'] ?? '好吃'}","star":${r['star'] ?? 5},'
           '"images":"[]","helpful_count":1,"unhelpful_count":0,'
           '"created_at":"2026-07-22"}')
@@ -51,18 +52,39 @@ String _detailJson({
   ''';
 }
 
-Widget _buildApp(Dio dio) {
+Widget _buildApp(
+  Dio dio, {
+  Brightness brightness = Brightness.light,
+  TextScaler textScaler = TextScaler.noScaling,
+  String initialImage = '',
+  bool initialOffline = false,
+  String? heroTag,
+}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
       ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
     ],
-    child: const MaterialApp(
-      home: CanteenDetailScreen(
-        canteenId: 1,
-        canteenName: '我家有面',
-        dishCount: 2,
-        dishPhotoCount: 5,
+    child: MaterialApp(
+      theme: ThemeData(
+        brightness: brightness,
+        useMaterial3: true,
+      ),
+      home: Builder(
+        builder: (context) {
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+            child: CanteenDetailScreen(
+              canteenId: 1,
+              canteenName: '我家有面',
+              dishCount: 2,
+              dishPhotoCount: 5,
+              initialImage: initialImage,
+              initialOffline: initialOffline,
+              heroTag: heroTag,
+            ),
+          );
+        },
       ),
     ),
   );
@@ -80,6 +102,45 @@ Dio _dioWith(String detailBody) {
 }
 
 void main() {
+  testWidgets('首屏加载保留入口封面 Hero 目标', (tester) async {
+    final pending = Completer<ResponseBody>();
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        return pending.future;
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(
+      _buildApp(
+        dio,
+        initialImage: '/uploads/ranking-cover.jpg',
+        initialOffline: true,
+        heroTag: 'canteen-1',
+      ),
+    );
+    await tester.pump();
+
+    final hero = find.byWidgetPredicate(
+      (widget) => widget is Hero && widget.tag == 'canteen-1',
+    );
+    expect(hero, findsOneWidget);
+    expect(find.byType(CanteenDetailSkeleton), findsOneWidget);
+    expect(find.byType(CanteenStatusImage), findsOneWidget);
+    expect(
+      tester
+          .widget<CanteenStatusImage>(find.byType(CanteenStatusImage))
+          .offline,
+      isTrue,
+    );
+
+    pending.complete(_json(_detailJson(), 200));
+    await tester.pumpAndSettle();
+    expect(hero, findsOneWidget);
+    expect(find.byType(CanteenDetailSkeleton), findsNothing);
+  });
+
   testWidgets('首次进入显示骨架而非中央 spinner', (tester) async {
     final dio = _dioWith(_detailJson());
     await tester.pumpWidget(_buildApp(dio));
@@ -141,8 +202,9 @@ void main() {
     await tester.ensureVisible(find.text('有图'));
     await tester.pump();
     await tester.tap(find.text('有图'), warnIfMissed: true);
-    for (var i = 0; i < 50 &&
-        !pending.any((r) => r.filter == 'with_image'); i++) {
+    for (var i = 0;
+        i < 50 && !pending.any((r) => r.filter == 'with_image');
+        i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
 
@@ -157,8 +219,7 @@ void main() {
     }
     // ignore: avoid_print
     print('pending filters: ${pending.map((r) => r.filter).toList()}');
-    expect(pending.any((r) => r.filter == 'high'), isTrue,
-        reason: '高分请求未发出');
+    expect(pending.any((r) => r.filter == 'high'), isTrue, reason: '高分请求未发出');
     final requestB = pending.firstWhere((r) => r.filter == 'high');
     final requestA = pending.firstWhere((r) => r.filter == 'with_image');
 
@@ -168,10 +229,11 @@ void main() {
     expect(find.text('暂无高分评价'), findsOneWidget);
 
     // 请求 A（with_image，带数据）晚到 → 必须被 generation 丢弃
-    requestA.completer
-        .complete(_json(_detailJson(ratingCount: 1, ratings: [
+    requestA.completer.complete(_json(
+        _detailJson(ratingCount: 1, ratings: [
           {'id': '9', 'comment': '带图评价', 'star': '5'},
-        ]), 200));
+        ]),
+        200));
     await tester.pumpAndSettle();
 
     // 仍停留在「高分」空态，未被陈旧 with_image 响应覆盖
@@ -179,7 +241,7 @@ void main() {
     expect(find.text('带图评价'), findsNothing);
   });
 
-  testWidgets('菜品为空时图鉴区显示上传 CTA', (tester) async {
+  testWidgets('商家详情页收起时只有一个贡献内容入口', (tester) async {
     final dio = _dioWith(_detailJson());
     dio.httpClientAdapter = FakeAdapter((options) async {
       if (options.path == '/canteens/1' && options.method == 'GET') {
@@ -194,9 +256,53 @@ void main() {
     await tester.pumpWidget(_buildApp(dio));
     await tester.pumpAndSettle();
 
-    // 空态不再 SizedBox.shrink：显示上传 CTA
-    expect(find.text('还没有同学上传菜品实拍'), findsOneWidget);
-    expect(find.text('上传菜品实拍'), findsOneWidget);
+    // 图鉴为图片驱动模块：无图可展示时整个模块收起，
+    // 贡献动作统一收进底部贡献入口。
+    expect(find.text('商家菜品'), findsNothing);
+    expect(find.text('上传菜品实拍'), findsNothing);
+    expect(find.text('贡献内容'), findsOneWidget);
+    expect(find.text('添加一条新的商家评价...'), findsNothing);
+    expect(find.text('添加'), findsNothing);
+
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
+    expect(find.text('你想贡献什么？'), findsOneWidget);
+    expect(find.text('写菜品评价'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsNothing);
+    expect(
+      find.text('评价中可以关联菜品并上传实拍，帮助其他同学做决定'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('暗色与大字号下贡献入口面板无溢出', (tester) async {
+    final dio = _dioWith(_detailJson());
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        return _json(_detailJson(), 200);
+      }
+      if (options.path == '/canteens/1/dishes' && options.method == 'GET') {
+        return _json('[]', 200);
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(
+      _buildApp(
+        dio,
+        brightness: Brightness.dark,
+        textScaler: const TextScaler.linear(1.3),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('贡献内容'), findsOneWidget);
+
+    await tester.tap(find.text('贡献内容'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('写菜品评价'), findsOneWidget);
+    expect(find.text('上传菜品实拍'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('筛选请求失败后回滚标签并提示，不拿旧数据冒充新筛选', (tester) async {
@@ -264,8 +370,9 @@ void main() {
     await tester.ensureVisible(find.text('有图'));
     await tester.pump();
     await tester.tap(find.text('有图'), warnIfMissed: true);
-    for (var i = 0; i < 50 &&
-        !pending.any((r) => r.filter == 'with_image'); i++) {
+    for (var i = 0;
+        i < 50 && !pending.any((r) => r.filter == 'with_image');
+        i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
 
@@ -286,9 +393,11 @@ void main() {
 
     // with_image 随后返回 200 但 stale → 必须被丢弃，不覆盖 all
     final withImageReq = pending.firstWhere((r) => r.filter == 'with_image');
-    withImageReq.completer.complete(_json(_detailJson(ratingCount: 1, ratings: [
-      {'id': '9', 'comment': '带图评价', 'star': '5'},
-    ]), 200));
+    withImageReq.completer.complete(_json(
+        _detailJson(ratingCount: 1, ratings: [
+          {'id': '9', 'comment': '带图评价', 'star': '5'},
+        ]),
+        200));
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
 

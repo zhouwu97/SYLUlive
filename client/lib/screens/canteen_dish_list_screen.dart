@@ -7,8 +7,9 @@ import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
+import 'image_viewer_screen.dart';
 
-/// 食堂全部菜品列表页。
+/// 商家菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
   final int canteenId;
   final String canteenName;
@@ -60,16 +61,34 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     }
   }
 
-  /// 空列表 → 直接打开上传 Sheet（dish_name 模式），可输入新菜名投稿第一张实拍。
-  Future<void> _openUploadSheet() async {
-    final success = await showDishPhotoUploadSheet(
-      context,
-      canteenId: widget.canteenId,
-      provider: context.read<CanteenProvider>(),
-    );
-    if (success == true && mounted) {
-      await _load();
+  void _openDish(CanteenDish dish) {
+    if (dish.isReviewGallery) {
+      final images =
+          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
+      final urls = images
+          .where((image) => image.trim().isNotEmpty)
+          .map(ApiConstants.fullUrl)
+          .toList(growable: false);
+      if (urls.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(imageUrls: urls),
+        ),
+      );
+      return;
     }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CanteenDishDetailScreen(
+          canteenId: widget.canteenId,
+          dishId: dish.id,
+          dishName: dish.name,
+          canteenName: widget.canteenName,
+        ),
+      ),
+    ).then((_) => _load());
   }
 
   @override
@@ -81,7 +100,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
-          '全部菜品',
+          '商家菜品',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -103,13 +122,11 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                 )
               : _dishes.isEmpty
                   ? CanteenEmptyState(
-                      icon: Icons.photo_camera_outlined,
-                      title: '还没有实拍菜品',
+                      icon: Icons.restaurant_menu_rounded,
+                      title: '暂无收录菜品',
                       subtitle: widget.offline
-                          ? '所属食堂已下架，历史菜品暂不支持新增'
-                          : '上传第一道菜的第一张实拍吧',
-                      actionLabel: widget.offline ? null : '上传第一道菜实拍',
-                      onAction: widget.offline ? null : _openUploadSheet,
+                          ? '所属商家已下架'
+                          : '发表食堂评价时填写菜品名称即可自动收录',
                     )
                   : GridView.builder(
                       padding: const EdgeInsets.all(16),
@@ -126,19 +143,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                         return _GridDishCard(
                           dish: dish,
                           isDark: isDark,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CanteenDishDetailScreen(
-                                  canteenId: widget.canteenId,
-                                  dishId: dish.id,
-                                  dishName: dish.name,
-                                  canteenName: widget.canteenName,
-                                ),
-                              ),
-                            ).then((_) => _load());
-                          },
+                          onTap: () => _openDish(dish),
                         );
                       },
                     ),
@@ -174,6 +179,7 @@ class _GridDishCard extends StatelessWidget {
                 child: dish.coverImage.isNotEmpty
                     ? CanteenStatusImage(
                         imageUrl: ApiConstants.fullUrl(dish.coverImage),
+                        variant: 'thumb',
                         offline: dish.isCanteenOffline,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder(),

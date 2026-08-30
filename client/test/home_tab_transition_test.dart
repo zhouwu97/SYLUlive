@@ -67,6 +67,22 @@ void main() {
     expect(ledger.targetIndex, isNull);
   });
 
+  test('root tab revisit does not schedule a second reveal', () {
+    final ledger = TabTransitionLedger(itemCount: 5, initialIndex: 0);
+
+    final firstVisit = ledger.begin(1, commit: true, visualStart: 0);
+    expect(firstVisit.shouldReveal, isTrue);
+    expect(ledger.complete(firstVisit), isTrue);
+
+    final returnHome = ledger.begin(0, commit: true, visualStart: 1);
+    expect(returnHome.shouldReveal, isFalse);
+    expect(ledger.complete(returnHome), isTrue);
+
+    final revisit = ledger.begin(1, commit: true, visualStart: 0);
+    expect(revisit.shouldReveal, isFalse);
+    expect(ledger.complete(revisit), isTrue);
+  });
+
   double revealTranslationY(WidgetTester tester, Key childKey) {
     final transforms = tester.widgetList<Transform>(
       find.ancestor(

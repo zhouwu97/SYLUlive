@@ -67,4 +67,26 @@ void main() {
       'http://example.com/not-upload/a.png',
     );
   });
+
+  test('image variants preserve the resource path and query parameters', () {
+    expect(
+      ApiConstants.imageVariant('/uploads/a/a.jpg', 'thumb'),
+      '/uploads/a/a_v1_thumb.jpg',
+    );
+    expect(
+      ApiConstants.imageVariant(
+        'https://cdn.example.com/a_medium.webp?v=2',
+        'medium',
+      ),
+      'https://cdn.example.com/a_medium.webp?v=2',
+    );
+    expect(
+      ApiConstants.imageVariant('/uploads/a/a.png?x=1', 'medium'),
+      '/uploads/a/a_v1_medium.png?x=1',
+    );
+    expect(
+      ApiConstants.imageVariant('/uploads/a/a_thumb.jpg', 'medium'),
+      '/uploads/a/a_v1_medium.jpg',
+    );
+  });
 }

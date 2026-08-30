@@ -11,6 +11,10 @@ String localizeAIProviderError({
   final message = rawMessage?.trim() ?? '';
   final searchable = '$errorCode $message'.toLowerCase();
 
+  if (errorCode == 'ai_budget_exceeded') {
+    return '当前 AI 服务额度已达到平台限制\n额度购买与计费功能暂未开发';
+  }
+
   if (statusCode == 401 ||
       statusCode == 403 ||
       _containsAny(searchable, const <String>[

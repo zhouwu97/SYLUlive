@@ -39,6 +39,7 @@ func (CampusArticle) TableName() string {
 type JWCSyncState struct {
 	ID                  uint       `gorm:"primaryKey" json:"id"`
 	Source              string     `gorm:"size:32;uniqueIndex" json:"source"`
+	ParserVersion       string     `gorm:"size:64" json:"parser_version"`
 	LastAttemptAt       *time.Time `json:"last_attempt_at"`
 	LastSuccessAt       *time.Time `json:"last_success_at"`
 	LastReconcileAt     *time.Time `json:"last_reconcile_at"`

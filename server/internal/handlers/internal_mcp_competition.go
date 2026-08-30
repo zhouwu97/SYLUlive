@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/ai"
 	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/models"
 )
@@ -31,6 +32,80 @@ func InternalMCPGrantMiddleware(expected string) gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// InternalMCPScopedGrantMiddleware 校验一次 Run 专属的 opaque Grant。
+// Grant 中的 subject 只写入 Go request Context，绝不写回 JSON 或传给模型。
+func InternalMCPScopedGrantMiddleware(manager *ai.ScopedGrantManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if manager == nil {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "MCP scoped grant 未启用"})
+			return
+		}
+		provided := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+		capability := internalMCPCapabilityForPath(c.Request.URL.Path)
+		grant, err := manager.VerifyContext(c.Request.Context(), provided, capability)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "MCP Grant 无效"})
+			return
+		}
+		c.Request = c.Request.WithContext(ai.WithScopedGrant(c.Request.Context(), grant))
+		c.Next()
+	}
+}
+
+// InternalMCPGrantOrScopedGrantMiddleware 兼容旧的公开事实服务 Grant，同时允许新 Runtime 使用 Run Scoped Grant。
+// 迁移期间两种 token 可以并存；个人数据端点必须由新 Grant 的 scope 再次校验。
+func InternalMCPGrantOrScopedGrantMiddleware(expected string, manager *ai.ScopedGrantManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		provided := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+		if expected != "" && len(provided) == len(expected) && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1 {
+			c.Next()
+			return
+		}
+		if manager == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "MCP Grant 无效"})
+			return
+		}
+		capability := internalMCPCapabilityForPath(c.Request.URL.Path)
+		grant, err := manager.VerifyContext(c.Request.Context(), provided, capability)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "MCP Grant 无效"})
+			return
+		}
+		c.Request = c.Request.WithContext(ai.WithScopedGrant(c.Request.Context(), grant))
+		c.Next()
+	}
+}
+
+func internalMCPCapabilityForPath(path string) string {
+	path = strings.TrimRight(path, "/")
+	switch path {
+	case "/internal/mcp/system/status":
+		return "system.status"
+	case "/internal/mcp/policy/search":
+		return "policy.search"
+	case "/internal/mcp/policy/sources":
+		return "policy.sources"
+	case "/internal/mcp/competition/search":
+		return "competition.search"
+	case "/internal/mcp/competition/details":
+		return "competition.details"
+	case "/internal/mcp/competition/candidate-context":
+		return "competition.governed_context"
+	case "/internal/mcp/competition/compare":
+		return "competition.compare"
+	case "/internal/mcp/competition/verify-records":
+		return "competition.verify"
+	case "/internal/mcp/academic/summary":
+		return "academic.summary"
+	case "/internal/mcp/schedule/free-windows":
+		return "schedule.free_windows"
+	case "/internal/mcp/schedule/validate-plan":
+		return "schedule.validate_plan"
+	default:
+		return ""
 	}
 }
 

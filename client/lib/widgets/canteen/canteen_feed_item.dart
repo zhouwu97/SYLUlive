@@ -6,16 +6,18 @@ import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
 
 /// 推荐信息流条目：按 type 分支渲染。
-/// 店铺类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
-/// 所有卡片统一点按 → 进入对应食堂详情页（P1 再做菜品深度定位）。
+/// 商家类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
+/// 所有卡片统一点按 → 进入对应商家详情页（P1 再做菜品深度定位）。
 class CanteenFeedItemCard extends StatefulWidget {
   final CanteenFeedItem item;
   final VoidCallback onTap;
+  final String? heroTag;
 
   const CanteenFeedItemCard({
     super.key,
     required this.item,
     required this.onTap,
+    this.heroTag,
   });
 
   @override
@@ -25,18 +27,19 @@ class CanteenFeedItemCard extends StatefulWidget {
 class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   bool _pressed = false;
 
+  String get _heroTag => widget.heroTag ?? 'canteen-feed-${widget.item.id}';
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: _pressed ? 0.985 : 1.0,
+      child: AnimatedOpacity(
+        opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
         child: widget.item.isRecentPhoto
@@ -46,7 +49,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     );
   }
 
-  // ── 店铺类卡片（推荐 / 稳妥 / 热门）─────────────────────────────────
+  // ── 商家类卡片（推荐 / 稳妥 / 热门）─────────────────────────────────
 
   Widget _buildStoreCard(bool isDark) {
     final item = widget.item;
@@ -81,7 +84,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Hero(
-                tag: 'canteen-${item.canteenId}',
+                tag: _heroTag,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
                   child: SizedBox(
@@ -106,6 +109,19 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
                         color: CanteenTheme.textPrimaryColor(isDark),
                       ),
                     ),
+                    if (item.locationLabel.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.locationLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: CanteenTheme.textTertiaryColor(isDark),
+                        ),
+                      ),
+                    ],
                     if (item.averageStar > 0) ...[
                       const SizedBox(height: 5),
                       Row(
@@ -280,6 +296,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   Widget _thumb(bool isDark, String url) {
     return CanteenStatusImage(
       imageUrl: url,
+      variant: 'thumb',
       offline: widget.item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
@@ -291,7 +308,8 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
     final item = widget.item;
     if (item.image.isEmpty) return _placeholder(isDark);
     return CanteenStatusImage(
-      imageUrl: ApiConstants.fullUrl(item.image),
+      imageUrl: item.image,
+      variant: 'thumb',
       offline: item.isOffline,
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

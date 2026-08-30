@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
+import '../services/async_action_guard.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
@@ -39,7 +40,9 @@ class MessageProvider extends ChangeNotifier {
   static const int maxMessageLength = 2000;
 
   final Dio _dio;
+  final bool _enableRealtime;
   final Random _random = Random.secure();
+  final AsyncActionGuard _sendActionGuard = AsyncActionGuard();
 
   List<Conversation> _conversations = [];
   List<Message> _messages = [];
@@ -63,6 +66,10 @@ class MessageProvider extends ChangeNotifier {
   final Map<String, _PendingMessageContext> _pendingMessages = {};
   bool _hasLoadedConversations = false;
   int? _sessionUserId;
+  int _authSessionGeneration = 0;
+  int _sessionGeneration = 0;
+  int _conversationRequestVersion = 0;
+  final Set<CancelToken> _sessionCancelTokens = <CancelToken>{};
   CancelToken? _eventCancelToken;
   int _realtimeGeneration = 0;
   bool _disposed = false;
@@ -89,7 +96,8 @@ class MessageProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  MessageProvider(this._dio);
+  MessageProvider(this._dio, {bool enableRealtime = true})
+      : _enableRealtime = enableRealtime;
 
   List<Conversation> get conversations => _conversations;
   List<Message> get messages => _messages;
@@ -173,22 +181,30 @@ class MessageProvider extends ChangeNotifier {
     _drafts.remove(targetUserId);
   }
 
-  int _sessionGeneration = 0;
-
-  void syncSessionUser(int? userId) {
-    if (_sessionUserId == userId) return;
-    _sessionGeneration++;
+  void syncSessionUser(int? userId, [int? authSessionGeneration]) {
+    final nextAuthGeneration = authSessionGeneration ??
+        (_sessionUserId == userId
+            ? _authSessionGeneration
+            : _authSessionGeneration + 1);
+    if (_sessionUserId == userId &&
+        _authSessionGeneration == nextAuthGeneration) {
+      return;
+    }
     _stopRealtime();
     // 账号切换后清空私信媒体缓存，避免跨账号复用上一账号的私信图片。
     PrivateMessageMediaCache.instance.scopeByAccount(userId);
     _sessionUserId = userId;
+    _authSessionGeneration = nextAuthGeneration;
     resetSession();
-    if (userId != null) {
+    if (userId != null && _enableRealtime) {
       unawaited(_runRealtimeLoop(userId, _realtimeGeneration));
     }
   }
 
   void resetSession() {
+    _sessionGeneration++;
+    _conversationRequestVersion++;
+    _cancelSessionRequests('私信会话已变化');
     _messageRequestVersion++;
     _conversations = [];
     _messages = [];
@@ -236,6 +252,8 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<void> loadConversations({bool silent = false}) async {
+    final request = _captureSessionRequest();
+    final requestVersion = ++_conversationRequestVersion;
     _conversationError = null;
     if (!silent) {
       _conversationLoading = true;
@@ -243,7 +261,14 @@ class MessageProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _dio.get('/messages/conversations');
+      final response = await _dio.get(
+        '/messages/conversations',
+        cancelToken: request.cancelToken,
+      );
+      if (!_ownsSessionRequest(request) ||
+          requestVersion != _conversationRequestVersion) {
+        return;
+      }
       if (response.statusCode == 200 && response.data is List) {
         _conversations = (response.data as List)
             .map(
@@ -255,14 +280,27 @@ class MessageProvider extends ChangeNotifier {
         _hasLoadedConversations = true;
       }
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error) ||
+          !_ownsSessionRequest(request) ||
+          requestVersion != _conversationRequestVersion) {
+        return;
+      }
       _conversationError =
           AppFeedback.dioErrorMessage(error, fallback: '加载会话列表失败');
     } catch (error) {
+      if (!_ownsSessionRequest(request) ||
+          requestVersion != _conversationRequestVersion) {
+        return;
+      }
       _conversationError = '加载会话列表失败';
       debugPrint('加载会话列表失败: $error');
     } finally {
-      _conversationLoading = false;
-      notifyListeners();
+      if (_ownsSessionRequest(request) &&
+          requestVersion == _conversationRequestVersion) {
+        _conversationLoading = false;
+        notifyListeners();
+      }
+      _releaseSessionRequest(request);
     }
   }
 
@@ -270,13 +308,19 @@ class MessageProvider extends ChangeNotifier {
     required int currentUserId,
     required int targetUserId,
   }) async {
+    final sessionRequest = _captureSessionRequest();
     _messageError = null;
     final cachedConversation = _findConversation(currentUserId, targetUserId);
     if (cachedConversation != null) {
-      await loadMessages(cachedConversation.id, preferCache: true);
-      return _currentConversationId == cachedConversation.id
-          ? cachedConversation.id
-          : null;
+      try {
+        await loadMessages(cachedConversation.id, preferCache: true);
+        return _ownsSessionRequest(sessionRequest) &&
+                _currentConversationId == cachedConversation.id
+            ? cachedConversation.id
+            : null;
+      } finally {
+        _releaseSessionRequest(sessionRequest);
+      }
     }
 
     // 先展示空聊天壳，轻量接口返回后再补入历史消息。
@@ -285,8 +329,12 @@ class MessageProvider extends ChangeNotifier {
     try {
       final response = await _dio.get(
         '/messages/users/$targetUserId/conversation',
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (requestVersion != _messageRequestVersion) return null;
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _messageRequestVersion) {
+        return null;
+      }
       final data = response.data;
       if (response.statusCode != 200 || data is! Map) return null;
       final rawConversation = data['conversation'];
@@ -296,14 +344,23 @@ class MessageProvider extends ChangeNotifier {
       );
       if (conversation.id <= 0) return null;
       await loadMessages(conversation.id, preferCache: true);
-      return _currentConversationId == conversation.id ? conversation.id : null;
+      return _ownsSessionRequest(sessionRequest) &&
+              _currentConversationId == conversation.id
+          ? conversation.id
+          : null;
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error) || !_ownsSessionRequest(sessionRequest)) {
+        return null;
+      }
       _messageError = AppFeedback.dioErrorMessage(error, fallback: '查询会话失败');
     } catch (error) {
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       _messageError = '查询会话失败';
       debugPrint('查询私信会话失败: $error');
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
-    notifyListeners();
+    if (_ownsSessionRequest(sessionRequest)) notifyListeners();
     return null;
   }
 
@@ -328,6 +385,7 @@ class MessageProvider extends ChangeNotifier {
     bool preferCache = false,
     int? aroundMessageId,
   }) async {
+    final sessionRequest = _captureSessionRequest();
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
     _messageFocusRequestId = null;
@@ -342,11 +400,13 @@ class MessageProvider extends ChangeNotifier {
       _loadingMore = false;
       notifyListeners();
       await refreshLatestMessages();
-      if (requestVersion == _messageRequestVersion &&
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _messageRequestVersion &&
           aroundMessageId != null &&
           !containsMessage(aroundMessageId)) {
         await loadAroundMessage(aroundMessageId);
       }
+      _releaseSessionRequest(sessionRequest);
       return;
     }
 
@@ -363,8 +423,12 @@ class MessageProvider extends ChangeNotifier {
           'limit': _pageSize,
           if (aroundMessageId != null) 'around_id': aroundMessageId,
         },
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (requestVersion != _messageRequestVersion) return;
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _messageRequestVersion) {
+        return;
+      }
       if (response.statusCode == 200 && response.data is List) {
         _messages = _parseMessages(response.data as List);
         _sortMessages();
@@ -372,17 +436,26 @@ class MessageProvider extends ChangeNotifier {
         _rememberMessages(conversationId);
       }
     } on DioException catch (error) {
-      if (requestVersion != _messageRequestVersion) return;
+      if (CancelToken.isCancel(error) ||
+          !_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _messageRequestVersion) {
+        return;
+      }
       _messageError = AppFeedback.dioErrorMessage(error, fallback: '加载消息失败');
     } catch (error) {
-      if (requestVersion != _messageRequestVersion) return;
+      if (!_ownsSessionRequest(sessionRequest) ||
+          requestVersion != _messageRequestVersion) {
+        return;
+      }
       _messageError = '加载消息失败';
       debugPrint('加载消息失败: $error');
     } finally {
-      if (requestVersion == _messageRequestVersion) {
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _messageRequestVersion) {
         _messageLoading = false;
         notifyListeners();
       }
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
@@ -391,6 +464,7 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<void> loadOlderMessages() async {
+    final sessionRequest = _captureSessionRequest();
     final conversationId = _currentConversationId;
     final requestVersion = _messageRequestVersion;
     final oldestMessageId = _messages
@@ -402,6 +476,7 @@ class MessageProvider extends ChangeNotifier {
         _loadingMore ||
         !_hasMore ||
         oldestMessageId == null) {
+      _releaseSessionRequest(sessionRequest);
       return;
     }
 
@@ -411,8 +486,10 @@ class MessageProvider extends ChangeNotifier {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
         queryParameters: {'limit': _pageSize, 'before_id': oldestMessageId},
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (_currentConversationId != conversationId ||
+      if (!_ownsSessionRequest(sessionRequest) ||
+          _currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
           response.data is! List) {
         return;
@@ -422,22 +499,33 @@ class MessageProvider extends ChangeNotifier {
       _hasMore = older.length == _pageSize;
       _rememberMessages(conversationId);
     } on DioException catch (error) {
-      if (requestVersion == _messageRequestVersion) {
+      if (!CancelToken.isCancel(error) &&
+          _ownsSessionRequest(sessionRequest) &&
+          requestVersion == _messageRequestVersion) {
         _messageError =
             AppFeedback.dioErrorMessage(error, fallback: '加载更早消息失败');
       }
     } finally {
-      if (requestVersion == _messageRequestVersion) {
+      if (_ownsSessionRequest(sessionRequest) &&
+          requestVersion == _messageRequestVersion) {
         _loadingMore = false;
         notifyListeners();
       }
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
   Future<void> refreshMessages({int? currentUserId}) async {
+    final sessionRequest = _captureSessionRequest();
     final conversationId = _currentConversationId;
-    if (conversationId == null || _messageLoading) return;
-    if (!_refreshingConversationIds.add(conversationId)) return;
+    if (conversationId == null || _messageLoading) {
+      _releaseSessionRequest(sessionRequest);
+      return;
+    }
+    if (!_refreshingConversationIds.add(conversationId)) {
+      _releaseSessionRequest(sessionRequest);
+      return;
+    }
 
     final requestVersion = _messageRequestVersion;
     final afterId = _latestServerMessageId;
@@ -448,8 +536,10 @@ class MessageProvider extends ChangeNotifier {
           'limit': _pageSize,
           if (afterId != null) 'after_id': afterId,
         },
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (_currentConversationId != conversationId ||
+      if (!_ownsSessionRequest(sessionRequest) ||
+          _currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
           response.data is! List) {
         return;
@@ -462,23 +552,34 @@ class MessageProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (error) {
-      debugPrint('刷新消息失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('刷新消息失败: $error');
+      }
     } finally {
-      _refreshingConversationIds.remove(conversationId);
+      if (_ownsSessionRequest(sessionRequest)) {
+        _refreshingConversationIds.remove(conversationId);
+      }
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
   Future<void> refreshLatestMessages() async {
+    final sessionRequest = _captureSessionRequest();
     final conversationId = _currentConversationId;
-    if (conversationId == null || _messageLoading) return;
+    if (conversationId == null || _messageLoading) {
+      _releaseSessionRequest(sessionRequest);
+      return;
+    }
 
     final requestVersion = _messageRequestVersion;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
         queryParameters: {'limit': _pageSize},
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (_currentConversationId != conversationId ||
+      if (!_ownsSessionRequest(sessionRequest) ||
+          _currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
           response.data is! List) {
         return;
@@ -489,21 +590,31 @@ class MessageProvider extends ChangeNotifier {
       _rememberMessages(conversationId);
       notifyListeners();
     } catch (error) {
-      debugPrint('刷新最新消息失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('刷新最新消息失败: $error');
+      }
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
   Future<void> loadAroundMessage(int messageId) async {
+    final sessionRequest = _captureSessionRequest();
     final conversationId = _currentConversationId;
-    if (conversationId == null || _messageLoading) return;
+    if (conversationId == null || _messageLoading) {
+      _releaseSessionRequest(sessionRequest);
+      return;
+    }
 
     final requestVersion = _messageRequestVersion;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
         queryParameters: {'limit': _pageSize, 'around_id': messageId},
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (_currentConversationId != conversationId ||
+      if (!_ownsSessionRequest(sessionRequest) ||
+          _currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
           response.data is! List) {
         return;
@@ -514,7 +625,11 @@ class MessageProvider extends ChangeNotifier {
       _rememberMessages(conversationId);
       notifyListeners();
     } catch (error) {
-      debugPrint('加载目标消息失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('加载目标消息失败: $error');
+      }
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
@@ -549,6 +664,7 @@ class MessageProvider extends ChangeNotifier {
     XFile image, {
     int? senderId,
   }) async {
+    final sessionRequest = _captureSessionRequest();
     final pending = _insertPendingMessage(
       targetUserId: targetUserId,
       content: '',
@@ -557,20 +673,30 @@ class MessageProvider extends ChangeNotifier {
     );
     final clientMessageId = pending.clientMessageId!;
     try {
-      final fileId = await _uploadImage(image);
+      final fileId = await _uploadImage(
+        image,
+        cancelToken: sessionRequest.cancelToken,
+      );
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       _updatePendingMessage(
         clientMessageId,
         (message) => message.copyWith(fileId: fileId),
       );
       return _sendPendingMessage(targetUserId, clientMessageId);
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error) || !_ownsSessionRequest(sessionRequest)) {
+        return null;
+      }
       _markPendingFailed(
         clientMessageId,
         AppFeedback.dioErrorMessage(error, fallback: '图片上传失败'),
       );
     } catch (error) {
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       _markPendingFailed(clientMessageId, '图片上传失败');
       debugPrint('私信图片上传失败: $error');
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
     return null;
   }
@@ -582,36 +708,62 @@ class MessageProvider extends ChangeNotifier {
     String content = '',
     int? senderId,
   }) async {
+    final sessionRequest = _captureSessionRequest();
     var fileId = favorite.fileId;
-    if (favorite.type != EmojiFavoriteType.image) {
-      return null;
-    }
-    if (fileId == null || fileId <= 0) {
-      try {
+    try {
+      if (favorite.type != EmojiFavoriteType.image) {
+        return null;
+      }
+      if (fileId == null || fileId <= 0) {
         await EmojiFavoriteService.instance.syncFromServer();
+        if (!_ownsSessionRequest(sessionRequest)) return null;
         final items = await EmojiFavoriteService.instance.load();
+        if (!_ownsSessionRequest(sessionRequest)) return null;
         final synced = items.firstWhere(
           (item) => item.key == favorite.key,
           orElse: () => favorite,
         );
         fileId = synced.fileId;
-      } catch (_) {}
-    }
-    if (fileId == null || fileId <= 0) {
-      _messageError = '该收藏数据已失效，请重新收藏';
-      notifyListeners();
+      }
+      if (!_ownsSessionRequest(sessionRequest)) return null;
+      if (fileId == null || fileId <= 0) {
+        _messageError = '该收藏数据已失效，请重新收藏';
+        notifyListeners();
+        return null;
+      }
+      return sendMessage(
+        targetUserId,
+        content,
+        fileId: fileId,
+        senderId: senderId,
+      );
+    } catch (_) {
+      if (_ownsSessionRequest(sessionRequest)) {
+        _messageError = '该收藏数据已失效，请重新收藏';
+        notifyListeners();
+      }
       return null;
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
-    return sendMessage(
-      targetUserId,
-      content,
-      fileId: fileId,
-      senderId: senderId,
-    );
   }
 
   /// 上传图片并返回文件 ID，供收藏流程复用现有上传接口。
-  Future<int> uploadImage(XFile image) => _uploadImage(image);
+  Future<int> uploadImage(XFile image) async {
+    final sessionRequest = _captureSessionRequest();
+    try {
+      final fileId = await _uploadImage(
+        image,
+        cancelToken: sessionRequest.cancelToken,
+      );
+      if (!_ownsSessionRequest(sessionRequest)) {
+        throw StateError('账号已切换，图片上传结果已丢弃');
+      }
+      return fileId;
+    } finally {
+      _releaseSessionRequest(sessionRequest);
+    }
+  }
 
   Future<Message?> sendStickerMessage(
     int targetUserId,
@@ -630,46 +782,61 @@ class MessageProvider extends ChangeNotifier {
     int targetUserId,
     String clientMessageId,
   ) async {
-    final failed = _messageByClientMessageID(clientMessageId);
-    final pendingContext = _pendingMessages[clientMessageId];
-    if (failed == null ||
-        !failed.isFailed ||
-        (pendingContext != null &&
-            pendingContext.targetUserId != targetUserId)) {
-      return null;
-    }
-    _updatePendingMessage(
-      clientMessageId,
-      (message) => message.copyWith(
-        localStatus: MessageLocalStatus.pending,
-        clearLocalError: true,
-      ),
-    );
-    _messageError = null;
-    notifyListeners();
-
-    var pending = _messageByClientMessageID(clientMessageId)!;
-    if (pending.fileId == null && pending.localImagePath != null) {
-      try {
-        final image = XFile(pending.localImagePath!);
-        final fileId = await _uploadImage(image);
-        _updatePendingMessage(
-          clientMessageId,
-          (message) => message.copyWith(fileId: fileId),
-        );
-        pending = _messageByClientMessageID(clientMessageId)!;
-      } on DioException catch (error) {
-        _markPendingFailed(
-          clientMessageId,
-          AppFeedback.dioErrorMessage(error, fallback: '图片上传失败'),
-        );
-        return null;
-      } catch (error) {
-        _markPendingFailed(clientMessageId, '图片上传失败');
+    final sessionRequest = _captureSessionRequest();
+    try {
+      final failed = _messageByClientMessageID(clientMessageId);
+      final pendingContext = _pendingMessages[clientMessageId];
+      if (failed == null ||
+          !failed.isFailed ||
+          (pendingContext != null &&
+              pendingContext.targetUserId != targetUserId)) {
         return null;
       }
+      _updatePendingMessage(
+        clientMessageId,
+        (message) => message.copyWith(
+          localStatus: MessageLocalStatus.pending,
+          clearLocalError: true,
+        ),
+      );
+      _messageError = null;
+      notifyListeners();
+
+      var pending = _messageByClientMessageID(clientMessageId)!;
+      if (pending.fileId == null && pending.localImagePath != null) {
+        final image = XFile(pending.localImagePath!);
+        try {
+          final fileId = await _uploadImage(
+            image,
+            cancelToken: sessionRequest.cancelToken,
+          );
+          if (!_ownsSessionRequest(sessionRequest)) return null;
+          _updatePendingMessage(
+            clientMessageId,
+            (message) => message.copyWith(fileId: fileId),
+          );
+          pending = _messageByClientMessageID(clientMessageId)!;
+        } on DioException catch (error) {
+          if (CancelToken.isCancel(error) ||
+              !_ownsSessionRequest(sessionRequest)) {
+            return null;
+          }
+          _markPendingFailed(
+            clientMessageId,
+            AppFeedback.dioErrorMessage(error, fallback: '图片上传失败'),
+          );
+          return null;
+        } catch (error) {
+          if (!_ownsSessionRequest(sessionRequest)) return null;
+          _markPendingFailed(clientMessageId, '图片上传失败');
+          return null;
+        }
+      }
+      if (!_ownsSessionRequest(sessionRequest)) return null;
+      return _sendPendingMessage(targetUserId, pending.clientMessageId!);
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
-    return _sendPendingMessage(targetUserId, pending.clientMessageId!);
   }
 
   void deleteFailedMessage(String clientMessageId) {
@@ -725,20 +892,34 @@ class MessageProvider extends ChangeNotifier {
   Future<Message?> _sendPendingMessage(
     int targetUserId,
     String clientMessageId,
+  ) {
+    return _sendActionGuard.run<Message?>(
+      'message-send:$clientMessageId',
+      () => _sendPendingMessageOnce(targetUserId, clientMessageId),
+    );
+  }
+
+  Future<Message?> _sendPendingMessageOnce(
+    int targetUserId,
+    String clientMessageId,
   ) async {
+    final sessionRequest = _captureSessionRequest();
     final pending = _messageByClientMessageID(clientMessageId);
-    if (pending == null) return null;
+    if (pending == null) {
+      _releaseSessionRequest(sessionRequest);
+      return null;
+    }
     if (pending.content.isEmpty &&
         pending.fileId == null &&
         !pending.isSticker) {
       _markPendingFailed(clientMessageId, '消息内容不能为空');
+      _releaseSessionRequest(sessionRequest);
       return null;
     }
 
-    final cancelToken = CancelToken();
     final timeoutTimer = Timer(
       _sendTimeout,
-      () => cancelToken.cancel('发送超时'),
+      () => sessionRequest.cancelToken.cancel('发送超时'),
     );
     try {
       final response = await _dio.post(
@@ -749,12 +930,18 @@ class MessageProvider extends ChangeNotifier {
           if (pending.isSticker) 'sticker_id': pending.stickerId,
           'client_message_id': clientMessageId,
         },
-        cancelToken: cancelToken,
+        cancelToken: sessionRequest.cancelToken,
         options: Options(
           sendTimeout: _sendTimeout,
           receiveTimeout: _sendTimeout,
+          headers: <String, dynamic>{
+            // client_message_id 贯穿待发送、失败重试和服务端唯一约束，
+            // 同时作为跨请求的幂等键，避免响应丢失后重复创建私信。
+            'Idempotency-Key': 'message-$clientMessageId',
+          },
         ),
       );
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           response.data is Map) {
         final serverMessage = Message.fromJson(
@@ -771,15 +958,18 @@ class MessageProvider extends ChangeNotifier {
       }
       _markPendingFailed(clientMessageId, '发送消息失败');
     } on DioException catch (error) {
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       final message = CancelToken.isCancel(error)
           ? '发送超时，请检查网络后重试'
           : AppFeedback.dioErrorMessage(error, fallback: '发送消息失败');
       _markPendingFailed(clientMessageId, message);
     } catch (error) {
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       _markPendingFailed(clientMessageId, '发送消息失败');
       debugPrint('发送消息失败: $error');
     } finally {
       timeoutTimer.cancel();
+      _releaseSessionRequest(sessionRequest);
     }
     return null;
   }
@@ -792,18 +982,17 @@ class MessageProvider extends ChangeNotifier {
   Future<void> _verifyRemoteMedia(Message message) async {
     final url = message.imageUrl;
     if (url.isEmpty) return;
-    final sessionGen = _sessionGeneration;
-    final cancelToken = CancelToken();
+    final sessionRequest = _captureSessionRequest();
     try {
       final response = await _dio.get<ResponseBody>(
         ApiConstants.fullUrl(url),
         options: Options(responseType: ResponseType.stream),
-        cancelToken: cancelToken,
+        cancelToken: sessionRequest.cancelToken,
       );
-      if (sessionGen != _sessionGeneration) return;
+      if (!_ownsSessionRequest(sessionRequest)) return;
       final status = response.statusCode ?? 0;
       if (status >= 200 && status < 300) {
-        cancelToken.cancel();
+        sessionRequest.cancelToken.cancel();
         return;
       }
       throw DioException(
@@ -815,7 +1004,7 @@ class MessageProvider extends ChangeNotifier {
         type: DioExceptionType.badResponse,
       );
     } on DioException catch (error) {
-      if (sessionGen != _sessionGeneration) return;
+      if (!_ownsSessionRequest(sessionRequest)) return;
       if (CancelToken.isCancel(error)) return;
       DiagnosticLogService.instance.record(
         level: 'error',
@@ -835,7 +1024,7 @@ class MessageProvider extends ChangeNotifier {
         },
       );
     } catch (_) {
-      if (sessionGen != _sessionGeneration) return;
+      if (!_ownsSessionRequest(sessionRequest)) return;
       DiagnosticLogService.instance.record(
         level: 'error',
         source: 'pm',
@@ -852,6 +1041,8 @@ class MessageProvider extends ChangeNotifier {
           'senderId': message.senderId,
         },
       );
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
@@ -951,7 +1142,10 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<int> _uploadImage(XFile image) async {
+  Future<int> _uploadImage(
+    XFile image, {
+    CancelToken? cancelToken,
+  }) async {
     final filename = _safeUploadFilename(image.name);
     // 移动/桌面端从文件流式上传，避免整张图片读入内存；Web 走 fromBytes。
     final MultipartFile part;
@@ -965,6 +1159,7 @@ class MessageProvider extends ChangeNotifier {
     final response = await _dio.post(
       '/upload',
       data: formData,
+      cancelToken: cancelToken,
       options: Options(
         sendTimeout: const Duration(seconds: 60),
         receiveTimeout: const Duration(seconds: 60),
@@ -994,16 +1189,22 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<void> markRead(int conversationId, {int? markedMessageId}) async {
+    final sessionRequest = _captureSessionRequest();
     final latestIncomingId = markedMessageId ??
         (_currentConversationId == conversationId
             ? latestIncomingMessage?.id
             : null);
     if (latestIncomingId != null &&
         _lastMarkedReadMessageIds[conversationId] == latestIncomingId) {
+      _releaseSessionRequest(sessionRequest);
       return;
     }
     try {
-      await _dio.post('/messages/conversations/$conversationId/read');
+      await _dio.post(
+        '/messages/conversations/$conversationId/read',
+        cancelToken: sessionRequest.cancelToken,
+      );
+      if (!_ownsSessionRequest(sessionRequest)) return;
       if (latestIncomingId != null) {
         _lastMarkedReadMessageIds[conversationId] = latestIncomingId;
       }
@@ -1015,13 +1216,22 @@ class MessageProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (error) {
-      debugPrint('标记消息已读失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('标记消息已读失败: $error');
+      }
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
   Future<MessageSendState?> getSendState(int targetUserId) async {
+    final sessionRequest = _captureSessionRequest();
     try {
-      final response = await _dio.get('/messages/$targetUserId/send-state');
+      final response = await _dio.get(
+        '/messages/$targetUserId/send-state',
+        cancelToken: sessionRequest.cancelToken,
+      );
+      if (!_ownsSessionRequest(sessionRequest)) return null;
       final data = response.data;
       if (data is Map<String, dynamic>) {
         return MessageSendState.fromJson(data);
@@ -1031,11 +1241,17 @@ class MessageProvider extends ChangeNotifier {
       }
       return null;
     } on DioException catch (error) {
-      debugPrint('拉取私信发送状态失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('拉取私信发送状态失败: $error');
+      }
       return null;
     } catch (error) {
-      debugPrint('拉取私信发送状态失败: $error');
+      if (_ownsSessionRequest(sessionRequest)) {
+        debugPrint('拉取私信发送状态失败: $error');
+      }
       return null;
+    } finally {
+      _releaseSessionRequest(sessionRequest);
     }
   }
 
@@ -1182,6 +1398,36 @@ class MessageProvider extends ChangeNotifier {
     _conversations.sort(
       (left, right) => right.lastMessageAt.compareTo(left.lastMessageAt),
     );
+  }
+
+  _MessageSessionRequest _captureSessionRequest() {
+    final cancelToken = CancelToken();
+    _sessionCancelTokens.add(cancelToken);
+    return _MessageSessionRequest(
+      userId: _sessionUserId,
+      authSessionGeneration: _authSessionGeneration,
+      providerGeneration: _sessionGeneration,
+      cancelToken: cancelToken,
+    );
+  }
+
+  bool _ownsSessionRequest(_MessageSessionRequest request) {
+    return !_disposed &&
+        request.userId == _sessionUserId &&
+        request.authSessionGeneration == _authSessionGeneration &&
+        request.providerGeneration == _sessionGeneration;
+  }
+
+  void _releaseSessionRequest(_MessageSessionRequest request) {
+    _sessionCancelTokens.remove(request.cancelToken);
+  }
+
+  void _cancelSessionRequests(String reason) {
+    final tokens = _sessionCancelTokens.toList(growable: false);
+    _sessionCancelTokens.clear();
+    for (final token in tokens) {
+      if (!token.isCancelled) token.cancel(reason);
+    }
   }
 
   void _stopRealtime() {
@@ -1368,9 +1614,25 @@ class MessageProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sessionGeneration++;
+    _cancelSessionRequests('私信 Provider 已释放');
     _stopRealtime();
     super.dispose();
   }
+}
+
+class _MessageSessionRequest {
+  const _MessageSessionRequest({
+    required this.userId,
+    required this.authSessionGeneration,
+    required this.providerGeneration,
+    required this.cancelToken,
+  });
+
+  final int? userId;
+  final int authSessionGeneration;
+  final int providerGeneration;
+  final CancelToken cancelToken;
 }
 
 class _PendingMessageContext {

@@ -20,8 +20,8 @@ class EncryptedBlobStore implements AppBlobStore {
   EncryptedBlobStore({
     AppSecretStore? secretStore,
     String namespace = 'default',
-  }) : _secretStore = secretStore ?? AppSecretStore.current(),
-       _namespace = namespace;
+  })  : _secretStore = secretStore ?? AppSecretStore.current(),
+        _namespace = namespace;
 
   String get _keyStoreName => 'blob_aes_key_$_namespace';
 
@@ -53,12 +53,12 @@ class EncryptedBlobStore implements AppBlobStore {
     final encrypter = enc.Encrypter(enc.AES(aesKey, mode: enc.AESMode.gcm));
 
     final encrypted = encrypter.encrypt(value, iv: iv);
-    
+
     // 我们需要将 IV 和密文一起保存
-    final combined = iv.base64 + ':' + encrypted.base64;
+    final combined = '${iv.base64}:${encrypted.base64}';
     final file = await _getFile(key);
     final tempFile = File('${file.path}.tmp');
-    
+
     await tempFile.writeAsString(combined, flush: true);
     await tempFile.rename(file.path);
   }

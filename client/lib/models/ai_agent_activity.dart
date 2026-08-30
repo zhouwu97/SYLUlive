@@ -18,6 +18,7 @@ class AiAgentActivity {
     this.jobId = '',
     this.freshnessBefore = '',
     this.freshnessAfter = '',
+    this.errorCode = '',
     this.success = false,
   });
 
@@ -34,6 +35,7 @@ class AiAgentActivity {
   final String jobId;
   final String freshnessBefore;
   final String freshnessAfter;
+  final String errorCode;
   final bool success;
 
   bool get isRunning => status == AiAgentActivityStatus.running;
@@ -53,6 +55,7 @@ class AiAgentActivity {
       jobId: event.jobId,
       freshnessBefore: event.freshnessBefore,
       freshnessAfter: event.freshnessAfter,
+      errorCode: event.errorCode,
       success: event.success,
     );
   }

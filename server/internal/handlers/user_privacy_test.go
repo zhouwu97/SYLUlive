@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -20,8 +21,11 @@ func newUserPrivacyTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}, &models.PushDevice{}); err != nil {
 		t.Fatalf("migrate users: %v", err)
+	}
+	if err := models.EnsurePushDeviceIndexes(db); err != nil {
+		t.Fatalf("migrate push device indexes: %v", err)
 	}
 	return db
 }
@@ -68,6 +72,141 @@ func TestUpdatePushSettingsKeepsActiveDeviceWhenAnotherInstallationDisables(t *t
 	}
 	if updated.PushDataProcessingEnabled || updated.PushInstallationID != "" || updated.DeviceToken != "" {
 		t.Fatalf("active device did not clear push state: %#v", updated)
+	}
+}
+
+func TestUpdatePushSettingsStoresMultiplePlatformsPerUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUserPrivacyTestDB(t)
+	user := models.User{StudentID: "multi-device-user", PasswordHash: "hash"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	handler := NewUserHandler(db)
+
+	call := func(body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPut, "/api/user/push-settings", strings.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		context.Set("user_id", user.ID)
+		handler.UpdatePushSettings(context)
+		return recorder
+	}
+
+	if recorder := call(`{"enabled":true,"installation_id":"iphone","registration_id":"ios-rid","notice_version":"v1","platform":"ios"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("iOS enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := call(`{"enabled":true,"installation_id":"android","registration_id":"android-rid","notice_version":"v1","platform":"android"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("Android enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var devices []models.PushDevice
+	if err := db.Where("user_id = ?", user.ID).Order("device_id").Find(&devices).Error; err != nil {
+		t.Fatalf("load push devices: %v", err)
+	}
+	if len(devices) != 2 || devices[0].Platform != "android" || devices[1].Platform != "ios" || !devices[0].Enabled || !devices[1].Enabled {
+		t.Fatalf("unexpected multi-device state: %#v", devices)
+	}
+
+	if recorder := call(`{"enabled":false,"installation_id":"iphone","notice_version":"v1","platform":"ios"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("iOS disable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var android models.PushDevice
+	if err := db.Where("device_id = ?", "android").First(&android).Error; err != nil {
+		t.Fatalf("reload Android device: %v", err)
+	}
+	if !android.Enabled {
+		t.Fatal("disabling iOS device unexpectedly disabled Android device")
+	}
+	var iphone models.PushDevice
+	if err := db.Where("device_id = ?", "iphone").First(&iphone).Error; err != nil {
+		t.Fatalf("reload iOS device: %v", err)
+	}
+	if iphone.Enabled {
+		t.Fatal("disabling iOS device did not disable its PushDevice record")
+	}
+}
+
+func TestPushDeviceActiveRegistrationIDIsUnique(t *testing.T) {
+	db := newUserPrivacyTestDB(t)
+	users := []models.User{
+		{StudentID: "push-index-user-a", PasswordHash: "hash"},
+		{StudentID: "push-index-user-b", PasswordHash: "hash"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+	first := models.PushDevice{
+		UserID: users[0].ID, DeviceID: "index-device-a", Platform: "ios",
+		PushProvider: "jpush", RegistrationID: "index-rid", Enabled: true,
+		LastSeenAt: time.Now(),
+	}
+	if err := db.Create(&first).Error; err != nil {
+		t.Fatalf("create first push device: %v", err)
+	}
+	duplicate := models.PushDevice{
+		UserID: users[1].ID, DeviceID: "index-device-b", Platform: "ios",
+		PushProvider: "jpush", RegistrationID: "index-rid", Enabled: true,
+		LastSeenAt: time.Now(),
+	}
+	if err := db.Create(&duplicate).Error; err == nil {
+		t.Fatal("active registration ID was not protected by a unique index")
+	}
+}
+
+func TestUpdatePushSettingsTransfersInstallationWithoutLegacyPushLeak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUserPrivacyTestDB(t)
+	userA := models.User{StudentID: "push-user-a", PasswordHash: "hash"}
+	userB := models.User{StudentID: "push-user-b", PasswordHash: "hash"}
+	if err := db.Create(&userA).Error; err != nil {
+		t.Fatalf("create user A: %v", err)
+	}
+	if err := db.Create(&userB).Error; err != nil {
+		t.Fatalf("create user B: %v", err)
+	}
+	handler := NewUserHandler(db)
+
+	call := func(userID uint, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPut, "/api/user/push-settings", strings.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		context.Set("user_id", userID)
+		handler.UpdatePushSettings(context)
+		return recorder
+	}
+
+	body := `{"enabled":true,"installation_id":"iphone","registration_id":"rid-ios","notice_version":"v1","platform":"ios"}`
+	if recorder := call(userA.ID, body); recorder.Code != http.StatusOK {
+		t.Fatalf("user A enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := call(userB.ID, body); recorder.Code != http.StatusOK {
+		t.Fatalf("user B enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var device models.PushDevice
+	if err := db.Where("device_id = ?", "iphone").First(&device).Error; err != nil {
+		t.Fatalf("load transferred device: %v", err)
+	}
+	if device.UserID != userB.ID || !device.Enabled || device.RegistrationID != "rid-ios" {
+		t.Fatalf("installation was not transferred to user B: %#v", device)
+	}
+
+	var oldUser models.User
+	if err := db.First(&oldUser, userA.ID).Error; err != nil {
+		t.Fatalf("load user A: %v", err)
+	}
+	if oldUser.PushDataProcessingEnabled || oldUser.PushInstallationID != "" || oldUser.DeviceToken != "" {
+		t.Fatalf("user A retained legacy push binding: %#v", oldUser)
+	}
+	var newUser models.User
+	if err := db.First(&newUser, userB.ID).Error; err != nil {
+		t.Fatalf("load user B: %v", err)
+	}
+	if !newUser.PushDataProcessingEnabled || newUser.PushInstallationID != "iphone" || newUser.DeviceToken != "rid-ios" {
+		t.Fatalf("user B did not receive legacy compatibility binding: %#v", newUser)
 	}
 }
 

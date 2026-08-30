@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../features/ai_runtime/tool_calling/tool_permission.dart';
+import '../../features/ai_device_bridge/device_credential_store.dart';
 import '../../features/campus_data/erke/erke_repository.dart';
 import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -15,7 +16,9 @@ import '../../features/personal_data_sync/personal_data_sync_result.dart';
 import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/webvpn_service.dart';
+import '../../services/physical_credential_store.dart';
 import '../../utils/app_feedback.dart';
+import '../../theme/app_spacing.dart';
 import '../../widgets/erke_snapshot_upload_dialog.dart';
 import 'campus_personal_data_permission_screen.dart';
 
@@ -89,11 +92,15 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     await LocalToolAuditStore(
       accountFingerprint: AccountCacheNamespace.fingerprint(widget.appUserId),
     ).clear();
+    await DeviceCredentialStore().deleteErke(widget.sourceAccountId);
+    await PhysicalCredentialStore().delete(widget.sourceAccountId);
     if (mounted) setState(() => _statuses = _load());
   }
 
   Future<void> _clearAll() async {
     await AesGcmAccountScopedSnapshotStore.clearAllVaultData();
+    await DeviceCredentialStore().deleteErke(widget.sourceAccountId);
+    await PhysicalCredentialStore().delete(widget.sourceAccountId);
     if (mounted) setState(() => _statuses = _load());
   }
 
@@ -165,6 +172,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                 obscureText: true,
                 decoration: const InputDecoration(labelText: '统一认证密码'),
               ),
+              const SizedBox(height: AppSpacing.sm),
               TextField(
                 controller: erkeController,
                 obscureText: true,

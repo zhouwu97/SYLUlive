@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.icu.text.BreakIterator
 import androidx.core.content.FileProvider
 import cn.jpush.android.api.JPushInterface
 import io.flutter.embedding.engine.FlutterEngine
@@ -19,6 +20,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
 
@@ -33,6 +35,7 @@ class MainActivity : FlutterActivity() {
         private const val NOTIFICATION_OPEN_CHANNEL =
             "shenliyuan/notification_open"
         private const val APP_UPDATE_CHANNEL = "shenliyuan/app_update"
+        private const val TEXT_SELECTION_CHANNEL = "shenliyuan/text_selection"
 
         const val ACTION_OPEN_NOTIFICATION =
             "com.example.shenliyuan.OPEN_NOTIFICATION"
@@ -152,6 +155,10 @@ class MainActivity : FlutterActivity() {
         appInForeground = true
         PrivateMessageNotificationState.setAppForeground(this, true)
         recordActivityTransition("resume", "应用进入前台")
+        try {
+            HomeWidgetRegistry.refreshAll(this)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onPause() {
@@ -324,6 +331,26 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // 只为帖子/评论正文提供中文词边界；普通 TextField 不经过此通道，
+        // 也不改动系统 PROCESS_TEXT 注册，避免影响输入法和编辑能力。
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            TEXT_SELECTION_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "resolveWordBoundary" -> {
+                    val text = call.argument<String>("text")
+                    val offset = call.argument<Number>("offset")?.toInt()
+                    if (text.isNullOrEmpty() || offset == null) {
+                        result.success(null)
+                    } else {
+                        result.success(resolveIcuWordBoundary(text, offset))
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         notificationOpenChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -983,6 +1010,24 @@ class MainActivity : FlutterActivity() {
         if (!apk.path.startsWith(root.path + File.separator)) return null
         if (!apk.isFile || !apk.name.endsWith(".apk", ignoreCase = true)) return null
         return apk
+    }
+
+    /** Android API 24+ 的确定性中文词边界；低版本返回 null 走 Dart 回退。 */
+    private fun resolveIcuWordBoundary(text: String, offset: Int): Map<String, Int>? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null
+        if (text.isEmpty()) return null
+
+        val safeOffset = offset.coerceIn(0, text.length)
+        val iterator = BreakIterator.getWordInstance(Locale.SIMPLIFIED_CHINESE)
+        iterator.setText(text)
+
+        var start = iterator.preceding((safeOffset + 1).coerceAtMost(text.length))
+        if (start == BreakIterator.DONE) start = iterator.first()
+        var end = iterator.following(safeOffset)
+        if (end == BreakIterator.DONE) end = iterator.last()
+
+        if (start < 0 || end <= start || end > text.length) return null
+        return mapOf("start" to start, "end" to end)
     }
 
     private fun handleDeepLink(intent: Intent?): Boolean {

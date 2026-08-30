@@ -3,6 +3,8 @@ import 'dart:convert';
 class Canteen {
   final int id;
   final String name;
+  final String locationArea;
+  final String locationFloor;
   final String image;
   final bool verified;
   final String operatingStatus;
@@ -13,12 +15,15 @@ class Canteen {
   final double averageStar;
   final Map<String, double> dimensionScores;
   final int dishCount;
+  final int dishWithPhotoCount;
   final int dishPhotoCount;
   final double rankingScore;
 
   Canteen({
     required this.id,
     required this.name,
+    this.locationArea = '',
+    this.locationFloor = '',
     required this.image,
     required this.verified,
     this.operatingStatus = 'active',
@@ -29,6 +34,7 @@ class Canteen {
     required this.averageStar,
     this.dimensionScores = const {},
     this.dishCount = 0,
+    this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.rankingScore = 0,
   });
@@ -37,6 +43,8 @@ class Canteen {
     return Canteen(
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
+      locationArea: json['location_area']?.toString() ?? '',
+      locationFloor: json['location_floor']?.toString() ?? '',
       image: json['image'] ?? '',
       verified: json['verified'] ?? false,
       operatingStatus: json['is_offline'] == true
@@ -54,12 +62,21 @@ class Canteen {
             )
           : const {},
       dishCount: json['dish_count'] ?? 0,
+      dishWithPhotoCount: json['dish_with_photo_count'] ?? 0,
       dishPhotoCount: json['dish_photo_count'] ?? 0,
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
     );
   }
 
   bool get isOffline => operatingStatus == 'offline';
+
+  /// 位置标签文案，如"一食堂·二楼"；未填写时为空。
+  String get locationLabel {
+    if (locationArea.isEmpty && locationFloor.isEmpty) return '';
+    if (locationArea.isEmpty) return locationFloor;
+    if (locationFloor.isEmpty) return locationArea;
+    return '$locationArea·$locationFloor';
+  }
 }
 
 class CanteenRating {

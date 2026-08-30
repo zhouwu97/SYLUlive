@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import '../models/team_recruitment.dart';
 import '../models/water_team.dart';
 import '../services/team_recruitment_service.dart';
+import '../services/idempotency_key.dart';
+import '../utils/public_image_compressor.dart';
 
 /// 组队大厅首屏状态，网络失败不能伪装成空列表。
 enum TeamFeedViewState {
@@ -42,6 +44,7 @@ enum TeamErrorType {
 /// 组队大厅独立状态；不会刷新或修改普通水帖的信息流缓存。
 class TeamRecruitmentProvider extends ChangeNotifier {
   final Dio _dio;
+  final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
   late final TeamRecruitmentService _service = TeamRecruitmentService(_dio);
 
   TeamRecruitmentProvider(this._dio);
@@ -67,6 +70,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   final Set<int> reviewingApplicationIds = {};
   final Set<int> loadingApplicationIds = {};
   final Map<int, String> applicationErrors = {};
+  final Map<String, String> _idempotencyKeys = <String, String>{};
 
   int publicPage = 1;
   int publicTotal = 0;
@@ -114,6 +118,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     updatingIds.clear();
     loadingApplicationIds.clear();
     applicationErrors.clear();
+    _idempotencyKeys.clear();
     notifyListeners();
   }
 
@@ -406,14 +411,17 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       String availability = ''}) async {
     if (applyingIds.contains(recruitmentId)) return '申请正在提交，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey = 'team-apply:$recruitmentId:$message:$availability';
     applyingIds.add(recruitmentId);
     notifyListeners();
     try {
       await _service.apply(
           recruitmentId: recruitmentId,
           message: message,
-          availability: availability);
+          availability: availability,
+          idempotencyKey: _idempotencyKeyFor(actionKey));
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
       return null;
     } catch (error) {
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
@@ -426,14 +434,24 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     }
   }
 
+  String _idempotencyKeyFor(String actionKey) => _idempotencyKeys.putIfAbsent(
+        actionKey,
+        () => newIdempotencyKey('team'),
+      );
+
   Future<String?> cancel(int applicationId) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey = 'team-cancel:$applicationId';
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
-      await _service.cancel(applicationId);
+      await _service.cancel(
+        applicationId,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      );
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
       return null;
     } catch (error) {
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
@@ -456,15 +474,24 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       {required bool remove}) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey =
+        'team-membership:${remove ? 'remove' : 'leave'}:$applicationId';
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
       if (remove) {
-        await _service.remove(applicationId);
+        await _service.remove(
+          applicationId,
+          idempotencyKey: _idempotencyKeyFor(actionKey),
+        );
       } else {
-        await _service.leave(applicationId);
+        await _service.leave(
+          applicationId,
+          idempotencyKey: _idempotencyKeyFor(actionKey),
+        );
       }
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
       return null;
     } catch (error) {
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
@@ -481,15 +508,25 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       {required bool accepted, String reply = ''}) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey = 'team-review:$applicationId:$accepted:$reply';
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
       if (accepted) {
-        await _service.accept(applicationId, reply: reply);
+        await _service.accept(
+          applicationId,
+          reply: reply,
+          idempotencyKey: _idempotencyKeyFor(actionKey),
+        );
       } else {
-        await _service.reject(applicationId, reply: reply);
+        await _service.reject(
+          applicationId,
+          reply: reply,
+          idempotencyKey: _idempotencyKeyFor(actionKey),
+        );
       }
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
       return null;
     } catch (error) {
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
@@ -505,11 +542,17 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   Future<String?> updateStatus(int recruitmentId, String status) async {
     if (closingIds.contains(recruitmentId)) return '正在更新状态，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey = 'team-status:$recruitmentId:$status';
     closingIds.add(recruitmentId);
     notifyListeners();
     try {
-      await _service.updateStatus(recruitmentId, status);
+      await _service.updateStatus(
+        recruitmentId,
+        status,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      );
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
       return null;
     } catch (error) {
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
@@ -525,11 +568,16 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   Future<String?> deleteRecruitment(int recruitmentId) async {
     if (deletingIds.contains(recruitmentId)) return '正在删除，请勿重复操作';
     final sessionVersion = _sessionVersion;
+    final actionKey = 'team-delete:$recruitmentId';
     deletingIds.add(recruitmentId);
     notifyListeners();
     try {
-      await _service.delete(recruitmentId);
+      await _service.delete(
+        recruitmentId,
+        idempotencyKey: _idempotencyKeyFor(actionKey),
+      );
       if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      _idempotencyKeys.remove(actionKey);
 
       final removedFromPublic =
           publicItems.any((item) => item.id == recruitmentId);
@@ -558,7 +606,8 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   String _error(Object error) {
     if (error is DioException && error.response?.data is Map) {
-      return error.response!.data['error']?.toString() ?? '请求失败';
+      final data = error.response!.data as Map;
+      return (data['message'] ?? data['error'])?.toString() ?? '请求失败';
     }
     return '请求失败，请稍后重试';
   }
@@ -607,16 +656,24 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   Future<List<int>> _uploadImages(List<XFile> images) async {
     final fileIds = <int>[];
-    for (final image in images) {
-      final bytes = await image.readAsBytes();
-      final response = await _dio.post('/upload',
-          data: FormData.fromMap({
-            'file': MultipartFile.fromBytes(bytes, filename: image.name),
-          }));
-      final id =
-          (response.data is Map ? response.data['file_id'] : null) as num?;
-      if (id == null) throw StateError('图片上传失败');
-      fileIds.add(id.toInt());
+    for (final source in images) {
+      final prepared = await _publicImageCompressor.prepare(source);
+      try {
+        final bytes = await prepared.file.readAsBytes();
+        final response = await _dio.post('/upload',
+            data: FormData.fromMap({
+              'file': MultipartFile.fromBytes(
+                bytes,
+                filename: prepared.file.name,
+              ),
+            }));
+        final id =
+            (response.data is Map ? response.data['file_id'] : null) as num?;
+        if (id == null) throw StateError('图片上传失败');
+        fileIds.add(id.toInt());
+      } finally {
+        await prepared.dispose();
+      }
     }
     return fileIds;
   }

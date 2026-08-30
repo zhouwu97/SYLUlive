@@ -1,0 +1,82 @@
+<style>
+  .v2-intro { margin-bottom: 18px; }
+  .v2-intro p { margin: 6px 0 0; color: #6f777d; }
+  .v2-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .v2-card { border: 1px solid #dfe8e4; border-radius: 12px; background: #fff; padding: 14px; }
+  .v2-card h3 { margin: 0; color: #1f2328; font-size: 16px; }
+  .v2-card p { margin: 6px 0 14px; color: #687176; font-size: 12px; line-height: 1.55; }
+  .phone { max-width: 320px; margin: 0 auto; overflow: hidden; border: 6px solid #20262a; border-radius: 24px; background: #fffbf6; box-shadow: 0 4px 12px rgba(31,35,40,.12); }
+  .phone-bar { height: 16px; background: #20262a; }
+  .phone-content { padding: 14px 12px 0; }
+  .store-name { color: #1f2328; font-weight: 700; font-size: 14px; }
+  .store-meta { margin-top: 4px; color: #7b8589; font-size: 10px; }
+  .section-title { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; color: #1f2328; font-size: 13px; font-weight: 700; }
+  .section-link { color: #899398; font-size: 10px; font-weight: 500; }
+  .empty-dish { display: grid; justify-items: center; gap: 5px; padding: 18px 8px 9px; color: #8a9498; text-align: center; font-size: 10px; }
+  .empty-dish b { color: #4f5a5f; }
+  .camera { width: 28px; height: 20px; border: 2px solid #a8b1b4; border-radius: 5px; position: relative; }
+  .camera:before { content: ''; width: 8px; height: 8px; border: 2px solid #a8b1b4; border-radius: 50%; position: absolute; left: 7px; top: 4px; }
+  .camera:after { content: ''; width: 8px; height: 3px; border-radius: 2px 2px 0 0; background: #a8b1b4; position: absolute; left: 4px; top: -5px; }
+  .review-row { padding: 10px 0; border-bottom: 1px solid #e9efec; color: #4e595e; font-size: 10px; }
+  .review-row strong { display: block; margin-bottom: 4px; color: #1f2328; }
+  .bottom-button { display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; margin: 14px -12px 0; background: #147c72; color: #fff; font-weight: 700; font-size: 12px; }
+  .bottom-button .plus { font-size: 18px; line-height: 1; font-weight: 400; }
+  .sheet { margin: 14px -12px 0; padding: 12px; background: #fff; border-top: 1px solid #e2ebe7; box-shadow: 0 -6px 14px rgba(31,35,40,.08); }
+  .sheet-handle { width: 34px; height: 4px; margin: 0 auto 10px; border-radius: 99px; background: #d6dfdc; }
+  .sheet-title { color: #1f2328; font-size: 13px; font-weight: 700; }
+  .sheet-subtitle { margin: 4px 0 10px; color: #7b8589; font-size: 10px; }
+  .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sheet-action { display: grid; place-items: center; gap: 4px; min-height: 58px; border: 1px solid #c6dfda; border-radius: 9px; background: #f2faf7; color: #147c72; font-size: 11px; font-weight: 700; }
+  .sheet-action .icon { font-size: 18px; font-weight: 400; }
+  @media (max-width: 760px) { .v2-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="v2-intro">
+  <h2>方案 B · 按钮版“贡献内容”</h2>
+  <p>底部只保留一个主按钮；点击后再选择具体动作。菜品空态不再出现第二个同级按钮。</p>
+</div>
+
+<div class="v2-grid">
+  <div class="v2-card">
+    <h3>收起状态：唯一入口</h3>
+    <p>用整行按钮替代输入框和“添加”按钮组合，用户一眼能知道这是新增内容入口。</p>
+    <div class="phone">
+      <div class="phone-bar"></div>
+      <div class="phone-content">
+        <div class="store-name">杂粮煎饼 煎饼果子（一楼）</div>
+        <div class="store-meta">★ 5.0 · 2 人评价</div>
+        <div class="section-title"><span>商家菜品</span><span class="section-link">查看全部 →</span></div>
+        <div class="empty-dish"><div class="camera"></div><b>还没有菜品实拍</b><span>已有同学来过？可以从底部统一入口补充</span></div>
+        <div class="section-title"><span>用户评价 · 2</span><span class="section-link">综合　最新</span></div>
+        <div class="review-row"><strong>★ 5.0</strong>挺好吃还便宜</div>
+        <div class="review-row"><strong>★ 5.0</strong>分量足，出餐快</div>
+        <div class="bottom-button"><span class="plus">＋</span>贡献内容</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="v2-card">
+    <h3>展开状态：两个明确按钮</h3>
+    <p>底部按钮点击后打开轻量操作面板，两个按钮对应不同对象，不再把它们同时摆在详情页正文里。</p>
+    <div class="phone">
+      <div class="phone-bar"></div>
+      <div class="phone-content">
+        <div class="store-name">杂粮煎饼 煎饼果子（一楼）</div>
+        <div class="store-meta">★ 5.0 · 2 人评价</div>
+        <div class="section-title"><span>商家菜品</span><span class="section-link">查看全部 →</span></div>
+        <div class="empty-dish"><div class="camera"></div><b>还没有菜品实拍</b><span>先看看评价，或从底部贡献内容</span></div>
+        <div class="section-title"><span>用户评价 · 2</span><span class="section-link">综合　最新</span></div>
+        <div class="review-row"><strong>★ 5.0</strong>挺好吃还便宜</div>
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">你想贡献什么？</div>
+          <div class="sheet-subtitle">选择一种内容，帮助其他同学做决定</div>
+          <div class="sheet-actions">
+            <div class="sheet-action"><span class="icon">★</span>写商家评价</div>
+            <div class="sheet-action"><span class="icon">▣</span>上传菜品实拍</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -12,7 +12,9 @@ class _Service extends PollService {
   _Service() : super(Dio());
 
   @override
-  Future<Post> putBallot(int pollId, List<int> optionIds) async => _post(participants: 1);
+  Future<Post> putBallot(int pollId, List<int> optionIds,
+      {String? idempotencyKey}) async =>
+      _post(participants: 1);
 }
 
 Post _post({bool multiple = true, bool active = true, bool voted = false, bool canChange = true, bool resultsVisible = true, int participants = 0}) {

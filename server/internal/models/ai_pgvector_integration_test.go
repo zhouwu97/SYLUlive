@@ -29,6 +29,8 @@ func TestPGVectorMigrationIntegration(t *testing.T) {
 		"20260719_ai_runtime_rag.sql",
 		"20260719_ai_privacy_quota.sql",
 		"20260727_ai_langchain_ingestion.sql",
+		"20260823_ai_agent_context.sql",
+		"20260823_ai_agent_runtime_hardening.sql",
 	} {
 		migrationPath := filepath.Join("..", "..", "sql", migrationName)
 		migration, err := os.ReadFile(migrationPath)

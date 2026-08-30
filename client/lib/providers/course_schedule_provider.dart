@@ -1,12 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'dart:convert';
 import '../config/api_constants.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/campus_data/storage/schedule_cache_store.dart';
 import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
+
+const _eduScheduleRequestTimeout = Duration(seconds: 25);
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -131,6 +135,17 @@ class _ScheduleOperationContext {
   final int semester;
 }
 
+/// 课表会话从认证身份到本地快照可用的阶段。
+///
+/// 课表为空并不等于当前用户真的没有课表：在来源账号尚未恢复、保险箱尚未
+/// 打开或缓存尚未读取完成时，UI 必须保留正式框架，不能提前展示空状态 CTA。
+enum ScheduleSessionPhase {
+  resolvingIdentity,
+  openingStore,
+  restoringCache,
+  ready,
+}
+
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
@@ -143,6 +158,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   ScheduleCacheStore? _scheduleStore;
   Future<void> _scheduleStoreReady = Future<void>.value();
   int _contextGeneration = 0;
+  ScheduleSessionPhase _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -172,6 +188,15 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? get cacheUserId => _userId;
   String? get sourceAccountId => _sourceAccountId;
   List<CourseArchive> get archives => _archives;
+  ScheduleSessionPhase get sessionPhase => _sessionPhase;
+  bool get isSessionReady => _sessionPhase == ScheduleSessionPhase.ready;
+  int get contextGeneration => _contextGeneration;
+
+  /// 页面层用于绑定一次性加载状态的稳定会话标识。
+  ///
+  /// 空来源账号是有意保留的：它表示认证用户已知，但教务身份仍在恢复，
+  /// 不能与已完成绑定的 `appUserId::sourceAccountId` 混为同一会话。
+  String get sessionKey => '${_userId ?? ''}::${_sourceAccountId ?? ''}';
 
   // 正常运行由 main 传入带认证拦截器的共享客户端；无参构造仅用于本地缓存测试。
   CourseScheduleProvider([
@@ -231,6 +256,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _archives = [];
     _errorMessage = null;
     _isLoading = false;
+    _lastFetchedAt = null;
     _userId = normalizedUserId;
     _sourceAccountId = normalizedSourceAccountId;
     _currentTerm = CourseTerm.inferCurrentTerm();
@@ -244,6 +270,9 @@ class CourseScheduleProvider extends ChangeNotifier {
           );
     final store = _scheduleStore;
     final generation = _contextGeneration;
+    _sessionPhase = store == null
+        ? ScheduleSessionPhase.resolvingIdentity
+        : ScheduleSessionPhase.openingStore;
     _scheduleStoreReady = store == null
         ? Future<void>.value()
         : store.discardUnownedLegacy().catchError((Object error) {
@@ -251,20 +280,49 @@ class CourseScheduleProvider extends ChangeNotifier {
           });
 
     if (store != null) {
-      _scheduleStoreReady.then((_) async {
-        if (generation != _contextGeneration ||
-            !identical(store, _scheduleStore)) {
-          return;
-        }
-        await loadSemesterStart();
-        await loadArchiveList();
-        if (generation == _contextGeneration &&
-            identical(store, _scheduleStore)) {
-          notifyListeners();
-        }
-      });
+      unawaited(_restoreSession(
+        generation: generation,
+        store: store,
+      ));
     }
     notifyListeners();
+  }
+
+  bool _isCurrentSession(int generation, ScheduleCacheStore store) {
+    return generation == _contextGeneration && identical(store, _scheduleStore);
+  }
+
+  /// 打开当前会话的保险箱并完成一次本地恢复。
+  ///
+  /// 这条链由 Provider 独占，页面不再通过 `setUserId` 或缓存 Future 参与
+  /// session 绑定。即使 EduProvider 的来源账号晚于 App 用户 ID 到达，也会
+  /// 产生新的 generation，并从正确 namespace 重新执行这里的恢复流程。
+  Future<void> _restoreSession({
+    required int generation,
+    required ScheduleCacheStore store,
+  }) async {
+    try {
+      await _scheduleStoreReady;
+      if (!_isCurrentSession(generation, store)) return;
+
+      _sessionPhase = ScheduleSessionPhase.restoringCache;
+      notifyListeners();
+
+      await loadSemesterStart();
+      await loadArchiveList();
+      await loadCachedCoursesIfAvailable();
+
+      if (!_isCurrentSession(generation, store)) return;
+      _sessionPhase = ScheduleSessionPhase.ready;
+      notifyListeners();
+    } catch (error) {
+      // 缓存损坏或本地读失败不能让页面永久停在初始化态；ready 表示身份和
+      // namespace 已确定，空课表仍由 UI 按正常 empty 状态处理，并允许用户重试。
+      debugPrint('恢复课表本地会话失败: ${error.runtimeType}');
+      if (!_isCurrentSession(generation, store)) return;
+      _sessionPhase = ScheduleSessionPhase.ready;
+      notifyListeners();
+    }
   }
 
   /// 彻底清空当前用户所有内存状态（用于登出场景）
@@ -274,11 +332,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     _sourceAccountId = null;
     _scheduleStore = null;
     _scheduleStoreReady = Future<void>.value();
+    _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
     _courses = [];
     _gridData = {};
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
+    _lastFetchedAt = null;
     _currentTerm = null;
     _isLoading = false;
     notifyListeners();
@@ -794,6 +854,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       final fetchResp = await _apiDio.post(
         '/edu/courses',
         data: {'year': operation.year, 'semester': operation.semester},
+        options: Options(receiveTimeout: _eduScheduleRequestTimeout),
       );
       if (!_isCurrentOperation(operation)) return;
 

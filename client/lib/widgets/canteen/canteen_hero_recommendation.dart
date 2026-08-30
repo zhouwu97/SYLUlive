@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../config/api_constants.dart';
 import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
@@ -12,11 +11,13 @@ import 'canteen_status_image.dart';
 class CanteenHeroRecommendationCard extends StatefulWidget {
   final CanteenHero hero;
   final VoidCallback onTap;
+  final String? heroTag;
 
   const CanteenHeroRecommendationCard({
     super.key,
     required this.hero,
     required this.onTap,
+    this.heroTag,
   });
 
   @override
@@ -32,6 +33,7 @@ class _CanteenHeroRecommendationCardState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final h = widget.hero;
+    final heroTag = widget.heroTag ?? 'canteen-home-hero-${h.canteenId}';
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
@@ -39,8 +41,8 @@ class _CanteenHeroRecommendationCardState
       onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: _pressed ? 0.985 : 1.0,
+      child: AnimatedOpacity(
+        opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
         child: Container(
@@ -56,7 +58,7 @@ class _CanteenHeroRecommendationCardState
               Stack(
                 children: [
                   Hero(
-                    tag: 'canteen-${h.canteenId}',
+                    tag: heroTag,
                     child: SizedBox(
                       width: double.infinity,
                       height: 176,
@@ -105,6 +107,19 @@ class _CanteenHeroRecommendationCardState
                                   ],
                                 ),
                               ),
+                              if (h.locationLabel.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  h.locationLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 3),
                               Text(
                                 _recentFeedbackLabel,
@@ -174,7 +189,7 @@ class _CanteenHeroRecommendationCardState
     final count = h.recentReviewCount > 0
         ? h.recentReviewCount
         : (h.visitReviewCount > 0 ? h.visitReviewCount : h.ratingCount);
-    return count > 0 ? '近 7 天 $count 条到店评价' : '近 7 天暂无到店评价';
+    return count > 0 ? '近 7 天 $count 条商家评价' : '近 7 天暂无商家评价';
   }
 
   Widget _buildDimensionRow(bool isDark) {
@@ -249,7 +264,8 @@ class _CanteenHeroRecommendationCardState
       );
     }
     return CanteenStatusImage(
-      imageUrl: ApiConstants.fullUrl(h.image),
+      imageUrl: h.image,
+      variant: 'medium',
       offline: h.operatingStatus == 'offline',
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),

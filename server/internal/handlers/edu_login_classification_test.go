@@ -27,3 +27,20 @@ func TestClassifyEduLoginFailureOnlyUsesCredentialCodeForExplicitPasswordErrors(
 		t.Fatalf("unknown login page must not be classified as credentials error")
 	}
 }
+
+func TestIsStableEduStateErrorCodePassesNewRefreshCodesThrough(t *testing.T) {
+	stable := []string{
+		"EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE",
+		"EDU_INVALID_CREDENTIALS", "EDU_UPSTREAM_UNAVAILABLE", "EDU_NETWORK_ERROR",
+	}
+	for _, code := range stable {
+		if !isStableEduStateErrorCode(code) {
+			t.Fatalf("code %s must pass through unchanged", code)
+		}
+	}
+	for _, code := range []string{"", "EDU_FETCH_FAILED", "EDU_LOGIN_FAILED", "rag_unavailable"} {
+		if isStableEduStateErrorCode(code) {
+			t.Fatalf("code %s must not be treated as stable", code)
+		}
+	}
+}

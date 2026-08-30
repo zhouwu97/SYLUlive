@@ -136,8 +136,13 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   }
 
   String _parseError(DioException e) {
-    if (e.response?.data is Map && e.response?.data['error'] != null) {
-      return e.response!.data['error'].toString();
+    if (e.response?.data is Map) {
+      final data = e.response!.data as Map;
+      // 服务端统一错误格式为 {code, message, request_id}，旧接口仍是 {error}。
+      final message = data['message'] ?? data['error'];
+      if (message != null && message.toString().trim().isNotEmpty) {
+        return message.toString();
+      }
     }
     final status = e.response?.statusCode;
     if (status != null && status >= 500) {

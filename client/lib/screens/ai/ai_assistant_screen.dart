@@ -58,6 +58,7 @@ import 'ai_model_settings_screen.dart';
 import 'ai_feature_settings_screen.dart';
 import 'graduation_checklist_screen.dart';
 import 'personal_data_center_screen.dart';
+import '../erke_score_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
@@ -67,6 +68,7 @@ import '../../widgets/ai/ai_agent_permission_sheet.dart';
 import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
+import '../account_security_screen.dart';
 
 enum _ConsentChoice { denied, once, always }
 
@@ -106,6 +108,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   String _lastConsentDialogKey = '';
   bool _agentTrusted = false;
   bool _agentPermissionLoaded = false;
+  AgentPermissionLoadState _agentPermissionState =
+      AgentPermissionLoadState.loading;
+  DeviceBridgeStatus _bridgeStatus = DeviceToolBridge.status;
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -139,6 +144,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
     _permissionService = AiPersonalDataPermissionService(widget.dio);
     _provider.addListener(_handleRunConsentRequired);
+    DeviceToolBridge.statusNotifier.addListener(_handleBridgeStatusChanged);
     final initialPrompt = widget.initialPrompt?.trim() ?? '';
     if (initialPrompt.isNotEmpty) {
       _inputController.value = TextEditingValue(
@@ -146,7 +152,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         selection: TextSelection.collapsed(offset: initialPrompt.length),
       );
     }
-    unawaited(_provider.initialize());
     unawaited(_loadAgentPermissionMode());
   }
 
@@ -164,12 +169,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _eduProvider = edu..addListener(_handleAccountContextChanged);
     }
     _synchronizePersonalAccount();
+    _synchronizeServerAccount();
   }
 
   @override
   void dispose() {
     _authProvider?.removeListener(_handleAccountContextChanged);
     _eduProvider?.removeListener(_handleAccountContextChanged);
+    DeviceToolBridge.statusNotifier.removeListener(_handleBridgeStatusChanged);
     _toolCancellation?.cancel();
     unawaited(_activeToolModel?.cancel());
     _inputFocusNode.dispose();
@@ -177,6 +184,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _provider.removeListener(_handleRunConsentRequired);
     _provider.dispose();
     super.dispose();
+  }
+
+  void _handleBridgeStatusChanged() {
+    if (!mounted) return;
+    setState(() => _bridgeStatus = DeviceToolBridge.status);
+  }
+
+  Future<void> _retryDeviceBridge() async {
+    try {
+      await DeviceToolBridge.syncPending();
+      if (mounted && DeviceToolBridge.status == DeviceBridgeStatus.connected) {
+        AppFeedback.success('设备桥接已恢复', context: context);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppFeedback.error('设备桥接仍不可用，请检查网络后重试', context: context);
+      }
+    }
   }
 
   void _handleRunConsentRequired() {
@@ -236,7 +261,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               isDeviceConsent
                   ? '为了回答当前问题，Agent 会检查数据新鲜度，必要时刷新并读取${requestedData.isEmpty ? '相关校园数据' : requestedData}，然后只回传本次问题所需的最小化摘要。\n\n不会读取密码、Cookie、Token 或设备标识。此选择只对当前请求生效，不会修改长期设置。'
                   : consent.consentScope == 'ai_external_model_analysis'
-                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务（当前为 gpt-5.4-mini）。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                      ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给统一 AI 模型服务。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
                       : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
             ),
             actions: [
@@ -327,7 +352,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
+    _synchronizeServerAccount();
+  }
 
+  void _synchronizeServerAccount() {
     final auth = _authProvider;
     final authKey = auth == null
         ? null
@@ -336,7 +364,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     if (authKey == _lastBootstrapAuthKey) return;
     _lastBootstrapAuthKey = authKey;
 
-    unawaited(_provider.retryBootstrap());
+    _provider.resetForAccountChange(
+      accountId: auth?.isLoggedIn == true ? auth?.user?.id : null,
+      sessionGeneration: auth?.accountSessionEpoch ?? 0,
+    );
+    if (auth?.isLoggedIn == true && auth?.user?.id != null) {
+      unawaited(_provider.retryBootstrap());
+    }
   }
 
   void _synchronizePersonalAccount() {
@@ -820,6 +854,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         setState(() {
           _agentTrusted = mode == AiAgentPermissionMode.trusted;
           _agentPermissionLoaded = true;
+          _agentPermissionState = _agentTrusted
+              ? AgentPermissionLoadState.trusted
+              : AgentPermissionLoadState.ask;
         });
         _handleRunConsentRequired();
       }
@@ -828,6 +865,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         setState(() {
           _agentTrusted = false;
           _agentPermissionLoaded = true;
+          _agentPermissionState = AgentPermissionLoadState.unavailable;
         });
         _handleRunConsentRequired();
       }
@@ -837,6 +875,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _showAgentPermissions() async {
     await AiAgentPermissionSheet.show(context, widget.dio);
     if (mounted) unawaited(_loadAgentPermissionMode());
+  }
+
+  Future<void> _reauthorizeEduAndRetry() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AccountSecurityScreen(),
+      ),
+    );
+    if (!mounted) return;
+    final edu = _eduProvider;
+    await edu?.refreshStatus();
+    if (!mounted) return;
+    if (edu?.isAuthorized == true && edu?.sessionState == 'active') {
+      if (_provider.canRetry) _provider.retryLast();
+      return;
+    }
+    AppFeedback.error('教务仍未恢复，请完成重新授权或登录后再试', context: context);
   }
 
   Future<void> _submitInlineAgentConsent(_ConsentChoice choice) async {
@@ -970,6 +1026,17 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final updated =
           await DioCalendarActionSource(widget.dio).confirm(draft.id);
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (updated.postconditionVerified == false) {
+        _replaceCalendarDraft(updated);
+        await _persistPersonalHistory();
+        if (mounted) {
+          AppFeedback.error(
+            '操作接口已返回，但回读未确认日历是否生效，请刷新日历后再判断',
+            context: context,
+          );
+        }
+        return;
+      }
       final localReminderScheduled =
           await _scheduleConfirmedCalendarReminder(updated);
       _replaceCalendarDraft(updated);
@@ -1154,6 +1221,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       await _showAgentPermissions();
       return;
     }
+    if (value == 'billing') {
+      AppFeedback.info('计费与额度功能暂未开发', context: context);
+      return;
+    }
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
       AppFeedback.info('毕业助手在当前内测版本中暂未开放', context: context);
       return;
@@ -1268,6 +1339,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         label: 'Agent 权限',
                         icon: Icons.admin_panel_settings_outlined,
                       ),
+                      AppPopupAction(
+                        value: 'billing',
+                        label: '计费与额度（暂未开发）',
+                        icon: Icons.account_balance_wallet_outlined,
+                      ),
                       if (BetaReleasePolicy.aiGraduationAssistant)
                         AppPopupAction(
                           value: 'graduation',
@@ -1362,14 +1438,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                       onRetrySources: () => unawaited(
                                         _provider.retryMessageSources(message),
                                       ),
+                                      onFeedback: (feedback) => _provider
+                                          .submitFeedback(message, feedback),
                                     ),
                                     if (message.role == AiMessageRole.user &&
                                         message.requestId ==
                                             provider.activeSubmissionRequestId)
                                       AiAgentExecutionCard(
                                         activities: provider.agentActivities,
+                                        rawEvents: provider.agentRawEvents,
                                         event: provider.agentEvent,
                                         running: provider.isRunning,
+                                        reconnecting: provider.isReconnecting,
                                         completed: provider.agentFlowCompleted,
                                         onOpenPermissions:
                                             _showAgentPermissions,
@@ -1394,6 +1474,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         onUseExistingData:
                                             provider.canUseExistingData
                                                 ? provider.useExistingData
+                                                : null,
+                                        onReauthorizeEdu: provider.canRetry
+                                            ? _reauthorizeEduAndRetry
+                                            : null,
+                                        onUpdateErke:
+                                            provider.hasOptionalErkeUpdate
+                                                ? _openErkeUpdate
                                                 : null,
                                       ),
                                     if (message.role == AiMessageRole.user &&
@@ -1454,13 +1541,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',
                     showAgentPermissionMode: !_personalMode,
                     agentTrusted: _agentTrusted,
+                    agentPermissionState: _agentPermissionState,
+                    bridgeStatus: _bridgeStatus,
                     onAgentPermissionTap: _showAgentPermissions,
+                    onBridgeRetry: () => unawaited(_retryDeviceBridge()),
                   ),
                 ],
               ),
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _openErkeUpdate() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ErkeScoreScreen(),
       ),
     );
   }

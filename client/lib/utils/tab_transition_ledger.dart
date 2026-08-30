@@ -9,12 +9,14 @@ class TabTransitionPlan {
     required this.targetIndex,
     required this.commit,
     required this.shouldReveal,
+    required this.previousIndex,
   });
 
   final int serial;
   final int targetIndex;
   final bool commit;
   final bool shouldReveal;
+  final int previousIndex;
 }
 
 class TabTransitionLedger {
@@ -36,6 +38,7 @@ class TabTransitionLedger {
   double visualIndex;
   int? targetIndex;
   int serial = 0;
+  int? _previousIndex;
 
   TabTransitionPlan begin(
     int target, {
@@ -44,6 +47,7 @@ class TabTransitionLedger {
   }) {
     _assertValidIndex(target);
     final requestSerial = ++serial;
+    _previousIndex = currentIndex;
     final shouldReveal = commit && !revealedTabs.contains(target);
     visitedTabs.add(target);
     targetIndex = target;
@@ -54,14 +58,19 @@ class TabTransitionLedger {
       targetIndex: target,
       commit: commit,
       shouldReveal: shouldReveal,
+      previousIndex: _previousIndex!,
     );
   }
 
   /// 取消当前请求并恢复到已提交 Tab。用于重复点击、手势取消和边界返回。
-  void cancel() {
+  void cancel({bool resetVisual = true}) {
+    if (targetIndex != null && _previousIndex != null) {
+      currentIndex = _previousIndex!;
+    }
     serial++;
     targetIndex = null;
-    visualIndex = currentIndex.toDouble();
+    _previousIndex = null;
+    if (resetVisual) visualIndex = currentIndex.toDouble();
   }
 
   bool isCurrent(int requestSerial) => serial == requestSerial;
@@ -72,6 +81,7 @@ class TabTransitionLedger {
       revealedTabs.add(plan.targetIndex);
     }
     targetIndex = null;
+    _previousIndex = null;
     visualIndex = currentIndex.toDouble();
     return true;
   }

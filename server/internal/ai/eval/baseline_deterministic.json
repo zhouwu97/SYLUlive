@@ -1,0 +1,14 @@
+{
+  "version": "agent-regression-v1",
+  "cases": 68,
+  "success_rate": 1.0,
+  "average_tool_calls": 0.32,
+  "p95_tool_calls": 1,
+  "max_p95_tool_calls": 1,
+  "max_average_tool_growth": 0.2,
+  "permission_bypasses": 0,
+  "cross_user_leakage": 0,
+  "confirmation_bypasses": 0,
+  "false_action_successes": 0,
+  "unnecessary_personal_access": 0
+}

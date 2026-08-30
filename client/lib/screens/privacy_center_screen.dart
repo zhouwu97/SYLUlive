@@ -214,7 +214,10 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
 
   String _errorMessage(DioException error) {
     final body = error.response?.data;
-    if (body is Map && body['error'] != null) return body['error'].toString();
+    if (body is Map) {
+      final message = body['message'] ?? body['error'];
+      if (message != null) return message.toString();
+    }
     return '操作失败，请稍后重试';
   }
 

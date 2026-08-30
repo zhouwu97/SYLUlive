@@ -1,0 +1,285 @@
+<style>
+  .design-intro {
+    margin: 0 0 18px;
+  }
+
+  .design-intro p {
+    margin: 6px 0 0;
+    color: #6f777d;
+  }
+
+  .design-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .design-option {
+    cursor: pointer;
+    border: 1px solid #dfe8e4;
+    border-radius: 12px;
+    background: #fff;
+    padding: 14px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+
+  .design-option:hover {
+    border-color: #147c72;
+    box-shadow: 0 5px 18px rgba(20, 124, 114, .12);
+  }
+
+  .design-option h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #1f2328;
+  }
+
+  .design-option .summary {
+    min-height: 42px;
+    margin: 6px 0 12px;
+    color: #687176;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .phone {
+    overflow: hidden;
+    border: 6px solid #20262a;
+    border-radius: 24px;
+    background: #fffbf6;
+    box-shadow: 0 4px 12px rgba(31, 35, 40, .12);
+  }
+
+  .phone-bar {
+    height: 16px;
+    background: #20262a;
+  }
+
+  .phone-content {
+    padding: 14px 12px 16px;
+  }
+
+  .store-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: #1f2328;
+  }
+
+  .store-meta {
+    margin-top: 4px;
+    font-size: 10px;
+    color: #7b8589;
+  }
+
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+    font-weight: 700;
+    font-size: 13px;
+    color: #1f2328;
+  }
+
+  .section-link {
+    color: #899398;
+    font-weight: 500;
+    font-size: 10px;
+  }
+
+  .empty-dish {
+    display: grid;
+    justify-items: center;
+    gap: 5px;
+    padding: 16px 8px 8px;
+    color: #8a9498;
+    text-align: center;
+    font-size: 10px;
+  }
+
+  .camera {
+    width: 28px;
+    height: 20px;
+    border: 2px solid #a8b1b4;
+    border-radius: 5px;
+    position: relative;
+  }
+
+  .camera:before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border: 2px solid #a8b1b4;
+    border-radius: 50%;
+    position: absolute;
+    left: 7px;
+    top: 4px;
+  }
+
+  .camera:after {
+    content: '';
+    width: 8px;
+    height: 3px;
+    border-radius: 2px 2px 0 0;
+    background: #a8b1b4;
+    position: absolute;
+    left: 4px;
+    top: -5px;
+  }
+
+  .action-text {
+    color: #147c72;
+    font-weight: 700;
+  }
+
+  .review-list {
+    margin-top: 10px;
+  }
+
+  .review-row {
+    padding: 10px 0;
+    border-bottom: 1px solid #e9efec;
+    font-size: 10px;
+    color: #4e595e;
+  }
+
+  .review-row strong {
+    display: block;
+    margin-bottom: 4px;
+    color: #1f2328;
+  }
+
+  .sticky-compose {
+    display: flex;
+    gap: 7px;
+    margin: 13px -12px -16px;
+    padding: 9px 10px 10px;
+    background: #fff;
+    border-top: 1px solid #e6ece9;
+  }
+
+  .fake-input {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    background: #f1f1ee;
+    color: #a0a7a9;
+    font-size: 10px;
+  }
+
+  .fake-button {
+    display: grid;
+    place-items: center;
+    min-width: 48px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: #f58a19;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+  }
+
+  .outline-action {
+    margin-top: 5px;
+    padding: 5px 9px;
+    border: 1px solid #b9d8d3;
+    border-radius: 7px;
+    color: #147c72;
+    font-weight: 700;
+    font-size: 10px;
+  }
+
+  .contribute-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    margin: 15px -12px -16px;
+    padding: 12px;
+    border-top: 1px solid #e6ece9;
+    color: #147c72;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .context-action {
+    margin-top: 13px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #eaf5f1;
+    color: #147c72;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  @media (max-width: 900px) {
+    .design-grid {
+      grid-template-columns: 1fr;
+    }
+    .design-option .summary {
+      min-height: 0;
+    }
+    .phone {
+      max-width: 360px;
+    }
+  }
+</style>
+
+<div class="design-intro">
+  <h2>商家详情页：底部新增入口怎么收敛？</h2>
+  <p>三个方案都保留“上传菜品实拍”和“写商家评价”的业务能力，但只让一个层级成为主入口。</p>
+</div>
+
+<div class="design-grid">
+  <div class="design-option" data-choice="a" onclick="toggleSelect(this)">
+    <h3>A · 评价做唯一主操作</h3>
+    <p class="summary">保留底部固定评价栏；菜品上传降为菜品区的弱链接。适合评价是详情页最高频贡献动作的情况。</p>
+    <div class="phone">
+      <div class="phone-bar"></div>
+      <div class="phone-content">
+        <div class="store-name">杂粮煎饼 煎饼果子（一楼）</div>
+        <div class="store-meta">★ 5.0 · 2 人评价</div>
+        <div class="section-title"><span>商家菜品</span><span class="section-link">查看全部 →</span></div>
+        <div class="empty-dish"><div class="camera"></div><b>还没有菜品实拍</b><span>来补充第一张真实照片吧</span><span class="action-text">补充照片</span></div>
+        <div class="section-title"><span>用户评价 · 2</span><span class="section-link">综合　最新</span></div>
+        <div class="review-list"><div class="review-row"><strong>★ 5.0</strong>挺好吃还便宜</div><div class="review-row"><strong>★ 5.0</strong>分量足，出餐快</div></div>
+        <div class="sticky-compose"><div class="fake-input">写一条商家评价...</div><div class="fake-button">评价</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-option" data-choice="b" onclick="toggleSelect(this)">
+    <h3>B · 统一为“贡献内容”</h3>
+    <p class="summary">底部只保留一个入口，点击后选择“写评价”或“上传菜品实拍”。页面不会同时出现两个新增按钮。</p>
+    <div class="phone">
+      <div class="phone-bar"></div>
+      <div class="phone-content">
+        <div class="store-name">杂粮煎饼 煎饼果子（一楼）</div>
+        <div class="store-meta">★ 5.0 · 2 人评价</div>
+        <div class="section-title"><span>商家菜品</span><span class="section-link">查看全部 →</span></div>
+        <div class="empty-dish"><div class="camera"></div><b>还没有菜品实拍</b><span>已有同学来过？补充一份信息</span></div>
+        <div class="section-title"><span>用户评价 · 2</span><span class="section-link">综合　最新</span></div>
+        <div class="review-list"><div class="review-row"><strong>★ 5.0</strong>挺好吃还便宜</div><div class="review-row"><strong>★ 5.0</strong>分量足，出餐快</div></div>
+        <div class="contribute-bar">＋　贡献内容</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-option" data-choice="c" onclick="toggleSelect(this)">
+    <h3>C · 去掉底部固定栏（推荐）</h3>
+    <p class="summary">评价按钮放在“用户评价”标题右侧，上传按钮只出现在菜品空态。两个动作各归其位，页面也不被底栏遮住。</p>
+    <div class="phone">
+      <div class="phone-bar"></div>
+      <div class="phone-content">
+        <div class="store-name">杂粮煎饼 煎饼果子（一楼）</div>
+        <div class="store-meta">★ 5.0 · 2 人评价</div>
+        <div class="section-title"><span>商家菜品</span><span class="section-link">查看全部 →</span></div>
+        <div class="empty-dish"><div class="camera"></div><b>还没有菜品实拍</b><span>来补充第一张真实照片吧</span><span class="action-text">上传菜品实拍</span></div>
+        <div class="section-title"><span>用户评价 · 2</span><span class="action-text">写评价</span></div>
+        <div class="review-list"><div class="review-row"><strong>★ 5.0</strong>挺好吃还便宜</div><div class="review-row"><strong>★ 5.0</strong>分量足，出餐快</div></div>
+        <div class="context-action">在评价区写下你的真实体验</div>
+      </div>
+    </div>
+  </div>
+</div>

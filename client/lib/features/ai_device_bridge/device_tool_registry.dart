@@ -1,4 +1,5 @@
 import '../ai_runtime/deterministic/academic_calculation_engine.dart';
+import '../ai_runtime/personal_data/gateway/gateway_error.dart';
 import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 
@@ -26,12 +27,15 @@ class DeviceToolRegistry {
     'device.schedule.get_cached_week',
     'device.academic.get_credit_summary',
     'device.erke.get_cached_overview',
+    'device.physical.get_cached_overview',
     'device.academic.ensure_fresh_overview',
     'device.academic.ensure_fresh_grade_summary',
     'device.academic.ensure_fresh_risk_context',
+    'device.academic.ensure_fresh_bundle',
     'device.schedule.ensure_fresh_week',
     'device.academic.ensure_fresh_credit_summary',
     'device.erke.ensure_fresh_overview',
+    'device.physical.ensure_fresh_overview',
   };
 
   final AcademicCalculationEngine _academicEngine;
@@ -48,6 +52,7 @@ class DeviceToolRegistry {
       'device.schedule.get_cached_week' => _scheduleWeek(job, gateway),
       'device.academic.get_credit_summary' => _creditSummary(job, gateway),
       'device.erke.get_cached_overview' => _erkeOverview(job, gateway),
+      'device.physical.get_cached_overview' => _physicalOverview(job, gateway),
       'device.academic.ensure_fresh_overview' => _academicOverview(
           job,
           gateway,
@@ -63,6 +68,11 @@ class DeviceToolRegistry {
           gateway,
           automationGateway: automationGateway,
         ),
+      'device.academic.ensure_fresh_bundle' => _academicBundle(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
       'device.schedule.ensure_fresh_week' => _scheduleWeek(
           job,
           gateway,
@@ -74,6 +84,11 @@ class DeviceToolRegistry {
           automationGateway: automationGateway,
         ),
       'device.erke.ensure_fresh_overview' => _erkeOverview(
+          job,
+          gateway,
+          automationGateway: automationGateway,
+        ),
+      'device.physical.ensure_fresh_overview' => _physicalOverview(
           job,
           gateway,
           automationGateway: automationGateway,
@@ -292,6 +307,164 @@ class DeviceToolRegistry {
     );
   }
 
+  Future<DeviceToolExecutionResult> _academicBundle(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final automation = automationGateway;
+    if (automation == null) {
+      throw const DeviceToolExecutionException('device_automation_unavailable');
+    }
+    _requireExactRequest(
+      job,
+      const <String>['grades', 'academic_situation', 'credit_requirements'],
+      const <String>{'max_age_seconds'},
+    );
+    final rawAges = job.arguments['max_age_seconds'];
+    if (rawAges is! Map ||
+        rawAges.length != 3 ||
+        !const <String>{
+          'grades',
+          'academic_situation',
+          'credit_requirements',
+        }.every(rawAges.containsKey)) {
+      throw const DeviceToolExecutionException('invalid_tool_arguments');
+    }
+    final maxAges = <String, Duration>{};
+    for (final key in const <String>[
+      'grades',
+      'academic_situation',
+      'credit_requirements',
+    ]) {
+      final value = rawAges[key];
+      if (value is! num || value % 1 != 0 || value <= 0) {
+        throw const DeviceToolExecutionException('invalid_tool_arguments');
+      }
+      maxAges[key] = Duration(seconds: value.toInt());
+    }
+    final ensured = await automation.ensureFreshAcademicBundle(
+      maxAges: maxAges,
+    );
+
+    final gradesResult = await _read(
+      gateway,
+      automation,
+      (reader) => reader.getAcademicRecords(),
+    );
+    final records = _requiredData(gradesResult);
+    final credits = _academicEngine.calculateCredits(records.courses);
+    final gpa = _academicEngine.calculateGpa(records.courses);
+    final failures = _academicEngine.calculateFailures(records.courses);
+    final failedCourses = failures.failedCourses.take(500).map((course) {
+      final score =
+          course.score ?? double.tryParse(course.gradeText ?? '') ?? 0;
+      return <String, dynamic>{
+        'course_name': course.courseName,
+        'grade': score,
+        'credits': course.credit,
+      };
+    }).toList(growable: false);
+    final gradesEnvelope = _envelope(
+      gradesResult,
+      data: <String, dynamic>{
+        'course_count': records.courses.length,
+        'earned_credits': credits.passedCredits,
+        'weighted_gpa': gpa.gpa ?? 0,
+        'failed_courses': failedCourses,
+      },
+      freshness: ensured.items['grades'],
+    );
+
+    final situationResult = await automation.readAcademicDataset(
+      'academic_situation',
+    );
+    final creditResult = await automation.readAcademicDataset(
+      'credit_requirements',
+    );
+    final situationData = _requiredData(situationResult);
+    final creditData = _requiredData(creditResult);
+    return DeviceToolExecutionResult(
+      _bundleEnvelope(
+        data: <String, dynamic>{
+          'grades': gradesEnvelope,
+          'academic_situation': _envelope(
+            situationResult,
+            data: situationData,
+            freshness: ensured.items['academic_situation'],
+          ),
+          'credit_requirements': _envelope(
+            creditResult,
+            data: creditData,
+            freshness: ensured.items['credit_requirements'],
+          ),
+        },
+        ensured: ensured,
+        maxAges: maxAges,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _bundleEnvelope({
+    required Map<String, dynamic> data,
+    required AcademicBundleEnsureResult ensured,
+    required Map<String, Duration> maxAges,
+  }) {
+    final entries = ensured.items.values.toList(growable: false);
+    final refreshed = entries.any((item) => item.refreshPerformed);
+    final beforeStale = maxAges.entries.any((entry) {
+      final item = ensured.items[entry.key];
+      return item == null ||
+          !item.before.isFreshAt(DateTime.now(), entry.value);
+    });
+    DateTime? fetchedAt;
+    DateTime? expiresAt;
+    for (final item in entries) {
+      final fetched = item.after.fetchedAt;
+      if (fetched != null &&
+          (fetchedAt == null || fetched.isAfter(fetchedAt))) {
+        fetchedAt = fetched;
+      }
+      final expires = item.after.expiresAt;
+      if (expires != null &&
+          (expiresAt == null || expires.isBefore(expiresAt))) {
+        expiresAt = expires;
+      }
+    }
+    return <String, dynamic>{
+      'data': data,
+      'source': refreshed
+          ? PersonalDataSource.remoteEduFetch.wireValue
+          : PersonalDataSource.localEncryptedVault.wireValue,
+      'fetched_at': fetchedAt?.toUtc().toIso8601String(),
+      'expires_at': expiresAt?.toUtc().toIso8601String(),
+      'is_stale': false,
+      'is_partial': false,
+      'warnings': ensured.items.values
+          .map((item) => item.warning)
+          .whereType<String>()
+          .where((item) => item.trim().isNotEmpty)
+          .toList(growable: false),
+      'evidence': entries
+          .map(
+            (item) => <String, dynamic>{
+              'source': item.refreshPerformed
+                  ? PersonalDataSource.remoteEduFetch.wireValue
+                  : PersonalDataSource.localEncryptedVault.wireValue,
+              'fetched_at': item.after.fetchedAt?.toUtc().toIso8601String(),
+              'expires_at': item.after.expiresAt?.toUtc().toIso8601String(),
+              'is_stale': false,
+            },
+          )
+          .toList(growable: false),
+      'freshness': <String, dynamic>{
+        'before': beforeStale ? 'stale' : 'fresh',
+        'after': 'fresh',
+      },
+      'refresh_performed': refreshed,
+    };
+  }
+
   Future<DeviceToolExecutionResult> _erkeOverview(
     DeviceToolJob job,
     PersonalDataGateway? gateway, {
@@ -305,7 +478,9 @@ class DeviceToolRegistry {
     _requireExactRequest(
       job,
       const <String>['erke'],
-      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+      freshness == null
+          ? const <String>{}
+          : const <String>{'max_age_seconds', 'allow_upload'},
     );
     final result = await _read(
       gateway,
@@ -331,6 +506,52 @@ class DeviceToolRegistry {
               .toList(growable: false),
           'activity_count': data.activityCount,
           'latest_activity_date': data.latestActivityDate,
+        },
+        freshness: freshness,
+      ),
+    );
+  }
+
+  Future<DeviceToolExecutionResult> _physicalOverview(
+    DeviceToolJob job,
+    PersonalDataGateway? gateway, {
+    DeviceAutomationGateway? automationGateway,
+  }) async {
+    final freshness = await _prepareFreshness(
+      job,
+      PersonalDataType.physical,
+      automationGateway,
+    );
+    _requireExactRequest(
+      job,
+      const <String>['physical'],
+      freshness == null ? const <String>{} : const <String>{'max_age_seconds'},
+    );
+    final result = await _read(
+      gateway,
+      automationGateway,
+      (reader) => reader.getPhysicalOverview(),
+    );
+    final data = _requiredData(result);
+    return DeviceToolExecutionResult(
+      _envelope(
+        result,
+        data: <String, dynamic>{
+          'latest_year': data.latestYear,
+          'available_year_count': data.availableYears.length,
+          'total_grade': data.totalGrade,
+          'total_score': data.totalScore,
+          'metrics': data.metrics
+              .take(16)
+              .map(
+                (item) => <String, dynamic>{
+                  'name': item.name,
+                  'result': item.result,
+                  'grade': item.grade,
+                  'score': item.score,
+                },
+              )
+              .toList(growable: false),
         },
         freshness: freshness,
       ),
@@ -366,16 +587,25 @@ class DeviceToolRegistry {
     // 设备最终限制不能被模型传入的 max_age_seconds 绕过。
     final ceiling = switch (type) {
       PersonalDataType.academic => 5 * 60,
+      PersonalDataType.academicSituation => 6 * 60 * 60,
+      PersonalDataType.creditRequirements => 24 * 60 * 60,
       PersonalDataType.schedule => 10 * 60,
       PersonalDataType.erke => 30 * 60,
+      PersonalDataType.physical => 24 * 60 * 60,
     };
-    final seconds = requested.toInt().clamp(ceiling, 24 * 60 * 60);
+    final seconds = requested.toInt().clamp(1, ceiling);
+    // allow_upload 只对二课任务有意义：服务端在用户已授权 AI 使用二课快照时
+    // 才会写入，设备侧据此把“每次询问”按单次上传处理。
+    final automationUpload = job.arguments['allow_upload'] == true;
     final ensured = await automationGateway.ensureFresh(
       type,
       maxAge: Duration(seconds: seconds),
+      automationUpload: automationUpload,
     );
     if (!ensured.after.isFreshAt(DateTime.now(), Duration(seconds: seconds))) {
-      throw const DeviceToolExecutionException('device_refresh_not_fresh');
+      throw DeviceToolExecutionException(
+        ensured.errorCode ?? 'device_refresh_not_fresh',
+      );
     }
     return ensured;
   }
@@ -389,7 +619,7 @@ class DeviceToolRegistry {
             result.status == GatewayStatus.stale)) {
       return result.data!;
     }
-    throw DeviceToolExecutionException(_gatewayErrorCode(result.status));
+    throw DeviceToolExecutionException(_gatewayErrorCode(result));
   }
 
   Map<String, dynamic> _envelope<T>(
@@ -469,19 +699,38 @@ class DeviceToolRegistry {
     return parsed.toUtc();
   }
 
-  static String _gatewayErrorCode(GatewayStatus status) => switch (status) {
-        GatewayStatus.missing ||
-        GatewayStatus.needsRefresh =>
-          'local_data_missing',
-        GatewayStatus.corrupted => 'local_cache_corrupted',
-        GatewayStatus.accountMismatch ||
-        GatewayStatus.closed =>
+  static String _gatewayErrorCode<T>(GatewayResult<T> result) {
+    final explicit = result.error?.code;
+    if (explicit != null) {
+      return switch (explicit) {
+        GatewayErrorCode.eduSessionExpired => 'edu_session_expired',
+        GatewayErrorCode.credentialUnavailable => 'credential_unavailable',
+        GatewayErrorCode.networkUnavailable => 'network_unavailable',
+        GatewayErrorCode.localStorageFailed => 'local_storage_failed',
+        GatewayErrorCode.refreshIncomplete => 'refresh_incomplete',
+        GatewayErrorCode.refreshFailed => 'refresh_failed',
+        GatewayErrorCode.accountMismatch ||
+        GatewayErrorCode.closed =>
           'device_context_unavailable',
-        GatewayStatus.unsupported => 'local_data_unsupported',
-        GatewayStatus.available ||
-        GatewayStatus.stale =>
-          'local_data_unavailable',
+        GatewayErrorCode.corrupted => 'local_cache_corrupted',
+        GatewayErrorCode.unsupported => 'local_data_unsupported',
+        GatewayErrorCode.unknown => 'local_data_unavailable',
       };
+    }
+    return switch (result.status) {
+      GatewayStatus.missing ||
+      GatewayStatus.needsRefresh =>
+        'local_data_missing',
+      GatewayStatus.corrupted => 'local_cache_corrupted',
+      GatewayStatus.accountMismatch ||
+      GatewayStatus.closed =>
+        'device_context_unavailable',
+      GatewayStatus.unsupported => 'local_data_unsupported',
+      GatewayStatus.available ||
+      GatewayStatus.stale =>
+        'local_data_unavailable',
+    };
+  }
 
   static String _date(DateTime value) =>
       value.toUtc().toIso8601String().substring(0, 10);

@@ -1,3 +1,4 @@
+import Foundation
 import WidgetKit
 import SwiftUI
 
@@ -42,29 +43,109 @@ struct Provider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CourseEntry>) -> Void) {
         let entry = readEntry()
-        // 不设置自动刷新策略（由 Flutter 端主动推送更新）
-        let timeline = Timeline(entries: [entry], policy: .never)
+        let timeline = Timeline(entries: [entry], policy: .after(nextMidnight()))
         completion(timeline)
     }
 
-    private func readEntry() -> CourseEntry {
-        let defaults = UserDefaults(suiteName: "group.com.example.shenliyuan")
-        let title = defaults?.string(forKey: "widget_title") ?? "沈理院课表"
-        let dateInfo = defaults?.string(forKey: "widget_date") ?? ""
-        let content = defaults?.string(forKey: "widget_content") ?? ""
-        let isEmpty = defaults?.bool(forKey: "widget_empty") ?? true
+    private func nextMidnight() -> Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        return tomorrow ?? Date().addingTimeInterval(24 * 60 * 60)
+    }
 
+    private func readEntry() -> CourseEntry {
+        let defaults = UserDefaults(suiteName: "group.com.sylu.sylulive")
+        let raw = defaults?.string(forKey: "widget_course_data")
+        var title = "沈理院课表"
+        var dateInfo = ""
         var courses: [CourseItem] = []
-        if !isEmpty && !content.isEmpty {
-            let lines = content.components(separatedBy: "\n")
-            for line in lines {
-                let parts = line.components(separatedBy: "|")
-                if parts.count >= 2 {
-                    courses.append(CourseItem(
-                        name: parts[0],
-                        time: parts[1],
-                        location: parts.count > 2 ? parts[2] : ""
+
+        if let raw,
+           let data = raw.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data),
+           let payload = object as? [String: Any] {
+            let version = (payload["schema_version"] as? Int) ?? 1
+            title = payload["title"] as? String ?? title
+
+            if version == 2 {
+                let now = Date()
+                let calendar = Calendar.current
+                let weekday = calendar.component(.weekday, from: now)
+                let mappedWeekday = weekday == 1 ? 7 : weekday - 1
+
+                var academicWeek: Int? = nil
+                if let startStr = payload["semester_start"] as? String, !startStr.isEmpty {
+                    let formatter = DateFormatter()
+                    formatter.locale = Locale(identifier: "en_US_POSIX")
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    if let startDate = formatter.date(from: startStr) {
+                        let startOfDay = calendar.startOfDay(for: now)
+                        let startOfSemester = calendar.startOfDay(for: startDate)
+                        let diffDays = calendar.dateComponents([.day], from: startOfSemester, to: startOfDay).day ?? 0
+                        if diffDays >= 0 {
+                            academicWeek = (diffDays / 7) + 1
+                        }
+                    }
+                }
+
+                let month = calendar.component(.month, from: now)
+                let day = calendar.component(.day, from: now)
+                let weekdaySymbols = ["", "一", "二", "三", "四", "五", "六", "日"]
+                let weekName = (mappedWeekday >= 1 && mappedWeekday <= 7) ? weekdaySymbols[mappedWeekday] : ""
+                let weekText = academicWeek != nil ? "第\(academicWeek!)周 " : ""
+                dateInfo = "\(month).\(day) \(weekText)周\(weekName)"
+
+                let starts = ["08:00", "08:55", "10:00", "10:55", "13:00", "13:55", "14:50", "15:45", "16:40", "17:35", "18:30", "19:25"]
+                let ends = ["08:45", "09:40", "10:45", "11:40", "13:45", "14:40", "15:35", "16:30", "17:25", "18:20", "19:15", "20:10"]
+
+                let rawCourses = payload["courses"] as? [[String: Any]] ?? []
+                var candidateCourses: [(startSection: Int, item: CourseItem)] = []
+
+                for item in rawCourses {
+                    guard let name = item["name"] as? String,
+                          let itemWeekday = item["weekday"] as? Int,
+                          itemWeekday == mappedWeekday else { continue }
+
+                    if let academicWeek = academicWeek,
+                       let weeks = item["weeks"] as? [Int],
+                       !weeks.isEmpty,
+                       !weeks.contains(academicWeek) {
+                        continue
+                    }
+
+                    let startSection = max(1, min(12, item["start_section"] as? Int ?? 1))
+                    let endSection = max(startSection, min(12, item["end_section"] as? Int ?? startSection))
+                    let time = "\(starts[startSection - 1])-\(ends[endSection - 1])"
+                    candidateCourses.append((
+                        startSection: startSection,
+                        item: CourseItem(name: name, time: time, location: item["location"] as? String ?? "")
                     ))
+                }
+
+                candidateCourses.sort { $0.startSection < $1.startSection }
+                courses = candidateCourses.map { $0.item }
+            } else if version == 1 {
+                dateInfo = payload["date"] as? String ?? ""
+                if let dateKey = payload["date_key"] as? String,
+                   !dateKey.isEmpty,
+                   dateKey != currentDateKey() {
+                    return CourseEntry(
+                        date: Date(),
+                        title: title,
+                        dateInfo: "暂无今日数据",
+                        isEmpty: true,
+                        courses: []
+                    )
+                }
+                let rawCourses = payload["courses"] as? [[String: Any]] ?? []
+                courses = rawCourses.compactMap { item in
+                    guard let name = item["name"] as? String,
+                          let time = item["time"] as? String else { return nil }
+                    return CourseItem(
+                        name: name,
+                        time: time,
+                        location: item["location"] as? String ?? ""
+                    )
                 }
             }
         }
@@ -73,9 +154,17 @@ struct Provider: TimelineProvider {
             date: Date(),
             title: title,
             dateInfo: dateInfo,
-            isEmpty: isEmpty,
+            isEmpty: courses.isEmpty,
             courses: courses
         )
+    }
+
+    private func currentDateKey() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar.current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
     }
 }
 
@@ -148,13 +237,141 @@ struct CourseScheduleWidgetEntryView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "E5E7EB"), lineWidth: 0.5)
         )
-        .widgetURL(URL(string: "timetable://home"))
+        .widgetURL(URL(string: "sylulive://schedule"))
+    }
+}
+
+// ── 考试 Widget ──
+
+struct ExamEntry: TimelineEntry {
+    let date: Date
+    let exams: [ExamItem]
+}
+
+struct ExamItem: Identifiable {
+    let id = UUID()
+    let name: String
+    let date: String
+    let time: String
+    let location: String
+    let countdown: String
+}
+
+struct ExamProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ExamEntry {
+        ExamEntry(date: Date(), exams: [
+            ExamItem(name: "高等数学", date: "2026-06-20", time: "08:00-10:00", location: "综合楼A201", countdown: "3天后")
+        ])
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ExamEntry) -> Void) {
+        completion(placeholder(in: context))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ExamEntry>) -> Void) {
+        completion(Timeline(entries: [readEntry()], policy: .after(nextMidnight())))
+    }
+
+    private func nextMidnight() -> Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
+        return tomorrow ?? Date().addingTimeInterval(24 * 60 * 60)
+    }
+
+    private func readEntry() -> ExamEntry {
+        let defaults = UserDefaults(suiteName: "group.com.sylu.sylulive")
+        guard let raw = defaults?.string(forKey: "widget_exam_data"),
+              let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let payload = object as? [String: Any],
+              let version = (payload["schema_version"] as? Int),
+              version >= 1 && version <= 2 else {
+            return ExamEntry(date: Date(), exams: [])
+        }
+        let rawExams = payload["exams"] as? [[String: Any]] ?? []
+        let exams = rawExams.compactMap { item -> ExamItem? in
+            guard let name = item["name"] as? String else { return nil }
+            return ExamItem(
+                name: name,
+                date: item["date"] as? String ?? "",
+                time: item["time"] as? String ?? "",
+                location: item["location"] as? String ?? "",
+                countdown: item["countdown"] as? String ?? ""
+            )
+        }
+        return ExamEntry(date: Date(), exams: exams)
+    }
+}
+
+struct ExamScheduleWidgetEntryView: View {
+    var entry: ExamProvider.Entry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("考试安排")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Color(hex: "1A1A2E"))
+                Spacer()
+                Text("沈理院")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(hex: "EC4899"))
+            }
+            Divider()
+            if entry.exams.isEmpty {
+                Spacer()
+                Text("近期没有考试")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(hex: "9CA3AF"))
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            } else {
+                ForEach(entry.exams.prefix(3)) { exam in
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(Color(hex: "EC4899"))
+                            .frame(width: 3)
+                            .cornerRadius(1.5)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(exam.name)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(hex: "1A1A2E"))
+                                .lineLimit(1)
+                            Text([exam.date, exam.time].filter { !$0.isEmpty }.joined(separator: " "))
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "EC4899"))
+                        }
+                        Spacer()
+                        Text(exam.countdown)
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "9CA3AF"))
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.white)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: "FBCFE8"), lineWidth: 0.5))
+        .widgetURL(URL(string: "sylulive://exam"))
+    }
+}
+
+struct ExamScheduleWidget: Widget {
+    let kind: String = "ExamScheduleWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: ExamProvider()) { entry in
+            ExamScheduleWidgetEntryView(entry: entry)
+        }
+        .configurationDisplayName("沈理考试")
+        .description("显示近期考试安排")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
 // ── Widget 入口 ──
 
-@main
 struct CourseScheduleWidget: Widget {
     let kind: String = "CourseScheduleWidget"
 
@@ -165,6 +382,14 @@ struct CourseScheduleWidget: Widget {
         .configurationDisplayName("沈理课表")
         .description("显示当天课程安排")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+@main
+struct SYLUliveWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        CourseScheduleWidget()
+        ExamScheduleWidget()
     }
 }
 

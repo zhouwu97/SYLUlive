@@ -406,6 +406,7 @@ void main() {
     expect(provider.token, isNull);
     expect(provider.user, isNull);
     expect(provider.sessionGeneration, 0);
+    expect(store.clearCount, 1);
   });
 
   test('合法本地认证只递增一次认证代次', () async {

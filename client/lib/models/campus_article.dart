@@ -9,12 +9,26 @@ const Set<String> allowedCampusArticleHosts = {
   'cxcyxy.sylu.edu.cn',
 };
 
+/// 校园资讯 URI 是否满足安全传递规则。
+///
+/// 正文中的外部链接和图片可以通过 [allowExternalHost] 放宽域名白名单，
+/// 但仍必须使用 HTTPS、禁止 userInfo，并且只能使用默认端口或 443。
+bool isSafeCampusUri(Uri? uri, {bool allowExternalHost = false}) {
+  if (uri == null ||
+      uri.scheme.toLowerCase() != 'https' ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      (uri.hasPort && uri.port != 443)) {
+    return false;
+  }
+
+  return allowExternalHost ||
+      allowedCampusArticleHosts.contains(uri.host.toLowerCase());
+}
+
 /// 校园资讯 URL 是否安全（HTTPS + 白名单域名）。
 bool isSafeCampusUrl(String rawUrl) {
-  final uri = Uri.tryParse(rawUrl);
-  return uri != null &&
-      uri.scheme == 'https' &&
-      allowedCampusArticleHosts.contains(uri.host);
+  return isSafeCampusUri(Uri.tryParse(rawUrl));
 }
 
 /// 校园资讯文章数据模型。
@@ -175,7 +189,8 @@ class CampusArticleDetail extends CampusArticleSummary {
   /// 是否为弱正文（正文为空或仅"详见附件"等提示语）。
   bool get isWeakContent {
     final trimmed = contentText.trim();
-    if (trimmed.isEmpty) return true;
+    // 纯图片或其他仅由 HTML 构成的正文仍然是有效内容，不能误判为“详见附件”。
+    if (trimmed.isEmpty) return contentHtml.trim().isEmpty;
     // 去除末尾标点后判断
     final normalized = trimmed.replaceAll(RegExp(r'[:：。.\s]+$'), '');
     return ['详见附件', '见附件'].contains(normalized);
@@ -183,9 +198,10 @@ class CampusArticleDetail extends CampusArticleSummary {
 
   /// 正文是否包含复杂 HTML（表格、图片等），用于引导用户查看原文。
   bool get hasComplexHtml {
-    return contentHtml.contains('<table') ||
-        contentHtml.contains('<img') ||
-        contentHtml.contains('<iframe');
+    final normalized = contentHtml.toLowerCase();
+    return normalized.contains('<table') ||
+        normalized.contains('<img') ||
+        normalized.contains('<iframe');
   }
 }
 

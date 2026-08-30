@@ -15,6 +15,7 @@ class CommunityPostCard extends StatelessWidget {
   final ValueChanged<Post>? onCommentTap;
   final bool disableAuthorNavigation;
   final PollCardVariant pollVariant;
+  final PostCardVariant postVariant;
 
   /// 卡片右上角操作菜单回调（FEED-3），透传给 PostCard / PollPostCard。
   final ValueChanged<FeedPostAction>? onPostAction;
@@ -31,6 +32,7 @@ class CommunityPostCard extends StatelessWidget {
     this.onCommentTap,
     this.disableAuthorNavigation = false,
     this.pollVariant = PollCardVariant.homeCompact,
+    this.postVariant = PostCardVariant.standard,
     this.onPostAction,
     this.allowNotInterested = true,
     this.allowHideAuthor = true,
@@ -54,6 +56,7 @@ class CommunityPostCard extends StatelessWidget {
     }
     return PostCard(
       post: post,
+      variant: postVariant,
       onTap: onTap,
       onAuthorTap: onAuthorTap,
       onCommentTap: onCommentTap,

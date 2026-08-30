@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -13,9 +14,14 @@ import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_feedback.dart';
+import '../utils/app_navigator.dart' show currentHomeTabIndex;
+import '../utils/image_decode_size.dart';
+import '../utils/image_prefetch_coordinator.dart';
+import '../utils/post_image_cache.dart';
 import '../utils/post_route.dart';
 import '../utils/search_focus_gate.dart';
 
@@ -33,10 +39,11 @@ import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
-import '../widgets/glass_container.dart';
+import '../services/app_resume_coordinator.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
+import '../widgets/post_card.dart';
 import '../widgets/feed/feed_exposure_tracker.dart';
 import '../widgets/feed/feed_post_action_menu.dart';
 import '../widgets/report_sheet.dart';
@@ -114,9 +121,13 @@ class ShuitieScreen extends StatefulWidget {
   /// 可选注入仅用于测试；生产环境创建内部实例。
   final FeedSessionService? feedSessionService;
   final FeedEventService? feedEventService;
+  final ValueChanged<bool>? onFabVisibilityChanged;
 
   const ShuitieScreen(
-      {super.key, this.feedSessionService, this.feedEventService});
+      {super.key,
+      this.feedSessionService,
+      this.feedEventService,
+      this.onFabVisibilityChanged});
 
   @override
   State<ShuitieScreen> createState() => _ShuitieScreenState();
@@ -125,6 +136,11 @@ class ShuitieScreen extends StatefulWidget {
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
+  late final ImagePrefetchCoordinator _feedImagePrefetchCoordinator;
+  String? _feedPrefetchMode;
+  int _feedPrefetchRevision = -1;
+  int _feedPrefetchCursor = 0;
+  bool _feedPrefetchNearViewport = false;
 
   // FEED-3：事件会话与批量上报（注入或内部默认）。
   late final FeedSessionService _feedSessionService;
@@ -139,16 +155,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   double _feedSwipeDx = 0;
   double? _pendingRestoredScrollOffset;
 
+  // 首页发布 FAB：下滑超过阈值后隐藏，反向滚动立即恢复。
+  double? _lastFabScrollOffset;
+  double _fabDownwardScroll = 0;
+  bool _fabReportedHidden = false;
+
   // 后台新鲜度探测：列表未在顶部时不直接覆写，显示“内容有更新”浮条。
   bool _freshnessBannerVisible = false;
   String _freshnessBannerLabel = '内容有更新';
-  // 桌面分屏模式：评论入口请求打开详情时聚焦评论输入框。
-  bool _selectedFocusReply = false;
+  // 桌面分屏模式：评论入口请求打开详情时滚到评论区。
+  bool _selectedScrollToReplies = false;
   static const double _freshnessNearTopThreshold = 160;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  Timer? _autoRefreshTimer;
   Timer? _announcementDelayTimer;
+  VoidCallback? _unregisterResumeRefresh;
+  bool _refreshVisibleStateInFlight = false;
   List<model.Announcement> _announcements = [];
   List<model.Announcement> _unreadAnnouncements = [];
   List<UnreadReplyNotification> _unreadReplyNotifications = [];
@@ -170,7 +192,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // FEED-3 桌面分屏：当前打开帖子的 open/dwell 归因上下文。
   _SplitOrigin? _splitOrigin;
 
-  static const _autoRefreshInterval = Duration(seconds: 60);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -197,6 +218,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return context.read<AuthProvider>().isLoggedIn;
   }
 
+  void _handleFabVisibilityScroll(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _lastFabScrollOffset = notification.metrics.pixels;
+      _fabDownwardScroll = 0;
+      return;
+    }
+
+    final currentOffset = notification.metrics.pixels;
+    final previousOffset = _lastFabScrollOffset;
+    _lastFabScrollOffset = currentOffset;
+    if (previousOffset == null) return;
+
+    final delta = currentOffset - previousOffset;
+    if (delta > 0) {
+      _fabDownwardScroll += delta;
+      if (_fabDownwardScroll > 16 && !_fabReportedHidden) {
+        _fabReportedHidden = true;
+        widget.onFabVisibilityChanged?.call(false);
+      }
+    } else if (delta < 0) {
+      _fabDownwardScroll = 0;
+      if (_fabReportedHidden) {
+        _fabReportedHidden = false;
+        widget.onFabVisibilityChanged?.call(true);
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -211,10 +260,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       for (final mode in kFeedModes)
         mode.key: ScrollController(keepScrollOffset: true),
     };
+    _feedImagePrefetchCoordinator = ImagePrefetchCoordinator();
     _feedVisualIndexListenable =
         ValueNotifier<double>(_currentModeIndex.toDouble());
 
     WidgetsBinding.instance.addObserver(this);
+    currentHomeTabIndex.addListener(_handleHomeTabVisibilityChanged);
+    _unregisterResumeRefresh =
+        AppResumeCoordinator.instance.registerVisibleRefresh(
+      _refreshVisibleState,
+      isVisible: () => currentHomeTabIndex.value == 0,
+    );
     ReplyNotificationState.instance
         .addListener(_handleReplyNotificationStateChanged);
     _feedSwitchController = AnimationController(
@@ -229,7 +285,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       if (initialSort != null && _canLoadFeedMode(_feedMode)) {
         postProvider.loadPosts(boardId: 1, sort: initialSort);
       }
-      _startAutoRefresh();
       _ensureCheckinStatusLoaded();
       unawaited(_loadUnreadReplyNotifications());
 
@@ -238,7 +293,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
       // 延迟加载其他非核心数据
       _announcementDelayTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted) {
+        if (mounted && currentHomeTabIndex.value == 0) {
           unawaited(_loadAnnouncements());
         }
       });
@@ -247,18 +302,37 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        unawaited(_probeFeedFreshness());
-      }
-      _loadAnnouncements();
-      unawaited(_loadUnreadReplyNotifications());
-      unawaited(_ensureCheckinStatusLoaded(force: true));
-      _startAutoRefresh();
-    } else if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       unawaited(_persistCommunityState());
       _feedEventService.flushNow(); // 应用进入后台时尝试清空事件队列
-      _stopAutoRefresh();
+    }
+  }
+
+  void _handleHomeTabVisibilityChanged() {
+    if (!mounted || currentHomeTabIndex.value != 0) return;
+    unawaited(_refreshVisibleState());
+  }
+
+  Future<void> _refreshVisibleState() async {
+    if (!mounted ||
+        currentHomeTabIndex.value != 0 ||
+        _refreshVisibleStateInFlight) {
+      return;
+    }
+    _refreshVisibleStateInFlight = true;
+    try {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
+        await _probeFeedFreshness();
+      }
+      if (!mounted || currentHomeTabIndex.value != 0) return;
+      await Future.wait([
+        _loadAnnouncements(),
+        _loadUnreadReplyNotifications(),
+        _ensureCheckinStatusLoaded(force: true),
+      ]);
+    } finally {
+      _refreshVisibleStateInFlight = false;
     }
   }
 
@@ -300,23 +374,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     });
   }
 
-  void _startAutoRefresh() {
-    _stopAutoRefresh();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
-      if (!mounted) return;
-      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
-        unawaited(_probeFeedFreshness());
-      }
-      _loadAnnouncements();
-      unawaited(_loadUnreadReplyNotifications());
-    });
-  }
-
-  void _stopAutoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = null;
-  }
-
   void _handleReplyNotificationStateChanged() {
     final change = ReplyNotificationState.instance.lastChange;
     if (change == null) return;
@@ -343,11 +400,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    currentHomeTabIndex.removeListener(_handleHomeTabVisibilityChanged);
+    _unregisterResumeRefresh?.call();
     ReplyNotificationState.instance
         .removeListener(_handleReplyNotificationStateChanged);
-    _stopAutoRefresh();
     _announcementDelayTimer?.cancel();
     _announcementDelayTimer = null;
+    _feedImagePrefetchCoordinator.invalidate();
     unawaited(_persistCommunityState());
 
     for (final controller in _feedScrollControllers.values) {
@@ -521,10 +580,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           .clearPendingFreshSnapshot(boardId: 1, sort: previousSort);
     }
     _refreshFeedMode(mode);
+    _feedImagePrefetchCoordinator.invalidate();
     setState(() {
       _feedMode = mode;
       _feedTargetIndex = null;
       _freshnessBannerVisible = false;
+      _feedPrefetchNearViewport = false;
     });
 
     // 内容立即换，只有顶部 indicator 使用 120ms 的可 retarget 过渡。
@@ -1284,7 +1345,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               initialPost: _selectedPost,
               isDesktopSplitMode: true,
               hideBackButton: true,
-              focusReplyComposer: _selectedFocusReply,
+              scrollToReplies: _selectedScrollToReplies,
               onAuthorTap: _openUserInSplit,
             ),
     );
@@ -1296,21 +1357,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _openPostInSplit(Post post,
-      {bool focusReply = false, String feedKind = '', int position = 0}) {
+      {bool scrollToReplies = false, String feedKind = '', int position = 0}) {
     if (!mounted) return;
     _finalizeSplitDwell(newPostId: post.id);
     _recordSplitOpen(post, feedKind: feedKind, position: position);
     setState(() {
       _selectedPost = post;
       _selectedUserId = null;
-      _selectedFocusReply = focusReply;
+      _selectedScrollToReplies = scrollToReplies;
     });
-    if (focusReply) {
-      // PostDetailScreen 在 initState 读取 focusReplyComposer 后重置，
-      // 避免同帖重复打开时再次弹键盘。
+    if (scrollToReplies) {
+      // PostDetailScreen 在 initState 读取 scrollToReplies 后重置，
+      // 避免同帖重复打开时再次滚动。
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _selectedFocusReply) {
-          setState(() => _selectedFocusReply = false);
+        if (mounted && _selectedScrollToReplies) {
+          setState(() => _selectedScrollToReplies = false);
         }
       });
     }
@@ -1560,13 +1621,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildFeedTabs(bool isDark) {
-    const tabWidth = 48.0;
-    final activeColor = isDark ? Colors.white : Colors.black87;
-    final inactiveColor = isDark ? Colors.white54 : Colors.black45;
+    const tabWidth = 56.0;
+    const activeColor = AppColors.brandPrimary;
+    final inactiveColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
-      height: 44,
+      height: 56,
       child: ValueListenableBuilder<double>(
         valueListenable: _feedVisualIndexListenable,
         builder: (context, visualIndex, child) {
@@ -1609,7 +1671,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                   return SizedBox(
                     width: tabWidth,
-                    height: 44,
+                    height: 56,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
@@ -1619,10 +1681,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         child: Text(
                           config.label,
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: activeT > 0.5
-                                ? FontWeight.w600
-                                : FontWeight.w500,
+                                ? FontWeight.w700
+                                : FontWeight.w400,
                             color: color,
                           ),
                         ),
@@ -1641,7 +1703,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // ---- 顶部导航栏 ----
   Widget _buildHomeTopBar(bool isDark) {
     return SizedBox(
-      height: 48,
+      height: 56,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1755,7 +1817,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget _buildFollowingDashboard(
       bool isDark, List<Post> posts, bool isFeedLoading) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1785,7 +1852,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.xs),
           if (posts.isEmpty && !isFeedLoading)
             Container(
               height: 100,
@@ -1819,9 +1886,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               final post = entry.value;
               final position = entry.key;
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
+                padding: EdgeInsets.zero,
                 child: CommunityPostCard(
                   post: post,
+                  postVariant: PostCardVariant.homeFeed,
                   onAuthorTap: _openUserInSplit,
                   onPostAction: (action) => _handlePostAction(post, action),
                   allowNotInterested: false,
@@ -1991,12 +2059,20 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 关注模式未登录占位 ----
   Widget _buildFollowingPlaceholder(bool isDark) {
+    final surface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final border =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: GlassContainer(
+      child: Container(
         padding: const EdgeInsets.all(24),
-        borderRadius: 20,
-        blur: 15,
-        opacity: 0.1,
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: border),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2043,12 +2119,20 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 关注模式已登录但无帖子 ----
   Widget _buildFollowingEmptyState(bool isDark) {
+    final surface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final border =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: GlassContainer(
+      child: Container(
         padding: const EdgeInsets.all(24),
-        borderRadius: 20,
-        blur: 15,
-        opacity: 0.1,
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: border),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2092,6 +2176,86 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ],
         ),
       ),
+    );
+  }
+
+  void _prefetchFeedImages({
+    required String mode,
+    required int revision,
+    required List<Post> posts,
+    required int limit,
+  }) {
+    if (posts.isEmpty || limit <= 0) return;
+    if (_feedPrefetchMode != mode || _feedPrefetchRevision != revision) {
+      _feedImagePrefetchCoordinator.invalidate();
+      _feedPrefetchMode = mode;
+      _feedPrefetchRevision = revision;
+      _feedPrefetchCursor = 0;
+      _feedPrefetchNearViewport = false;
+    }
+    if (_feedPrefetchCursor >= posts.length) return;
+
+    final target = calculateImageDecodeTarget(
+      logicalSize: Size(MediaQuery.sizeOf(context).width, 300),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageMediumLongEdge,
+      fallbackLogicalSize: const Size(360, 220),
+    );
+    final tasks = <ImagePrefetchTask>[];
+    var cursor = _feedPrefetchCursor;
+    while (cursor < posts.length && tasks.length < limit) {
+      for (final image in posts[cursor].images) {
+        if (tasks.length >= limit) break;
+        final task = _buildPublicImagePrefetchTask(image, target);
+        if (task != null) tasks.add(task);
+      }
+      cursor++;
+    }
+    _feedPrefetchCursor = cursor;
+    if (tasks.isNotEmpty) {
+      unawaited(_feedImagePrefetchCoordinator.enqueue(tasks, limit: limit));
+    }
+  }
+
+  ImagePrefetchTask? _buildPublicImagePrefetchTask(
+    PostImage image,
+    ImageDecodeTarget target,
+  ) {
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    if (originUrl.isEmpty ||
+        image.file?.mimeType.toLowerCase() == 'image/gif' ||
+        originUrl.toLowerCase().split('?').first.endsWith('.gif')) {
+      return null;
+    }
+    final selection = selectImageResource(
+      target: target,
+      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
+      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
+      viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
+      originUrl: originUrl,
+    );
+    if (!selection.shouldResize || selection.url.isEmpty) return null;
+
+    return ImagePrefetchTask(
+      cacheKey: selection.url,
+      isCached: () async =>
+          await PostImageCache.manager.getFileFromCache(selection.url) != null,
+      preload: () {
+        if (!mounted) return Future<void>.value();
+        final provider = CachedNetworkImageProvider(
+          selection.url,
+          cacheManager: PostImageCache.manager,
+          cacheKey: selection.url,
+        );
+        return precacheImage(
+          ResizeImage.resizeIfNeeded(
+            target.width,
+            target.height,
+            provider,
+          ),
+          context,
+        );
+      },
     );
   }
 
@@ -2176,13 +2340,37 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             .where((post) => !post.isActivePinned)
             .toList();
 
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _feedMode != mode) return;
+          _prefetchFeedImages(
+            mode: mode,
+            revision: data.revision,
+            posts: normalPosts,
+            limit: 2,
+          );
+        });
+
         return Stack(
           alignment: Alignment.topCenter,
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
-                final canLoadMore =
-                    mode != 'following' || context.read<AuthProvider>().isLoggedIn;
+                _handleFabVisibilityScroll(notification);
+                final nearNextViewport = notification.metrics.extentAfter <=
+                    notification.metrics.viewportDimension * 1.5;
+                if (nearNextViewport && !_feedPrefetchNearViewport) {
+                  _feedPrefetchNearViewport = true;
+                  _prefetchFeedImages(
+                    mode: mode,
+                    revision: data.revision,
+                    posts: normalPosts,
+                    limit: 4,
+                  );
+                } else if (!nearNextViewport) {
+                  _feedPrefetchNearViewport = false;
+                }
+                final canLoadMore = mode != 'following' ||
+                    context.read<AuthProvider>().isLoggedIn;
                 if (config.supportsRemoteLoading &&
                     notification.metrics.pixels >=
                         notification.metrics.maxScrollExtent - 500 &&
@@ -2199,7 +2387,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               child: CustomScrollView(
                 key: PageStorageKey<String>('home-feed-scroll-$mode'),
                 controller: _feedScrollControllers[mode],
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 physics: const AlwaysScrollableScrollPhysics(
                   parent: BouncingScrollPhysics(),
                 ),
@@ -2210,7 +2399,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     delegate: _SliverSearchBarDelegate(
                       vsync: this,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
                         child: _buildSearchBar(isDark),
                       ),
                     ),
@@ -2221,9 +2410,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(
                           AppSpacing.md,
-                          AppSpacing.sm,
-                          AppSpacing.md,
                           AppSpacing.xs,
+                          AppSpacing.md,
+                          0,
                         ),
                         child: ReplyNotificationReminder(
                           items: _unreadReplyNotifications,
@@ -2233,219 +2422,243 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       ),
                     ),
                   if (mode == 'following' && !_followingExpanded) ...[
-                if (!context.read<AuthProvider>().isLoggedIn)
-                  SliverToBoxAdapter(
-                    child: _buildFollowingPlaceholder(isDark),
-                  )
-                else
-                  SliverToBoxAdapter(
-                    child: _buildFollowingDashboard(
-                        isDark, normalPosts, isFeedLoading),
-                  ),
-                SliverToBoxAdapter(
-                  child: _buildCommunitySectionsGrid(isDark),
-                ),
-              ] else ...[
-                if (mode == 'following' && _followingExpanded)
-                  SliverToBoxAdapter(
-                    child: _buildExpandedFollowingHeader(isDark),
-                  ),
-                if (mode == 'following' &&
-                    !context.read<AuthProvider>().isLoggedIn)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildFollowingPlaceholder(isDark),
-                  )
-                else if (isFeedLoading && posts.isEmpty)
-                  const SliverFillRemaining(
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if (feedError != null && posts.isEmpty)
-                  SliverFillRemaining(
-                    child: _buildEmptyState(
-                      isDark,
-                      title: '帖子加载失败',
-                      subtitle: feedError,
-                      onRetry: _refresh,
-                    ),
-                  )
-                else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
-                  SliverFillRemaining(
-                    child: mode == 'following'
-                        ? _buildFollowingEmptyState(isDark)
-                        : _buildEmptyState(
-                            isDark,
-                            title:
-                                _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                            subtitle: _searchQuery.isNotEmpty
-                                ? '目前只按帖子标题搜索，换个标题关键词试试'
-                                : '发布第一条帖子吧',
-                            onRetry: _refresh,
-                          ),
-                  )
-                else ...[
-                  if (pinnedPosts.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: PinnedPostSummaryBar(
-                        posts: pinnedPosts,
-                        isDark: isDark,
-                        label: '置顶',
-                        onOpenPost: (post) {
-                          if (ResponsiveUtil.useDesktopShell(context)) {
-                            _openPostInSplit(post);
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PostDetailScreen(
-                                  postId: post.id,
-                                  isMarket: false,
-                                  initialPost: post,
-                                ),
-                              ),
-                            );
-                          }
-                        },
+                    if (!context.read<AuthProvider>().isLoggedIn)
+                      SliverToBoxAdapter(
+                        child: _buildFollowingPlaceholder(isDark),
+                      )
+                    else
+                      SliverToBoxAdapter(
+                        child: _buildFollowingDashboard(
+                            isDark, normalPosts, isFeedLoading),
                       ),
+                    SliverToBoxAdapter(
+                      child: _buildCommunitySectionsGrid(isDark),
                     ),
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final post = normalPosts[index];
-                      final isSelected = _selectedPost?.id == post.id &&
-                          _selectedUserId == null &&
-                          ResponsiveUtil.useDesktopShell(context);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Container(
-                          decoration: isSelected
-                              ? BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Theme.of(context)
-                                          .primaryColor
-                                          .withValues(alpha: 0.15),
-                                      blurRadius: 20,
-                                      spreadRadius: 2,
+                  ] else ...[
+                    if (mode == 'following' && _followingExpanded)
+                      SliverToBoxAdapter(
+                        child: _buildExpandedFollowingHeader(isDark),
+                      ),
+                    if (mode == 'following' &&
+                        !context.read<AuthProvider>().isLoggedIn)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _buildFollowingPlaceholder(isDark),
+                      )
+                    else if (isFeedLoading && posts.isEmpty)
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: _buildFeedSkeleton(isDark),
+                          ),
+                          childCount: 3,
+                        ),
+                      )
+                    else if (feedError != null && posts.isEmpty)
+                      SliverFillRemaining(
+                        child: _buildEmptyState(
+                          isDark,
+                          title: '帖子加载失败',
+                          subtitle: '检查网络后再试',
+                          onRetry: _refresh,
+                        ),
+                      )
+                    else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
+                      SliverFillRemaining(
+                        child: mode == 'following'
+                            ? _buildFollowingEmptyState(isDark)
+                            : _buildEmptyState(
+                                isDark,
+                                title: _searchQuery.isNotEmpty
+                                    ? '没有找到匹配帖子'
+                                    : '暂无帖子',
+                                subtitle: _searchQuery.isNotEmpty
+                                    ? '目前只按帖子标题搜索，换个标题关键词试试'
+                                    : '发布第一条帖子吧',
+                                onRetry: _refresh,
+                              ),
+                      )
+                    else ...[
+                      if (pinnedPosts.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: PinnedPostSummaryBar(
+                            posts: pinnedPosts,
+                            isDark: isDark,
+                            label: '置顶',
+                            onOpenPost: (post) {
+                              if (ResponsiveUtil.useDesktopShell(context)) {
+                                _openPostInSplit(post);
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PostDetailScreen(
+                                      postId: post.id,
+                                      isMarket: false,
+                                      initialPost: post,
                                     ),
-                                  ],
-                                )
-                              : null,
-                          child: FeedExposureTracker(
-                            post: post,
-                            feedKind: sort,
-                            position: index,
-                            algorithmVersion:
-                                PostCacheService.expectedAlgorithmVersion(
-                              boardId: 1,
-                              sort: sort,
-                            ),
-                            sessionService: _feedSessionService,
-                            eventService: _feedEventService,
-                            child: CommunityPostCard(
-                              post: post,
-                              onAuthorTap: _openUserInSplit,
-                              onPostAction: (action) =>
-                                  _handlePostAction(post, action),
-                              allowNotInterested: sort == 'all',
-                              onCommentTap: (commentPost) {
-                                if (ResponsiveUtil.useDesktopShell(context)) {
-                                  _openPostInSplit(commentPost,
-                                      focusReply: true);
-                                } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PostDetailScreen(
-                                        postId: commentPost.id,
-                                        isMarket: false,
-                                        initialPost: commentPost,
-                                        focusReplyComposer: true,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              onTap: () {
-                                if (_exitSearchInputMode()) {
-                                  return;
-                                }
-                                if (ResponsiveUtil.useDesktopShell(context)) {
-                                  _openPostInSplit(post,
-                                      feedKind: sort, position: index);
-                                } else {
-                                  _openFeedDetail(post,
-                                      sort: sort, position: index);
-                                }
-                              },
-                            ),
+                                  ),
+                                );
+                              }
+                            },
                           ),
                         ),
-                      );
-                    }, childCount: normalPosts.length),
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final post = normalPosts[index];
+                          final isSelected = _selectedPost?.id == post.id &&
+                              _selectedUserId == null &&
+                              ResponsiveUtil.useDesktopShell(context);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Container(
+                              decoration: isSelected
+                                  ? BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withValues(alpha: 0.15),
+                                          blurRadius: 20,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    )
+                                  : null,
+                              child: FeedExposureTracker(
+                                post: post,
+                                feedKind: sort,
+                                position: index,
+                                algorithmVersion:
+                                    PostCacheService.expectedAlgorithmVersion(
+                                  boardId: 1,
+                                  sort: sort,
+                                ),
+                                sessionService: _feedSessionService,
+                                eventService: _feedEventService,
+                                child: CommunityPostCard(
+                                  post: post,
+                                  postVariant: PostCardVariant.homeFeed,
+                                  onAuthorTap: _openUserInSplit,
+                                  onPostAction: (action) =>
+                                      _handlePostAction(post, action),
+                                  allowNotInterested: sort == 'all',
+                                  onCommentTap: (commentPost) {
+                                    if (ResponsiveUtil.useDesktopShell(
+                                        context)) {
+                                      _openPostInSplit(commentPost,
+                                          scrollToReplies: true);
+                                    } else {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PostDetailScreen(
+                                            postId: commentPost.id,
+                                            isMarket: false,
+                                            initialPost: commentPost,
+                                            scrollToReplies: true,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  onTap: () {
+                                    if (_exitSearchInputMode()) {
+                                      return;
+                                    }
+                                    if (ResponsiveUtil.useDesktopShell(
+                                        context)) {
+                                      _openPostInSplit(post,
+                                          feedKind: sort, position: index);
+                                    } else {
+                                      _openFeedDetail(post,
+                                          sort: sort, position: index);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        }, childCount: normalPosts.length),
+                      ),
+                    ],
+                  ],
+                  if (isFeedLoading && posts.isNotEmpty)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 18),
+                        child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: _feedBottomInset(context)),
                   ),
                 ],
-              ],
-              if (isFeedLoading && posts.isNotEmpty)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                ),
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 80),
               ),
-            ],
-          ),
-        ),
-        Positioned(
-          top: 52,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 160),
-            reverseDuration: const Duration(milliseconds: 160),
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, -0.15),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              );
-            },
-            child: _freshnessBannerVisible
-                ? _buildFreshnessBanner()
-                : const SizedBox.shrink(),
-          ),
-        ),
-      ],
+            ),
+            Positioned(
+              top: 52,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                reverseDuration: const Duration(milliseconds: 160),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, -0.15),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _freshnessBannerVisible
+                    ? _buildFreshnessBanner()
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ],
+        );
+      },
     );
-  },
-);
 
     // Feed 是高频筛选路径：内容立即替换，不对帖子逐条重播 reveal。
     return feedList;
   }
 
+  /// 让最后一条帖子完整停在底栏与 FAB 之上，避免悬浮操作遮挡正文。
+  double _feedBottomInset(BuildContext context) {
+    final themeProvider = context.read<ThemeProvider>();
+    final hasBottomNav = !ResponsiveUtil.useDesktopShell(context) ||
+        themeProvider.floatingNavBar;
+    if (!hasBottomNav) return AppSpacing.xxl;
+
+    // 标准底栏约 64，悬浮 Dock 为 64 高加 8 的底部留白。
+    final bottomNavHeight = themeProvider.floatingNavBar ? 72.0 : 64.0;
+    final bottomSafe = MediaQuery.paddingOf(context).bottom;
+    return bottomNavHeight + bottomSafe + 52 + AppSpacing.xl;
+  }
+
   Widget _buildSearchBar(bool isDark) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      borderRadius: 50,
-      blur: 8,
-      opacity: 1,
-      backgroundColor: isDark ? const Color(0xE6171B24) : Colors.white,
-      borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.12)
-          : const Color(0xFFEEF0F5),
+    final background = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final border =
+        isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: border),
+      ),
       child: TextField(
         key: const ValueKey('feed-search-field'),
         controller: _searchController,
@@ -2457,10 +2670,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         decoration: InputDecoration(
           border: InputBorder.none,
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          hintText: '搜索帖子标题关键词',
-          hintStyle: const TextStyle(fontSize: 14),
-          prefixIcon: const Icon(Icons.search, size: 20),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          hintText: '搜索帖子标题、关键词、校园话题',
+          hintStyle: TextStyle(
+            fontSize: 14,
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
           suffixIcon: _searchController.text.isEmpty
               ? null
               : IconButton(
@@ -2481,12 +2705,20 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     required String subtitle,
     VoidCallback? onRetry,
   }) {
+    final surface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final border =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: GlassContainer(
-        padding: const EdgeInsets.all(24),
-        borderRadius: 20,
-        blur: 15,
-        opacity: 0.1,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.xxl),
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: border),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2532,6 +2764,83 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ),
     );
   }
+
+  Widget _buildFeedSkeleton(bool isDark) {
+    final fill = isDark ? const Color(0xFF2A3032) : const Color(0xFFF0F3F1);
+    final border =
+        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+    Widget bar(double width, {double height = 12}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+      );
+    }
+
+    return Container(
+      key: const ValueKey('feed-skeleton-card'),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  bar(92),
+                  const SizedBox(height: 6),
+                  bar(64, height: 10)
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          bar(220, height: 18),
+          const SizedBox(height: AppSpacing.sm),
+          bar(double.infinity),
+          const SizedBox(height: 6),
+          bar(180),
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            width: double.infinity,
+            height: 92,
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              bar(38, height: 10),
+              bar(38, height: 10),
+              bar(38, height: 10),
+              bar(38, height: 10)
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---- 搜索框固定 SliverPersistentHeaderDelegate ----
@@ -2543,10 +2852,10 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
       : _vsync = vsync;
 
   @override
-  double get maxExtent => 46;
+  double get maxExtent => 50;
 
   @override
-  double get minExtent => 46;
+  double get minExtent => 50;
 
   @override
   FloatingHeaderSnapConfiguration get snapConfiguration =>
@@ -2579,9 +2888,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _SliverSearchBarDelegate oldDelegate) {
     return oldDelegate.child != child;
   }
-
 }
-
 
 class CheckInSuccessDialog extends StatelessWidget {
   final int streakDays;

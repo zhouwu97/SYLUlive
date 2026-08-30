@@ -236,7 +236,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('邀请已发送，用户同意后进入管理员代办'),
+          content: Text('邀请已发送，用户同意后进入管理员待办'),
           backgroundColor: Colors.green,
         ),
       );
@@ -250,7 +250,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       if (!mounted) return;
       String msg = '邀请失败';
       if (e.response?.data is Map) {
-        msg = (e.response!.data as Map)['error']?.toString() ?? msg;
+        final data = e.response!.data as Map;
+        msg = (data['message'] ?? data['error'])?.toString() ?? msg;
       }
       messenger.showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: Colors.red),

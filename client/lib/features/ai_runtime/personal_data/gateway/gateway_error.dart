@@ -4,6 +4,12 @@ enum GatewayErrorCode {
   corrupted,
   unsupported,
   refreshFailed,
+  eduSessionExpired,
+  credentialUnavailable,
+  networkUnavailable,
+  localStorageFailed,
+  refreshIncomplete,
+  unknown,
 }
 
 /// 不携带个人字段的 Gateway 读取失败原因。

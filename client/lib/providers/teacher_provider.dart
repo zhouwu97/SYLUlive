@@ -476,8 +476,13 @@ class TeacherProvider extends ChangeNotifier {
   }
 
   String _parseError(DioException e) {
-    if (e.response?.data is Map && e.response?.data['error'] != null) {
-      return e.response!.data['error'];
+    // 服务端统一错误格式为 {code, message, request_id}，error 仅旧接口兜底。
+    if (e.response?.data is Map) {
+      final data = e.response!.data as Map;
+      final message = data['message'] ?? data['error'];
+      if (message != null && message.toString().trim().isNotEmpty) {
+        return message.toString();
+      }
     }
     return '网络异常';
   }

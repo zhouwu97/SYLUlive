@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_screen.dart';
+import 'package:shenliyuan/widgets/canteen/canteen_ranking_entry.dart';
 
 const _homeBody =
     '{"hero":{"type":"recommended_store","canteen_id":1,"canteen_name":"一食堂二楼",'
@@ -49,6 +50,16 @@ const _homeWithoutDishesBody = '{"hero":null,'
     '"hot_dishes":[],"recent_reviews":[],"feed":['
     '{"id":"stable_choice:3","type":"stable_choice","canteen_id":3,"canteen_name":"旧 Feed 不应出现",'
     '"title":"想吃稳一点？"}]}';
+
+const _homePartialHotDishesBody = '{"hero":null,'
+    '"ranking_entry":{"top":{},"total":0},'
+    '"today_effective_reviewer_count":0,"recent_effective_review_count":0,'
+    '"hot_dishes":['
+    '{"id":11,"name":"麻辣拌","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"cover_image":"/uploads/a.jpg","average_score":4.8,"reviewer_count":21},'
+    '{"id":12,"name":"无图凉菜","canteen_id":1,"canteen_name":"一食堂二楼",'
+    '"cover_image":"","average_score":4.5,"reviewer_count":9}'
+    '],"recent_reviews":[],"feed":[]}';
 
 /// 构造一个返回食堂首页与全量食堂数据的 Dio Adapter。
 Dio _buildDio() {
@@ -130,7 +141,11 @@ void main() {
     expect(requests.where((r) => r == 'GET /canteens/home'), hasLength(1));
     // 旧整榜列表接口不应在未搜索时被首页使用。
     expect(requests.where((r) => r == 'GET /canteens'), isEmpty);
-    expect(find.text('校园食堂'), findsOneWidget);
+    expect(find.text('校园餐饮'), findsOneWidget);
+    expect(find.byTooltip('添加商家'), findsOneWidget);
+    expect(find.text('发布评价'), findsNothing);
+    expect(find.text('店铺'), findsNothing);
+    expect(find.byType(BottomNavigationBar), findsNothing);
   });
 
   testWidgets('首页按参考结构展示今天吃什么、快捷入口与热门菜品', (tester) async {
@@ -138,7 +153,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('今天吃什么'), findsOneWidget);
-    expect(find.text('同学真实评价 · 菜品实拍'), findsOneWidget);
+    expect(find.text('同学真实评价 · 商家菜品实拍'), findsOneWidget);
     expect(find.text('综合评价 4.6 · 五维数据待补充'), findsOneWidget);
 
     final scrollableFinder = find.byWidgetPredicate(
@@ -155,15 +170,31 @@ void main() {
     );
 
     expect(find.text('热门菜品'), findsOneWidget);
-    expect(find.text('今日有效评价'), findsOneWidget);
+    expect(find.text('今日新增评价'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
     expect(find.text('一食堂二楼'), findsOneWidget);
-    expect(find.text('综合排行'), findsOneWidget);
+    expect(find.text('商家排行'), findsOneWidget);
     // 首页不再以整榜数字排名渲染（不存在 01/02 榜单数字）。
     expect(find.text('01'), findsNothing);
   });
 
-  testWidgets('同学最近在吃渲染真实评价卡，不渲染旧 Feed', (tester) async {
+  testWidgets('快捷入口两张卡片底边对齐', (tester) async {
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    final rankingRect = tester.getRect(find.byType(CanteenRankingEntryCard));
+    final todayReviewRect = tester.getRect(
+      find.byKey(const Key('canteen_today_review_card')),
+    );
+    final rankingTitleRect = tester.getRect(find.text('商家排行'));
+    final todayReviewTitleRect = tester.getRect(find.text('今日新增评价'));
+
+    expect(rankingRect.height, todayReviewRect.height);
+    expect(rankingRect.bottom, todayReviewRect.bottom);
+    expect(rankingTitleRect.top, todayReviewTitleRect.top);
+  });
+
+  testWidgets('同学最近评价渲染真实评价卡，不渲染旧 Feed', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -177,7 +208,7 @@ void main() {
     expect(listFinder, findsOneWidget);
     await tester.fling(listFinder, const Offset(0, -900), 1200);
     await tester.pumpAndSettle();
-    expect(find.text('同学最近在吃'), findsOneWidget);
+    expect(find.text('同学最近评价'), findsOneWidget);
     expect(find.text('z同学'), findsOneWidget);
     expect(find.text('麻辣拌今天味道稳定，午饭高峰排了大概8分钟。'), findsOneWidget);
     expect(find.text('一食堂二楼'), findsWidgets);
@@ -210,9 +241,40 @@ void main() {
       scrollable: listFinder,
     );
     expect(find.text('热门菜品'), findsOneWidget);
-    expect(find.text('还没有同学上传菜品实拍'), findsOneWidget);
-    expect(find.text('去看看菜品'), findsOneWidget);
+    expect(find.text('还没有菜品实拍'), findsOneWidget);
+    expect(find.text('添加商家'), findsOneWidget);
     expect(find.text('旧 Feed 不应出现'), findsNothing);
+  });
+
+  testWidgets('热门菜品只渲染有实拍图的菜品', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/home' && options.method == 'GET') {
+        return _json(_homePartialHotDishesBody);
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_buildApp(dio: dio));
+    await tester.pumpAndSettle();
+
+    final listFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          widget.axisDirection == AxisDirection.down &&
+          widget.physics is AlwaysScrollableScrollPhysics,
+    );
+    await tester.scrollUntilVisible(
+      find.text('热门菜品'),
+      300,
+      scrollable: listFinder,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('热门菜品'), findsOneWidget);
+    expect(find.text('麻辣拌'), findsOneWidget);
+    expect(find.text('无图凉菜'), findsNothing);
+    expect(find.text('还没有菜品实拍'), findsNothing);
   });
 
   testWidgets('无 FAB', (tester) async {
@@ -235,15 +297,15 @@ void main() {
           widget.physics is AlwaysScrollableScrollPhysics,
     );
     await tester.scrollUntilVisible(
-      find.text('同学最近在吃'),
+      find.text('同学最近评价'),
       400,
       scrollable: scrollableFinder,
     );
     expect(tester.takeException(), isNull);
-    expect(find.text('同学最近在吃'), findsOneWidget);
+    expect(find.text('同学最近评价'), findsOneWidget);
   });
 
-  testWidgets('搜索时懒加载全量收录店铺，即使未入选推荐流也能搜到', (tester) async {
+  testWidgets('搜索时懒加载全量收录商家，即使未入选推荐流也能搜到', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -252,12 +314,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('川渝小吃（未进推荐流）'), findsOneWidget);
-    expect(find.text('综合排行 #3'), findsOneWidget);
+    expect(find.text('商家排行 #3'), findsOneWidget);
     // 搜索结果页不应展示首页 Feed 卡片
     expect(find.text('红烧牛肉面'), findsNothing);
   });
 
-  testWidgets('搜索无结果时提供提交这家店 CTA', (tester) async {
+  testWidgets('搜索无结果时提供提交商家 CTA', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
@@ -265,6 +327,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('没有找到'), findsOneWidget);
-    expect(find.text('提交这家店'), findsOneWidget);
+    expect(find.text('提交商家'), findsOneWidget);
   });
 }

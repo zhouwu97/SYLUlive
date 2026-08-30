@@ -5,7 +5,10 @@ class CanteenRankingItem {
   final int rank;
   final int id;
   final String name;
+  final String locationArea;
+  final String locationFloor;
   final String image;
+  final String operatingStatus;
 
   final double averageStar;
   final int ratingCount;
@@ -14,6 +17,7 @@ class CanteenRankingItem {
   final String confidence; // low / medium / high
 
   final int dishCount;
+  final int dishWithPhotoCount;
   final int dishPhotoCount;
 
   final List<SummaryTag> summaryTags;
@@ -22,12 +26,16 @@ class CanteenRankingItem {
     required this.rank,
     required this.id,
     required this.name,
+    this.locationArea = '',
+    this.locationFloor = '',
     this.image = '',
+    this.operatingStatus = 'active',
     this.averageStar = 0,
     this.ratingCount = 0,
     this.rankingScore = 0,
     this.confidence = 'low',
     this.dishCount = 0,
+    this.dishWithPhotoCount = 0,
     this.dishPhotoCount = 0,
     this.summaryTags = const [],
   });
@@ -38,12 +46,18 @@ class CanteenRankingItem {
       rank: (json['rank'] ?? 0).toInt(),
       id: (json['id'] ?? 0).toInt(),
       name: json['name']?.toString() ?? '',
+      locationArea: json['location_area']?.toString() ?? '',
+      locationFloor: json['location_floor']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
+      operatingStatus: json['is_offline'] == true
+          ? 'offline'
+          : (json['operating_status']?.toString() ?? 'active'),
       averageStar: (json['average_star'] ?? 0).toDouble(),
       ratingCount: (json['rating_count'] ?? 0).toInt(),
       rankingScore: (json['ranking_score'] ?? 0).toDouble(),
       confidence: json['confidence']?.toString() ?? 'low',
       dishCount: (json['dish_count'] ?? 0).toInt(),
+      dishWithPhotoCount: (json['dish_with_photo_count'] ?? 0).toInt(),
       dishPhotoCount: (json['dish_photo_count'] ?? 0).toInt(),
       summaryTags: rawTags is List
           ? rawTags
@@ -60,6 +74,16 @@ class CanteenRankingItem {
     if (ratingCount < 6) return '样本较少';
     return '';
   }
+
+  /// 位置标签文案，如"一食堂·二楼"；未填写时为空。
+  String get locationLabel {
+    if (locationArea.isEmpty && locationFloor.isEmpty) return '';
+    if (locationArea.isEmpty) return locationFloor;
+    if (locationFloor.isEmpty) return locationArea;
+    return '$locationArea·$locationFloor';
+  }
+
+  bool get isOffline => operatingStatus == 'offline';
 }
 
 class SummaryTag {
@@ -67,7 +91,8 @@ class SummaryTag {
   final String name;
   final int count;
 
-  const SummaryTag({required this.key, required this.name, required this.count});
+  const SummaryTag(
+      {required this.key, required this.name, required this.count});
 
   factory SummaryTag.fromJson(Map<String, dynamic> json) {
     return SummaryTag(

@@ -44,6 +44,28 @@ enum HomeWidgetTheme {
   }
 }
 
+/// 桌面小组件字号只提供经过布局验证的三个安全档位。
+enum HomeWidgetFontSize {
+  small,
+  standard,
+  large;
+
+  String get storageName => name;
+
+  String get label => switch (this) {
+        HomeWidgetFontSize.small => '小',
+        HomeWidgetFontSize.standard => '标准',
+        HomeWidgetFontSize.large => '大',
+      };
+
+  static HomeWidgetFontSize fromStorage(String? value) {
+    return HomeWidgetFontSize.values.firstWhere(
+      (fontSize) => fontSize.storageName == value,
+      orElse: () => HomeWidgetFontSize.standard,
+    );
+  }
+}
+
 enum HomeWidgetSize {
   size2x2,
   size4x2;
@@ -64,20 +86,24 @@ class HomeWidgetAppearance {
     required this.kind,
     required this.theme,
     required this.title,
+    this.fontSize = HomeWidgetFontSize.standard,
   });
 
   final HomeWidgetKind kind;
   final HomeWidgetTheme theme;
   final String title;
+  final HomeWidgetFontSize fontSize;
 
   HomeWidgetAppearance copyWith({
     HomeWidgetTheme? theme,
     String? title,
+    HomeWidgetFontSize? fontSize,
   }) {
     return HomeWidgetAppearance(
       kind: kind,
       theme: theme ?? this.theme,
       title: title ?? this.title,
+      fontSize: fontSize ?? this.fontSize,
     );
   }
 }
@@ -89,6 +115,8 @@ class HomeWidgetPreferenceKeys {
   static const examTheme = 'widget_exam_theme';
   static const courseTitle = 'widget_course_title';
   static const examTitle = 'widget_exam_title';
+  static const courseFontSize = 'widget_course_font_size';
+  static const examFontSize = 'widget_exam_font_size';
 
   static const legacyTextColor = 'widget_text_color';
   static const legacyTitle = 'widget_title';
@@ -102,6 +130,98 @@ class HomeWidgetPreferenceKeys {
         HomeWidgetKind.course => courseTitle,
         HomeWidgetKind.exam => examTitle,
       };
+
+  static String fontSize(HomeWidgetKind kind) => switch (kind) {
+        HomeWidgetKind.course => courseFontSize,
+        HomeWidgetKind.exam => examFontSize,
+      };
+}
+
+/// Flutter 预览与 Android RemoteViews 共用的语义字号角色。
+///
+/// 这里只描述文字大小，不携带任何布局尺寸，确保切换字号不会改变
+/// 小组件结构、条目高度、色条位置和内容顺序。
+class HomeWidgetTypography {
+  const HomeWidgetTypography({
+    required this.title,
+    required this.subtitle,
+    required this.primary,
+    required this.secondary,
+    required this.tertiary,
+    required this.badge,
+    required this.empty,
+  });
+
+  final double title;
+  final double subtitle;
+  final double primary;
+  final double secondary;
+  final double tertiary;
+  final double badge;
+  final double empty;
+
+  static HomeWidgetTypography resolve(
+    HomeWidgetSize size,
+    HomeWidgetFontSize fontSize,
+  ) {
+    final isWide = size == HomeWidgetSize.size4x2;
+    return switch ((isWide, fontSize)) {
+      (false, HomeWidgetFontSize.small) => const HomeWidgetTypography(
+          title: 12,
+          subtitle: 8,
+          primary: 10,
+          secondary: 8,
+          tertiary: 8,
+          badge: 7,
+          empty: 10,
+        ),
+      (false, HomeWidgetFontSize.standard) => const HomeWidgetTypography(
+          title: 13,
+          subtitle: 9,
+          primary: 11,
+          secondary: 9,
+          tertiary: 8,
+          badge: 8,
+          empty: 11,
+        ),
+      (false, HomeWidgetFontSize.large) => const HomeWidgetTypography(
+          title: 14,
+          subtitle: 10,
+          primary: 12,
+          secondary: 10,
+          tertiary: 9,
+          badge: 9,
+          empty: 12,
+        ),
+      (true, HomeWidgetFontSize.small) => const HomeWidgetTypography(
+          title: 13,
+          subtitle: 9,
+          primary: 11,
+          secondary: 8,
+          tertiary: 7,
+          badge: 7,
+          empty: 11,
+        ),
+      (true, HomeWidgetFontSize.standard) => const HomeWidgetTypography(
+          title: 14,
+          subtitle: 10,
+          primary: 12,
+          secondary: 9,
+          tertiary: 8,
+          badge: 8,
+          empty: 12,
+        ),
+      (true, HomeWidgetFontSize.large) => const HomeWidgetTypography(
+          title: 15,
+          subtitle: 11,
+          primary: 13,
+          secondary: 10,
+          tertiary: 9,
+          badge: 9,
+          empty: 13,
+        ),
+    };
+  }
 }
 
 class HomeWidgetThemePalette {

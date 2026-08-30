@@ -67,6 +67,8 @@ android/.kotlin/
 .codex/
 .sisyphus/
 .worktrees/
+.cache/
+.tools/
 
 # 本地任务设计文档，不纳入版本控制
 /docs/superpowers/
@@ -86,6 +88,8 @@ python-edu-service/tools/*/output/
 # 本地临时说明与误提交二进制
 /before-low-conflict-cleanup.txt
 /server/shenliyuan.new
+# 本地构建暂存目录曾被误提交为 gitlink，禁止再次入库
+/client-build-staging-*
 
 # Go 服务端本地构建产物，部署时重新构建或由 CI 发布
 /server/dist/*
@@ -98,6 +102,7 @@ python-edu-service/tools/*/output/
 /ssh_run.py
 /step12.py
 /step4_7.py
+/.deploy_*.py
 /server/handler_test_output*.txt
 /server/tmp_server
 

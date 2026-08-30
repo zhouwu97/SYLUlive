@@ -22,6 +22,20 @@ void main() {
     expect(capabilities.supportsInAppPackageInstall, isTrue);
   });
 
+  test('iOS 是独立的一等平台并启用 Apple 对应能力', () {
+    final capabilities = PlatformCapabilities.forPlatform(AppPlatform.ios);
+
+    expect(AppPlatform.ios.wireName, 'ios');
+    expect(AppPlatform.ios.isIOS, isTrue);
+    expect(capabilities.supportsJPush, isTrue);
+    expect(capabilities.supportsSystemNotification, isTrue);
+    expect(capabilities.supportsSensitiveSecretStorage, isTrue);
+    expect(capabilities.supportsNativeWidget, isTrue);
+    expect(capabilities.supportsPdfPreview, isTrue);
+    expect(capabilities.supportsInAppPackageInstall, isFalse);
+    expect(capabilities.supportsLiveView, isFalse);
+  });
+
   test('macOS 暴露课程提醒能力但不启用 Android 专属能力', () {
     final capabilities = PlatformCapabilities.forPlatform(AppPlatform.macos);
 

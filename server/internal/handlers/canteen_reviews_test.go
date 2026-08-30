@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +14,8 @@ import (
 
 func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.User) {
 	t.Helper()
+	uploadDir := t.TempDir()
+	t.Setenv("UPLOAD_DIR", uploadDir)
 	db := newCanteenTestDB(t)
 	if err := models.EnsureCanteenReviewSchema(db); err != nil {
 		t.Fatalf("migrate review v2: %v", err)
@@ -31,6 +34,153 @@ func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.Us
 
 func reviewBody() string {
 	return `{"taste_score":5,"value_score":4,"queue_score":3,"hygiene_score":4,"service_score":4,"comment":"好吃"}`
+}
+
+func TestCreateReviewCreatesActiveDishDirectly(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"铁板豆腐不错","dish_names":["铁板豆腐"]}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "铁板豆腐").First(&dish).Error; err != nil {
+		t.Fatalf("dish missing: %v", err)
+	}
+	if dish.Status != models.DishStatusActive || dish.CreatedBy != user.ID {
+		t.Fatalf("dish=%+v want active status", dish)
+	}
+	var relation models.CanteenReviewEventDish
+	if err := h.db.Where("dish_id = ?", dish.ID).First(&relation).Error; err != nil {
+		t.Fatalf("review relation missing: %v", err)
+	}
+	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), "铁板豆腐") ||
+		!strings.Contains(contributions.Body.String(), models.DishStatusActive) {
+		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+}
+
+func TestUpdateReviewDoesNotReviveRejectedDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "被驳回菜", NormalizedName: "被驳回菜",
+		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "无法确认菜品来源",
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4,
+		Comment: "原评价", Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.Create(&models.CanteenReviewEventDish{
+		ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	updated := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+itoaForTest(event.ID),
+		mapParams("reviewId", itoaForTest(event.ID)), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改文字","dish_ids":[%d]}`, dish.ID))
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
+	}
+	var refreshed models.CanteenDish
+	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != models.DishStatusRejected || refreshed.RejectReason != dish.RejectReason {
+		t.Fatalf("rejected dish was revived: %+v", refreshed)
+	}
+}
+
+func TestResubmitDishEndpointIsRetired(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	response := performCanteenRequest(t, h.ResubmitDish, http.MethodPost,
+		"/api/canteens/dishes/1/resubmit", mapParams("dishId", "1"), user.ID, "")
+	if response.Code != http.StatusGone || !strings.Contains(response.Body.String(), "dish_submission_retired") {
+		t.Fatalf("resubmit status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestReviewDishNamesAndPhotosRespectViewerVisibility(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	activeDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "公开菜", NormalizedName: "公开菜",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	pendingDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "待收录菜", NormalizedName: "待收录菜",
+		Status: models.DishStatusPending, CreatedBy: user.ID,
+	}
+	rejectedDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "未通过菜", NormalizedName: "未通过菜",
+		Status: models.DishStatusRejected, CreatedBy: user.ID, RejectReason: "菜名无法核实",
+	}
+	for _, dish := range []*models.CanteenDish{&activeDish, &pendingDish, &rejectedDish} {
+		if err := h.db.Create(dish).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	event := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4,
+		Images: `[]`, Status: models.ReviewEventStatusActive, ScoreVersion: 2,
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, dish := range []*models.CanteenDish{&activeDish, &pendingDish, &rejectedDish} {
+		if err := h.db.Create(&models.CanteenReviewEventDish{
+			ReviewEventID: event.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	approvedFile := models.File{Path: "/uploads/approved.jpg", Hash: "review-approved", Size: 1, MimeType: "image/jpeg"}
+	pendingFile := models.File{Path: "/uploads/pending.jpg", Hash: "review-pending", Size: 1, MimeType: "image/jpeg"}
+	rejectedFile := models.File{Path: "/uploads/rejected.jpg", Hash: "review-rejected", Size: 1, MimeType: "image/jpeg"}
+	for _, file := range []*models.File{&approvedFile, &pendingFile, &rejectedFile} {
+		if err := h.db.Create(file).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	photos := []models.CanteenDishPhoto{
+		{DishID: activeDish.ID, FileID: approvedFile.ID, UserID: user.ID, Status: models.DishPhotoStatusApproved, ReviewEventID: &event.ID},
+		{DishID: pendingDish.ID, FileID: pendingFile.ID, UserID: user.ID, Status: models.DishPhotoStatusPending, ReviewEventID: &event.ID},
+		{DishID: rejectedDish.ID, FileID: rejectedFile.ID, UserID: user.ID, Status: models.DishPhotoStatusRejected, RejectReason: "图片模糊", ReviewEventID: &event.ID},
+	}
+	if err := h.db.Create(&photos).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	publicResponse := performCanteenRequest(t, h.GetReviews, http.MethodGet,
+		"/api/canteens/88/reviews", mapParams("id", "88"), 0, "")
+	if publicResponse.Code != http.StatusOK {
+		t.Fatalf("public status=%d body=%s", publicResponse.Code, publicResponse.Body.String())
+	}
+	if strings.Contains(publicResponse.Body.String(), "未通过菜") ||
+		strings.Contains(publicResponse.Body.String(), "图片模糊") ||
+		!strings.Contains(publicResponse.Body.String(), "approved.jpg") {
+		t.Fatalf("public visibility is wrong: %s", publicResponse.Body.String())
+	}
+
+	ownerResponse := performCanteenRequest(t, h.GetReviews, http.MethodGet,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, "")
+	if ownerResponse.Code != http.StatusOK ||
+		!strings.Contains(ownerResponse.Body.String(), "未通过菜") ||
+		!strings.Contains(ownerResponse.Body.String(), "图片模糊") ||
+		!strings.Contains(ownerResponse.Body.String(), "pending.jpg") {
+		t.Fatalf("owner visibility is wrong: %s", ownerResponse.Body.String())
+	}
 }
 
 func TestCreateReviewKeepsEventsAndRecomputesSummary(t *testing.T) {
@@ -78,7 +228,7 @@ func TestCreateReviewKeepsEventsAndRecomputesSummary(t *testing.T) {
 	}
 }
 
-func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
+func TestCreateReviewAllowsImmediateRepeat(t *testing.T) {
 	h, _, user := prepareReviewV2DB(t)
 	first := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
@@ -87,8 +237,15 @@ func TestCreateReviewRateLimitsWithinSixHours(t *testing.T) {
 	}
 	second := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
-	if second.Code != http.StatusTooManyRequests || !containsReviewJSONCode(second.Body.Bytes(), "review_too_frequent") {
+	if second.Code != http.StatusCreated {
 		t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
+	}
+	var eventCount int64
+	if err := h.db.Model(&models.CanteenReviewEvent{}).Where("canteen_id = ? AND user_id = ?", 88, user.ID).Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("event count=%d want 2", eventCount)
 	}
 }
 
@@ -149,7 +306,7 @@ func TestDeleteReviewRejectsOtherUserAndHidden(t *testing.T) {
 	}
 }
 
-func TestDeletedLatestStillCountsForCreateCooldown(t *testing.T) {
+func TestDeletedLatestAllowsImmediateCreate(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
@@ -170,7 +327,7 @@ func TestDeletedLatestStillCountsForCreateCooldown(t *testing.T) {
 	}
 	createdAgain := performCanteenRequest(t, h.CreateReview, http.MethodPost,
 		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID, reviewBody())
-	if createdAgain.Code != http.StatusTooManyRequests || !containsReviewJSONCode(createdAgain.Body.Bytes(), "review_too_frequent") {
+	if createdAgain.Code != http.StatusCreated {
 		t.Fatalf("create after delete status=%d body=%s", createdAgain.Code, createdAgain.Body.String())
 	}
 }
@@ -389,12 +546,12 @@ func TestGetDetailReturnsEventLevelPayloadForEditing(t *testing.T) {
 	if action["can_edit_latest"] != true || action["latest_review_id"].(float64) != float64(event.ID) {
 		t.Fatalf("review action=%v", action)
 	}
-	if action["can_create"] != false || action["retry_after_seconds"].(float64) <= 0 {
-		t.Fatalf("expected cooldown action=%v", action)
+	if action["can_create"] != true {
+		t.Fatalf("unexpected create action=%v", action)
 	}
 }
 
-func TestGetDetailReviewActionAllowsCreateAfterCooldown(t *testing.T) {
+func TestGetDetailReviewActionAllowsCreateImmediately(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	event := models.CanteenReviewEvent{
 		CanteenID: canteen.ID, UserID: user.ID,
@@ -418,9 +575,8 @@ func TestGetDetailReviewActionAllowsCreateAfterCooldown(t *testing.T) {
 	}
 	if body.ReviewAction["can_create"] != true ||
 		body.ReviewAction["can_edit_latest"] != true ||
-		body.ReviewAction["latest_review_id"].(float64) != float64(event.ID) ||
-		body.ReviewAction["retry_after_seconds"].(float64) != 0 {
-		t.Fatalf("unexpected post-cooldown action=%v", body.ReviewAction)
+		body.ReviewAction["latest_review_id"].(float64) != float64(event.ID) {
+		t.Fatalf("unexpected immediate-create action=%v", body.ReviewAction)
 	}
 }
 
@@ -567,6 +723,76 @@ func TestCreateDishReviewValidatesParentEventOwnershipAndCanteen(t *testing.T) {
 	}
 }
 
+func TestGetDishReviewsUsesParentCommentWithOptionalDishScore(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	other := models.User{ID: 90, StudentID: "student-90", PasswordHash: "test", Nickname: "另一位同学", CreditScore: 90}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "鱼香肉丝", NormalizedName: "鱼香肉丝",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	parentWithoutDishScore := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: user.ID, TasteScore: 5, ValueScore: 4,
+		QueueScore: 4, HygieneScore: 4, ServiceScore: 4, OverallScore: 4.4,
+		Comment: "主评价里写的鱼香肉丝很好吃", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: time.Now().Add(-time.Hour), UpdatedAt: time.Now().Add(-time.Hour),
+	}
+	parentWithDishScore := models.CanteenReviewEvent{
+		CanteenID: canteen.ID, UserID: other.ID, TasteScore: 4, ValueScore: 4,
+		QueueScore: 3, HygieneScore: 4, ServiceScore: 4, OverallScore: 3.8,
+		Comment: "主评价评论应该展示在菜品详情", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := h.db.Create(&parentWithoutDishScore).Create(&parentWithDishScore).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, parent := range []models.CanteenReviewEvent{parentWithoutDishScore, parentWithDishScore} {
+		if err := h.db.Create(&models.CanteenReviewEventDish{
+			ReviewEventID: parent.ID, DishID: dish.ID, Relation: models.DishReviewRelationAte,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	parentID := parentWithDishScore.ID
+	if err := h.db.Create(&models.CanteenDishReviewEvent{
+		DishID: dish.ID, UserID: other.ID, TasteScore: 5, ValueScore: 3, PortionScore: 4,
+		OverallScore: 4, Comment: "可选的菜品三维评分", Status: models.ReviewEventStatusActive,
+		ScoreVersion: 1, CanteenReviewEventID: &parentID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performCanteenRequest(t, h.GetDishReviews, http.MethodGet,
+		"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/reviews",
+		mapParams("dishId", itoaForTest(dish.ID)), 0, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("dish reviews status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items=%+v", body.Items)
+	}
+	commentsByUser := make(map[uint]string, len(body.Items))
+	for _, item := range body.Items {
+		userID := uint(item["user_id"].(float64))
+		commentsByUser[userID] = item["comment"].(string)
+	}
+	if commentsByUser[user.ID] != parentWithoutDishScore.Comment ||
+		commentsByUser[other.ID] != parentWithDishScore.Comment {
+		t.Fatalf("parent comments were not used: %+v", commentsByUser)
+	}
+}
+
 func TestDishSuggestionsDistinguishExactAndPossible(t *testing.T) {
 	h, canteen, user := prepareReviewV2DB(t)
 	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "辣子鸡", NormalizedName: "辣子鸡", Status: models.DishStatusActive, CreatedBy: user.ID}
@@ -582,6 +808,185 @@ func TestDishSuggestionsDistinguishExactAndPossible(t *testing.T) {
 		"/api/canteens/88/dish-suggestions?q=辣子", mapParams("id", "88"), 0, "")
 	if resp.Code != http.StatusOK || !containsReviewJSONCode(resp.Body.Bytes(), "possible") {
 		t.Fatalf("possible response=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestReviewWithDishDirectlyCreatesActiveDishAndApprovedPhotos(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 501, user.ID, models.FileAccessPrivate)
+
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"火锅牛肉米线超好吃","dishes":[{"dish_name":"火锅牛肉米线","photo_file_ids":[%d]}]}`, file.ID))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "火锅牛肉米线").First(&dish).Error; err != nil {
+		t.Fatalf("dish not found: %v", err)
+	}
+	if dish.Status != models.DishStatusActive {
+		t.Fatalf("dish status = %s, want active", dish.Status)
+	}
+
+	var photo models.CanteenDishPhoto
+	if err := h.db.Where("dish_id = ? AND file_id = ?", dish.ID, file.ID).First(&photo).Error; err != nil {
+		t.Fatalf("dish photo not found: %v", err)
+	}
+	if photo.Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status = %s, want approved", photo.Status)
+	}
+
+	var updatedFile models.File
+	if err := h.db.First(&updatedFile, file.ID).Error; err != nil {
+		t.Fatalf("file not found: %v", err)
+	}
+	if updatedFile.AccessScope != models.FileAccessPublic || updatedFile.Status != "active" {
+		t.Fatalf("file access_scope = %s status = %s, want public active", updatedFile.AccessScope, updatedFile.Status)
+	}
+}
+
+func TestReviewReusesExistingDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	existing := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "火锅牛肉米线", NormalizedName: "火锅牛肉米线",
+		Status: models.DishStatusActive, CreatedBy: 1,
+	}
+	if err := h.db.Create(&existing).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"再次打卡","dish_names":["火锅牛肉米线"]}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var count int64
+	h.db.Model(&models.CanteenDish{}).Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "火锅牛肉米线").Count(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 dish row, got %d", count)
+	}
+}
+
+func TestMigratePendingDishesAndPhotosMigration(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	pendingDish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "待审历史菜", NormalizedName: "待审历史菜",
+		Status: models.DishStatusPending, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&pendingDish).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := createTestFile(t, h.db, 601, user.ID, models.FileAccessPrivate)
+	pendingPhoto := models.CanteenDishPhoto{
+		DishID: pendingDish.ID, FileID: file.ID, UserID: user.ID, Status: models.DishPhotoStatusPending,
+	}
+	if err := h.db.Create(&pendingPhoto).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := models.MigratePendingDishesAndPhotos(h.db); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	var refreshedDish models.CanteenDish
+	h.db.First(&refreshedDish, pendingDish.ID)
+	if refreshedDish.Status != models.DishStatusActive {
+		t.Fatalf("dish status after migration = %s, want active", refreshedDish.Status)
+	}
+
+	var refreshedPhoto models.CanteenDishPhoto
+	h.db.First(&refreshedPhoto, pendingPhoto.ID)
+	if refreshedPhoto.Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status after migration = %s, want approved", refreshedPhoto.Status)
+	}
+
+	var refreshedFile models.File
+	h.db.First(&refreshedFile, file.ID)
+	if refreshedFile.AccessScope != models.FileAccessPublic {
+		t.Fatalf("file access after migration = %s, want public", refreshedFile.AccessScope)
+	}
+}
+
+func TestUpdateReviewKeepsDishPhotoAfterCreate(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 701, user.ID, models.FileAccessPrivate)
+
+	createResp := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"原评价","dishes":[{"dish_name":"贵妃荔枝鸡肉燥双拼饭","photo_file_ids":[%d]}]}`, file.ID))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	editContext := performCanteenRequest(t, h.GetReviewEditContext, http.MethodGet,
+		"/api/canteens/reviews/1/edit-context", mapParams("reviewId", "1"), user.ID, "")
+	if editContext.Code != http.StatusOK {
+		t.Fatalf("edit-context status=%d body=%s", editContext.Code, editContext.Body.String())
+	}
+	var ctxBody struct {
+		Review map[string]interface{} `json:"review"`
+	}
+	if err := json.Unmarshal(editContext.Body.Bytes(), &ctxBody); err != nil {
+		t.Fatal(err)
+	}
+	reviewID := fmt.Sprint(ctxBody.Review["review_event_id"])
+	updatedAt := fmt.Sprint(ctxBody.Review["updated_at"])
+
+	// 模拟客户端编辑保存载荷：绑定了菜品的实拍只走 dishes[].photo_file_ids，
+	// 不再重复出现在 images 里。
+	patchBody := fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"修改后的评价","images":[],"tags":["portion_enough"],"dishes":[{"dish_id":0,"dish_name":"贵妃荔枝鸡肉燥双拼饭","taste_score":0,"value_score":0,"portion_score":0,"comment":"","photo_file_ids":[%d]}],"base_updated_at":%q}`, file.ID, updatedAt)
+	patchResp := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/"+reviewID, mapParams("reviewId", reviewID), user.ID, patchBody)
+	if patchResp.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", patchResp.Code, patchResp.Body.String())
+	}
+
+	var photos []models.CanteenDishPhoto
+	if err := h.db.Where("file_id = ?", file.ID).Find(&photos).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(photos) != 1 {
+		t.Fatalf("photo rows=%d, want 1", len(photos))
+	}
+	if photos[0].Status != models.DishPhotoStatusApproved {
+		t.Fatalf("photo status=%s, want approved", photos[0].Status)
+	}
+}
+
+func TestUpdateReviewRebindsPhotoToChangedDish(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 801, user.ID, models.FileAccessPrivate)
+
+	createResp := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"原评价","dishes":[{"dish_name":"贵妃荔枝鸡肉燥双拼饭","photo_file_ids":[%d]}]}`, file.ID))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	// 用户在编辑器里把菜品从「贵妃荔枝鸡肉燥双拼饭」换成另一道菜，
+	// 图片会自动改绑到新菜品。
+	patchBody := fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"换了个菜","images":[],"tags":["portion_enough"],"dishes":[{"dish_id":0,"dish_name":"麻辣香锅","taste_score":0,"value_score":0,"portion_score":0,"comment":"","photo_file_ids":[%d]}]}`, file.ID)
+	patchResp := performCanteenRequest(t, h.UpdateReview, http.MethodPatch,
+		"/api/canteens/reviews/1", mapParams("reviewId", "1"), user.ID, patchBody)
+	if patchResp.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", patchResp.Code, patchResp.Body.String())
+	}
+
+	var photo models.CanteenDishPhoto
+	if err := h.db.Where("file_id = ?", file.ID).First(&photo).Error; err != nil {
+		t.Fatalf("photo missing: %v", err)
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = 88 AND normalized_name = ?", "麻辣香锅").First(&dish).Error; err != nil {
+		t.Fatalf("new dish missing: %v", err)
+	}
+	if photo.DishID != dish.ID {
+		t.Fatalf("photo bound to dish %d, want %d", photo.DishID, dish.ID)
 	}
 }
 

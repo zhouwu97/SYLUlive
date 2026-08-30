@@ -23,6 +23,20 @@ void main() {
     expect(event.retryable, isTrue);
   });
 
+  test('answer.rollback 解析为绝对文本事件', () {
+    final event = AiRunEvent.parseSse(
+      '{"run_id":"run-1","seq":10,"type":"answer.rollback","payload":{"text":""}}',
+    );
+    expect(event.type, AiRunEventType.rollback);
+    expect(event.text, '');
+
+    final nonEmpty = AiRunEvent.parseSse(
+      '{"run_id":"run-1","seq":11,"type":"answer.rollback","payload":{"text":"已回滚到检查点"}}',
+    );
+    expect(nonEmpty.type, AiRunEventType.rollback);
+    expect(nonEmpty.text, '已回滚到检查点');
+  });
+
   test('按文档聚合来源并解析公开引用编号', () {
     final event = AiRunEvent.parseSse(
       '{"run_id":"run-1","seq":9,"type":"sources.ready","payload":{"sources":[{"document_id":3,"primary_chunk_id":18,"title":"学生手册","department":"学生处","status":"published","effective_from":"2025-09-01T00:00:00+08:00","effective_to":"2027-08-31T23:59:59+08:00","citation_numbers":[1,2],"locators":["第十条","第十一条"]}]}}',

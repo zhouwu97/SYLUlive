@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
-import '../../config/api_constants.dart';
 import '../../theme/app_motion.dart';
+import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
 
-/// 食堂排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
+/// 商家排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
 /// 排名使用排版数字（01/02/03），图片 104x96 圆角 14，整行底部分割线。
 class CanteenRankingCard extends StatefulWidget {
   final int rank;
@@ -58,8 +57,8 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
           onTap: widget.onTap,
           onLongPress: widget.onLongPress,
           behavior: HitTestBehavior.opaque,
-          child: AnimatedScale(
-            scale: _pressed ? 0.985 : 1.0,
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.94 : 1.0,
             duration: AppMotion.micro,
             curve: AppMotion.standard,
             child: Column(
@@ -85,9 +84,10 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
                   children: [
                     // 封面 104x96，圆角 14，Hero 用于列表→详情过渡
                     Hero(
-                      tag: 'canteen-${widget.canteenId}',
+                      tag: 'canteen-ranking-${widget.canteenId}',
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+                        borderRadius:
+                            BorderRadius.circular(CanteenTheme.radiusMd),
                         child: SizedBox(
                           width: 104,
                           height: 96,
@@ -126,7 +126,8 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: CanteenTheme.textPrimaryColor(isDark),
+                                    color:
+                                        CanteenTheme.textPrimaryColor(isDark),
                                   ),
                                 ),
                                 const SizedBox(width: 7),
@@ -185,8 +186,9 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
         ),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: ApiConstants.fullUrl(widget.imageUrl),
+    return CanteenStatusImage(
+      imageUrl: widget.imageUrl,
+      variant: 'thumb',
       fit: BoxFit.cover,
       errorWidget: (_, __, ___) => _placeholder(isDark),
       placeholder: (_, __) => _placeholder(isDark),

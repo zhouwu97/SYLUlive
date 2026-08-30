@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -10,8 +9,9 @@ import '../../models/canteen_review_draft.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../services/canteen_review_draft_repository.dart';
 import 'canteen_theme.dart';
+import 'canteen_status_image.dart';
 
-/// 食堂评价图片选择与草稿暂存组件。
+/// 商家评价图片选择与草稿暂存组件。
 ///
 /// 特性：
 /// - 最多 3 张图片（已有远端图片 + 本地待上传图片 <= 3）。
@@ -29,6 +29,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
   final CanteenReviewDraftRepository draftRepository;
   final ValueChanged<List<CanteenReviewDraftImage>> onImagesChanged;
   final bool enabled;
+  final int? defaultDishId;
+  final String? defaultDishName;
 
   const CanteenReviewImagePicker({
     super.key,
@@ -41,6 +43,8 @@ class CanteenReviewImagePicker extends StatefulWidget {
     required this.draftRepository,
     required this.onImagesChanged,
     this.enabled = true,
+    this.defaultDishId,
+    this.defaultDishName,
   });
 
   @override
@@ -63,9 +67,9 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
     try {
       final XFile? file = await _picker.pickImage(
         source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
         requestFullMetadata: false,
       );
 
@@ -99,6 +103,8 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
           CanteenReviewDraftImage(
             type: ReviewDraftImageType.localPending,
             localPath: draftPath,
+            dishId: widget.defaultDishId,
+            dishName: widget.defaultDishName,
           ),
         );
 
@@ -258,8 +264,9 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
     if (image.type == ReviewDraftImageType.publishedRemote &&
         image.url != null &&
         image.url!.isNotEmpty) {
-      content = CachedNetworkImage(
-        imageUrl: ApiConstants.fullUrl(image.url!),
+      content = CanteenStatusImage(
+        imageUrl: image.url!,
+        variant: 'thumb',
         fit: BoxFit.cover,
         placeholder: (_, __) => Container(
           color: CanteenTheme.surfaceMutedBg(isDark),

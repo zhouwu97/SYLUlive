@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/post.dart';
+import '../utils/public_image_compressor.dart';
 
 class PollApiException implements Exception {
   final String code;
@@ -69,6 +70,7 @@ class PollDraft {
 
 class PollService {
   final Dio dio;
+  final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
 
   PollService(this.dio);
 
@@ -96,22 +98,47 @@ class PollService {
 
   Future<Post> getPoll(int pollId) => _post(() => dio.get('/polls/$pollId'));
 
-  Future<Post> createPoll(PollDraft draft) =>
-      _post(() => dio.post('/polls', data: draft.toJson()));
-
-  Future<Post> updatePoll(int pollId, PollDraft draft) =>
-      _post(() => dio.put('/polls/$pollId', data: draft.toJson()));
-
-  Future<Post> putBallot(int pollId, List<int> optionIds) => _post(
-        () => dio.put('/polls/$pollId/ballot', data: {'option_ids': optionIds}),
+  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) => _post(
+        () => dio.post(
+          '/polls',
+          data: draft.toJson(),
+          options: _writeOptions(idempotencyKey),
+        ),
       );
 
-  Future<Post> closePoll(int pollId) =>
-      _post(() => dio.post('/polls/$pollId/close'));
+  Future<Post> updatePoll(int pollId, PollDraft draft,
+          {String? idempotencyKey}) =>
+      _post(
+        () => dio.put(
+          '/polls/$pollId',
+          data: draft.toJson(),
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
 
-  Future<void> deletePoll(int pollId) async {
+  Future<Post> putBallot(int pollId, List<int> optionIds,
+          {String? idempotencyKey}) =>
+      _post(
+        () => dio.put(
+          '/polls/$pollId/ballot',
+          data: {'option_ids': optionIds},
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
+
+  Future<Post> closePoll(int pollId, {String? idempotencyKey}) => _post(
+        () => dio.post(
+          '/polls/$pollId/close',
+          options: _writeOptions(idempotencyKey),
+        ),
+      );
+
+  Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {
     try {
-      await dio.delete('/polls/$pollId');
+      await dio.delete(
+        '/polls/$pollId',
+        options: _writeOptions(idempotencyKey),
+      );
     } on DioException catch (error) {
       throw _mapError(error);
     }
@@ -119,19 +146,25 @@ class PollService {
 
   Future<List<int>> uploadImages(List<XFile> images) async {
     final ids = <int>[];
-    for (final image in images) {
-      final bytes = await image.readAsBytes();
+    for (final source in images) {
+      final prepared = await _publicImageCompressor.prepare(source);
       try {
+        final bytes = await prepared.file.readAsBytes();
         final response = await dio.post(
           '/upload',
           data: FormData.fromMap({
-            'file': MultipartFile.fromBytes(bytes, filename: image.name),
+            'file': MultipartFile.fromBytes(
+              bytes,
+              filename: prepared.file.name,
+            ),
           }),
         );
         final value = response.data is Map ? response.data['file_id'] : null;
         if (value is num) ids.add(value.toInt());
       } on DioException catch (error) {
         throw _mapError(error);
+      } finally {
+        await prepared.dispose();
       }
     }
     return ids;
@@ -164,12 +197,18 @@ class PollService {
     }
   }
 
+  Options? _writeOptions(String? idempotencyKey) {
+    final key = idempotencyKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
+  }
+
   PollApiException _mapError(DioException error) {
     final data = error.response?.data;
     final map = data is Map ? data : const <String, dynamic>{};
     return PollApiException(
       map['code']?.toString() ?? 'poll_network_error',
-      map['error']?.toString() ?? '网络连接失败，请稍后重试',
+      (map['message'] ?? map['error'])?.toString() ?? '网络连接失败，请稍后重试',
       statusCode: error.response?.statusCode,
     );
   }

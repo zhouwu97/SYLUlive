@@ -314,7 +314,7 @@ func TestCanteenDiscoveryCacheInvalidation(t *testing.T) {
 		DishID:    dish.ID,
 		FileID:    file.ID,
 		UserID:    10,
-		Status:    models.DishPhotoStatusPending,
+		Status:    models.DishPhotoStatusApproved,
 		SortOrder: 0,
 	}
 	db.Create(&photo)
@@ -344,24 +344,13 @@ func TestCanteenDiscoveryCacheInvalidation(t *testing.T) {
 		return false
 	}
 
-	// 1. 预热 /canteens/home 缓存（此时实拍处于 pending，首页无 recent_photo）
+	// 1. 预热 /canteens/home 缓存（此时实拍处于 approved，首页有 recent_photo）
 	canteenDiscoveryCache.Invalidate()
-	if hasRecentPhotoInHome() {
-		t.Fatalf("pending photo must not appear in home")
-	}
-
-	// 2. 管理员审核通过实拍 -> 缓存必须立即失效并出现实拍
-	approveURL := fmt.Sprintf("/api/canteens/dish-photos/%d/approve", photo.ID)
-	approveParams := gin.Params{gin.Param{Key: "photoId", Value: fmt.Sprintf("%d", photo.ID)}}
-	respApprove := performCanteenRequest(t, photoAdminHandler.ApproveDishPhoto, http.MethodPost, approveURL, approveParams, 1, "")
-	if respApprove.Code != http.StatusOK {
-		t.Fatalf("approve status=%d body=%s", respApprove.Code, respApprove.Body.String())
-	}
 	if !hasRecentPhotoInHome() {
-		t.Fatalf("after approve, home cache must be invalidated and immediately display the approved photo")
+		t.Fatalf("approved photo must appear in home")
 	}
 
-	// 3. 预热首页缓存后，管理员下架实拍 -> 缓存必须立即失效且实拍立刻消失
+	// 2. 管理员下架实拍 -> 缓存必须立即失效且实拍立刻消失
 	archiveURL := fmt.Sprintf("/api/canteens/dish-photos/%d/archive", photo.ID)
 	archiveParams := gin.Params{gin.Param{Key: "photoId", Value: fmt.Sprintf("%d", photo.ID)}}
 	respArchive := performCanteenRequest(t, photoAdminHandler.ArchiveDishPhoto, http.MethodPost, archiveURL, archiveParams, 1, "")

@@ -280,7 +280,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   bool _isSaving = false;
   final Map<int, _ImageFileResult> _originalFiles = {};
   final Map<int, OriginalLoadState> _originalStates = {};
-  final Map<int, double> _originalProgress = {};
+
+  /// 下载进度只驱动左下角 pill 的百分比文本，避免整屏 setState。
+  /// 同一查看器最多一个原图下载，翻页即取消，单 notifier 足够。
+  final ValueNotifier<({int index, double value})?> _originalProgressNotifier =
+      ValueNotifier(null);
   final Map<int, Object> _originalErrors = {};
   final Map<int, Future<_ImageFileResult>> _originalLoads = {};
   final Map<int, CancelToken> _originalCancelTokens = {};
@@ -356,6 +360,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       unawaited(_deleteFileIfExists(File(path)));
     }
     if (_ownsDownloadClient) _downloadClientInstance.close(force: true);
+    _originalProgressNotifier.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -685,14 +690,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final sizeLabel = formatImageFileSize(item.originalSizeBytes);
     final sizeSuffix = sizeLabel.isEmpty ? '' : ' $sizeLabel';
     final isLoading = state == OriginalLoadState.loading;
-    final percent = ((_originalProgress[index] ?? 0) * 100).round();
-    final title = isLoading
-        ? (percent > 0 ? '$percent%' : '加载中…')
-        : state == OriginalLoadState.error
-            ? '重试原图$sizeSuffix'
-            : '查看原图$sizeSuffix';
+    final title = state == OriginalLoadState.error
+        ? '重试原图$sizeSuffix'
+        : '查看原图$sizeSuffix';
     final semanticLabel = isLoading
-        ? '正在加载原图，$title，点击取消'
+        ? '正在加载原图，点击取消'
         : state == OriginalLoadState.error
             ? '原图加载失败，点击重试$sizeSuffix'
             : '查看原图$sizeSuffix';
@@ -720,14 +722,33 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       padding: EdgeInsets.only(right: 8),
                       child: Icon(Icons.close, size: 18, color: Colors.black87),
                     ),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  if (isLoading)
+                    ValueListenableBuilder<({int index, double value})?>(
+                      valueListenable: _originalProgressNotifier,
+                      builder: (context, progress, _) {
+                        final value = progress != null && progress.index == index
+                            ? progress.value
+                            : 0.0;
+                        final percent = (value * 100).round();
+                        return Text(
+                          percent > 0 ? '$percent%' : '加载中…',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      },
+                    )
+                  else
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -857,9 +878,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (inFlight != null) return inFlight;
 
     if (mounted) {
+      _originalProgressNotifier.value = (index: index, value: 0);
       setState(() {
         _originalStates[index] = OriginalLoadState.loading;
-        _originalProgress[index] = 0;
         _originalErrors.remove(index);
       });
     }
@@ -877,8 +898,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         if (!mounted) return;
         setState(() {
           _originalStates[index] = OriginalLoadState.ready;
-          _originalProgress[index] = 1;
         });
+        _clearOriginalProgress(index);
       },
       onError: (Object error, StackTrace stackTrace) {
         if (identical(_originalLoads[index], future)) {
@@ -891,12 +912,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           _originalStates[index] =
               isCancelled ? OriginalLoadState.idle : OriginalLoadState.error;
           if (isCancelled) {
-            _originalProgress.remove(index);
             _lastOriginalProgressUpdates.remove(index);
           } else {
             _originalErrors[index] = error;
           }
         });
+        _clearOriginalProgress(index);
       },
     );
     return future;
@@ -1012,7 +1033,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final expectedTotal = total > 0 ? total : fallbackTotal;
     if (expectedTotal <= 0) return;
     final next = (received / expectedTotal).clamp(0.0, 1.0).toDouble();
-    final previous = _originalProgress[index];
+    final current = _originalProgressNotifier.value;
+    final previous =
+        current != null && current.index == index ? current.value : null;
     if (previous != null && (next - previous).abs() < 0.01 && next < 1) {
       return;
     }
@@ -1024,14 +1047,19 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return;
     }
     _lastOriginalProgressUpdates[index] = now;
-    setState(() => _originalProgress[index] = next);
+    _originalProgressNotifier.value = (index: index, value: next);
+  }
+
+  void _clearOriginalProgress(int index) {
+    final current = _originalProgressNotifier.value;
+    if (current != null && current.index == index) {
+      _originalProgressNotifier.value = null;
+    }
   }
 
   void _scheduleOriginalProgress(int index, int received, int total) {
     if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateOriginalProgress(index, received, total);
-    });
+    _updateOriginalProgress(index, received, total);
   }
 
   Dio _downloadClient() {

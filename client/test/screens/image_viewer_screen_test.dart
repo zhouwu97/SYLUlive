@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/utils/image_decode_size.dart';
+import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:shenliyuan/utils/private_message_media_cache.dart';
 
 class _TrackingFakeCacheManager extends Fake implements BaseCacheManager {
@@ -59,6 +60,35 @@ class _CacheWriteFailingFakeCacheManager extends _TrackingFakeCacheManager {
     String fileExtension = 'file',
   }) {
     throw StateError('模拟缓存写入失败');
+  }
+}
+
+/// 记录原图缓存写入的 key 与 maxAge，用于断言写入落在独立原图缓存；
+/// 不消费下载流，返回内存文件即可（读取路径的真实存在性校验走真实文件）。
+class _RecordingOriginalCacheManager extends _TrackingFakeCacheManager {
+  final List<String> putKeys = [];
+  final List<Duration> putMaxAges = [];
+  int readCalls = 0;
+
+  @override
+  Future<FileInfo?> getFileFromCache(String key,
+      {bool ignoreMemCache = false}) async {
+    readCalls++;
+    return super.getFileFromCache(key, ignoreMemCache: ignoreMemCache);
+  }
+
+  @override
+  Future<pkg_file.File> putFileStream(
+    String url,
+    Stream<List<int>> source, {
+    String? key,
+    String? eTag,
+    Duration maxAge = const Duration(days: 30),
+    String fileExtension = 'file',
+  }) async {
+    putKeys.add(key ?? url);
+    putMaxAges.add(maxAge);
+    return putSync(key ?? url, const <int>[0xFF, 0xD8, 0xFF, 0xD9]);
   }
 }
 
@@ -705,6 +735,96 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(adapter.requestedUrls.length, requestCount);
+  });
+
+  testWidgets('原图下载结果写入独立缓存并带 7 天有效期，不落展示缓存', (tester) async {
+    final displayCache = _TrackingFakeCacheManager();
+    final originalCache = _RecordingOriginalCacheManager();
+    final adapter = _TrackingDownloadAdapter();
+    final client = Dio()..httpClientAdapter = adapter;
+    const originalUrl = 'https://example.test/isolated-origin.jpg';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageViewerScreen(
+          cacheManager: displayCache,
+          originalCacheManager: originalCache,
+          downloadClient: client,
+          items: const [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/isolated-thumb.jpg',
+              originalUrl: originalUrl,
+              originalSizeBytes: 1024 * 1024,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('查看原图 1.0 MB'));
+    await _driveOriginalDownloadSettle(tester);
+
+    expect(adapter.requestedUrls, [originalUrl]);
+    expect(originalCache.readCalls, greaterThanOrEqualTo(1));
+    expect(originalCache.putKeys, [originalUrl]);
+    expect(originalCache.putMaxAges, [PostOriginalCache.stalePeriod]);
+    expect(displayCache.store, isEmpty);
+    expect(
+      find.byKey(const ValueKey('viewer-original-file-0')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('原图命中独立缓存时不再发起网络请求', (tester) async {
+    final originalCache = _TrackingFakeCacheManager();
+    final adapter = _TrackingDownloadAdapter();
+    final client = Dio()..httpClientAdapter = adapter;
+    const originalUrl = 'https://example.test/hit-origin.jpg';
+
+    // 读取路径会用真实 dart:io 校验存在性，先落一个真实文件再挂进缓存记录。
+    final realFile = File(
+        '/tmp/viewer_original_hit_cache_${DateTime.now().microsecondsSinceEpoch}.jpg');
+    realFile.writeAsBytesSync(const <int>[0xFF, 0xD8, 0xFF, 0xD9]);
+    addTearDown(() {
+      if (realFile.existsSync()) realFile.deleteSync();
+    });
+    originalCache.store[originalUrl] = FileInfo(
+      originalCache.fs.file(realFile.path),
+      FileSource.Online,
+      DateTime.now().add(const Duration(days: 1)),
+      originalUrl,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageViewerScreen(
+          originalCacheManager: originalCache,
+          downloadClient: client,
+          items: const [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/hit-thumb.jpg',
+              originalUrl: originalUrl,
+              originalSizeBytes: 1024 * 1024,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('查看原图 1.0 MB'));
+    // 命中判定要过真实文件 exists/length 检查，与下载链一样交替推进。
+    await _driveOriginalDownloadSettle(tester);
+
+    expect(adapter.requestedUrls, isEmpty);
+    expect(
+      find.byKey(const ValueKey('viewer-original-file-0')),
+      findsOneWidget,
+    );
+    expect(find.text('查看原图 1.0 MB'), findsNothing);
   });
 
   testWidgets('翻页会取消上一张原图且同一查看器最多一个原图请求', (tester) async {

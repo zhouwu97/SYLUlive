@@ -82,7 +82,7 @@ void main() {
       expect(selection.url, origin);
     });
 
-    test('GIF 始终选择原图且不缩放', () {
+    test('GIF 默认选择原图且不缩放，保持旧调用兼容', () {
       final selection = selectImageResource(
         target: const ImageDecodeTarget(width: 480, height: 320),
         thumbUrl: thumb,
@@ -94,6 +94,53 @@ void main() {
       expect(selection.variant, ImageResourceVariant.origin);
       expect(selection.url, origin);
       expect(selection.shouldResize, isFalse);
+    });
+
+    test('静态 GIF 预览启用后选择 ready 变体，不旁路到原图', () {
+      final selection = selectImageResource(
+        target: const ImageDecodeTarget(width: 720, height: 480),
+        thumbUrl: thumb,
+        mediumUrl: medium,
+        originUrl: origin,
+        isAnimatedGif: true,
+        allowStaticAnimatedPreview: true,
+        allowOriginFallback: false,
+      );
+
+      expect(selection.variant, ImageResourceVariant.medium);
+      expect(selection.url, medium);
+      expect(selection.shouldResize, isTrue);
+    });
+
+    test('大图变体 pending/failed 时返回不可用，不把 origin 当预览', () {
+      final selection = selectImageResource(
+        target: const ImageDecodeTarget(width: 480, height: 320),
+        thumbUrl: origin,
+        mediumUrl: origin,
+        originUrl: origin,
+        thumbReady: false,
+        mediumReady: false,
+        viewerReady: false,
+        allowOriginFallback: false,
+      );
+
+      expect(selection.variant, ImageResourceVariant.unavailable);
+      expect(selection.url, isEmpty);
+    });
+
+    test('目标档位未 ready 时回退到更低的 ready 变体', () {
+      final selection = selectImageResource(
+        target: const ImageDecodeTarget(width: 1280, height: 900),
+        thumbUrl: thumb,
+        mediumUrl: origin,
+        originUrl: origin,
+        mediumReady: false,
+        viewerReady: false,
+        allowOriginFallback: false,
+      );
+
+      expect(selection.variant, ImageResourceVariant.thumb);
+      expect(selection.url, thumb);
     });
   });
 }

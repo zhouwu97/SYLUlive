@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
+import '../utils/image_decode_size.dart';
 import '../utils/post_route.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/poll/poll_post_card.dart';
+import '../widgets/post_media/post_media_view.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
 import 'dart:io' show File;
@@ -607,6 +608,12 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildMarketItem(Post post, bool isDark) {
     final isSelected = _selectedIds.contains(post.id);
+    final coverSelection = post.images.isEmpty
+        ? null
+        : PostMediaView.resourceForPostImage(
+            post.images.first,
+            const ImageDecodeTarget(width: 120, height: 120),
+          );
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -635,9 +642,9 @@ class _MyContentScreenState extends State<MyContentScreen>
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: AppCachedImage.public(
-                // 60dp 缩略图走 thumb 档（480 长边）；变体未就绪时回退原图，不会 404。
-                imageUrl:
-                    ApiConstants.fullUrl(post.images.first.resolvedThumbUrl),
+                // 60dp 缩略图走状态安全的最低可用档位；大图变体 pending/failed
+                // 时保持占位，不能把接口回退的 origin 当作 thumb 下载。
+                imageUrl: coverSelection?.url ?? '',
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,

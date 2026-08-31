@@ -396,7 +396,8 @@ class MarketPostCard extends StatelessWidget {
   Widget _buildCover(BuildContext context, List<PostImage> images, double width,
       double? height, bool isDark,
       {required bool isGrid}) {
-    // 封面是列表/网格缩略图，按显示像素挑 thumb 档位；变体未就绪时回退原图。
+    // 封面是列表/网格缩略图，按显示像素挑 thumb 档位；大图变体未就绪时
+    // 保持骨架屏，不把服务端回退 URL 当成可用原图。
     final validImagesForCover = images
         .where((image) => image.resolvedOriginUrl.trim().isNotEmpty)
         .toList(growable: false);
@@ -411,21 +412,24 @@ class MarketPostCard extends StatelessWidget {
             context, validImagesForCover.first, width, height);
     final imgUrl = imageUrls.isEmpty ? '' : imageUrls[0];
 
-    Widget imageWidget = CachedNetworkImage(
-      cacheManager: PostImageCache.manager,
-      imageUrl: cover?.url ?? imgUrl,
-      fit: BoxFit.cover,
-      width: width,
-      height: height,
-      memCacheWidth: cover?.decodeWidth,
-      memCacheHeight: cover?.decodeHeight,
-      fadeInDuration: const Duration(milliseconds: 200),
-      placeholder: (_, __) => _buildSkeleton(isDark),
-      errorWidget: (context, url, error) {
-        Future.microtask(() => PostImageCache.manager.removeFile(url));
-        return _buildSkeleton(isDark);
-      },
-    );
+    final coverUrl = cover?.url ?? imgUrl;
+    Widget imageWidget = coverUrl.isEmpty
+        ? _buildSkeleton(isDark)
+        : CachedNetworkImage(
+            cacheManager: PostImageCache.manager,
+            imageUrl: coverUrl,
+            fit: BoxFit.cover,
+            width: width,
+            height: height,
+            memCacheWidth: cover?.decodeWidth,
+            memCacheHeight: cover?.decodeHeight,
+            fadeInDuration: const Duration(milliseconds: 200),
+            placeholder: (_, __) => _buildSkeleton(isDark),
+            errorWidget: (context, url, error) {
+              Future.microtask(() => PostImageCache.manager.removeFile(url));
+              return _buildSkeleton(isDark);
+            },
+          );
 
     if (isGrid) {
       imageWidget = AspectRatio(aspectRatio: 1, child: imageWidget);
@@ -469,7 +473,8 @@ class MarketPostCard extends StatelessWidget {
 
   /// 封面档位选择：列表/网格封面只需要 thumb 档（480 长边）。
   ///
-  /// 服务端未生成变体时 [selectImageResource] 会回退原图，不会让封面 404。
+  /// 复用帖子媒体的状态感知选择，避免 pending/failed 变体把大原图带入
+  /// 商品列表；小图和旧接口仍保留原图兜底。
   _CoverResource _selectCoverResource(
     BuildContext context,
     PostImage image,
@@ -482,14 +487,7 @@ class MarketPostCard extends StatelessWidget {
       maxLongEdge: imageThumbLongEdge,
       fallbackLogicalSize: const Size(96, 96),
     );
-    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
-    final selection = selectImageResource(
-      target: target,
-      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
-      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
-      originUrl: originUrl,
-      isAnimatedGif: originUrl.toLowerCase().split('?').first.endsWith('.gif'),
-    );
+    final selection = PostMediaView.resourceForPostImage(image, target);
     return _CoverResource(
       url: selection.url,
       decodeWidth: selection.shouldResize ? target.width : null,

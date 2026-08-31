@@ -14,7 +14,11 @@ class _FakeAuthProvider extends Fake
   User? get user => null;
 }
 
-PostImage _image({required String thumbUrl}) {
+PostImage _image({
+  required String thumbUrl,
+  int size = 1024,
+  Map<String, String> variantStatus = const {},
+}) {
   return PostImage(
     id: 1,
     postId: 1,
@@ -23,12 +27,14 @@ PostImage _image({required String thumbUrl}) {
       id: 1,
       hash: 'hash',
       path: '/uploads/ab/hash.jpg',
-      size: 1024,
+      size: size,
       mimeType: 'image/jpeg',
       width: 4000,
       height: 3000,
     ),
     thumbUrl: thumbUrl,
+    mediumUrl: thumbUrl,
+    variantStatus: variantStatus,
   );
 }
 
@@ -83,6 +89,27 @@ void main() {
       images.any((image) => image.imageUrl.endsWith('/uploads/ab/hash.jpg')),
       isTrue,
     );
+  });
+
+  testWidgets('大图变体 pending/failed 时封面保持骨架，不请求原图', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        _post([
+          _image(
+            thumbUrl: '',
+            size: 4 * 1024 * 1024,
+            variantStatus: const {
+              'thumb': 'pending',
+              'medium': 'failed',
+              'viewer': 'pending',
+            },
+          ),
+        ]),
+      ),
+    );
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.byIcon(Icons.image_outlined), findsOneWidget);
   });
 
   testWidgets('商品卡片进入查看器时保留原图大小策略', (tester) async {

@@ -354,9 +354,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/thumb.jpg'));
     expect(cached.imageUrl, contains('/uploads/thumb.jpg'));
     expect(cached.memCacheWidth, 288);
     expect(cached.memCacheHeight, 162);
@@ -398,9 +398,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.imageUrl, contains('/uploads/medium.jpg'));
     expect(cached.memCacheWidth, 863);
     expect(cached.memCacheHeight, 486);
@@ -442,9 +442,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.imageUrl, contains('/uploads/medium.jpg'));
     // 250 宽按 9:16 展开 444.4 逻辑高，×3×1.15 后长边封顶 1280，比例保持 0.5625。
     expect(cached.memCacheWidth, 720);
@@ -494,9 +494,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('长图'), findsOneWidget);
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.topCenter);
     expect(cached.fit, BoxFit.cover);
     expect(tester.takeException(), isNull);
@@ -536,9 +536,9 @@ void main() {
     );
     await tester.pump();
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.center);
     expect(cached.fit, BoxFit.contain);
     expect(find.text('长图'), findsNothing);
@@ -578,12 +578,53 @@ void main() {
     );
     await tester.pump();
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.center);
     expect(cached.fit, BoxFit.cover);
     expect(find.text('长图'), findsNothing);
+  });
+
+  testWidgets('Feed/详情大图变体 pending 或 failed 时不请求 origin', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'pending-hash',
+        path: '/uploads/pending-origin.jpg',
+        size: 4 * 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/pending-origin.jpg',
+      // 服务端未 ready 时会把这些字段回退为 origin URL。
+      thumbUrl: '/uploads/pending-origin.jpg',
+      mediumUrl: '/uploads/pending-origin.jpg',
+      variantStatus: const {
+        'thumb': 'pending',
+        'medium': 'failed',
+        'viewer': 'pending',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('homeFeed 多图瓦片顶部对齐并保持原图比例解码', (tester) async {
@@ -625,9 +666,10 @@ void main() {
     );
     await tester.pump();
 
-    final tiles = tester.widgetList<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final tiles = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .where((image) => image.imageUrl.contains('-medium.jpg'))
+        .toList();
     expect(tiles, isNotEmpty);
     for (final tile in tiles) {
       expect(tile.alignment, Alignment.topCenter);
@@ -678,9 +720,10 @@ void main() {
     );
     await tester.pump();
 
-    final tiles = tester.widgetList<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final tiles = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .where((image) => image.imageUrl.contains('-medium.jpg'))
+        .toList();
     expect(tiles, isNotEmpty);
     for (final tile in tiles) {
       // 16:9 源高度占满 195，展开 (346.67, 195)，×3×1.15 = 1196×673。

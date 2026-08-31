@@ -44,6 +44,7 @@ import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/post_card.dart';
+import '../widgets/post_media/post_media_view.dart';
 import '../widgets/feed/feed_exposure_tracker.dart';
 import '../widgets/feed/feed_post_action_menu.dart';
 import '../widgets/report_sheet.dart';
@@ -2222,18 +2223,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ImageDecodeTarget target,
   ) {
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
-    if (originUrl.isEmpty ||
-        image.file?.mimeType.toLowerCase() == 'image/gif' ||
-        originUrl.toLowerCase().split('?').first.endsWith('.gif')) {
-      return null;
-    }
-    final selection = selectImageResource(
-      target: target,
-      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
-      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
-      viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
-      originUrl: originUrl,
-    );
+    if (originUrl.isEmpty) return null;
+    final selection = PostMediaView.resourceForPostImage(image, target);
     if (!selection.shouldResize || selection.url.isEmpty) return null;
 
     return ImagePrefetchTask(

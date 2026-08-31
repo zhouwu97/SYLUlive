@@ -158,6 +158,11 @@ class ImageViewerScreen extends StatefulWidget {
   /// 为空时回退到公开图片缓存 [PostImageCache.manager]。
   final BaseCacheManager? cacheManager;
 
+  /// 原图独立缓存（7 天 / 50 项，避免原图挤占展示缓存）。为空时注入了
+  /// [cacheManager] 的场景原图仍读写该缓存（保持账号隔离与退出清理），
+  /// 否则回退到 [PostOriginalCache.manager]。
+  final BaseCacheManager? originalCacheManager;
+
   /// 针对私有图片等需要自定义账号隔离 cacheKey 的构建器；为空时使用 url 作为 cacheKey。
   final String Function(String url)? cacheKeyBuilder;
 
@@ -175,6 +180,7 @@ class ImageViewerScreen extends StatefulWidget {
     this.downloadUrls,
     this.items,
     this.cacheManager,
+    this.originalCacheManager,
     this.cacheKeyBuilder,
     this.downloadClient,
   });
@@ -1079,12 +1085,20 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   }
 
   Future<File?> _readCachedFile(String url) async {
-    final managers = widget.cacheManager != null
-        ? <BaseCacheManager>[widget.cacheManager!]
-        : <BaseCacheManager>[
-            PostImageCache.manager,
-            DefaultCacheManager(),
-          ];
+    final List<BaseCacheManager> managers;
+    if (widget.originalCacheManager != null) {
+      managers = <BaseCacheManager>[widget.originalCacheManager!];
+    } else if (widget.cacheManager != null) {
+      managers = <BaseCacheManager>[widget.cacheManager!];
+    } else {
+      // 独立原图缓存优先；旧版本曾把原图写进展示缓存，保留兜底命中，
+      // 避免升级后重复下载。
+      managers = <BaseCacheManager>[
+        PostOriginalCache.manager,
+        PostImageCache.manager,
+        DefaultCacheManager(),
+      ];
+    }
     final key = _cacheKeyFor(url);
 
     for (final manager in managers) {
@@ -1106,12 +1120,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     File downloaded,
     String extension,
   ) async {
+    final target = widget.originalCacheManager ??
+        widget.cacheManager ??
+        PostOriginalCache.manager;
     try {
-      final cached = await _cacheManager.putFileStream(
+      final cached = await target.putFileStream(
         url,
         downloaded.openRead(),
         key: _cacheKeyFor(url),
-        maxAge: PostImageCache.stalePeriod,
+        maxAge: PostOriginalCache.stalePeriod,
         fileExtension: extension,
       );
       final file = File(cached.path);

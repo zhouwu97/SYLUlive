@@ -25,9 +25,10 @@ bool shouldAutoLoadOriginalByDefault({
   required int originalSizeBytes,
   bool isAnimatedGif = false,
 }) {
-  return isAnimatedGif ||
-      (originalSizeBytes > 0 &&
-          originalSizeBytes < imageOriginalAutoLoadThresholdBytes);
+  // GIF 也遵守同一阈值：小 GIF 直出，大 GIF 留在静态预览并等待用户主动
+  // 加载完整动画，避免进入查看器就占用大带宽和动画解码资源。
+  return originalSizeBytes > 0 &&
+      originalSizeBytes < imageOriginalAutoLoadThresholdBytes;
 }
 
 /// 将原图字节数格式化为查看器按钮文案。
@@ -272,6 +273,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late int _currentIndex;
   late final List<ImageViewerItem> _resolvedItems;
   late final ImagePrefetchCoordinator _prefetchCoordinator;
+  late final Dio _downloadClientInstance;
+  late final bool _ownsDownloadClient;
+  int _prefetchDirection = 1;
 
   bool _isSaving = false;
   final Map<int, _ImageFileResult> _originalFiles = {};
@@ -280,6 +284,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   final Map<int, Object> _originalErrors = {};
   final Map<int, Future<_ImageFileResult>> _originalLoads = {};
   final Map<int, CancelToken> _originalCancelTokens = {};
+  final Map<int, DateTime> _lastOriginalProgressUpdates = {};
   final Set<String> _ownedTemporaryFiles = <String>{};
 
   @override
@@ -290,6 +295,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     _currentIndex = total == 0 ? 0 : widget.initialIndex.clamp(0, total - 1);
     _pageController = PageController(initialPage: _currentIndex);
     _prefetchCoordinator = ImagePrefetchCoordinator();
+    _downloadClientInstance = widget.downloadClient ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 10),
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 60),
+          ),
+        );
+    _ownsDownloadClient = widget.downloadClient == null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _prefetchAdjacentImages();
     });
@@ -341,6 +355,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     for (final path in _ownedTemporaryFiles) {
       unawaited(_deleteFileIfExists(File(path)));
     }
+    if (_ownsDownloadClient) _downloadClientInstance.close(force: true);
     _pageController.dispose();
     super.dispose();
   }
@@ -390,6 +405,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   itemCount: total,
                   onPageChanged: (index) {
                     if (!mounted) return;
+                    final direction = index.compareTo(_currentIndex);
+                    if (direction != 0) _prefetchDirection = direction;
+                    _cancelOriginalLoadsExcept(index);
                     setState(() => _currentIndex = index);
                     _prefetchCoordinator.invalidate();
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -748,6 +766,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         state == OriginalLoadState.ready) {
       return;
     }
+    // 原图属于高成本动作，同一查看器同时只保留一个下载；切换图片或
+    // 用户点击另一张时，前一个请求会收到 Dio cancel，而不是继续抢带宽。
+    _cancelOriginalLoadsExcept(index);
     final future = _loadOriginalFile(index);
     unawaited(future.then<void>((_) {}, onError: (_, __) {}));
   }
@@ -756,6 +777,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final token = _originalCancelTokens[index];
     if (token != null && !token.isCancelled) {
       token.cancel('用户取消原图下载');
+    }
+  }
+
+  void _cancelOriginalLoadsExcept(int keepIndex) {
+    for (final index in _originalCancelTokens.keys.toList(growable: false)) {
+      if (index != keepIndex) _cancelOriginalLoad(index);
     }
   }
 
@@ -846,6 +873,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           _originalLoads.remove(index);
         }
         _rememberOriginalFile(index, result);
+        _lastOriginalProgressUpdates.remove(index);
         if (!mounted) return;
         setState(() {
           _originalStates[index] = OriginalLoadState.ready;
@@ -864,6 +892,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
               isCancelled ? OriginalLoadState.idle : OriginalLoadState.error;
           if (isCancelled) {
             _originalProgress.remove(index);
+            _lastOriginalProgressUpdates.remove(index);
           } else {
             _originalErrors[index] = error;
           }
@@ -883,6 +912,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final cancelToken = CancelToken();
     _originalCancelTokens[index] = cancelToken;
     File? temporaryFile;
+    File? completedFile;
     try {
       // 先查与显示一致的磁盘缓存，命中时不发送 origin 请求。
       final cachedFile = await _readCachedFile(originalUrl);
@@ -904,8 +934,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         url: originalUrl,
         mimeType: item.mimeType,
       );
+      final basename =
+          'sylulive_original_${DateTime.now().microsecondsSinceEpoch}_$index';
       temporaryFile = File(
-        '${tempDir.path}/sylulive_original_${DateTime.now().microsecondsSinceEpoch}_$index.$ext.part',
+        '${tempDir.path}/$basename.$ext.part',
       );
 
       final response = await _downloadClient().download(
@@ -914,12 +946,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         cancelToken: cancelToken,
         deleteOnError: true,
         onReceiveProgress: (received, total) {
-          _updateOriginalProgress(index, received, total);
+          _scheduleOriginalProgress(index, received, total);
         },
         options: Options(headers: widget.httpHeaders),
       );
 
-      if (!await temporaryFile.exists() || await temporaryFile.length() <= 0) {
+      // Dio 返回时文件句柄已经关闭；这里的校验和同目录改名只涉及文件元数据，
+      // 使用同步操作可以避免 UI 测试/低端设备上异步文件事件被延迟时留下半成品。
+      if (!temporaryFile.existsSync() || temporaryFile.lengthSync() <= 0) {
         throw Exception('原图下载结果为空');
       }
 
@@ -928,16 +962,25 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         mimeType: item.mimeType,
         contentType: response.headers.value('content-type'),
       );
+      // 下载未完成时只存在 .part；成功后先在同一目录原子改名，再交给缓存。
+      // 缓存写入失败时也返回这个正式文件，避免把半成品路径当成原图。
+      final downloadedFile = File('${tempDir.path}/$basename.$responseExt');
+      completedFile = downloadedFile;
+      temporaryFile.renameSync(downloadedFile.path);
+      temporaryFile = null;
       final cached = await _putDownloadedFileInCache(
         originalUrl,
-        temporaryFile,
+        downloadedFile,
         responseExt,
       );
-      final file = cached ?? temporaryFile;
+      final file = cached ?? downloadedFile;
       if (cached == null) {
         _ownedTemporaryFiles.add(file.path);
-      } else if (cached.path != temporaryFile.path) {
-        await _deleteFileIfExists(temporaryFile);
+      } else {
+        if (cached.path != downloadedFile.path) {
+          await _deleteFileIfExists(downloadedFile);
+        }
+        completedFile = null;
       }
 
       return _ImageFileResult(
@@ -950,6 +993,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (temporaryFile != null) {
         await _deleteFileIfExists(temporaryFile);
         _ownedTemporaryFiles.remove(temporaryFile.path);
+      }
+      if (completedFile != null) {
+        await _deleteFileIfExists(completedFile);
+        _ownedTemporaryFiles.remove(completedFile.path);
       }
       rethrow;
     } finally {
@@ -969,18 +1016,26 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (previous != null && (next - previous).abs() < 0.01 && next < 1) {
       return;
     }
+    final now = DateTime.now();
+    final lastUpdate = _lastOriginalProgressUpdates[index];
+    if (next < 1 &&
+        lastUpdate != null &&
+        now.difference(lastUpdate) < const Duration(milliseconds: 100)) {
+      return;
+    }
+    _lastOriginalProgressUpdates[index] = now;
     setState(() => _originalProgress[index] = next);
   }
 
+  void _scheduleOriginalProgress(int index, int received, int total) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateOriginalProgress(index, received, total);
+    });
+  }
+
   Dio _downloadClient() {
-    return widget.downloadClient ??
-        Dio(
-          BaseOptions(
-            connectTimeout: const Duration(seconds: 10),
-            sendTimeout: const Duration(seconds: 10),
-            receiveTimeout: const Duration(seconds: 60),
-          ),
-        );
+    return _downloadClientInstance;
   }
 
   BaseCacheManager get _cacheManager =>
@@ -1103,6 +1158,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final tasks = adjacentImageIndexes(
       currentIndex: _currentIndex,
       itemCount: _resolvedItems.length,
+      priorityDirection: _prefetchDirection,
     ).map((index) {
       final item = _resolvedItems[index];
       final url = _prefetchUrl(item);

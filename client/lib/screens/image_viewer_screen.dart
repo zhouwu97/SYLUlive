@@ -9,6 +9,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../theme/app_radius.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/image_prefetch_coordinator.dart';
 import '../utils/post_image_cache.dart';
@@ -709,25 +710,20 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       button: true,
       label: semanticLabel,
       child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
           onTap: isLoading
               ? () => _cancelOriginalLoad(index)
               : () => _requestOriginal(index),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (isLoading)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 8),
-                      child: Icon(Icons.close, size: 18, color: Colors.black87),
-                    ),
                   if (isLoading)
                     ValueListenableBuilder<({int index, double value})?>(
                       valueListenable: _originalProgressNotifier,
@@ -739,7 +735,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                         return Text(
                           percent > 0 ? '$percent%' : '加载中…',
                           style: const TextStyle(
-                            color: Colors.black87,
+                            color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -750,10 +746,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     Text(
                       title,
                       style: const TextStyle(
-                        color: Colors.black87,
+                        color: Colors.white,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
+                    ),
+                  if (isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.close, size: 18, color: Colors.white),
                     ),
                 ],
               ),

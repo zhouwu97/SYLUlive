@@ -10,6 +10,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/screens/image_viewer_screen.dart';
+import 'package:shenliyuan/theme/app_radius.dart';
 import 'package:shenliyuan/utils/image_decode_size.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:shenliyuan/utils/private_message_media_cache.dart';
@@ -695,6 +696,62 @@ void main() {
       find.byKey(const ValueKey('viewer-original-file-0')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('查看原图按钮是深色胶囊样式：白字、进度文案在左关闭在右', (tester) async {
+    final cache = _TrackingFakeCacheManager();
+    final adapter = _BlockingDownloadAdapter();
+    final client = Dio()..httpClientAdapter = adapter;
+    const originalUrl = 'https://example.test/pill-style-origin.jpg';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageViewerScreen(
+          cacheManager: cache,
+          downloadClient: client,
+          items: const [
+            ImageViewerItem(
+              thumbUrl: 'https://example.test/pill-style-thumb.jpg',
+              originalUrl: originalUrl,
+              originalSizeBytes: 1024 * 1024,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final idleMaterial = tester.widget<Material>(
+      find.ancestor(
+        of: find.text('查看原图 1.0 MB'),
+        matching: find.byType(Material),
+      ).first,
+    );
+    expect(idleMaterial.color, Colors.black54);
+    expect(idleMaterial.borderRadius, BorderRadius.circular(AppRadius.pill));
+    expect(
+      tester.widget<Text>(find.text('查看原图 1.0 MB')).style?.color,
+      Colors.white,
+    );
+
+    await tester.tap(find.text('查看原图 1.0 MB'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('加载中…'), findsOneWidget);
+
+    final labelCenter = tester.getCenter(find.text('加载中…'));
+    final closeCenter = tester.getCenter(find.byIcon(Icons.close));
+    expect(closeCenter.dx, greaterThan(labelCenter.dx));
+    expect(
+      tester.widget<Text>(find.text('加载中…')).style?.color,
+      Colors.white,
+    );
+
+    adapter.release(originalUrl);
+    // 下载完成要穿过 dio 真实磁盘写入链，交替 pump/runAsync 推进。
+    await _driveOriginalDownloadSettle(tester);
+    expect(find.text('加载中…'), findsNothing);
   });
 
   testWidgets('查看原图使用 Dio 磁盘下载并在完成后复用文件保存', (tester) async {

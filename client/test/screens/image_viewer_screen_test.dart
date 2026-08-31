@@ -170,6 +170,63 @@ class _BlockingDownloadAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// 分块下发响应：先到 33%/67% 两个进度，随后挂在门上等待
+/// （取消时会放开），用于驱动按钮内的真实进度展示。
+class _GatedChunkedDownloadAdapter implements HttpClientAdapter {
+  final List<String> requestedUrls = [];
+  final List<String> cancelledUrls = [];
+  final Completer<void> _gate = Completer<void>();
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final url = options.uri.toString();
+    requestedUrls.add(url);
+    cancelFuture?.whenComplete(() {
+      cancelledUrls.add(url);
+      if (!_gate.isCompleted) _gate.complete();
+    });
+
+    final controller = StreamController<Uint8List>();
+    unawaited(Future<void>(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      controller.add(Uint8List(1000));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      controller.add(Uint8List(1000));
+      await _gate.future;
+      controller.add(Uint8List(1000));
+      await controller.close();
+    }));
+    return ResponseBody(
+      controller.stream,
+      200,
+      headers: {
+        'content-length': ['3000'],
+        'content-type': ['image/jpeg'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// 取消/重试原图下载后，错误要穿过 dio 流清理、raf.close、.part 删除等
+/// 层层串行的真实磁盘 I/O。假时钟环境里 pump 提交下一层 I/O，runAsync
+/// 让真实事件循环送达完成事件，交替数轮后链路才能走完并重建 UI。
+Future<void> _driveOriginalDownloadSettle(WidgetTester tester) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+  }
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -544,6 +601,70 @@ void main() {
         .toList();
     expect(urls, contains('https://example.test/motion-medium.jpg'));
     expect(urls, isNot(contains('https://example.test/motion.gif')));
+  });
+
+  testWidgets('查看原图下载进度显示在按钮上，取消后可重试并完成', (tester) async {
+    final cache = _TrackingFakeCacheManager();
+    final adapter = _GatedChunkedDownloadAdapter();
+    final client = Dio()..httpClientAdapter = adapter;
+    const originalUrl = 'https://example.test/progress-origin.jpg';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageViewerScreen(
+          cacheManager: cache,
+          downloadClient: client,
+          items: const [
+            ImageViewerItem(
+              previewUrl: 'https://example.test/progress-medium.jpg',
+              originalUrl: originalUrl,
+              originalSizeBytes: imageOriginalAutoLoadThresholdBytes,
+              useProgressiveLoading: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('查看原图 600.0 KB'), findsOneWidget);
+    await tester.tap(find.text('查看原图 600.0 KB'));
+    await tester.pump();
+    expect(find.text('加载中…'), findsOneWidget);
+
+    // dio 在真实磁盘写入完成后才回调进度（raf.writeFrom 的 then），
+    // 假时钟只推进分块计时器；runAsync 让真实 I/O 有机会完成。
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pump();
+    expect(find.text('33%'), findsOneWidget);
+
+    // 进度节流按真实时钟 100ms 判定，先走真实时间再推进假时钟取下一块。
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    });
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pump();
+    expect(find.text('67%'), findsOneWidget);
+
+    await tester.tap(find.text('67%'));
+    await _driveOriginalDownloadSettle(tester);
+    expect(find.text('查看原图 600.0 KB'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+    expect(adapter.cancelledUrls, contains(originalUrl));
+
+    await tester.tap(find.text('查看原图 600.0 KB'));
+    await _driveOriginalDownloadSettle(tester);
+    expect(find.text('查看原图 600.0 KB'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('viewer-original-file-0')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('查看原图使用 Dio 磁盘下载并在完成后复用文件保存', (tester) async {

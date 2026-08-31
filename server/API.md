@@ -190,8 +190,11 @@ FEED-H1 加固：
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 | `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
-| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者 |
+| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者；提交者获得 10 经验奖励（幂等，仅用户提交，响应含 `exp_awarded`） |
 | `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
+| `POST` | `/api/canteens/:id/offline` | (管理员) 下架已公开食堂（历史数据保留）；如有未收回的提交奖励经验则收回，经验扣至下限 0 |
+| `POST` | `/api/canteens/:id/online` | (管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
+| `DELETE` | `/api/canteens/:id` | (管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
 
 ### 食堂评价投票
 

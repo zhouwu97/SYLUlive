@@ -72,6 +72,10 @@ type Canteen struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 
+	// 提交奖励经验状态：审核通过发放、下架/删除收回、恢复营业返还。
+	ExpRewardedAt *time.Time `json:"-"`
+	ExpRevokedAt  *time.Time `json:"-"`
+
 	RatingCount int     `gorm:"-" json:"rating_count"`
 	AverageStar float64 `gorm:"-" json:"average_star"`
 

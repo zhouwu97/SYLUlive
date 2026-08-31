@@ -25,6 +25,10 @@ type CanteenHandler struct {
 
 var errCanteenOffline = errors.New("canteen_offline")
 
+// canteenSubmissionRewardExp 用户提交食堂审核通过后的一次性经验奖励。
+// 下架/删除时收回，恢复营业时返还，保证经验与“店铺是否公开在列”对称。
+const canteenSubmissionRewardExp = 10
+
 // lockActiveCanteen 在写入事务内锁定并校验营业状态。
 // 事务外的预检查只能改善错误提示，不能防止“下架”和“提交”并发穿透。
 func lockActiveCanteen(tx *gorm.DB, canteenID uint) (models.Canteen, error) {
@@ -1356,10 +1360,20 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 
 	adminID, _ := c.Get("user_id")
 	var admin models.User
+	expRevoked := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
+		// 事务内锁定重读，防止与审核通过/下架并发时漏算奖励经验。
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
+			return err
+		}
+		revoked, err := revokeCanteenSubmissionExp(tx, canteen.ID, canteen.CreatedBy, time.Now())
+		if err != nil {
+			return err
+		}
+		expRevoked = revoked
 		if err := deleteCanteenDependencies(tx, uint(id)); err != nil {
 			return err
 		}
@@ -1368,7 +1382,7 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 		}
 		return tx.Create(&models.AdminLog{
 			AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "删除食堂", Target: canteen.Name,
-			Detail: fmt.Sprintf("删除食堂提交，创建者 %d", canteen.CreatedBy),
+			Detail: fmt.Sprintf("删除食堂提交，创建者 %d，回收经验=%t", canteen.CreatedBy, expRevoked),
 		}).Error
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除食堂失败"})
@@ -1424,6 +1438,71 @@ func attachCanteenCreatorNames(db *gorm.DB, canteens []models.Canteen) {
 	}
 }
 
+// grantCanteenSubmissionExp 在事务内向提交者发放一次性奖励经验（幂等，仅首次发放）。
+func grantCanteenSubmissionExp(tx *gorm.DB, canteenID, creatorID uint, now time.Time) (bool, error) {
+	if creatorID == 0 {
+		return false, nil
+	}
+	result := tx.Model(&models.Canteen{}).
+		Where("id = ? AND exp_rewarded_at IS NULL", canteenID).
+		UpdateColumn("exp_rewarded_at", now)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if err := tx.Model(&models.User{}).Where("id = ?", creatorID).
+		UpdateColumn("exp", gorm.Expr("exp + ?", canteenSubmissionRewardExp)).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// revokeCanteenSubmissionExp 在事务内收回尚未收回的奖励经验（幂等），经验扣至下限 0。
+func revokeCanteenSubmissionExp(tx *gorm.DB, canteenID, creatorID uint, now time.Time) (bool, error) {
+	if creatorID == 0 {
+		return false, nil
+	}
+	result := tx.Model(&models.Canteen{}).
+		Where("id = ? AND exp_rewarded_at IS NOT NULL AND exp_revoked_at IS NULL", canteenID).
+		UpdateColumn("exp_revoked_at", now)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if err := tx.Model(&models.User{}).Where("id = ?", creatorID).UpdateColumn(
+		"exp",
+		gorm.Expr("CASE WHEN exp >= ? THEN exp - ? ELSE 0 END", canteenSubmissionRewardExp, canteenSubmissionRewardExp),
+	).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// restoreCanteenSubmissionExp 恢复营业时返还已收回的奖励经验（幂等）。
+func restoreCanteenSubmissionExp(tx *gorm.DB, canteenID, creatorID uint) (bool, error) {
+	if creatorID == 0 {
+		return false, nil
+	}
+	result := tx.Model(&models.Canteen{}).
+		Where("id = ? AND exp_rewarded_at IS NOT NULL AND exp_revoked_at IS NOT NULL", canteenID).
+		UpdateColumn("exp_revoked_at", nil)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if err := tx.Model(&models.User{}).Where("id = ?", creatorID).
+		UpdateColumn("exp", gorm.Expr("exp + ?", canteenSubmissionRewardExp)).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ApproveCanteen 审核通过食堂，使其出现在公开列表并允许用户评价。
 func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -1433,6 +1512,7 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 	}
 	adminID := c.GetUint("user_id")
 	var canteen models.Canteen
+	expAwarded := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
 			return err
@@ -1443,6 +1523,11 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		if err := tx.Model(&canteen).Update("verified", true).Error; err != nil {
 			return err
 		}
+		awarded, err := grantCanteenSubmissionExp(tx, canteen.ID, canteen.CreatedBy, time.Now())
+		if err != nil {
+			return err
+		}
+		expAwarded = awarded
 		if err := services.ClaimPublicImagePaths(tx, canteen.Image); err != nil {
 			return err
 		}
@@ -1452,11 +1537,11 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		}
 		if err := tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: admin.Nickname, Action: "通过食堂审核", Target: canteen.Name,
-			Detail: fmt.Sprintf("通过食堂提交（ID: %d），创建者 %d", canteen.ID, canteen.CreatedBy),
+			Detail: fmt.Sprintf("通过食堂提交（ID: %d），创建者 %d，奖励经验=%t", canteen.ID, canteen.CreatedBy, awarded),
 		}).Error; err != nil {
 			return err
 		}
-		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, true, "")
+		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, true, "", canteenSubmissionRewardExp)
 		return nil
 	}); err != nil {
 		switch {
@@ -1472,7 +1557,7 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 	canteen.Verified = true
 	canteen.NormalizeOperatingStatus()
 	canteenDiscoveryCache.Invalidate() // 新食堂公开影响排行/首页
-	c.JSON(http.StatusOK, gin.H{"message": "审核已通过", "canteen": canteen})
+	c.JSON(http.StatusOK, gin.H{"message": "审核已通过", "canteen": canteen, "exp_awarded": expAwarded})
 }
 
 // RejectCanteen 驳回待审核食堂；已公开食堂需使用常规删除接口处理。
@@ -1514,7 +1599,7 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, false, input.Reason)
+		CreateCanteenReviewResultNotification(tx, canteen.ID, canteen.CreatedBy, canteen.Name, false, input.Reason, 0)
 		return nil
 	}); err != nil {
 		switch {
@@ -1572,12 +1657,16 @@ func (h *CanteenHandler) OfflineCanteen(c *gin.Context) {
 		canteen.OperatingStatus = models.CanteenOperatingOffline
 		canteen.OfflinedAt, canteen.OfflinedBy = &now, &adminID
 		canteen.OfflineReason = strings.TrimSpace(input.Reason)
+		expRevoked, err := revokeCanteenSubmissionExp(tx, canteen.ID, canteen.CreatedBy, now)
+		if err != nil {
+			return err
+		}
 		var admin models.User
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
 		return tx.Create(&models.AdminLog{AdminID: adminID, AdminName: admin.Nickname, Action: "下架食堂", Target: canteen.Name,
-			Detail: fmt.Sprintf("食堂 %d 下架", canteen.ID)}).Error
+			Detail: fmt.Sprintf("食堂 %d 下架，回收经验=%t", canteen.ID, expRevoked)}).Error
 	})
 	if err != nil {
 		switch {
@@ -1634,12 +1723,16 @@ func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
 		}
 		canteen.OperatingStatus = models.CanteenOperatingActive
 		canteen.OfflinedAt, canteen.OfflinedBy, canteen.OfflineReason = nil, nil, ""
+		expRestored, err := restoreCanteenSubmissionExp(tx, canteen.ID, canteen.CreatedBy)
+		if err != nil {
+			return err
+		}
 		var admin models.User
 		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
 			return err
 		}
 		return tx.Create(&models.AdminLog{AdminID: adminID, AdminName: admin.Nickname, Action: "重新上架食堂", Target: canteen.Name,
-			Detail: fmt.Sprintf("食堂 %d 重新上架", canteen.ID)}).Error
+			Detail: fmt.Sprintf("食堂 %d 重新上架，返还经验=%t", canteen.ID, expRestored)}).Error
 	})
 	if err != nil {
 		switch {

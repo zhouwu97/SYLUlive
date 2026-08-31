@@ -49,14 +49,28 @@ func imageVariantExtension(mimeType string) (string, bool) {
 	case "image/png":
 		return ".png", true
 	case "image/gif":
-		return ".gif", true
+		// GIF 变体只保存静态首帧，统一以 JPEG 输出；原图路径仍保留 .gif。
+		return ".jpg", true
+	default:
+		return "", false
+	}
+}
+
+// imageVariantOutputMimeType 返回变体文件的真实 MIME。动态 GIF 的预览是
+// JPEG 首帧，避免客户端在拿到静态预览时继续按动画 GIF 解码。
+func imageVariantOutputMimeType(sourceMimeType string) (string, bool) {
+	switch sourceMimeType {
+	case "image/jpeg", "image/png":
+		return sourceMimeType, true
+	case "image/gif":
+		return "image/jpeg", true
 	default:
 		return "", false
 	}
 }
 
 // CreatePublicImageVariantTasks 在公开权限已经写入的同一事务中创建变体任务。
-// GIF 保持动态内容，只记录 unsupported，绝不生成静态首帧。
+// GIF 原图保持动态内容，同时为 Feed/详情和查看器生成静态首帧预览任务。
 func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 	if len(fileIDs) == 0 {
 		return nil
@@ -66,10 +80,8 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 		return err
 	}
 	for _, file := range files {
-		status := models.ImageVariantStatusPending
-		if file.MimeType == "image/gif" {
-			status = models.ImageVariantStatusUnsupported
-		} else if _, ok := imageVariantExtension(file.MimeType); !ok {
+		outputMimeType, ok := imageVariantOutputMimeType(file.MimeType)
+		if !ok {
 			continue
 		}
 		variants := []string{ImageVariantThumb, ImageVariantMedium}
@@ -87,9 +99,43 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 				FileID:        file.ID,
 				Variant:       variant,
 				RecipeVersion: ImageVariantRecipeVersion,
-				Status:        status,
+				Status:        models.ImageVariantStatusPending,
 				Path:          variantPath,
-				MimeType:      file.MimeType,
+				MimeType:      outputMimeType,
+			}
+			var existing models.ImageVariant
+			query := tx.Where(
+				"file_id = ? AND variant = ? AND recipe_version = ?",
+				file.ID,
+				variant,
+				ImageVariantRecipeVersion,
+			).Find(&existing)
+			if query.Error != nil {
+				return query.Error
+			}
+			if query.RowsAffected > 0 {
+				// 旧版本曾把 GIF 记录为 unsupported 并使用 .gif 变体路径。
+				// 现在 GIF 变体是 JPEG 静态首帧，启动回填时需要把这类旧记录
+				// 重新排回 pending；ready 或 failed 记录仍保持幂等，不强制重跑。
+				if file.MimeType == "image/gif" &&
+					(existing.Status == models.ImageVariantStatusUnsupported ||
+						existing.Path != record.Path || existing.MimeType != record.MimeType) {
+					if err := tx.Model(&existing).Updates(map[string]interface{}{
+						"status":          models.ImageVariantStatusPending,
+						"path":            record.Path,
+						"mime_type":       record.MimeType,
+						"width":           0,
+						"height":          0,
+						"size":            0,
+						"attempts":        0,
+						"next_attempt_at": nil,
+						"started_at":      nil,
+						"last_error":      "",
+					}).Error; err != nil {
+						return err
+					}
+				}
+				continue
 			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "file_id"}, {Name: "variant"}, {Name: "recipe_version"}},

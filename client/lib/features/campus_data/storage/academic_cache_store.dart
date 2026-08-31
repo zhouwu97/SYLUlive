@@ -84,6 +84,47 @@ class AcademicSituationSnapshot {
   }
 }
 
+/// 已通过本地解析的单次考试快照。
+///
+/// 考试接口在不同学校可能按学期返回，也可能返回全量数据；使用显式键保存
+/// 请求范围，避免把一个范围的结果误当作另一个范围的完整事实。
+class AcademicExamTermSnapshot {
+  AcademicExamTermSnapshot({
+    required this.key,
+    required this.fetchedAt,
+    List<Map<String, dynamic>> exams = const <Map<String, dynamic>>[],
+  }) : exams = List<Map<String, dynamic>>.unmodifiable(
+          exams.map(_copyAcademicMap),
+        ) {
+    if (key.trim().isEmpty) throw ArgumentError('考试查询范围不能为空');
+  }
+
+  final String key;
+  final DateTime fetchedAt;
+  final List<Map<String, dynamic>> exams;
+
+  Map<String, dynamic> toPayload() => <String, dynamic>{
+        'key': key,
+        'fetched_at': fetchedAt.toUtc().toIso8601String(),
+        'exams': exams.map(_copyAcademicMap).toList(growable: false),
+      };
+
+  factory AcademicExamTermSnapshot.fromPayload(
+    String expectedKey,
+    Map<String, dynamic> payload,
+  ) {
+    final key = payload['key'];
+    if (key is! String || key.trim().isEmpty || key.trim() != expectedKey) {
+      throw const FormatException('考试查询范围格式错误');
+    }
+    return AcademicExamTermSnapshot(
+      key: key,
+      fetchedAt: _parseAcademicDateTime(payload['fetched_at'], '考试时间'),
+      exams: _copyAcademicMapList(payload['exams'], '考试列表'),
+    );
+  }
+}
+
 /// 从 AES-GCM 认证通过的成绩快照解析出的最小存储模型。
 class AcademicVaultSnapshot {
   AcademicVaultSnapshot({
@@ -95,6 +136,7 @@ class AcademicVaultSnapshot {
     this.creditRequirements,
     this.creditRequirementsFetchedAt,
     this.isGradeSyncComplete = false,
+    this.examTerms = const <String, AcademicExamTermSnapshot>{},
   }) : terms = Map<String, AcademicTermSnapshot>.unmodifiable(terms);
 
   final Map<String, AcademicTermSnapshot> terms;
@@ -105,6 +147,7 @@ class AcademicVaultSnapshot {
   final Map<String, dynamic>? creditRequirements;
   final DateTime? creditRequirementsFetchedAt;
   final bool isGradeSyncComplete;
+  final Map<String, AcademicExamTermSnapshot> examTerms;
 }
 
 /// 成绩数据只在网络请求成功后直接写入 AES-GCM 保险箱，不创建明文迁移链路。
@@ -165,6 +208,27 @@ class AcademicCacheStore {
     if (rawSituation != null && rawSituation is! Map) {
       throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
     }
+    final rawExamTerms = payload['exam_terms'];
+    if (rawExamTerms != null && rawExamTerms is! Map) {
+      throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
+    }
+    final examTerms = <String, AcademicExamTermSnapshot>{};
+    if (rawExamTerms is Map) {
+      for (final entry in rawExamTerms.entries) {
+        if (entry.key is! String || entry.value is! Map) {
+          throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
+        }
+        try {
+          final key = entry.key as String;
+          examTerms[key] = AcademicExamTermSnapshot.fromPayload(
+            key,
+            Map<String, dynamic>.from(entry.value as Map),
+          );
+        } on FormatException {
+          throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
+        }
+      }
+    }
     try {
       return AcademicVaultSnapshot(
         terms: terms,
@@ -186,6 +250,7 @@ class AcademicCacheStore {
                   )?.toUtc()
                 : null,
         isGradeSyncComplete: payload['grade_sync_complete'] == true,
+        examTerms: examTerms,
       );
     } on FormatException {
       throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
@@ -260,6 +325,46 @@ class AcademicCacheStore {
     });
   }
 
+  /// 将本地解析后的考试数据写入加密快照。
+  ///
+  /// [year] 与 [semester] 必须同时提供或同时省略。省略时使用 `all` 键，
+  /// 供学校返回全量考试的接口使用；不会把不同查询范围静默合并。
+  Future<void> writeExams({
+    String? year,
+    int? semester,
+    required List<Map<String, dynamic>> exams,
+    DateTime? fetchedAt,
+  }) async {
+    _validateNamespace();
+    final key = _examKey(year, semester);
+    final record = AcademicExamTermSnapshot(
+      key: key,
+      fetchedAt: fetchedAt ?? DateTime.now().toUtc(),
+      exams: _copyAcademicMapList(exams, '考试列表'),
+    );
+    await _serializeMutation(() async {
+      final payload = await _readPayload() ?? _emptyPayload();
+      final rawTerms = payload['exam_terms'];
+      if (rawTerms is! Map) {
+        throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
+      }
+      final terms = Map<String, dynamic>.from(rawTerms);
+      terms[key] = record.toPayload();
+      payload['exam_terms'] = terms;
+      await _writePayload(payload);
+    });
+  }
+
+  /// 读取指定查询范围的考试快照；不存在时返回 null。
+  Future<List<Map<String, dynamic>>?> readExams({
+    String? year,
+    int? semester,
+  }) async {
+    final snapshot = await readSnapshot();
+    final record = snapshot?.examTerms[_examKey(year, semester)];
+    return record?.exams.map(_copyAcademicMap).toList(growable: false);
+  }
+
   Future<void> clearAll() async {
     _validateNamespace();
     await _serializeMutation(
@@ -284,6 +389,7 @@ class AcademicCacheStore {
 
   Map<String, dynamic> _emptyPayload() => <String, dynamic>{
         'grade_terms': <String, dynamic>{},
+        'exam_terms': <String, dynamic>{},
         'academic_situation': null,
         'credit_requirements': null,
         'credit_requirements_fetched_at': null,
@@ -324,6 +430,15 @@ class AcademicCacheStore {
     if (!_hasValidNamespace) {
       throw StateError('成绩缓存缺少有效的账号命名空间');
     }
+  }
+
+  String _examKey(String? year, int? semester) {
+    if (year == null && semester == null) return 'all';
+    final normalizedYear = year?.trim() ?? '';
+    if (normalizedYear.isEmpty || semester == null || semester <= 0) {
+      throw ArgumentError('考试查询范围参数无效');
+    }
+    return '${normalizedYear}_$semester';
   }
 }
 

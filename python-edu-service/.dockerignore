@@ -1,0 +1,18 @@
+# 生产镜像只需要 FastAPI 运行时源码；测试、探针和本地输出不得进入镜像。
+.git/
+.github/
+__pycache__/
+.pytest_cache/
+tests/
+tools/
+scripts/
+output/
+private-probe-output/
+test*.py
+**/test*.py
+*.pyc
+*.pyo
+*.log
+*.md
+Dockerfile
+.dockerignore

@@ -259,29 +259,71 @@ func TestImageVariantWorkerPreservesTransparentPNG(t *testing.T) {
 	}
 }
 
-func TestImageVariantWorkerSkipsUnsupportedGIF(t *testing.T) {
+func TestImageVariantWorkerGeneratesStaticJPEGPreviewForGIF(t *testing.T) {
 	db := newImageVariantTestDB(t)
 	uploadDir := t.TempDir()
 	file := createPublicVariantFile(t, db, uploadDir, "motion.gif", "image/gif")
-	frame := image.NewPaletted(image.Rect(0, 0, 32, 32), color.Palette{color.Transparent, color.RGBA{R: 255, A: 255}})
-	if err := gif.EncodeAll(mustCreateFile(t, filepath.Join(uploadDir, "motion.gif")), &gif.GIF{Image: []*image.Paletted{frame}, Delay: []int{1}}); err != nil {
+	frame := image.NewPaletted(
+		image.Rect(0, 0, 32, 32),
+		color.Palette{color.Transparent, color.RGBA{R: 255, A: 255}},
+	)
+	output, err := os.Create(filepath.Join(uploadDir, "motion.gif"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if err := gif.EncodeAll(output, &gif.GIF{Image: []*image.Paletted{frame}, Delay: []int{1}}); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, variant := range []string{ImageVariantThumb, ImageVariantMedium} {
+		if err := db.Create(&models.ImageVariant{
+			FileID: file.ID, Variant: variant, RecipeVersion: ImageVariantRecipeVersion,
+			Status: models.ImageVariantStatusUnsupported,
+			Path:   "/uploads/motion_v1_" + variant + ".gif", MimeType: "image/gif",
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := CreatePublicImageVariantTasks(db, []uint{file.ID}); err != nil {
 		t.Fatal(err)
 	}
+	var pending []models.ImageVariant
+	if err := db.Where("file_id = ?", file.ID).Find(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("GIF 应创建 thumb/medium 两个静态预览任务，实际 %d", len(pending))
+	}
+	for _, variant := range pending {
+		if variant.Status != models.ImageVariantStatusPending || variant.MimeType != "image/jpeg" || !strings.HasSuffix(variant.Path, ".jpg") {
+			t.Fatalf("GIF 静态预览任务错误: %+v", variant)
+		}
+	}
+
 	worker := NewImageVariantWorker(db, uploadDir)
-	worked, err := worker.ProcessNext(context.Background())
-	if err != nil || worked {
-		t.Fatalf("GIF 不应被 worker 领取: worked=%v err=%v", worked, err)
+	for range pending {
+		worked, err := worker.ProcessNext(context.Background())
+		if err != nil || !worked {
+			t.Fatalf("GIF 静态预览未处理: worked=%v err=%v", worked, err)
+		}
 	}
 	var variants []models.ImageVariant
 	if err := db.Where("file_id = ?", file.ID).Find(&variants).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, variant := range variants {
-		if variant.Status != models.ImageVariantStatusUnsupported {
-			t.Fatalf("GIF 状态=%q", variant.Status)
+		if variant.Status != models.ImageVariantStatusReady || variant.MimeType != "image/jpeg" {
+			t.Fatalf("GIF 静态预览状态=%q mime=%q", variant.Status, variant.MimeType)
+		}
+		config, format := readImageConfig(
+			t,
+			filepath.Join(uploadDir, strings.TrimPrefix(variant.Path, "/uploads/")),
+		)
+		if format != "jpeg" || config.Width != 32 || config.Height != 32 {
+			t.Fatalf("GIF 静态预览格式或尺寸错误: format=%s size=%dx%d", format, config.Width, config.Height)
 		}
 	}
 }

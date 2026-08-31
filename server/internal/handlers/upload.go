@@ -201,10 +201,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	}
 	var file models.File
 	variant, originalRelative, legacyVariant := imageVariantRequest(relative)
+	originalPathCandidates := imageVariantSourcePathCandidates(originalRelative, variant != "")
 	isPublic := true
-	if err := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPublic).First(&file).Error; err != nil {
+	if err := h.db.Where("path IN ? AND access_scope = ?", originalPathCandidates, models.FileAccessPublic).First(&file).Error; err != nil {
 		// 如果不是公开文件，尝试检查是否为私有待审核文件并校验管理员/上传者身份
-		if privErr := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPrivate).First(&file).Error; privErr != nil {
+		if privErr := h.db.Where("path IN ? AND access_scope = ?", originalPathCandidates, models.FileAccessPrivate).First(&file).Error; privErr != nil {
 			servePublicNotFound(c)
 			return
 		}
@@ -284,6 +285,30 @@ func uploadPathCandidates(publicPath string) []string {
 		normalized = "/uploads/" + strings.TrimPrefix(normalized, "/")
 	}
 	return []string{normalized, strings.TrimPrefix(normalized, "/")}
+}
+
+// imageVariantSourcePathCandidates 允许 GIF 静态预览使用 .jpg 变体路径，
+// 同时仍能反查 .gif 原图。普通 JPEG/PNG 变体保持原有路径解析不变。
+func imageVariantSourcePathCandidates(originalPath string, isVariant bool) []string {
+	candidates := uploadPathCandidates(originalPath)
+	if !isVariant || !strings.EqualFold(filepath.Ext(originalPath), ".jpg") {
+		return candidates
+	}
+
+	gifPath := strings.TrimSuffix(originalPath, filepath.Ext(originalPath)) + ".gif"
+	for _, candidate := range uploadPathCandidates(gifPath) {
+		found := false
+		for _, existing := range candidates {
+			if existing == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates
 }
 
 func normalizeUploadPath(publicPath string) string {

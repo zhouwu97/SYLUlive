@@ -34,6 +34,12 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.CanteenRatingDishRecommendation{},
+		&models.CanteenReviewEvent{},
+		&models.CanteenReviewEventVote{},
+		&models.CanteenReviewEventDish{},
+		&models.CanteenDishReviewEvent{},
+		&models.CanteenDishRatingSummary{},
+		&models.CanteenDishAlias{},
 		&models.AdminLog{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
@@ -393,6 +399,107 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 	}
 	if !strings.Contains(resultNotification.Content, "审核已通过") {
 		t.Fatalf("approve notification content=%s", resultNotification.Content)
+	}
+}
+
+func TestCanteenSubmissionExpAwardAndRevocation(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "管理员")
+	createCanteenTestUser(t, db, 2, "提交者")
+	canteen := models.Canteen{Name: "经验食堂", Image: "/uploads/exp.png", CreatedBy: 2, Verified: false}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+	idParam := gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}
+	expOfSubmitter := func() int {
+		t.Helper()
+		var user models.User
+		if err := db.Select("exp").First(&user, 2).Error; err != nil {
+			t.Fatalf("load submitter: %v", err)
+		}
+		return user.Exp
+	}
+
+	// 审核通过 → +10，通知告知奖励经验
+	approved := performCanteenRequest(t, handler.ApproveCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/approve", canteen.ID), idParam, 1, "")
+	if approved.Code != http.StatusOK {
+		t.Fatalf("approve status=%d body=%s", approved.Code, approved.Body.String())
+	}
+	if expOfSubmitter() != canteenSubmissionRewardExp {
+		t.Fatalf("exp after approve=%d want %d", expOfSubmitter(), canteenSubmissionRewardExp)
+	}
+	var approveNotification models.Notification
+	if err := db.Where("user_id = ? AND type = ?", 2, NotificationTypeCanteenReviewResult).First(&approveNotification).Error; err != nil {
+		t.Fatalf("approve notification: %v", err)
+	}
+	if !strings.Contains(approveNotification.Content, "获得 10 经验奖励") {
+		t.Fatalf("approve notification content=%s", approveNotification.Content)
+	}
+
+	// 下架 → 收回；重复下架不重复扣
+	offline := performCanteenRequest(t, handler.OfflineCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/offline", canteen.ID), idParam, 1, `{}`)
+	if offline.Code != http.StatusOK {
+		t.Fatalf("offline status=%d body=%s", offline.Code, offline.Body.String())
+	}
+	if expOfSubmitter() != 0 {
+		t.Fatalf("exp after offline=%d want 0", expOfSubmitter())
+	}
+	offlineAgain := performCanteenRequest(t, handler.OfflineCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/offline", canteen.ID), idParam, 1, `{}`)
+	if offlineAgain.Code != http.StatusOK || expOfSubmitter() != 0 {
+		t.Fatalf("repeat offline status=%d exp=%d", offlineAgain.Code, expOfSubmitter())
+	}
+
+	// 恢复营业 → 返还
+	online := performCanteenRequest(t, handler.OnlineCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/online", canteen.ID), idParam, 1, "")
+	if online.Code != http.StatusOK {
+		t.Fatalf("online status=%d body=%s", online.Code, online.Body.String())
+	}
+	if expOfSubmitter() != canteenSubmissionRewardExp {
+		t.Fatalf("exp after online=%d want %d", expOfSubmitter(), canteenSubmissionRewardExp)
+	}
+
+	// 再次下架后删除 → 不重复扣（下架已收回）
+	offlineSecond := performCanteenRequest(t, handler.OfflineCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/offline", canteen.ID), idParam, 1, `{}`)
+	if offlineSecond.Code != http.StatusOK {
+		t.Fatalf("second offline status=%d body=%s", offlineSecond.Code, offlineSecond.Body.String())
+	}
+	deleted := performCanteenRequest(t, handler.DeleteCanteen, http.MethodDelete,
+		fmt.Sprintf("/api/canteens/%d", canteen.ID), idParam, 1, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if expOfSubmitter() != 0 {
+		t.Fatalf("exp after delete=%d want 0", expOfSubmitter())
+	}
+}
+
+func TestCanteenApproveWithoutCreatorSkipsExpAward(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "管理员")
+	canteen := models.Canteen{Name: "无主食堂", Image: "/uploads/no-owner.png", Verified: false}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	approved := performCanteenRequest(t, handler.ApproveCanteen, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/approve", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}}, 1, "")
+	if approved.Code != http.StatusOK {
+		t.Fatalf("approve status=%d body=%s", approved.Code, approved.Body.String())
+	}
+	var refreshed models.Canteen
+	if err := db.First(&refreshed, canteen.ID).Error; err != nil || !refreshed.Verified {
+		t.Fatalf("canteen should be verified: %+v err=%v", refreshed, err)
+	}
+	if refreshed.ExpRewardedAt != nil {
+		t.Fatalf("canteen without creator must not record exp reward")
 	}
 }
 

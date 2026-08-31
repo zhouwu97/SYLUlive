@@ -566,11 +566,15 @@ func CreateCanteenPendingNotification(db *gorm.DB, canteenID uint, canteenName s
 }
 
 // CreateCanteenReviewResultNotification 审核通过/驳回后通知提交者（仅写库）。
-func CreateCanteenReviewResultNotification(db *gorm.DB, canteenID, submitterID uint, canteenName string, approved bool, reason string) {
+// expReward>0 时在通过通知中告知提交者获得的奖励经验。
+func CreateCanteenReviewResultNotification(db *gorm.DB, canteenID, submitterID uint, canteenName string, approved bool, reason string, expReward int) {
 	if submitterID == 0 {
 		return
 	}
 	content := fmt.Sprintf("你提交的食堂「%s」审核已通过，现已显示在商家列表", textutils.TruncateGraphemes(canteenName, 50))
+	if approved && expReward > 0 {
+		content += fmt.Sprintf("，获得 %d 经验奖励", expReward)
+	}
 	if !approved {
 		content = fmt.Sprintf("你提交的食堂「%s」未能通过审核", textutils.TruncateGraphemes(canteenName, 50))
 		if reason != "" {

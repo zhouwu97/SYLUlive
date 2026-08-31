@@ -90,13 +90,20 @@ class ImagePrefetchCoordinator {
 List<int> adjacentImageIndexes({
   required int currentIndex,
   required int itemCount,
+  int priorityDirection = 1,
 }) {
   if (itemCount <= 1 || currentIndex < 0 || currentIndex >= itemCount) {
     return const <int>[];
   }
 
   final indexes = <int>[];
-  if (currentIndex > 0) indexes.add(currentIndex - 1);
-  if (currentIndex + 1 < itemCount) indexes.add(currentIndex + 1);
+  final nextIndex = currentIndex + 1;
+  final previousIndex = currentIndex - 1;
+  final first = priorityDirection < 0 ? previousIndex : nextIndex;
+  final second = priorityDirection < 0 ? nextIndex : previousIndex;
+  if (first >= 0 && first < itemCount) indexes.add(first);
+  if (second >= 0 && second < itemCount && second != first) {
+    indexes.add(second);
+  }
   return indexes;
 }

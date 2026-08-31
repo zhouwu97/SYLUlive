@@ -52,6 +52,74 @@ func TestExternalMCPHealthPayloadUsesVerifiedSessionAndRegisteredTools(t *testin
 	}
 }
 
+func TestNewAIRuntimeRegistriesAppliesSchoolCapabilityCutAtStartup(t *testing.T) {
+	tools := []ai.PureReadTool{
+		healthTool{name: "academic.get_risk_analysis"},
+		healthTool{name: "academic.summary"},
+		healthTool{name: "device.academic.ensure_fresh_bundle"},
+		healthTool{name: "hy3_decision.plan_student_week"},
+		healthTool{name: "campus.search_policy"},
+	}
+
+	toolRegistry, capabilityRegistry, err := newAIRuntimeRegistries(nil, true, tools...)
+	if err != nil {
+		t.Fatalf("装配 C3 AI Runtime 失败: %v", err)
+	}
+	for _, name := range []string{
+		"academic.get_risk_analysis",
+		"academic.summary",
+		"device.academic.ensure_fresh_bundle",
+		"hy3_decision.plan_student_week",
+	} {
+		if toolRegistry.HasTool(name) {
+			t.Fatalf("C3 后学校个人工具仍进入运行时注册表: %s", name)
+		}
+	}
+	if !toolRegistry.HasTool("campus.search_policy") {
+		t.Fatal("C3 不应移除公开校园资讯工具")
+	}
+
+	capabilities := make(map[string]ai.AgentCapability)
+	for _, capability := range capabilityRegistry.Public() {
+		capabilities[capability.ID] = capability
+	}
+	for _, id := range []string{
+		"academic.summary",
+		"academic.personal_read",
+		"academic.personal_refresh",
+		"schedule.free_windows",
+		"schedule.validate_plan",
+	} {
+		if _, exists := capabilities[id]; exists {
+			t.Fatalf("C3 后能力目录仍声明学校个人能力: %s", id)
+		}
+	}
+	publicCapability, exists := capabilities["campus.policy_search"]
+	if !exists || !publicCapability.Available {
+		t.Fatalf("公开校园资讯能力应继续可用: %#v", publicCapability)
+	}
+}
+
+func TestNewAIRuntimeRegistriesKeepsSchoolCapabilitiesBeforeCut(t *testing.T) {
+	toolRegistry, capabilityRegistry, err := newAIRuntimeRegistries(
+		nil,
+		false,
+		healthTool{name: "academic.summary"},
+	)
+	if err != nil {
+		t.Fatalf("装配迁移期 AI Runtime 失败: %v", err)
+	}
+	if !toolRegistry.HasTool("academic.summary") {
+		t.Fatal("C3 前不应提前移除学校个人工具")
+	}
+	for _, capability := range capabilityRegistry.Public() {
+		if capability.ID == "academic.summary" {
+			return
+		}
+	}
+	t.Fatal("C3 前能力目录应保留迁移期学业能力")
+}
+
 type examPaperStorageJobAttemptProcessorStub struct {
 	jobID uint
 	err   error

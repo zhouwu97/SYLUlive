@@ -74,15 +74,39 @@ type CreateDeviceJobRequest struct {
 
 // DeviceJobService 管理临时设备工具任务；它不读取设备缓存，也不保存设备密钥。
 type DeviceJobService struct {
-	db    *gorm.DB
-	clock func() time.Time
+	db            *gorm.DB
+	clock         func() time.Time
+	capabilityCut bool
 }
 
 func NewDeviceJobService(db *gorm.DB) *DeviceJobService {
 	return &DeviceJobService{db: db, clock: time.Now}
 }
 
+// SetCapabilityCut 在 C3 发布门禁后关闭所有学校设备任务能力。
+// 该开关由启动配置在服务开始接收请求前设置；关闭后即使内部 AI 调度绕过
+// HTTP 路由，也只能得到稳定的退役错误，不能登记设备、创建或推进任务。
+func (s *DeviceJobService) SetCapabilityCut(cut bool) {
+	s.capabilityCut = cut
+}
+
+// CapabilityCut 返回当前是否已经执行 C3 能力切断。
+// 该方法供启动预检、管理命令和发布证据使用，调用方不得据此恢复旧能力。
+func (s *DeviceJobService) CapabilityCut() bool {
+	return s != nil && s.capabilityCut
+}
+
+func (s *DeviceJobService) ensureCapabilityActive() error {
+	if s.capabilityCut {
+		return newDeviceJobError("school_device_capability_retired")
+	}
+	return nil
+}
+
 func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, registration DeviceRegistration) (*models.UserDevice, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if userID == 0 {
 		return nil, newDeviceJobError("unauthorized")
 	}
@@ -141,6 +165,9 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 
 // CreateJob 仅供经过工具白名单和用户授权的服务端调用。模型传入的参数中不能含 user_id。
 func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJobRequest) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if request.UserID == 0 || strings.TrimSpace(request.RunID) == "" || strings.TrimSpace(request.ToolCallID) == "" {
 		return nil, newDeviceJobError("invalid_device_job")
 	}
@@ -252,6 +279,9 @@ func deviceSupportsTool(device models.UserDevice, toolName string) bool {
 }
 
 func (s *DeviceJobService) PendingJobs(ctx context.Context, userID uint, installationID string) ([]models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if err := s.requireActiveDevice(ctx, userID, installationID); err != nil {
 		return nil, err
 	}
@@ -287,6 +317,9 @@ func (s *DeviceJobService) PendingJobs(ctx context.Context, userID uint, install
 }
 
 func (s *DeviceJobService) GetJob(ctx context.Context, userID uint, installationID, jobID string) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if err := s.requireActiveDevice(ctx, userID, installationID); err != nil {
 		return nil, err
 	}
@@ -304,6 +337,9 @@ func (s *DeviceJobService) GetJob(ctx context.Context, userID uint, installation
 }
 
 func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if stateVersion < 0 {
 		return nil, newDeviceJobError("invalid_state_version")
 	}
@@ -358,6 +394,9 @@ func (s *DeviceJobService) ClaimJob(ctx context.Context, userID uint, installati
 // WaitForUserJob 把已领取的设备任务转入等待用户凭据状态，让 Run 在密码框期间
 // 保持存活而不是被判定失败。仅 claimed/running 可转入；重复上报幂等返回。
 func (s *DeviceJobService) WaitForUserJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if stateVersion < 0 {
 		return nil, newDeviceJobError("invalid_state_version")
 	}
@@ -415,6 +454,9 @@ func (s *DeviceJobService) WaitForUserJob(ctx context.Context, userID uint, inst
 
 // ProgressJob 接受设备桥接的固定阶段，不接受客户端自定义文案或任意状态。
 func (s *DeviceJobService) ProgressJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, stage string) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	if stateVersion < 0 || !validDeviceJobStage(stage) {
 		return nil, newDeviceJobError("invalid_progress_stage")
 	}
@@ -454,6 +496,9 @@ func (s *DeviceJobService) ProgressJob(ctx context.Context, userID uint, install
 }
 
 func (s *DeviceJobService) CompleteJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, result json.RawMessage) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	normalized, err := normalizeDeviceJSON(result, deviceJobMaxResultBytes)
 	if err != nil || containsForbiddenIdentity(normalized) {
 		return nil, newDeviceJobError("invalid_tool_result")
@@ -1016,6 +1061,9 @@ func validLimitedStringArray(value json.RawMessage, maxItems, maxLength int) boo
 }
 
 func (s *DeviceJobService) FailJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, errorCode string) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	errorCode = strings.TrimSpace(errorCode)
 	if errorCode == "" || len(errorCode) > 64 || !isSafeErrorCode(errorCode) {
 		return nil, newDeviceJobError("invalid_error_code")
@@ -1026,9 +1074,34 @@ func (s *DeviceJobService) FailJob(ctx context.Context, userID uint, installatio
 }
 
 func (s *DeviceJobService) CancelJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64) (*models.DeviceToolJob, error) {
+	if err := s.ensureCapabilityActive(); err != nil {
+		return nil, err
+	}
 	return s.finishJob(ctx, userID, installationID, jobID, stateVersion, map[string]interface{}{
 		"status": models.DeviceToolJobCancelled, "completed_at": s.clock().UTC(), "error_code": "cancelled_by_device",
 	})
+}
+
+// CancelActiveJobs 在能力切断后一次性取消所有尚未结束的学校设备任务。
+// 结果正文和哈希必须同时清空，避免取消后的任务继续向 Run 恢复个人学校数据。
+// 该操作是幂等的：已取消/已结束任务不会被修改，重复执行返回新增取消数 0。
+func (s *DeviceJobService) CancelActiveJobs(ctx context.Context) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, errors.New("database is nil")
+	}
+	now := s.clock().UTC()
+	result := s.db.WithContext(ctx).Model(&models.DeviceToolJob{}).
+		Where("status IN ?", activeDeviceJobStates()).
+		Updates(map[string]interface{}{
+			"status":         models.DeviceToolJobCancelled,
+			"completed_at":   now,
+			"result_json":    nil,
+			"result_hash":    "",
+			"error_code":     "school_capability_retired",
+			"progress_stage": "",
+			"state_version":  gorm.Expr("state_version + 1"),
+		})
+	return result.RowsAffected, result.Error
 }
 
 func (s *DeviceJobService) finishJob(ctx context.Context, userID uint, installationID, jobID string, stateVersion int64, updates map[string]interface{}) (*models.DeviceToolJob, error) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -212,19 +213,54 @@ func TestPrepareEduBindingReusesPersistedPendingGeneration(t *testing.T) {
 	}
 }
 
-func TestLoginEduIsRetired(t *testing.T) {
+func TestLoginEduUsesAppPasswordWithoutEduCredential(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AccountSecurityAuditLog{}); err != nil {
+		t.Fatalf("迁移测试表失败: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("app-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("生成 APP 密码哈希失败: %v", err)
+	}
+	now := time.Now()
+	user := models.User{
+		StudentID: "2026000102", StudentVerifiedAt: &now,
+		PasswordHash: string(passwordHash), AccountStatus: "active", Nickname: "迁移用户",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("创建迁移用户失败: %v", err)
+	}
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		upstreamCalls++
+		writer.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+	previousConfig := EduServiceConfig
+	EduServiceConfig.BaseURL = upstream.URL
+	EduServiceConfig.Token = "test-token"
+	defer func() { EduServiceConfig = previousConfig }()
 	handler := NewAuthHandler(db, "test-secret")
 	router := gin.New()
 	router.POST("/login_edu", handler.LoginEdu)
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/login_edu", nil))
-	if recorder.Code != http.StatusGone || !containsJSONCode(recorder.Body.Bytes(), "LEGACY_EDU_LOGIN_RETIRED") {
-		t.Fatalf("旧教务登录入口未退役: status=%d body=%s", recorder.Code, recorder.Body.String())
+	payload := []byte(`{"student_id":"2026000102","password":"app-password"}`)
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/login_edu", bytes.NewReader(payload)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("迁移登录失败: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("迁移登录不应访问学校系统，调用次数=%d", upstreamCalls)
+	}
+	var response struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || response.Token == "" {
+		t.Fatalf("迁移登录未返回会话: err=%v body=%s", err, recorder.Body.String())
 	}
 }
 

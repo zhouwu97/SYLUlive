@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 func openAccountIdentityTestDB(t *testing.T) *gorm.DB {
@@ -19,6 +20,9 @@ func openAccountIdentityTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.User{}); err != nil {
 		t.Fatalf("迁移用户表失败: %v", err)
+	}
+	if err := models.EnsureAccountIdentitySchema(db); err != nil {
+		t.Fatalf("迁移身份表失败: %v", err)
 	}
 	return db
 }
@@ -45,7 +49,7 @@ func TestPrecheckEduBindingProtectsStudentIdentity(t *testing.T) {
 	}
 }
 
-func TestFindLoginUserFallsBackToTenDigitLegacyQQ(t *testing.T) {
+func TestFindLegacyLoginUserFallsBackToTenDigitQQ(t *testing.T) {
 	db := openAccountIdentityTestDB(t)
 	legacy := models.User{QQ: "1234567890", PasswordHash: "hash", Nickname: "旧 QQ 用户"}
 	if err := db.Create(&legacy).Error; err != nil {
@@ -53,7 +57,7 @@ func TestFindLoginUserFallsBackToTenDigitLegacyQQ(t *testing.T) {
 	}
 	handler := NewAuthHandler(db, "test-jwt-secret")
 
-	user, err := handler.findLoginUser(legacy.QQ)
+	user, err := handler.findLegacyLoginUser(legacy.QQ)
 	if err != nil || user.ID != legacy.ID {
 		t.Fatalf("十位 QQ 回退结果 id=%d err=%v，期望 id=%d", user.ID, err, legacy.ID)
 	}
@@ -65,8 +69,46 @@ func TestFindLoginUserFallsBackToTenDigitLegacyQQ(t *testing.T) {
 	if err := db.Create(&student).Error; err != nil {
 		t.Fatalf("创建真实学号用户失败: %v", err)
 	}
-	user, err = handler.findLoginUser(legacy.QQ)
+	user, err = handler.findLegacyLoginUser(legacy.QQ)
 	if err != nil || user.ID != student.ID {
 		t.Fatalf("真实学号优先结果 id=%d err=%v，期望 id=%d", user.ID, err, student.ID)
+	}
+}
+
+func TestFindLoginUserRequiresVerifiedActiveEmailIdentity(t *testing.T) {
+	db := openAccountIdentityTestDB(t)
+	now := time.Now().UTC()
+	user := models.User{
+		Email: "identity@example.com", EmailVerifiedAt: &now,
+		PasswordHash: "hash", Nickname: "邮箱用户", AccountStatus: "active",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("创建邮箱用户失败: %v", err)
+	}
+	handler := NewAuthHandler(db, "test-jwt-secret")
+	if _, err := handler.findLoginUser(user.Email); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("仅有 users.email 镜像时不应登录，错误=%v", err)
+	}
+	if err := db.Create(&models.UserLoginIdentity{
+		UserID: user.ID, Type: models.LoginIdentityTypeEmail,
+		IdentifierNormalized: user.Email,
+	}).Error; err != nil {
+		t.Fatalf("创建未验证 Identity 失败: %v", err)
+	}
+	if _, err := handler.findLoginUser(user.Email); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("未验证 Identity 不应登录，错误=%v", err)
+	}
+	if _, err := services.CreateEmailIdentity(db, user.ID, user.Email, now); err != nil {
+		t.Fatalf("验证邮箱 Identity 失败: %v", err)
+	}
+	resolved, err := handler.findLoginUser(" IDENTITY@EXAMPLE.COM ")
+	if err != nil || resolved.ID != user.ID {
+		t.Fatalf("有效 Identity 解析结果 id=%d err=%v，期望 id=%d", resolved.ID, err, user.ID)
+	}
+	if err := services.DisableLoginIdentity(db, user.ID, models.LoginIdentityTypeEmail, user.Email, now); err != nil {
+		t.Fatalf("禁用邮箱 Identity 失败: %v", err)
+	}
+	if _, err := handler.findLoginUser(user.Email); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("已禁用 Identity 不应登录，错误=%v", err)
 	}
 }

@@ -6,6 +6,7 @@ import '../core/jiaowu_headers.dart';
 import '../core/jiaowu_request_validator.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/course_fetch_result.dart';
+import '../network/transport_error_mapper.dart';
 import '../parser/course_parser.dart';
 import '../session/jiaowu_session.dart';
 import '../session/session_state.dart';
@@ -31,6 +32,7 @@ final class CourseApi {
     _requireAuthenticated();
     final stopwatch = Stopwatch()..start();
     final failures = <String>[];
+    JiaowuException? transportFailure;
     var sawValidEmpty = false;
 
     final desktopTimeout = _remainingTimeout(stopwatch, totalBudget);
@@ -60,6 +62,9 @@ final class CourseApi {
         }
       } on SessionExpiredException {
         rethrow;
+      } on JiaowuException catch (error) {
+        transportFailure ??= error;
+        failures.add(_failure('DESKTOP', error));
       } catch (error) {
         failures.add(_failure('DESKTOP', error));
       }
@@ -96,6 +101,9 @@ final class CourseApi {
         }
       } on SessionExpiredException {
         rethrow;
+      } on JiaowuException catch (error) {
+        transportFailure ??= error;
+        failures.add(_failure('MOBILE', error));
       } catch (error) {
         failures.add(_failure('MOBILE', error));
       }
@@ -105,6 +113,9 @@ final class CourseApi {
 
     if (sawValidEmpty) {
       throw const CourseNotOpenException();
+    }
+    if (transportFailure != null) {
+      throw transportFailure;
     }
     final detail = failures.isEmpty ? 'no_response' : failures.join(',');
     throw NetworkException(
@@ -161,7 +172,7 @@ final class CourseApi {
         return _EndpointOutcome.failure('$source:${error.code}');
       }
     } on DioException catch (error) {
-      throw _mapTransportError(error, source);
+      throw TransportErrorMapper.map(error, '$source课表请求');
     }
   }
 
@@ -191,19 +202,6 @@ final class CourseApi {
     final configured =
         _dio.options.receiveTimeout ?? const Duration(seconds: 8);
     return configured < remaining ? configured : remaining;
-  }
-
-  static JiaowuException _mapTransportError(
-    DioException error,
-    String source,
-  ) {
-    final isTimeout = error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.receiveTimeout;
-    if (isTimeout) {
-      return RequestTimeoutException(message: '$source课表请求超时');
-    }
-    return NetworkException(message: '$source课表请求失败', cause: error);
   }
 
   static String _failure(String source, Object error) {

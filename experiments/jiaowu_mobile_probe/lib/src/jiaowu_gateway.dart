@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+
+import 'diagnostic_dio_factory.dart';
 
 /// 页面依赖的最小教务能力，便于用假实现验证 UI 状态和错误映射。
 abstract interface class JiaowuGateway {
@@ -16,11 +19,16 @@ abstract interface class JiaowuGateway {
     required String year,
     required int semester,
   });
+  Future<JiaowuNetworkProbeResult> diagnoseNetwork({bool insecureTls = false});
   void close();
 }
 
 /// 一个 Gateway 实例只持有一个 JiaowuClient，保证 Dio/CookieJar 会话连续。
 final class JiaowuClientGateway implements JiaowuGateway {
+  JiaowuClientGateway({JiaowuClient Function()? clientFactory})
+    : _clientFactory = clientFactory ?? (() => JiaowuClient());
+
+  final JiaowuClient Function() _clientFactory;
   JiaowuClient? _client;
 
   JiaowuClient get _activeClient => _client ??= JiaowuClient();
@@ -35,7 +43,7 @@ final class JiaowuClientGateway implements JiaowuGateway {
     required String password,
   }) async {
     _client?.close(force: true);
-    _client = JiaowuClient();
+    _client = _clientFactory();
     return _activeClient.login(studentId: studentId, password: password);
   }
 
@@ -55,8 +63,23 @@ final class JiaowuClientGateway implements JiaowuGateway {
   }) => _activeClient.getGrades(year: year, semester: semester);
 
   @override
+  Future<JiaowuNetworkProbeResult> diagnoseNetwork({
+    bool insecureTls = false,
+  }) async {
+    if (insecureTls && !kDebugMode) {
+      throw StateError('insecure TLS 诊断只允许 Debug 构建');
+    }
+    final dio = createDiagnosticDio(insecureTls: insecureTls);
+    try {
+      return await JiaowuNetworkProbe(dio: dio).run();
+    } finally {
+      dio.close(force: true);
+    }
+  }
+
+  @override
   void close() {
-    _client?.close();
+    _client?.close(force: true);
     _client = null;
   }
 }

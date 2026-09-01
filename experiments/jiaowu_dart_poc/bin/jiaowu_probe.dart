@@ -68,7 +68,7 @@ Future<void> main(List<String> arguments) async {
     }
 
     if (result is LoginSuccess && options['action'] != 'login') {
-      final profile = await client.getProfile(studentId: studentId);
+      final profile = await client.getProfile();
       stdout.writeln('[PROFILE] OK');
       stdout.writeln('name = ${_mask(profile.name)}');
       stdout.writeln('grade = ${profile.grade}');

@@ -7,6 +7,7 @@ import '../error/jiaowu_exception.dart';
 import '../model/student_profile.dart';
 import '../parser/profile_parser.dart';
 import '../session/jiaowu_session.dart';
+import '../session/session_state.dart';
 
 /// 学生信息接口，保持 API 请求与 HTML 解析分层。
 final class ProfileApi {
@@ -17,7 +18,15 @@ final class ProfileApi {
   final Dio _dio;
   final JiaowuSession _session;
 
-  Future<StudentProfile> fetch({required String studentId}) async {
+  Future<StudentProfile> fetch() async {
+    if (_session.state == SessionState.expired) {
+      throw const SessionExpiredException();
+    }
+    final studentId = _session.studentId;
+    if (_session.state != SessionState.authenticated || studentId == null) {
+      throw const UnauthenticatedException();
+    }
+
     try {
       final response = await _dio.get<String>(
         JiaowuEndpoints.studentInfo,

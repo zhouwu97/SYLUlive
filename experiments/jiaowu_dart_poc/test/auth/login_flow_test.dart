@@ -56,10 +56,15 @@ void main() {
     ]);
     final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
       ..httpClientAdapter = adapter;
+    final jar = CookieJar();
+    await jar.saveFromResponse(
+      Uri.parse('https://test.local/'),
+      [Cookie('JSESSIONID', 'OLD_SESSION')],
+    );
     final client = JiaowuClient(
       baseUrl: 'https://test.local',
       dio: dio,
-      cookieJar: CookieJar(),
+      cookieJar: jar,
     );
 
     final result = await client.login(
@@ -72,6 +77,8 @@ void main() {
     expect(success.cookieNames, containsAll(['route', 'JSESSIONID']));
     expect(client.session.state, SessionState.authenticated);
     expect(adapter.requests.length, 4);
+    expect(requestHeader(adapter.requests[0], 'cookie'),
+        isNot(contains('OLD_SESSION')));
     expect(
       requestHeader(adapter.requests[3], 'cookie'),
       contains('JSESSIONID=TEST_SESSION'),
@@ -128,6 +135,77 @@ void main() {
 
     expect(result, isA<InvalidCredentials>());
     expect(client.session.state, SessionState.unauthenticated);
+    client.close(force: true);
+  });
+
+  test('同一客户端重复登录时不会携带上一个账号的 Cookie', () async {
+    final keyPair = _newKeyPair();
+    final publicKey = keyPair.publicKey;
+    final publicKeyBody = jsonEncode({
+      'modulus': base64.encode(_toUnsignedBytes(publicKey.modulus!)),
+      'exponent': base64.encode(_toUnsignedBytes(publicKey.publicExponent!)),
+    });
+    final adapter = QueuedHttpAdapter([
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<input id="csrftoken" name="csrftoken" value="CSRF_A">',
+      ),
+      QueuedHttpResponse(statusCode: 200, body: publicKeyBody),
+      const QueuedHttpResponse(
+        statusCode: 302,
+        body: '',
+        headers: {
+          'set-cookie': ['JSESSIONID=SESSION_A; Path=/'],
+          'location': ['/xtgl/index_initMenu.html'],
+        },
+      ),
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<div id="col_xm"><p>账号甲</p></div>',
+      ),
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<input id="csrftoken" name="csrftoken" value="CSRF_B">',
+      ),
+      QueuedHttpResponse(statusCode: 200, body: publicKeyBody),
+      const QueuedHttpResponse(
+        statusCode: 302,
+        body: '',
+        headers: {
+          'set-cookie': ['JSESSIONID=SESSION_B; Path=/'],
+          'location': ['/xtgl/index_initMenu.html'],
+        },
+      ),
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<div id="col_xm"><p>账号乙</p></div>',
+      ),
+    ]);
+    final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
+      ..httpClientAdapter = adapter;
+    final client = JiaowuClient(
+      baseUrl: 'https://test.local',
+      dio: dio,
+      cookieJar: CookieJar(),
+    );
+
+    final first = await client.login(
+      studentId: 'STUDENT_A',
+      password: 'password-a',
+    );
+    final second = await client.login(
+      studentId: 'STUDENT_B',
+      password: 'password-b',
+    );
+
+    expect(first, isA<LoginSuccess>());
+    expect(second, isA<LoginSuccess>());
+    expect(requestHeader(adapter.requests[4], 'cookie'),
+        isNot(contains('SESSION_A')));
+    expect(requestHeader(adapter.requests[7], 'cookie'), contains('SESSION_B'));
+    expect(requestHeader(adapter.requests[7], 'cookie'),
+        isNot(contains('SESSION_A')));
+    expect(client.session.studentId, 'STUDENT_B');
     client.close(force: true);
   });
 }

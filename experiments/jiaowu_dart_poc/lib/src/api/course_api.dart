@@ -23,6 +23,7 @@ final class CourseApi {
     required int semester,
     Duration totalBudget = const Duration(seconds: 12),
   }) async {
+    _validateRequest(year: year, semester: semester);
     _requireAuthenticated();
     final stopwatch = Stopwatch()..start();
     final failures = <String>[];
@@ -115,6 +116,15 @@ final class CourseApi {
     if (_session.state != SessionState.authenticated ||
         _session.studentId == null) {
       throw const UnauthenticatedException();
+    }
+  }
+
+  void _validateRequest({required String year, required int semester}) {
+    if (!RegExp(r'^\d{4}$').hasMatch(year)) {
+      throw ArgumentError.value(year, 'year', '学年必须是四位数字');
+    }
+    if (semester != 3 && semester != 12) {
+      throw ArgumentError.value(semester, 'semester', '仅支持学期编码 3 或 12');
     }
   }
 

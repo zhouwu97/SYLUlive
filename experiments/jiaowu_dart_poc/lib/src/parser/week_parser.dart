@@ -23,21 +23,23 @@ abstract final class WeekParser {
         .replaceAll('至', '-')
         .replaceAll('到', '-');
     final rangePattern = RegExp(r'(\d+)\s*-\s*(\d+)|(\d+)');
-    final onlyOddWeeks = raw.contains('单');
-    final onlyEvenWeeks = raw.contains('双');
 
-    for (final match in rangePattern.allMatches(normalized)) {
-      final rangeStart = int.tryParse(match.group(1) ?? match.group(3) ?? '');
-      final rangeEnd = int.tryParse(match.group(2) ?? '') ?? rangeStart;
-      if (rangeStart == null || rangeEnd == null) continue;
+    for (final segment in normalized.split(',')) {
+      final onlyOddWeeks = segment.contains('单');
+      final onlyEvenWeeks = segment.contains('双');
+      for (final match in rangePattern.allMatches(segment)) {
+        final rangeStart = int.tryParse(match.group(1) ?? match.group(3) ?? '');
+        final rangeEnd = int.tryParse(match.group(2) ?? '') ?? rangeStart;
+        if (rangeStart == null || rangeEnd == null) continue;
 
-      final lower = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
-      final upper = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
-      for (var week = lower; week <= upper; week++) {
-        if (week < 1) continue;
-        if (onlyOddWeeks && week.isEven) continue;
-        if (onlyEvenWeeks && week.isOdd) continue;
-        weeks.add(week);
+        final lower = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+        final upper = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
+        for (var week = lower; week <= upper; week++) {
+          if (week < 1) continue;
+          if (onlyOddWeeks && week.isEven) continue;
+          if (onlyEvenWeeks && week.isOdd) continue;
+          weeks.add(week);
+        }
       }
     }
     return ParsedWeeks(weeks: weeks, raw: raw);

@@ -177,7 +177,7 @@ void main() {
     }
   });
 
-  test('两端合法空课表才返回 CourseNotOpen', () async {
+  test('存在可信合法空响应且无非空课表时返回 CourseNotOpen', () async {
     final setup = _buildClient([
       _jsonResponse('desktop_empty.json'),
       _jsonResponse('desktop_empty.json'),
@@ -244,6 +244,29 @@ void main() {
       expect(setup.adapter.requests, isEmpty);
     } finally {
       setup.client.close(force: true);
+    }
+  });
+
+  test('公开课表接口拒绝非法学期和非四位学年', () async {
+    final invalidRequests = [
+      (year: '2026', semester: 1),
+      (year: '20263', semester: 3),
+    ];
+
+    for (final request in invalidRequests) {
+      final setup = _buildClient([]);
+      try {
+        await expectLater(
+          setup.client.getCourses(
+            year: request.year,
+            semester: request.semester,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(setup.adapter.requests, isEmpty);
+      } finally {
+        setup.client.close(force: true);
+      }
     }
   });
 

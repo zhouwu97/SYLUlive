@@ -72,6 +72,8 @@ dart run bin/jiaowu_probe.dart --action all
 | 登录探活 | 学生信息页优先，菜单页回退 |
 | 学生信息 | `GET /xsxxxggl/xsgrxxwh_cxXsgrxx.html`，`gnmkdm=N100801` |
 | 会话失效 | 901、302 到登录页、200 登录 HTML |
+| 课表参数 | `year` 为四位学年；`semester` 仅支持 3（第一学期）或 12（第二学期） |
+| 周次与星期 | `zcd` 保留原文并解析为 `weeks`；`xqj` 必须为 1 到 7 |
 
 公钥的 `_` 参数在 README 中用空格展示仅为避免视觉误读，代码使用精确的 `_`。
 

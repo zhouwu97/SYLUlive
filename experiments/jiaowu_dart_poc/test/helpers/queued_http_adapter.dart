@@ -8,11 +8,13 @@ final class QueuedHttpResponse {
     required this.statusCode,
     required this.body,
     this.headers = const <String, List<String>>{},
+    this.error,
   });
 
   final int statusCode;
   final String body;
   final Map<String, List<String>> headers;
+  final Object? error;
 }
 
 final class QueuedHttpAdapter implements HttpClientAdapter {
@@ -37,6 +39,9 @@ final class QueuedHttpAdapter implements HttpClientAdapter {
       throw StateError('没有为 ${options.method} ${options.path} 准备响应');
     }
     final response = _responses.removeAt(0);
+    if (response.error != null) {
+      throw response.error!;
+    }
     return ResponseBody(
       Stream.value(Uint8List.fromList(utf8.encode(response.body))),
       response.statusCode,

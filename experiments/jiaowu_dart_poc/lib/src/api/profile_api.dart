@@ -5,6 +5,7 @@ import '../core/jiaowu_endpoints.dart';
 import '../core/jiaowu_headers.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/student_profile.dart';
+import '../network/transport_error_mapper.dart';
 import '../parser/profile_parser.dart';
 import '../session/jiaowu_session.dart';
 import '../session/session_state.dart';
@@ -59,12 +60,7 @@ final class ProfileApi {
     } on JiaowuException {
       rethrow;
     } on DioException catch (error) {
-      if (error.type == DioExceptionType.connectionTimeout ||
-          error.type == DioExceptionType.sendTimeout ||
-          error.type == DioExceptionType.receiveTimeout) {
-        throw const RequestTimeoutException(message: '获取学生信息超时');
-      }
-      throw NetworkException(message: '获取学生信息失败，请检查网络连接', cause: error);
+      throw TransportErrorMapper.map(error, '获取学生信息');
     }
   }
 }

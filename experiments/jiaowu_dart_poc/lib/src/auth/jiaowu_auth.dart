@@ -9,6 +9,7 @@ import '../core/jiaowu_headers.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/login_result.dart';
 import '../model/rsa_public_key.dart';
+import '../network/transport_error_mapper.dart';
 import '../parser/error_parser.dart';
 import '../parser/profile_parser.dart';
 import '../session/jiaowu_session.dart';
@@ -53,11 +54,11 @@ final class JiaowuAuth {
         }
         return CsrfParser.parse(_responseText(response));
       } on DioException catch (error) {
-        if (_isTimeout(error) && attempt < 3) {
+        if (TransportErrorMapper.isTimeout(error) && attempt < 3) {
           await Future<void>.delayed(const Duration(milliseconds: 500));
           continue;
         }
-        throw _mapDioException(error, '获取 CSRF');
+        throw TransportErrorMapper.map(error, '获取 CSRF');
       }
     }
     throw const NetworkException(message: '获取 CSRF 失败');
@@ -99,7 +100,7 @@ final class JiaowuAuth {
     } on JiaowuException {
       rethrow;
     } on DioException catch (error) {
-      throw _mapDioException(error, '获取登录公钥');
+      throw TransportErrorMapper.map(error, '获取登录公钥');
     } on FormatException catch (error) {
       throw LoginPageChangedException(
         message: '学校登录公钥响应无法解析，请稍后重试或联系管理员',
@@ -186,7 +187,7 @@ final class JiaowuAuth {
       return CaptchaRequired(message: error.message);
     } on DioException catch (error) {
       _session.clearState();
-      final mapped = _mapDioException(error, '登录');
+      final mapped = TransportErrorMapper.map(error, '登录');
       return NetworkUnavailable(message: mapped.message, cause: mapped);
     } on NetworkException catch (error) {
       _session.clearState();
@@ -236,7 +237,7 @@ final class JiaowuAuth {
         return _isSuccessfulLocation(location);
       }
     } on DioException catch (error) {
-      throw _mapDioException(error, '登录探活');
+      throw TransportErrorMapper.map(error, '登录探活');
     }
     return false;
   }
@@ -275,21 +276,5 @@ final class JiaowuAuth {
       'gnmkdm'
     ];
     return tokens.where(body.contains).length >= 2;
-  }
-
-  static bool _isTimeout(DioException error) {
-    return error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.receiveTimeout;
-  }
-
-  static JiaowuException _mapDioException(
-    DioException error,
-    String operation,
-  ) {
-    if (_isTimeout(error)) {
-      return RequestTimeoutException(message: '$operation超时');
-    }
-    return NetworkException(message: '$operation失败，请检查网络连接', cause: error);
   }
 }

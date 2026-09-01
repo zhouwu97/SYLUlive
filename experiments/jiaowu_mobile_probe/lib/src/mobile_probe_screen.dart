@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import 'probe_controller.dart';
@@ -94,6 +95,30 @@ final class _MobileProbeScreenState extends State<MobileProbeScreen> {
                   onPressed: _controller.isBusy ? null : _login,
                   icon: const Icon(Icons.login),
                   label: const Text('登录'),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _controller.isBusy
+                          ? null
+                          : _controller.diagnoseNetwork,
+                      icon: const Icon(Icons.network_check),
+                      label: const Text('网络诊断'),
+                    ),
+                    if (kDebugMode)
+                      OutlinedButton.icon(
+                        onPressed: _controller.isBusy
+                            ? null
+                            : () => _controller.diagnoseNetwork(
+                                insecureTls: true,
+                              ),
+                        icon: const Icon(Icons.warning_amber_outlined),
+                        label: const Text('Debug insecure TLS'),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -202,6 +227,10 @@ final class _StatusPanel extends StatelessWidget {
             Text('Session: $sessionLabel'),
             const SizedBox(height: 4),
             Text(statusText),
+            if (controller.diagnostic != null) ...[
+              const SizedBox(height: 12),
+              SelectableText(controller.diagnostic!.toDisplayString()),
+            ],
           ],
         ),
       ),

@@ -1,3 +1,5 @@
+import '../network/safe_transport_diagnostic.dart';
+
 /// 教务协议错误基类。
 sealed class JiaowuException implements Exception {
   const JiaowuException(this.message, this.code, {this.cause});
@@ -5,6 +7,7 @@ sealed class JiaowuException implements Exception {
   final String message;
   final String code;
   final Object? cause;
+  SafeTransportDiagnostic? get diagnostic => null;
 
   @override
   String toString() => '$code: $message';
@@ -42,12 +45,23 @@ final class NetworkException extends JiaowuException {
     String message = '学校教务系统暂时不可用，请稍后再试',
     String code = 'REMOTE_SYSTEM_UNAVAILABLE',
     Object? cause,
+    this.diagnostic,
   }) : super(message, code, cause: cause);
+
+  final SafeTransportDiagnostic? diagnostic;
 }
 
 final class RequestTimeoutException extends NetworkException {
-  const RequestTimeoutException({String message = '教务请求超时'})
-      : super(message: message, code: 'REQUEST_TIMEOUT');
+  const RequestTimeoutException({
+    String message = '教务请求超时',
+    Object? cause,
+    SafeTransportDiagnostic? diagnostic,
+  }) : super(
+          message: message,
+          code: 'REQUEST_TIMEOUT',
+          cause: cause,
+          diagnostic: diagnostic,
+        );
 }
 
 final class RemoteMaintenanceException extends NetworkException {

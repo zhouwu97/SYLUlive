@@ -7,6 +7,7 @@ import '../core/jiaowu_request_validator.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/grade_fetch_result.dart';
 import '../model/raw_grade.dart';
+import '../network/transport_error_mapper.dart';
 import '../parser/grade_parser.dart';
 import '../session/jiaowu_session.dart';
 import '../session/session_state.dart';
@@ -114,7 +115,7 @@ final class GradeApi {
         );
       }
     } on DioException catch (error) {
-      throw _mapTransportError(error, '成绩模块初始化');
+      throw TransportErrorMapper.map(error, '成绩模块初始化');
     }
   }
 
@@ -168,7 +169,7 @@ final class GradeApi {
       }
       return GradeParser.parse(body);
     } on DioException catch (error) {
-      throw _mapTransportError(error, '成绩分页查询');
+      throw TransportErrorMapper.map(error, '成绩分页查询');
     }
   }
 
@@ -198,18 +199,5 @@ final class GradeApi {
     final configured =
         _dio.options.receiveTimeout ?? const Duration(seconds: 8);
     return configured < remaining ? configured : remaining;
-  }
-
-  static JiaowuException _mapTransportError(
-    DioException error,
-    String stage,
-  ) {
-    final isTimeout = error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.receiveTimeout;
-    if (isTimeout) {
-      return RequestTimeoutException(message: '$stage超时');
-    }
-    return NetworkException(message: '$stage失败', cause: error);
   }
 }

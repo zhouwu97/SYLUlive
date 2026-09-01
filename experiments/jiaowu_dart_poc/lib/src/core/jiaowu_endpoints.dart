@@ -8,4 +8,6 @@ abstract final class JiaowuEndpoints {
   static const studentInfo = '/xsxxxggl/xsgrxxwh_cxXsgrxx.html';
   static const courseDesktop = '/kbcx/xskbcx_cxXsKb.html';
   static const courseMobile = '/kbcx/xskbcxMobile_cxXsKb.html';
+  static const gradePage = '/cjcx/cjcx_cxDgXscj.html';
+  static const gradeList = '/cjcx/cjcx_cxXsgrcj.html';
 }

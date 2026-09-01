@@ -20,6 +20,10 @@ DNS → HTTPS GET /xtgl/login_slogin.html → CSRF 解析
 页面只展示 IPv4/IPv6 数量、HTTP 状态和安全 transport 摘要，不展示 Cookie、
 请求体、响应体或密码。
 
+TLS 握手失败时，摘要只会显示白名单原因，例如 `UNKNOWN_CA`、
+`HOSTNAME_MISMATCH`、`CERT_EXPIRED`、`CERT_NOT_YET_VALID`、
+`TLS_PROTOCOL_VERSION` 或 `TLS_HANDSHAKE_GENERIC`，不会显示底层异常原文。
+
 ## Android A/B
 
 Debug 构建提供两个按钮：

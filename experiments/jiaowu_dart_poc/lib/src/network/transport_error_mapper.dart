@@ -8,11 +8,14 @@ import 'safe_transport_diagnostic.dart';
 /// 将 Dio/Socket 层异常统一转换为可行动、且不会泄漏请求内容的教务异常。
 abstract final class TransportErrorMapper {
   static JiaowuException map(DioException error, String operation) {
-    final code = _codeFor(error);
+    final tlsFailure = _classifyTls(error);
+    final code = _codeFor(error, tlsFailure: tlsFailure != null);
     final diagnostic = SafeTransportDiagnostic.fromDioException(
       error: error,
       operation: operation,
       code: code,
+      tlsReason: tlsFailure?.reason,
+      tlsDetail: tlsFailure?.detail,
     );
 
     if (code == 'REQUEST_TIMEOUT') {
@@ -31,15 +34,12 @@ abstract final class TransportErrorMapper {
     );
   }
 
-  static String _codeFor(DioException error) {
+  static String _codeFor(
+    DioException error, {
+    required bool tlsFailure,
+  }) {
     if (isTimeout(error)) return 'REQUEST_TIMEOUT';
-
-    final inner = error.error;
-    if (error.type == DioExceptionType.badCertificate ||
-        inner is HandshakeException ||
-        _looksLikeTlsFailure(error)) {
-      return 'TLS_HANDSHAKE_FAILED';
-    }
+    if (tlsFailure) return 'TLS_HANDSHAKE_FAILED';
 
     final text = _transportText(error);
     if (_containsAny(text, [
@@ -91,6 +91,74 @@ abstract final class TransportErrorMapper {
       'ssl_error',
       'tls handshake',
     ]);
+  }
+
+  static ({String reason, String? detail})? _classifyTls(DioException error) {
+    final inner = error.error;
+    final isTls = error.type == DioExceptionType.badCertificate ||
+        inner is HandshakeException ||
+        _looksLikeTlsFailure(error);
+    if (!isTls) return null;
+
+    final text = _transportText(error);
+    if (_containsAny(text, [
+      'unknown ca',
+      'unknown_ca',
+      'unable to get local issuer',
+      'unable to verify the first certificate',
+      'self signed',
+    ])) {
+      return (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'UNKNOWN_CA',
+      );
+    }
+    if (_containsAny(text, [
+      'hostname mismatch',
+      'hostname does not match',
+      'doesn\'t match',
+      'does not match',
+    ])) {
+      return (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'HOSTNAME_MISMATCH',
+      );
+    }
+    if (_containsAny(text, [
+      'certificate has expired',
+      'certificate expired',
+      'cert has expired',
+    ])) {
+      return (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'CERT_EXPIRED',
+      );
+    }
+    if (_containsAny(text, [
+      'not yet valid',
+      'not_yet_valid',
+      'certificate is not yet valid',
+    ])) {
+      return (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'CERT_NOT_YET_VALID',
+      );
+    }
+    if (_containsAny(text, [
+          'certificate_verify_failed',
+          'certificate verify failed',
+        ]) ||
+        error.type == DioExceptionType.badCertificate) {
+      return (reason: 'CERTIFICATE_VERIFY_FAILED', detail: null);
+    }
+    if (_containsAny(text, [
+      'protocol version',
+      'tlsv1 alert protocol version',
+      'unsupported protocol',
+    ])) {
+      return (reason: 'TLS_PROTOCOL_VERSION', detail: null);
+    }
+    return (reason: 'TLS_HANDSHAKE_GENERIC', detail: null);
   }
 
   static String _transportText(DioException error) {

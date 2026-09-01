@@ -15,6 +15,9 @@ void configureWebVpnCertificatePolicy(Dio dio) {
   dio.httpClientAdapter = IOHttpClientAdapter(
     createHttpClient: () {
       final client = HttpClient();
+      // 安全审计元数据：Owner：Security/Client Owner；原因：WebVPN 缺失中间证书，
+      // 仅用固定 SPKI 兼容策略完成当前连接。删除边界=PR6 标准 PKI 修复后删除；
+      // 该回调不得由普通 Server Remote Config 放宽，也不得扩大到其他主机。
       client.badCertificateCallback = (
         X509Certificate certificate,
         String host,

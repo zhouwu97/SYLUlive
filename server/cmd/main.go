@@ -82,6 +82,22 @@ func externalMCPHealthPayload(configured bool, client externalMCPHealthReader, r
 	return result
 }
 
+// newAIRuntimeRegistries 统一执行 AI Runtime 启动装配，确保 C3 开关同时作用于
+// 实际工具注册表和对外能力目录，避免只切断 Device API 后仍能从 Agent 调用学校个人能力。
+func newAIRuntimeRegistries(db *gorm.DB, schoolPersonalCut bool, tools ...ai.PureReadTool) (*ai.ToolRegistry, *ai.AgentCapabilityRegistry, error) {
+	registryTools := tools
+	if schoolPersonalCut {
+		registryTools = ai.FilterSchoolPersonalTools(tools)
+	}
+	toolRegistry, err := ai.NewToolRegistry(db, registryTools...)
+	if err != nil {
+		return nil, nil, err
+	}
+	capabilityRegistry := ai.NewAgentCapabilityRegistry(toolRegistry)
+	capabilityRegistry.SetSchoolPersonalCut(schoolPersonalCut)
+	return toolRegistry, capabilityRegistry, nil
+}
+
 const examPaperStorageJobAttemptTimeout = 15 * time.Second
 
 type examPaperStorageJobAttemptProcessor interface {
@@ -197,6 +213,8 @@ func main() {
 		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
 		&models.IdempotencyRecord{},
+		&models.UserLoginIdentity{},
+		&models.RegistrationSession{},
 
 		&models.UserLegalConsent{},
 
@@ -400,6 +418,12 @@ func main() {
 	}
 	if err := models.EnsurePushDeviceIndexes(db); err != nil {
 		log.Fatal("推送设备唯一索引迁移失败:", err)
+	}
+	if err := models.EnsureAccountIdentitySchema(db); err != nil {
+		log.Fatal("账号身份与注册会话索引迁移失败:", err)
+	}
+	if err := validateAccountIdentityReadiness(appCtx, db, cfg.AccountIdentityReadMode); err != nil {
+		log.Fatal(err)
 	}
 	if err := ensureUserCalendarAgentActionUniqueIndex(db); err != nil {
 		log.Fatal("个人日历 Agent 动作幂等索引迁移失败:", err)
@@ -647,6 +671,10 @@ func main() {
 		services.EduFetchOrchestratorOptions{},
 	)
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	if err := authHandler.SetAccountIdentityReadMode(cfg.AccountIdentityReadMode); err != nil {
+		log.Fatal("配置账号 Identity 读路径失败:", err)
+	}
+	authHandler.SetSchoolAcademicRoutesRetired(cfg.SchoolAcademicRoutesRetired)
 
 	userHandler := handlers.NewUserHandler(db)
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
@@ -752,6 +780,14 @@ func main() {
 
 	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
 	deviceJobService := services.NewDeviceJobService(db)
+	deviceJobService.SetCapabilityCut(cfg.SchoolDeviceCapabilityCut)
+	if cfg.SchoolDeviceCapabilityCut {
+		cancelled, cancelErr := deviceJobService.CancelActiveJobs(appCtx)
+		if cancelErr != nil {
+			log.Fatalf("学校设备能力切断后取消历史任务失败: %v", cancelErr)
+		}
+		log.Printf("学校设备能力已切断，历史未完成任务已取消 count=%d", cancelled)
+	}
 	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
 	aiUserPermissionService := services.NewAIUserPermissionService(db)
 	aiUserPermissionHandler := handlers.NewAIUserPermissionHandler(aiUserPermissionService)
@@ -985,11 +1021,14 @@ func main() {
 			}
 		}
 		var registryErr error
-		toolRegistry, registryErr = ai.NewToolRegistry(db, tools...)
+		toolRegistry, capabilityRegistry, registryErr = newAIRuntimeRegistries(
+			db,
+			cfg.SchoolDeviceCapabilityCut,
+			tools...,
+		)
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
-		capabilityRegistry = ai.NewAgentCapabilityRegistry(toolRegistry)
 		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
 			db, provider, retriever, ai.NewEventBroker(),
@@ -1191,23 +1230,34 @@ func main() {
 	deviceAPI := r.Group("/api/device")
 	deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
-		deviceAPI.PUT("/registration", deviceJobHandler.Register)
-		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
-		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
-		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
-		deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
-		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
-		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
-		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
-		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+		if cfg.SchoolDeviceCapabilityCut {
+			// C3 后保留明确的 410 协议，便于旧客户端和探针区分“无设备”与“能力已退役”。
+			deviceAPI.Any("/", handlers.RetiredSchoolDeviceCapability)
+			deviceAPI.Any("/*path", handlers.RetiredSchoolDeviceCapability)
+		} else {
+			deviceAPI.PUT("/registration", deviceJobHandler.Register)
+			deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
+			deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
+			deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+			deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
+			deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
+			deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
+			deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
+			deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+		}
 	}
 
-	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
-	personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	{
-		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
-		personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
-		personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+	if cfg.SchoolAcademicRoutesRetired {
+		// Release D 退役入口直接挂在顶层路由，旧认证和 Body Handler 不进入调用链。
+		handlers.RegisterRetiredSchoolAuthorityRoutes(r)
+	} else {
+		personalSnapshotsAPI := r.Group("/api/personal-snapshots")
+		personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+		{
+			personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
+			personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
+			personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+		}
 	}
 
 	personalDataAccessAPI := r.Group("/api/ai/personal-data-access")
@@ -1246,17 +1296,16 @@ func main() {
 
 		auth.POST("/login", authHandler.Login)
 
-		auth.POST("/login_edu", authHandler.LoginEdu)
-
-		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
-
-		auth.POST("/forgot_password", authHandler.ForgotPassword)
+		if !cfg.SchoolAcademicRoutesRetired {
+			auth.POST("/login_edu", authHandler.LoginEdu)
+			auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
+			auth.POST("/forgot_password", authHandler.ForgotPassword)
+			auth.POST("/password/edu/reset", authHandler.ForgotPassword)
+		}
 
 		auth.POST("/password/email/code", authHandler.RequestEmailPasswordResetCode)
 
 		auth.POST("/password/email/reset", authHandler.ResetPasswordByEmail)
-
-		auth.POST("/password/edu/reset", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
 
@@ -1882,39 +1931,38 @@ func main() {
 
 	// 教务系统路由
 
-	edu := r.Group("/api/edu")
+	if !cfg.SchoolAcademicRoutesRetired {
+		edu := r.Group("/api/edu")
+		{
+			edu.GET("/status", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetEduStatus)
 
-	{
+			edu.POST("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.BindEdu)
 
-		edu.GET("/status", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetEduStatus)
+			edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
 
-		edu.POST("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.BindEdu)
+			edu.POST("/session/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.LogoutEduSession)
 
-		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
+			edu.POST("/session/resume", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.ResumeEduSession)
 
-		edu.POST("/session/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.LogoutEduSession)
+			edu.DELETE("/authorization", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RevokeEduAuthorization)
 
-		edu.POST("/session/resume", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.ResumeEduSession)
+			edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
 
-		edu.DELETE("/authorization", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RevokeEduAuthorization)
+			// 保留旧路径仅用于返回明确的客户端升级提示，绝不再代理服务端课表缓存。
+			edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RetiredCourseCache)
 
-		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
+			edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RetiredCourseCache)
 
-		// 保留旧路径仅用于返回明确的客户端升级提示，绝不再代理服务端课表缓存。
-		edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RetiredCourseCache)
+			edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
 
-		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RetiredCourseCache)
+			edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
 
-		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
+			edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
 
-		edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
+			edu.POST("/credit-requirements", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCreditRequirements)
 
-		edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
-
-		edu.POST("/credit-requirements", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCreditRequirements)
-
-		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
-
+			edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
+		}
 	}
 
 	// 超级管理员路由

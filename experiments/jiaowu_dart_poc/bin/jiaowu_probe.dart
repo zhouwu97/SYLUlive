@@ -113,6 +113,9 @@ Future<void> main(List<String> arguments) async {
       case CaptchaRequired(:final message):
         stdout.writeln('[LOGIN] CAPTCHA: $message');
         exitCode = 2;
+      case CaptchaExpired(:final message):
+        stdout.writeln('[LOGIN] CAPTCHA EXPIRED: $message');
+        exitCode = 2;
       case LoginPageChanged(:final message):
         stdout.writeln('[LOGIN] PROTOCOL: $message');
         exitCode = 3;

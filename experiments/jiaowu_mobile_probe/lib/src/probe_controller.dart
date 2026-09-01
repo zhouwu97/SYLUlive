@@ -15,41 +15,71 @@ final class ProbeController extends ChangeNotifier {
   String message = '可先执行网络诊断，再登录探测 Profile、课表或成绩。';
   String? errorCode;
   SafeTransportDiagnostic? diagnostic;
+  CaptchaChallenge? captchaChallenge;
   bool _disposed = false;
 
   SessionState get sessionState => gateway.sessionState;
   bool get isBusy => status == ProbeStatus.loading;
   bool get isAuthenticated => sessionState == SessionState.authenticated;
+  bool get isAwaitingCaptcha =>
+      sessionState == SessionState.awaitingCaptcha && captchaChallenge != null;
 
   Future<void> login({
     required String studentId,
     required String password,
   }) async {
+    captchaChallenge = null;
     _begin('登录');
     try {
       final result = await gateway.login(
         studentId: studentId.trim(),
         password: password,
       );
-      switch (result) {
-        case LoginSuccess():
-          _success('登录', '已建立认证会话');
-        case InvalidCredentials(:final message):
-          _error('登录', 'INVALID_CREDENTIALS', message);
-        case CaptchaRequired(:final message):
-          _error('登录', 'CAPTCHA_REQUIRED', message);
-        case LoginPageChanged(:final message):
-          _error('登录', 'LOGIN_PAGE_CHANGED', message);
-        case NetworkUnavailable(:final message, :final cause):
-          _error(
-            '登录',
-            cause?.code ?? 'REMOTE_SYSTEM_UNAVAILABLE',
-            message,
-            diagnostic: cause?.diagnostic,
-          );
-      }
+      await _handleLoginResult(result);
     } catch (error) {
       _handleError('登录', error);
+    }
+  }
+
+  Future<void> refreshCaptcha() async {
+    _begin('获取验证码');
+    try {
+      final challenge = await gateway.getCaptchaChallenge();
+      captchaChallenge = challenge;
+      _success('验证码', '验证码已更新');
+    } catch (error) {
+      _handleError('获取验证码', error);
+    }
+  }
+
+  Future<void> continueLoginWithCaptcha({required String code}) async {
+    final normalized = code.trim();
+    if (normalized.isEmpty) {
+      _error('验证码', 'CAPTCHA_REQUIRED', '请输入验证码');
+      return;
+    }
+    _begin('提交验证码');
+    try {
+      final result = await gateway.continueLoginWithCaptcha(code: normalized);
+      await _handleLoginResult(result);
+    } catch (error) {
+      _handleError('提交验证码', error);
+    }
+  }
+
+  Future<void> cancelPendingLogin() async {
+    _begin('取消验证码登录');
+    try {
+      await gateway.cancelPendingLogin();
+      captchaChallenge = null;
+      status = ProbeStatus.idle;
+      operation = '验证码';
+      errorCode = null;
+      diagnostic = null;
+      message = '已取消验证码登录';
+      _notify();
+    } catch (error) {
+      _handleError('取消验证码登录', error);
     }
   }
 
@@ -154,6 +184,40 @@ final class ProbeController extends ChangeNotifier {
     diagnostic = null;
     message = '正在执行$nextOperation...';
     _notify();
+  }
+
+  Future<void> _handleLoginResult(LoginResult result) async {
+    switch (result) {
+      case LoginSuccess():
+        captchaChallenge = null;
+        _success('登录', '已建立认证会话');
+      case InvalidCredentials(:final message):
+        captchaChallenge = null;
+        _error('登录', 'INVALID_CREDENTIALS', message);
+      case CaptchaRequired(:final message):
+        await _loadCaptcha(message: message);
+      case CaptchaExpired(:final message):
+        captchaChallenge = null;
+        _error('验证码', 'CAPTCHA_EXPIRED', message);
+      case LoginPageChanged(:final message):
+        _error('登录', 'LOGIN_PAGE_CHANGED', message);
+      case NetworkUnavailable(:final message, :final cause):
+        _error(
+          '登录',
+          cause?.code ?? 'REMOTE_SYSTEM_UNAVAILABLE',
+          message,
+          diagnostic: cause?.diagnostic,
+        );
+    }
+  }
+
+  Future<void> _loadCaptcha({required String message}) async {
+    try {
+      captchaChallenge = await gateway.getCaptchaChallenge();
+      _error('验证码', 'CAPTCHA_REQUIRED', message);
+    } catch (error) {
+      _handleError('获取验证码', error);
+    }
   }
 
   void _success(String nextOperation, String nextMessage) {

@@ -26,9 +26,45 @@ abstract final class ErrorParser {
   }
 
   static bool captchaRequired(String body) {
-    final lower = body.toLowerCase();
-    return body.contains('验证码') ||
-        lower.contains('captcha') ||
-        lower.contains('kaptcha');
+    final alert = alertMessage(body)?.toLowerCase() ?? '';
+    final visibleText = html_parser.parse(body).body?.text ?? body;
+    final combined = '$alert $visibleText $body'.toLowerCase();
+    const explicitMarkers = [
+      '请输入验证码',
+      '请填写验证码',
+      '验证码不能为空',
+      '验证码错误',
+      '验证码不正确',
+      '验证码已过期',
+      '验证码失效',
+      'captcha required',
+      'captcha is required',
+      'invalid captcha',
+      'captcha expired',
+    ];
+    return alert.contains('验证码') ||
+        alert.contains('captcha') ||
+        explicitMarkers.any(combined.contains);
+  }
+
+  static bool captchaInvalid(String body) {
+    final alert = alertMessage(body)?.toLowerCase() ?? '';
+    final visibleText = html_parser.parse(body).body?.text ?? body;
+    final combined = '$alert $visibleText $body'.toLowerCase();
+    const markers = [
+      '验证码错误',
+      '验证码不正确',
+      '验证码校验失败',
+      '验证码已过期',
+      '验证码失效',
+      'invalid captcha',
+      'captcha expired',
+    ];
+    return (alert.contains('验证码') || alert.contains('captcha')) ||
+        markers.any(combined.contains);
+  }
+
+  static String captchaMessage(String body) {
+    return captchaInvalid(body) ? '验证码错误，请换一张后重试' : '请输入验证码';
   }
 }

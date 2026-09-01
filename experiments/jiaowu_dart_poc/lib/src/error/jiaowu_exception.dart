@@ -33,6 +33,11 @@ final class CaptchaRequiredException extends JiaowuException {
       : super(message, 'CAPTCHA_REQUIRED');
 }
 
+final class CaptchaExpiredException extends JiaowuException {
+  const CaptchaExpiredException({String message = '验证码会话已失效，请重新登录'})
+      : super(message, 'CAPTCHA_EXPIRED');
+}
+
 final class LoginPageChangedException extends JiaowuException {
   const LoginPageChangedException({
     String message = '学校登录页面可能发生变化，请稍后重试或联系管理员',

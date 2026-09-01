@@ -8,12 +8,14 @@ final class QueuedHttpResponse {
     required this.statusCode,
     required this.body,
     this.headers = const <String, List<String>>{},
+    this.bodyBytes,
     this.error,
   });
 
   final int statusCode;
   final String body;
   final Map<String, List<String>> headers;
+  final Uint8List? bodyBytes;
   final Object? error;
 }
 
@@ -43,7 +45,9 @@ final class QueuedHttpAdapter implements HttpClientAdapter {
       throw response.error!;
     }
     return ResponseBody(
-      Stream.value(Uint8List.fromList(utf8.encode(response.body))),
+      Stream.value(
+        response.bodyBytes ?? Uint8List.fromList(utf8.encode(response.body)),
+      ),
       response.statusCode,
       headers: response.headers,
     );

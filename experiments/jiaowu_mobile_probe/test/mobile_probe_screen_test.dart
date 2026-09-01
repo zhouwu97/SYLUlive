@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
@@ -80,6 +83,37 @@ void main() {
     );
     expect(find.textContaining('secret-value'), findsNothing);
     expect(find.text('Session: authenticated'), findsOneWidget);
+  });
+
+  testWidgets('验证码挑战显示图片，并可在不重输密码的情况下继续登录', (
+    tester,
+  ) async {
+    final gateway = _FakeGateway()..requireCaptcha = true;
+    await _pump(tester, gateway);
+
+    await tester.enterText(find.byType(TextField).at(0), '20260001');
+    await tester.enterText(find.byType(TextField).at(1), 'secret-value');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller!.text,
+      isEmpty,
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.text('Session: awaitingCaptcha'), findsOneWidget);
+    expect(find.text('请输入验证码'), findsOneWidget);
+    expect(find.bySemanticsLabel('验证码图片'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '换一张'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '继续登录'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, 'A7k2');
+    await tester.tap(find.widgetWithText(FilledButton, '继续登录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Session: authenticated'), findsOneWidget);
+    expect(find.text('已建立认证会话'), findsOneWidget);
   });
 
   testWidgets('登录成功后仅展示安全的 Profile 摘要', (tester) async {
@@ -175,6 +209,7 @@ Future<void> _login(WidgetTester tester) async {
 final class _FakeGateway implements JiaowuGateway {
   SessionState _state = SessionState.unauthenticated;
   String? lastPassword;
+  bool requireCaptcha = false;
   int courseCalls = 0;
   Object? profileError;
   CourseFetchResult courseResult = CourseFetchResult(
@@ -202,8 +237,34 @@ final class _FakeGateway implements JiaowuGateway {
     required String password,
   }) async {
     lastPassword = password;
+    if (requireCaptcha) {
+      _state = SessionState.awaitingCaptcha;
+      return const CaptchaRequired();
+    }
     _state = SessionState.authenticated;
     return LoginSuccess(studentId: studentId, cookieNames: const {});
+  }
+
+  @override
+  Future<CaptchaChallenge> getCaptchaChallenge() async {
+    return CaptchaChallenge(
+      imageBytes: Uint8List.fromList(
+        base64.decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
+    _state = SessionState.authenticated;
+    return const LoginSuccess(studentId: '20260001', cookieNames: {});
+  }
+
+  @override
+  Future<void> cancelPendingLogin() async {
+    _state = SessionState.unauthenticated;
   }
 
   @override

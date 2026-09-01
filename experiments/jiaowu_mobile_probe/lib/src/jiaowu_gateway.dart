@@ -10,6 +10,9 @@ abstract interface class JiaowuGateway {
     required String studentId,
     required String password,
   });
+  Future<CaptchaChallenge> getCaptchaChallenge();
+  Future<LoginResult> continueLoginWithCaptcha({required String code});
+  Future<void> cancelPendingLogin();
   Future<StudentProfile> getProfile();
   Future<CourseFetchResult> getCourses({
     required String year,
@@ -49,6 +52,17 @@ final class JiaowuClientGateway implements JiaowuGateway {
 
   @override
   Future<StudentProfile> getProfile() => _activeClient.getProfile();
+
+  @override
+  Future<CaptchaChallenge> getCaptchaChallenge() =>
+      _activeClient.getCaptchaChallenge();
+
+  @override
+  Future<LoginResult> continueLoginWithCaptcha({required String code}) =>
+      _activeClient.continueLoginWithCaptcha(code: code);
+
+  @override
+  Future<void> cancelPendingLogin() => _activeClient.cancelPendingLogin();
 
   @override
   Future<CourseFetchResult> getCourses({

@@ -9,8 +9,8 @@ Future<void> main(List<String> arguments) async {
     ..addOption(
       'action',
       defaultsTo: 'all',
-      allowed: ['login', 'profile', 'courses', 'all'],
-      help: '执行范围：login、profile、courses 或 all',
+      allowed: ['login', 'profile', 'courses', 'grades', 'all'],
+      help: '执行范围：login、profile、courses、grades 或 all',
     )
     ..addOption('student-id', help: '学号；也可使用 JIAOWU_STUDENT_ID')
     ..addOption(
@@ -27,7 +27,7 @@ Future<void> main(List<String> arguments) async {
     ..addFlag(
       'json',
       negatable: false,
-      help: '课表成功后额外输出 canonical JSON',
+      help: '课程或成绩成功后额外输出 canonical JSON',
     )
     ..addFlag('help', abbr: 'h', negatable: false);
 
@@ -43,13 +43,19 @@ Future<void> main(List<String> arguments) async {
   final hasYear = year != null && year.isNotEmpty;
   final hasSemester = semesterText != null && semesterText.isNotEmpty;
   if (hasYear != hasSemester ||
-      (action == 'courses' && !(hasYear && hasSemester)) ||
-      (hasYear && action != 'courses' && action != 'all') ||
+      ((action == 'courses' || action == 'grades') &&
+          !(hasYear && hasSemester)) ||
+      (hasYear &&
+          action != 'courses' &&
+          action != 'grades' &&
+          action != 'all') ||
       ((options['json'] as bool) &&
           action != 'courses' &&
+          action != 'grades' &&
           !(action == 'all' && hasYear && hasSemester))) {
     stderr.writeln(
-      '--year、--semester 和 --json 仅用于 courses，all 需要同时提供课表参数。',
+      '--year、--semester 和 --json 仅用于 courses/grades，'
+      'all 需要同时提供课表参数。',
     );
     exitCode = 64;
     return;
@@ -64,15 +70,17 @@ Future<void> main(List<String> arguments) async {
       return;
     }
   }
-  if (hasYear && !RegExp(r'^\d{4}$').hasMatch(year)) {
-    stderr.writeln('--year 必须是四位数字。');
-    exitCode = 64;
-    return;
-  }
-  if (hasSemester && semester != 3 && semester != 12) {
-    stderr.writeln('--semester 只支持 3 或 12。');
-    exitCode = 64;
-    return;
+  if (hasYear) {
+    try {
+      JiaowuRequestValidator.validateAcademicRequest(
+        year: year,
+        semester: semester!,
+      );
+    } on ArgumentError catch (error) {
+      stderr.writeln(error.message);
+      exitCode = 64;
+      return;
+    }
   }
 
   final studentId = (options['student-id'] as String?) ??
@@ -141,6 +149,19 @@ Future<void> main(List<String> arguments) async {
           stdout.writeln('[COURSES] EMPTY');
           stdout.writeln('records = 0');
           if (options['json'] as bool) stdout.writeln('[]');
+        }
+      }
+
+      if (action == 'grades') {
+        final grades = await client.getGrades(
+          year: year!,
+          semester: semester!,
+        );
+        stdout.writeln(grades.validEmpty ? '[GRADES] EMPTY' : '[GRADES] OK');
+        stdout.writeln('records = ${grades.grades.length}');
+        stdout.writeln('pages = ${grades.pages}');
+        if (options['json'] as bool) {
+          stdout.writeln(jsonEncode(grades.canonicalJson));
         }
       }
     }

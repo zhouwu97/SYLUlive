@@ -16,19 +16,25 @@ void main() {
   });
 
   test('登录响应明确提示请输入验证码时识别为挑战', () {
+    const body = '<script>alert("请输入验证码");</script>';
+
     expect(
-      ErrorParser.captchaRequired(
-        '<script>alert("请输入验证码");</script>',
-      ),
+      ErrorParser.captchaRequired(body),
       isTrue,
     );
+    expect(ErrorParser.captchaInvalid(body), isFalse);
+    expect(ErrorParser.captchaMessage(body), '请输入验证码');
   });
 
   test('验证码错误和过期提示仍属于可续登挑战', () {
+    const invalidBody = '<div class="error">验证码错误</div>';
+
     expect(
-      ErrorParser.captchaRequired('<div class="error">验证码错误</div>'),
+      ErrorParser.captchaRequired(invalidBody),
       isTrue,
     );
+    expect(ErrorParser.captchaInvalid(invalidBody), isTrue);
+    expect(ErrorParser.captchaMessage(invalidBody), '验证码错误，请换一张后重试');
     expect(
       ErrorParser.captchaRequired('<div class="error">验证码已过期</div>'),
       isTrue,

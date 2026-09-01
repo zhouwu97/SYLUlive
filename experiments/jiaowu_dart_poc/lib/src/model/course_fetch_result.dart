@@ -13,7 +13,7 @@ final class CourseFetchResult {
 
   bool get isEmpty => courses.isEmpty;
 
-  List<Map<String, String>> get canonicalJson {
+  List<Map<String, Object>> get canonicalJson {
     final sorted = List<RawCourse>.of(courses)
       ..sort((left, right) {
         final byWeekday = _compare(left.weekDay, right.weekDay);

@@ -34,4 +34,13 @@ void main() {
     expect(parsed.raw, isEmpty);
     expect(parsed.weeks, isEmpty);
   });
+
+  test('反向验证 2026/3 线上课表中的周次表达式', () {
+    expect(WeekParser.parse('1-6周,8-13周').weeks,
+        {1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13});
+    expect(WeekParser.parse('8-17周').weeks,
+        {8, 9, 10, 11, 12, 13, 14, 15, 16, 17});
+    expect(WeekParser.parse('1-5周,7-13周').weeks,
+        {1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13});
+  });
 }

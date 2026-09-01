@@ -14,9 +14,14 @@ abstract final class LoginPageDetector {
     });
     if (hasLoginForm) return true;
 
-    final lowerBody = body.toLowerCase();
-    return lowerBody.contains('login_slogin') ||
-        body.contains('统一身份认证') ||
-        body.contains('用户登录');
+    // 文本/标题只是辅助证据，必须与表单同时存在，避免普通页面脚本或
+    // 帮助文案中出现 login_slogin 时误判会话失效。
+    final auxiliaryText = <String>[
+      document.querySelector('title')?.text ?? '',
+      document.body?.text ?? '',
+    ].join(' ');
+    final hasAuxiliaryMarker =
+        auxiliaryText.contains('统一身份认证') || auxiliaryText.contains('用户登录');
+    return hasAuxiliaryMarker && document.querySelector('form') != null;
   }
 }

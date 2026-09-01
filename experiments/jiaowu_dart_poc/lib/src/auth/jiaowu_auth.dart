@@ -112,6 +112,8 @@ final class JiaowuAuth {
     required String studentId,
     required String password,
   }) async {
+    // 每次显式 login 都是 fresh login，避免账号切换或重复登录复用旧 Cookie。
+    await _session.resetSession(_cookieJar);
     _session.beginLogin(studentId);
     try {
       final csrfToken = await getCsrfToken();
@@ -176,20 +178,21 @@ final class JiaowuAuth {
         message: '教务登录会话建立失败，请稍后重试',
       );
     } on InvalidCredentialsException catch (error) {
-      _session.clear();
+      await _session.resetSession(_cookieJar);
       return InvalidCredentials(message: error.message);
     } on CaptchaRequiredException catch (error) {
-      _session.clear();
+      // 验证码后续流程需要保留当前 Cookie 绑定，仅清理内存状态。
+      _session.clearState();
       return CaptchaRequired(message: error.message);
     } on DioException catch (error) {
-      _session.clear();
+      _session.clearState();
       final mapped = _mapDioException(error, '登录');
       return NetworkUnavailable(message: mapped.message, cause: mapped);
     } on NetworkException catch (error) {
-      _session.clear();
+      _session.clearState();
       return NetworkUnavailable(message: error.message, cause: error);
     } on JiaowuException catch (error) {
-      _session.clear();
+      _session.clearState();
       return LoginPageChanged(message: error.message, cause: error);
     }
   }

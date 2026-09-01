@@ -67,9 +67,10 @@ final class JiaowuClient {
 
   Future<String> getCsrfToken() => auth.getCsrfToken();
 
-  Future<StudentProfile> getProfile({required String studentId}) {
-    return profileApi.fetch(studentId: studentId);
-  }
+  Future<StudentProfile> getProfile() => profileApi.fetch();
+
+  /// 主动退出或切换账号时清理完整 HTTP 会话。
+  Future<void> resetSession() => session.resetSession(cookieJar);
 
   /// 释放底层连接。CookieJar 不会被写入磁盘。
   void close({bool force = false}) {

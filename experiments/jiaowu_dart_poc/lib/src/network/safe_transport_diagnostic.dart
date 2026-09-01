@@ -14,12 +14,16 @@ final class SafeTransportDiagnostic {
     required this.innerType,
     required this.host,
     this.socketErrorCode,
+    this.tlsReason,
+    this.tlsDetail,
   });
 
   factory SafeTransportDiagnostic.fromDioException({
     required DioException error,
     required String operation,
     required String code,
+    String? tlsReason,
+    String? tlsDetail,
   }) {
     final inner = error.error;
     return SafeTransportDiagnostic(
@@ -30,6 +34,8 @@ final class SafeTransportDiagnostic {
       host: error.requestOptions.uri.host,
       socketErrorCode:
           inner is SocketException ? inner.osError?.errorCode : null,
+      tlsReason: tlsReason,
+      tlsDetail: tlsDetail,
     );
   }
 
@@ -56,6 +62,8 @@ final class SafeTransportDiagnostic {
   final String innerType;
   final String host;
   final int? socketErrorCode;
+  final String? tlsReason;
+  final String? tlsDetail;
 
   /// 只输出白名单字段，供 Probe 状态区域使用。
   String toDisplayString() {
@@ -68,6 +76,12 @@ final class SafeTransportDiagnostic {
     ];
     if (socketErrorCode != null) {
       lines.add('errno: $socketErrorCode');
+    }
+    if (tlsReason != null) {
+      lines.add('reason: $tlsReason');
+    }
+    if (tlsDetail != null) {
+      lines.add('detail: $tlsDetail');
     }
     return lines.join('\n');
   }

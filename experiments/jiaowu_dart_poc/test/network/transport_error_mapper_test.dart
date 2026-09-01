@@ -61,6 +61,64 @@ void main() {
     }
   });
 
+  test('TLS 证书错误只暴露白名单 reason/detail', () {
+    final cases = <String, ({String reason, String? detail})>{
+      'CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate': (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'UNKNOWN_CA',
+      ),
+      'hostname mismatch': (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'HOSTNAME_MISMATCH',
+      ),
+      'certificate has expired': (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'CERT_EXPIRED',
+      ),
+      'certificate is not yet valid': (
+        reason: 'CERTIFICATE_VERIFY_FAILED',
+        detail: 'CERT_NOT_YET_VALID',
+      ),
+      'tlsv1 alert protocol version': (
+        reason: 'TLS_PROTOCOL_VERSION',
+        detail: null,
+      ),
+      'handshake failure': (
+        reason: 'TLS_HANDSHAKE_GENERIC',
+        detail: null,
+      ),
+    };
+
+    for (final entry in cases.entries) {
+      final mapped = TransportErrorMapper.map(
+        error(
+          type: DioExceptionType.connectionError,
+          cause: HandshakeException(entry.key),
+        ),
+        '网络诊断',
+      );
+      expect(mapped.diagnostic?.tlsReason, entry.value.reason,
+          reason: entry.key);
+      expect(mapped.diagnostic?.tlsDetail, entry.value.detail,
+          reason: entry.key);
+      expect(mapped.diagnostic?.toDisplayString(), isNot(contains(entry.key)));
+    }
+  });
+
+  test('无法识别的 HandshakeException 回退到通用 TLS 原因', () {
+    final mapped = TransportErrorMapper.map(
+      error(
+        type: DioExceptionType.connectionError,
+        cause: HandshakeException('平台私有错误文本，不应显示'),
+      ),
+      '网络诊断',
+    );
+
+    expect(mapped.diagnostic?.tlsReason, 'TLS_HANDSHAKE_GENERIC');
+    expect(mapped.diagnostic?.tlsDetail, isNull);
+    expect(mapped.diagnostic?.toDisplayString(), isNot(contains('平台私有错误文本')));
+  });
+
   test('超时保留 REQUEST_TIMEOUT 和原始 transport 摘要', () {
     final mapped = TransportErrorMapper.map(
       error(type: DioExceptionType.receiveTimeout),

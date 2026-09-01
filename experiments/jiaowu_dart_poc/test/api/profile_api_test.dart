@@ -35,7 +35,7 @@ void main() {
     client.close(force: true);
   });
 
-  test('200 登录页识别为会话失效而不是解析空数据', () async {
+  test('未认证会话访问 Profile 返回 UnauthenticatedException', () async {
     final adapter = QueuedHttpAdapter([
       const QueuedHttpResponse(
         statusCode: 200,
@@ -57,6 +57,36 @@ void main() {
       throwsA(isA<UnauthenticatedException>()),
     );
     expect(session.state, SessionState.unauthenticated);
+    client.close(force: true);
+  });
+
+  test('已认证会话收到 200 登录页时标记 SessionExpired', () async {
+    final adapter = QueuedHttpAdapter([
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<form action="login_slogin.html">'
+            '<input name="yhm"><input name="mm">'
+            '</form>',
+      ),
+    ]);
+    final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
+      ..httpClientAdapter = adapter;
+    final session = JiaowuSession()
+      ..beginLogin('2026000000')
+      ..markAuthenticated();
+    final client = JiaowuClient(
+      baseUrl: 'https://test.local',
+      dio: dio,
+      cookieJar: CookieJar(),
+      session: session,
+    );
+
+    await expectLater(
+      client.getProfile(),
+      throwsA(isA<SessionExpiredException>()),
+    );
+
+    expect(session.state, SessionState.expired);
     client.close(force: true);
   });
 

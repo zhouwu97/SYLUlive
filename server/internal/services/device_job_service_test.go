@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -453,6 +454,66 @@ func seedWaitForUserRun(t *testing.T, db *gorm.DB, runID string, userID uint, ex
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestDeviceJobCapabilityCutBlocksInternalAndDeviceOperations(t *testing.T) {
+	service := NewDeviceJobService(nil)
+	service.SetCapabilityCut(true)
+
+	_, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{})
+	assertDeviceJobCode(t, err, "school_device_capability_retired")
+
+	_, err = service.RegisterDevice(context.Background(), 1, DeviceRegistration{})
+	assertDeviceJobCode(t, err, "school_device_capability_retired")
+}
+
+func TestDeviceJobCapabilityCutCancelsActiveJobsAndClearsResults(t *testing.T) {
+	now := time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	activeStates := []string{
+		models.DeviceToolJobPending,
+		models.DeviceToolJobPushed,
+		models.DeviceToolJobClaimed,
+		models.DeviceToolJobWaitingUser,
+		models.DeviceToolJobRunning,
+	}
+	for index, state := range activeStates {
+		job := models.DeviceToolJob{
+			ID:                fmt.Sprintf("retire-job-%d", index),
+			UserID:            1,
+			RunID:             fmt.Sprintf("retire-run-%d", index),
+			ToolCallID:        fmt.Sprintf("retire-call-%d", index),
+			InstallationID:    "retire-installation",
+			ToolName:          "device.academic.get_cached_overview",
+			ArgumentsJSON:     datatypes.JSON(`{}`),
+			RequiredDataTypes: datatypes.JSON(`["academic"]`),
+			Status:            state,
+			StateVersion:      3,
+			ExpiresAt:         now.Add(time.Hour),
+			ResultJSON:        datatypes.JSON(`{"data":"must-be-cleared"}`),
+			ResultHash:        "deadbeef",
+			ErrorCode:         "",
+		}
+		require.NoError(t, db.Create(&job).Error)
+	}
+	service.SetCapabilityCut(true)
+	cancelled, err := service.CancelActiveJobs(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, int64(len(activeStates)), cancelled)
+	var jobs []models.DeviceToolJob
+	require.NoError(t, db.Order("id").Find(&jobs).Error)
+	require.Len(t, jobs, len(activeStates))
+	for _, job := range jobs {
+		require.Equal(t, models.DeviceToolJobCancelled, job.Status)
+		require.Empty(t, job.ResultJSON)
+		require.Empty(t, job.ResultHash)
+		require.Equal(t, "school_capability_retired", job.ErrorCode)
+		require.Equal(t, "", job.ProgressStage)
+	}
+	// 重复执行不应再次修改已终止任务。
+	cancelled, err = service.CancelActiveJobs(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, cancelled)
 }
 
 func TestDeviceJobWaitForUserExtendsExpiryToRunBudget(t *testing.T) {

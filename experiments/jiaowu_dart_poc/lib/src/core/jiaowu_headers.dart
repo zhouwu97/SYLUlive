@@ -39,4 +39,15 @@ abstract final class JiaowuHeaders {
     'X-Requested-With': 'XMLHttpRequest',
     'Accept': ajaxAccept,
   };
+
+  static const gradeWarmup = <String, String>{
+    ...base,
+    'Accept': htmlAccept,
+  };
+
+  static const grade = <String, String>{
+    ...base,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept': ajaxAccept,
+  };
 }

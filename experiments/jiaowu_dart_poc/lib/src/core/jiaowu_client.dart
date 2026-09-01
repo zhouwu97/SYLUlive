@@ -3,12 +3,14 @@ import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 import '../api/course_api.dart';
+import '../api/grade_api.dart';
 import '../api/profile_api.dart';
 import '../auth/jiaowu_auth.dart';
 import '../core/jiaowu_endpoints.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/login_result.dart';
 import '../model/course_fetch_result.dart';
+import '../model/grade_fetch_result.dart';
 import '../model/student_profile.dart';
 import '../session/jiaowu_session.dart';
 
@@ -54,6 +56,7 @@ final class JiaowuClient {
     );
     profileApi = ProfileApi(dio: this.dio, session: this.session);
     courseApi = CourseApi(dio: this.dio, session: this.session);
+    gradeApi = GradeApi(dio: this.dio, session: this.session);
   }
 
   final Dio dio;
@@ -62,6 +65,7 @@ final class JiaowuClient {
   late final JiaowuAuth auth;
   late final ProfileApi profileApi;
   late final CourseApi courseApi;
+  late final GradeApi gradeApi;
 
   Future<LoginResult> login({
     required String studentId,
@@ -83,6 +87,20 @@ final class JiaowuClient {
       year: year,
       semester: semester,
       totalBudget: totalBudget,
+    );
+  }
+
+  Future<GradeFetchResult> getGrades({
+    required String year,
+    required int semester,
+    Duration totalBudget = const Duration(seconds: 20),
+    int maxPages = GradeApi.defaultMaxPages,
+  }) {
+    return gradeApi.fetch(
+      year: year,
+      semester: semester,
+      totalBudget: totalBudget,
+      maxPages: maxPages,
     );
   }
 

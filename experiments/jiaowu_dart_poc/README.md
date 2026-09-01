@@ -7,9 +7,9 @@ SYLUlive 教务客户端的独立纯 Dart 协议实验包。它与 `client/` 和
 HTTP + CookieJar → CSRF → RSA PKCS#1 v1.5 → 登录探活 → 学生信息
 ```
 
-当前版本覆盖登录、会话、Profile，以及课表 Desktop/Mobile fallback、原始课表记录、
-周次解析和 canonical JSON；暂不包含成绩、自动重登、验证码图片、考试、真机 Flutter
-Probe。这样可以先把已验证的协议边界稳定下来，再逐步扩展协议。
+当前版本覆盖登录、会话、Profile，课表 Desktop/Mobile fallback、成绩列表 warmup 与分页、
+原始记录、周次解析和 canonical JSON；暂不包含成绩详情、自动重登、验证码图片、考试、
+真机 Flutter Probe。这样可以先把已验证的协议边界稳定下来，再逐步扩展协议。
 
 ## 安全边界
 
@@ -43,6 +43,17 @@ dart run bin/jiaowu_probe.dart --action courses --year 2026 --semester 3 --json
 节次和字段稳定排序的 canonical JSON；每条记录同时保留原始 `weekExpression` 和解析后的
 `weeks` 数组，便于与 Python Probe 做差分。
 
+成绩 CLI Probe：
+
+```powershell
+dart run bin/jiaowu_probe.dart --action grades --year 2026 --semester 3
+dart run bin/jiaowu_probe.dart --action grades --year 2026 --semester 3 --json
+```
+
+成绩查询先 GET 模块页面建立会话，再使用同一个 CookieJar POST AJAX 接口；每页请求 500
+条，直到不足 500 条。只有结构合法的 `{"items": []}` 会输出 `[GRADES] EMPTY`；登录页、
+901/302、非 JSON、非法 JSON 和缺少有效 `items` 都会保留为明确错误。
+
 ## 本地 Live Probe
 
 推荐通过环境变量传入凭据，避免密码出现在命令行历史中：
@@ -55,8 +66,8 @@ dart run bin/jiaowu_probe.dart --action all
 
 也支持 `--student-id`、`--password`，但不建议在共享终端使用。Probe 默认只执行
 登录和学生信息；`--action login` 只验证登录，不再次获取学生信息。`--action courses`
-会在登录成功后查询课表；`--action all --year ... --semester ...` 会依次执行 Profile
-和课表查询。
+和 `--action grades` 会在登录成功后查询对应数据；`--action all --year ... --semester ...`
+会依次执行 Profile 和课表查询。
 
 ## 当前协议合同
 
@@ -73,6 +84,9 @@ dart run bin/jiaowu_probe.dart --action all
 | 学生信息 | `GET /xsxxxggl/xsgrxxwh_cxXsgrxx.html`，`gnmkdm=N100801` |
 | 会话失效 | 901、302 到登录页、200 登录 HTML |
 | 课表参数 | `year` 为四位学年；`semester` 仅支持 3（第一学期）或 12（第二学期） |
+| 成绩 warmup | `GET /cjcx/cjcx_cxDgXscj.html?gnmkdm=N305005&layout=default` |
+| 成绩查询 | `POST /cjcx/cjcx_cxXsgrcj.html?doType=query&gnmkdm=N305005` |
+| 成绩表单 | `xnm`、`xqm`、`queryModel.showCount=500`、`queryModel.currentPage`；最多 20 页 |
 | 周次与星期 | `zcd` 保留原文并解析为 `weeks`；`xqj` 必须为 1 到 7 |
 
 公钥的 `_` 参数在 README 中用空格展示仅为避免视觉误读，代码使用精确的 `_`。
@@ -82,5 +96,6 @@ dart run bin/jiaowu_probe.dart --action all
 1. P0：`dart analyze`、fixture 测试、RSA 私钥解密测试、登录探活。
 2. P1：课表 Desktop/Mobile fallback、RawCourse、周次解析、CLI canonical JSON。
 3. P1：Python ↔ Dart 真实课表 canonical JSON 差分。
-4. P2：最小 Flutter Android 真机 Probe。
-5. 全部通过后，才通过 path dependency 接入主 App。
+4. P1：成绩列表 warmup、分页、严格解析、CLI canonical JSON 与真实差分。
+5. P2：最小 Flutter Android 真机 Probe。
+6. 全部通过后，才通过 path dependency 接入主 App。

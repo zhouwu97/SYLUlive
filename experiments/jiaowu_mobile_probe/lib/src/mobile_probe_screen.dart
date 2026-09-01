@@ -14,6 +14,7 @@ final class MobileProbeScreen extends StatefulWidget {
 final class _MobileProbeScreenState extends State<MobileProbeScreen> {
   late final TextEditingController _studentId;
   late final TextEditingController _password;
+  late final TextEditingController _captchaCode;
   late final TextEditingController _year;
   late final TextEditingController _semester;
 
@@ -24,6 +25,7 @@ final class _MobileProbeScreenState extends State<MobileProbeScreen> {
     super.initState();
     _studentId = TextEditingController();
     _password = TextEditingController();
+    _captchaCode = TextEditingController();
     _year = TextEditingController(text: '2026');
     _semester = TextEditingController(text: '3');
   }
@@ -32,6 +34,7 @@ final class _MobileProbeScreenState extends State<MobileProbeScreen> {
   void dispose() {
     _studentId.dispose();
     _password.dispose();
+    _captchaCode.dispose();
     _year.dispose();
     _semester.dispose();
     super.dispose();
@@ -97,6 +100,19 @@ final class _MobileProbeScreenState extends State<MobileProbeScreen> {
                   label: const Text('登录'),
                 ),
                 const SizedBox(height: 12),
+                if (_controller.captchaChallenge != null) ...[
+                  _CaptchaPanel(
+                    challenge: _controller.captchaChallenge!,
+                    codeController: _captchaCode,
+                    busy: _controller.isBusy,
+                    onRefresh: _controller.refreshCaptcha,
+                    onContinue: () => _controller.continueLoginWithCaptcha(
+                      code: _captchaCode.text,
+                    ),
+                    onCancel: _controller.cancelPendingLogin,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -186,6 +202,7 @@ final class _StatusPanel extends StatelessWidget {
         : Icons.info_outline;
     final sessionLabel = switch (controller.sessionState) {
       SessionState.authenticated => 'authenticated',
+      SessionState.awaitingCaptcha => 'awaitingCaptcha',
       SessionState.expired => 'expired',
       SessionState.authenticating => 'authenticating',
       SessionState.unauthenticated => 'unauthenticated',
@@ -231,6 +248,80 @@ final class _StatusPanel extends StatelessWidget {
               const SizedBox(height: 12),
               SelectableText(controller.diagnostic!.toDisplayString()),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final class _CaptchaPanel extends StatelessWidget {
+  const _CaptchaPanel({
+    required this.challenge,
+    required this.codeController,
+    required this.busy,
+    required this.onRefresh,
+    required this.onContinue,
+    required this.onCancel,
+  });
+
+  final CaptchaChallenge challenge;
+  final TextEditingController codeController;
+  final bool busy;
+  final VoidCallback onRefresh;
+  final VoidCallback onContinue;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('请输入验证码', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 12),
+            Semantics(
+              label: '验证码图片',
+              image: true,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Image.memory(
+                  challenge.imageBytes,
+                  height: 96,
+                  width: 240,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: false,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: codeController,
+              enabled: !busy,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(labelText: '验证码'),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: busy ? null : onRefresh,
+                  child: const Text('换一张'),
+                ),
+                FilledButton(
+                  onPressed: busy ? null : onContinue,
+                  child: const Text('继续登录'),
+                ),
+                TextButton(
+                  onPressed: busy ? null : onCancel,
+                  child: const Text('取消'),
+                ),
+              ],
+            ),
           ],
         ),
       ),

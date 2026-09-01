@@ -16,6 +16,11 @@ final class JiaowuSession {
     state = SessionState.authenticated;
   }
 
+  void awaitCaptcha(String id) {
+    studentId = id;
+    state = SessionState.awaitingCaptcha;
+  }
+
   void markExpired() {
     state = SessionState.expired;
   }

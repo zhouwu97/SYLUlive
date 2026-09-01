@@ -64,6 +64,16 @@ Future<void> main(List<String> arguments) async {
       return;
     }
   }
+  if (hasYear && !RegExp(r'^\d{4}$').hasMatch(year)) {
+    stderr.writeln('--year 必须是四位数字。');
+    exitCode = 64;
+    return;
+  }
+  if (hasSemester && semester != 3 && semester != 12) {
+    stderr.writeln('--semester 只支持 3 或 12。');
+    exitCode = 64;
+    return;
+  }
 
   final studentId = (options['student-id'] as String?) ??
       Platform.environment['JIAOWU_STUDENT_ID'];

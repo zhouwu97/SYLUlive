@@ -22,6 +22,12 @@ void main() {
     expect(WeekParser.parse('1-16周(双)').weeks, {2, 4, 6, 8, 10, 12, 14, 16});
   });
 
+  test('单双周只作用于所在的周次片段', () {
+    expect(WeekParser.parse('1-8周(单),10-12周').weeks, {1, 3, 5, 7, 10, 11, 12});
+    expect(
+        WeekParser.parse('1-8周(双),9-12周').weeks, {2, 4, 6, 8, 9, 10, 11, 12});
+  });
+
   test('解析显式离散周和中文前缀', () {
     expect(WeekParser.parse('1,3,5,7周').weeks, {1, 3, 5, 7});
     expect(WeekParser.parse('第1-4周,7周,9-13周').weeks,

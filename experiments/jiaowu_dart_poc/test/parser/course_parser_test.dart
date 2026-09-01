@@ -50,4 +50,20 @@ void main() {
       );
     }
   });
+
+  test('xqj 缺失或超出 1 到 7 时拒绝伪造星期', () {
+    const invalidWeekdays = [
+      '{"kbList":[{"kcmc":"课程","xqj":null}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":0}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":8}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":"周一"}]}',
+    ];
+
+    for (final body in invalidWeekdays) {
+      expect(
+        () => CourseParser.parse(body),
+        throwsA(isA<ProtocolChangedException>()),
+      );
+    }
+  });
 }

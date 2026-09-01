@@ -42,13 +42,14 @@ abstract final class CourseParser {
           message: '课表 kbList 第 ${index + 1} 条记录结构异常',
         );
       }
+      final weekDay = _parseWeekDay(item['xqj'], index: index);
       courses.add(
         RawCourse(
           name: _stringValue(item['kcmc']),
           teacher: _stringValue(item['xm']),
           location: _stringValue(item['cdmc']),
           section: _stringValue(item['jc']),
-          weekDay: _stringValue(item['xqj'], fallback: '1'),
+          weekDay: weekDay,
           weekExpression: _stringValue(item['zcd']),
         ),
       );
@@ -72,5 +73,16 @@ abstract final class CourseParser {
     if (value == null) return fallback;
     final text = value.toString().trim();
     return text.isEmpty ? fallback : text;
+  }
+
+  static String _parseWeekDay(Object? value, {required int index}) {
+    final weekDay = _stringValue(value);
+    final parsed = int.tryParse(weekDay);
+    if (parsed == null || parsed < 1 || parsed > 7) {
+      throw ProtocolChangedException(
+        message: '课表 kbList 第 ${index + 1} 条记录的 xqj 无效',
+      );
+    }
+    return weekDay;
   }
 }

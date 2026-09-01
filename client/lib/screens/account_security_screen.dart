@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -392,6 +394,27 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     password.dispose();
   }
 
+  Future<void> _showLocalAcademicLogin() async {
+    final controller = context.read<AcademicSessionController>();
+    final success = await AcademicLoginDialog.show(
+      context,
+      controller: controller,
+      initialStudentId: _studentId,
+    );
+    if (!mounted || success != true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('本机教务会话已建立')),
+    );
+  }
+
+  Future<void> _logoutLocalAcademic() async {
+    await context.read<AcademicSessionController>().resetSession();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('本机教务会话已退出')),
+    );
+  }
+
   Future<void> _runEduAction(
       Future<OperationResult<void>> Function() action) async {
     final result = await action();
@@ -436,6 +459,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
 
     final edu = context.read<EduProvider>();
+    final localAcademic = context.watch<AcademicSessionController>();
     final loginMethods = (_security?['login_methods'] as List? ?? const [])
         .map((method) => method == 'student_id' ? '学号' : '邮箱')
         .join('、');
@@ -537,6 +561,40 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
         SettingsSection(
           title: '教务连接',
           children: [
+            SettingsTile(
+              icon: localAcademic.isAuthenticated
+                  ? Icons.phonelink_lock_outlined
+                  : Icons.phonelink_outlined,
+              title: localAcademic.isAuthenticated ? '本机教务：在线' : '本机直连教务',
+              subtitle: localAcademic.isAuthenticated
+                  ? '学号 ${localAcademic.studentId ?? '--'}；Cookie 仅保存在内存中'
+                  : '直接连接学校教务，应用退出或换号时清理会话',
+              trailing: SettingsStatusBadge(
+                label: localAcademic.isAuthenticated
+                    ? '在线'
+                    : localAcademic.isAwaitingCaptcha
+                        ? '待验证码'
+                        : localAcademic.status == AcademicSessionStatus.error
+                            ? '需重试'
+                            : '未连接',
+                type: localAcademic.isAuthenticated
+                    ? SettingsStatusBadgeType.success
+                    : localAcademic.status == AcademicSessionStatus.error
+                        ? SettingsStatusBadgeType.warning
+                        : SettingsStatusBadgeType.neutral,
+              ),
+              onTap: localAcademic.isAuthenticated
+                  ? null
+                  : _showLocalAcademicLogin,
+              showChevron: !localAcademic.isAuthenticated,
+            ),
+            if (localAcademic.isAuthenticated)
+              SettingsTile(
+                icon: Icons.logout_outlined,
+                title: '退出本机教务',
+                subtitle: '清除本机 Cookie 和待登录信息，不撤销旧服务端授权',
+                onTap: _logoutLocalAcademic,
+              ),
             SettingsTile(
               icon: Icons.hub_outlined,
               title: _eduAuthorized ? '教务授权：已授权' : '教务授权：已撤销',

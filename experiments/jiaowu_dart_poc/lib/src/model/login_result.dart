@@ -26,6 +26,12 @@ final class CaptchaRequired extends LoginResult {
   final String message;
 }
 
+final class CaptchaExpired extends LoginResult {
+  const CaptchaExpired({this.message = '验证码会话已失效，请重新登录'});
+
+  final String message;
+}
+
 final class LoginPageChanged extends LoginResult {
   const LoginPageChanged({required this.message, this.cause});
 

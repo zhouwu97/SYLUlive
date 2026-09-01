@@ -260,7 +260,8 @@ void main() {
           'location': 'A101',
           'section': '1-2节',
           'weekday': '1',
-          'weeks': '1-8周',
+          'weekExpression': '1-8周',
+          'weeks': [1, 2, 3, 4, 5, 6, 7, 8],
         },
         {
           'name': '高等数学',
@@ -268,7 +269,8 @@ void main() {
           'location': 'A202',
           'section': '1-2节',
           'weekday': '1',
-          'weeks': '9-16周',
+          'weekExpression': '9-16周',
+          'weeks': [9, 10, 11, 12, 13, 14, 15, 16],
         },
         {
           'name': '大学英语',
@@ -276,7 +278,8 @@ void main() {
           'location': 'B201',
           'section': '3-4节',
           'weekday': '2',
-          'weeks': '1-16周(单)',
+          'weekExpression': '1-16周(单)',
+          'weeks': [1, 3, 5, 7, 9, 11, 13, 15],
         },
       ]);
     } finally {

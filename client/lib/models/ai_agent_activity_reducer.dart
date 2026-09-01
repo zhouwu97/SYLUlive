@@ -124,6 +124,9 @@ class AiAgentActivityReducer {
             ? event.dataset
             : (event.datasets.isNotEmpty ? event.datasets.first : '');
     final isFailure = event.type == AiRunEventType.failed ||
+        (event.type == AiRunEventType.toolCompleted &&
+            !event.success &&
+            event.errorCode.trim().isNotEmpty) ||
         event.activityCode == 'refresh_failed' ||
         event.activityCode == 'provider_failed' ||
         event.activityCode == 'device_job_failed' ||
@@ -300,6 +303,12 @@ class AiAgentActivityReducer {
         return '$label已获取，但本地加密保存失败';
       case 'device_refresh_not_fresh':
         return '$label刷新后仍未达到新鲜度要求';
+      case 'agent_same_tool_budget_exhausted':
+        return '课表查询重复步骤过多，请重新提问';
+      case 'agent_duplicate_tool_call':
+        return '检测到重复查询，请重新提问';
+      case 'agent_planning_budget_exhausted':
+        return '本次分析规划步骤达到上限，请重新提问';
     }
     return null;
   }

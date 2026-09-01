@@ -209,6 +209,22 @@ void main() {
     expect(activity.detail, '当前回答模型暂不可用，管理员需要检查服务配置');
   });
 
+  test('课表工具失败事件不会显示为已读取，并保留预算错误原因', () {
+    const event = AiRunEvent(
+      runId: 'run-budget',
+      seq: 1,
+      type: AiRunEventType.toolCompleted,
+      dataset: 'schedule',
+      toolName: 'schedule_get_availability',
+      errorCode: 'agent_same_tool_budget_exhausted',
+      success: false,
+    );
+
+    final activity = AiAgentActivityReducer.reduce([event]).single;
+    expect(activity.status, AiAgentActivityStatus.failed);
+    expect(activity.detail, '课表查询重复步骤过多，请重新提问');
+  });
+
   test('Agent Contract v5 活动事件映射为目标、重规划和待确认状态', () {
     final activities = AiAgentActivityReducer.reduce([
       AiRunEvent.fromJson({

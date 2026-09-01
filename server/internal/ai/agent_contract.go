@@ -92,6 +92,11 @@ func ParseGoalSpec(message string, pageContext *AgentContextEnvelope) GoalSpec {
 	if containsAnyContract(message, "我的", "我适合", "适合我", "我参加", "我当前", "我", "本学期", "我的成绩", "我的课表") {
 		goal.RequiresPersonalContext = true
 	}
+	// 空闲时间和“哪天没课”即使省略“我的”，也只能依据当前用户课表回答。
+	// 仅命中“空闲”不够，避免把通用时间管理问题误判成个人数据查询。
+	if impliesPersonalScheduleContext(message) {
+		goal.RequiresPersonalContext = true
+	}
 	if goal.ActionIntent == "recommend" {
 		goal.DerivedSubgoals = append(goal.DerivedSubgoals, "核对候选事实与截止时间")
 	}
@@ -110,6 +115,14 @@ func ParseGoalSpec(message string, pageContext *AgentContextEnvelope) GoalSpec {
 		}
 	}
 	return goal
+}
+
+func impliesPersonalScheduleContext(message string) bool {
+	if containsAnyContract(message, "课表", "课程安排", "课程表") {
+		return true
+	}
+	return containsAnyContract(message, "空闲", "有空", "比较空", "空余", "空档", "没课", "无课") &&
+		containsAnyContract(message, "本周", "这周", "下周", "今天", "明天", "上午", "下午", "晚上", "时间", "哪天", "星期", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
 }
 
 func containsAnyContract(value string, candidates ...string) bool {

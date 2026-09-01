@@ -21,6 +21,15 @@ func TestParseGoalSpecExtractsConstraintsWithoutChoosingWorkflow(t *testing.T) {
 	require.Empty(t, goal.Unknowns)
 }
 
+func TestParseGoalSpecImplicitScheduleQueryUsesPersonalBudget(t *testing.T) {
+	goal := ParseGoalSpec("这周哪几天下午比较空？", nil)
+	require.True(t, goal.RequiresPersonalContext)
+
+	profile := ExecutionProfileForGoal(goal)
+	require.Equal(t, ExecutionNormal, profile.Mode)
+	require.Equal(t, 2, profile.MaxSameToolCalls)
+}
+
 func TestAgentTraceMetricsProducesTrendFields(t *testing.T) {
 	var first AgentTraceMetrics
 	first.Observe("tool.requested", []byte(`{}`))

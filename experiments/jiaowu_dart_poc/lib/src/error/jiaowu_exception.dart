@@ -20,6 +20,11 @@ final class SessionExpiredException extends JiaowuException {
       : super(message, 'SESSION_EXPIRED');
 }
 
+final class UnauthenticatedException extends JiaowuException {
+  const UnauthenticatedException({String message = '当前没有已认证的教务会话'})
+      : super(message, 'UNAUTHENTICATED');
+}
+
 final class CaptchaRequiredException extends JiaowuException {
   const CaptchaRequiredException({String message = '教务系统要求输入验证码'})
       : super(message, 'CAPTCHA_REQUIRED');

@@ -56,6 +56,28 @@ void main() {
         isTrue,
       );
     });
+
+    test('单独出现登录路径的脚本不应误判为登录页', () {
+      expect(
+        LoginPageDetector.isLoginPage(
+          '<script>location = "/xtgl/login_slogin.html";</script>',
+        ),
+        isFalse,
+      );
+    });
+
+    test('只有辅助文字且没有表单不应误判为登录页', () {
+      expect(LoginPageDetector.isLoginPage('<p>用户登录</p>'), isFalse);
+    });
+
+    test('yhm 和 mm 输入对是登录页强证据', () {
+      expect(
+        LoginPageDetector.isLoginPage(
+          '<form><input name="yhm"><input name="mm"></form>',
+        ),
+        isTrue,
+      );
+    });
   });
 
   test('明确账号密码错误才分类为凭据错误', () {

@@ -15,6 +15,8 @@ HTTP + CookieJar → CSRF → RSA PKCS#1 v1.5 → 登录探活 → 学生信息
 - `verify` 由 Dart IO 的默认 TLS 校验负责，不关闭证书校验。
 - Dio 关闭自动重定向，保留 302/901 给分类器判断。
 - 所有请求共享同一个 `CookieJar`，不在业务请求中手动拼接 Cookie。
+- `clearState()` 只清内存状态；`resetSession()` 才会清空 CookieJar，用于 fresh login、退出和切换账号。
+- Profile 只能读取当前已认证 Session 的 `studentId`，调用方不能拼接另一账号的 `su`。
 - 日志与 Probe 只输出 Cookie 名称，不输出 Cookie 值、密码、CSRF 或完整页面。
 - 真实账号只允许本地手动 Probe，禁止放入 fixture、源码或 CI。
 

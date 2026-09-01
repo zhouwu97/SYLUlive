@@ -15,13 +15,16 @@ void main() {
     ]);
     final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
       ..httpClientAdapter = adapter;
+    final session = JiaowuSession()..beginLogin('2026000000');
+    session.markAuthenticated();
     final client = JiaowuClient(
       baseUrl: 'https://test.local',
       dio: dio,
       cookieJar: CookieJar(),
+      session: session,
     );
 
-    final profile = await client.getProfile(studentId: '2026000000');
+    final profile = await client.getProfile();
 
     expect(profile.name, '李四');
     expect(adapter.requests.single.queryParameters, {
@@ -50,10 +53,34 @@ void main() {
     );
 
     await expectLater(
-      client.getProfile(studentId: '2026000000'),
-      throwsA(isA<SessionExpiredException>()),
+      client.getProfile(),
+      throwsA(isA<UnauthenticatedException>()),
     );
-    expect(session.state, SessionState.expired);
+    expect(session.state, SessionState.unauthenticated);
+    client.close(force: true);
+  });
+
+  test('已认证会话只把当前 Session studentId 发给教务接口', () async {
+    final adapter = QueuedHttpAdapter([
+      const QueuedHttpResponse(
+        statusCode: 200,
+        body: '<div id="col_xm"><p>李四</p></div>',
+      ),
+    ]);
+    final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
+      ..httpClientAdapter = adapter;
+    final session = JiaowuSession()..beginLogin('STUDENT_A');
+    session.markAuthenticated();
+    final client = JiaowuClient(
+      baseUrl: 'https://test.local',
+      dio: dio,
+      cookieJar: CookieJar(),
+      session: session,
+    );
+
+    await client.getProfile();
+
+    expect(adapter.requests.single.queryParameters['su'], 'STUDENT_A');
     client.close(force: true);
   });
 }

@@ -40,7 +40,8 @@ dart run bin/jiaowu_probe.dart --action courses --year 2026 --semester 3 --json
 ```
 
 输出中的 `source` 表示实际成功的接口（`desktop` 或 `mobile`），`--json` 输出按周次、
-节次和字段稳定排序的 canonical JSON，便于与 Python Probe 做差分。
+节次和字段稳定排序的 canonical JSON；每条记录同时保留原始 `weekExpression` 和解析后的
+`weeks` 数组，便于与 Python Probe 做差分。
 
 ## 本地 Live Probe
 

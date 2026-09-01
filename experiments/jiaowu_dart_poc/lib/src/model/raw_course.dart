@@ -1,3 +1,5 @@
+import '../parser/week_parser.dart';
+
 /// 教务接口原始课表记录。
 ///
 /// 该模型故意不做合并或去重，保留服务器返回的每一条记录，避免不同周次、
@@ -20,12 +22,16 @@ final class RawCourse {
   final String weekExpression;
 
   /// Python/Dart 差分使用的稳定字段命名。
-  Map<String, String> toCanonicalJson() => {
-        'name': name,
-        'teacher': teacher,
-        'location': location,
-        'section': section,
-        'weekday': weekDay,
-        'weeks': weekExpression,
-      };
+  Map<String, Object> toCanonicalJson() {
+    final parsedWeeks = WeekParser.parse(weekExpression);
+    return {
+      'name': name,
+      'teacher': teacher,
+      'location': location,
+      'section': section,
+      'weekday': weekDay,
+      'weekExpression': parsedWeeks.raw,
+      'weeks': parsedWeeks.weeks.toList()..sort(),
+    };
+  }
 }

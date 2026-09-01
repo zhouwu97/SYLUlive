@@ -116,15 +116,21 @@ Future<void> main(List<String> arguments) async {
       final shouldFetchCourses =
           action == 'courses' || (action == 'all' && hasYear && hasSemester);
       if (shouldFetchCourses) {
-        final courses = await client.getCourses(
-          year: year!,
-          semester: semester!,
-        );
-        stdout.writeln('[COURSES] OK');
-        stdout.writeln('source = ${courses.source.name}');
-        stdout.writeln('records = ${courses.courses.length}');
-        if (options['json'] as bool) {
-          stdout.writeln(jsonEncode(courses.canonicalJson));
+        try {
+          final courses = await client.getCourses(
+            year: year!,
+            semester: semester!,
+          );
+          stdout.writeln('[COURSES] OK');
+          stdout.writeln('source = ${courses.source.name}');
+          stdout.writeln('records = ${courses.courses.length}');
+          if (options['json'] as bool) {
+            stdout.writeln(jsonEncode(courses.canonicalJson));
+          }
+        } on CourseNotOpenException {
+          stdout.writeln('[COURSES] EMPTY');
+          stdout.writeln('records = 0');
+          if (options['json'] as bool) stdout.writeln('[]');
         }
       }
     }

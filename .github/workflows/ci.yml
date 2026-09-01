@@ -116,6 +116,32 @@ jobs:
       - run: python -m compileall -q .
       - run: python -m pytest -q
 
+  school-boundary-security:
+    # PR0/PR1 门禁：源码与实际容器发布边界必须同时可证明。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install boundary test runner
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Scan school authority boundary
+        run: python scripts/security/school_boundary_scan.py --root . --pretty
+      - name: Run boundary scanner regression tests
+        run: python -m pytest -q python-edu-service/tests/test_school_boundary_scan.py
+      - name: Run zero-authority evidence tool regression tests
+        run: python -m unittest scripts.security.test_zero_authority_verify -v
+      - name: Validate zero-authority evidence contract
+        run: python scripts/security/zero_authority_verify.py --dry-run --pretty
+      - name: Run identity migration contract tests
+        run: >-
+          python -m unittest
+          scripts.migration.test_identity_dependency_inventory
+          scripts.migration.test_identity_preflight -v
+
   rag-service:
     runs-on: ubuntu-latest
     defaults:

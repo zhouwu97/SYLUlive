@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -8,8 +9,8 @@ Future<void> main(List<String> arguments) async {
     ..addOption(
       'action',
       defaultsTo: 'all',
-      allowed: ['login', 'profile', 'all'],
-      help: '执行范围：login、profile 或 all',
+      allowed: ['login', 'profile', 'courses', 'all'],
+      help: '执行范围：login、profile、courses 或 all',
     )
     ..addOption('student-id', help: '学号；也可使用 JIAOWU_STUDENT_ID')
     ..addOption(
@@ -21,12 +22,47 @@ Future<void> main(List<String> arguments) async {
       defaultsTo: JiaowuEndpoints.defaultBaseUrl,
       help: '仅用于本地协议 Mock 或测试环境',
     )
+    ..addOption('year', help: '课表学年，例如 2026')
+    ..addOption('semester', help: '课表学期，例如 3')
+    ..addFlag(
+      'json',
+      negatable: false,
+      help: '课表成功后额外输出 canonical JSON',
+    )
     ..addFlag('help', abbr: 'h', negatable: false);
 
   final options = parser.parse(arguments);
   if (options['help'] as bool) {
     stdout.writeln(parser.usage);
     return;
+  }
+
+  final action = options['action'] as String;
+  final year = options['year'] as String?;
+  final semesterText = options['semester'] as String?;
+  final hasYear = year != null && year.isNotEmpty;
+  final hasSemester = semesterText != null && semesterText.isNotEmpty;
+  if (hasYear != hasSemester ||
+      (action == 'courses' && !(hasYear && hasSemester)) ||
+      (hasYear && action != 'courses' && action != 'all') ||
+      ((options['json'] as bool) &&
+          action != 'courses' &&
+          !(action == 'all' && hasYear && hasSemester))) {
+    stderr.writeln(
+      '--year、--semester 和 --json 仅用于 courses，all 需要同时提供课表参数。',
+    );
+    exitCode = 64;
+    return;
+  }
+
+  int? semester;
+  if (hasSemester) {
+    semester = int.tryParse(semesterText);
+    if (semester == null) {
+      stderr.writeln('--semester 必须是整数。');
+      exitCode = 64;
+      return;
+    }
   }
 
   final studentId = (options['student-id'] as String?) ??
@@ -67,13 +103,30 @@ Future<void> main(List<String> arguments) async {
         exitCode = 4;
     }
 
-    if (result is LoginSuccess && options['action'] != 'login') {
-      final profile = await client.getProfile();
-      stdout.writeln('[PROFILE] OK');
-      stdout.writeln('name = ${_mask(profile.name)}');
-      stdout.writeln('grade = ${profile.grade}');
-      stdout.writeln('college = ${_mask(profile.college)}');
-      stdout.writeln('major = ${_mask(profile.major)}');
+    if (result is LoginSuccess) {
+      if (action == 'profile' || action == 'all') {
+        final profile = await client.getProfile();
+        stdout.writeln('[PROFILE] OK');
+        stdout.writeln('name = ${_mask(profile.name)}');
+        stdout.writeln('grade = ${profile.grade}');
+        stdout.writeln('college = ${_mask(profile.college)}');
+        stdout.writeln('major = ${_mask(profile.major)}');
+      }
+
+      final shouldFetchCourses =
+          action == 'courses' || (action == 'all' && hasYear && hasSemester);
+      if (shouldFetchCourses) {
+        final courses = await client.getCourses(
+          year: year!,
+          semester: semester!,
+        );
+        stdout.writeln('[COURSES] OK');
+        stdout.writeln('source = ${courses.source.name}');
+        stdout.writeln('records = ${courses.courses.length}');
+        if (options['json'] as bool) {
+          stdout.writeln(jsonEncode(courses.canonicalJson));
+        }
+      }
     }
   } on JiaowuException catch (error) {
     stdout.writeln('[ERROR] ${error.code}: ${error.message}');

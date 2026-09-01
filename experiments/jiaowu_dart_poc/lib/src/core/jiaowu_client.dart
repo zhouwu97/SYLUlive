@@ -2,11 +2,13 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
+import '../api/course_api.dart';
 import '../api/profile_api.dart';
 import '../auth/jiaowu_auth.dart';
 import '../core/jiaowu_endpoints.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/login_result.dart';
+import '../model/course_fetch_result.dart';
 import '../model/student_profile.dart';
 import '../session/jiaowu_session.dart';
 
@@ -30,7 +32,8 @@ final class JiaowuClient {
                 followRedirects: false,
                 // 必须保留 302/901 给协议分类器，不让 Dio 先抛错。
                 validateStatus: (status) =>
-                    status != null && status >= 200 && status < 600,
+                    status != null &&
+                    ((status >= 200 && status < 600) || status == 901),
               ),
             ),
         cookieJar = cookieJar ?? CookieJar(),
@@ -39,8 +42,8 @@ final class JiaowuClient {
     this.dio.options.connectTimeout = timeout;
     this.dio.options.receiveTimeout = timeout;
     this.dio.options.followRedirects = false;
-    this.dio.options.validateStatus =
-        (status) => status != null && status >= 200 && status < 600;
+    this.dio.options.validateStatus = (status) =>
+        status != null && ((status >= 200 && status < 600) || status == 901);
 
     // CookieManager 负责请求前加载、响应后合并 Set-Cookie。
     this.dio.interceptors.add(CookieManager(this.cookieJar));
@@ -50,6 +53,7 @@ final class JiaowuClient {
       session: this.session,
     );
     profileApi = ProfileApi(dio: this.dio, session: this.session);
+    courseApi = CourseApi(dio: this.dio, session: this.session);
   }
 
   final Dio dio;
@@ -57,6 +61,7 @@ final class JiaowuClient {
   final JiaowuSession session;
   late final JiaowuAuth auth;
   late final ProfileApi profileApi;
+  late final CourseApi courseApi;
 
   Future<LoginResult> login({
     required String studentId,
@@ -68,6 +73,18 @@ final class JiaowuClient {
   Future<String> getCsrfToken() => auth.getCsrfToken();
 
   Future<StudentProfile> getProfile() => profileApi.fetch();
+
+  Future<CourseFetchResult> getCourses({
+    required String year,
+    required int semester,
+    Duration totalBudget = const Duration(seconds: 12),
+  }) {
+    return courseApi.fetch(
+      year: year,
+      semester: semester,
+      totalBudget: totalBudget,
+    );
+  }
 
   /// 主动退出或切换账号时清理完整 HTTP 会话。
   Future<void> resetSession() => session.resetSession(cookieJar);

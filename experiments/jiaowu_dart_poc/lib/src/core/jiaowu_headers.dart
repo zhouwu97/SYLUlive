@@ -33,4 +33,10 @@ abstract final class JiaowuHeaders {
     ...base,
     'Accept': htmlAccept,
   };
+
+  static const course = <String, String>{
+    ...base,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept': ajaxAccept,
+  };
 }

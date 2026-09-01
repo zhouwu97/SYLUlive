@@ -60,8 +60,7 @@ abstract final class ErrorParser {
       'invalid captcha',
       'captcha expired',
     ];
-    return (alert.contains('验证码') || alert.contains('captcha')) ||
-        markers.any(combined.contains);
+    return markers.any(combined.contains);
   }
 
   static String captchaMessage(String body) {

@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
+import '../features/academic/application/academic_session_controller.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
@@ -96,6 +100,8 @@ class EduProvider extends ChangeNotifier {
   Future<void> Function(String token, Map<String, dynamic> user)?
       _applyAuthPayload;
   Future<void> Function()? _refreshAuthUser;
+  AcademicSessionController? _academicSessionController;
+  bool _usingLocalAcademicSession = false;
 
   bool get isBound => _isBound;
   bool get isAuthorized => _isAuthorized;
@@ -108,6 +114,7 @@ class EduProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isStatusLoaded => _statusLoaded;
   String? get errorMessage => _errorMessage;
+  bool get isUsingLocalAcademicSession => _usingLocalAcademicSession;
   int get enrollmentYear {
     int startYear = DateTime.now().year - 4; // 默认往前推4年
     if (_studentId.length >= 2) {
@@ -229,6 +236,101 @@ class EduProvider extends ChangeNotifier {
     _refreshAuthUser = refreshAuthUser;
   }
 
+  /// 接入 Batch 5 本机教务会话，同时保留旧服务端代理的状态和接口。
+  ///
+  /// 该 setter 保持独立于构造函数，避免破坏已有测试和旧页面的依赖注入。
+  void setAcademicSessionController(AcademicSessionController controller) {
+    if (identical(_academicSessionController, controller)) return;
+    _academicSessionController?.removeListener(_onAcademicSessionChanged);
+    _academicSessionController = controller;
+    controller.addListener(_onAcademicSessionChanged);
+    _applyAcademicSessionState();
+  }
+
+  void _onAcademicSessionChanged() {
+    _applyAcademicSessionState();
+  }
+
+  /// 将本机直连状态投影到旧 Provider 的兼容字段。
+  ///
+  /// 旧页面仍可读取 [isBound]、[studentId] 等字段，但网络请求是否走本机
+  /// 直连由下面的本地分支决定；本地状态不会写入旧的服务端绑定偏好设置。
+  void _applyAcademicSessionState() {
+    final controller = _academicSessionController;
+    if (controller == null) return;
+
+    final localState = controller.sessionState;
+    final hasLocalFlow = controller.status != AcademicSessionStatus.idle ||
+        localState != SessionState.unauthenticated ||
+        controller.studentId != null;
+    if (!hasLocalFlow) {
+      if (!_usingLocalAcademicSession) return;
+      _usingLocalAcademicSession = false;
+      _isBound = false;
+      _isAuthorized = false;
+      _sessionState = 'unbound';
+      _studentId = '';
+      _name = '';
+      _grade = '';
+      _college = '';
+      _major = '';
+      _statusLoaded = false;
+      notifyListeners();
+      final userId = _userId;
+      if (userId != null && userId.isNotEmpty) {
+        unawaited(
+          loadStatus(
+            expectedUserId: userId,
+            generation: _statusGeneration,
+          ),
+        );
+      }
+      return;
+    }
+
+    _usingLocalAcademicSession = true;
+    _isAuthorized = controller.isAuthenticated;
+    _isBound = _isAuthorized;
+    _sessionState = switch (localState) {
+      SessionState.authenticated => 'active',
+      SessionState.expired => 'expired',
+      SessionState.awaitingCaptcha => 'awaiting_captcha',
+      SessionState.authenticating => 'authenticating',
+      SessionState.unauthenticated => 'unbound',
+    };
+    _studentId = controller.studentId ?? '';
+    final profile = controller.profile;
+    _name = profile?.name ?? '';
+    _grade = profile?.grade ?? '';
+    _college = profile?.college ?? '';
+    _major = profile?.major ?? '';
+    _errorMessage = controller.failure?.message;
+    _statusLoaded = true;
+    notifyListeners();
+  }
+
+  static Map<String, dynamic> _rawCourseToLegacyMap(RawCourse course) {
+    final sectionMatch =
+        RegExp(r'(\d+)\s*[-~至到—–]\s*(\d+)').firstMatch(course.section);
+    final startSection = int.tryParse(sectionMatch?.group(1) ?? '') ?? 1;
+    final endSection =
+        int.tryParse(sectionMatch?.group(2) ?? '') ?? startSection;
+    final weekday = int.tryParse(course.weekDay) ??
+        int.tryParse(RegExp(r'\d+').stringMatch(course.weekDay) ?? '') ??
+        1;
+    final canonical = course.toCanonicalJson();
+    return {
+      'name': course.name,
+      'teacher': course.teacher,
+      'location': course.location,
+      'weekday': weekday,
+      'start_section': startSection,
+      'end_section': endSection,
+      'weekExpression': canonical['weekExpression'] ?? course.weekExpression,
+      'weeks': canonical['weeks'] ?? const <int>[],
+    };
+  }
+
   void setUserId(String userId) {
     if (_userId == userId) return;
     // 递增 generation，使旧 loadStatus 的后续无效
@@ -252,6 +354,8 @@ class EduProvider extends ChangeNotifier {
     _errorMessage = null;
     _statusLoaded = false;
     notifyListeners();
+    _applyAcademicSessionState();
+    if (_usingLocalAcademicSession) return;
     // 再异步加载新用户状态，携带 generation 防止覆盖
     loadStatus(
       expectedUserId: expectedUserId,
@@ -403,6 +507,7 @@ class EduProvider extends ChangeNotifier {
     required String expectedUserId,
     required int generation,
   }) async {
+    if (_usingLocalAcademicSession) return;
     // 极速上屏：先从本地缓存读取状态
     final cached = await _loadBoundStatusFor(expectedUserId);
     final cachedSessionState = _sessionState;
@@ -423,6 +528,7 @@ class EduProvider extends ChangeNotifier {
       if (_userId != expectedUserId || generation != _statusGeneration) {
         return;
       }
+      if (_usingLocalAcademicSession) return;
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -670,12 +776,37 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
-    if (!_isBound || requestSourceAccountId.isEmpty) {
-      return OperationResult.fail('教务账号未就绪');
-    }
 
     bool isCurrentContext() =>
         _isSameAcademicContext(requestUserId, requestSourceAccountId);
+
+    final localController = _academicSessionController;
+    if (_usingLocalAcademicSession && localController != null) {
+      if (requestSourceAccountId.isEmpty) {
+        return OperationResult.fail('教务账号未就绪');
+      }
+      return _runEduRequest(() async {
+        final result = await localController.loadCourses(
+          year: year,
+          semester: semester,
+        );
+        if (result == null) {
+          final failure = localController.failure;
+          return OperationResult.fail(
+            failure?.message ?? '获取课表失败',
+            errorCode: failure?.code,
+          );
+        }
+        if (!isCurrentContext()) return OperationResult.fail('用户已切换');
+        return OperationResult.ok(
+          result.courses.map(_rawCourseToLegacyMap).toList(growable: false),
+        );
+      });
+    }
+
+    if (!_isBound || requestSourceAccountId.isEmpty) {
+      return OperationResult.fail('教务账号未就绪');
+    }
 
     return _runEduRequest(() async {
       try {
@@ -1069,6 +1200,28 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
+    final localController = _academicSessionController;
+    if (_usingLocalAcademicSession && localController != null) {
+      return _runEduRequest(() async {
+        final result = await localController.loadGrades(
+          year: year,
+          semester: semester,
+        );
+        if (result == null) {
+          final failure = localController.failure;
+          return OperationResult.fail(
+            failure?.message ?? '获取成绩失败',
+            errorCode: failure?.code,
+          );
+        }
+        return OperationResult.ok(
+          result.grades
+              .map((grade) => Map<String, dynamic>.from(grade.raw))
+              .toList(growable: false),
+        );
+      });
+    }
+
     return _runEduRequest(() async {
       try {
         // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
@@ -1163,5 +1316,11 @@ class EduProvider extends ChangeNotifier {
         return _failFromDio(e, '获取学分要求失败');
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _academicSessionController?.removeListener(_onAcademicSessionChanged);
+    super.dispose();
   }
 }

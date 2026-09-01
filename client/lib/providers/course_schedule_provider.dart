@@ -3,7 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 import '../config/api_constants.dart';
+import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/domain/academic_failure.dart';
+import '../features/academic/domain/academic_repository.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/campus_data/storage/schedule_cache_store.dart';
 import '../services/home_widget_service.dart';
@@ -150,6 +154,8 @@ enum ScheduleSessionPhase {
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
   final Dio _apiDio;
+  final AcademicRepository? _academicRepository;
+  final AcademicSessionController? _academicSessionController;
   final AccountScopedSnapshotStore Function(String appUserId)?
       _snapshotStoreBuilder;
 
@@ -202,6 +208,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   CourseScheduleProvider([
     Dio? dio,
     AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
+    AcademicRepository? academicRepository,
+    AcademicSessionController? academicSessionController,
   ])  : _apiDio = dio ??
             Dio(
               BaseOptions(
@@ -210,7 +218,9 @@ class CourseScheduleProvider extends ChangeNotifier {
                 receiveTimeout: const Duration(seconds: 60),
               ),
             ),
-        _snapshotStoreBuilder = snapshotStoreBuilder {
+        _snapshotStoreBuilder = snapshotStoreBuilder,
+        _academicRepository = academicRepository,
+        _academicSessionController = academicSessionController {
     _initDefaults();
   }
 
@@ -617,6 +627,28 @@ class CourseScheduleProvider extends ChangeNotifier {
     return importedCount;
   }
 
+  static Map<String, dynamic> _rawCourseToFetchedMap(RawCourse course) {
+    final sectionMatch =
+        RegExp(r'(\d+)\s*[-~至到—–]\s*(\d+)').firstMatch(course.section);
+    final startSection = int.tryParse(sectionMatch?.group(1) ?? '') ?? 1;
+    final endSection =
+        int.tryParse(sectionMatch?.group(2) ?? '') ?? startSection;
+    final weekday = int.tryParse(course.weekDay) ??
+        int.tryParse(RegExp(r'\d+').stringMatch(course.weekDay) ?? '') ??
+        1;
+    final canonical = course.toCanonicalJson();
+    return {
+      'name': course.name,
+      'teacher': course.teacher,
+      'location': course.location,
+      'weekday': weekday,
+      'start_section': startSection,
+      'end_section': endSection,
+      'weekExpression': canonical['weekExpression'] ?? course.weekExpression,
+      'weeks': canonical['weeks'] ?? const <int>[],
+    };
+  }
+
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
     final name = _firstString(map, [
       'name',
@@ -848,51 +880,91 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     bool networkSuccess = false;
 
-    // 原始课表只通过教务代理按需获取。成功后写入当前账号的本地加密
-    // 保险箱，不能读取服务端持久化副本，避免个人课程数据回流到服务端。
-    try {
-      final fetchResp = await _apiDio.post(
-        '/edu/courses',
-        data: {'year': operation.year, 'semester': operation.semester},
-        options: Options(receiveTimeout: _eduScheduleRequestTimeout),
-      );
-      if (!_isCurrentOperation(operation)) return;
-
-      if (fetchResp.statusCode == 200 && fetchResp.data is Map) {
-        final data = fetchResp.data;
-        if (data['success'] == true) {
-          final rawCourses = data['courses'] as List<dynamic>? ?? [];
-          if (rawCourses.isEmpty &&
-              backupCourses.isNotEmpty &&
-              !isManualRefresh) {
-            // 自动刷新拉取到空课表时，保留已验证的本地数据，避免教务端
-            // 短暂异常覆盖当前用户的加密缓存。
-            debugPrint('教务系统返回空课表，保留当前本地课程');
-            _courses = backupCourses;
-            _buildGrid();
-          } else {
-            _courses = rawCourses
-                .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
-                .where((c) => !_hiddenCourseIds.contains(c.id))
-                .toList();
-            _buildGrid();
-            networkSuccess = true;
-          }
-          debugPrint('从教务拉取课程: count=${_courses.length}');
+    // 原始课表只通过当前选定的教务数据源按需获取。成功后仍写入当前
+    // 账号和来源账号隔离的本地加密保险箱，不创建服务端课程副本。
+    final localController = _academicSessionController;
+    final localSessionActive = _academicRepository?.sourceKind ==
+            AcademicSourceKind.local &&
+        ((localController != null &&
+                localController.status != AcademicSessionStatus.idle) ||
+            _academicRepository?.sessionState != SessionState.unauthenticated);
+    if (localSessionActive && _academicRepository != null) {
+      try {
+        final fetched = await _academicRepository!.getCourses(
+          year: operation.year,
+          semester: operation.semester,
+        );
+        if (!_isCurrentOperation(operation)) return;
+        final rawCourses =
+            fetched.courses.map(_rawCourseToFetchedMap).toList(growable: false);
+        if (rawCourses.isEmpty &&
+            backupCourses.isNotEmpty &&
+            !isManualRefresh) {
+          debugPrint('教务系统返回空课表，保留当前本地课程');
+          _courses = backupCourses;
+          _buildGrid();
         } else {
-          _errorMessage = data['message'] as String?;
+          _courses = rawCourses
+              .map(_courseFromFetchedMap)
+              .where((c) => !_hiddenCourseIds.contains(c.id))
+              .toList();
+          _buildGrid();
+          networkSuccess = true;
         }
+        debugPrint('本机直连教务拉取课程: count=${_courses.length}');
+      } on AcademicFailure catch (error) {
+        if (!_isCurrentOperation(operation)) return;
+        _errorMessage = error.message;
+      } catch (error) {
+        if (!_isCurrentOperation(operation)) return;
+        _errorMessage = '解析课表数据失败';
+        debugPrint('解析本机教务课表失败: ${error.runtimeType}');
       }
-    } on DioException catch (e) {
-      if (!_isCurrentOperation(operation)) return;
-      _errorMessage = _parseDioError(e);
-      debugPrint(
-        '从教务拉取课程失败: type=${e.type}, status=${e.response?.statusCode}',
-      );
-    } catch (error) {
-      if (!_isCurrentOperation(operation)) return;
-      _errorMessage = '解析课表数据失败';
-      debugPrint('解析教务课表失败: ${error.runtimeType}');
+    } else {
+      try {
+        final fetchResp = await _apiDio.post(
+          '/edu/courses',
+          data: {'year': operation.year, 'semester': operation.semester},
+          options: Options(receiveTimeout: _eduScheduleRequestTimeout),
+        );
+        if (!_isCurrentOperation(operation)) return;
+
+        if (fetchResp.statusCode == 200 && fetchResp.data is Map) {
+          final data = fetchResp.data;
+          if (data['success'] == true) {
+            final rawCourses = data['courses'] as List<dynamic>? ?? [];
+            if (rawCourses.isEmpty &&
+                backupCourses.isNotEmpty &&
+                !isManualRefresh) {
+              // 自动刷新拉取到空课表时，保留已验证的本地数据，避免教务端
+              // 短暂异常覆盖当前用户的加密缓存。
+              debugPrint('教务系统返回空课表，保留当前本地课程');
+              _courses = backupCourses;
+              _buildGrid();
+            } else {
+              _courses = rawCourses
+                  .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
+                  .where((c) => !_hiddenCourseIds.contains(c.id))
+                  .toList();
+              _buildGrid();
+              networkSuccess = true;
+            }
+            debugPrint('从教务拉取课程: count=${_courses.length}');
+          } else {
+            _errorMessage = data['message'] as String?;
+          }
+        }
+      } on DioException catch (e) {
+        if (!_isCurrentOperation(operation)) return;
+        _errorMessage = _parseDioError(e);
+        debugPrint(
+          '从教务拉取课程失败: type=${e.type}, status=${e.response?.statusCode}',
+        );
+      } catch (error) {
+        if (!_isCurrentOperation(operation)) return;
+        _errorMessage = '解析课表数据失败';
+        debugPrint('解析教务课表失败: ${error.runtimeType}');
+      }
     }
     if (!_isCurrentOperation(operation)) return;
 

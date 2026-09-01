@@ -30,6 +30,11 @@ import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
+import 'features/academic/application/academic_session_controller.dart';
+import 'features/academic/data/academic_repository_impl.dart';
+import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
+import 'features/academic/data/datasource/legacy_server_data_source.dart';
+import 'features/academic/domain/academic_repository.dart';
 import 'models/user.dart';
 import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
@@ -1358,6 +1363,13 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        Provider<AcademicRepository>(
+          create: (_) => AcademicRepositoryImpl(
+            local: JiaowuLocalDataSource(),
+            legacy: LegacyServerDataSource(dio),
+          ),
+          dispose: (_, repository) => repository.close(),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(
@@ -1365,6 +1377,13 @@ class MyApp extends StatelessWidget {
             dio,
             onForbiddenRecovery: _handleForbiddenRecovery,
           ),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(
+          create: (context) => AcademicSessionController(
+            repository: context.read<AcademicRepository>(),
+          ),
+          update: (_, auth, controller) =>
+              controller!..syncAppUser(auth.user?.id.toString()),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {
@@ -1410,9 +1429,11 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) => provider!
             ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
         ),
-        ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, AcademicSessionController,
+            EduProvider>(
           create: (_) => EduProvider(dio),
-          update: (_, auth, provider) => provider!
+          update: (_, auth, academic, provider) => provider!
+            ..setAcademicSessionController(academic)
             ..setAuthCallbacks(
               applyAuthPayload: auth.applyAuthPayload,
               refreshAuthUser: auth.refreshUser,
@@ -1421,7 +1442,12 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
             CourseScheduleProvider>(
-          create: (_) => CourseScheduleProvider(dio),
+          create: (context) => CourseScheduleProvider(
+            dio,
+            null,
+            context.read<AcademicRepository>(),
+            context.read<AcademicSessionController>(),
+          ),
           update: (_, auth, edu, provider) => provider!
             ..syncSessionContext(
               auth.user?.id.toString(),

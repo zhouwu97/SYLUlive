@@ -12,8 +12,9 @@ final class ProbeController extends ChangeNotifier {
   final JiaowuGateway gateway;
   ProbeStatus status = ProbeStatus.idle;
   String operation = '等待操作';
-  String message = '请先登录，再执行 Profile、课表或成绩探测。';
+  String message = '可先执行网络诊断，再登录探测 Profile、课表或成绩。';
   String? errorCode;
+  SafeTransportDiagnostic? diagnostic;
   bool _disposed = false;
 
   SessionState get sessionState => gateway.sessionState;
@@ -40,7 +41,12 @@ final class ProbeController extends ChangeNotifier {
         case LoginPageChanged(:final message):
           _error('登录', 'LOGIN_PAGE_CHANGED', message);
         case NetworkUnavailable(:final message, :final cause):
-          _error('登录', cause?.code ?? 'REMOTE_SYSTEM_UNAVAILABLE', message);
+          _error(
+            '登录',
+            cause?.code ?? 'REMOTE_SYSTEM_UNAVAILABLE',
+            message,
+            diagnostic: cause?.diagnostic,
+          );
       }
     } catch (error) {
       _handleError('登录', error);
@@ -100,6 +106,25 @@ final class ProbeController extends ChangeNotifier {
     }
   }
 
+  Future<void> diagnoseNetwork({bool insecureTls = false}) async {
+    final label = insecureTls ? '网络诊断（Debug insecure TLS）' : '网络诊断';
+    _begin(label);
+    try {
+      final result = await gateway.diagnoseNetwork(insecureTls: insecureTls);
+      final summary = _networkSummary(result);
+      if (result.succeeded) {
+        _success(label, summary);
+        return;
+      }
+
+      final error = result.error;
+      final code = error?.code ?? 'CONNECTION_FAILED';
+      _error(label, code, summary, diagnostic: error?.diagnostic);
+    } catch (error) {
+      _handleError(label, error);
+    }
+  }
+
   _AcademicRequest? _validate({
     required String year,
     required String semester,
@@ -126,6 +151,7 @@ final class ProbeController extends ChangeNotifier {
     status = ProbeStatus.loading;
     operation = nextOperation;
     errorCode = null;
+    diagnostic = null;
     message = '正在执行$nextOperation...';
     _notify();
   }
@@ -134,24 +160,50 @@ final class ProbeController extends ChangeNotifier {
     status = ProbeStatus.success;
     operation = nextOperation;
     errorCode = null;
+    diagnostic = null;
     message = nextMessage;
     _notify();
   }
 
-  void _error(String nextOperation, String code, String nextMessage) {
+  void _error(
+    String nextOperation,
+    String code,
+    String nextMessage, {
+    SafeTransportDiagnostic? diagnostic,
+  }) {
     status = ProbeStatus.error;
     operation = nextOperation;
     errorCode = code;
+    this.diagnostic = diagnostic;
     message = nextMessage;
     _notify();
   }
 
   void _handleError(String nextOperation, Object error) {
     if (error is JiaowuException) {
-      _error(nextOperation, error.code, error.message);
+      _error(
+        nextOperation,
+        error.code,
+        error.message,
+        diagnostic: error.diagnostic,
+      );
     } else {
       _error(nextOperation, 'UNEXPECTED_ERROR', '操作失败，请检查输入或网络连接');
     }
+  }
+
+  String _networkSummary(JiaowuNetworkProbeResult result) {
+    final dns = result.dnsSucceeded ? 'OK' : 'FAILED';
+    final https = result.httpsSucceeded ? 'OK' : 'FAILED';
+    final csrf = result.csrfSucceeded ? 'OK' : 'FAILED';
+    final status = result.httpStatus == null
+        ? ''
+        : '\nHTTP status: ${result.httpStatus}';
+    return 'DNS: $dns\n'
+        'IPv4: ${result.ipv4Count}\n'
+        'IPv6: ${result.ipv6Count}\n'
+        'HTTPS: $https\n'
+        'CSRF: $csrf$status';
   }
 
   void _notify() {

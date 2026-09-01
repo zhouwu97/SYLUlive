@@ -6,6 +6,50 @@ import 'package:jiaowu_mobile_probe/src/jiaowu_gateway.dart';
 import 'package:jiaowu_mobile_probe/src/probe_controller.dart';
 
 void main() {
+  testWidgets('网络诊断不需要账号，并显示 DNS、HTTPS 和 CSRF 摘要', (tester) async {
+    final gateway = _FakeGateway();
+    await _pump(tester, gateway);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '网络诊断'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.networkCalls, 1);
+    expect(gateway.lastInsecureTls, isFalse);
+    expect(find.textContaining('DNS: OK'), findsOneWidget);
+    expect(find.textContaining('HTTPS: OK'), findsOneWidget);
+    expect(find.textContaining('CSRF: OK'), findsOneWidget);
+  });
+
+  testWidgets('网络诊断失败时只展示安全 transport 摘要', (tester) async {
+    final gateway = _FakeGateway()
+      ..networkResult = JiaowuNetworkProbeResult(
+        dnsSucceeded: true,
+        ipv4Count: 1,
+        ipv6Count: 0,
+        error: NetworkException(
+          code: 'TLS_HANDSHAKE_FAILED',
+          message: 'HTTPS 诊断时 TLS 握手失败',
+          diagnostic: const SafeTransportDiagnostic(
+            operation: 'HTTPS 诊断',
+            code: 'TLS_HANDSHAKE_FAILED',
+            dioType: 'connectionError',
+            innerType: 'HandshakeException',
+            host: 'jxw.sylu.edu.cn',
+          ),
+        ),
+      );
+    await _pump(tester, gateway);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '网络诊断'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('HTTPS: FAILED'), findsOneWidget);
+    expect(find.textContaining('TLS_HANDSHAKE_FAILED'), findsWidgets);
+    expect(find.textContaining('HandshakeException'), findsOneWidget);
+    expect(find.textContaining('Cookie'), findsNothing);
+    expect(find.textContaining('encrypted-secret'), findsNothing);
+  });
+
   testWidgets('密码字段隐藏且登录后清空，不出现在安全状态中', (tester) async {
     final gateway = _FakeGateway();
     await _pump(tester, gateway);
@@ -138,6 +182,16 @@ final class _FakeGateway implements JiaowuGateway {
     source: CourseSource.desktop,
   );
   GradeFetchResult gradeResult = GradeFetchResult(grades: const [], pages: 1);
+  JiaowuNetworkProbeResult networkResult = const JiaowuNetworkProbeResult(
+    dnsSucceeded: true,
+    ipv4Count: 1,
+    ipv6Count: 0,
+    httpsSucceeded: true,
+    httpStatus: 200,
+    csrfSucceeded: true,
+  );
+  int networkCalls = 0;
+  bool? lastInsecureTls;
 
   @override
   SessionState get sessionState => _state;
@@ -182,6 +236,15 @@ final class _FakeGateway implements JiaowuGateway {
     required String year,
     required int semester,
   }) async => gradeResult;
+
+  @override
+  Future<JiaowuNetworkProbeResult> diagnoseNetwork({
+    bool insecureTls = false,
+  }) async {
+    networkCalls++;
+    lastInsecureTls = insecureTls;
+    return networkResult;
+  }
 
   @override
   void close() {}

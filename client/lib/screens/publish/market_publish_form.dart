@@ -33,7 +33,7 @@ class MarketPublishForm extends StatefulWidget {
   State<MarketPublishForm> createState() => _MarketPublishFormState();
 }
 
-enum _PublishField { type, title, price, content, contact }
+enum _PublishField { type, title, price, content, contact, image }
 
 class _MarketPublishFormState extends State<MarketPublishForm>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
@@ -229,6 +229,13 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   bool get _showsTitleField => _postType != 'exposure';
 
   bool get _isLostOrFound => _postType == 'lost' || _postType == 'found';
+
+  bool get _requiresImage => _postType != 'exposure';
+
+  bool get _showImageRequiredError =>
+      _hasTriedSubmit && _requiresImage && _images.isEmpty;
+
+  String get _imageSectionLabel => _requiresImage ? '商品图片（至少 1 张）' : '证据图片（选填）';
 
   String get _pageTitle {
     if (_isEditing) return '编辑帖子';
@@ -428,6 +435,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
     if (_contentController.text.trim().isEmpty) {
       fields.add(_PublishField.content);
+    }
+    if (_requiresImage && _images.isEmpty) {
+      fields.add(_PublishField.image);
     }
     final hasContactType = _contactType.isNotEmpty;
     final hasContact = _contactController.text.trim().isNotEmpty;
@@ -709,12 +719,22 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildImageSection(ColorScheme colorScheme) {
+    final needsAttention = _attentionFields.contains(_PublishField.image);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _buildSectionLabel('商品图片'),
+            _ShakingAttention(
+              active: needsAttention,
+              controller: _shakeController,
+              child: _buildSectionLabel(
+                _imageSectionLabel,
+                color: _showImageRequiredError
+                    ? colorScheme.error
+                    : colorScheme.onSurface,
+              ),
+            ),
             const Spacer(),
             Text(
               '${_totalImageCount.clamp(0, _maxImages)}/$_maxImages',
@@ -727,17 +747,41 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           ],
         ),
         const SizedBox(height: 8),
-        PublishImageGrid(
-          images: _images,
-          canAddMore: canAddMoreImages,
-          onAdd: showImageSourceDialog,
-          onRemove: _removeImage,
-          onReorder: _moveImage,
-          onRetry: _retryImage,
-          addLabel: '添加图片',
-          compact: true,
-          accent: _marketAccent,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: _showImageRequiredError
+                ? Border.all(
+                    color: colorScheme.error.withValues(alpha: 0.72),
+                  )
+                : null,
+          ),
+          child: PublishImageGrid(
+            images: _images,
+            canAddMore: canAddMoreImages,
+            onAdd: showImageSourceDialog,
+            onRemove: _removeImage,
+            onReorder: _moveImage,
+            onRetry: _retryImage,
+            addLabel: '添加图片',
+            compact: true,
+            accent: _marketAccent,
+          ),
         ),
+        if (_showImageRequiredError)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                '请至少上传 1 张商品图片',
+                key: const ValueKey('market-image-required-error'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.error,
+                    ),
+              ),
+            ),
+          ),
       ],
     );
   }

@@ -3,10 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +25,7 @@ import (
 func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260003")
+	image := createMarketTagsTestImage(t, db, user.ID)
 
 	body, contentType := buildMultipartFields(t, map[string]string{
 		"board_id":     "2",
@@ -32,6 +36,7 @@ func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 		"contact":      "wx_contact",
 		"contact_type": "wechat",
 		"market_tags":  "自提,乱传,急出",
+		"file_ids":     strconv.FormatUint(uint64(image.ID), 10),
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -70,6 +75,7 @@ func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 func TestCreateMarketPostStoresAllowedTagsOutsideContent(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260001")
+	image := createMarketTagsTestImage(t, db, user.ID)
 
 	form := url.Values{}
 	form.Set("board_id", "2")
@@ -78,6 +84,7 @@ func TestCreateMarketPostStoresAllowedTagsOutsideContent(t *testing.T) {
 	form.Set("post_type", "sell")
 	form.Set("price", "99")
 	form.Set("market_tags", "自提,乱传,急出")
+	form.Set("file_ids", strconv.FormatUint(uint64(image.ID), 10))
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -178,6 +185,7 @@ func TestUpdateMarketPostStoresTagsFromMultipartForm(t *testing.T) {
 
 func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("UPLOAD_DIR", t.TempDir())
 	dbName := strings.ReplaceAll(t.Name(), "/", "_")
 	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -187,6 +195,9 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.ExpLog{},
 		&models.Like{},
+		&models.File{},
+		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.Post{},
 		&models.PostImage{},
 	); err != nil {
@@ -212,6 +223,27 @@ func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) model
 	return user
 }
 
+func createMarketTagsTestImage(t *testing.T, db *gorm.DB, uploaderID uint) models.File {
+	t.Helper()
+	filename := fmt.Sprintf("market-image-%d-%d.png", uploaderID, time.Now().UnixNano())
+	if err := os.WriteFile(filepath.Join(os.Getenv("UPLOAD_DIR"), filename), []byte("test image"), 0o600); err != nil {
+		t.Fatalf("write market image: %v", err)
+	}
+	file := models.File{
+		Hash:        "market-" + filename,
+		Path:        "/uploads/" + filename,
+		Size:        int64(len("test image")),
+		MimeType:    "image/png",
+		UploaderID:  uploaderID,
+		Status:      "active",
+		AccessScope: models.FileAccessPublic,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create market image: %v", err)
+	}
+	return file
+}
+
 func createMarketTagsTestPost(t *testing.T, db *gorm.DB, userID uint, tags string) models.Post {
 	t.Helper()
 	post := models.Post{
@@ -226,6 +258,10 @@ func createMarketTagsTestPost(t *testing.T, db *gorm.DB, userID uint, tags strin
 	}
 	if err := db.Create(&post).Error; err != nil {
 		t.Fatalf("create post: %v", err)
+	}
+	image := createMarketTagsTestImage(t, db, userID)
+	if err := db.Create(&models.PostImage{PostID: post.ID, FileID: image.ID}).Error; err != nil {
+		t.Fatalf("create post image: %v", err)
 	}
 	return post
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -84,13 +85,117 @@ void main() {
 
       controller.syncAppUser('app-user-a');
       await controller.login(studentId: '2026000001', password: 'secret');
-      controller.syncAppUser('app-user-b');
-      await controller.resetSession();
+      await controller.syncAppUser('app-user-b');
 
       expect(controller.appUserId, 'app-user-b');
       expect(controller.sessionState, SessionState.unauthenticated);
       expect(controller.studentId, isNull);
       expect(source.resetCalls, greaterThanOrEqualTo(2));
+
+      controller.dispose();
+    });
+
+    test('账号切换返回的 Future 会等待自动清理完成', () async {
+      final source = _FakeAcademicDataSource();
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      await controller.login(studentId: '2026000001', password: 'secret');
+      final resetCallsBeforeSwitch = source.resetCalls;
+
+      await controller.syncAppUser('app-user-b');
+
+      expect(source.resetCalls, resetCallsBeforeSwitch + 1);
+      expect(controller.studentId, isNull);
+      expect(controller.sessionState, SessionState.unauthenticated);
+
+      controller.dispose();
+    });
+
+    test('登录异常会转换为可渲染失败而不是抛出未处理 Future error', () async {
+      final source = _FakeAcademicDataSource(
+        loginError: StateError('模拟客户端初始化异常'),
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      final result = await controller.login(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+
+      expect(result, isA<LoginPageChanged>());
+      expect(controller.status, AcademicSessionStatus.error);
+      expect(controller.failure?.kind, AcademicFailureKind.unexpected);
+
+      controller.dispose();
+    });
+
+    test('登录成功后 Profile 会话失效时不会继续报告 authenticated', () async {
+      final source = _FakeAcademicDataSource(
+        profileError: const SessionExpiredException(),
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      final result = await controller.login(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+
+      expect(result, isA<LoginPageChanged>());
+      expect(controller.status, AcademicSessionStatus.error);
+      expect(controller.isAuthenticated, isFalse);
+      expect(controller.failure?.kind, AcademicFailureKind.sessionExpired);
+
+      controller.dispose();
+    });
+
+    test('验证码刷新会话失效时退出 awaitingCaptcha', () async {
+      final source = _FakeAcademicDataSource(
+        captchaError: const SessionExpiredException(),
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      await controller.refreshCaptcha();
+
+      expect(controller.status, AcademicSessionStatus.error);
+      expect(controller.isAwaitingCaptcha, isFalse);
+      expect(controller.captchaChallenge, isNull);
+      expect(controller.failure?.kind, AcademicFailureKind.sessionExpired);
+
+      controller.dispose();
+    });
+
+    test('控制器会串行执行登录和课表操作', () async {
+      final loginRelease = Completer<void>();
+      final loginStarted = Completer<void>();
+      final source = _FakeAcademicDataSource(
+        loginGate: loginRelease.future,
+        onLoginStarted: loginStarted.complete,
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      final loginFuture = controller.login(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+      await loginStarted.future;
+
+      final coursesFuture = controller.loadCourses(
+        year: '2026',
+        semester: 3,
+      );
+      expect(source.courseCalls, 0);
+
+      loginRelease.complete();
+      await loginFuture;
+      await coursesFuture;
+
+      expect(source.calls.indexOf('login:start'),
+          lessThan(source.calls.indexOf('course')));
 
       controller.dispose();
     });
@@ -155,6 +260,10 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
     CourseFetchResult? courses,
     GradeFetchResult? grades,
     this.profileError,
+    this.loginError,
+    this.captchaError,
+    this.loginGate,
+    this.onLoginStarted,
   })  : courses = courses ??
             CourseFetchResult(courses: const [], source: CourseSource.desktop),
         grades = grades ?? GradeFetchResult(grades: const [], pages: 1);
@@ -165,6 +274,10 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   final CourseFetchResult courses;
   final GradeFetchResult grades;
   final Object? profileError;
+  final Object? loginError;
+  final Object? captchaError;
+  final Future<void>? loginGate;
+  final void Function()? onLoginStarted;
 
   SessionState _state = SessionState.unauthenticated;
   String? _studentId;
@@ -174,6 +287,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   int courseCalls = 0;
   int gradeCalls = 0;
   int resetCalls = 0;
+  final List<String> calls = [];
 
   @override
   String get sourceName => 'fake';
@@ -190,6 +304,10 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
     required String password,
   }) async {
     loginCalls++;
+    calls.add('login:start');
+    onLoginStarted?.call();
+    if (loginGate != null) await loginGate;
+    if (loginError != null) throw loginError!;
     lastPassword = password;
     if (loginResult is LoginSuccess) {
       _studentId = (loginResult as LoginSuccess).studentId;
@@ -198,11 +316,13 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
       _studentId = studentId;
       _state = SessionState.awaitingCaptcha;
     }
+    calls.add('login:end');
     return loginResult;
   }
 
   @override
   Future<CaptchaChallenge> getCaptchaChallenge() async {
+    if (captchaError != null) throw captchaError!;
     return captcha!;
   }
 
@@ -218,7 +338,13 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   @override
   Future<StudentProfile> getProfile() async {
     profileCalls++;
-    if (profileError != null) throw profileError!;
+    calls.add('profile');
+    if (profileError != null) {
+      if (profileError is SessionExpiredException) {
+        _state = SessionState.expired;
+      }
+      throw profileError!;
+    }
     return profile;
   }
 
@@ -228,6 +354,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
     required int semester,
   }) async {
     courseCalls++;
+    calls.add('course');
     return courses;
   }
 

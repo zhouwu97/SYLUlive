@@ -18,6 +18,7 @@ class GradeManageDrawer extends StatefulWidget {
   final Future<List<EduGrade>?> Function({bool silent})? onRefreshGrades;
   final Future<bool> Function()? onRefreshAcademic;
   final EduAcademicSituation? academicSituation;
+  final String? academicUnavailableMessage;
   final bool isAcademicRefreshing;
 
   const GradeManageDrawer({
@@ -32,6 +33,7 @@ class GradeManageDrawer extends StatefulWidget {
     this.onRefreshGrades,
     this.onRefreshAcademic,
     this.academicSituation,
+    this.academicUnavailableMessage,
     this.isAcademicRefreshing = false,
   });
 
@@ -400,7 +402,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
             ),
             const SizedBox(height: 14),
             Text(
-              '暂未获取到学业总览',
+              widget.academicUnavailableMessage ?? '暂未获取到学业总览',
               style: TextStyle(fontSize: 12, color: subColor),
             ),
           ],

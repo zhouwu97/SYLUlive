@@ -66,13 +66,14 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     if (!_consentAccepted || !(_formKey.currentState?.validate() ?? false)) {
       return;
     }
+    final password = _passwordController.text;
+    // 提交前清除 UI 控制器中的密码；验证码续登所需的密码只由 POC
+    // 客户端在内存 pending 会话中短暂保留。
+    _passwordController.clear();
     final result = await _controller.login(
       studentId: _studentIdController.text.trim(),
-      password: _passwordController.text,
+      password: password,
     );
-    // 初次登录请求完成后不再让 UI 控制器保留密码；验证码续登所需的
-    // 密码只由 POC 客户端在内存 pending 会话中短暂保留。
-    _passwordController.clear();
     if (!mounted) return;
     if (result is LoginSuccess) {
       Navigator.of(context).pop(true);

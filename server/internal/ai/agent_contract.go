@@ -526,6 +526,11 @@ type AgentTraceMetrics struct {
 	RunSucceeded               bool           `json:"run_succeeded"`
 	RunFailed                  bool           `json:"run_failed"`
 	ToolLatencyMs              []int64        `json:"-"`
+	ToolContextSamples         int            `json:"tool_context_samples"`
+	RegisteredToolCount        int            `json:"registered_tool_count"`
+	ModelVisibleToolCount      int            `json:"model_visible_tool_count"`
+	ToolSchemaBytes            int            `json:"tool_schema_bytes"`
+	ToolSchemaTokenEstimate    int            `json:"tool_schema_token_estimate"`
 }
 
 // Observe 从一个已脱敏的 Agent 事件中提取长期指标。
@@ -553,6 +558,11 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		TimeToFirstActivityMs int64              `json:"time_to_first_activity_ms"`
 		TokenUsageAvailable   *bool              `json:"token_usage_available"`
 		FailureReason         AgentFailureReason `json:"failure_reason"`
+		RegisteredToolCount   int                `json:"registered_tool_count"`
+		ModelVisibleToolCount int                `json:"model_visible_tool_count"`
+		ToolSchemaBytes       int                `json:"tool_schema_bytes"`
+		ToolSchemaTokens      int                `json:"tool_schema_token_estimate"`
+		ToolSchemaMeasurement *bool              `json:"tool_schema_measurement_available"`
 	}
 	_ = json.Unmarshal(payload, &event)
 	if event.ExecutionMode != "" {
@@ -574,6 +584,16 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 	switch eventType {
 	case "tool.requested":
 		metrics.ToolCalls++
+	case "retrieval.completed":
+		// 只有带有新字段的事件才计入样本；旧版 LangChain 事件没有这些
+		// 字段，不能被误算为工具上下文样本。显式报告零工具也要保留。
+		if event.ToolSchemaMeasurement != nil || event.RegisteredToolCount > 0 || event.ModelVisibleToolCount > 0 {
+			metrics.ToolContextSamples++
+			metrics.RegisteredToolCount += event.RegisteredToolCount
+			metrics.ModelVisibleToolCount += event.ModelVisibleToolCount
+			metrics.ToolSchemaBytes += event.ToolSchemaBytes
+			metrics.ToolSchemaTokenEstimate += event.ToolSchemaTokens
+		}
 	case "tool.completed":
 		if event.DurationMs > 0 {
 			metrics.TotalLatencyMs += event.DurationMs

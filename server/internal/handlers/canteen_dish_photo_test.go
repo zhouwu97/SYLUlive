@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -50,7 +50,7 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestListDishesAddsActiveReviewImageGallery(t *testing.T) {
+func TestListDishesOmitsReviewImageGallery(t *testing.T) {
 	db := newDishPhotoTestDB(t)
 	canteen := models.Canteen{Name: "评价图片食堂", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
@@ -60,12 +60,6 @@ func TestListDishesAddsActiveReviewImageGallery(t *testing.T) {
 	if err := db.Create(&models.CanteenReviewEvent{
 		CanteenID: canteen.ID, UserID: 1, Status: models.ReviewEventStatusActive,
 		Images: `[{"not":"a string"}]`, CreatedAt: now.Add(-2 * time.Hour),
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&models.CanteenReviewEvent{
-		CanteenID: canteen.ID, UserID: 2, Status: models.ReviewEventStatusActive,
-		Images: `[/uploads/bad.json]`, CreatedAt: now.Add(-time.Hour),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -98,15 +92,14 @@ func TestListDishesAddsActiveReviewImageGallery(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &rows); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if len(rows) != 1 || rows[0]["source"] != "review_images" {
-		t.Fatalf("review image gallery missing: %#v", rows)
+	if len(rows) != 0 {
+		t.Fatalf("review image gallery must not be returned as a dish: %#v", rows)
 	}
-	images, ok := rows[0]["photo_images"].([]interface{})
-	if !ok || len(images) != 3 || images[0] != "/uploads/review-new.jpg" || images[1] != "/uploads/review-duplicate.jpg" || images[2] != "/uploads/legacy.jpg" {
-		t.Fatalf("unexpected gallery images: %#v", rows[0]["photo_images"])
-	}
-	if strings.Contains(resp.Body.String(), "hidden.jpg") {
-		t.Fatalf("hidden review image must not be public: %s", resp.Body.String())
+	if strings.Contains(resp.Body.String(), "用户评价实拍") ||
+		strings.Contains(resp.Body.String(), "review_images") ||
+		strings.Contains(resp.Body.String(), "/uploads/review-new.jpg") ||
+		strings.Contains(resp.Body.String(), "hidden.jpg") {
+		t.Fatalf("review images must not leak into dish list: %s", resp.Body.String())
 	}
 }
 

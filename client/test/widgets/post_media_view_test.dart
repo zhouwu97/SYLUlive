@@ -5,6 +5,32 @@ import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
 
+List<PostImage> _createTestImages(int count) {
+  return List.generate(
+    count,
+    (index) => PostImage(
+      id: index + 1,
+      postId: 1,
+      fileId: index + 1,
+      originUrl: '/uploads/image-$index.jpg',
+    ),
+  );
+}
+
+Widget _buildDetailMedia(List<PostImage> images) {
+  return MaterialApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: 360,
+        child: PostMediaView(
+          images: images,
+          variant: PostMediaVariant.detail,
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   group('calculateSinglePostImageSize', () {
     test('16:9 横图', () {
@@ -829,5 +855,40 @@ void main() {
       expect(tile.memCacheWidth, 475);
       expect(tile.memCacheHeight, 480);
     }
+  });
+
+  for (final imageCount in [6, 7, 8, 9]) {
+    testWidgets('详情页 $imageCount 张图片完整显示', (tester) async {
+      await tester.pumpWidget(_buildDetailMedia(_createTestImages(imageCount)));
+      await tester.pump();
+
+      final gridFinder = find.byType(GridView);
+      final aspectRatio = tester.widget<AspectRatio>(find.byType(AspectRatio));
+      final lastTileFinder = find.byKey(
+        ValueKey<String>('post-media-tile-${imageCount - 1}'),
+      );
+
+      expect(gridFinder, findsOneWidget);
+      expect(lastTileFinder, findsOneWidget);
+      expect(aspectRatio.aspectRatio, imageCount <= 6 ? 1.5 : 1.0);
+
+      final gridRect = tester.getRect(gridFinder);
+      final lastTileRect = tester.getRect(lastTileFinder);
+      expect(lastTileRect.bottom, lessThanOrEqualTo(gridRect.bottom + 0.01));
+    });
+  }
+
+  testWidgets('详情页点击第 9 张图片会打开完整查看器', (tester) async {
+    await tester.pumpWidget(_buildDetailMedia(_createTestImages(9)));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey<String>('post-media-tile-8')));
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    expect(viewer.items, hasLength(9));
+    expect(viewer.initialIndex, 8);
   });
 }

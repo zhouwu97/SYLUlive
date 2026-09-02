@@ -143,7 +143,8 @@ class PostMediaView extends StatelessWidget {
     final visibleCount = images.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
     return AspectRatio(
-      aspectRatio: rows == 1 ? 3 : 1.5,
+      // 固定三列时按实际行数扩展高度，避免第 3 行图片被裁切。
+      aspectRatio: 3 / rows,
       child: GridView.builder(
         padding: EdgeInsets.zero,
         physics: const NeverScrollableScrollPhysics(),
@@ -191,6 +192,7 @@ class PostMediaView extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: GestureDetector(
+        key: ValueKey<String>('post-media-tile-$index'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap ?? () => _openPreview(context, images, index),
         child: LayoutBuilder(

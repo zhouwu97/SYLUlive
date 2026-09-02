@@ -67,6 +67,10 @@
 {"case_id":"c001","q_hmac":"<24位HMAC>","t_accept_ms":12,"t_first_status_ms":80,"t_first_delta_ms":720,"t_complete_ms":3100,"tool_hit":false,"cancelled":false,"degraded":null}
 ```
 
+`collect_ai_baseline.py` 不接收原问题文本，也不持有 HMAC 密钥。上游服务或
+测试夹具应在内存中使用独立密钥生成 `q_hmac`，只把摘要写入 JSONL；本工具
+仅校验摘要格式、时间点和字段脱敏契约。
+
 ## 4. 基线报告模板
 
 ```markdown
@@ -116,3 +120,42 @@
 - 第 1 步依赖本步骤的二进制摘要与流式能力判断；
 - 第 3/4 步依赖本步骤冻结的政策评测版本；
 - 第 6 步依赖本步骤的脱敏指标口径与 HMAC 摘要约定。
+
+## 8. 本地采集工具（默认 dry-run）
+
+仓库提供 `scripts/collect_ai_baseline.py`，只读取显式指定的本地文件和
+`systemctl show` 只读结果，不负责 SSH、HTTP、数据库写入或生产配置变更。
+工具只解析开关白名单、MCP/知识库元数据白名单和固定字段 JSONL，不会把
+环境文件中的未知变量复制到报告。
+
+预览采集计划（不写文件）：
+
+```powershell
+python scripts/collect_ai_baseline.py `
+  --evidence-type fixture `
+  --repo .
+```
+
+写出报告必须显式提供确认短语；报告建议放在被忽略的 `artifacts/` 目录，
+并在提交前检查其中没有完整问题、答案或凭据：
+
+```powershell
+python scripts/collect_ai_baseline.py `
+  --evidence-type fixture `
+  --repo . `
+  --runtime-env .env `
+  --defaults-env .env.example `
+  --timings-jsonl .\artifacts\t00-timings.jsonl `
+  --output .\artifacts\t00-baseline.json `
+  --markdown-output .\artifacts\t00-baseline.md `
+  --execute --confirm WRITE:T00-BASELINE
+```
+
+`online` 证据另需 `WRITE:T00-ONLINE-READONLY` 确认，但该工具仍不会代替
+生产授权、SSH 登录或隔离测试账号；缺少授权时只能保留 `fixture`/`staging`
+标记并记录未采集项。独立模板见
+`docs/ai/t00-baseline-report-template.md`，测试命令为：
+
+```powershell
+python -m pytest scripts/test_collect_ai_baseline.py -q
+```

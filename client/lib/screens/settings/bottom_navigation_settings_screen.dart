@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,9 +7,11 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
+import '../../widgets/settings/settings_tile.dart';
 
 /// 外观设置中的底部导航栏配置页。
 ///
@@ -158,6 +161,23 @@ class BottomNavigationSettingsScreen extends StatelessWidget {
             ),
           ],
         ),
+        // 液态玻璃光学 QA 仅在开发构建出现；底栏参数页是它的唯一入口。
+        if (kDebugMode)
+          SettingsSection(
+            title: '高级视觉特效',
+            children: [
+              SettingsTile(
+                icon: Icons.tune_rounded,
+                title: 'Liquid Glass Reference QA',
+                subtitle: '开发专用参考参数、纹理与光学对照页',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LiquidGlassReferenceParityScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

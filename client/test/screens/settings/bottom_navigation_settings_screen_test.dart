@@ -47,6 +47,13 @@ void main() {
     expect(find.text('高性能'), findsOneWidget);
     expect(find.text('高画质'), findsOneWidget);
     expect(themeProvider.bottomNavStyle, BottomNavStyle.floating);
+
+    // debug 构建里液态玻璃 QA 入口收敛在底栏页底部（release 不渲染）。
+    await tester.scrollUntilVisible(
+      find.text('Liquid Glass Reference QA'),
+      200,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('首次开启液态玻璃先确认，确认后保存新配置', (tester) async {

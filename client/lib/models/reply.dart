@@ -19,6 +19,7 @@ class Reply {
   final List<ReplyImage> images;
   final User? author;
   final DateTime createdAt;
+
   /// 仅根评论：真实子回复总数（列表可能只携带前 N 条，其余懒加载）。
   final int childReplyCount;
 
@@ -140,6 +141,13 @@ class ReplyImage {
   final int fileId;
   final int sortOrder;
   final FileItem? file;
+  final String thumbUrl;
+  final String mediumUrl;
+  final String viewerUrl;
+  final String originUrl;
+
+  /// 服务端图片变体状态。只有 `ready` 变体才可作为普通预览资源。
+  final Map<String, String> variantStatus;
 
   ReplyImage({
     required this.id,
@@ -147,16 +155,61 @@ class ReplyImage {
     required this.fileId,
     this.sortOrder = 0,
     this.file,
+    this.thumbUrl = '',
+    this.mediumUrl = '',
+    this.viewerUrl = '',
+    this.originUrl = '',
+    this.variantStatus = const {},
   });
 
   factory ReplyImage.fromJson(Map<String, dynamic> json) {
+    final fileJson = json['file'];
     return ReplyImage(
       id: json['id'] ?? 0,
       replyId: json['reply_id'] ?? 0,
       fileId: json['file_id'] ?? 0,
       sortOrder: json['sort_order'] ?? 0,
-      file: json['file'] != null ? FileItem.fromJson(json['file']) : null,
+      file: fileJson != null ? FileItem.fromJson(fileJson) : null,
+      thumbUrl: json['thumb_url']?.toString() ??
+          (fileJson is Map ? fileJson['thumb_url']?.toString() : null) ??
+          '',
+      mediumUrl: json['medium_url']?.toString() ??
+          (fileJson is Map ? fileJson['medium_url']?.toString() : null) ??
+          '',
+      viewerUrl: json['viewer_url']?.toString() ??
+          (fileJson is Map ? fileJson['viewer_url']?.toString() : null) ??
+          '',
+      originUrl: json['origin_url']?.toString() ??
+          (fileJson is Map ? fileJson['origin_url']?.toString() : null) ??
+          '',
+      variantStatus: _parseVariantStatus(
+        json['variant_status'] ??
+            (fileJson is Map ? fileJson['variant_status'] : null),
+      ),
     );
+  }
+
+  String get url => file?.url ?? '';
+  String get resolvedThumbUrl => thumbUrl.isNotEmpty ? thumbUrl : url;
+  String get resolvedMediumUrl => mediumUrl.isNotEmpty ? mediumUrl : url;
+  String get resolvedViewerUrl => viewerUrl.isNotEmpty ? viewerUrl : url;
+  String get resolvedOriginUrl => originUrl.isNotEmpty ? originUrl : url;
+
+  bool isVariantReady(String variant) {
+    final status = variantStatus[variant];
+    // 兼容旧接口：没有状态字段时沿用 URL 回退行为。
+    return status == null || status == 'ready';
+  }
+
+  static Map<String, String> _parseVariantStatus(dynamic raw) {
+    if (raw is! Map) return const {};
+    final parsed = <String, String>{};
+    raw.forEach((key, value) {
+      if (key != null && value != null) {
+        parsed[key.toString()] = value.toString();
+      }
+    });
+    return parsed.isEmpty ? const {} : Map.unmodifiable(parsed);
   }
 }
 
@@ -166,6 +219,8 @@ class FileItem {
   final String path;
   final int size;
   final String mimeType;
+  final int width;
+  final int height;
 
   FileItem({
     required this.id,
@@ -173,6 +228,8 @@ class FileItem {
     required this.path,
     required this.size,
     required this.mimeType,
+    this.width = 0,
+    this.height = 0,
   });
 
   factory FileItem.fromJson(Map<String, dynamic> json) {
@@ -182,6 +239,8 @@ class FileItem {
       path: json['path'] ?? '',
       size: json['size'] ?? 0,
       mimeType: json['mime_type'] ?? '',
+      width: (json['width'] as num?)?.toInt() ?? 0,
+      height: (json['height'] as num?)?.toInt() ?? 0,
     );
   }
 

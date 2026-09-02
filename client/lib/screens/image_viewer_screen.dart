@@ -81,8 +81,15 @@ class ImageViewerItem {
   /// 服务端原图 MIME 类型。
   final String mimeType;
 
-  /// 是否启用分层资源语义。启用后没有 ready 变体时绝不自动回退原图。
+  /// 是否启用分层资源语义。启用后分层预览资源始终优先于原图；原图是否
+  /// 可自动作为兜底由 [allowOriginalPreviewFallback] 单独控制。
   final bool useProgressiveLoading;
+
+  /// 分层预览候选全部失败后，是否允许把原图作为最后兜底。
+  ///
+  /// 帖子和回复的变体状态来自服务端，未就绪时不能旁路请求原图；文章
+  /// 正文没有随 HTML 返回变体状态，只能在变体请求失败后回退原图。
+  final bool allowOriginalPreviewFallback;
 
   const ImageViewerItem({
     this.url,
@@ -98,6 +105,7 @@ class ImageViewerItem {
     this.height = 0,
     this.mimeType = '',
     this.useProgressiveLoading = false,
+    this.allowOriginalPreviewFallback = false,
   });
 
   String? get resolvedOriginalUrl =>
@@ -171,6 +179,10 @@ class ImageViewerScreen extends StatefulWidget {
   @visibleForTesting
   final Dio? downloadClient;
 
+  /// 全屏预览的位图解码长边上限。为空时使用查看器默认上限；调用方可按
+  /// 当前屏幕物理像素传入更小的值，避免小屏设备为文章图片解码过大位图。
+  final int? decodeMaxLongEdge;
+
   const ImageViewerScreen({
     super.key,
     this.imageUrls = const <String>[],
@@ -184,6 +196,7 @@ class ImageViewerScreen extends StatefulWidget {
     this.originalCacheManager,
     this.cacheKeyBuilder,
     this.downloadClient,
+    this.decodeMaxLongEdge,
   });
 
   @override
@@ -600,11 +613,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
 
     if (item.useProgressiveLoading) {
-      // 结构化帖子图片只允许使用已由入口筛选过的 ready 变体；原图不在候选内。
+      // 分层资源先尝试中间档和缩略图；原图只能在明确允许时作为最后兜底。
       add(item.previewUrl);
       add(item.viewerUrl);
-      add(item.url);
       add(item.thumbUrl);
+      final displayUrl = _optionalString(item.url);
+      final originalUrl = item.resolvedOriginalUrl;
+      if (displayUrl != originalUrl) add(displayUrl);
+      if (item.allowOriginalPreviewFallback) add(originalUrl);
       return candidates;
     }
 
@@ -620,10 +636,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   bool _hasPreview(ImageViewerItem item) => _previewCandidates(item).isNotEmpty;
 
   ImageProvider _decodeConstrained(ImageProvider provider) {
+    final maxLongEdge = (widget.decodeMaxLongEdge ?? imageViewerLongEdge)
+        .clamp(1, imageViewerLongEdge)
+        .toInt();
     return ResizeImage(
       provider,
-      width: imageViewerLongEdge,
-      height: imageViewerLongEdge,
+      width: maxLongEdge,
+      height: maxLongEdge,
       policy: ResizeImagePolicy.fit,
     );
   }
@@ -728,9 +747,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     ValueListenableBuilder<({int index, double value})?>(
                       valueListenable: _originalProgressNotifier,
                       builder: (context, progress, _) {
-                        final value = progress != null && progress.index == index
-                            ? progress.value
-                            : 0.0;
+                        final value =
+                            progress != null && progress.index == index
+                                ? progress.value
+                                : 0.0;
                         final percent = (value * 100).round();
                         return Text(
                           percent > 0 ? '$percent%' : '加载中…',

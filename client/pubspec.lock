@@ -629,6 +629,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.20.2"
+  jiaowu_dart_poc:
+    dependency: "direct main"
+    description:
+      path: "../experiments/jiaowu_dart_poc"
+      relative: true
+    source: path
+    version: "0.1.0"
   jni:
     dependency: transitive
     description:

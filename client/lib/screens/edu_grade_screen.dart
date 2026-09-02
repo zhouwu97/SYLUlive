@@ -10,7 +10,6 @@ import '../models/edu_grade.dart';
 import '../theme/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
 import '../utils/grade_screen_registry.dart';
-import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
@@ -136,14 +135,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         // 捕获局部变量防止异步期间 _lastUserId 变化
         final capturedUserId = currentUserId;
         eduProvider.setUserId(currentUserId);
-        unawaited(
-          GradeReminderService.instance.syncRuntimeConfig(
-            userId: currentUserId,
-          ),
-        );
-        unawaited(
-          GradeReminderService.instance.ensureScheduledIfEnabled(),
-        );
         Future<void> initFlow() async {
           await eduProvider.ensureStatusLoaded();
           if (!mounted || _lastUserId != capturedUserId) return;
@@ -157,8 +148,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         initFlow();
       } else {
         _showUnavailableState('请先登录后查看成绩');
-        unawaited(
-            GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
     }
   }
@@ -219,8 +208,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     await _loadGrades();
     if (!mounted) return;
 
-    // GPA 在后台预取；学分要求仅进入总览时查询，避免拖慢成绩首屏。
-    unawaited(_loadAcademicSituation());
+    // 仅在当前数据源声明支持时预取 GPA；本机直连尚未迁移该能力，不能
+    // 触发旧服务端接口，也不能拿旧来源缓存填充当前页面。
+    if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      unawaited(_loadAcademicSituation());
+    } else {
+      _markUnsupportedAcademicFeatures();
+    }
   }
 
   bool _tryUseInitialSemester(String userId) {
@@ -247,6 +241,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Future<void> _loadAcademicSituation({bool forceRefresh = false}) async {
     final provider = _eduProvider;
     if (provider == null) return;
+    if (provider.isUsingLocalAcademicSession &&
+        !provider.academicCapabilities.supportsAcademicSituation) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
 
     final cache = provider.getCachedAcademicSituation();
     if (cache != null && !forceRefresh) {
@@ -301,6 +300,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }) async {
     final provider = _eduProvider;
     if (provider == null) return;
+    if (provider.isUsingLocalAcademicSession &&
+        !provider.academicCapabilities.supportsCreditRequirements) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
 
     final cache = provider.getCachedCreditRequirements();
 
@@ -397,8 +401,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isRefreshing = false;
         _errorMessage = null;
       });
-      _syncBaselineAndCancelNotification(
-          _selectedYear, _selectedSemester, result.data!);
       _prefetchGradeDetails(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
@@ -446,8 +448,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             : GradePageState.content;
         _isRefreshing = false;
       });
-      _syncBaselineAndCancelNotification(
-          _selectedYear, _selectedSemester, result.data!);
       _prefetchGradeDetails(result.data!);
       if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
@@ -552,7 +552,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _grades.isEmpty ? GradePageState.empty : GradePageState.content;
     });
 
-    _syncBaselineAndCancelNotification(year, semester, result.data!);
     _saveSelectedSemester(year, semester);
     _prefetchGradeDetails(result.data!, year: year, semester: semester);
     return true;
@@ -564,37 +563,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     _saveSelectedSemesterFor(userId, year, semester);
   }
 
-  void _syncBaselineAndCancelNotification(
-      String year, int semester, List<EduGrade> grades) {
-    final userId = _lastUserId;
-    if (userId == null) return;
-    unawaited(
-      GradeReminderService.instance.syncBaselineIfEnabled(
-        userId: userId,
-        year: year,
-        semester: semester,
-        grades: grades,
-      ),
-    );
-    unawaited(
-      GradeReminderService.instance.clearGradeUpdateNotifications(),
-    );
-  }
-
   void _saveSelectedSemesterFor(String userId, String year, int semester) {
     AppPreferencesStore.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
-    unawaited(
-      GradeReminderService.instance.syncSelectedSemester(
-        userId: userId,
-        year: year,
-        semester: semester,
-      ),
-    );
-    unawaited(
-      GradeReminderService.instance.ensureScheduledIfEnabled(),
-    );
   }
 
   Future<void> _refreshSelectedSemesterInBackground(
@@ -614,7 +586,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _pageState =
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
-      _syncBaselineAndCancelNotification(year, semester, result.data!);
       _prefetchGradeDetails(result.data!, year: year, semester: semester);
     }
   }
@@ -671,6 +642,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         onSemesterChanged: _switchSemester,
         onRefreshGrades: _refreshCurrentView,
         academicSituation: _academicSituation,
+        academicUnavailableMessage: _eduProvider?.isUsingLocalAcademicSession ==
+                    true &&
+                !_eduProvider!.academicCapabilities.supportsAcademicSituation
+            ? '本机直连暂不支持官方 GPA'
+            : null,
         isAcademicRefreshing: _isAcademicLoading || _isRequirementLoading,
         onRefreshAcademic: _refreshAcademicOverview,
       ),
@@ -742,6 +718,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   void _ensureAcademicContentLoaded() {
+    final provider = _eduProvider;
+    if (provider?.isUsingLocalAcademicSession == true &&
+        (!provider!.academicCapabilities.supportsAcademicSituation ||
+            !provider.academicCapabilities.supportsCreditRequirements)) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
     if (_academicSituation == null &&
         _academicError == null &&
         !_isAcademicLoading) {
@@ -752,6 +735,26 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         !_isRequirementLoading) {
       unawaited(_loadCreditRequirements());
     }
+  }
+
+  void _markUnsupportedAcademicFeatures() {
+    final provider = _eduProvider;
+    if (!mounted || provider == null || !provider.isUsingLocalAcademicSession) {
+      return;
+    }
+    final capabilities = provider.academicCapabilities;
+    setState(() {
+      if (!capabilities.supportsAcademicSituation) {
+        _academicSituation = null;
+        _isAcademicLoading = false;
+        _academicError = '本机直连暂不支持官方 GPA';
+      }
+      if (!capabilities.supportsCreditRequirements) {
+        _creditRequirements = null;
+        _isRequirementLoading = false;
+        _requirementError = '本机直连暂不支持学分要求';
+      }
+    });
   }
 
   ScrollController _controllerFor(GradeCenterSection section) {

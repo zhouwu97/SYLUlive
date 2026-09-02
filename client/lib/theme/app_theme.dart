@@ -33,6 +33,16 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      // 必须显式指定：ThemeData 在深色模式下默认 primaryColor 取
+      // colorScheme.surface（近黑），导致 NavigationRail 选中项、各种
+      // Theme.of(context).primaryColor 强调色在深色背景上几乎不可见。
+      // 浅色仍取 scheme.primary；深色不用 fromSeed 的 tone80，而是用
+      // app 内既定的深色强调色 #7ED6C5（与设置滑块/开关等一致），柔和
+      // 清晰、深色背景上对比充足，不突兀。
+      primaryColor:
+          brightness == Brightness.dark
+          ? const Color(0xFF7ED6C5)
+          : scheme.primary,
       scaffoldBackgroundColor:
           brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
       canvasColor:

@@ -8,6 +8,9 @@ import '../../models/campus_article.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/image_decode_size.dart';
+import '../../utils/post_image_cache.dart';
+import '../../utils/campus_article_image.dart';
 
 /// 清洗后校园资讯 HTML 的轻量原生渲染器。
 ///
@@ -364,29 +367,26 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
             );
     }
 
-    final image = ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      child: CachedNetworkImage(
-        imageUrl: uri.toString(),
-        width: double.infinity,
-        fit: BoxFit.contain,
-        placeholder: (context, url) => Container(
-          height: 160,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceMutedDark
-              : AppColors.surfaceMutedLight,
-          alignment: Alignment.center,
-          child: const CircularProgressIndicator.adaptive(),
-        ),
-        errorWidget: (context, url, error) => Container(
-          height: 96,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceMutedDark
-              : AppColors.surfaceMutedLight,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined),
-        ),
-      ),
+    final resources = CampusArticleImageResources.fromUri(uri);
+    final image = LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite && constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final target = calculateImageDecodeTarget(
+          logicalSize: Size(width, width * 0.75),
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+          maxLongEdge: imageMediumLongEdge,
+          fallbackLogicalSize: const Size(320, 240),
+        );
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: _CampusArticleNetworkImage(
+            resources: resources,
+            target: target,
+          ),
+        );
+      },
     );
 
     final tappable = widget.onOpenImage == null
@@ -398,7 +398,7 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(AppRadius.sm),
-                onTap: () => widget.onOpenImage!(uri.toString()),
+                onTap: () => widget.onOpenImage!(resources.originalUrl),
                 child: image,
               ),
             ),
@@ -716,6 +716,94 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
   int _spanValue(String? raw) {
     final value = int.tryParse(raw ?? '') ?? 1;
     return value.clamp(1, 12).toInt();
+  }
+}
+
+class _CampusArticleNetworkImage extends StatefulWidget {
+  const _CampusArticleNetworkImage({
+    required this.resources,
+    required this.target,
+  });
+
+  final CampusArticleImageResources resources;
+  final ImageDecodeTarget target;
+
+  @override
+  State<_CampusArticleNetworkImage> createState() =>
+      _CampusArticleNetworkImageState();
+}
+
+class _CampusArticleNetworkImageState
+    extends State<_CampusArticleNetworkImage> {
+  int _candidateIndex = 0;
+  bool _advanceScheduled = false;
+
+  @override
+  void didUpdateWidget(covariant _CampusArticleNetworkImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resources.originalUrl != widget.resources.originalUrl ||
+        oldWidget.target.width != widget.target.width ||
+        oldWidget.target.height != widget.target.height) {
+      _candidateIndex = 0;
+      _advanceScheduled = false;
+    }
+  }
+
+  void _advanceCandidate() {
+    if (_advanceScheduled) return;
+    _advanceScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _candidateIndex++;
+        _advanceScheduled = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final candidates = widget.resources.candidatesFor(widget.target);
+    if (_candidateIndex >= candidates.length) {
+      return _buildError(context);
+    }
+
+    final candidate = candidates[_candidateIndex];
+    return CachedNetworkImage(
+      cacheManager: PostImageCache.manager,
+      imageUrl: candidate.url,
+      width: double.infinity,
+      fit: BoxFit.contain,
+      memCacheWidth: candidate.shouldResize ? widget.target.width : null,
+      memCacheHeight: candidate.shouldResize ? widget.target.height : null,
+      placeholder: (context, url) => _buildPlaceholder(context),
+      errorWidget: (context, url, error) {
+        _advanceCandidate();
+        return _buildPlaceholder(context);
+      },
+    );
+  }
+
+  Widget _buildPlaceholder(BuildContext context) {
+    return Container(
+      height: 160,
+      color: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.surfaceMutedDark
+          : AppColors.surfaceMutedLight,
+      alignment: Alignment.center,
+      child: const CircularProgressIndicator.adaptive(),
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    return Container(
+      height: 96,
+      color: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.surfaceMutedDark
+          : AppColors.surfaceMutedLight,
+      alignment: Alignment.center,
+      child: const Icon(Icons.broken_image_outlined),
+    );
   }
 }
 

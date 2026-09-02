@@ -329,6 +329,24 @@ void main() {
     expect(resize.height, imageViewerLongEdge);
   });
 
+  testWidgets('调用方可以为全屏预览设置更小的解码长边上限', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          imageUrls: ['https://example.test/article.jpg'],
+          decodeMaxLongEdge: 960,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<Image>(find.byType(Image));
+    final resize = image.image as ResizeImage;
+    expect(resize.policy, ResizeImagePolicy.fit);
+    expect(resize.width, 960);
+    expect(resize.height, 960);
+  });
+
   testWidgets('GIF 查看不套用解码缩放，保留动画帧', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -601,6 +619,40 @@ void main() {
     expect(imageProviders, contains('https://example.test/image-thumb.jpg'));
   });
 
+  testWidgets('文章图片先尝试变体，原图只作为最后兜底', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageViewerScreen(
+          items: [
+            ImageViewerItem(
+              url: 'https://example.test/article-origin.jpg',
+              thumbUrl: 'https://example.test/article-thumb.jpg',
+              previewUrl: 'https://example.test/article-medium.jpg',
+              viewerUrl: 'https://example.test/article-viewer.jpg',
+              originalUrl: 'https://example.test/article-origin.jpg',
+              useProgressiveLoading: true,
+              allowOriginalPreviewFallback: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final initialUrls = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((image) => image.image)
+        .whereType<ResizeImage>()
+        .map((image) => image.imageProvider)
+        .whereType<CachedNetworkImageProvider>()
+        .map((provider) => provider.url)
+        .toList();
+    expect(initialUrls, contains('https://example.test/article-medium.jpg'));
+    expect(initialUrls, contains('https://example.test/article-thumb.jpg'));
+    expect(initialUrls,
+        isNot(contains('https://example.test/article-origin.jpg')));
+  });
+
   testWidgets('大 GIF 使用静态首帧预览，不能进入查看器就自动加载动画原图', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -723,10 +775,12 @@ void main() {
     await tester.pump();
 
     final idleMaterial = tester.widget<Material>(
-      find.ancestor(
-        of: find.text('查看原图 1.0 MB'),
-        matching: find.byType(Material),
-      ).first,
+      find
+          .ancestor(
+            of: find.text('查看原图 1.0 MB'),
+            matching: find.byType(Material),
+          )
+          .first,
     );
     expect(idleMaterial.color, Colors.black54);
     expect(idleMaterial.borderRadius, BorderRadius.circular(AppRadius.pill));

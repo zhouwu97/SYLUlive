@@ -27,6 +27,7 @@ import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
+import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
@@ -34,6 +35,7 @@ import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
 import '../widgets/post_content_link_text.dart';
 import '../widgets/post_reply/post_reply_list.dart';
+import '../widgets/post_reply/reply_image_media.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'create_post_screen.dart';
@@ -5293,46 +5295,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         ),
       );
     }
-    final imageUrls = reply.images
-        .map((image) => image.file?.url.trim() ?? '')
-        .where((url) => url.isNotEmpty)
-        .map(ApiConstants.fullUrl)
-        .toList(growable: false);
-    if (imageUrls.isNotEmpty) {
+    if (reply.images.any(ReplyImageMedia.hasAnyImageUrl)) {
       contentWidgets.add(
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: List.generate(imageUrls.length, (index) {
-            final imageSize = imageUrls.length == 1 ? size * 1.45 : 88.0;
-            return GestureDetector(
-              key: ValueKey('reply-image-${reply.id}-$index'),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: imageUrls,
-                    initialIndex: index,
-                  ),
-                ),
-              ),
-              onLongPress: () => _showImageFavoriteAction(imageUrls[index]),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrls[index],
-                  width: imageSize,
-                  height: imageSize,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => SizedBox(
-                    width: imageSize,
-                    height: imageSize,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
-                ),
-              ),
-            );
-          }),
+        ReplyImageMedia(
+          images: reply.images,
+          singleImageSize: size * 1.45,
+          maxDecodeLongEdge: imageMediumLongEdge,
+          onImageLongPress: _showImageFavoriteAction,
         ),
       );
     }

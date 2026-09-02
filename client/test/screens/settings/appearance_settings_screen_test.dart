@@ -79,8 +79,9 @@ void main() {
 
     expect(find.text('背景高斯模糊'), findsOneWidget);
     expect(find.text('组件卡片不透明度'), findsOneWidget);
-    expect(find.text('液态玻璃 2.0 效果'), findsOneWidget);
-    expect(find.text('悬浮式底栏导航'), findsOneWidget);
+    // 底栏样式配置（含液态玻璃）已收敛到底部导航栏二级页，外观页只留入口。
+    expect(find.text('液态玻璃 2.0 效果'), findsNothing);
+    expect(find.text('悬浮式底栏导航'), findsNothing);
   });
 
   testWidgets('未启用自定义背景时模糊滑块禁用并提示原因', (tester) async {
@@ -164,7 +165,7 @@ void main() {
     expect(prefs.getDouble('background_blur'), themeProvider.backgroundBlur);
   });
 
-  testWidgets('开启液态玻璃效果弹窗确认', (tester) async {
+  testWidgets('外观页不再保留液态玻璃开关，只留底栏二级页入口', (tester) async {
     await tester.pumpWidget(
       _buildTestApp(
         auth: authProvider,
@@ -173,38 +174,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 旧的重复入口已删除，避免与底栏二级页形成双份控制。
+    expect(find.widgetWithText(SettingsTile, '液态玻璃 2.0 效果'), findsNothing);
+    expect(find.widgetWithText(SettingsTile, '悬浮式底栏导航'), findsNothing);
+    // 液态玻璃状态只能经底栏二级页修改（那里有 GPU 确认弹窗）。
     expect(themeProvider.liquidGlass, isFalse);
+    expect(themeProvider.bottomNavStyle, BottomNavStyle.floating);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    // 二级页入口仍然可达。
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-
-    final glassTile = find.widgetWithText(SettingsTile, '液态玻璃 2.0 效果');
-    final glassSwitch = find.descendant(
-      of: glassTile,
-      matching: find.byType(Switch),
-    );
-
-    await tester.tap(glassSwitch);
-    await tester.pumpAndSettle();
-
-    // 确认弹窗
-    expect(
-      find.text(
-        '液态玻璃效果使用高阶层叠加与高斯模糊渲染。在部分低配置设备上可能增加渲染开销，确定要开启吗？',
-      ),
-      findsOneWidget,
-    );
-
-    // 点击取消
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(themeProvider.liquidGlass, isFalse);
-
-    // 再次点击并确认开启
-    await tester.tap(glassSwitch);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('开启'));
-    await tester.pumpAndSettle();
-    expect(themeProvider.liquidGlass, isTrue);
+    expect(find.text('底部导航栏'), findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 }

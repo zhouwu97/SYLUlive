@@ -537,24 +537,6 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setLiquidGlass(bool value) async {
-    await setBottomNavStyle(
-      value
-          ? BottomNavStyle.liquidGlass
-          : (_floatingNavBar ? BottomNavStyle.floating : BottomNavStyle.normal),
-    );
-  }
-
-  Future<void> setFloatingNavBar(bool value) async {
-    await setBottomNavStyle(
-      value
-          ? (_liquidGlass
-              ? BottomNavStyle.liquidGlass
-              : BottomNavStyle.floating)
-          : BottomNavStyle.normal,
-    );
-  }
-
   Future<void> _persistBottomNavPreferences(AppPreferencesStore prefs) async {
     await prefs.setString(_bottomNavStyleKey, _bottomNavStyle.storageValue);
     await prefs.setBool(_bottomNavFloatingKey, _floatingNavBar);

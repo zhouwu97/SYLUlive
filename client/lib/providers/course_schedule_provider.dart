@@ -910,11 +910,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     // 原始课表只通过当前选定的教务数据源按需获取。成功后仍写入当前
     // 账号和来源账号隔离的本地加密保险箱，不创建服务端课程副本。
     final localController = _academicSessionController;
-    final localSessionActive = _academicRepository?.sourceKind ==
-            AcademicSourceKind.local &&
-        ((localController != null &&
-                localController.status != AcademicSessionStatus.idle) ||
-            _academicRepository?.sessionState != SessionState.unauthenticated);
+    // 来源选择是显式契约：本机来源即使尚未登录，也必须停在本机登录态，
+    // 不能因为旧服务端存在绑定信息而静默改走 /edu/courses。
+    final localSessionActive =
+        _academicRepository?.sourceKind == AcademicSourceKind.local;
     if (localSessionActive) {
       if (localController == null) {
         if (!_isCurrentOperation(operation)) return;

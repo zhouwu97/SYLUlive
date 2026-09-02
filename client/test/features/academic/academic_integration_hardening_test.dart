@@ -324,6 +324,83 @@ void main() {
     controller.dispose();
     schedule.dispose();
   });
+
+  test('EduProvider legacy 兼容课表支持单节并保留真实星期', () async {
+    final repository = _FakeAcademicRepository(
+      courses: CourseFetchResult(
+        courses: <RawCourse>[
+          const RawCourse(
+            name: '单节课程',
+            teacher: '测试老师',
+            location: 'B202',
+            section: '3节',
+            weekDay: '2',
+            weekExpression: '1-16周',
+          ),
+        ],
+        source: CourseSource.mobile,
+      ),
+    );
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2026000001', password: 'secret');
+    final provider = EduProvider(Dio())
+      ..setAcademicSessionController(controller)
+      ..syncSessionUser('app-user-a');
+
+    final result = await provider.getCourses('2026', 3);
+    final course = result!.data!.single;
+    expect(course['start_section'], 3);
+    expect(course['end_section'], 3);
+    expect(course['weekday'], 2);
+
+    provider.dispose();
+    controller.dispose();
+  });
+
+  test('EduProvider legacy 兼容课表缺少节次时 fail-closed', () async {
+    final repository = _FakeAcademicRepository(
+      courses: CourseFetchResult(
+        courses: <RawCourse>[
+          const RawCourse(
+            name: '缺少节次',
+            teacher: '测试老师',
+            location: 'B202',
+            section: '',
+            weekDay: '2',
+            weekExpression: '1-16周',
+          ),
+        ],
+        source: CourseSource.mobile,
+      ),
+    );
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2026000001', password: 'secret');
+    final provider = EduProvider(Dio())
+      ..setAcademicSessionController(controller)
+      ..syncSessionUser('app-user-a');
+
+    await expectLater(
+      provider.getCourses('2026', 3),
+      throwsA(
+        isA<ProtocolChangedException>().having(
+          (error) => error.message,
+          'message',
+          '本机课表记录缺少有效节次',
+        ),
+      ),
+    );
+
+    provider.dispose();
+    controller.dispose();
+  });
 }
 
 final class _FakeAcademicRepository implements AcademicRepository {

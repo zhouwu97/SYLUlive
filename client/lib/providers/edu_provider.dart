@@ -380,14 +380,25 @@ class EduProvider extends ChangeNotifier {
   }
 
   static Map<String, dynamic> _rawCourseToLegacyMap(RawCourse course) {
-    final sectionMatch =
-        RegExp(r'(\d+)\s*[-~至到—–]\s*(\d+)').firstMatch(course.section);
-    final startSection = int.tryParse(sectionMatch?.group(1) ?? '') ?? 1;
-    final endSection =
-        int.tryParse(sectionMatch?.group(2) ?? '') ?? startSection;
-    final weekday = int.tryParse(course.weekDay) ??
-        int.tryParse(RegExp(r'\d+').stringMatch(course.weekDay) ?? '') ??
-        1;
+    final sectionMatch = RegExp(
+      r'^\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节?\s*$',
+    ).firstMatch(course.section);
+    final startSection =
+        sectionMatch == null ? null : int.tryParse(sectionMatch.group(1)!);
+    final endSection = sectionMatch == null
+        ? null
+        : int.tryParse(sectionMatch.group(2) ?? sectionMatch.group(1)!);
+    if (startSection == null ||
+        endSection == null ||
+        startSection < 1 ||
+        endSection < startSection) {
+      throw const ProtocolChangedException(message: '本机课表记录缺少有效节次');
+    }
+
+    final weekday = int.tryParse(course.weekDay.trim());
+    if (weekday == null || weekday < 1 || weekday > 7) {
+      throw const ProtocolChangedException(message: '本机课表记录缺少有效星期');
+    }
     final canonical = course.toCanonicalJson();
     return {
       'name': course.name,

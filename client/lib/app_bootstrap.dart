@@ -1367,6 +1367,7 @@ class MyApp extends StatelessWidget {
           create: (_) => AcademicRepositoryImpl(
             local: JiaowuLocalDataSource(),
             legacy: LegacyServerDataSource(dio),
+            source: AcademicSourceKind.local,
           ),
           dispose: (_, repository) => repository.close(),
         ),

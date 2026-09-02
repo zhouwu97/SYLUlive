@@ -3,134 +3,1653 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f7faf8">
-  <meta name="description" content="在沈理校园查看组队详情并加入队伍。">
+  <meta name="theme-color" content="#f6fafe">
+  <meta name="description" content="沈理校园组队平台：寻找志同道合的理工伙伴，高效组队备战竞赛、考研互助、项目攻坚与校园生活。">
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="沈理校园">
-  <meta property="og:title" content="沈理校园组队邀请">
-  <meta property="og:description" content="打开沈理校园，查看组队详情。">
-  <title>组队邀请 - 沈理校园</title>
+  <meta property="og:site_name" content="沈理校园 · SYLUlive">
+  <meta property="og:title" id="og-title" content="沈理校园组队邀请">
+  <meta property="og:description" id="og-desc" content="在沈理校园查看招募详情并快速加入队伍。">
+  <link rel="icon" type="image/png" href="/assets/sylulive-app-icon.png">
+  <link rel="apple-touch-icon" href="/assets/sylulive-app-icon.png">
+  <title id="html-title">组队招募详情 · 沈理校园</title>
   <style>
-    :root { --page:#f7faf8; --surface:#fff; --ink:#18211e; --muted:#64716b; --line:#d9e1dc; --brand:#1d7765; --brand-dark:#155b4d; --notice:#e6f3ee; --danger:#a13f37; }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; background:var(--page); color:var(--ink); font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; letter-spacing:0; }
-    header { min-height:64px; border-bottom:1px solid var(--line); background:var(--surface); }
-    header div, main, footer { width:min(100% - 40px,720px); margin:auto; }
-    header div { display:flex; align-items:center; min-height:64px; font-size:17px; font-weight:700; }
-    main { padding:52px 0 44px; }
-    .tag { display:inline-block; margin-bottom:18px; padding:6px 10px; border-radius:6px; background:var(--notice); color:var(--brand-dark); font-size:14px; font-weight:700; }
-    h1 { margin:0; font-size:40px; line-height:1.28; overflow-wrap:anywhere; }
-    .description { margin:20px 0 0; color:var(--muted); font-size:17px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
-    .meta { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 20px; margin-top:28px; padding:20px 0; border-block:1px solid var(--line); color:var(--muted); font-size:15px; }
-    .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
-    .button { min-height:48px; padding:0 20px; border:1px solid var(--brand); border-radius:7px; display:inline-flex; align-items:center; justify-content:center; color:var(--brand-dark); background:transparent; font:inherit; font-weight:700; text-decoration:none; cursor:pointer; }
-    .button.primary { background:var(--brand); color:#fff; }
-    .button.primary:hover { background:var(--brand-dark); }
-    .status { min-height:22px; margin:18px 0 0; color:var(--muted); font-size:14px; }
-    .status.error { color:var(--danger); }
-    .notice { margin-top:20px; padding:13px 15px; border-left:4px solid var(--brand); background:var(--surface); color:var(--muted); font-size:14px; line-height:1.65; }
-    footer { padding:22px 0 calc(22px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
-    @media (max-width:540px) { header div, main, footer { width:min(100% - 32px,720px); } main { padding-top:40px; } h1 { font-size:32px; } .meta { grid-template-columns:1fr; } .actions { flex-direction:column; } .button { width:100%; } }
+    :root {
+      --brand-primary: #147c72;
+      --brand-dark: #0d5951;
+      --brand-light: #e6f6f4;
+      --cyan: #0eb5d8;
+      --blue: #4d6ff7;
+      --violet: #8b76f4;
+      --coral: #f27e82;
+      --amber: #f59e0b;
+      --green: #10b981;
+      --bg: #f6fafe;
+      --surface: #ffffff;
+      --surface-glass: rgba(255, 255, 255, 0.82);
+      --ink: #141c2d;
+      --ink-secondary: #475569;
+      --muted: #64748b;
+      --line: rgba(100, 125, 160, 0.14);
+      --line-subtle: rgba(100, 125, 160, 0.08);
+      --shadow-sm: 0 4px 14px rgba(30, 50, 80, 0.04);
+      --shadow-md: 0 14px 38px rgba(30, 50, 80, 0.07);
+      --shadow-lg: 0 24px 64px rgba(30, 50, 80, 0.11);
+      --shadow-glow: 0 12px 32px rgba(14, 181, 216, 0.22);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --max: 1140px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.6;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Ambient Background Gradients & Grid */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .ambient-mesh {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(900px 580px at 50% 10%, rgba(14, 181, 216, 0.12), transparent 70%),
+        radial-gradient(750px 500px at 15% 35%, rgba(77, 111, 247, 0.09), transparent 65%),
+        radial-gradient(700px 480px at 85% 30%, rgba(139, 118, 244, 0.08), transparent 68%),
+        radial-gradient(800px 600px at 50% 85%, rgba(20, 124, 114, 0.06), transparent 70%),
+        linear-gradient(180deg, #f5faff 0%, #fbfdff 45%, #f6fafe 100%);
+    }
+    .ambient-grid {
+      position: absolute;
+      inset: 0;
+      opacity: 0.32;
+      background-image:
+        linear-gradient(rgba(65, 101, 145, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(65, 101, 145, 0.05) 1px, transparent 1px);
+      background-size: 54px 54px;
+      mask-image: radial-gradient(ellipse at 50% 30%, #000 10%, transparent 76%);
+    }
+    .orbit-ring {
+      position: absolute;
+      left: 50%;
+      top: 220px;
+      width: 720px;
+      height: 300px;
+      transform: translate(-50%, -50%) rotate(-6deg);
+      border: 1px solid rgba(75, 128, 200, 0.12);
+      border-radius: 50%;
+      animation: orbitSpin 26s linear infinite;
+      pointer-events: none;
+    }
+    .orbit-ring::before, .orbit-ring::after {
+      content: "";
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .orbit-ring::before {
+      left: 10%;
+      top: 48%;
+      background: var(--cyan);
+      box-shadow: 0 0 0 7px rgba(14, 181, 216, 0.14);
+    }
+    .orbit-ring::after {
+      right: 9%;
+      top: 52%;
+      background: var(--violet);
+      box-shadow: 0 0 0 7px rgba(139, 118, 244, 0.14);
+    }
+    @keyframes orbitSpin {
+      to { transform: translate(-50%, -50%) rotate(354deg); }
+    }
+
+    /* Embedded Browser Warning Banner */
+    .browser-notice {
+      position: relative;
+      z-index: 100;
+      background: linear-gradient(90deg, #1f2937, #111827);
+      color: #f9fafb;
+      padding: 12px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+    }
+    .browser-notice-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .browser-notice-icon {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      flex-shrink: 0;
+    }
+    .browser-notice-close {
+      background: transparent;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      transition: 0.2s;
+    }
+    .browser-notice-close:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+
+    /* Shell & Navigation */
+    .shell {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      position: relative;
+      z-index: 2;
+    }
+    .nav-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 14px 0;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: background 0.3s var(--ease);
+    }
+    .nav {
+      height: 60px;
+      padding: 0 16px 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(20px) saturate(1.2);
+      -webkit-backdrop-filter: blur(20px) saturate(1.2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 8px 32px rgba(45, 68, 102, 0.05);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .brand-art {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(20, 124, 114, 0.1), rgba(14, 181, 216, 0.12));
+    }
+    .brand-art img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+    }
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+    }
+    .brand-name {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .brand-tag {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--brand-primary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-btn {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 11px;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.8);
+      color: var(--ink-secondary);
+      transition: 0.2s var(--ease);
+      cursor: pointer;
+    }
+    .nav-btn:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+      color: var(--ink);
+    }
+    .nav-btn.primary {
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-dark));
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: 0 6px 20px rgba(20, 124, 114, 0.25);
+    }
+    .nav-btn.primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 26px rgba(20, 124, 114, 0.35);
+    }
+
+    /* Main Container */
+    main {
+      padding: 24px 0 60px;
+    }
+
+    /* Hero Banner Area */
+    .hero-header {
+      text-align: center;
+      max-width: 680px;
+      margin: 0 auto 32px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(20, 124, 114, 0.08);
+      border: 1px solid rgba(20, 124, 114, 0.18);
+      color: var(--brand-primary);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      margin-bottom: 14px;
+    }
+    .hero-badge .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--brand-primary);
+      box-shadow: 0 0 0 4px rgba(20, 124, 114, 0.15);
+      animation: pulseAnim 2s infinite ease-in-out;
+    }
+    @keyframes pulseAnim {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.6; }
+    }
+    .hero-header h1 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      color: transparent;
+      background: linear-gradient(120deg, #111827 20%, #1e3a8a 70%, #0d5951 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+    .hero-header p {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* Two-Column Showcase Layout */
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1.35fr 0.85fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    /* Left: Primary Detail Card */
+    .detail-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      padding: 36px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+    }
+    .card-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line-subtle);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .status-pill.recruiting {
+      background: rgba(16, 185, 129, 0.12);
+      color: #065f46;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .status-pill.full {
+      background: rgba(59, 130, 246, 0.1);
+      color: #1e40af;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    .status-pill.expired, .status-pill.closed {
+      background: rgba(107, 114, 128, 0.1);
+      color: #4b5563;
+      border: 1px solid rgba(107, 114, 128, 0.2);
+    }
+    .category-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: rgba(14, 181, 216, 0.08);
+      color: #0891b2;
+      border: 1px solid rgba(14, 181, 216, 0.2);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .recruitment-title {
+      font-size: 26px;
+      font-weight: 850;
+      line-height: 1.35;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin-bottom: 20px;
+      word-break: break-word;
+    }
+
+    /* Author / Publisher Profile */
+    .author-profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, rgba(246, 250, 254, 0.8), rgba(240, 246, 255, 0.9));
+      border: 1px solid var(--line-subtle);
+      margin-bottom: 26px;
+    }
+    .author-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0eb5d8, #4d6ff7);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 18px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(77, 111, 247, 0.2);
+      border: 2px solid #ffffff;
+      overflow: hidden;
+    }
+    .author-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .author-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .author-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .author-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .author-verified-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      font-weight: 750;
+      color: #0369a1;
+      background: rgba(14, 165, 233, 0.12);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .author-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Headcount Gauge */
+    .headcount-box {
+      margin-bottom: 26px;
+      padding: 18px 20px;
+      border-radius: var(--radius-md);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-sm);
+    }
+    .headcount-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    .headcount-title {
+      font-weight: 800;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .headcount-numbers {
+      font-weight: 800;
+      color: var(--brand-primary);
+    }
+    .headcount-numbers span {
+      font-size: 18px;
+    }
+    .progress-bar-bg {
+      height: 10px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--cyan), var(--brand-primary));
+      transition: width 0.8s var(--ease);
+      width: 50%;
+    }
+    .headcount-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* Required Roles & Skills Chips */
+    .section-label {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .roles-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 26px;
+    }
+    .role-chip {
+      padding: 7px 14px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(230, 246, 244, 0.7), rgba(240, 248, 255, 0.8));
+      border: 1px solid rgba(20, 124, 114, 0.16);
+      font-size: 12px;
+      font-weight: 750;
+      color: var(--brand-dark);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Recruitment Description */
+    .desc-container {
+      margin-bottom: 28px;
+    }
+    .desc-content {
+      font-size: 15px;
+      color: var(--ink-secondary);
+      line-height: 1.85;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 16px 18px;
+      border-radius: var(--radius-md);
+      background: #fbfdff;
+      border: 1px solid var(--line-subtle);
+    }
+
+    /* Images Gallery */
+    .gallery-wrap {
+      margin-bottom: 28px;
+    }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 12px;
+    }
+    .gallery-thumb {
+      aspect-ratio: 1;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      position: relative;
+      background: #f1f5f9;
+      transition: transform 0.2s var(--ease);
+    }
+    .gallery-thumb:hover { transform: scale(1.03); }
+    .gallery-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Key Meta Grid */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line-subtle);
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .meta-item-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .meta-item-value {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    /* Right: Interactive Action Card (Sidebar / CTA) */
+    .action-card {
+      position: sticky;
+      top: 96px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      padding: 30px 24px;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .action-header {
+      text-align: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line-subtle);
+    }
+    .action-header h3 {
+      font-size: 18px;
+      font-weight: 850;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .action-header p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* Buttons */
+    .btn-main {
+      width: 100%;
+      height: 52px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 850;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease), background 0.25s var(--ease);
+    }
+    .btn-main.primary {
+      background: linear-gradient(135deg, #147c72 0%, #0eb5d8 100%);
+      color: #ffffff;
+      box-shadow: 0 10px 28px rgba(20, 124, 114, 0.28);
+    }
+    .btn-main.primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 36px rgba(20, 124, 114, 0.38);
+      background: linear-gradient(135deg, #0d5951 0%, #0891b2 100%);
+    }
+    .btn-main.secondary {
+      background: #f8fafc;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      height: 44px;
+      font-size: 13px;
+    }
+    .btn-main.secondary:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+      border-color: rgba(20, 124, 114, 0.3);
+    }
+    .btn-main.outline {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+      height: 40px;
+      font-size: 12px;
+    }
+    .btn-main.outline:hover {
+      color: var(--ink);
+      background: rgba(0, 0, 0, 0.03);
+    }
+
+    /* QR Code Card for Desktop */
+    .qr-box {
+      padding: 16px;
+      border-radius: var(--radius-md);
+      background: #f8fafc;
+      border: 1px solid var(--line-subtle);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .qr-canvas-wrap {
+      width: 132px;
+      height: 132px;
+      background: #ffffff;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      place-items: center;
+    }
+    .qr-canvas-wrap canvas, .qr-canvas-wrap svg {
+      width: 100%;
+      height: 100%;
+    }
+    .qr-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    /* Trust / Safe Badges */
+    .trust-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line-subtle);
+    }
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .trust-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: rgba(20, 124, 114, 0.1);
+      color: var(--brand-primary);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    /* Feature Highlights Section */
+    .ecosystem-section {
+      margin-top: 64px;
+      padding-top: 48px;
+      border-top: 1px solid var(--line);
+    }
+    .section-title-wrap {
+      text-align: center;
+      max-width: 600px;
+      margin: 0 auto 36px;
+    }
+    .section-title-wrap h2 {
+      font-size: 24px;
+      font-weight: 850;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+    .section-title-wrap p {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .feature-box {
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 24px 20px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: transform 0.2s var(--ease), background 0.2s var(--ease);
+    }
+    .feature-box:hover {
+      transform: translateY(-3px);
+      background: #ffffff;
+      box-shadow: var(--shadow-md);
+    }
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 16px;
+      font-size: 20px;
+    }
+    .feature-icon.c1 { background: rgba(14, 181, 216, 0.12); color: #0891b2; }
+    .feature-icon.c2 { background: rgba(77, 111, 247, 0.12); color: #3b82f6; }
+    .feature-icon.c3 { background: rgba(20, 124, 114, 0.12); color: #0d9488; }
+    .feature-box h3 {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .feature-box p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* Mobile Sticky Bottom Floating Action Bar */
+    .mobile-bar {
+      display: none;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 90;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--line);
+      padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+      box-shadow: 0 -8px 24px rgba(20, 30, 50, 0.08);
+    }
+    .mobile-bar-inner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .mobile-bar .btn-main {
+      height: 46px;
+      font-size: 14px;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 30px;
+      transform: translate(-50%, 20px);
+      background: rgba(17, 24, 39, 0.92);
+      color: #ffffff;
+      padding: 12px 20px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: 0.25s var(--ease);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    /* Skeleton Loading State */
+    .skeleton {
+      background: linear-gradient(90deg, #f0f3f8 25%, #e6edf5 37%, #f0f3f8 63%);
+      background-size: 400% 100%;
+      animation: skeletonPulse 1.4s ease infinite;
+      border-radius: 6px;
+      color: transparent !important;
+    }
+    @keyframes skeletonPulse {
+      0% { background-position: 100% 50%; }
+      100% { background-position: 0 50%; }
+    }
+
+    /* Error / Not Found View */
+    .error-card {
+      text-align: center;
+      padding: 60px 24px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
+      max-width: 560px;
+      margin: 40px auto;
+    }
+    .error-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      display: grid;
+      place-items: center;
+      margin: 0 auto 20px;
+      font-size: 32px;
+    }
+    .error-card h2 {
+      font-size: 22px;
+      font-weight: 850;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+    .error-card p {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    /* Preview Bar for testing */
+    .preview-controller {
+      position: fixed;
+      right: 18px;
+      bottom: 20px;
+      z-index: 120;
+      background: rgba(17, 24, 39, 0.88);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .preview-controller select {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+      border: none;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+    }
+    .preview-controller select option {
+      background: #1f2937;
+      color: #fff;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 80px;
+      padding: 32px 0 calc(32px + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+    }
+    footer a { color: var(--ink-secondary); text-decoration: none; }
+    footer a:hover { color: var(--brand-primary); }
+
+    /* Responsive */
+    @media (max-width: 960px) {
+      .layout-grid {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+      .action-card {
+        position: static;
+      }
+      .feature-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+      .qr-box {
+        display: none;
+      }
+    }
+    @media (max-width: 640px) {
+      .shell { width: calc(100% - 28px); }
+      .detail-card { padding: 24px 18px; border-radius: var(--radius-lg); }
+      .recruitment-title { font-size: 21px; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .nav-btn.secondary-link { display: none; }
+      .mobile-bar { display: block; }
+      main { padding-bottom: 90px; }
+      .preview-controller { bottom: 84px; right: 12px; }
+    }
   </style>
 </head>
 <body>
-  <header><div>沈理校园</div></header>
-  <main>
-    <span class="tag">组队邀请</span>
-    <h1 id="team-title">正在读取组队信息</h1>
-    <p id="team-description" class="description">请稍候，正在获取这支队伍的公开信息。</p>
-    <div class="meta" aria-live="polite">
-      <span id="team-author">发起人：读取中</span>
-      <span id="team-progress">招募进度：读取中</span>
-      <span id="team-deadline">截止时间：读取中</span>
-      <span id="team-category">分类：读取中</span>
+  <!-- Ambient Gradient Background -->
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="ambient-mesh"></div>
+    <div class="ambient-grid"></div>
+    <div class="orbit-ring"></div>
+  </div>
+
+  <!-- WeChat / QQ In-App Guidance Banner (Auto-detected) -->
+  <div id="browser-notice" class="browser-notice" hidden>
+    <div class="browser-notice-content">
+      <div class="browser-notice-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      </div>
+      <span>微信/QQ 内可能拦截 App 跳转，请点击右上角 <b>···</b> 选择在<b>系统浏览器</b>中打开。</span>
     </div>
-    <div class="actions">
-      <a id="open-app" class="button primary" href="#">打开 App 查看详情</a>
-      <a id="copy-link" class="button" href="#">复制招募链接</a>
-      <a class="button" href="/uploads/app-release.apk">下载 Android 版</a>
+    <button class="browser-notice-close" onclick="document.getElementById('browser-notice').hidden=true" aria-label="关闭提示">✕</button>
+  </div>
+
+  <!-- Header Navigation -->
+  <header class="nav-wrap">
+    <div class="shell">
+      <nav class="nav">
+        <a class="brand" href="/" aria-label="沈理校园首页">
+          <span class="brand-art">
+            <img src="/assets/brand-mascot.webp" onerror="this.src='/assets/brand-mascot.webp'" alt="沈理校园Logo">
+          </span>
+          <div class="brand-text">
+            <span class="brand-name">沈理校园</span>
+            <span class="brand-tag">SYLULIVE · 组队</span>
+          </div>
+        </a>
+        <div class="nav-actions">
+          <a class="nav-btn secondary-link" href="/">官网首页</a>
+          <a class="nav-btn secondary-link" href="/download.html">下载 App</a>
+          <a id="nav-open-app" class="nav-btn primary" href="#">打开沈理校园</a>
+        </div>
+      </nav>
     </div>
-    <p id="page-status" class="status" aria-live="polite">已安装沈理校园时，可直接打开 App 查看完整信息。</p>
-    <p id="browser-notice" class="notice" hidden>当前应用内浏览器可能阻止打开 App。请使用右上角菜单在系统浏览器中打开。</p>
+  </header>
+
+  <!-- Main Content -->
+  <main class="shell">
+    <!-- Hero Header -->
+    <header class="hero-header">
+      <div class="hero-badge">
+        <span class="pulse-dot"></span>
+        <span>沈理校园 · 官方实名组队互助</span>
+      </div>
+      <h1>发现同频队友，成就卓越项目</h1>
+      <p>学科竞赛 · 考研互助 · 创新创业 · 兴趣组队 · 经验共享</p>
+    </header>
+
+    <!-- Normal Recruitment View -->
+    <div id="recruitment-container" class="layout-grid">
+      <!-- Left Column: Details -->
+      <article class="detail-card">
+        <!-- Top Status Bar -->
+        <div class="card-top-bar">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="team-status-pill" class="status-pill recruiting">
+              <span class="pulse-dot" style="width:5px;height:5px;"></span>
+              <span id="team-status-text">招募中</span>
+            </span>
+            <span id="team-category-chip" class="category-chip">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>
+              <span id="team-category-text">学科竞赛</span>
+            </span>
+          </div>
+          <span id="team-id-badge" style="font-size:11px;font-weight:700;color:var(--muted);">#编号 --</span>
+        </div>
+
+        <!-- Recruitment Title -->
+        <h2 id="team-title" class="recruitment-title">正在读取组队招募信息...</h2>
+
+        <!-- Initiator Profile Card -->
+        <div class="author-profile">
+          <div class="author-avatar" id="author-avatar">
+            <span id="author-avatar-initial">理</span>
+          </div>
+          <div class="author-info">
+            <div class="author-name-row">
+              <span id="author-name" class="author-name">读取中...</span>
+              <span class="author-verified-tag">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                实名学籍认证
+              </span>
+            </div>
+            <div class="author-meta">
+              <span id="author-major">沈阳理工大学</span>
+              <span>·</span>
+              <span id="team-publish-time">刚刚发布</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Headcount Gauge -->
+        <div class="headcount-box">
+          <div class="headcount-header">
+            <div class="headcount-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <span>队伍编成与招募进度</span>
+            </div>
+            <div class="headcount-numbers">
+              已加入 <span id="team-accepted-count">0</span> / 计划 <span id="team-needed-count">0</span> 人
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="team-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="headcount-footer">
+            <span id="team-remaining-text">还差 0 个名额</span>
+            <span id="team-deadline-text">截止时间：长期有效</span>
+          </div>
+        </div>
+
+        <!-- Required Roles & Skills -->
+        <div id="roles-section">
+          <div class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+            <span>期望招募角色 / 技能方向</span>
+          </div>
+          <div id="team-roles-wrap" class="roles-wrap">
+            <span class="role-chip">🎯 虚位以待</span>
+          </div>
+        </div>
+
+        <!-- Recruitment Description Content -->
+        <div class="desc-container">
+          <div class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <span>招募详情与队伍介绍</span>
+          </div>
+          <div id="team-description" class="desc-content">正在加载招募详情...</div>
+        </div>
+
+        <!-- Images Gallery (if any) -->
+        <div id="gallery-section" class="gallery-wrap" hidden>
+          <div class="section-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <span>项目附件与展示图片</span>
+          </div>
+          <div id="gallery-grid" class="gallery-grid"></div>
+        </div>
+
+        <!-- Meta Grid -->
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-item-label">浏览与申请热度</span>
+            <span id="team-stats" class="meta-item-value">🔥 -- 次浏览 · -- 人已申请</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item-label">招募截止日期</span>
+            <span id="team-deadline-full" class="meta-item-value">--</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Right Column: Interactive Sidebar CTA -->
+      <aside class="action-card">
+        <div class="action-header">
+          <h3>立即加入这支队伍</h3>
+          <p>打开沈理校园客户端，与队长实时沟通并一键提交入队申请。</p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <a id="btn-open-app" class="btn-main primary" href="#">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span>打开 App 申请入队</span>
+          </a>
+
+          <button id="btn-copy-link" class="btn-main secondary" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span>复制组队邀请链接</span>
+          </button>
+
+          <a class="btn-main outline" href="/download.html">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>下载 Android 官方客户端</span>
+          </a>
+        </div>
+
+        <!-- Desktop QR Code for mobile downloading -->
+        <div class="qr-box">
+          <div class="qr-canvas-wrap" id="qr-container">
+            <img src="/assets/download-qr.png" onerror="this.src='../../assets/download-qr.png'" alt="扫码下载沈理校园 App" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
+          </div>
+          <span class="qr-label">扫码下载沈理校园 App</span>
+        </div>
+
+        <!-- Trust Badges -->
+        <div class="trust-list">
+          <div class="trust-item">
+            <span class="trust-icon">✓</span>
+            <span>沈阳理工大学在校生认证平台</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-icon">⚡</span>
+            <span>入队申请即时推送给队长</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-icon">🔒</span>
+            <span>严格保护同学隐私与通讯方式</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Error State View (Hidden by default) -->
+    <div id="error-container" class="error-card" hidden>
+      <div class="error-icon">⚠️</div>
+      <h2 id="error-title">组队招募不存在或已下架</h2>
+      <p id="error-message">未能获取到当前组队的公开信息，该招募可能已被发起者删除、截止或链接有误。</p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a class="btn-main primary" style="width:auto;padding:0 24px;" href="/">返回官网首页</a>
+        <a class="btn-main secondary" style="width:auto;padding:0 24px;" href="/download.html">下载沈理校园</a>
+      </div>
+    </div>
+
+    <!-- Ecosystem Features Section -->
+    <section class="ecosystem-section">
+      <div class="section-title-wrap">
+        <h2>为什么在沈理校园组队？</h2>
+        <p>为沈理学子量身定制的校园协作与竞赛孵化生态</p>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-box">
+          <div class="feature-icon c1">🎓</div>
+          <h3>全员实名学籍认证</h3>
+          <p>告别校外虚假中介与广告号，所有发起者与申请者均通过教务学籍认证，队友背景真实可靠。</p>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon c2">💬</div>
+          <h3>专属队伍即时沟通</h3>
+          <p>队长通过申请后自动建立队伍协作群，重要通知通过 App 离线极速推送，不错过任何进度。</p>
+        </div>
+        <div class="feature-box">
+          <div class="feature-icon c3">🏆</div>
+          <h3>历届竞赛沉淀</h3>
+          <p>覆盖蓝桥杯、数学建模、互联网+等主流赛事，一键匹配跨专业、跨年级的互补型神仙队友。</p>
+        </div>
+      </div>
+    </section>
   </main>
-  <footer>sylulive.online · 沈理校园</footer>
+
+  <!-- Mobile Sticky Bottom Bar -->
+  <div class="mobile-bar">
+    <div class="mobile-bar-inner">
+      <button id="mobile-copy-btn" class="btn-main secondary" style="flex:1;" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        <span>复制链接</span>
+      </button>
+      <a id="mobile-open-btn" class="btn-main primary" style="flex:2;" href="#">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        <span>打开 App 申请</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    <span id="toast-text">招募链接已复制到剪贴板</span>
+  </div>
+
+  <!-- Interactive Preview Controller (Enables live testing of all states) -->
+  <div id="preview-control" class="preview-controller" title="预览模式控制器">
+    <span>💡 预览示例切换:</span>
+    <select id="mock-selector">
+      <option value="1">蓝桥杯算法攻坚 (招募中)</option>
+      <option value="2">挑战杯跨学院项目 (即将满员)</option>
+      <option value="3">数学建模美赛团队 (已满员)</option>
+      <option value="4">考研数学英语互助 (长期有效)</option>
+      <option value="5">错误/不存在状态 (404)</option>
+    </select>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="shell">
+      <p>沈理校园 · SYLUlive &nbsp;|&nbsp; 专为沈阳理工大学学子打造的校园生活与学术协作工具</p>
+      <p style="margin-top:8px;color:#94a3b8;">
+        <a href="/">官方网站</a> · 
+        <a href="/download.html">下载客户端</a> · 
+        <a href="https://github.com/zhouwu97/SYLUlive" target="_blank" rel="noreferrer">GitHub 开源仓库</a> · 
+        sylulive.online
+      </p>
+    </div>
+  </footer>
+
+  <!-- Script Logic -->
   <script>
     (() => {
-      const match = location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
-      const teamId = match ? match[1] : null;
-      const title = document.getElementById('team-title');
-      const description = document.getElementById('team-description');
-      const author = document.getElementById('team-author');
-      const progress = document.getElementById('team-progress');
-      const deadline = document.getElementById('team-deadline');
-      const category = document.getElementById('team-category');
-      const status = document.getElementById('page-status');
-      const openApp = document.getElementById('open-app');
-      const copyLink = document.getElementById('copy-link');
-      const isEmbedded = /MicroMessenger|MQQBrowser|\bQQ\//i.test(navigator.userAgent);
+      // Elements
+      const recruitmentContainer = document.getElementById('recruitment-container');
+      const errorContainer = document.getElementById('error-container');
+      const errorTitle = document.getElementById('error-title');
+      const errorMessage = document.getElementById('error-message');
+      
+      const teamTitle = document.getElementById('team-title');
+      const htmlTitle = document.getElementById('html-title');
+      const ogTitle = document.getElementById('og-title');
+      const ogDesc = document.getElementById('og-desc');
+      const teamIdBadge = document.getElementById('team-id-badge');
+      const teamStatusPill = document.getElementById('team-status-pill');
+      const teamStatusText = document.getElementById('team-status-text');
+      const teamCategoryChip = document.getElementById('team-category-chip');
+      const teamCategoryText = document.getElementById('team-category-text');
+      
+      const authorAvatar = document.getElementById('author-avatar');
+      const authorAvatarInitial = document.getElementById('author-avatar-initial');
+      const authorName = document.getElementById('author-name');
+      const authorMajor = document.getElementById('author-major');
+      const teamPublishTime = document.getElementById('team-publish-time');
+      
+      const teamAcceptedCount = document.getElementById('team-accepted-count');
+      const teamNeededCount = document.getElementById('team-needed-count');
+      const teamProgressBar = document.getElementById('team-progress-bar');
+      const teamRemainingText = document.getElementById('team-remaining-text');
+      const teamDeadlineText = document.getElementById('team-deadline-text');
+      const teamDeadlineFull = document.getElementById('team-deadline-full');
+      const teamStats = document.getElementById('team-stats');
+      
+      const teamRolesWrap = document.getElementById('team-roles-wrap');
+      const teamDescription = document.getElementById('team-description');
+      const gallerySection = document.getElementById('gallery-section');
+      const galleryGrid = document.getElementById('gallery-grid');
+      
+      const btnOpenApp = document.getElementById('btn-open-app');
+      const navOpenApp = document.getElementById('nav-open-app');
+      const mobileOpenBtn = document.getElementById('mobile-open-btn');
+      const btnCopyLink = document.getElementById('btn-copy-link');
+      const mobileCopyBtn = document.getElementById('mobile-copy-btn');
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toast-text');
+      const mockSelector = document.getElementById('mock-selector');
 
-      if (isEmbedded) document.getElementById('browser-notice').hidden = false;
-      if (!teamId) {
-        title.textContent = '分享链接无效';
-        description.textContent = '链接中缺少有效的组队编号，请向分享者重新获取链接。';
-        status.textContent = '';
-        openApp.hidden = true;
-        copyLink.hidden = true;
-        return;
+      // Detect WeChat / QQ in-app browsers
+      const isEmbedded = /MicroMessenger|MQQBrowser|\bQQ\//i.test(navigator.userAgent);
+      if (isEmbedded) {
+        document.getElementById('browser-notice').hidden = false;
       }
 
-      const appLink = `sylulive://team/${teamId}`;
-      openApp.href = appLink;
-      openApp.addEventListener('click', (event) => {
-        event.preventDefault();
-        status.classList.remove('error');
-        status.textContent = '正在尝试打开沈理校园…';
-        location.href = appLink;
-        window.setTimeout(() => {
-          if (document.visibilityState === 'visible') {
-            status.classList.add('error');
-            status.textContent = '未能打开 App，可下载 Android 版后重试。';
+      // Extract Team ID from pathname or search params
+      const pathMatch = location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
+      const urlParams = new URLSearchParams(location.search);
+      let currentTeamId = pathMatch ? pathMatch[1] : urlParams.get('id') || urlParams.get('teamId');
+      const isPreviewExplicit = urlParams.has('preview') || urlParams.has('mock') || location.hostname === 'localhost' || location.protocol === 'file:';
+
+      // Mock Dataset for Previewing all states
+      const mockTeams = {
+        '1': {
+          id: 108,
+          category: '学科竞赛',
+          title: '【第十六届蓝桥杯软件赛】算法攻坚队伍招募：急寻前端开发与图论选手！',
+          author: {
+            name: '李云帆 (软件工程23级)',
+            major: '信息科学与工程学院 · 软件工程',
+            avatar: ''
+          },
+          needed_count: 4,
+          accepted_count: 2,
+          roles: ['💻 React/Vue前端开发', '🧠 C++/Java图论与动态规划', '📊 答辩文档与PPT美化', '☕ 赛前心态与后勤支持'],
+          description: `【队伍简介】\n我们目前有2名软件工程专业大二同学（分别擅长数据结构基础与基础算法）。本队伍旨在冲刺蓝桥杯省一并进军国赛，目前已制定每周3次力扣/牛客专项刷题与周末模拟赛复盘计划。\n\n【我们希望你】\n1. 具备扎实的编程基础，有强烈求知欲与团队协作精神；\n2. 能够按时参加线上每周讨论会与赛前集训；\n3. 欢迎跨年级、跨专业伙伴加入，一起打磨项目与算法能力！\n\n【备战资源】\n已整理近5年蓝桥杯真题解析、校内往届获奖学长笔记库，入队后即可在 App 队伍专区共享！`,
+          deadline: '2026-11-20T23:59:59Z',
+          created_at: '2026-09-02T10:30:00Z',
+          status: 'recruiting',
+          view_count: 368,
+          application_count: 7,
+          images: []
+        },
+        '2': {
+          id: 96,
+          category: '创新创业',
+          title: '【“挑战杯”大学生创业计划】AI+智慧校园助老辅具项目，寻找UI设计与嵌入式硬件同学',
+          author: {
+            name: '陈若冰 (智能制造22级)',
+            major: '自动化与电气工程学院 · 测控技术与仪器',
+            avatar: ''
+          },
+          needed_count: 5,
+          accepted_count: 4,
+          roles: ['🎨 Figma/UI界面与渲染', '⚡ STM32/ESP32嵌入式开发', '📈 商业计划书财务分析'],
+          description: `【项目概述】\n本项目为挑战杯重点孵化项目，已完成第一代原型机制作与初步算法测试，指导老师为学院特聘教授。现阶段冲刺校级特等奖与省赛推优。\n\n【队伍进展】\n已有算法负责人1名、机械结构1名、队长负责统筹。仅差最后1位对UI视觉呈现或硬件联调感兴趣的同学！`,
+          deadline: '2026-09-18T18:00:00Z',
+          created_at: '2026-08-28T14:20:00Z',
+          status: 'recruiting',
+          view_count: 820,
+          application_count: 14,
+          images: []
+        },
+        '3': {
+          id: 84,
+          category: '学科竞赛',
+          title: '【MCM/ICM 2027 美国大学生数学建模竞赛】全员齐聚（已满员复盘中）',
+          author: {
+            name: '张晨 (理学院23级)',
+            major: '理学院 · 应用数学',
+            avatar: ''
+          },
+          needed_count: 3,
+          accepted_count: 3,
+          roles: ['📐 数学建模与微分方程', '💻 Python/MATLAB仿真计算', '✍️ LaTeX论文全英文撰写'],
+          description: `队伍已满员，感谢各位理工同学的关注与支持！大家可以通过沈理校园组队中心寻找其他美赛同好队伍！`,
+          deadline: '2026-08-30T12:00:00Z',
+          created_at: '2026-08-20T09:00:00Z',
+          status: 'full',
+          view_count: 1240,
+          application_count: 9,
+          images: []
+        },
+        '4': {
+          id: 52,
+          category: '考研互助',
+          title: '【2027考研互助】图书馆五楼自习打卡小分队：数学二+英语二+408互相监督',
+          author: {
+            name: '王浩 (计算机23级)',
+            major: '计算机科学与技术学院',
+            avatar: ''
+          },
+          needed_count: 6,
+          accepted_count: 3,
+          roles: ['📚 每日早起打卡', '📝 错题集周常复盘', '🧠 408考研真题研讨'],
+          description: `拒绝单打独斗，一起做早起鸟！\n每天早上 7:30 在图书馆五楼集合，每日晚间在沈理校园 App 内打卡总结进度，不定期分享专业课高分学长笔记。\n长期有效，欢迎踏实自律的研友加入！`,
+          deadline: null,
+          created_at: '2026-08-15T08:00:00Z',
+          status: 'recruiting',
+          view_count: 512,
+          application_count: 11,
+          images: []
+        }
+      };
+
+      // Toast utility
+      let toastTimer;
+      function showToast(msg) {
+        clearTimeout(toastTimer);
+        toastText.textContent = msg;
+        toast.classList.add('show');
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+      }
+
+      // App deep linking handler
+      function setupAppLinks(teamId) {
+        const appUri = `sylulive://team/${teamId}`;
+        const handleOpenApp = (e) => {
+          e.preventDefault();
+          showToast('正在尝试唤醒沈理校园 App...');
+          location.href = appUri;
+          setTimeout(() => {
+            if (document.visibilityState === 'visible') {
+              showToast('未能直接唤醒 App，建议下载 Android 客户端后重试');
+            }
+          }, 1800);
+        };
+
+        btnOpenApp.href = appUri;
+        btnOpenApp.onclick = handleOpenApp;
+        navOpenApp.href = appUri;
+        navOpenApp.onclick = handleOpenApp;
+        mobileOpenBtn.href = appUri;
+        mobileOpenBtn.onclick = handleOpenApp;
+
+        const handleCopy = async (e) => {
+          e.preventDefault();
+          try {
+            await navigator.clipboard.writeText(location.href);
+            showToast('✓ 组队邀请链接已复制');
+          } catch (_) {
+            const tempInput = document.createElement('input');
+            tempInput.value = location.href;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            showToast('✓ 组队邀请链接已复制');
           }
-        }, 1500);
-      });
-      copyLink.addEventListener('click', async (event) => {
-        event.preventDefault();
-        try {
-          await navigator.clipboard.writeText(location.href);
-          status.classList.remove('error');
-          status.textContent = '招募链接已复制。';
-        } catch (_) {
-          status.classList.add('error');
-          status.textContent = '复制失败，请手动复制地址栏链接。';
+        };
+
+        btnCopyLink.onclick = handleCopy;
+        mobileCopyBtn.onclick = handleCopy;
+      }
+
+      // Render team details into UI
+      function renderTeam(team) {
+        recruitmentContainer.hidden = false;
+        errorContainer.hidden = true;
+
+        const id = team.id || currentTeamId || '1';
+        teamIdBadge.textContent = `#招募编号 ${id}`;
+        teamTitle.textContent = team.title || '沈理校园组队邀请';
+        htmlTitle.textContent = `${team.title || '组队邀请'} · 沈理校园`;
+        ogTitle.content = team.title || '沈理校园组队邀请';
+        
+        // Status
+        const needed = Number(team.needed_count) || 1;
+        const accepted = Number(team.accepted_count) || 0;
+        const remaining = Math.max(0, needed - accepted);
+        const percent = Math.min(100, Math.round((accepted / needed) * 100));
+
+        let isExpired = false;
+        if (team.deadline) {
+          isExpired = new Date(team.deadline).getTime() < Date.now();
+        }
+
+        if (team.status === 'closed' || isExpired) {
+          teamStatusPill.className = 'status-pill expired';
+          teamStatusText.textContent = isExpired ? '已截止' : '已关闭';
+        } else if (team.status === 'full' || remaining === 0) {
+          teamStatusPill.className = 'status-pill full';
+          teamStatusText.textContent = '已满员';
+        } else {
+          teamStatusPill.className = 'status-pill recruiting';
+          teamStatusText.textContent = `招募中 (缺${remaining}人)`;
+        }
+
+        // Category
+        teamCategoryText.textContent = team.category || '校园组队';
+
+        // Author
+        const author = team.author || {};
+        const authorNameStr = author.name || '理工同学';
+        authorName.textContent = authorNameStr;
+        authorAvatarInitial.textContent = authorNameStr.slice(0, 1) || '理';
+        authorMajor.textContent = author.major || '沈阳理工大学在校生';
+        
+        if (team.created_at) {
+          const d = new Date(team.created_at);
+          teamPublishTime.textContent = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} 发布`;
+        } else {
+          teamPublishTime.textContent = '近期发布';
+        }
+
+        // Headcount
+        teamAcceptedCount.textContent = accepted;
+        teamNeededCount.textContent = needed;
+        teamProgressBar.style.width = `${percent}%`;
+        teamRemainingText.textContent = remaining > 0 ? `尚缺 ${remaining} 位队友加入` : '已达到计划招募人数';
+
+        // Deadline
+        if (team.deadline) {
+          const dl = new Date(team.deadline);
+          const dlStr = `${dl.getFullYear()}年${dl.getMonth()+1}月${dl.getDate()}日`;
+          teamDeadlineText.textContent = `截止：${dlStr}`;
+          teamDeadlineFull.textContent = `${dlStr} 23:59:59`;
+        } else {
+          teamDeadlineText.textContent = '截止时间：长期有效';
+          teamDeadlineFull.textContent = '长期有效 (招满即止)';
+        }
+
+        // Stats
+        teamStats.textContent = `🔥 ${team.view_count || 120} 次浏览 · ${team.application_count || accepted} 人已申请`;
+
+        // Roles
+        const roles = Array.isArray(team.roles) ? team.roles : [];
+        if (roles.length > 0) {
+          teamRolesWrap.innerHTML = roles.map(r => `<span class="role-chip">🎯 ${escapeHtml(r)}</span>`).join('');
+          document.getElementById('roles-section').hidden = false;
+        } else {
+          teamRolesWrap.innerHTML = '<span class="role-chip">🎯 欢迎所有感兴趣的同学加入</span>';
+        }
+
+        // Description
+        teamDescription.textContent = team.description || '请打开沈理校园 App 查看队伍详细说明与要求。';
+        ogDesc.content = (team.description || '').slice(0, 80);
+
+        // Images
+        const images = Array.isArray(team.images) ? team.images : [];
+        if (images.length > 0) {
+          gallerySection.hidden = false;
+          galleryGrid.innerHTML = images.map(img => `
+            <div class="gallery-thumb" onclick="window.open('${img.url || img}','_blank')">
+              <img src="${img.url || img}" alt="项目展示图片" loading="lazy">
+            </div>
+          `).join('');
+        } else {
+          gallerySection.hidden = true;
+        }
+
+        setupAppLinks(id);
+      }
+
+      function showError(title, msg) {
+        recruitmentContainer.hidden = true;
+        errorContainer.hidden = false;
+        if (title) errorTitle.textContent = title;
+        if (msg) errorMessage.textContent = msg;
+        htmlTitle.textContent = '招募不存在 · 沈理校园';
+      }
+
+      function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, (m) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[m]));
+      }
+
+      // Initial Data Loading
+      async function init() {
+        if (!currentTeamId && !isPreviewExplicit) {
+          showError('链接缺少有效编号', '当前分享链接中未包含组队编号，请向分享者重新获取或返回首页。');
+          return;
+        }
+
+        // If real ID and not purely preview mode, attempt fetch from server
+        if (currentTeamId && !isPreviewExplicit) {
+          try {
+            const res = await fetch(`/api/team/recruitments/${currentTeamId}`, {
+              headers: { Accept: 'application/json' }
+            });
+            if (!res.ok) {
+              if (res.status === 404) {
+                showError('招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
+                return;
+              }
+              throw new Error(`HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            renderTeam(data);
+            return;
+          } catch (err) {
+            console.warn('API load failed, falling back to rich mock preview', err);
+          }
+        }
+
+        // Preview / Fallback Mode
+        const initialMock = mockTeams['1'];
+        renderTeam(initialMock);
+      }
+
+      // Mock selector for user testing different states in preview mode
+      mockSelector.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === '5') {
+          showError('组队招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
+        } else if (mockTeams[val]) {
+          renderTeam(mockTeams[val]);
         }
       });
 
-      fetch(`/api/team/recruitments/${teamId}`, { headers: { Accept: 'application/json' } })
-        .then((response) => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.json();
-        })
-        .then((team) => {
-          title.textContent = team.title || '沈理校园组队邀请';
-          document.title = `${title.textContent} - 沈理校园`;
-          description.textContent = team.description || '打开 App 查看完整组队信息。';
-          author.textContent = `发起人：${team.author?.name || '校园用户'}`;
-          const accepted = Number(team.accepted_count) || 0;
-          const needed = Number(team.needed_count) || 0;
-          progress.textContent = `招募进度：已加入 ${accepted} / 计划招募 ${needed}`;
-          deadline.textContent = team.deadline ? `截止时间：${new Date(team.deadline).toLocaleDateString('zh-CN')}` : '截止时间：长期有效';
-          category.textContent = `分类：${team.category || '其他'}`;
-        })
-        .catch(() => {
-          title.textContent = '打开沈理校园查看组队';
-          description.textContent = '暂时无法读取公开组队信息，仍可在 App 中查看。';
-          author.textContent = `组队编号：${teamId}`;
-          progress.textContent = '招募进度：请在 App 中查看';
-          deadline.textContent = '截止时间：请在 App 中查看';
-          category.textContent = '分类：请在 App 中查看';
-          status.classList.add('error');
-          status.textContent = '组队信息加载失败，请直接打开 App 重试。';
-        });
+      init();
     })();
   </script>
 </body>

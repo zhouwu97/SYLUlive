@@ -28,6 +28,12 @@ final class AcademicRepositoryImpl implements AcademicRepository {
   AcademicSourceKind get sourceKind => _source;
 
   @override
+  AcademicCapabilities get capabilities => switch (_source) {
+        AcademicSourceKind.local => const AcademicCapabilities.local(),
+        AcademicSourceKind.legacy => const AcademicCapabilities.legacy(),
+      };
+
+  @override
   SessionState get sessionState => _active.sessionState;
 
   @override

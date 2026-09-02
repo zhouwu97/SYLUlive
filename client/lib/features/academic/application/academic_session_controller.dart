@@ -48,7 +48,10 @@ final class AcademicSessionController extends ChangeNotifier {
   bool _disposed = false;
 
   String? get appUserId => _appUserId;
-  String? get studentId => _studentId ?? _repository.studentId;
+  String? get studentId =>
+      _sessionResetPending ? null : (_studentId ?? _repository.studentId);
+  AcademicSourceKind get sourceKind => _repository.sourceKind;
+  AcademicCapabilities get capabilities => _repository.capabilities;
   StudentProfile? get profile => _profile;
   CaptchaChallenge? get captchaChallenge => _captchaChallenge;
   CourseFetchResult? get lastCourses => _lastCourses;
@@ -71,10 +74,10 @@ final class AcademicSessionController extends ChangeNotifier {
   ///
   /// App 账号和学校 Session 是两套身份。这里仅在账号发生变化时清理学校
   /// Session，不把 App JWT 传给学校，也不把学校 Cookie 写入 App 存储。
-  void syncAppUser(String? userId) {
+  Future<void> syncAppUser(String? userId) {
     final normalized = userId?.trim();
     final next = normalized == null || normalized.isEmpty ? null : normalized;
-    if (_appUserId == next) return;
+    if (_appUserId == next) return Future<void>.value();
 
     _appUserId = next;
     final generation = ++_accountGeneration;
@@ -84,13 +87,13 @@ final class AcademicSessionController extends ChangeNotifier {
 
     // 账号切换不能复用旧学校 Cookie；清理排入同一队列，避免与进行中的登录
     // 请求并发修改同一个 JiaowuClient。
-    unawaited(_enqueue<void>(() async {
+    return _enqueue<void>(() async {
       if (_disposed || generation != _accountGeneration) return;
       await _repository.resetSession();
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();
-    }));
+    });
   }
 
   Future<LoginResult> login({
@@ -111,13 +114,18 @@ final class AcademicSessionController extends ChangeNotifier {
       _captchaChallenge = null;
       _notifyListeners();
 
-      final result = await _repository.login(
-        studentId: studentId.trim(),
-        password: password,
-      );
-      if (generation != _accountGeneration || _disposed) return result;
-      await _applyLoginResult(result, generation);
-      return result;
+      try {
+        final result = await _repository.login(
+          studentId: studentId.trim(),
+          password: password,
+        );
+        if (generation != _accountGeneration || _disposed) {
+          return const LoginPageChanged(message: '教务账号上下文已切换');
+        }
+        return _applyLoginResult(result, generation);
+      } catch (error) {
+        return _handleLoginException(error, generation);
+      }
     });
   }
 
@@ -131,12 +139,17 @@ final class AcademicSessionController extends ChangeNotifier {
       _failure = null;
       _notifyListeners();
 
-      final result = await _repository.continueLoginWithCaptcha(
-        code: code.trim(),
-      );
-      if (generation != _accountGeneration || _disposed) return result;
-      await _applyLoginResult(result, generation);
-      return result;
+      try {
+        final result = await _repository.continueLoginWithCaptcha(
+          code: code.trim(),
+        );
+        if (generation != _accountGeneration || _disposed) {
+          return const CaptchaExpired(message: '教务账号上下文已切换');
+        }
+        return _applyLoginResult(result, generation);
+      } catch (error) {
+        return _handleLoginException(error, generation);
+      }
     });
   }
 
@@ -154,7 +167,12 @@ final class AcademicSessionController extends ChangeNotifier {
         _failure = null;
       } catch (error) {
         if (generation != _accountGeneration || _disposed) return;
-        _failure = AcademicFailure.fromException(error);
+        final failure = AcademicFailure.fromException(error);
+        _failure = failure;
+        if (_shouldLeaveCaptchaState(failure)) {
+          _captchaChallenge = null;
+          _status = AcademicSessionStatus.error;
+        }
       }
       _notifyListeners();
     });
@@ -254,7 +272,7 @@ final class AcademicSessionController extends ChangeNotifier {
     });
   }
 
-  Future<void> _applyLoginResult(
+  Future<LoginResult> _applyLoginResult(
     LoginResult result,
     int generation,
   ) async {
@@ -268,28 +286,52 @@ final class AcademicSessionController extends ChangeNotifier {
         // Profile 是显式的第二步请求；登录成功不会因为 Profile 暂时失败而
         // 丢弃已经建立的学校 Session。
         try {
-          _profile = await _repository.getProfile();
-          if (generation != _accountGeneration || _disposed) return;
+          final profile = await _repository.getProfile();
+          if (generation != _accountGeneration || _disposed) {
+            return const LoginPageChanged(message: '教务账号上下文已切换');
+          }
+          _profile = profile;
         } catch (error) {
-          if (generation != _accountGeneration || _disposed) return;
-          _failure = AcademicFailure.fromException(error);
+          if (generation != _accountGeneration || _disposed) {
+            return const LoginPageChanged(message: '教务账号上下文已切换');
+          }
+          final failure = AcademicFailure.fromException(error);
+          _failure = failure;
+          if (failure.kind == AcademicFailureKind.sessionExpired) {
+            _status = AcademicSessionStatus.error;
+            _notifyListeners();
+            return LoginPageChanged(message: failure.message);
+          }
         }
         _status = AcademicSessionStatus.authenticated;
         _notifyListeners();
+        return result;
       case CaptchaRequired():
         _status = AcademicSessionStatus.awaitingCaptcha;
         _failure = AcademicFailure.fromLoginResult(result);
         _notifyListeners();
         try {
           _captchaChallenge = await _repository.getCaptchaChallenge();
-          if (generation != _accountGeneration || _disposed) return;
+          if (generation != _accountGeneration || _disposed) {
+            return const CaptchaExpired(message: '教务账号上下文已切换');
+          }
           _failure = null;
         } catch (error) {
-          if (generation != _accountGeneration || _disposed) return;
-          _failure = AcademicFailure.fromException(error);
+          if (generation != _accountGeneration || _disposed) {
+            return const CaptchaExpired(message: '教务账号上下文已切换');
+          }
+          final failure = AcademicFailure.fromException(error);
+          _failure = failure;
+          if (_shouldLeaveCaptchaState(failure)) {
+            _captchaChallenge = null;
+            _status = AcademicSessionStatus.error;
+          }
         }
-        _status = AcademicSessionStatus.awaitingCaptcha;
+        if (_status != AcademicSessionStatus.error) {
+          _status = AcademicSessionStatus.awaitingCaptcha;
+        }
         _notifyListeners();
+        return result;
       case InvalidCredentials():
       case CaptchaExpired():
       case LoginPageChanged():
@@ -298,7 +340,57 @@ final class AcademicSessionController extends ChangeNotifier {
         _failure = AcademicFailure.fromLoginResult(result);
         _status = AcademicSessionStatus.error;
         _notifyListeners();
+        return result;
     }
+  }
+
+  LoginResult _handleLoginException(Object error, int generation) {
+    if (generation != _accountGeneration || _disposed) {
+      return const LoginPageChanged(message: '教务账号上下文已切换');
+    }
+    final failure = AcademicFailure.fromException(error);
+    _captchaChallenge = null;
+    _failure = failure;
+    _status = AcademicSessionStatus.error;
+    _notifyListeners();
+    return _loginResultForFailure(failure);
+  }
+
+  LoginResult _loginResultForFailure(AcademicFailure failure) {
+    return switch (failure.kind) {
+      AcademicFailureKind.invalidCredentials =>
+        InvalidCredentials(message: failure.message),
+      AcademicFailureKind.captchaRequired =>
+        CaptchaRequired(message: failure.message),
+      AcademicFailureKind.captchaExpired =>
+        CaptchaExpired(message: failure.message),
+      AcademicFailureKind.network => NetworkUnavailable(
+          message: failure.message,
+          cause: NetworkException(
+            message: failure.message,
+            code: failure.code,
+            diagnostic: failure.diagnostic,
+          ),
+        ),
+      _ => LoginPageChanged(message: failure.message),
+    };
+  }
+
+  bool _shouldLeaveCaptchaState(AcademicFailure failure) {
+    return switch (failure.kind) {
+      AcademicFailureKind.captchaExpired ||
+      AcademicFailureKind.sessionExpired ||
+      AcademicFailureKind.unauthenticated ||
+      AcademicFailureKind.protocolChanged ||
+      AcademicFailureKind.unexpected =>
+        true,
+      AcademicFailureKind.invalidCredentials ||
+      AcademicFailureKind.captchaRequired ||
+      AcademicFailureKind.network ||
+      AcademicFailureKind.courseUnavailable ||
+      AcademicFailureKind.gradeUnavailable =>
+        false,
+    };
   }
 
   bool _canReadAcademicData() {

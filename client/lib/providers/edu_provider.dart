@@ -7,6 +7,7 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/domain/academic_repository.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
@@ -115,6 +116,9 @@ class EduProvider extends ChangeNotifier {
   bool get isStatusLoaded => _statusLoaded;
   String? get errorMessage => _errorMessage;
   bool get isUsingLocalAcademicSession => _usingLocalAcademicSession;
+  AcademicCapabilities get academicCapabilities =>
+      _academicSessionController?.capabilities ??
+      const AcademicCapabilities.legacy();
   int get enrollmentYear {
     int startYear = DateTime.now().year - 4; // 默认往前推4年
     if (_studentId.length >= 2) {
@@ -162,13 +166,13 @@ class EduProvider extends ChangeNotifier {
 
   /// 读取学业情况缓存。
   AcademicSituationCacheEntry? getCachedAcademicSituation() {
-    if (_userId == null) return null;
+    if (_usingLocalAcademicSession || _userId == null) return null;
     return _academicSituationCache[_academicSituationCacheKey(_userId!)];
   }
 
   /// 读取学分要求缓存。
   CreditRequirementCacheEntry? getCachedCreditRequirements() {
-    if (_userId == null) return null;
+    if (_usingLocalAcademicSession || _userId == null) return null;
     return _creditRequirementCache[_creditRequirementCacheKey(_userId!)];
   }
 
@@ -217,6 +221,7 @@ class EduProvider extends ChangeNotifier {
 
   EduGradeDetail? getCachedGradeDetail(
       EduGrade grade, String year, int semester) {
+    if (_usingLocalAcademicSession) return null;
     return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
@@ -260,9 +265,10 @@ class EduProvider extends ChangeNotifier {
     if (controller == null) return;
 
     final localState = controller.sessionState;
-    final hasLocalFlow = controller.status != AcademicSessionStatus.idle ||
-        localState != SessionState.unauthenticated ||
-        controller.studentId != null;
+    final hasLocalFlow = controller.sourceKind == AcademicSourceKind.local &&
+        (controller.status != AcademicSessionStatus.idle ||
+            localState != SessionState.unauthenticated ||
+            controller.studentId != null);
     if (!hasLocalFlow) {
       if (!_usingLocalAcademicSession) return;
       _usingLocalAcademicSession = false;
@@ -978,6 +984,13 @@ class EduProvider extends ChangeNotifier {
     int semester, {
     bool forceRefresh = false,
   }) async {
+    if (_usingLocalAcademicSession &&
+        !academicCapabilities.supportsGradeDetail) {
+      return OperationResult.fail(
+        '本机直连暂不支持成绩构成',
+        errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
+      );
+    }
     final requestUserId = _userId;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
@@ -1053,6 +1066,10 @@ class EduProvider extends ChangeNotifier {
     int semester, {
     Duration initialDelay = const Duration(milliseconds: 300),
   }) {
+    if (_usingLocalAcademicSession &&
+        !academicCapabilities.supportsGradeDetail) {
+      return Future<void>.value();
+    }
     final requestUserId = _userId;
     if (requestUserId == null || grades.isEmpty) return Future<void>.value();
 
@@ -1110,6 +1127,13 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
+    if (_usingLocalAcademicSession &&
+        !academicCapabilities.supportsAcademicSituation) {
+      return OperationResult.fail(
+        '本机直连暂不支持官方 GPA',
+        errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
+      );
+    }
     final requestUserId = _userId;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
@@ -1254,6 +1278,13 @@ class EduProvider extends ChangeNotifier {
 
   Future<OperationResult<EduCreditRequirementOverview>>
       fetchCreditRequirements() async {
+    if (_usingLocalAcademicSession &&
+        !academicCapabilities.supportsCreditRequirements) {
+      return OperationResult.fail(
+        '本机直连暂不支持学分要求',
+        errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
+      );
+    }
     final requestUserId = _userId;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');

@@ -177,11 +177,28 @@ var allowedWaterPostTypes = map[string]struct{}{
 	"campus_news":   {},
 }
 
+// 与客户端 market_publish_form.dart 的 _availableMarketTags 保持同步：
+// sell/buy/lost/found/proxy 五种发布类型的全部快捷标签都在此白名单内。
 var allowedMarketTags = map[string]struct{}{
+	// sell 出售
 	"自提":     {},
 	"可送宿舍楼下": {},
 	"可小刀":    {},
 	"急出":     {},
+	// buy 求购
+	"可上门": {},
+	"长期求": {},
+	"急需":  {},
+	// lost 失物 / found 招领 共用
+	"急寻":  {},
+	"有酬谢": {},
+	"可面交": {},
+	"待认领": {},
+	"已交宿管": {},
+	// proxy 办事
+	"可跑腿":  {},
+	"当日完成": {},
+	"可议价":  {},
 }
 
 var (

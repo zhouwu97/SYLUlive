@@ -133,11 +133,16 @@ class EduProvider extends ChangeNotifier {
 
   /// 当前实际请求使用的教务来源。
   ///
-  /// 控制器默认绑定本机数据源，但在本机流程尚未启动时兼容旧服务端
-  /// 状态；因此不能只读取 repository 的 sourceKind 判断当前缓存命名空间。
-  AcademicSourceKind get _activeAcademicSourceKind => _usingLocalAcademicSession
-      ? AcademicSourceKind.local
-      : AcademicSourceKind.legacy;
+  /// 只要主应用注入了会话控制器，就以仓储显式选择的来源为准。来源未
+  /// 完成登录时只能返回“未就绪”，不能因为旧服务端仍有绑定状态而偷偷
+  /// 改走兼容代理。
+  AcademicSourceKind get _activeAcademicSourceKind {
+    final controller = _academicSessionController;
+    if (controller != null) return controller.sourceKind;
+    return _usingLocalAcademicSession
+        ? AcademicSourceKind.local
+        : AcademicSourceKind.legacy;
+  }
 
   /// 内存缓存 key：App 用户 + 教务来源 + 来源学号 + 学年学期。
   String _cacheKeyFor(
@@ -305,7 +310,7 @@ class EduProvider extends ChangeNotifier {
     _refreshAuthUser = refreshAuthUser;
   }
 
-  /// 接入 Batch 5 本机教务会话，同时保留旧服务端代理的状态和接口。
+  /// 接入 Batch 5 本机教务会话；旧服务端代理仅在显式选择 legacy 来源时使用。
   ///
   /// 该 setter 保持独立于构造函数，避免破坏已有测试和旧页面的依赖注入。
   void setAcademicSessionController(AcademicSessionController controller) {
@@ -329,11 +334,8 @@ class EduProvider extends ChangeNotifier {
     if (controller == null) return;
 
     final localState = controller.sessionState;
-    final hasLocalFlow = controller.sourceKind == AcademicSourceKind.local &&
-        (controller.status != AcademicSessionStatus.idle ||
-            localState != SessionState.unauthenticated ||
-            controller.studentId != null);
-    if (!hasLocalFlow) {
+    final isLocalSource = controller.sourceKind == AcademicSourceKind.local;
+    if (!isLocalSource) {
       if (!_usingLocalAcademicSession) return;
       _usingLocalAcademicSession = false;
       _isBound = false;

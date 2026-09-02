@@ -77,6 +77,73 @@ void main() {
     controller.dispose();
   });
 
+  test('本机来源尚未登录时不会回退到旧服务端课表接口', () async {
+    final repository = _FakeAcademicRepository();
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+
+    final requestedPaths = <String>[];
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requestedPaths.add(options.path);
+            handler.reject(DioException(requestOptions: options));
+          },
+        ),
+      );
+    final provider = EduProvider(dio)
+      ..setAcademicSessionController(controller)
+      ..syncSessionUser('app-user-a');
+
+    final result = await provider.getCourses('2026', 3);
+
+    expect(provider.isUsingLocalAcademicSession, isTrue);
+    expect(result?.success, isFalse);
+    expect(result?.errorMessage, '教务账号未就绪');
+    expect(requestedPaths, isEmpty);
+
+    provider.dispose();
+    controller.dispose();
+  });
+
+  test('课表网格的本机来源尚未登录时不会请求旧服务端接口', () async {
+    final repository = _FakeAcademicRepository();
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+
+    final requestedPaths = <String>[];
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requestedPaths.add(options.path);
+            handler.reject(DioException(requestOptions: options));
+          },
+        ),
+      );
+    final schedule = CourseScheduleProvider(
+      dio,
+      (_) => _NoopSnapshotStore('app-user-a'),
+      repository,
+      controller,
+    )..syncSessionContext('app-user-a', '2026000001');
+
+    await schedule.loadCourses(forceRefresh: true);
+
+    expect(requestedPaths, isEmpty);
+    expect(schedule.errorMessage, isNotNull);
+
+    schedule.dispose();
+    controller.dispose();
+  });
+
   test('课表本机请求经 SessionController 排队，不与登录并发', () async {
     final loginRelease = Completer<void>();
     final repository = _FakeAcademicRepository(

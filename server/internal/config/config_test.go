@@ -33,6 +33,9 @@ func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
 	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
 	t.Setenv("EXAM_PAPER_DIR", "")
 	production := Load()
 	if production.ExamPaperDir != "/opt/shenliyuan/private/exam-papers" {
@@ -97,6 +100,28 @@ func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {
 	os.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
 	os.Unsetenv("UPLOAD_USE_ACCEL_REDIRECT")
 	assertLoadPanics(t)
+}
+
+func TestLoadReleaseRequiresExplicitSchoolRetirementSwitches(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
+
+	require.PanicsWithError(
+		t,
+		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true",
+		func() { _ = Load() },
+	)
+}
+
+func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
+
+	cfg := Load()
+	require.True(t, cfg.SchoolDeviceCapabilityCut)
+	require.True(t, cfg.SchoolAcademicRoutesRetired)
 }
 
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
@@ -266,6 +291,9 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/opt/shenliyuan/private/competition-award-evidence")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
 	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")

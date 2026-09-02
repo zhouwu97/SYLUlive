@@ -48,4 +48,22 @@ void main() {
     expect(response.statusCode, 200);
     expect(reachedNetwork, isTrue);
   });
+
+  test('教务注册、预验证和找回密码旧别名同样被阻断', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid'))
+      ..interceptors.add(const AcademicServerAccessGuard());
+
+    for (final path in const [
+      '/register_with_edu',
+      '/api/login_edu',
+      '/api/forgot_password/',
+      '/password/edu/reset',
+    ]) {
+      await expectLater(
+        dio.post(path),
+        throwsA(isA<DioException>()),
+        reason: '旧教务认证路径未被阻断: $path',
+      );
+    }
+  });
 }

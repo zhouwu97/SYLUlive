@@ -146,16 +146,6 @@ final _authCases = <_AuthCase>[
     (provider) => provider.login('20260001', 'password'),
   ),
   _AuthCase(
-    'registerWithEdu',
-    201,
-    (provider) => provider.registerWithEdu(
-      '20260001',
-      'password',
-      eduPassword: 'edu-pass',
-      consents: _registrationConsents,
-    ),
-  ),
-  _AuthCase(
     'registerWithEmail',
     201,
     (provider) => provider.registerWithEmail(
@@ -230,6 +220,51 @@ void main() {
           provider.dio.options.headers['Authorization'], 'Bearer next-token');
     });
   }
+
+  test('教务注册入口已关闭且不发起服务端请求', () async {
+    final provider = _provider(
+      _QueuedAuthAdapter(),
+      _FakeAuthCredentialStore(),
+    );
+
+    final result = await provider.registerWithEdu(
+      '20260001',
+      'password',
+      eduPassword: 'edu-pass',
+      consents: _registrationConsents,
+    );
+
+    expect(result.success, isFalse);
+    expect(result.errorMessage, contains('教务注册已关闭'));
+  });
+
+  test('教务验证找回密码入口已关闭且不发起服务端请求', () async {
+    final provider = _provider(
+      _QueuedAuthAdapter(),
+      _FakeAuthCredentialStore(),
+    );
+
+    final result = await provider.resetPasswordWithEdu(
+      '20260001',
+      'edu-pass',
+      'new-password',
+    );
+
+    expect(result.success, isFalse);
+    expect(result.errorMessage, contains('已关闭'));
+  });
+
+  test('教务预验证入口已关闭且不发起服务端请求', () async {
+    final provider = _provider(
+      _QueuedAuthAdapter(),
+      _FakeAuthCredentialStore(),
+    );
+
+    final result = await provider.verifyEdu('20260001', 'edu-pass');
+
+    expect(result.success, isFalse);
+    expect(result.errorMessage, contains('已关闭'));
+  });
 
   test('Web 认证 user 写入 false 时回滚已写入的 token', () async {
     final preferences = _FakePreferenceStore();

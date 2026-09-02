@@ -61,6 +61,14 @@ def test_application_factory_captures_retirement_state(monkeypatch) -> None:
     assert "/api/edu/bind" in active_paths
 
 
+def test_missing_retirement_switch_defaults_to_closed(monkeypatch) -> None:
+    monkeypatch.delenv("SCHOOL_AUTHORITY_RETIRED", raising=False)
+
+    app = main.create_app()
+
+    assert app.state.school_authority_retired is True
+
+
 def test_retirement_does_not_block_public_service_routes() -> None:
     client = TestClient(main.create_app(retired=True))
 

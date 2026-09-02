@@ -102,7 +102,7 @@ type Config struct {
 	AccountIdentityReadMode     string // 账号登录读路径：legacy 或 identity
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 表示 Release D 已完成，旧教务/个人快照路由只返回 410。
-	// 两个开关默认关闭，必须由发布证据明确开启；SCHOOL_AUTHORITY_RETIRED 会同时开启二者。
+	// 学校个人能力默认关闭；SCHOOL_AUTHORITY_RETIRED 会同时作为总闸门。
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
 
@@ -187,6 +187,16 @@ func Load() *Config {
 	}
 
 	releaseMode := os.Getenv("GIN_MODE") == "release"
+
+	// 生产环境禁止重新打开服务端学校个人能力。子开关必须显式为 true，
+	// 防止空值回退或仅设置总开关时误开放历史教务路由。
+	if releaseMode {
+		requireReleaseTrue(
+			"SCHOOL_AUTHORITY_RETIRED",
+			"SCHOOL_DEVICE_CAPABILITY_CUT",
+			"SCHOOL_ACADEMIC_ROUTES_RETIRED",
+		)
+	}
 
 	// 图片管线两个开关直接影响生产资源链路（worker 写盘、Nginx 直传）。release 模式
 	// 必须显式设置，空值视同缺失（envBool 对空串静默回退，会形成假显式配置）。
@@ -326,7 +336,7 @@ func Load() *Config {
 	}
 	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
 	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
-	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
+	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", true)
 	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
 	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
 
@@ -549,6 +559,19 @@ func envBool(name string, fallback bool) bool {
 		panic(fmt.Errorf("%s 必须为 true 或 false", name))
 	}
 	return parsed
+}
+
+func requireReleaseTrue(names ...string) {
+	for _, name := range names {
+		value, ok := os.LookupEnv(name)
+		if !ok || strings.TrimSpace(value) == "" {
+			panic(fmt.Errorf("release 模式必须显式设置 %s=true", name))
+		}
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil || !parsed {
+			panic(fmt.Errorf("release 模式必须设置 %s=true", name))
+		}
+	}
 }
 
 func firstNonEmptyEnv(names ...string) string {

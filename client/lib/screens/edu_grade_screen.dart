@@ -219,8 +219,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     await _loadGrades();
     if (!mounted) return;
 
-    // GPA 在后台预取；学分要求仅进入总览时查询，避免拖慢成绩首屏。
-    unawaited(_loadAcademicSituation());
+    // 仅在当前数据源声明支持时预取 GPA；本机直连尚未迁移该能力，不能
+    // 触发旧服务端接口，也不能拿旧来源缓存填充当前页面。
+    if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      unawaited(_loadAcademicSituation());
+    } else {
+      _markUnsupportedAcademicFeatures();
+    }
   }
 
   bool _tryUseInitialSemester(String userId) {
@@ -247,6 +252,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Future<void> _loadAcademicSituation({bool forceRefresh = false}) async {
     final provider = _eduProvider;
     if (provider == null) return;
+    if (provider.isUsingLocalAcademicSession &&
+        !provider.academicCapabilities.supportsAcademicSituation) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
 
     final cache = provider.getCachedAcademicSituation();
     if (cache != null && !forceRefresh) {
@@ -301,6 +311,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }) async {
     final provider = _eduProvider;
     if (provider == null) return;
+    if (provider.isUsingLocalAcademicSession &&
+        !provider.academicCapabilities.supportsCreditRequirements) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
 
     final cache = provider.getCachedCreditRequirements();
 
@@ -671,6 +686,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         onSemesterChanged: _switchSemester,
         onRefreshGrades: _refreshCurrentView,
         academicSituation: _academicSituation,
+        academicUnavailableMessage: _eduProvider?.isUsingLocalAcademicSession ==
+                    true &&
+                !_eduProvider!.academicCapabilities.supportsAcademicSituation
+            ? '本机直连暂不支持官方 GPA'
+            : null,
         isAcademicRefreshing: _isAcademicLoading || _isRequirementLoading,
         onRefreshAcademic: _refreshAcademicOverview,
       ),
@@ -742,6 +762,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   void _ensureAcademicContentLoaded() {
+    final provider = _eduProvider;
+    if (provider?.isUsingLocalAcademicSession == true &&
+        (!provider!.academicCapabilities.supportsAcademicSituation ||
+            !provider.academicCapabilities.supportsCreditRequirements)) {
+      _markUnsupportedAcademicFeatures();
+      return;
+    }
     if (_academicSituation == null &&
         _academicError == null &&
         !_isAcademicLoading) {
@@ -752,6 +779,26 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         !_isRequirementLoading) {
       unawaited(_loadCreditRequirements());
     }
+  }
+
+  void _markUnsupportedAcademicFeatures() {
+    final provider = _eduProvider;
+    if (!mounted || provider == null || !provider.isUsingLocalAcademicSession) {
+      return;
+    }
+    final capabilities = provider.academicCapabilities;
+    setState(() {
+      if (!capabilities.supportsAcademicSituation) {
+        _academicSituation = null;
+        _isAcademicLoading = false;
+        _academicError = '本机直连暂不支持官方 GPA';
+      }
+      if (!capabilities.supportsCreditRequirements) {
+        _creditRequirements = null;
+        _isRequirementLoading = false;
+        _requirementError = '本机直连暂不支持学分要求';
+      }
+    });
   }
 
   ScrollController _controllerFor(GradeCenterSection section) {

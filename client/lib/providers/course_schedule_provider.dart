@@ -888,37 +888,48 @@ class CourseScheduleProvider extends ChangeNotifier {
         ((localController != null &&
                 localController.status != AcademicSessionStatus.idle) ||
             _academicRepository?.sessionState != SessionState.unauthenticated);
-    if (localSessionActive && _academicRepository != null) {
-      try {
-        final fetched = await _academicRepository!.getCourses(
-          year: operation.year,
-          semester: operation.semester,
-        );
+    if (localSessionActive) {
+      if (localController == null) {
         if (!_isCurrentOperation(operation)) return;
-        final rawCourses =
-            fetched.courses.map(_rawCourseToFetchedMap).toList(growable: false);
-        if (rawCourses.isEmpty &&
-            backupCourses.isNotEmpty &&
-            !isManualRefresh) {
-          debugPrint('教务系统返回空课表，保留当前本地课程');
-          _courses = backupCourses;
-          _buildGrid();
-        } else {
-          _courses = rawCourses
-              .map(_courseFromFetchedMap)
-              .where((c) => !_hiddenCourseIds.contains(c.id))
-              .toList();
-          _buildGrid();
-          networkSuccess = true;
+        _errorMessage = '本机教务会话控制器未就绪';
+      } else {
+        try {
+          final fetched = await localController.loadCourses(
+            year: operation.year,
+            semester: operation.semester,
+          );
+          if (fetched == null) {
+            if (!_isCurrentOperation(operation)) return;
+            _errorMessage = localController.failure?.message ?? '获取课表失败';
+          } else {
+            if (!_isCurrentOperation(operation)) return;
+            final rawCourses = fetched.courses
+                .map(_rawCourseToFetchedMap)
+                .toList(growable: false);
+            if (rawCourses.isEmpty &&
+                backupCourses.isNotEmpty &&
+                !isManualRefresh) {
+              debugPrint('教务系统返回空课表，保留当前本地课程');
+              _courses = backupCourses;
+              _buildGrid();
+            } else {
+              _courses = rawCourses
+                  .map(_courseFromFetchedMap)
+                  .where((c) => !_hiddenCourseIds.contains(c.id))
+                  .toList();
+              _buildGrid();
+              networkSuccess = true;
+            }
+            debugPrint('本机直连教务拉取课程: count=${_courses.length}');
+          }
+        } on AcademicFailure catch (error) {
+          if (!_isCurrentOperation(operation)) return;
+          _errorMessage = error.message;
+        } catch (error) {
+          if (!_isCurrentOperation(operation)) return;
+          _errorMessage = '解析课表数据失败';
+          debugPrint('解析本机教务课表失败: ${error.runtimeType}');
         }
-        debugPrint('本机直连教务拉取课程: count=${_courses.length}');
-      } on AcademicFailure catch (error) {
-        if (!_isCurrentOperation(operation)) return;
-        _errorMessage = error.message;
-      } catch (error) {
-        if (!_isCurrentOperation(operation)) return;
-        _errorMessage = '解析课表数据失败';
-        debugPrint('解析本机教务课表失败: ${error.runtimeType}');
       }
     } else {
       try {

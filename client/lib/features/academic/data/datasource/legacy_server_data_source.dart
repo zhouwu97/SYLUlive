@@ -216,42 +216,54 @@ final class LegacyServerDataSource implements AcademicDataSource {
   }
 
   RawCourse _courseFromMap(Map<String, dynamic> map) {
-    final section = _text(map, const [
+    final sectionText = _text(map, const [
       'section',
       'jc',
       'section_text',
     ]);
+    final sectionNumbers = _numbersInText(sectionText);
     final start = _firstInt(map, const [
-      'start_section',
-      'startSection',
-      'time',
-      'jc_start',
-    ]);
-    final end = _firstInt(
-        map,
-        const [
+          'start_section',
+          'startSection',
+          'time',
+          'jc_start',
+        ]) ??
+        (sectionNumbers.isNotEmpty ? sectionNumbers.first : null);
+    final end = _firstInt(map, const [
           'end_section',
           'endSection',
           'jc_end',
-        ],
-        fallback: start);
+        ]) ??
+        (sectionNumbers.length > 1 ? sectionNumbers.last : start);
+    if (start == null || start <= 0) {
+      throw const ProtocolChangedException(message: '旧课表记录缺少开始节次');
+    }
+    if (end == null || end < start) {
+      throw const ProtocolChangedException(message: '旧课表记录缺少有效结束节次');
+    }
     final expression = _text(map, const [
       'weekExpression',
       'week_expression',
       'weeks_text',
       'zcd',
     ]);
+    final weekDay = _firstInt(map, const [
+      'weekday',
+      'week_day',
+      'dayOfWeek',
+      'day_of_week',
+      'xqj',
+    ]);
+    if (weekDay == null || weekDay < 1 || weekDay > 7) {
+      throw const ProtocolChangedException(message: '旧课表记录缺少有效星期');
+    }
     return RawCourse(
       name: _text(map, const ['name', 'course_name', 'courseName', 'kcmc']),
       teacher:
           _text(map, const ['teacher', 'teacher_name', 'teacherName', 'jsxm']),
       location: _text(map, const ['location', 'classroom', 'room', 'jxdd']),
-      section: section.isNotEmpty ? section : '$start-$end节',
-      weekDay: _text(
-        map,
-        const ['weekday', 'week_day', 'dayOfWeek', 'day_of_week', 'xqj'],
-        fallback: '1',
-      ),
+      section: sectionText.isNotEmpty ? sectionText : '$start-$end节',
+      weekDay: weekDay.toString(),
       weekExpression: expression.isNotEmpty
           ? expression
           : _weeksToExpression(map['weeks'] ?? map['week_list']),
@@ -292,11 +304,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     return fallback;
   }
 
-  static int _firstInt(
-    Map<String, dynamic> map,
-    List<String> keys, {
-    int fallback = 1,
-  }) {
+  static int? _firstInt(Map<String, dynamic> map, List<String> keys) {
     for (final key in keys) {
       final value = map[key];
       if (value is num) return value.toInt();
@@ -306,7 +314,14 @@ final class LegacyServerDataSource implements AcademicDataSource {
       final fromText = int.tryParse(match?.group(0) ?? '');
       if (fromText != null) return fromText;
     }
-    return fallback;
+    return null;
+  }
+
+  static List<int> _numbersInText(String value) {
+    return RegExp(r'\d+')
+        .allMatches(value)
+        .map((match) => int.parse(match.group(0)!))
+        .toList(growable: false);
   }
 
   static String _weeksToExpression(Object? value) {

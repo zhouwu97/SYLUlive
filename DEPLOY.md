@@ -34,7 +34,7 @@ sudo /usr/local/sbin/update-sylulive-site-v5 /tmp/sylulive_site_v5
 
 - `/.well-known/assetlinks.json` 返回 `sylulive_site_v5/.well-known/assetlinks.json`
 - `/team/{id}` 使用 `try_files /team/index.html =404`，不做 302/301 到 `/team/index.html`
-- `deploy/update-sylulive-site-v5` 会拒绝缺少上述两个资源的发布包
+- `deploy/update-sylulive-site-v5` 会拒绝缺少上述两个资源的发布包，也会拒绝未安装深链 Nginx 路由的生产环境
 
 Android release 发布前必须执行 `apksigner verify --print-certs app-release.apk`，并确认 SHA-256
 包含在 `assetlinks.json` 中。当前 release 指纹为

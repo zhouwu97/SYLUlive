@@ -1243,8 +1243,8 @@
         </div>
         <div class="feature-box">
           <div class="feature-icon c2">💬</div>
-          <h3>专属队伍即时沟通</h3>
-          <p>队长通过申请后自动建立队伍协作群，重要通知通过 App 离线极速推送，不错过任何进度。</p>
+          <h3>专属队伍成员协同</h3>
+          <p>申请通过后统一管理队伍成员，并通过站内通知实时同步申请结果与招募进度。</p>
         </div>
         <div class="feature-box">
           <div class="feature-icon c3">🏆</div>
@@ -1275,8 +1275,8 @@
     <span id="toast-text">招募链接已复制到剪贴板</span>
   </div>
 
-  <!-- Interactive Preview Controller (Enables live testing of all states) -->
-  <div id="preview-control" class="preview-controller" title="预览模式控制器">
+  <!-- Interactive Preview Controller (Hidden by default in production) -->
+  <div id="preview-control" class="preview-controller" title="预览模式控制器" hidden>
     <span>💡 预览示例切换:</span>
     <select id="mock-selector">
       <option value="1">蓝桥杯算法攻坚 (招募中)</option>
@@ -1303,6 +1303,14 @@
   <!-- Script Logic -->
   <script>
     (() => {
+      const CATEGORY_MAP = {
+        'competition': '学科竞赛',
+        'project': '项目协作',
+        'study': '学习互助',
+        'activity': '活动组队',
+        'other': '其他组队'
+      };
+
       // Elements
       const recruitmentContainer = document.getElementById('recruitment-container');
       const errorContainer = document.getElementById('error-container');
@@ -1345,6 +1353,7 @@
       const mobileCopyBtn = document.getElementById('mobile-copy-btn');
       const toast = document.getElementById('toast');
       const toastText = document.getElementById('toast-text');
+      const previewControl = document.getElementById('preview-control');
       const mockSelector = document.getElementById('mock-selector');
 
       // Detect WeChat / QQ in-app browsers
@@ -1357,13 +1366,17 @@
       const pathMatch = location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
       const urlParams = new URLSearchParams(location.search);
       let currentTeamId = pathMatch ? pathMatch[1] : urlParams.get('id') || urlParams.get('teamId');
-      const isPreviewExplicit = urlParams.has('preview') || urlParams.has('mock') || location.hostname === 'localhost' || location.protocol === 'file:';
+      const isPreviewExplicit = urlParams.has('preview') || urlParams.has('mock');
 
-      // Mock Dataset for Previewing all states
+      if (isPreviewExplicit && previewControl) {
+        previewControl.hidden = false;
+      }
+
+      // Mock Dataset for Previewing
       const mockTeams = {
         '1': {
           id: 108,
-          category: '学科竞赛',
+          category: 'competition',
           title: '【第十六届蓝桥杯软件赛】算法攻坚队伍招募：急寻前端开发与图论选手！',
           author: {
             name: '李云帆 (软件工程23级)',
@@ -1383,7 +1396,7 @@
         },
         '2': {
           id: 96,
-          category: '创新创业',
+          category: 'project',
           title: '【“挑战杯”大学生创业计划】AI+智慧校园助老辅具项目，寻找UI设计与嵌入式硬件同学',
           author: {
             name: '陈若冰 (智能制造22级)',
@@ -1403,8 +1416,8 @@
         },
         '3': {
           id: 84,
-          category: '学科竞赛',
-          title: '【MCM/ICM 2027 美国大学生数学建模竞赛】全员齐聚（已满员复盘中）',
+          category: 'competition',
+          title: '【MCM/ICM 2027 美国大学生数学建模竞赛】全员齐聚（已满员备赛中）',
           author: {
             name: '张晨 (理学院23级)',
             major: '理学院 · 应用数学',
@@ -1423,7 +1436,7 @@
         },
         '4': {
           id: 52,
-          category: '考研互助',
+          category: 'study',
           title: '【2027考研互助】图书馆五楼自习打卡小分队：数学二+英语二+408互相监督',
           author: {
             name: '王浩 (计算机23级)',
@@ -1526,8 +1539,9 @@
           teamStatusText.textContent = `招募中 (缺${remaining}人)`;
         }
 
-        // Category
-        teamCategoryText.textContent = team.category || '校园组队';
+        // Category mapping
+        const rawCategory = team.category || 'other';
+        teamCategoryText.textContent = CATEGORY_MAP[rawCategory] || rawCategory || '其他组队';
 
         // Author
         const author = team.author || {};
@@ -1547,7 +1561,7 @@
         teamAcceptedCount.textContent = accepted;
         teamNeededCount.textContent = needed;
         teamProgressBar.style.width = `${percent}%`;
-        teamRemainingText.textContent = remaining > 0 ? `尚缺 ${remaining} 位队友加入` : '已达到计划招募人数';
+        teamRemainingText.textContent = remaining > 0 ? `还需 ${remaining} 位队友加入` : '已达到计划招募人数';
 
         // Deadline
         if (team.deadline) {
@@ -1613,7 +1627,7 @@
           return;
         }
 
-        // If real ID and not purely preview mode, attempt fetch from server
+        // If real ID and not preview mode, fetch from server
         if (currentTeamId && !isPreviewExplicit) {
           try {
             const res = await fetch(`/api/team/recruitments/${currentTeamId}`, {
@@ -1630,24 +1644,28 @@
             renderTeam(data);
             return;
           } catch (err) {
-            console.warn('API load failed, falling back to rich mock preview', err);
+            console.error('API load failed:', err);
+            showError('组队信息加载失败', '当前网络无法连接服务，或该招募暂不可见，请稍后刷新重试。');
+            return;
           }
         }
 
-        // Preview / Fallback Mode
+        // Explicit Preview Mode
         const initialMock = mockTeams['1'];
         renderTeam(initialMock);
       }
 
-      // Mock selector for user testing different states in preview mode
-      mockSelector.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (val === '5') {
-          showError('组队招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
-        } else if (mockTeams[val]) {
-          renderTeam(mockTeams[val]);
-        }
-      });
+      // Mock selector for testing
+      if (mockSelector) {
+        mockSelector.addEventListener('change', (e) => {
+          const val = e.target.value;
+          if (val === '5') {
+            showError('组队招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
+          } else if (mockTeams[val]) {
+            renderTeam(mockTeams[val]);
+          }
+        });
+      }
 
       init();
     })();

@@ -7,7 +7,6 @@ import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
-import 'image_viewer_screen.dart';
 
 /// 商家菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
@@ -62,22 +61,6 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
   }
 
   void _openDish(CanteenDish dish) {
-    if (dish.isReviewGallery) {
-      final images =
-          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
-      final urls = images
-          .where((image) => image.trim().isNotEmpty)
-          .map(ApiConstants.fullUrl)
-          .toList(growable: false);
-      if (urls.isEmpty) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ImageViewerScreen(imageUrls: urls),
-        ),
-      );
-      return;
-    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -89,6 +72,33 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
         ),
       ),
     ).then((_) => _load());
+  }
+
+  /// 实拍图库是图片驱动页面，0 实拍菜品不渲染占位卡；
+  /// 无图菜品的收录与选择仍由评价编辑器使用完整列表承担。
+  List<CanteenDish> get _visibleDishes =>
+      _dishes.where((dish) => dish.hasDisplayImage).toList(growable: false);
+
+  CanteenEmptyState _buildEmptyState() {
+    if (widget.offline) {
+      return const CanteenEmptyState(
+        icon: Icons.restaurant_menu_rounded,
+        title: '暂无收录菜品',
+        subtitle: '所属商家已下架',
+      );
+    }
+    if (_dishes.isEmpty) {
+      return const CanteenEmptyState(
+        icon: Icons.restaurant_menu_rounded,
+        title: '暂无收录菜品',
+        subtitle: '发表食堂评价时填写菜品名称即可自动收录',
+      );
+    }
+    return const CanteenEmptyState(
+      icon: Icons.photo_camera_back_rounded,
+      title: '暂无菜品实拍',
+      subtitle: '发表评价时关联菜品并上传实拍即可展示在这里',
+    );
   }
 
   @override
@@ -120,14 +130,8 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                   actionLabel: '点击重试',
                   onAction: _load,
                 )
-              : _dishes.isEmpty
-                  ? CanteenEmptyState(
-                      icon: Icons.restaurant_menu_rounded,
-                      title: '暂无收录菜品',
-                      subtitle: widget.offline
-                          ? '所属商家已下架'
-                          : '发表食堂评价时填写菜品名称即可自动收录',
-                    )
+              : _visibleDishes.isEmpty
+                  ? _buildEmptyState()
                   : GridView.builder(
                       padding: const EdgeInsets.all(16),
                       gridDelegate:
@@ -137,9 +141,9 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                         crossAxisSpacing: 16,
                         childAspectRatio: 0.82,
                       ),
-                      itemCount: _dishes.length,
+                      itemCount: _visibleDishes.length,
                       itemBuilder: (context, index) {
-                        final dish = _dishes[index];
+                        final dish = _visibleDishes[index];
                         return _GridDishCard(
                           dish: dish,
                           isDark: isDark,

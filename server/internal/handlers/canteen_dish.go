@@ -3,10 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
-	"time"
 
 	"shenliyuan/internal/models"
 
@@ -19,22 +16,11 @@ type CanteenDishHandler struct {
 	db *gorm.DB
 }
 
-const maxReviewImageGalleryCount = 24
-
-type reviewImageGalleryItem struct {
-	Path      string
-	CreatedAt time.Time
-	ReviewID  uint
-	Position  int
-}
-
 func NewCanteenDishHandler(db *gorm.DB) *CanteenDishHandler {
 	return &CanteenDishHandler{db: db}
 }
 
 // ListDishes 公开菜品列表：所有 status=active 的菜都返回，是否有实拍由 photo_count 单独表达。
-// 没有明确绑定菜名的 active 评价图片会以 source=review_images 的聚合卡返回，
-// 避免把无法确认归属的图片臆造为某道菜，同时让食堂详情页不会漏掉真实评价图片。
 // 使用独立聚合子查询，避免 LEFT JOIN 膨胀污染 COUNT。
 // GET /api/canteens/:id/dishes
 func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
@@ -66,8 +52,6 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 		MentionCount           int      `json:"mention_count"`
 		LastPhotoAt            string   `json:"last_photo_at"`
 		ReviewerCount          int      `json:"reviewer_count"`
-		Source                 string   `json:"source,omitempty"`
-		PhotoImages            []string `json:"photo_images,omitempty"`
 	}
 	var dishes []dishRow
 	hasRelationTable := h.db.Migrator().HasTable(&models.CanteenReviewEventDish{})
@@ -109,123 +93,7 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 		dishes[i].ReviewerCount = dishes[i].MentionCount
 	}
 
-	reviewImages, lastReviewImageAt, err := h.loadPublicReviewImages(uint(canteenID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价实拍失败"})
-		return
-	}
-	if len(reviewImages) > 0 {
-		dishes = append(dishes, dishRow{
-			ID:                     0,
-			Name:                   "用户评价实拍",
-			CanteenID:              canteen.ID,
-			CanteenName:            canteen.Name,
-			CanteenOperatingStatus: canteen.OperatingStatus,
-			CoverImage:             reviewImages[0],
-			PhotoCount:             len(reviewImages),
-			LastPhotoAt:            lastReviewImageAt.Format(time.RFC3339),
-			Source:                 "review_images",
-			PhotoImages:            reviewImages,
-		})
-	}
 	c.JSON(http.StatusOK, dishes)
-}
-
-// loadPublicReviewImages 汇总新旧评价表里的 active 图片。
-// 图片已经由评价公开链路负责权限收敛；这里仅做来源过滤、排序和去重。
-func (h *CanteenDishHandler) loadPublicReviewImages(canteenID uint) ([]string, time.Time, error) {
-	items := make([]reviewImageGalleryItem, 0)
-
-	if h.db.Migrator().HasTable(&models.CanteenReviewEvent{}) {
-		type reviewRow struct {
-			ID        uint      `gorm:"column:id"`
-			Images    string    `gorm:"column:images"`
-			CreatedAt time.Time `gorm:"column:created_at"`
-		}
-		var rows []reviewRow
-		err := h.db.Table("canteen_review_events").
-			Select("id, images, created_at").
-			Where("canteen_id = ? AND status = ?", canteenID, models.ReviewEventStatusActive).
-			Order("created_at DESC, id DESC").
-			Find(&rows).Error
-		if err != nil && !isCanteenReviewSchemaMissing(err) {
-			return nil, time.Time{}, err
-		}
-		for _, row := range rows {
-			for position, path := range decodeStringList(row.Images) {
-				path = strings.TrimSpace(path)
-				if path == "" {
-					continue
-				}
-				items = append(items, reviewImageGalleryItem{
-					Path: path, CreatedAt: row.CreatedAt, ReviewID: row.ID, Position: position,
-				})
-			}
-		}
-	}
-
-	if h.db.Migrator().HasTable(&models.CanteenRating{}) {
-		type ratingRow struct {
-			ID        uint      `gorm:"column:id"`
-			Images    string    `gorm:"column:images"`
-			CreatedAt time.Time `gorm:"column:created_at"`
-		}
-		var rows []ratingRow
-		err := h.db.Table("canteen_ratings").
-			Select("id, images, created_at").
-			Where("canteen_id = ? AND (status = ? OR status IS NULL OR status = '')", canteenID, models.ReviewEventStatusActive).
-			Order("created_at DESC, id DESC").
-			Find(&rows).Error
-		if err != nil && !isCanteenReviewSchemaMissing(err) {
-			return nil, time.Time{}, err
-		}
-		for _, row := range rows {
-			for position, path := range decodeStringList(row.Images) {
-				path = strings.TrimSpace(path)
-				if path == "" {
-					continue
-				}
-				items = append(items, reviewImageGalleryItem{
-					Path: path, CreatedAt: row.CreatedAt, ReviewID: row.ID, Position: position,
-				})
-			}
-		}
-	}
-
-	sort.SliceStable(items, func(i, j int) bool {
-		if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
-			return items[i].CreatedAt.After(items[j].CreatedAt)
-		}
-		if items[i].ReviewID != items[j].ReviewID {
-			return items[i].ReviewID > items[j].ReviewID
-		}
-		return items[i].Position < items[j].Position
-	})
-
-	paths := make([]string, 0, minReviewImageCount(len(items), maxReviewImageGalleryCount))
-	seen := make(map[string]struct{}, len(items))
-	var lastAt time.Time
-	for _, item := range items {
-		if _, exists := seen[item.Path]; exists {
-			continue
-		}
-		seen[item.Path] = struct{}{}
-		paths = append(paths, item.Path)
-		if lastAt.IsZero() || item.CreatedAt.After(lastAt) {
-			lastAt = item.CreatedAt
-		}
-		if len(paths) >= maxReviewImageGalleryCount {
-			break
-		}
-	}
-	return paths, lastAt, nil
-}
-
-func minReviewImageCount(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // GetDish 公开菜品详情：dish + approved 实拍列表 + 评价提及数。

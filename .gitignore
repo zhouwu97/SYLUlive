@@ -66,6 +66,7 @@ android/.kotlin/
 .claude/
 .codex/
 .sisyphus/
+.workbuddy/
 .worktrees/
 .cache/
 .tools/
@@ -82,6 +83,7 @@ client/analyze_output.txt
 
 # Python 测试与探测输出
 .pytest_cache/
+.venv/
 python-edu-service/tools/*/output/
 /python-edu-service/private-probe-output/
 

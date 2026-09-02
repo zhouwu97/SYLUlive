@@ -127,12 +127,36 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
+  /// 描述快捷标签 → 图标。新增标签时在此同步登记图标。
+  static const Map<String, IconData> _marketTagIcons = {
+    '自提': Icons.shopping_bag_outlined,
+    '可送宿舍楼下': Icons.delivery_dining,
+    '可小刀': Icons.local_offer_outlined,
+    '急出': Icons.bolt_rounded,
+    '可上门': Icons.directions_walk,
+    '长期求': Icons.schedule,
+    '急需': Icons.bolt_rounded,
+    '可面交': Icons.place_outlined,
+    '有酬谢': Icons.redeem,
+    '急寻': Icons.bolt_rounded,
+    '待认领': Icons.inventory_2_outlined,
+    '已交宿管': Icons.home_work_outlined,
+    '可跑腿': Icons.directions_run,
+    '当日完成': Icons.today,
+    '可议价': Icons.local_offer_outlined,
+  };
+
+  /// 按发布类型给出贴题的描述快捷标签。
   List<String> get _availableMarketTags {
     switch (_postType) {
       case 'sell':
         return ['自提', '可送宿舍楼下', '可小刀', '急出'];
       case 'buy':
         return ['自提', '可上门', '长期求', '急需'];
+      case 'lost':
+        return ['急寻', '有酬谢', '可面交'];
+      case 'found':
+        return ['待认领', '已交宿管', '可面交'];
       case 'proxy':
         return ['可跑腿', '当日完成', '可议价'];
       default:
@@ -908,27 +932,30 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildRequiredLabel('描述', _PublishField.content),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildDescriptionChip('自提', Icons.shopping_bag_outlined),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('可送宿舍楼下', Icons.delivery_dining),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('可小刀', Icons.local_offer_outlined),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('急出', Icons.bolt_rounded),
-                ],
+          if (_availableMarketTags.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < _availableMarketTags.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      _buildDescriptionChip(
+                        _availableMarketTags[i],
+                        _marketTagIcons[_availableMarketTags[i]] ??
+                            Icons.label_outline,
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           TextFormField(
             controller: _contentController,
             decoration: InputDecoration(

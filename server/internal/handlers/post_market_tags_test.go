@@ -324,3 +324,66 @@ func buildMultipartFields(t *testing.T, fields map[string]string) (*bytes.Buffer
 	}
 	return &body, writer.FormDataContentType()
 }
+
+func TestNormalizeMarketTagsAcceptsTagsForAllPostTypes(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260005")
+
+	cases := []struct {
+		postType string
+		tags     string
+		want     string
+	}{
+		{"sell", "自提,可小刀,乱传", "自提,可小刀"},
+		{"buy", "自提,可上门,长期求,急需,乱传", "自提,可上门,长期求,急需"},
+		{"lost", "急寻,有酬谢,可面交,乱传", "急寻,有酬谢,可面交"},
+		{"found", "待认领,已交宿管,可面交,乱传", "待认领,已交宿管,可面交"},
+		{"proxy", "可跑腿,当日完成,可议价,乱传", "可跑腿,当日完成,可议价"},
+	}
+
+	for i, tc := range cases {
+		image := createMarketTagsTestImage(t, db, user.ID)
+		form := url.Values{}
+		form.Set("board_id", "2")
+		form.Set("title", "测试")
+		form.Set("content", "内容")
+		form.Set("post_type", tc.postType)
+		form.Set("contact", "wx_contact")
+		form.Set("contact_type", "wechat")
+		form.Set("market_tags", tc.tags)
+		form.Set("file_ids", strconv.FormatUint(uint64(image.ID), 10))
+
+		gin.SetMode(gin.TestMode)
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Set("user_id", user.ID)
+		context.Request = httptest.NewRequest(
+			http.MethodPost,
+			"/api/posts",
+			strings.NewReader(form.Encode()),
+		)
+		context.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		NewPostHandler(db, "", "").Create(context)
+
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("case %d (%s): status=%d body=%s", i, tc.postType, recorder.Code, recorder.Body.String())
+		}
+
+		var body models.Post
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatalf("case %d: decode response: %v", i, err)
+		}
+		if body.MarketTags != tc.want {
+			t.Fatalf("case %d (%s): market tags=%q, want %q", i, tc.postType, body.MarketTags, tc.want)
+		}
+
+		var saved models.Post
+		if err := db.First(&saved, body.ID).Error; err != nil {
+			t.Fatalf("case %d: load saved post: %v", i, err)
+		}
+		if saved.MarketTags != tc.want {
+			t.Fatalf("case %d (%s): saved market tags=%q, want %q", i, tc.postType, saved.MarketTags, tc.want)
+		}
+	}
+}

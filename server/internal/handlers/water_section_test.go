@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +25,7 @@ import (
 // newWaterSectionTestDB 构造 in-memory DB，迁移 water 与 post 相关表。
 func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("UPLOAD_DIR", t.TempDir())
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
@@ -29,6 +33,8 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.File{},
+		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
@@ -1165,6 +1171,8 @@ func TestCreateMarketPostIgnoresWaterTag(t *testing.T) {
 	form.Set("board_id", "2")
 	form.Set("post_type", "marketplace_sell")
 	form.Set("water_tag_id", fmt.Sprintf("%d", examTag.ID))
+	image := createWaterSectionTestImage(t, db, user.ID)
+	form.Set("file_ids", strconv.FormatUint(uint64(image.ID), 10))
 
 	handler := NewPostHandler(db, "", "")
 	rec := performPostCreate(t, handler.Create, user.ID, form)
@@ -1178,6 +1186,27 @@ func TestCreateMarketPostIgnoresWaterTag(t *testing.T) {
 	if post.WaterTagID != nil {
 		t.Fatalf("market post must not store water_tag_id, got %v", post.WaterTagID)
 	}
+}
+
+func createWaterSectionTestImage(t *testing.T, db *gorm.DB, uploaderID uint) models.File {
+	t.Helper()
+	const filename = "market-water-section-test.png"
+	if err := os.WriteFile(filepath.Join(os.Getenv("UPLOAD_DIR"), filename), []byte("test image"), 0o600); err != nil {
+		t.Fatalf("write market image: %v", err)
+	}
+	file := models.File{
+		Hash:        "market-water-section-test",
+		Path:        "/uploads/" + filename,
+		Size:        int64(len("test image")),
+		MimeType:    "image/png",
+		UploaderID:  uploaderID,
+		Status:      "active",
+		AccessScope: models.FileAccessPublic,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create market image: %v", err)
+	}
+	return file
 }
 
 // 9. 旧客户端不传 water_tag_id 也能成功发布水帖。

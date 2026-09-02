@@ -77,7 +77,9 @@ final class AcademicSessionController extends ChangeNotifier {
   Future<void> syncAppUser(String? userId) {
     final normalized = userId?.trim();
     final next = normalized == null || normalized.isEmpty ? null : normalized;
-    if (_appUserId == next) return Future<void>.value();
+    if (_appUserId == next && !_sessionResetPending) {
+      return Future<void>.value();
+    }
 
     _appUserId = next;
     final generation = ++_accountGeneration;
@@ -89,7 +91,17 @@ final class AcademicSessionController extends ChangeNotifier {
     // 请求并发修改同一个 JiaowuClient。
     return _enqueue<void>(() async {
       if (_disposed || generation != _accountGeneration) return;
-      await _repository.resetSession();
+      try {
+        await _repository.resetSession();
+      } catch (error) {
+        if (_disposed || generation != _accountGeneration) return;
+        // 账号切换期间必须保持 unauthenticated/pending，不能因为清理失败
+        // 让后续请求继续复用可能属于上一个账号的 Cookie。
+        _failure = AcademicFailure.fromException(error);
+        _status = AcademicSessionStatus.error;
+        _notifyListeners();
+        return;
+      }
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();
@@ -107,6 +119,11 @@ final class AcademicSessionController extends ChangeNotifier {
       }
       if (_appUserId == null) {
         return const LoginPageChanged(message: '请先登录 APP');
+      }
+      if (_sessionResetPending) {
+        return LoginPageChanged(
+          message: _failure?.message ?? '教务会话清理失败，请重试',
+        );
       }
 
       _status = AcademicSessionStatus.authenticating;
@@ -265,7 +282,15 @@ final class AcademicSessionController extends ChangeNotifier {
     _notifyListeners();
     return _enqueue(() async {
       if (_disposed) return;
-      await _repository.resetSession();
+      try {
+        await _repository.resetSession();
+      } catch (error) {
+        if (_disposed || generation != _accountGeneration) return;
+        _failure = AcademicFailure.fromException(error);
+        _status = AcademicSessionStatus.error;
+        _notifyListeners();
+        return;
+      }
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();

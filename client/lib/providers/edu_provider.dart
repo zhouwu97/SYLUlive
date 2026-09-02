@@ -7,6 +7,7 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/data/mapper/raw_grade_mapper.dart';
 import '../features/academic/domain/academic_repository.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
@@ -130,17 +131,40 @@ class EduProvider extends ChangeNotifier {
     return startYear;
   }
 
-  /// 内存缓存 key：edu_grades_${userId}_${year}_${semester}
-  String _cacheKeyFor(String userId, String year, int semester) {
-    return 'edu_grades_${userId}_${year}_$semester';
+  /// 当前实际请求使用的教务来源。
+  ///
+  /// 控制器默认绑定本机数据源，但在本机流程尚未启动时兼容旧服务端
+  /// 状态；因此不能只读取 repository 的 sourceKind 判断当前缓存命名空间。
+  AcademicSourceKind get _activeAcademicSourceKind => _usingLocalAcademicSession
+      ? AcademicSourceKind.local
+      : AcademicSourceKind.legacy;
+
+  /// 内存缓存 key：App 用户 + 教务来源 + 来源学号 + 学年学期。
+  String _cacheKeyFor(
+    String userId,
+    String sourceAccountId,
+    AcademicSourceKind source,
+    String year,
+    int semester,
+  ) {
+    return 'edu_grades_${userId}_${source.name}_'
+        '${sourceAccountId}_${year}_$semester';
   }
 
-  String _academicSituationCacheKey(String userId) {
-    return 'edu_academic_situation_$userId';
+  String _academicSituationCacheKey(
+    String userId,
+    String sourceAccountId,
+    AcademicSourceKind source,
+  ) {
+    return 'edu_academic_situation_${userId}_${source.name}_$sourceAccountId';
   }
 
-  String _creditRequirementCacheKey(String userId) {
-    return 'edu_credit_requirements_$userId';
+  String _creditRequirementCacheKey(
+    String userId,
+    String sourceAccountId,
+    AcademicSourceKind source,
+  ) {
+    return 'edu_credit_requirements_${userId}_${source.name}_$sourceAccountId';
   }
 
   AcademicCacheStore? _academicCacheStoreFor({
@@ -155,25 +179,60 @@ class EduProvider extends ChangeNotifier {
     );
   }
 
-  bool _isSameAcademicContext(String appUserId, String sourceAccountId) =>
-      _userId == appUserId && _studentId.trim() == sourceAccountId;
+  bool _isSameAcademicContext(
+    String appUserId,
+    String sourceAccountId,
+    AcademicSourceKind source,
+  ) {
+    return _userId == appUserId &&
+        _studentId.trim() == sourceAccountId &&
+        _activeAcademicSourceKind == source;
+  }
 
   /// 读取内存缓存（同步方法，直接使用当前 _userId，安全）
   GradeCacheEntry? getCachedGrades(String year, int semester) {
-    if (_userId == null) return null;
-    return _gradeCache[_cacheKeyFor(_userId!, year, semester)];
+    final userId = _userId;
+    final sourceAccountId = _studentId.trim();
+    if (userId == null || sourceAccountId.isEmpty) return null;
+    return _gradeCache[_cacheKeyFor(
+      userId,
+      sourceAccountId,
+      _activeAcademicSourceKind,
+      year,
+      semester,
+    )];
   }
 
   /// 读取学业情况缓存。
   AcademicSituationCacheEntry? getCachedAcademicSituation() {
-    if (_usingLocalAcademicSession || _userId == null) return null;
-    return _academicSituationCache[_academicSituationCacheKey(_userId!)];
+    final userId = _userId;
+    final sourceAccountId = _studentId.trim();
+    if (_usingLocalAcademicSession ||
+        userId == null ||
+        sourceAccountId.isEmpty) {
+      return null;
+    }
+    return _academicSituationCache[_academicSituationCacheKey(
+      userId,
+      sourceAccountId,
+      _activeAcademicSourceKind,
+    )];
   }
 
   /// 读取学分要求缓存。
   CreditRequirementCacheEntry? getCachedCreditRequirements() {
-    if (_usingLocalAcademicSession || _userId == null) return null;
-    return _creditRequirementCache[_creditRequirementCacheKey(_userId!)];
+    final userId = _userId;
+    final sourceAccountId = _studentId.trim();
+    if (_usingLocalAcademicSession ||
+        userId == null ||
+        sourceAccountId.isEmpty) {
+      return null;
+    }
+    return _creditRequirementCache[_creditRequirementCacheKey(
+      userId,
+      sourceAccountId,
+      _activeAcademicSourceKind,
+    )];
   }
 
   /// 清除指定用户的所有成绩缓存
@@ -184,8 +243,12 @@ class EduProvider extends ChangeNotifier {
     _gradeDetailRequests.removeWhere((key, _) => key.startsWith('$userId|'));
     _gradeDetailPrefetchJobs
         .removeWhere((key, _) => key.startsWith('$userId|'));
-    _academicSituationCache.remove(_academicSituationCacheKey(userId));
-    _creditRequirementCache.remove(_creditRequirementCacheKey(userId));
+    _academicSituationCache.removeWhere(
+      (key, _) => key.startsWith('edu_academic_situation_${userId}_'),
+    );
+    _creditRequirementCache.removeWhere(
+      (key, _) => key.startsWith('edu_credit_requirements_${userId}_'),
+    );
   }
 
   /// 撤销教务授权后销毁该账号的本地个人数据保险箱。
@@ -204,7 +267,8 @@ class EduProvider extends ChangeNotifier {
             ? grade.classId
             : grade.name;
 
-    return '${_userId ?? ''}|$year|$semester|$stableId';
+    return '${_userId ?? ''}|${_activeAcademicSourceKind.name}|'
+        '${_studentId.trim()}|$year|$semester|$stableId';
   }
 
   Future<T> _runEduRequest<T>(Future<T> Function() task) async {
@@ -221,7 +285,7 @@ class EduProvider extends ChangeNotifier {
 
   EduGradeDetail? getCachedGradeDetail(
       EduGrade grade, String year, int semester) {
-    if (_usingLocalAcademicSession) return null;
+    if (_usingLocalAcademicSession || _studentId.trim().isEmpty) return null;
     return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
@@ -779,12 +843,16 @@ class EduProvider extends ChangeNotifier {
   ) async {
     final requestUserId = _userId;
     final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
 
-    bool isCurrentContext() =>
-        _isSameAcademicContext(requestUserId, requestSourceAccountId);
+    bool isCurrentContext() => _isSameAcademicContext(
+          requestUserId,
+          requestSourceAccountId,
+          requestSourceKind,
+        );
 
     final localController = _academicSessionController;
     if (_usingLocalAcademicSession && localController != null) {
@@ -877,10 +945,15 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
     final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
     final raw = await _fetchGradesRaw(year, semester);
 
     // 请求期间用户已切换 → 丢弃结果
-    if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+    if (!_isSameAcademicContext(
+      requestUserId,
+      requestSourceAccountId,
+      requestSourceKind,
+    )) {
       return OperationResult.fail('用户已切换');
     }
 
@@ -906,15 +979,26 @@ class EduProvider extends ChangeNotifier {
           );
         }
       }
-      if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
         return OperationResult.fail('用户已切换');
       }
       // 使用捕获的 requestUserId 生成缓存键，防止写入错误用户的缓存
-      _gradeCache[_cacheKeyFor(requestUserId, year, semester)] =
-          GradeCacheEntry(
-        grades: grades,
-        updatedAt: DateTime.now(),
-      );
+      if (requestSourceAccountId.isNotEmpty) {
+        _gradeCache[_cacheKeyFor(
+          requestUserId,
+          requestSourceAccountId,
+          requestSourceKind,
+          year,
+          semester,
+        )] = GradeCacheEntry(
+          grades: grades,
+          updatedAt: DateTime.now(),
+        );
+      }
       return OperationResult.ok(grades);
     }
     return OperationResult.fail(
@@ -927,6 +1011,7 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<int>> syncAllGrades() async {
     final requestUserId = _userId;
     final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
     if (requestUserId == null || requestSourceAccountId.isEmpty) {
       return OperationResult.fail('请先完成教务绑定');
     }
@@ -936,7 +1021,11 @@ class EduProvider extends ChangeNotifier {
     String? lastErrorCode;
     for (final term in terms) {
       final result = await fetchGrades(term.year, term.semester);
-      if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
         return OperationResult.fail('用户已切换');
       }
       if (result.success) {
@@ -995,6 +1084,11 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
+    if (requestSourceAccountId.isEmpty) {
+      return OperationResult.fail('教务账号未就绪');
+    }
 
     final cacheKey = _gradeDetailCacheKey(grade, year, semester);
 
@@ -1032,7 +1126,11 @@ class EduProvider extends ChangeNotifier {
     requestFuture = _runEduRequest<OperationResult<EduGradeDetail>>(() async {
       try {
         final response = await request();
-        if (_userId != requestUserId) {
+        if (!_isSameAcademicContext(
+          requestUserId,
+          requestSourceAccountId,
+          requestSourceKind,
+        )) {
           return OperationResult.fail('用户已切换');
         }
         if (response.statusCode == 200) {
@@ -1071,7 +1169,13 @@ class EduProvider extends ChangeNotifier {
       return Future<void>.value();
     }
     final requestUserId = _userId;
-    if (requestUserId == null || grades.isEmpty) return Future<void>.value();
+    final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
+    if (requestUserId == null ||
+        requestSourceAccountId.isEmpty ||
+        grades.isEmpty) {
+      return Future<void>.value();
+    }
 
     final pendingGrades = grades
         .where(
@@ -1082,13 +1186,16 @@ class EduProvider extends ChangeNotifier {
         .toList(growable: false);
     if (pendingGrades.isEmpty) return Future<void>.value();
 
-    final jobKey = '$requestUserId|$year|$semester';
+    final jobKey = '$requestUserId|${requestSourceKind.name}|'
+        '$requestSourceAccountId|$year|$semester';
     final activeJob = _gradeDetailPrefetchJobs[jobKey];
     if (activeJob != null) return activeJob;
 
     late final Future<void> job;
     job = _runGradeDetailPrefetch(
       requestUserId: requestUserId,
+      requestSourceAccountId: requestSourceAccountId,
+      requestSourceKind: requestSourceKind,
       grades: pendingGrades,
       year: year,
       semester: semester,
@@ -1104,6 +1211,8 @@ class EduProvider extends ChangeNotifier {
 
   Future<void> _runGradeDetailPrefetch({
     required String requestUserId,
+    required String requestSourceAccountId,
+    required AcademicSourceKind requestSourceKind,
     required List<EduGrade> grades,
     required String year,
     required int semester,
@@ -1112,14 +1221,26 @@ class EduProvider extends ChangeNotifier {
     if (initialDelay > Duration.zero) await Future<void>.delayed(initialDelay);
 
     for (final grade in grades) {
-      if (_userId != requestUserId) return;
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
+        return;
+      }
       if (grade.classId.isEmpty ||
           getCachedGradeDetail(grade, year, semester) != null) {
         continue;
       }
 
       await fetchGradeDetail(grade, year, semester);
-      if (_userId != requestUserId) return;
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
+        return;
+      }
 
       // 给详情点击、刷新等前台请求留出抢占窗口。
       await Future<void>.delayed(const Duration(milliseconds: 160));
@@ -1139,6 +1260,7 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
     final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
 
     Future<Response<dynamic>> request() {
       return _authDio.post(
@@ -1151,7 +1273,11 @@ class EduProvider extends ChangeNotifier {
     return _runEduRequest(() async {
       try {
         final response = await request();
-        if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+        if (!_isSameAcademicContext(
+          requestUserId,
+          requestSourceAccountId,
+          requestSourceKind,
+        )) {
           return OperationResult.fail('用户已切换');
         }
         if (response.statusCode == 200) {
@@ -1171,6 +1297,7 @@ class EduProvider extends ChangeNotifier {
           final persisted = await _persistAcademicSituation(
             appUserId: requestUserId,
             sourceAccountId: requestSourceAccountId,
+            sourceKind: requestSourceKind,
             raw: rawSituation,
           );
           if (!persisted) {
@@ -1179,8 +1306,11 @@ class EduProvider extends ChangeNotifier {
               errorCode: 'local_storage_failed',
             );
           }
-          _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
-              AcademicSituationCacheEntry(
+          _academicSituationCache[_academicSituationCacheKey(
+            requestUserId,
+            requestSourceAccountId,
+            requestSourceKind,
+          )] = AcademicSituationCacheEntry(
             data: situation,
             updatedAt: DateTime.now(),
           );
@@ -1196,6 +1326,7 @@ class EduProvider extends ChangeNotifier {
   Future<bool> _persistAcademicSituation({
     required String appUserId,
     required String sourceAccountId,
+    required AcademicSourceKind sourceKind,
     required Map<String, dynamic> raw,
   }) async {
     final store = _academicCacheStoreFor(
@@ -1203,11 +1334,11 @@ class EduProvider extends ChangeNotifier {
       sourceAccountId: sourceAccountId,
     );
     if (store == null) {
-      return _isSameAcademicContext(appUserId, sourceAccountId);
+      return _isSameAcademicContext(appUserId, sourceAccountId, sourceKind);
     }
     try {
       await store.writeAcademicSituation(data: raw);
-      return _isSameAcademicContext(appUserId, sourceAccountId);
+      return _isSameAcademicContext(appUserId, sourceAccountId, sourceKind);
     } catch (error) {
       // 页面保留本次网络响应，但 AI 侧不会获得未落入保险箱的数据。
       debugPrint('保存加密学业情况失败: ${error.runtimeType}');
@@ -1239,9 +1370,7 @@ class EduProvider extends ChangeNotifier {
           );
         }
         return OperationResult.ok(
-          result.grades
-              .map((grade) => Map<String, dynamic>.from(grade.raw))
-              .toList(growable: false),
+          result.grades.map(RawGradeMapper.toAppJson).toList(growable: false),
         );
       });
     }
@@ -1290,6 +1419,7 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
     final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
 
     return _runEduRequest(() async {
       try {
@@ -1298,7 +1428,11 @@ class EduProvider extends ChangeNotifier {
           data: const <String, dynamic>{},
           options: Options(receiveTimeout: _eduLongRequestTimeout),
         );
-        if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+        if (!_isSameAcademicContext(
+          requestUserId,
+          requestSourceAccountId,
+          requestSourceKind,
+        )) {
           return OperationResult.fail('用户已切换');
         }
         if (response.statusCode == 200) {
@@ -1332,11 +1466,18 @@ class EduProvider extends ChangeNotifier {
               );
             }
           }
-          if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+          if (!_isSameAcademicContext(
+            requestUserId,
+            requestSourceAccountId,
+            requestSourceKind,
+          )) {
             return OperationResult.fail('用户已切换');
           }
-          _creditRequirementCache[_creditRequirementCacheKey(requestUserId)] =
-              CreditRequirementCacheEntry(
+          _creditRequirementCache[_creditRequirementCacheKey(
+            requestUserId,
+            requestSourceAccountId,
+            requestSourceKind,
+          )] = CreditRequirementCacheEntry(
             data: overview,
             updatedAt: DateTime.now(),
           );

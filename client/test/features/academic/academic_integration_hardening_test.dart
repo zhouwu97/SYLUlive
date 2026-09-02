@@ -13,9 +13,14 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 import 'package:shenliyuan/models/edu_grade.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    AppPreferencesStore.setMockInitialValues({});
+  });
 
   test('本机模式下未迁移能力不会读取旧缓存或请求旧代理', () async {
     final repository = _FakeAcademicRepository();
@@ -112,6 +117,118 @@ void main() {
     schedule.dispose();
   });
 
+  test('本机 RawGrade 映射正确且成绩缓存不跨来源账号复用', () async {
+    final repository = _FakeAcademicRepository(
+      grades: GradeFetchResult(
+        grades: <RawGrade>[
+          RawGrade(
+            raw: <String, Object?>{
+              'kcmc': '本机高等数学',
+              'jxb_id': 'LOCAL-JXB',
+              'kch_id': 'LOCAL-KC',
+              'kch': 'LOCAL101',
+              'xh_id': 'LOCAL-XH',
+              'jsxm': '本机张老师',
+              'sfxwkc': '是',
+              'xf': '4',
+              'jd': '3.8',
+              'xfjd': '15.2',
+              'bfzcj': '88',
+              'cj': '88',
+            },
+          ),
+        ],
+        pages: 1,
+      ),
+    );
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'edu_authorized': true,
+                    'edu_student_id': 'legacy-x',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/grades') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'grades': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'name': '旧代理课程',
+                        'grade': '77',
+                        'credits': 2,
+                        'gpa': 2.7,
+                        'is_degree': false,
+                      },
+                    ],
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    final provider = EduProvider(
+      dio,
+      (_) => _NoopSnapshotStore('app-user-a'),
+    )
+      ..setAcademicSessionController(controller)
+      ..syncSessionUser('app-user-a');
+
+    await provider.ensureStatusLoaded();
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: 'local-y', password: 'secret');
+
+    final localResult = await provider.fetchGrades('2024', 3);
+    expect(localResult.success, isTrue);
+    final localGrade = localResult.data!.single;
+    expect(localGrade.name, '本机高等数学');
+    expect(localGrade.classId, 'LOCAL-JXB');
+    expect(localGrade.displayGrade, '88');
+    expect(localGrade.credits, 4);
+    expect(localGrade.gpa, 3.8);
+    expect(localGrade.teacher, '本机张老师');
+    expect(localGrade.isDegree, isTrue);
+
+    expect(provider.getCachedGrades('2024', 3)!.grades.single.name, '本机高等数学');
+
+    repository.currentSource = AcademicSourceKind.legacy;
+    await controller.resetSession();
+    await provider.refreshStatus();
+    expect(provider.isUsingLocalAcademicSession, isFalse);
+    expect(provider.studentId, 'legacy-x');
+    expect(provider.getCachedGrades('2024', 3), isNull);
+
+    final legacyResult = await provider.fetchGrades('2024', 3);
+    expect(legacyResult.success, isTrue);
+    expect(legacyResult.data!.single.name, '旧代理课程');
+
+    repository.currentSource = AcademicSourceKind.local;
+    await controller.login(studentId: 'local-y', password: 'secret');
+    expect(provider.getCachedGrades('2024', 3)!.grades.single.name, '本机高等数学');
+
+    provider.dispose();
+    controller.dispose();
+  });
+
   test('旧代理课表缺少星期或节次时 fail-closed', () async {
     final dio = Dio()
       ..interceptors.add(
@@ -169,23 +286,85 @@ void main() {
       ),
     );
   });
+
+  test('本机 RawCourse 缺少节次时不会伪造成第 1 节', () async {
+    final repository = _FakeAcademicRepository(
+      courses: CourseFetchResult(
+        courses: <RawCourse>[
+          const RawCourse(
+            name: '不完整课程',
+            teacher: '测试老师',
+            location: 'A101',
+            section: '',
+            weekDay: '3',
+            weekExpression: '1-16周',
+          ),
+        ],
+        source: CourseSource.mobile,
+      ),
+    );
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2026000001', password: 'secret');
+    final schedule = CourseScheduleProvider(
+      Dio(),
+      (_) => _NoopSnapshotStore('app-user-a'),
+      repository,
+      controller,
+    )..syncSessionContext('app-user-a', '2026000001');
+
+    await schedule.loadCourses(forceRefresh: true);
+
+    expect(schedule.courses, isEmpty);
+    expect(schedule.errorMessage, '解析课表数据失败');
+
+    controller.dispose();
+    schedule.dispose();
+  });
 }
 
 final class _FakeAcademicRepository implements AcademicRepository {
-  _FakeAcademicRepository({this.loginGate});
+  _FakeAcademicRepository({
+    this.loginGate,
+    CourseFetchResult? courses,
+    GradeFetchResult? grades,
+  })  : courses = courses ??
+            CourseFetchResult(
+              courses: <RawCourse>[
+                const RawCourse(
+                  name: '本机课程',
+                  teacher: '测试老师',
+                  location: 'A101',
+                  section: '1-2节',
+                  weekDay: '1',
+                  weekExpression: '1周',
+                ),
+              ],
+              source: CourseSource.mobile,
+            ),
+        grades = grades ?? GradeFetchResult(grades: const [], pages: 1);
 
   final Future<void>? loginGate;
+  final CourseFetchResult courses;
+  final GradeFetchResult grades;
   final Completer<void> loginStarted = Completer<void>();
   final List<String> calls = [];
   SessionState _state = SessionState.unauthenticated;
   String? _studentId;
   int courseCalls = 0;
+  AcademicSourceKind currentSource = AcademicSourceKind.local;
 
   @override
-  AcademicSourceKind get sourceKind => AcademicSourceKind.local;
+  AcademicSourceKind get sourceKind => currentSource;
 
   @override
-  AcademicCapabilities get capabilities => const AcademicCapabilities.local();
+  AcademicCapabilities get capabilities =>
+      currentSource == AcademicSourceKind.local
+          ? const AcademicCapabilities.local()
+          : const AcademicCapabilities.legacy();
 
   @override
   SessionState get sessionState => _state;
@@ -245,19 +424,7 @@ final class _FakeAcademicRepository implements AcademicRepository {
   }) async {
     courseCalls++;
     calls.add('courses');
-    return CourseFetchResult(
-      courses: <RawCourse>[
-        RawCourse(
-          name: '本机课程',
-          teacher: '测试老师',
-          location: 'A101',
-          section: '1-2节',
-          weekDay: '1',
-          weekExpression: '1周',
-        ),
-      ],
-      source: CourseSource.mobile,
-    );
+    return courses;
   }
 
   @override
@@ -265,7 +432,7 @@ final class _FakeAcademicRepository implements AcademicRepository {
     required String year,
     required int semester,
   }) async {
-    return GradeFetchResult(grades: <RawGrade>[], pages: 1);
+    return grades;
   }
 
   @override

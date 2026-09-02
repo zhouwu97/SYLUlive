@@ -131,6 +131,30 @@ void main() {
       controller.dispose();
     });
 
+    test('账号切换清理异常会被控制器收口且阻止复用旧会话', () async {
+      final source = _FakeAcademicDataSource(
+        resetError: StateError('模拟 Cookie 清理异常'),
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+
+      expect(controller.status, AcademicSessionStatus.error);
+      expect(controller.isAuthenticated, isFalse);
+      expect(controller.sessionState, SessionState.unauthenticated);
+      expect(controller.failure?.kind, AcademicFailureKind.unexpected);
+      expect(
+        (await controller.login(
+          studentId: '2026000001',
+          password: 'secret',
+        )),
+        isA<LoginPageChanged>(),
+      );
+      expect(source.loginCalls, 0);
+
+      controller.dispose();
+    });
+
     test('登录成功后 Profile 会话失效时不会继续报告 authenticated', () async {
       final source = _FakeAcademicDataSource(
         profileError: const SessionExpiredException(),
@@ -262,6 +286,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
     this.profileError,
     this.loginError,
     this.captchaError,
+    this.resetError,
     this.loginGate,
     this.onLoginStarted,
   })  : courses = courses ??
@@ -276,6 +301,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   final Object? profileError;
   final Object? loginError;
   final Object? captchaError;
+  final Object? resetError;
   final Future<void>? loginGate;
   final void Function()? onLoginStarted;
 
@@ -370,6 +396,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   @override
   Future<void> resetSession() async {
     resetCalls++;
+    if (resetError != null) throw resetError!;
     _state = SessionState.unauthenticated;
     _studentId = null;
   }

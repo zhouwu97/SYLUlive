@@ -110,6 +110,34 @@ void main() {
     controller.dispose();
   });
 
+  test('生产兼容数据源禁网时不会触碰教务服务器', () async {
+    final requestedPaths = <String>[];
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            requestedPaths.add(options.path);
+            handler.next(options);
+          },
+        ),
+      );
+    final source = LegacyServerDataSource(dio, networkEnabled: false);
+
+    await expectLater(
+      source.login(studentId: '2026000001', password: 'secret'),
+      throwsA(
+        isA<NetworkException>().having(
+          (error) => error.code,
+          'code',
+          'LEGACY_SERVER_BLOCKED',
+        ),
+      ),
+    );
+    await source.resetSession();
+
+    expect(requestedPaths, isEmpty);
+  });
+
   test('课表网格的本机来源尚未登录时不会请求旧服务端接口', () async {
     final repository = _FakeAcademicRepository();
     final controller = AcademicSessionController(

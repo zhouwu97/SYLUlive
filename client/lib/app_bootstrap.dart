@@ -32,6 +32,7 @@ import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
 import 'features/academic/application/academic_session_controller.dart';
 import 'features/academic/data/academic_repository_impl.dart';
+import 'features/academic/data/academic_server_access_guard.dart';
 import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
 import 'features/academic/data/datasource/legacy_server_data_source.dart';
 import 'features/academic/domain/academic_repository.dart';
@@ -85,7 +86,8 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 export 'widgets/global_background_wrapper.dart'
-    show BackgroundWrapperState,
+    show
+        BackgroundWrapperState,
         GlobalBackgroundWrapper,
         PredictiveBackGate,
         backgroundWrapperKey;
@@ -1310,6 +1312,9 @@ Dio getSharedDio() {
       ),
     );
 
+    // 本机教务使用 JiaowuClient；共享 App Dio 上的旧教务服务器出口统一阻断。
+    dio.interceptors.add(const AcademicServerAccessGuard());
+
     // 每个业务请求都带版本头；服务端开启最低支持版本限制后，426 会由根级
     // 更新门禁接管，而不是在任意业务页面弹出分散提示。
     dio.interceptors.add(
@@ -1366,7 +1371,7 @@ class MyApp extends StatelessWidget {
         Provider<AcademicRepository>(
           create: (_) => AcademicRepositoryImpl(
             local: JiaowuLocalDataSource(),
-            legacy: LegacyServerDataSource(dio),
+            legacy: LegacyServerDataSource(dio, networkEnabled: false),
             source: AcademicSourceKind.local,
           ),
           dispose: (_, repository) => repository.close(),

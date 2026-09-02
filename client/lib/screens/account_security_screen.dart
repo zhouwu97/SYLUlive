@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/domain/academic_repository.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
@@ -280,6 +282,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
   }
 
   Future<void> _showEduBindDialog() async {
+    if (context.read<AcademicSessionController>().sourceKind ==
+        AcademicSourceKind.local) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本机模式已阻断服务端教务绑定，请使用本机直连教务')),
+      );
+      return;
+    }
     final edu = context.read<EduProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final studentId = TextEditingController(text: _studentId);
@@ -417,6 +426,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
 
   Future<void> _runEduAction(
       Future<OperationResult<void>> Function() action) async {
+    if (context.read<AcademicSessionController>().sourceKind ==
+        AcademicSourceKind.local) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本机模式已阻断服务端教务操作')),
+      );
+      return;
+    }
     final result = await action();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -425,6 +441,16 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               Text(result.success ? '操作成功' : result.errorMessage ?? '操作失败')),
     );
     if (result.success) await _reload();
+  }
+
+  String _localSessionState(AcademicSessionController controller) {
+    return switch (controller.sessionState) {
+      SessionState.authenticated => 'active',
+      SessionState.expired => 'expired',
+      SessionState.awaitingCaptcha => 'awaiting_captcha',
+      SessionState.authenticating => 'authenticating',
+      SessionState.unauthenticated => 'unbound',
+    };
   }
 
   String _sessionLabel(String value) {
@@ -460,6 +486,16 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
 
     final edu = context.read<EduProvider>();
     final localAcademic = context.watch<AcademicSessionController>();
+    final usesLocalAcademic =
+        localAcademic.sourceKind == AcademicSourceKind.local;
+    final effectiveStudentId =
+        usesLocalAcademic ? localAcademic.studentId ?? '' : _studentId;
+    final effectiveStudentVerified =
+        usesLocalAcademic ? localAcademic.isAuthenticated : _studentVerified;
+    final effectiveEduAuthorized =
+        usesLocalAcademic ? localAcademic.isAuthenticated : _eduAuthorized;
+    final effectiveSessionState =
+        usesLocalAcademic ? _localSessionState(localAcademic) : _sessionState;
     final loginMethods = (_security?['login_methods'] as List? ?? const [])
         .map((method) => method == 'student_id' ? '学号' : '邮箱')
         .join('、');
@@ -475,10 +511,11 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.verified_user_outlined,
               title: '学生身份认证',
-              subtitle: _studentVerified ? '学号 $_studentId' : '未完成认证',
+              subtitle:
+                  effectiveStudentVerified ? '学号 $effectiveStudentId' : '未完成认证',
               trailing: SettingsStatusBadge(
-                label: _studentVerified ? '已认证' : '未认证',
-                type: _studentVerified
+                label: effectiveStudentVerified ? '已认证' : '未认证',
+                type: effectiveStudentVerified
                     ? SettingsStatusBadgeType.success
                     : SettingsStatusBadgeType.neutral,
               ),
@@ -499,12 +536,22 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务系统状态',
-              subtitle: '授权：${_eduAuthorized ? "已授权" : "已撤销"}',
+              subtitle: usesLocalAcademic
+                  ? '本机直连，不使用服务器教务授权'
+                  : '授权：${effectiveEduAuthorized ? "已授权" : "已撤销"}',
               trailing: SettingsStatusBadge(
-                label: _sessionLabel(_sessionState),
-                type: _sessionState == 'active'
-                    ? SettingsStatusBadgeType.success
-                    : SettingsStatusBadgeType.neutral,
+                label: usesLocalAcademic
+                    ? localAcademic.isAuthenticated
+                        ? '本机在线'
+                        : '本机未连接'
+                    : _sessionLabel(effectiveSessionState),
+                type: usesLocalAcademic
+                    ? (localAcademic.isAuthenticated
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.neutral)
+                    : (effectiveSessionState == 'active'
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.neutral),
               ),
               showChevron: false,
             ),
@@ -517,8 +564,10 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.badge_outlined,
-              title: _studentVerified ? '主账号：$_studentId' : '尚未认证学生',
-              subtitle: _studentVerified ? '学生身份已认证' : '完成教务绑定后，学号将成为主账号',
+              title: effectiveStudentVerified
+                  ? '主账号：$effectiveStudentId'
+                  : '尚未认证学生',
+              subtitle: effectiveStudentVerified ? '学生身份已认证' : '完成本机教务登录后显示学号',
               showChevron: false,
             ),
             SettingsTile(
@@ -597,39 +646,53 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               ),
             SettingsTile(
               icon: Icons.hub_outlined,
-              title: _eduAuthorized ? '教务授权：已授权' : '教务授权：已撤销',
-              subtitle: '教务会话：${_sessionLabel(_sessionState)}',
+              title: usesLocalAcademic
+                  ? localAcademic.isAuthenticated
+                      ? '本机教务：已连接'
+                      : '本机教务：未连接'
+                  : effectiveEduAuthorized
+                      ? '教务授权：已授权'
+                      : '教务授权：已撤销',
+              subtitle: usesLocalAcademic
+                  ? 'Cookie 仅保存在本机内存，不使用服务器教务会话'
+                  : '教务会话：${_sessionLabel(effectiveSessionState)}',
               showChevron: false,
             ),
-            if (!_studentVerified)
+            if (!usesLocalAcademic && !effectiveStudentVerified)
               SettingsTile(
                 icon: Icons.verified_user_outlined,
                 title: '完成学生认证',
                 subtitle: '验证学号并授权连接教务系统',
                 onTap: _showEduBindDialog,
               ),
-            if (_studentVerified && !_eduAuthorized)
+            if (!usesLocalAcademic &&
+                effectiveStudentVerified &&
+                !effectiveEduAuthorized)
               SettingsTile(
                 icon: Icons.link_outlined,
                 title: '重新授权教务',
                 subtitle: '重新连接教务服务以恢复相关功能',
                 onTap: _showEduBindDialog,
               ),
-            if (_eduAuthorized && _sessionState != 'active')
+            if (!usesLocalAcademic &&
+                effectiveEduAuthorized &&
+                effectiveSessionState != 'active')
               SettingsTile(
                 icon: Icons.login_outlined,
                 title: '重新登录教务',
                 subtitle: '尝试刷新教务 Session 会话状态',
                 onTap: () => _runEduAction(edu.resumeSession),
               ),
-            if (_eduAuthorized && _sessionState == 'active')
+            if (!usesLocalAcademic &&
+                effectiveEduAuthorized &&
+                effectiveSessionState == 'active')
               SettingsTile(
                 icon: Icons.logout_outlined,
                 title: '退出教务登录',
                 subtitle: '保留授权和学生身份，不会自动恢复',
                 onTap: () => _runEduAction(edu.logoutSession),
               ),
-            if (_eduAuthorized)
+            if (!usesLocalAcademic && effectiveEduAuthorized)
               SettingsTile(
                 icon: Icons.delete_outline,
                 title: '撤销教务授权',

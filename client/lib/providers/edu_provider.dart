@@ -709,6 +709,11 @@ class EduProvider extends ChangeNotifier {
     String password, {
     required bool eduDataConsentAccepted,
   }) async {
+    if (_usingLocalAcademicSession) {
+      _errorMessage = '本机模式已阻断服务端教务绑定，请使用本机直连教务';
+      notifyListeners();
+      return false;
+    }
     if (_userId == null) {
       _errorMessage = '用户未登录';
       notifyListeners();
@@ -775,6 +780,9 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<OperationResult<void>> logoutSession() async {
+    if (_usingLocalAcademicSession) {
+      return OperationResult.fail('本机模式已阻断服务端教务操作，请使用本机教务退出');
+    }
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
@@ -799,6 +807,9 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<OperationResult<void>> resumeSession() async {
+    if (_usingLocalAcademicSession) {
+      return OperationResult.fail('本机模式已阻断服务端教务操作，请重新登录本机教务');
+    }
     if (_userId == null) return OperationResult.fail('用户未登录');
     try {
       final response = await _authDio.post('/edu/session/resume');
@@ -821,6 +832,9 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<OperationResult<void>> revokeAuthorization() async {
+    if (_usingLocalAcademicSession) {
+      return OperationResult.fail('本机模式已阻断服务端教务操作，请使用本机教务退出');
+    }
     if (_userId == null) return OperationResult.fail('用户未登录');
     final currentUserId = _userId!;
     try {

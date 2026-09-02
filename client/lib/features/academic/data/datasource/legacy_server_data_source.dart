@@ -6,12 +6,13 @@ import '../../domain/academic_data_source.dart';
 /// 旧服务端代理数据源。
 ///
 /// 这是迁移期间的兼容实现：它只使用 App JWT 所在的 Dio，不接触本机直连
-/// 数据源的 CookieJar。新功能默认使用 [JiaowuLocalDataSource]；保留本类
-/// 是为了让旧账号和旧页面仍有明确的回退入口，但仓储不会自动切换来源。
+/// 数据源的 CookieJar。新功能默认使用 [JiaowuLocalDataSource]；生产 App
+/// 通过 [networkEnabled] 关闭本类的网络出口，测试和独立旧版构建仍可显式启用。
 final class LegacyServerDataSource implements AcademicDataSource {
-  LegacyServerDataSource(this._dio);
+  LegacyServerDataSource(this._dio, {this.networkEnabled = true});
 
   final Dio _dio;
+  final bool networkEnabled;
   SessionState _sessionState = SessionState.unauthenticated;
   String? _studentId;
   bool _closed = false;
@@ -31,6 +32,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     required String password,
   }) async {
     _ensureOpen();
+    _ensureNetworkEnabled();
     try {
       final response = await _dio.post(
         '/edu/bind',
@@ -78,6 +80,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   @override
   Future<CaptchaChallenge> getCaptchaChallenge() async {
+    _ensureNetworkEnabled();
     throw const LoginPageChangedException(
       message: '旧服务端代理不提供验证码图片，请使用本机直连',
     );
@@ -85,6 +88,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   @override
   Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
+    _ensureNetworkEnabled();
     return const LoginPageChanged(
       message: '旧服务端代理不支持本地验证码流程，请重新选择本机直连',
     );
@@ -93,6 +97,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
   @override
   Future<StudentProfile> getProfile() async {
     _ensureAuthenticated();
+    _ensureNetworkEnabled();
     try {
       final response = await _dio.get('/edu/status');
       final data = _requireSuccessfulMap(response, '获取学生信息');
@@ -113,6 +118,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     required int semester,
   }) async {
     _ensureAuthenticated();
+    _ensureNetworkEnabled();
     try {
       final response = await _dio.post(
         '/edu/courses',
@@ -146,6 +152,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     required int semester,
   }) async {
     _ensureAuthenticated();
+    _ensureNetworkEnabled();
     try {
       final response = await _dio.post(
         '/edu/grades',
@@ -175,6 +182,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     if (_closed) return;
     _studentId = null;
     _sessionState = SessionState.unauthenticated;
+    if (!networkEnabled) return;
     // 旧代理的会话由服务端管理；退出失败不能阻止本地账号切换清理。
     try {
       await _dio.post('/edu/session/logout');
@@ -272,6 +280,15 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   void _ensureOpen() {
     if (_closed) throw StateError('旧教务数据源已关闭');
+  }
+
+  void _ensureNetworkEnabled() {
+    if (!networkEnabled) {
+      throw const NetworkException(
+        message: '教务服务器接口已阻断，请使用本机直连教务',
+        code: 'LEGACY_SERVER_BLOCKED',
+      );
+    }
   }
 
   void _ensureAuthenticated() {

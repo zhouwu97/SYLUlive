@@ -628,22 +628,22 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   static Map<String, dynamic> _rawCourseToFetchedMap(RawCourse course) {
-    final sectionMatch =
-        RegExp(r'(\d+)\s*[-~至到—–]\s*(\d+)').firstMatch(course.section);
-    final startSection = int.tryParse(sectionMatch?.group(1) ?? '') ?? 1;
-    final endSection =
-        int.tryParse(sectionMatch?.group(2) ?? '') ?? startSection;
-    final weekday = int.tryParse(course.weekDay) ??
-        int.tryParse(RegExp(r'\d+').stringMatch(course.weekDay) ?? '') ??
-        1;
+    final sections = _parseSectionRange(
+      course.section,
+      message: '本机课表记录缺少有效节次',
+    );
+    final weekday = int.tryParse(course.weekDay.trim());
+    if (weekday == null || weekday < 1 || weekday > 7) {
+      throw const ProtocolChangedException(message: '本机课表记录缺少有效星期');
+    }
     final canonical = course.toCanonicalJson();
     return {
       'name': course.name,
       'teacher': course.teacher,
       'location': course.location,
       'weekday': weekday,
-      'start_section': startSection,
-      'end_section': endSection,
+      'start_section': sections.start,
+      'end_section': sections.end,
       'weekExpression': canonical['weekExpression'] ?? course.weekExpression,
       'weeks': canonical['weeks'] ?? const <int>[],
     };
@@ -658,37 +658,44 @@ class CourseScheduleProvider extends ChangeNotifier {
       'title',
     ]);
 
-    final time = _firstInt(
-        map,
-        [
-          'time',
-          'start_time',
-          'startSection',
-          'start_section',
-          'jc_start',
-        ],
-        fallback: 1);
+    final time = _requiredInt(
+      map,
+      [
+        'time',
+        'start_time',
+        'startSection',
+        'start_section',
+        'jc_start',
+      ],
+      message: '课表记录缺少开始节次',
+    );
 
-    final endTime = _firstInt(
-        map,
-        [
-          'end_time',
-          'endSection',
-          'end_section',
-          'jc_end',
-        ],
-        fallback: time);
+    final endTime = _requiredInt(
+      map,
+      [
+        'end_time',
+        'endSection',
+        'end_section',
+        'jc_end',
+      ],
+      message: '课表记录缺少结束节次',
+      fallback: time,
+    );
 
-    final weekday = _firstInt(
-        map,
-        [
-          'week_day',
-          'weekday',
-          'dayOfWeek',
-          'day_of_week',
-          'xqj',
-        ],
-        fallback: 1);
+    final weekday = _requiredInt(
+      map,
+      [
+        'week_day',
+        'weekday',
+        'dayOfWeek',
+        'day_of_week',
+        'xqj',
+      ],
+      message: '课表记录缺少有效星期',
+    );
+    if (time < 1 || endTime < time || weekday < 1 || weekday > 7) {
+      throw const ProtocolChangedException(message: '课表记录的星期或节次无效');
+    }
 
     final teacher = _firstString(map, [
       'teacher',
@@ -730,10 +737,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     return '';
   }
 
-  int _firstInt(
+  int _requiredInt(
     Map<String, dynamic> map,
     List<String> keys, {
-    required int fallback,
+    required String message,
+    int? fallback,
   }) {
     for (final key in keys) {
       final value = map[key];
@@ -751,7 +759,26 @@ class CourseScheduleProvider extends ChangeNotifier {
         }
       }
     }
-    return fallback;
+    if (fallback != null) return fallback;
+    throw ProtocolChangedException(message: message);
+  }
+
+  static ({int start, int end}) _parseSectionRange(
+    String raw, {
+    required String message,
+  }) {
+    final match = RegExp(
+      r'^\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节?\s*$',
+    ).firstMatch(raw);
+    if (match == null) {
+      throw ProtocolChangedException(message: message);
+    }
+    final start = int.tryParse(match.group(1)!);
+    final end = int.tryParse(match.group(2) ?? match.group(1)!);
+    if (start == null || end == null || start < 1 || end < start) {
+      throw ProtocolChangedException(message: message);
+    }
+    return (start: start, end: end);
   }
 
   List<int> _parseWeeks(Object? raw) {

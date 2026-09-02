@@ -66,4 +66,20 @@ void main() {
       );
     }
   });
+
+  test('jc 缺失或无法解析时拒绝伪造节次', () {
+    const invalidSections = [
+      '{"kbList":[{"kcmc":"课程","xqj":1,"jc":null}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":1,"jc":""}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":1,"jc":"第1节"}]}',
+      '{"kbList":[{"kcmc":"课程","xqj":1,"jc":"4-2节"}]}',
+    ];
+
+    for (final body in invalidSections) {
+      expect(
+        () => CourseParser.parse(body),
+        throwsA(isA<ProtocolChangedException>()),
+      );
+    }
+  });
 }

@@ -43,12 +43,13 @@ abstract final class CourseParser {
         );
       }
       final weekDay = _parseWeekDay(item['xqj'], index: index);
+      final section = _parseSection(item['jc'], index: index);
       courses.add(
         RawCourse(
           name: _stringValue(item['kcmc']),
           teacher: _stringValue(item['xm']),
           location: _stringValue(item['cdmc']),
-          section: _stringValue(item['jc']),
+          section: section,
           weekDay: weekDay,
           weekExpression: _stringValue(item['zcd']),
         ),
@@ -84,5 +85,21 @@ abstract final class CourseParser {
       );
     }
     return weekDay;
+  }
+
+  static String _parseSection(Object? value, {required int index}) {
+    final section = _stringValue(value);
+    final match = RegExp(
+      r'^\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节?\s*$',
+    ).firstMatch(section);
+    final start = match == null ? null : int.tryParse(match.group(1)!);
+    final end =
+        match == null ? null : int.tryParse(match.group(2) ?? match.group(1)!);
+    if (start == null || end == null || start < 1 || end < start) {
+      throw ProtocolChangedException(
+        message: '课表 kbList 第 ${index + 1} 条记录的 jc 无效',
+      );
+    }
+    return section;
   }
 }

@@ -10,7 +10,6 @@ import '../models/edu_grade.dart';
 import '../theme/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
 import '../utils/grade_screen_registry.dart';
-import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
@@ -136,14 +135,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         // 捕获局部变量防止异步期间 _lastUserId 变化
         final capturedUserId = currentUserId;
         eduProvider.setUserId(currentUserId);
-        unawaited(
-          GradeReminderService.instance.syncRuntimeConfig(
-            userId: currentUserId,
-          ),
-        );
-        unawaited(
-          GradeReminderService.instance.ensureScheduledIfEnabled(),
-        );
         Future<void> initFlow() async {
           await eduProvider.ensureStatusLoaded();
           if (!mounted || _lastUserId != capturedUserId) return;
@@ -157,8 +148,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         initFlow();
       } else {
         _showUnavailableState('请先登录后查看成绩');
-        unawaited(
-            GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
     }
   }
@@ -412,8 +401,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isRefreshing = false;
         _errorMessage = null;
       });
-      _syncBaselineAndCancelNotification(
-          _selectedYear, _selectedSemester, result.data!);
       _prefetchGradeDetails(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
@@ -461,8 +448,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             : GradePageState.content;
         _isRefreshing = false;
       });
-      _syncBaselineAndCancelNotification(
-          _selectedYear, _selectedSemester, result.data!);
       _prefetchGradeDetails(result.data!);
       if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
@@ -567,7 +552,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _grades.isEmpty ? GradePageState.empty : GradePageState.content;
     });
 
-    _syncBaselineAndCancelNotification(year, semester, result.data!);
     _saveSelectedSemester(year, semester);
     _prefetchGradeDetails(result.data!, year: year, semester: semester);
     return true;
@@ -579,37 +563,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     _saveSelectedSemesterFor(userId, year, semester);
   }
 
-  void _syncBaselineAndCancelNotification(
-      String year, int semester, List<EduGrade> grades) {
-    final userId = _lastUserId;
-    if (userId == null) return;
-    unawaited(
-      GradeReminderService.instance.syncBaselineIfEnabled(
-        userId: userId,
-        year: year,
-        semester: semester,
-        grades: grades,
-      ),
-    );
-    unawaited(
-      GradeReminderService.instance.clearGradeUpdateNotifications(),
-    );
-  }
-
   void _saveSelectedSemesterFor(String userId, String year, int semester) {
     AppPreferencesStore.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
-    unawaited(
-      GradeReminderService.instance.syncSelectedSemester(
-        userId: userId,
-        year: year,
-        semester: semester,
-      ),
-    );
-    unawaited(
-      GradeReminderService.instance.ensureScheduledIfEnabled(),
-    );
   }
 
   Future<void> _refreshSelectedSemesterInBackground(
@@ -629,7 +586,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _pageState =
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
-      _syncBaselineAndCancelNotification(year, semester, result.data!);
       _prefetchGradeDetails(result.data!, year: year, semester: semester);
     }
   }

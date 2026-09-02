@@ -39,7 +39,4 @@ abstract class ReminderNotificationClient {
       false;
 
   Future<void> cancelCalendarReminder(int id) async {}
-
-  Future<void> initializeGradeReminders();
-  Future<bool> requestGradeReminderPermissions();
 }

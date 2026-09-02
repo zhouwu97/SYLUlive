@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
-import '../config/api_constants.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/domain/academic_failure.dart';
 import '../features/academic/domain/academic_repository.dart';
@@ -13,8 +12,6 @@ import '../features/campus_data/storage/schedule_cache_store.dart';
 import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
-
-const _eduScheduleRequestTimeout = Duration(seconds: 25);
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -153,7 +150,6 @@ enum ScheduleSessionPhase {
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
-  final Dio _apiDio;
   final AcademicRepository? _academicRepository;
   final AcademicSessionController? _academicSessionController;
   final AccountScopedSnapshotStore Function(String appUserId)?
@@ -204,21 +200,13 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 不能与已完成绑定的 `appUserId::sourceAccountId` 混为同一会话。
   String get sessionKey => '${_userId ?? ''}::${_sourceAccountId ?? ''}';
 
-  // 正常运行由 main 传入带认证拦截器的共享客户端；无参构造仅用于本地缓存测试。
+  // 保留旧构造参数以兼容调用方；教务请求统一由本机会话控制器处理。
   CourseScheduleProvider([
-    Dio? dio,
+    Dio? legacyDio,
     AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
     AcademicRepository? academicRepository,
     AcademicSessionController? academicSessionController,
-  ])  : _apiDio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConstants.baseUrl,
-                connectTimeout: const Duration(seconds: 30),
-                receiveTimeout: const Duration(seconds: 60),
-              ),
-            ),
-        _snapshotStoreBuilder = snapshotStoreBuilder,
+  ])  : _snapshotStoreBuilder = snapshotStoreBuilder,
         _academicRepository = academicRepository,
         _academicSessionController = academicSessionController {
     _initDefaults();
@@ -907,12 +895,12 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     bool networkSuccess = false;
 
-    // 原始课表只通过当前选定的教务数据源按需获取。成功后仍写入当前
+    // 原始课表只通过本机教务数据源按需获取。成功后仍写入当前
     // 账号和来源账号隔离的本地加密保险箱，不创建服务端课程副本。
     final localController = _academicSessionController;
     // 来源选择是显式契约：本机来源即使尚未登录，也必须停在本机登录态，
-    // 不能因为旧服务端存在绑定信息而静默改走 /edu/courses。
-    final localSessionActive =
+    // 不能因为旧服务端存在绑定信息而静默改走服务端教务接口。
+    final localSessionActive = _academicSessionController != null ||
         _academicRepository?.sourceKind == AcademicSourceKind.local;
     if (localSessionActive) {
       if (localController == null) {
@@ -957,55 +945,10 @@ class CourseScheduleProvider extends ChangeNotifier {
           debugPrint('解析本机教务课表失败: ${error.runtimeType}');
         }
       }
-    } else {
-      try {
-        final fetchResp = await _apiDio.post(
-          '/edu/courses',
-          data: {'year': operation.year, 'semester': operation.semester},
-          options: Options(receiveTimeout: _eduScheduleRequestTimeout),
-        );
-        if (!_isCurrentOperation(operation)) return;
-
-        if (fetchResp.statusCode == 200 && fetchResp.data is Map) {
-          final data = fetchResp.data;
-          if (data['success'] == true) {
-            final rawCourses = data['courses'] as List<dynamic>? ?? [];
-            if (rawCourses.isEmpty &&
-                backupCourses.isNotEmpty &&
-                !isManualRefresh) {
-              // 自动刷新拉取到空课表时，保留已验证的本地数据，避免教务端
-              // 短暂异常覆盖当前用户的加密缓存。
-              debugPrint('教务系统返回空课表，保留当前本地课程');
-              _courses = backupCourses;
-              _buildGrid();
-            } else {
-              _courses = rawCourses
-                  .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
-                  .where((c) => !_hiddenCourseIds.contains(c.id))
-                  .toList();
-              _buildGrid();
-              networkSuccess = true;
-            }
-            debugPrint('从教务拉取课程: count=${_courses.length}');
-          } else {
-            _errorMessage = data['message'] as String?;
-          }
-        }
-      } on DioException catch (e) {
-        if (!_isCurrentOperation(operation)) return;
-        _errorMessage = _parseDioError(e);
-        debugPrint(
-          '从教务拉取课程失败: type=${e.type}, status=${e.response?.statusCode}',
-        );
-      } catch (error) {
-        if (!_isCurrentOperation(operation)) return;
-        _errorMessage = '解析课表数据失败';
-        debugPrint('解析教务课表失败: ${error.runtimeType}');
-      }
     }
     if (!_isCurrentOperation(operation)) return;
 
-    // 网络请求成功后，保存或清理缓存
+    // 本机教务读取成功后，保存或清理缓存
     if (networkSuccess) {
       // 恢复所有本地的自定义课程 (包括 AI 导入的课程，其 id 均为负数)
       final customCourses = backupCourses.where((c) => c.id < 0).toList();
@@ -1031,7 +974,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
-    debugPrint('课表网络拉取完成: count=${_courses.length}');
+    debugPrint('课表本机读取完成: count=${_courses.length}');
   }
 
   /// 同步课程数据到桌面小部件（非阻塞）
@@ -1069,27 +1012,6 @@ class CourseScheduleProvider extends ChangeNotifier {
     final operation = _captureOperationContext();
     if (operation == null) return;
     await _clearOperationCourses(operation);
-  }
-
-  String _parseDioError(DioException e) {
-    if (e.response != null) {
-      switch (e.response!.statusCode) {
-        case 401:
-          return '教务登录状态已失效，请重新登录';
-        case 503:
-          return '教务系统不可用，请稍后重试';
-        default:
-          return '服务器错误 (${e.response!.statusCode})';
-      }
-    }
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return '连接超时，请检查网络';
-    }
-    if (e.type == DioExceptionType.connectionError) {
-      return '无法连接到教务服务';
-    }
-    return '网络异常';
   }
 
   /// 将课程列表组织成网格：weekday -> section -> courses

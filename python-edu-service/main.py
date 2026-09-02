@@ -25,12 +25,20 @@ _PERSONAL_SNAPSHOT_PATHS = frozenset({"/api/personal-snapshots/erke"})
 def school_authority_retired() -> bool:
     """读取创建应用实例时使用的进程开关。"""
 
-    return os.getenv("SCHOOL_AUTHORITY_RETIRED", "").strip().lower() in {
+    raw = os.getenv("SCHOOL_AUTHORITY_RETIRED", "").strip().lower()
+    if not raw:
+        # 个人教务能力必须 fail-closed；只有显式 false 才允许兼容/测试模式。
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {
         "1",
         "true",
         "yes",
         "on",
-    }
+    }:
+        return True
+    raise RuntimeError("SCHOOL_AUTHORITY_RETIRED 必须为 true 或 false")
 
 
 @asynccontextmanager

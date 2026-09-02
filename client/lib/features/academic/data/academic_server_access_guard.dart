@@ -28,11 +28,27 @@ final class AcademicServerAccessGuard extends Interceptor {
 
   /// 同时兼容 Dio 的相对 path 和已拼接 `/api` 前缀的 URI path。
   static bool isAcademicServerPath(RequestOptions options) {
-    bool matches(String path) =>
-        path == '/edu' ||
-        path.startsWith('/edu/') ||
-        path == '/api/edu' ||
-        path.startsWith('/api/edu/');
+    const retiredAuthPaths = {
+      '/register_with_edu',
+      '/api/register_with_edu',
+      '/login_edu',
+      '/api/login_edu',
+      '/forgot_password',
+      '/api/forgot_password',
+      '/password/edu/reset',
+      '/api/password/edu/reset',
+    };
+
+    bool matches(String path) {
+      final normalized = path.length > 1 && path.endsWith('/')
+          ? path.substring(0, path.length - 1)
+          : path;
+      return normalized == '/edu' ||
+          normalized.startsWith('/edu/') ||
+          normalized == '/api/edu' ||
+          normalized.startsWith('/api/edu/') ||
+          retiredAuthPaths.contains(normalized);
+    }
 
     return matches(options.path) || matches(options.uri.path);
   }

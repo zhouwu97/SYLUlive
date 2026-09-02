@@ -47,14 +47,4 @@ class OhosReminderNotificationClient implements ReminderNotificationClient {
   Future<void> cancelCalendarReminder(int id) async {
     // Unsupported on OHOS for now
   }
-
-  @override
-  Future<void> initializeGradeReminders() async {
-    // Unsupported on OHOS for now
-  }
-
-  @override
-  Future<bool> requestGradeReminderPermissions() async {
-    return false; // Unsupported on OHOS for now
-  }
 }

@@ -1163,8 +1163,15 @@ func main() {
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
-	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
-	eduBindingRecoveryCron := tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
+	var eduCredentialCleanupCron *tasks.EduCredentialCleanupCron
+	var eduBindingRecoveryCron *tasks.EduBindingRecoveryCron
+	if cfg.SchoolAcademicRoutesRetired {
+		// 个人教务路由退役后，不再启动任何会访问 Python 教务服务的后台补偿任务。
+		log.Println("服务端教务能力已退役，跳过教务凭证清理与绑定恢复后台任务")
+	} else {
+		eduCredentialCleanupCron = tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
+		eduBindingRecoveryCron = tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
+	}
 	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。

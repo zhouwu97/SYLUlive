@@ -1440,10 +1440,6 @@ class MyApp extends StatelessWidget {
           create: (_) => EduProvider(dio),
           update: (_, auth, academic, provider) => provider!
             ..setAcademicSessionController(academic)
-            ..setAuthCallbacks(
-              applyAuthPayload: auth.applyAuthPayload,
-              refreshAuthUser: auth.refreshUser,
-            )
             ..syncSessionUser(auth.user?.id.toString()),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, EduProvider,

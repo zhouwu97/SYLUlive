@@ -409,7 +409,7 @@ class KeepAliveForegroundService : Service() {
         return builder
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("沈理校园保活中")
-            .setContentText("保持私信、课程提醒和成绩提醒更稳定")
+            .setContentText("保持私信和课程提醒更稳定")
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setShowWhen(false)
@@ -734,7 +734,7 @@ class KeepAliveForegroundService : Service() {
                     CHANNEL_NAME,
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "用于维持私信、课程提醒和成绩提醒后台连接"
+                    description = "用于维持私信和课程提醒后台连接"
                     setShowBadge(false)
                 },
             )

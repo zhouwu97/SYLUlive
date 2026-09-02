@@ -9,7 +9,7 @@ import '../../domain/academic_data_source.dart';
 /// 数据源的 CookieJar。新功能默认使用 [JiaowuLocalDataSource]；生产 App
 /// 通过 [networkEnabled] 关闭本类的网络出口，测试和独立旧版构建仍可显式启用。
 final class LegacyServerDataSource implements AcademicDataSource {
-  LegacyServerDataSource(this._dio, {this.networkEnabled = true});
+  LegacyServerDataSource(this._dio, {this.networkEnabled = false});
 
   final Dio _dio;
   final bool networkEnabled;

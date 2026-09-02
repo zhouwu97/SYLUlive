@@ -212,7 +212,7 @@ void main() {
     schedule.dispose();
   });
 
-  test('本机 RawGrade 映射正确且成绩缓存不跨来源账号复用', () async {
+  test('本机 RawGrade 映射正确且切换旧来源不会回退', () async {
     final repository = _FakeAcademicRepository(
       grades: GradeFetchResult(
         grades: <RawGrade>[
@@ -236,10 +236,12 @@ void main() {
         pages: 1,
       ),
     );
+    final requestedPaths = <String>[];
     final dio = Dio()
       ..interceptors.add(
         InterceptorsWrapper(
           onRequest: (options, handler) {
+            requestedPaths.add(options.path);
             if (options.path == '/edu/status') {
               handler.resolve(
                 Response(
@@ -309,12 +311,13 @@ void main() {
     await controller.resetSession();
     await provider.refreshStatus();
     expect(provider.isUsingLocalAcademicSession, isFalse);
-    expect(provider.studentId, 'legacy-x');
+    expect(provider.studentId, isEmpty);
     expect(provider.getCachedGrades('2024', 3), isNull);
 
     final legacyResult = await provider.fetchGrades('2024', 3);
-    expect(legacyResult.success, isTrue);
-    expect(legacyResult.data!.single.name, '旧代理课程');
+    expect(legacyResult.success, isFalse);
+    expect(legacyResult.errorCode, 'LOCAL_SESSION_NOT_READY');
+    expect(requestedPaths, isEmpty);
 
     repository.currentSource = AcademicSourceKind.local;
     await controller.login(studentId: 'local-y', password: 'secret');
@@ -364,7 +367,7 @@ void main() {
           },
         ),
       );
-    final source = LegacyServerDataSource(dio);
+    final source = LegacyServerDataSource(dio, networkEnabled: true);
 
     expect(
       await source.login(studentId: '2026000001', password: 'secret'),

@@ -1110,10 +1110,10 @@
           <div class="headcount-header">
             <div class="headcount-title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-              <span>队伍编成与招募进度</span>
+              <span>招募名额与进度</span>
             </div>
             <div class="headcount-numbers">
-              已加入 <span id="team-accepted-count">0</span> / 计划 <span id="team-needed-count">0</span> 人
+              已招募 <span id="team-accepted-count">0</span> / 招募名额 <span id="team-needed-count">0</span> 人
             </div>
           </div>
           <div class="progress-bar-bg">
@@ -1561,7 +1561,7 @@
         teamAcceptedCount.textContent = accepted;
         teamNeededCount.textContent = needed;
         teamProgressBar.style.width = `${percent}%`;
-        teamRemainingText.textContent = remaining > 0 ? `还需 ${remaining} 位队友加入` : '已达到计划招募人数';
+        teamRemainingText.textContent = remaining > 0 ? `还需 ${remaining} 位队友加入` : '招募名额已满';
 
         // Deadline
         if (team.deadline) {
@@ -1574,8 +1574,10 @@
           teamDeadlineFull.textContent = '长期有效 (招满即止)';
         }
 
-        // Stats
-        teamStats.textContent = `🔥 ${team.view_count || 120} 次浏览 · ${team.application_count || accepted} 人已申请`;
+        // Stats (truthful, no fallback to fake defaults)
+        const viewCount = (team.view_count !== undefined && team.view_count !== null) ? Number(team.view_count) : 0;
+        const appCount = (team.application_count !== undefined && team.application_count !== null) ? Number(team.application_count) : 0;
+        teamStats.textContent = `🔥 ${viewCount} 次浏览 · ${appCount} 人已申请`;
 
         // Roles
         const roles = Array.isArray(team.roles) ? team.roles : [];

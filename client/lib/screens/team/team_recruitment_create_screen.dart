@@ -147,6 +147,9 @@ class _TeamRecruitmentCreateScreenState
     } else {
       _isStructuredMode = false;
       _freeDescriptionController.text = desc;
+      if (desc.trim().isNotEmpty) {
+        _introController.text = desc.trim();
+      }
     }
   }
 
@@ -285,9 +288,28 @@ class _TeamRecruitmentCreateScreenState
     setState(() => _deadline = null);
   }
 
-  // 构建临时招募对象用于实时预览
+  // 构建临时招募对象用于实时预览（支持已满员/已截止/即将截止状态准确计算）
   TeamRecruitment _buildSyntheticPreviewRecruitment(User? currentUser) {
     final description = _buildCombinedDescription();
+    final accepted = widget.initialValue?.acceptedCount ?? 0;
+    final remaining = (_neededCount - accepted).clamp(0, 999);
+    final isClosed = widget.initialValue?.status == 'closed';
+    final isExpired = _deadline != null && _deadline!.isBefore(DateTime.now());
+    final effectiveStatus = isClosed
+        ? 'closed'
+        : (isExpired
+            ? 'expired'
+            : (remaining == 0
+                ? 'full'
+                : (_deadline != null &&
+                        _deadline!.isBefore(
+                            DateTime.now().add(const Duration(days: 3)))
+                    ? 'deadline_soon'
+                    : 'recruiting')));
+    final status = isClosed
+        ? 'closed'
+        : (isExpired ? 'expired' : (remaining == 0 ? 'full' : 'recruiting'));
+
     return TeamRecruitment(
       id: widget.initialValue?.id ?? 9999,
       postId: widget.initialValue?.postId ?? 9999,
@@ -297,12 +319,12 @@ class _TeamRecruitmentCreateScreenState
           : _titleController.text.trim(),
       description: description.isEmpty ? '暂未填写招募详情' : description,
       neededCount: _neededCount,
-      acceptedCount: widget.initialValue?.acceptedCount ?? 0,
-      remainingCount: _neededCount - (widget.initialValue?.acceptedCount ?? 0),
+      acceptedCount: accepted,
+      remainingCount: remaining,
       roles: _roles.isEmpty ? ['虚位以待'] : _roles,
       deadline: _deadline,
-      status: 'recruiting',
-      effectiveStatus: 'recruiting',
+      status: status,
+      effectiveStatus: effectiveStatus,
       applicationCount: widget.initialValue?.applicationCount ?? 0,
       pendingApplicationCount:
           widget.initialValue?.pendingApplicationCount ?? 0,
@@ -323,6 +345,7 @@ class _TeamRecruitmentCreateScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentUser = context.read<AuthProvider>().user;
     final previewItem = _buildSyntheticPreviewRecruitment(currentUser);
+    final totalImagesCount = _existingImages.length + _images.length;
 
     showModalBottomSheet(
       context: context,
@@ -371,7 +394,7 @@ class _TeamRecruitmentCreateScreenState
                     padding: const EdgeInsets.all(16),
                     children: [
                       Text(
-                        '💡 组队大厅卡片样式',
+                        '💡 组队广场卡片样式',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -385,7 +408,7 @@ class _TeamRecruitmentCreateScreenState
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        '💡 招募详情与 Web 分享页内容',
+                        '💡 招募详情与 Web 分享页排版',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -410,7 +433,8 @@ class _TeamRecruitmentCreateScreenState
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              '招募名额：再招 ${previewItem.neededCount} 人',
+                              '招募名额：${previewItem.neededCount} 人 · 已招募 ${previewItem.acceptedCount} 人'
+                              '${previewItem.remainingCount > 0 ? " (还需 ${previewItem.remainingCount} 人)" : " (名额已满)"}',
                               style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -440,6 +464,83 @@ class _TeamRecruitmentCreateScreenState
                                 color: TeamUiTokens.title(isDark),
                               ),
                             ),
+                            // 本地与已有图片统一展示
+                            if (totalImagesCount > 0) ...[
+                              const SizedBox(height: 16),
+                              const Divider(height: 1),
+                              const SizedBox(height: 12),
+                              Text(
+                                '项目展示图片 ($totalImagesCount 张)',
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 90,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: totalImagesCount,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 8),
+                                  itemBuilder: (context, idx) {
+                                    final isCover = idx == 0;
+                                    final isExisting =
+                                        idx < _existingImages.length;
+                                    return Stack(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: SizedBox(
+                                            width: 90,
+                                            height: 90,
+                                            child: isExisting
+                                                ? AppCachedImage.public(
+                                                    imageUrl:
+                                                        _existingImages[idx]
+                                                            .url,
+                                                    fit: BoxFit.cover,
+                                                  )
+                                                : Image.file(
+                                                    File(_images[idx -
+                                                            _existingImages
+                                                                .length]
+                                                        .path),
+                                                    fit: BoxFit.cover,
+                                                  ),
+                                          ),
+                                        ),
+                                        if (isCover)
+                                          Positioned(
+                                            left: 4,
+                                            top: 4,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.7),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: const Text(
+                                                '封面',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -560,7 +661,7 @@ class _TeamRecruitmentCreateScreenState
               ),
               const SizedBox(height: 6),
               Text(
-                '大家现在已经可以在组队大厅与公开分享页看到你的招募',
+                '大家现在已经可以在组队广场与公开分享页看到你的招募',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -590,7 +691,7 @@ class _TeamRecruitmentCreateScreenState
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '计划招募 ${created.neededCount} 人 · ${teamCategoryLabel(created.category)}',
+                      '已招募 ${created.acceptedCount} / 招募名额 ${created.neededCount} 人 · ${teamCategoryLabel(created.category)}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: CampusTheme.primary,
@@ -662,7 +763,7 @@ class _TeamRecruitmentCreateScreenState
                   TextButton(
                     onPressed: () {
                       Navigator.pop(ctx); // 关闭 sheet
-                      Navigator.pop(context, true); // 返回大厅
+                      Navigator.pop(context, true); // 返回广场
                     },
                     child: Text(
                       '返回组队中心',
@@ -690,6 +791,10 @@ class _TeamRecruitmentCreateScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     final borderColor = TeamUiTokens.border(isDark);
+
+    // 编辑模式下的名额下限：不能低于已被接受的成员数
+    final acceptedCount = widget.initialValue?.acceptedCount ?? 0;
+    final minNeeded = (acceptedCount > 0 ? acceptedCount : 1).clamp(1, 20);
 
     return Scaffold(
       backgroundColor: pageColor,
@@ -873,10 +978,14 @@ class _TeamRecruitmentCreateScreenState
                                 fontSize: 13, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 2),
                         Text(
-                          '已通过申请的队友会计入招募进度（不含队长本人）',
+                          acceptedCount > 0
+                              ? '已有 $acceptedCount 名队员通过申请 (招募名额不能低于 $minNeeded 人)'
+                              : '已通过申请的队友会计入招募进度（不含队长本人）',
                           style: TextStyle(
                               fontSize: 11,
-                              color: TeamUiTokens.subtitle(isDark)),
+                              color: acceptedCount > 0
+                                  ? CampusTheme.primary
+                                  : TeamUiTokens.subtitle(isDark)),
                         ),
                       ],
                     ),
@@ -894,7 +1003,7 @@ class _TeamRecruitmentCreateScreenState
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
                                 width: 34, height: 34),
-                            onPressed: _neededCount > 1
+                            onPressed: _neededCount > minNeeded
                                 ? () => setState(() => _neededCount--)
                                 : null,
                           ),
@@ -1104,6 +1213,19 @@ class _TeamRecruitmentCreateScreenState
                           ),
                           onSelected: (val) {
                             if (val && !_isStructuredMode) {
+                              // 切回结构化模式：防止数据丢失，若自由文本无标签则保存在简介中
+                              final freeText =
+                                  _freeDescriptionController.text.trim();
+                              if (freeText.isNotEmpty) {
+                                _parseDescription(freeText);
+                                if (_introController.text.isEmpty &&
+                                    _progressController.text.isEmpty &&
+                                    _expectationController.text.isEmpty &&
+                                    _cooperationController.text.isEmpty &&
+                                    _resourceController.text.isEmpty) {
+                                  _introController.text = freeText;
+                                }
+                              }
                               setState(() => _isStructuredMode = true);
                             }
                           },
@@ -1123,8 +1245,10 @@ class _TeamRecruitmentCreateScreenState
                           onSelected: (val) {
                             if (val && _isStructuredMode) {
                               // 将当前结构化内容合并到自由文本框
-                              _freeDescriptionController.text =
-                                  _buildCombinedDescription();
+                              final combined = _buildCombinedDescription();
+                              if (combined.isNotEmpty) {
+                                _freeDescriptionController.text = combined;
+                              }
                               setState(() => _isStructuredMode = false);
                             }
                           },
@@ -1494,7 +1618,7 @@ class _TeamRecruitmentCreateScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            '你的昵称、头像与院系专业将作为发起人身份公开展示在 App 组队大厅与分享页中',
+            '你的昵称、头像与院系专业将作为发起人身份公开展示在 App 组队广场与分享页中',
             style: TextStyle(
               fontSize: 10,
               color: TeamUiTokens.subtitle(isDark),

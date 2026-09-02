@@ -80,7 +80,8 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 export 'widgets/global_background_wrapper.dart'
-    show BackgroundWrapperState,
+    show
+        BackgroundWrapperState,
         GlobalBackgroundWrapper,
         PredictiveBackGate,
         backgroundWrapperKey;
@@ -1489,9 +1490,26 @@ class _WidgetDeepLinkHandler extends StatefulWidget {
   State<_WidgetDeepLinkHandler> createState() => _WidgetDeepLinkHandlerState();
 }
 
+enum _DeepLinkHandlingResult { handled, deferred, unhandled }
+
 class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     with WidgetsBindingObserver {
   static const _channel = MethodChannel('shenliyuan/deeplink');
+  AuthProvider? _authProvider;
+  String? _pendingTeamDeepLink;
+  bool _retryScheduled = false;
+  bool _consumingDeepLink = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextAuthProvider = context.read<AuthProvider>();
+    if (!identical(_authProvider, nextAuthProvider)) {
+      _authProvider?.removeListener(_retryPendingTeamDeepLink);
+      _authProvider = nextAuthProvider..addListener(_retryPendingTeamDeepLink);
+    }
+    _schedulePendingTeamDeepLinkRetry();
+  }
 
   @override
   void initState() {
@@ -1509,17 +1527,36 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     AppResumeCoordinator.instance.onLifecycleChanged(context, state);
     if (state == AppLifecycleState.resumed) {
       _checkDeepLink();
+      _schedulePendingTeamDeepLinkRetry();
     }
+  }
+
+  @override
+  void dispose() {
+    _authProvider?.removeListener(_retryPendingTeamDeepLink);
+    _channel.setMethodCallHandler(null);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _retryPendingTeamDeepLink() {
+    if (!mounted || _pendingTeamDeepLink == null) return;
+    _schedulePendingTeamDeepLinkRetry();
+  }
+
+  void _schedulePendingTeamDeepLinkRetry() {
+    if (_retryScheduled || _pendingTeamDeepLink == null || !mounted) return;
+    _retryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _retryScheduled = false;
+      final pending = _pendingTeamDeepLink;
+      if (!mounted || pending == null) return;
+      await _consumeDeepLink(pending);
+    });
   }
 
   Future<void> _checkDeepLink() async {
@@ -1543,33 +1580,50 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   Future<void> _consumeDeepLink(String? uri) async {
-    if (uri == null || !mounted) return;
-    final handled = await _handleDeepLinkUri(uri);
-    if (!handled) {
-      final parsed = Uri.tryParse(uri);
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '导航',
-        type: '深链无法处理',
-        summary: '应用链接格式无效或目标暂不可用',
-        detail: 'scheme=${parsed?.scheme}\nhost=${parsed?.host}',
-        eventCode: 'navigation_deep_link_unhandled',
-        category: 'navigation',
-        operation: 'open',
-        result: 'failure',
-        route: _safeDeepLinkRoute(parsed),
-      );
-      return;
-    }
+    if (uri == null || !mounted || _consumingDeepLink) return;
+    _consumingDeepLink = true;
     try {
-      await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
-    } catch (error) {
-      debugPrint('深度链接确认失败: $error');
+      final result = await _handleDeepLinkUri(uri);
+      if (result == _DeepLinkHandlingResult.deferred) {
+        // Navigator 尚未就绪或会话门禁尚未通过时，组队链接必须留在 Dart
+        // 层等待下一次状态变化；此时不能 ACK 原生 pending link。
+        if (TeamShareLink.parseRecruitmentId(uri) != null) {
+          _pendingTeamDeepLink = uri;
+        }
+        return;
+      }
+      if (result == _DeepLinkHandlingResult.unhandled) {
+        final parsed = Uri.tryParse(uri);
+        DiagnosticLogService.instance.record(
+          level: 'warning',
+          source: '导航',
+          type: '深链无法处理',
+          summary: '应用链接格式无效或目标暂不可用',
+          detail: 'scheme=${parsed?.scheme}\nhost=${parsed?.host}',
+          eventCode: 'navigation_deep_link_unhandled',
+          category: 'navigation',
+          operation: 'open',
+          result: 'failure',
+          route: _safeDeepLinkRoute(parsed),
+        );
+        return;
+      }
+
+      // 只有真正完成导航后才确认原生 pending link。未登录或未完成协议时
+      // 由 _handleDeepLinkUri 保留链接，待 AuthProvider 状态变化后重试。
+      if (_pendingTeamDeepLink == uri) _pendingTeamDeepLink = null;
+      try {
+        await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+      } catch (error) {
+        debugPrint('深度链接确认失败: $error');
+      }
+    } finally {
+      _consumingDeepLink = false;
     }
   }
 
-  Future<bool> _handleDeepLinkUri(String? uri) async {
-    if (uri == null || !mounted) return false;
+  Future<_DeepLinkHandlingResult> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return _DeepLinkHandlingResult.unhandled;
     if (appNavigatorKey.currentState == null) {
       DiagnosticLogService.instance.record(
         level: 'warning',
@@ -1583,40 +1637,45 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         result: 'retry',
         route: _safeDeepLinkRoute(Uri.tryParse(uri)),
       );
-      return false;
+      return _DeepLinkHandlingResult.deferred;
     }
     if (uri == 'widget_timetable' ||
         uri == 'campus://timetable' ||
         uri.startsWith('sylulive://schedule')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
-      return true;
+      return _DeepLinkHandlingResult.handled;
     }
     if (uri.startsWith('widget_exam') || uri.startsWith('sylulive://exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
       );
-      return true;
+      return _DeepLinkHandlingResult.handled;
     }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      return _openGradeDeepLink(uri);
+      return (await _openGradeDeepLink(uri))
+          ? _DeepLinkHandlingResult.handled
+          : _DeepLinkHandlingResult.unhandled;
     }
     final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
-    if (recruitmentId == null) return false;
+    if (recruitmentId == null) return _DeepLinkHandlingResult.unhandled;
 
     // 授权撤销或尚未登录时不得通过分享链接绕过会话门禁。
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || !(auth.user?.legalConsentsActive ?? false)) {
-      return true;
+      _pendingTeamDeepLink = uri;
+      return _DeepLinkHandlingResult.deferred;
     }
-    appNavigatorKey.currentState?.push(
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return _DeepLinkHandlingResult.deferred;
+    navigator.push(
       MaterialPageRoute(
         builder: (_) =>
             TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
       ),
     );
-    return true;
+    return _DeepLinkHandlingResult.handled;
   }
 
   Future<bool> _openGradeDeepLink(String raw) async {

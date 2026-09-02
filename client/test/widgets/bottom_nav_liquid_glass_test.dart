@@ -66,6 +66,39 @@ void main() {
     }
   });
 
+  testWidgets('非 liquid 悬浮底栏选中胶囊在浅色/深色模式下都保持半透明',
+      (tester) async {
+    for (final darkMode in const [false, true]) {
+      await _pumpNav(tester, liquidGlass: false, darkMode: darkMode);
+
+      expect(
+        find.byKey(const ValueKey('bottom-nav-floating-dock')),
+        findsOneWidget,
+      );
+      // 非 liquid 模式没有液态光学层，选中胶囊是 backdrop 装饰本身。
+      expect(
+        find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
+        findsNothing,
+      );
+
+      final backdrop = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
+      );
+      final gradient =
+          (backdrop.decoration as BoxDecoration).gradient! as LinearGradient;
+      for (final color in gradient.colors) {
+        expect(color.a, greaterThan(0), reason: 'darkMode=$darkMode');
+        // 胶囊绘制在 Normal Row 内容之上，任何不透明填充都会盖住选中 Tab。
+        expect(color.a, lessThan(1), reason: 'darkMode=$darkMode');
+        expect(
+          color,
+          AppColors.brandPrimary.withValues(alpha: color.a),
+          reason: 'darkMode=$darkMode',
+        );
+      }
+    }
+  });
+
   testWidgets('frosted idle 保留背景 blur、Normal Row 挖空和 Accent 前景分层',
       (tester) async {
     await _pumpNav(tester, liquidGlass: true);

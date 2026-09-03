@@ -4,7 +4,6 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
-import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_route.dart';
@@ -15,7 +14,7 @@ import '../widgets/poll/poll_post_card.dart';
 import '../widgets/post_media/post_media_view.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
-import 'dart:io' show File;
+import '../widgets/global_background_wrapper.dart';
 
 /// 我的内容管理页面
 /// 查看并管理自己发布的帖子、评论、集市物品，支持多选删除
@@ -267,8 +266,6 @@ class _MyContentScreenState extends State<MyContentScreen>
     final authProvider = context.watch<AuthProvider>();
     _syncSessionScope(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -294,9 +291,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       ),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: _buildBackground(themeProvider, isDark),
-          ),
+          const Positioned.fill(child: CustomBackgroundLayer()),
           SafeArea(
             child: Column(
               children: [
@@ -354,52 +349,6 @@ class _MyContentScreenState extends State<MyContentScreen>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.shouldShowCustomBackground &&
-        themeProvider.getCustomBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(bgPath)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : ThemeProvider.isLocalFileBackground(bgPath)
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: bgPath,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
     );
   }
 

@@ -169,6 +169,9 @@ Component Token（组件内部派生）
 | 7 | 字体字重 | 仅 Regular 单字重，w600/w700 合成 | 引入字重文件或明确已知限制 | 决策在 PR5 前 |
 | 8 | FAB 圆角 | 14 | 16 | PR5 |
 | 9 | 食堂 Feature Token | `CanteenTheme` 引入 `radiusSm=10 / radiusMd=14 / radiusLg=20`（偏离 canonical 8/12/16）且 feature 层重定义 page/text/border 中性色（`#F8F7F4`/`#202124`/`#EAE8E3`），违反「Feature Token 不得重定义全局中性色」 | 食堂视觉作为独立 Feature Token 收敛；radius 偏离属 deliberate（图片 14px、chip 10px），由食堂页面统一引用 `CanteenTheme`，不扩散到其他模块 | PR6 时评估是否将 10/14 提升为全局档位 |
+| 10 | 二级页背景残留 | feedback / exam_schedule / physical_test / admin_members / shuitie / post_detail 等页面仍用 Scaffold 实底（`0xFF131720`/`kCleanWarmBackgroundLight`），自定义壁纸模式下不显示壁纸、未走 `CustomBackgroundLayer` | 全部二级页由 `CustomBackgroundLayer` 提供背景（本轮已迁移 admin_panel、my_content、announcement、chat_list、chat_detail、market_exposure、search_results、teacher_rating） | 后续背景统一 PR |
+| 11 | 卡片材质残留 | toolbox `_WebsiteDirectoryCard` 等卡片仍硬编码透明度变体，未走 `GlassContainer`，不随「组件卡片不透明度」滑杆变化 | 卡片统一引用 `GlassContainer` | 后续卡片统一 PR |
+| 12 | 聊天页 chrome | chat_detail 独立路由保留实心 header 与状态栏 surface 色（消息区背景已统一）— deliberate：聊天列表可读性优先 | 维持现状 | — |
 
 ## 12. 路线图（冻结）
 

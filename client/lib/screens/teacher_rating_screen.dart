@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
-import '../widgets/app_cached_image.dart';
 import 'post_detail_screen.dart';
-import 'dart:io' show File;
 
 class TeacherRatingScreen extends StatefulWidget {
   const TeacherRatingScreen({super.key});
@@ -178,7 +176,6 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -196,7 +193,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       ),
       body: Stack(
         children: [
-          _buildBg(themeProvider, isDark),
+          const Positioned.fill(child: CustomBackgroundLayer()),
           SafeArea(
             child: Column(
               children: [
@@ -248,47 +245,6 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       ),
     );
   }
-
-  Widget _buildBg(ThemeProvider p, bool d) {
-    if (p.shouldShowCustomBackground &&
-        p.getCustomBackgroundImageFor(context) != null) {
-      final bg = p.getCustomBackgroundImageFor(context)!;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(bg)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(bg),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _gradient(d),
-                )
-              : ThemeProvider.isLocalFileBackground(bg)
-                  ? Image.file(
-                      File(bg),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _gradient(d),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: bg,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) => _gradient(d),
-                    ),
-          Container(
-            color: d
-                ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3),
-          ),
-        ],
-      );
-    }
-    return _gradient(d);
-  }
-
-  Widget _gradient(bool d) => ColoredBox(
-        color: d ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-      );
 
   Widget _buildWarningBanner(bool isDark) {
     return Container(

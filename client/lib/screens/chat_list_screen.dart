@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,12 +10,12 @@ import '../models/conversation.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
-import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_navigator.dart' show appRouteObserver;
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'chat_detail_screen.dart';
@@ -184,42 +183,44 @@ class _ChatListScreenState extends State<ChatListScreen>
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = isDark
-        ? AppColors.surfacePrimaryDark
-        : AppColors.surfacePrimaryLight;
 
     return SwipeToExit(
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: _privateMessageSystemUiStyle(isDark),
-        child: Scaffold(
-          backgroundColor: surfaceColor,
-          appBar: AppBar(
-            toolbarHeight: 64,
-            title: const Text(
-              '私信',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const Positioned.fill(child: CustomBackgroundLayer()),
+            Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                toolbarHeight: 64,
+                title: const Text(
+                  '私信',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                backgroundColor: isDark
+                    ? AppColors.surfacePrimaryDark.withValues(alpha: 0.92)
+                    : AppColors.surfacePrimaryLight.withValues(alpha: 0.92),
+                surfaceTintColor: Colors.transparent,
+                systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
+              ),
+              body: RefreshIndicator(
+                onRefresh: () => provider.loadConversations(),
+                child: _buildConversationList(provider, currentUserId),
+              ),
             ),
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
-          ),
-          body: RefreshIndicator(
-            onRefresh: () => provider.loadConversations(),
-            child: _buildConversationList(provider, currentUserId),
-          ),
+          ],
         ),
       ),
     );
   }
 
   SystemUiOverlayStyle _privateMessageSystemUiStyle(bool isDark) {
-    final surfaceColor = isDark
-        ? AppColors.surfacePrimaryDark
-        : AppColors.surfacePrimaryLight;
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
-      statusBarColor: surfaceColor,
-      systemNavigationBarColor: surfaceColor,
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -296,7 +297,7 @@ class _ChatListScreenState extends State<ChatListScreen>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _buildPrivateMessageBackground(),
+          const Positioned.fill(child: CustomBackgroundLayer()),
           Scaffold(
             resizeToAvoidBottomInset: false,
             backgroundColor: Colors.transparent,
@@ -337,60 +338,6 @@ class _ChatListScreenState extends State<ChatListScreen>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPrivateMessageBackground() {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
-    if (!themeProvider.shouldShowCustomBackground ||
-        bgPath == null ||
-        bgPath.isEmpty) {
-      return ColoredBox(
-        color: isDark
-            ? AppColors.surfacePrimaryDark
-            : AppColors.surfacePrimaryLight,
-      );
-    }
-
-    final imageProvider = _privateMessageBackgroundProvider(bgPath);
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildPrivateMessageBackgroundImage(imageProvider: imageProvider),
-        ColoredBox(
-          color: (isDark ? Colors.black : Colors.white)
-              .withValues(alpha: isDark ? 0.25 : 0.12),
-        ),
-      ],
-    );
-  }
-
-  ImageProvider _privateMessageBackgroundProvider(String bgPath) {
-    if (ThemeProvider.isBundledAssetBackground(bgPath)) {
-      return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
-    }
-    if (ThemeProvider.isLocalFileBackground(bgPath)) {
-      return FileImage(File(bgPath));
-    }
-    return NetworkImage(bgPath);
-  }
-
-  Widget _buildPrivateMessageBackgroundImage({
-    required ImageProvider imageProvider,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fallbackColor =
-        isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight;
-    // 私信双栏背景同样固定铺满，避免竖图在宽屏时留下整块空白。
-    return Image(
-      image: imageProvider,
-      fit: BoxFit.cover,
-      alignment: Alignment.center,
-      gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
     );
   }
 

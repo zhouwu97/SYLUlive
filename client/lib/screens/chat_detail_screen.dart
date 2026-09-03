@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +28,7 @@ import '../utils/app_time.dart';
 import '../utils/chat_scroll_intent.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/app_composer_bar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -1403,7 +1403,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
     return Stack(
       children: [
-        Positioned.fill(child: _buildStandaloneMessageBackdrop()),
+        const Positioned.fill(child: CustomBackgroundLayer()),
         content,
       ],
     );
@@ -1780,67 +1780,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildMessageBackdrop(Widget child) {
     return Stack(
       children: [
-        Positioned.fill(child: _buildChatBackground()),
+        const Positioned.fill(child: CustomBackgroundLayer()),
         child,
       ],
-    );
-  }
-
-  Widget _buildStandaloneMessageBackdrop() {
-    return _buildChatBackground();
-  }
-
-  Widget _buildChatBackground() {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
-    if (!themeProvider.shouldShowCustomBackground ||
-        bgPath == null ||
-        bgPath.isEmpty) {
-      return ColoredBox(
-        color: isDark
-            ? AppColors.surfacePrimaryDark
-            : AppColors.surfacePrimaryLight,
-      );
-    }
-
-    final imageProvider = _chatBackgroundImageProvider(bgPath);
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildChatBackgroundImage(
-          imageProvider: imageProvider,
-        ),
-        ColoredBox(
-          color: (isDark ? Colors.black : Colors.white)
-              .withValues(alpha: isDark ? 0.20 : 0.10),
-        ),
-      ],
-    );
-  }
-
-  ImageProvider _chatBackgroundImageProvider(String bgPath) {
-    if (ThemeProvider.isBundledAssetBackground(bgPath)) {
-      return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
-    }
-    if (ThemeProvider.isLocalFileBackground(bgPath)) {
-      return FileImage(File(bgPath));
-    }
-    return NetworkImage(bgPath);
-  }
-
-  Widget _buildChatBackgroundImage({
-    required ImageProvider imageProvider,
-  }) {
-    final fallbackColor = Theme.of(context).colorScheme.surface;
-    // 私信消息区始终铺满可视区域，避免 contain 模式在两侧留下暖白空隙。
-    return Image(
-      image: imageProvider,
-      fit: BoxFit.cover,
-      alignment: Alignment.center,
-      gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
     );
   }
 

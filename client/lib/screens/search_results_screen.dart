@@ -1,5 +1,3 @@
-import 'dart:io' show File;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,8 +8,8 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
-import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
 import '../utils/post_route.dart';
 import 'user_home_screen.dart';
@@ -180,7 +178,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         backgroundColor: Colors.transparent,
         body: Stack(
           children: [
-            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+            const Positioned.fill(child: CustomBackgroundLayer()),
             SafeArea(
               child: Column(
                 children: [
@@ -439,51 +437,5 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getCustomBackgroundImageFor(context);
-    if (themeProvider.shouldShowCustomBackground &&
-        path != null &&
-        path.isNotEmpty) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(path)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : ThemeProvider.isLocalFileBackground(path)
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: path,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.32)
-                : Colors.white.withValues(alpha: 0.22),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
   }
 }

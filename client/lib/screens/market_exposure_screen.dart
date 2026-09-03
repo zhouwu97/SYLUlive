@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:io' show File;
 
 import '../providers/post_provider.dart';
-import '../providers/theme_provider.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
-import '../widgets/app_cached_image.dart';
 import 'post_detail_screen.dart';
 
 class MarketExposureScreen extends StatelessWidget {
@@ -15,7 +13,6 @@ class MarketExposureScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -27,9 +24,7 @@ class MarketExposureScreen extends StatelessWidget {
       ),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: _buildBackground(context, themeProvider, isDark),
-          ),
+          const Positioned.fill(child: CustomBackgroundLayer()),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final exposurePosts = postProvider
@@ -116,55 +111,6 @@ class MarketExposureScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackground(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    bool isDark,
-  ) {
-    if (themeProvider.shouldShowCustomBackground &&
-        themeProvider.getCustomBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(bgPath)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : ThemeProvider.isLocalFileBackground(bgPath)
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: bgPath,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
     );
   }
 }

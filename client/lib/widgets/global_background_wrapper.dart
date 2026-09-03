@@ -29,26 +29,36 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Stack(
       fit: StackFit.expand,
       children: [
-        _buildBackgroundLayer(themeProvider, isDark),
+        const CustomBackgroundLayer(),
         widget.child,
       ],
     );
   }
+}
 
-  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
+/// 页面级自定义背景层：与全局壳完全同一套壁纸 / 模糊 / 遮罩处理。
+///
+/// Navigator.push 出的二级路由盖在全局壳之上，需要自绘背景；
+/// 之前各页各自拷贝实现，遮罩与模糊参数漂移导致磨砂观感不统一，
+/// 统一收敛到本 widget。
+class CustomBackgroundLayer extends StatelessWidget {
+  const CustomBackgroundLayer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (themeProvider.shouldShowCustomBackground) {
-      return _buildBackgroundImageLayer(themeProvider, isDark);
+      return _buildBackgroundImageLayer(context, themeProvider, isDark);
     }
     return _buildCleanBackground(isDark);
   }
 
-  Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
+  Widget _buildBackgroundImageLayer(BuildContext context,
+      ThemeProvider themeProvider, bool isDark) {
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
     if (bgPath == null || bgPath.isEmpty) {
       return _buildCleanBackground(isDark);
@@ -61,7 +71,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     const alignment = Alignment.center;
     final fillScreen =
         themeProvider.getCustomBackgroundFillScreenFor(context) ||
-            _isUsingFallbackDirection(themeProvider);
+            _isUsingFallbackDirection(context, themeProvider);
     final imageProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
@@ -87,7 +97,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     );
   }
 
-  bool _isUsingFallbackDirection(ThemeProvider themeProvider) {
+  bool _isUsingFallbackDirection(
+      BuildContext context, ThemeProvider themeProvider) {
     final isWide =
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
     return (isWide && !themeProvider.hasLandscapeBackground) ||

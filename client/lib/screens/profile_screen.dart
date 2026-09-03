@@ -286,12 +286,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-    );
-  }
-
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -496,22 +490,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSocialStatsSection(BuildContext context, user, bool isDark) {
     if (user == null) return const SizedBox();
-    return Container(
+    return GlassContainer(
       margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 24),
       padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E1E1E).withOpacity(0.6)
-            : Colors.white.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10.0,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      borderRadius: 20,
+      blur: 12,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [

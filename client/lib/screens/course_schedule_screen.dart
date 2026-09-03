@@ -23,6 +23,7 @@ import '../services/home_widget_service.dart';
 import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
 import '../widgets/course/course_action_menu.dart';
+import '../widgets/course/course_evaluation_section.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
@@ -4137,18 +4138,29 @@ $classFilterRule
   void _showDetail(CourseBlock c) {
     final color = courseColors[getCourseColorIndex(c.name)];
     final wdn = _wd[c.weekday - 1];
+    // 正式教务课程才显示评价入口；手动添加与 AI 导入的自定义课程不显示。
+    final showEvaluation = c.id > 0 && c.courseCode != 'CUSTOM';
 
     showModalBottomSheet(
       context: appNavigatorKey.currentContext!,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        // 键盘弹出时上移，保证评价表单输入框可见。
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(appNavigatorKey.currentContext!).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             Center(
               child: Container(
                 width: 40,
@@ -4197,6 +4209,12 @@ $classFilterRule
             ),
             if (c.note != null && c.note!.isNotEmpty)
               _detailRow(Icons.note_outlined, '备注', c.note!),
+            // 评价区放在周次/备注之后，不包裹原有课程信息为新卡片。
+            if (showEvaluation)
+              CourseEvaluationSection(
+                courseName: c.name,
+                teacherName: c.teacher ?? '',
+              ),
             const SizedBox(height: 16),
             if (c.id < 0) ...[
               const Divider(),
@@ -4258,7 +4276,10 @@ $classFilterRule
             ],
           ],
         ),
+        ),
       ),
+    ),
+    ),
     );
   }
 

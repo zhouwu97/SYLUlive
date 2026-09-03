@@ -15,7 +15,79 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ensureTeacherCourseSubject 按课程名维护标准学科归属。
+//
+// 旧 /teachers 入口仍以自由文本课程名为主，这里只做等价名称的归属：
+// 名称规范化不删除括号、后缀或数字，因此"高等数学A1"与"高等数学A2"保持不同实体。
+// 并发下若已有同名学科，直接复用 canonical 行，不向调用方暴露 duplicate 错误。
+func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *uint {
+	normalized := models.NormalizeCourseSubjectName(courseName)
+	if normalized == "" {
+		return nil
+	}
+	var subject models.CourseSubject
+	err := db.Where("normalized_name = ?", normalized).Order("verified DESC, id ASC").First(&subject).Error
+	if err == nil {
+		if verified && !subject.Verified {
+			_ = db.Model(&models.CourseSubject{}).Where("id = ?", subject.ID).Update("verified", true).Error
+		}
+		id := subject.ID
+		return &id
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	candidate := models.CourseSubject{
+		Name:           strings.TrimSpace(courseName),
+		NormalizedName: normalized,
+		Verified:       verified,
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate).Error; err != nil {
+		return nil
+	}
+	if candidate.ID == 0 {
+		if err := db.Where("normalized_name = ?", normalized).Order("verified DESC, id ASC").First(&subject).Error; err != nil {
+			return nil
+		}
+		id := subject.ID
+		return &id
+	}
+	id := candidate.ID
+	return &id
+}
+
+// syncCourseEvaluationSubmission 把教师评价的改动同步回关联的提交记录。
+// 旧入口创建的评价没有关联提交记录，此处直接跳过，不改变既有语义。
+func syncCourseEvaluationSubmission(db *gorm.DB, rating *models.TeacherRating) {
+	if rating == nil || rating.CourseEvaluationSubmissionID == nil || *rating.CourseEvaluationSubmissionID == 0 {
+		return
+	}
+	_ = db.Model(&models.CourseEvaluationSubmission{}).
+		Where("id = ?", *rating.CourseEvaluationSubmissionID).
+		Updates(map[string]interface{}{
+			"star":    rating.Star,
+			"comment": rating.Comment,
+			"status":  models.CourseEvaluationStatusPublished,
+		}).Error
+}
+
+// detachCourseEvaluationSubmission 删除公开评价时解绑提交记录，
+// 避免提交记录仍标称 published 却指向一条已删除的评价。
+// 记录转入 needs_edit 等待用户重新提交，不直接进入管理员待审核队列。
+func detachCourseEvaluationSubmission(db *gorm.DB, ratingID uint) {
+	if ratingID == 0 {
+		return
+	}
+	_ = db.Model(&models.CourseEvaluationSubmission{}).
+		Where("teacher_rating_id = ?", ratingID).
+		Updates(map[string]interface{}{
+			"teacher_rating_id": nil,
+			"status":            models.CourseEvaluationStatusNeedsEdit,
+		}).Error
+}
 
 type TeacherHandler struct {
 	db *gorm.DB
@@ -150,6 +222,11 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 	teacher := models.Teacher{
 		Name: input.Name, Course: input.Course,
 		Verified: verified, CreatedBy: userID.(uint),
+		NameNormalized: models.NormalizeTeacherName(input.Name),
+	}
+	// 旧入口继续以自由文本课程名为主，同时维护标准学科归属。
+	if subjectID := ensureTeacherCourseSubject(h.db, input.Course, verified); subjectID != nil {
+		teacher.CourseSubjectID = subjectID
 	}
 	if err := h.db.Create(&teacher).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
@@ -193,6 +270,9 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 		h.db.Model(&rating).Updates(map[string]interface{}{
 			"star": input.Star, "comment": input.Comment,
 		})
+		// 回读最新值，保证同步到提交记录的是已落库的星级与评论。
+		h.db.First(&rating, rating.ID)
+		syncCourseEvaluationSubmission(h.db, &rating)
 		c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
 	} else {
 		rating = models.TeacherRating{
@@ -203,6 +283,7 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
+		syncCourseEvaluationSubmission(h.db, &rating)
 		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
 	}
 }
@@ -218,6 +299,23 @@ func (h *TeacherHandler) Verify(c *gin.Context) {
 	if err := h.db.First(&t, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
 		return
+	}
+	// 审核通过时补齐标准学科字段：教师名规范化、学科归属与学科审核状态。
+	updates := map[string]interface{}{}
+	if strings.TrimSpace(t.NameNormalized) == "" {
+		updates["name_normalized"] = models.NormalizeTeacherName(t.Name)
+	}
+	if t.CourseSubjectID == nil || *t.CourseSubjectID == 0 {
+		if subjectID := ensureTeacherCourseSubject(h.db, t.Course, true); subjectID != nil {
+			updates["course_subject_id"] = *subjectID
+		}
+	} else {
+		// 教师已审核，其所属学科必须同为已审核，否则学科榜读不到该教师。
+		_ = h.db.Model(&models.CourseSubject{}).Where("id = ?", *t.CourseSubjectID).
+			Update("verified", true).Error
+	}
+	if len(updates) > 0 {
+		_ = h.db.Model(&models.Teacher{}).Where("id = ?", id).Updates(updates).Error
 	}
 	h.logAdmin(c, "审核通过教师", t.Name, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
@@ -284,6 +382,8 @@ func (h *TeacherHandler) DeleteRating(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
 	}
+	// 删除前先解绑关联的课程评价提交记录，避免提交记录指向已删除的评价。
+	detachCourseEvaluationSubmission(h.db, uint(id))
 	result := h.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.TeacherRating{})
 	if result.RowsAffected == 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除"})

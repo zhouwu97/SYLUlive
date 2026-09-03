@@ -548,6 +548,9 @@ func main() {
 	if err := models.EnsureRatingInteractionSchema(db); err != nil {
 		log.Fatal("评价交互系统数据库约束未就绪:", err)
 	}
+	if err := models.EnsureCourseEvaluationSchema(db); err != nil {
+		log.Fatal("课程评价系统数据库约束未就绪:", err)
+	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	announcementBackfills := []struct {
@@ -795,6 +798,8 @@ func main() {
 	personalSnapshotHandler.SetAIUserPermissionService(aiUserPermissionService)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
+
+	courseEvaluationHandler := handlers.NewCourseEvaluationHandler(db)
 
 	majorHandler := handlers.NewMajorHandler(db)
 
@@ -2078,6 +2083,58 @@ func main() {
 		teacherAdminVotes.POST("/admin/:id/vote-remove", teacherHandler.VoteRemoveAdmin)
 
 		teacherAdminVotes.GET("/admin/:id/votes", teacherHandler.GetAdminVotes)
+
+	}
+
+	// 课程评价路由
+
+	// 标准学科：列表与详情公开可读，解析需要登录。
+	courseSubjects := r.Group("/api/course-subjects")
+
+	{
+
+		// resolve 必须注册在 /:id 之前，否则会被当作学科 ID 解析。
+		courseSubjects.GET("/resolve", middleware.AuthMiddleware(db, cfg.JWTSecret), courseEvaluationHandler.Resolve)
+
+		courseSubjects.GET("", courseEvaluationHandler.ListSubjects)
+
+		courseSubjects.GET("/:id", courseEvaluationHandler.GetSubject)
+
+	}
+
+	courseEvaluationAuth := r.Group("/api/course-evaluations")
+
+	courseEvaluationAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+
+		courseEvaluationAuth.POST("", courseEvaluationHandler.Submit)
+
+	}
+
+	userCourseEvaluation := r.Group("/api/user/course-evaluations")
+
+	userCourseEvaluation.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+
+		userCourseEvaluation.GET("", courseEvaluationHandler.ListMine)
+
+		userCourseEvaluation.PATCH("/:id", courseEvaluationHandler.Update)
+
+	}
+
+	adminCourseEvaluation := r.Group("/api/admin/course-evaluations")
+
+	adminCourseEvaluation.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+
+	{
+
+		adminCourseEvaluation.GET("/pending", courseEvaluationHandler.ListPending)
+
+		adminCourseEvaluation.PUT("/:id/approve", courseEvaluationHandler.Approve)
+
+		adminCourseEvaluation.PUT("/:id/reject", courseEvaluationHandler.Reject)
 
 	}
 

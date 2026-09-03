@@ -15,6 +15,7 @@ import '../models/post.dart';
 import '../utils/post_route.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
+import 'my_content_screen.dart';
 
 @visibleForTesting
 bool canLoadMoreNotifications({
@@ -463,6 +464,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '你已被移出组队';
     } else if (type == 'canteen_review_result') {
       actionText = '食堂审核结果';
+    } else if (type == 'course_evaluation_result') {
+      actionText = '学科评价审核结果';
     }
 
     return InkWell(
@@ -515,6 +518,19 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   content: Text(
                       AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
             }
+          } else if (type == 'course_evaluation_result' && relatedId != null) {
+            // 课程评价审核结果：按 related_id 深链到
+            // "个人中心 → 我的内容 → 学科评价"，不得把 related_id 当作帖子 ID。
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyContentScreen(
+                  initialTabIndex: 2,
+                  focusCourseEvaluationId: relatedId,
+                ),
+              ),
+            );
           }
         } finally {
           if (id != null) _openingNotificationIds.remove(id);
@@ -551,7 +567,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 child: Icon(
                   type == 'water_moderation'
                       ? Icons.admin_panel_settings_outlined
-                      : Icons.notifications,
+                      : type == 'course_evaluation_result'
+                          ? Icons.rate_review_outlined
+                          : Icons.notifications,
                   color: Theme.of(context).primaryColor,
                   size: 20,
                 ),

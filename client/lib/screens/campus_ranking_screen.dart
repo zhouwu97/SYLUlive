@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 import '../models/teacher.dart';
+import '../providers/course_subject_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../utils/responsive_util.dart';
@@ -58,6 +59,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
     await Future.wait([
       context.read<TeacherProvider>().loadTeachers(query: _currentQuery),
       context.read<MajorProvider>().loadMajors(),
+      context.read<CourseSubjectProvider>().loadSubjects(force: true),
     ]);
   }
 
@@ -292,7 +294,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            // 两个 Tab 均为本地即时过滤：学科榜在 _buildSubjectGroups 中过滤，
+            // 两个 Tab 均为本地即时过滤：学科榜在 _buildSubjectList 中过滤，
             // 专业榜在 _buildMajorList 中过滤。这里只触发重建，不发网络请求，
             // 避免专业榜搜索误请求教师接口、以及无 debounce 的高频请求。
             onChanged: (_) => setState(() {}),
@@ -302,57 +304,90 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
   // ── Subject list ───────────────────────────────────────────────────
 
-  Widget _buildSubjectList(bool isDark) => Consumer<TeacherProvider>(
+  // 学科榜改读服务端标准学科列表，按学科 ID 传递；
+  // 客户端不再用教师文本分组，也不通过包含关系合并 A1/A2。
+  Widget _buildSubjectList(bool isDark) =>
+      Consumer<CourseSubjectProvider>(
         builder: (_, provider, __) {
-          if (provider.isLoading && provider.teachers.isEmpty) {
+          if (provider.isLoading && provider.subjects.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (provider.subjects.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    provider.error ?? '暂无学科数据',
+                    style:
+                        TextStyle(color: RankingTokens.subColor(isDark)),
+                  ),
+                  if (provider.error != null) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          provider.loadSubjects(force: true),
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('重试'),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
 
-          final groups = _buildSubjectGroups(provider.teachers, _currentQuery);
-          if (groups.isEmpty) {
+          final keyword = _currentQuery?.trim().toLowerCase();
+          final subjects = keyword == null
+              ? provider.subjects
+              : provider.subjects
+                  .where((s) => s.name.toLowerCase().contains(keyword))
+                  .toList();
+          if (subjects.isEmpty) {
             return Center(
               child: Text(
-                '暂无学科数据',
+                '未找到相关学科',
                 style: TextStyle(color: RankingTokens.subColor(isDark)),
               ),
             );
           }
 
           Widget buildCard(int index) {
-            final group = groups[index];
-            final topTeachers =
-                group.teachers.take(3).map((t) => t.name).join(' · ');
+            final subject = subjects[index];
+            final topTeachers = subject.teacherCount > 0
+                ? '${subject.teacherCount} 位已审核教师'
+                : '暂无已审核教师';
             return _buildLeaderboardCard(
               isDark: isDark,
               rank: index + 1,
-              title: group.subject,
-              subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
-              average: group.averageStar,
-              count: group.ratingCount,
-              extraLabel: '${group.teachers.length} 位教师',
+              title: subject.name,
+              subtitle: topTeachers,
+              average: subject.averageStar,
+              count: subject.ratingCount,
+              extraLabel: subject.ratingCount > 0 ? '学科评分' : '暂无评分',
               icon: Icons.auto_stories_outlined,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => SubjectRankingDetailScreen(
-                    subjectName: group.subject,
-                    teachers: group.teachers,
+                    subjectId: subject.id,
+                    subjectName: subject.name,
                   ),
                 ),
               ).then((changed) async {
                 if (changed != true || !mounted) return;
-                await context.read<TeacherProvider>().loadTeachers(
-                      query: _currentQuery,
-                    );
+                // 学科详情内发布评价后刷新学科榜统计。
+                await context
+                    .read<CourseSubjectProvider>()
+                    .loadSubjects(force: true);
               }),
             );
           }
 
           return RefreshIndicator(
             onRefresh: () async {
-              await context.read<TeacherProvider>().loadTeachers(
-                    query: _currentQuery,
-                  );
+              await context
+                  .read<CourseSubjectProvider>()
+                  .loadSubjects(force: true);
             },
             child: ResponsiveUtil.isDesktop(context)
                 ? MasonryGridView.count(
@@ -361,12 +396,12 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                         MediaQuery.of(context).size.width > 900 ? 3 : 2,
                     mainAxisSpacing: RankingTokens.cardGap,
                     crossAxisSpacing: RankingTokens.cardGap,
-                    itemCount: groups.length,
+                    itemCount: subjects.length,
                     itemBuilder: (_, index) => buildCard(index),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                    itemCount: groups.length,
+                    itemCount: subjects.length,
                     itemBuilder: (_, index) => buildCard(index),
                   ),
           );
@@ -631,42 +666,6 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
         ],
       ),
     );
-  }
-
-  List<_SubjectGroup> _buildSubjectGroups(
-    List<Teacher> teachers,
-    String? query,
-  ) {
-    final keyword = query?.trim().toLowerCase();
-    final map = <String, List<Teacher>>{};
-
-    for (final teacher in teachers) {
-      final subject =
-          teacher.course.trim().isEmpty ? '未分类课程' : teacher.course.trim();
-      final hit = keyword == null ||
-          subject.toLowerCase().contains(keyword) ||
-          teacher.name.toLowerCase().contains(keyword);
-      if (!hit) continue;
-      map.putIfAbsent(subject, () => <Teacher>[]).add(teacher);
-    }
-
-    final groups = map.entries.map((entry) {
-      final items = [...entry.value]..sort((a, b) {
-          final compare = b.averageStar.compareTo(a.averageStar);
-          if (compare != 0) return compare;
-          return b.ratingCount.compareTo(a.ratingCount);
-        });
-      return _SubjectGroup(entry.key, items);
-    }).toList();
-
-    groups.sort((a, b) {
-      final compare = b.averageStar.compareTo(a.averageStar);
-      if (compare != 0) return compare;
-      final countCompare = b.ratingCount.compareTo(a.ratingCount);
-      if (countCompare != 0) return countCompare;
-      return a.subject.compareTo(b.subject);
-    });
-    return groups;
   }
 
   // ── Add dialog (teacher / major) ───────────────────────────────────
@@ -973,19 +972,23 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                               ),
                               TextButton(
                                 onPressed: () {
-                                  final courseTeachers = teachers
-                                      .where((t) =>
-                                          t.course.trim() == determinedCourse)
-                                      .toList();
+                                  // 旧"添加授课教师"入口继续走 /teachers；
+                                  // 这里跳转学科详情时按标准学科 ID 传递。
+                                  final subject = context
+                                      .read<CourseSubjectProvider>()
+                                      .subjects
+                                      .where((s) =>
+                                          s.name.trim() == determinedCourse.trim())
+                                      .firstOrNull;
                                   Navigator.pop(sheetContext);
-                                  if (mounted) {
+                                  if (mounted && subject != null) {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) =>
                                             SubjectRankingDetailScreen(
-                                          subjectName: determinedCourse,
-                                          teachers: courseTeachers,
+                                          subjectId: subject.id,
+                                          subjectName: subject.name,
                                         ),
                                       ),
                                     );
@@ -1550,32 +1553,6 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
     if (index == 1) return RankingTokens.rankSilver;
     if (index == 2) return RankingTokens.rankBronze;
     return const Color(0xFF9CA3AF); // neutral gray instead of purple
-  }
-}
-
-class _SubjectGroup {
-  final String subject;
-  final List<Teacher> teachers;
-
-  const _SubjectGroup(this.subject, this.teachers);
-
-  int get ratingCount =>
-      teachers.fold<int>(0, (sum, teacher) => sum + teacher.ratingCount);
-
-  double get averageStar {
-    if (teachers.isEmpty) return 0;
-    if (ratingCount == 0) {
-      final sum = teachers.fold<double>(
-        0,
-        (value, teacher) => value + teacher.averageStar,
-      );
-      return sum / teachers.length;
-    }
-    final total = teachers.fold<double>(
-      0,
-      (value, teacher) => value + teacher.averageStar * teacher.ratingCount,
-    );
-    return total / ratingCount;
   }
 }
 

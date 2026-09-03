@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/course_evaluation.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
+import '../providers/course_evaluation_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_route.dart';
+import '../widgets/course/course_evaluation_form_sheet.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
@@ -18,9 +21,19 @@ import 'poll/poll_composer_screen.dart';
 import 'dart:io' show File;
 
 /// 我的内容管理页面
-/// 查看并管理自己发布的帖子、评论、集市物品，支持多选删除
+/// 查看并管理自己发布的帖子、评论、集市物品与学科评价，支持多选删除
 class MyContentScreen extends StatefulWidget {
-  const MyContentScreen({super.key});
+  /// 初始打开的页签：0 帖子、1 集市、2 学科评价。
+  final int? initialTabIndex;
+
+  /// 深链定位的学科评价提交 ID。通知中心按 related_id 打开第三页签并定位。
+  final int? focusCourseEvaluationId;
+
+  const MyContentScreen({
+    super.key,
+    this.initialTabIndex,
+    this.focusCourseEvaluationId,
+  });
 
   @override
   State<MyContentScreen> createState() => _MyContentScreenState();
@@ -39,10 +52,92 @@ class _MyContentScreenState extends State<MyContentScreen>
   int _accountSessionEpoch = -1;
   int? _sessionUserId;
 
+  /// 学科评价页签：滚动控制器与深链定位。
+  final ScrollController _evaluationScrollController = ScrollController();
+  final Map<int, GlobalKey> _evaluationItemKeys = {};
+  int? _highlightEvaluationId;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final initialIndex = widget.initialTabIndex == null
+        ? 0
+        : widget.initialTabIndex!.clamp(0, 2);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: initialIndex);
+    _tabController.addListener(_onTabChanged);
+    _evaluationScrollController.addListener(_onEvaluationScroll);
+    if (widget.focusCourseEvaluationId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _locateFocusEvaluation();
+      });
+    }
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 2 && mounted) {
+      final provider = context.read<CourseEvaluationProvider>();
+      if (!provider.isLoadingMine &&
+          provider.mine.isEmpty &&
+          provider.mineError == null) {
+        provider.loadMine(refresh: true);
+      }
+    }
+    setState(() {});
+  }
+
+  void _onEvaluationScroll() {
+    if (!_evaluationScrollController.hasClients) return;
+    final position = _evaluationScrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      final provider = context.read<CourseEvaluationProvider>();
+      if (provider.mineHasMore &&
+          !provider.isLoadingMoreMine &&
+          !provider.isLoadingMine) {
+        provider.loadMoreMine();
+      }
+    }
+  }
+
+  /// 通知深链定位：打开第三页签并定位到对应记录；
+  /// 翻页仍找不到时保持普通列表，不阻塞浏览。
+  Future<void> _locateFocusEvaluation() async {
+    final provider = context.read<CourseEvaluationProvider>();
+    if (provider.mine.isEmpty) {
+      await provider.loadMine(refresh: true);
+    }
+    if (!mounted) return;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final found = provider.mine.any(
+        (item) => item.id == widget.focusCourseEvaluationId,
+      );
+      if (found) {
+        if (mounted) {
+          setState(() => _highlightEvaluationId = widget.focusCourseEvaluationId);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!mounted) return;
+        final key = _evaluationItemKeys[widget.focusCourseEvaluationId];
+        final itemContext = key?.currentContext;
+        if (itemContext != null) {
+          await Scrollable.ensureVisible(
+            itemContext,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            alignment: 0.15,
+          );
+        }
+        Future<void>.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() => _highlightEvaluationId = null);
+          }
+        });
+        return;
+      }
+      if (!provider.mineHasMore || provider.isLoadingMoreMine) break;
+      await provider.loadMoreMine();
+      if (!mounted) return;
+    }
   }
 
   void _syncSessionScope(AuthProvider auth) {
@@ -58,11 +153,17 @@ class _MyContentScreenState extends State<MyContentScreen>
     _isSelectionMode = false;
     _errorMessage = null;
     _isLoading = auth.user != null;
+    _evaluationItemKeys.clear();
+    _highlightEvaluationId = null;
 
     if (auth.user != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _loadData();
+          // 学科评价数据由 Provider 随账号隔离，此处只需按需重新拉取。
+          if (_tabController.index == 2) {
+            context.read<CourseEvaluationProvider>().loadMine(refresh: true);
+          }
         }
       });
     }
@@ -70,7 +171,10 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _evaluationScrollController.removeListener(_onEvaluationScroll);
+    _evaluationScrollController.dispose();
     super.dispose();
   }
 
@@ -268,6 +372,8 @@ class _MyContentScreenState extends State<MyContentScreen>
     _syncSessionScope(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final evaluationProvider = context.watch<CourseEvaluationProvider>();
+    final evaluationCount = evaluationProvider.mine.length;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -331,6 +437,10 @@ class _MyContentScreenState extends State<MyContentScreen>
                         text:
                             '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}',
                       ),
+                      Tab(
+                        text:
+                            '学科评价${evaluationCount == 0 ? '' : ' ($evaluationCount)'}',
+                      ),
                     ],
                   ),
                 ),
@@ -346,6 +456,7 @@ class _MyContentScreenState extends State<MyContentScreen>
                               children: [
                                 _buildPostsList(_myPosts, isDark),
                                 _buildMarketList(_myMarketPosts, isDark),
+                                _buildCourseEvaluationList(isDark),
                               ],
                             ),
                 ),
@@ -738,6 +849,237 @@ class _MyContentScreenState extends State<MyContentScreen>
         ],
       ),
     );
+  }
+
+  // ---- 学科评价列表 ----
+
+  /// 学科评价页签：cursor 分页，pending/published/needs_edit 均可打开
+  /// 同一表单编辑原记录；深链定位由 _locateFocusEvaluation 完成。
+  Widget _buildCourseEvaluationList(bool isDark) {
+    return Consumer<CourseEvaluationProvider>(
+      builder: (_, provider, __) {
+        if (provider.isLoadingMine && provider.mine.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (provider.mineError != null && provider.mine.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  provider.mineError!,
+                  style: TextStyle(
+                    color: isDark ? Colors.white60 : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => provider.loadMine(refresh: true),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
+          );
+        }
+        if (provider.mine.isEmpty) {
+          return _buildEmptyState(
+            '暂无学科评价',
+            '从课表课程详情提交你的第一条课程评价',
+            Icons.rate_review_outlined,
+            isDark,
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () => provider.loadMine(refresh: true),
+          child: ListView.builder(
+            controller: _evaluationScrollController,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+            itemCount: provider.mine.length + (provider.mineHasMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index >= provider.mine.length) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: provider.isLoadingMoreMine
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : TextButton.icon(
+                            onPressed: provider.loadMoreMine,
+                            icon: const Icon(Icons.expand_more, size: 18),
+                            label: const Text('加载更多'),
+                          ),
+                  ),
+                );
+              }
+              final submission = provider.mine[index];
+              return _buildCourseEvaluationItem(submission, isDark);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCourseEvaluationItem(
+    CourseEvaluationSubmission submission,
+    bool isDark,
+  ) {
+    final isHighlighted = submission.id == _highlightEvaluationId;
+    final statusColor = switch (submission.status) {
+      CourseEvaluationStatus.published => Colors.green,
+      CourseEvaluationStatus.needsEdit => Colors.orange,
+      CourseEvaluationStatus.pending => Colors.blue,
+    };
+    final statusLabel = switch (submission.status) {
+      CourseEvaluationStatus.published => '已发布',
+      CourseEvaluationStatus.needsEdit => '需修改',
+      CourseEvaluationStatus.pending => '待审核',
+    };
+    final subColor = isDark ? Colors.white60 : Colors.grey[600];
+
+    final itemKey = _evaluationItemKeys.putIfAbsent(
+      submission.id,
+      () => GlobalKey(),
+    );
+
+    return GlassContainer(
+      key: itemKey,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      blur: 8,
+      opacity: isDark ? 0.12 : 0.35,
+      borderColor: isHighlighted
+          ? Theme.of(context).primaryColor
+          : (isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFECEEF1)),
+      onTap: () => _editCourseEvaluation(submission),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${submission.subjectDisplayName} · ${submission.teacherDisplayName}',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(fontSize: 11, color: statusColor),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              ...List.generate(5, (index) {
+                return Icon(
+                  index < submission.star ? Icons.star : Icons.star_border,
+                  size: 14,
+                  color: Colors.amber,
+                );
+              }),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '更新于 ${_formatTime(submission.updatedAt ?? submission.createdAt ?? DateTime.now())}',
+                  style: TextStyle(fontSize: 12, color: subColor),
+                ),
+              ),
+              Text(
+                'v${submission.revision}',
+                style: TextStyle(fontSize: 11, color: subColor),
+              ),
+            ],
+          ),
+          if (submission.comment.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              submission.comment,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white70 : Colors.black87,
+                height: 1.4,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (submission.status == CourseEvaluationStatus.needsEdit &&
+              submission.reviewReason.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.orange.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                '驳回原因：${submission.reviewReason}',
+                style: TextStyle(fontSize: 12, color: statusColor, height: 1.4),
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _editCourseEvaluation(submission),
+              icon: const Icon(Icons.edit_outlined, size: 14),
+              label: Text(
+                submission.status == CourseEvaluationStatus.needsEdit
+                    ? '修改并重新提交'
+                    : '编辑',
+                style: const TextStyle(fontSize: 12),
+              ),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editCourseEvaluation(CourseEvaluationSubmission submission) async {
+    await CourseEvaluationFormSheet.show(
+      context,
+      courseName: submission.courseName,
+      teacherName: submission.teacherName,
+      submission: submission,
+    );
+    if (!mounted) return;
+    // 编辑后按需刷新列表（pending → published 等状态迁移）。
+    await context.read<CourseEvaluationProvider>().loadMine(refresh: true);
   }
 
   Widget _buildTypeTag(String type) {

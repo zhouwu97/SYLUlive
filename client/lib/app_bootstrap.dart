@@ -20,6 +20,8 @@ import 'providers/team_recruitment_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
+import 'providers/course_evaluation_provider.dart';
+import 'providers/course_subject_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
@@ -1433,6 +1435,15 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
+        // 课程评价：会话隔离由 Provider 内部的 account epoch 保证，
+        // 切换账号时清空解析缓存与"我的内容"，丢弃旧响应。
+        ChangeNotifierProxyProvider<AuthProvider, CourseEvaluationProvider>(
+          create: (_) => CourseEvaluationProvider(dio),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
+        ),
+        // 标准学科榜为公开数据，不依赖登录态。
+        ChangeNotifierProvider(create: (_) => CourseSubjectProvider(dio)),
         ChangeNotifierProxyProvider<AuthProvider, MajorProvider>(
           create: (_) => MajorProvider(dio),
           update: (_, auth, provider) =>

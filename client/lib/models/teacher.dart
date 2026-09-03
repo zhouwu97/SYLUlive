@@ -6,6 +6,9 @@ class Teacher {
   final double averageStar;
   final DateTime createdAt;
 
+  /// 标准学科归属。历史数据与服务端旧响应可能为空。
+  final int? courseSubjectId;
+
   Teacher({
     required this.id,
     required this.name,
@@ -13,6 +16,7 @@ class Teacher {
     this.ratingCount = 0,
     this.averageStar = 0,
     required this.createdAt,
+    this.courseSubjectId,
   });
 
   factory Teacher.fromJson(Map<String, dynamic> json) {
@@ -23,6 +27,7 @@ class Teacher {
       ratingCount: json['rating_count'] ?? 0,
       averageStar: (json['average_star'] ?? 0).toDouble(),
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      courseSubjectId: (json['course_subject_id'] as num?)?.toInt(),
     );
   }
 }

@@ -16,6 +16,10 @@ type Teacher struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	// 标准学科归属。历史数据允许为空，迁移回填后新数据必须归属某个学科。
+	CourseSubjectID *uint  `gorm:"index" json:"course_subject_id,omitempty"`
+	NameNormalized  string `gorm:"size:50;index" json:"name_normalized"`
+
 	RatingCount int     `gorm:"-" json:"rating_count"`
 	AverageStar float64 `gorm:"-" json:"average_star"`
 }
@@ -38,6 +42,9 @@ type TeacherRating struct {
 	ModeratedBy      *uint      `gorm:"index" json:"moderated_by,omitempty"`
 	ModeratedAt      *time.Time `json:"moderated_at,omitempty"`
 	ModerationReason string     `gorm:"size:500" json:"-"`
+
+	// 产生该评价的课程评价提交记录。为空表示来自旧教师评价入口。
+	CourseEvaluationSubmissionID *uint `gorm:"index" json:"course_evaluation_submission_id,omitempty"`
 
 	// 关联数据（非数据库字段）
 	User          *User   `gorm:"foreignKey:UserID" json:"-"`

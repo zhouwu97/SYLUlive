@@ -13,6 +13,11 @@ const (
 	legacyNotificationCleanupBatch        = 500
 )
 
+// NotificationTypeCourseEvaluationResult 课程评价审核结果通知。
+// 该类型不关联帖子：PostID 恒为 0，RelatedID 为课程评价提交 ID，
+// 客户端必须按 related_id 深链到"我的内容 → 学科评价"，不能当作帖子 ID 使用。
+const NotificationTypeCourseEvaluationResult = "course_evaluation_result"
+
 // RetiredNotificationTypes 已退役通知类型：不再产生，查询时过滤并分批清理历史数据。
 var RetiredNotificationTypes = []string{
 	RetiredNotificationTypeMarketPost,

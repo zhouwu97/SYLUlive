@@ -32,22 +32,24 @@ DART_RESULT="$TEMP_DIR/dart_result.json"
 # 运行 Python 查询
 echo ">>> 运行 Python 端查询..." >&2
 cd "$PROJECT_ROOT"
-python3 tools/differential/python_query.py > "$PYTHON_RESULT" 2>&1 &
+python tools/differential/python_query.py > "$PYTHON_RESULT" 2>"$TEMP_DIR/python_stderr.log" &
 PYTHON_PID=$!
 
 # 运行 Dart 查询
 echo ">>> 运行 Dart 端查询..." >&2
-dart run tools/differential/dart_query.dart > "$DART_RESULT" 2>&1 &
+dart run tools/differential/dart_query.dart > "$DART_RESULT" 2>"$TEMP_DIR/dart_stderr.log" &
 DART_PID=$!
 
 # 等待两个查询完成
 echo ">>> 等待查询完成..." >&2
 wait $PYTHON_PID || {
     echo "错误: Python 查询失败" >&2
+    cat "$TEMP_DIR/python_stderr.log" >&2
     exit 1
 }
 wait $DART_PID || {
     echo "错误: Dart 查询失败" >&2
+    cat "$TEMP_DIR/dart_stderr.log" >&2
     exit 1
 }
 
@@ -57,4 +59,4 @@ echo "" >&2
 
 # 运行比较
 echo ">>> 运行 Differential 比较..." >&2
-python3 tools/differential/compare.py "$PYTHON_RESULT" "$DART_RESULT"
+python tools/differential/compare.py "$PYTHON_RESULT" "$DART_RESULT"

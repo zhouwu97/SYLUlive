@@ -122,6 +122,11 @@ def compare_detail(
 
 
 def main():
+    # 设置 stdout 编码为 UTF-8
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'ignore')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'ignore')
+
     if len(sys.argv) != 3:
         print('用法: python compare.py python_result.json dart_result.json', file=sys.stderr)
         sys.exit(1)
@@ -130,11 +135,26 @@ def main():
     dart_path = sys.argv[2]
 
     try:
-        with open(python_path, 'r', encoding='utf-8') as f:
-            python_results = json.load(f)
+        # 尝试多种编码
+        for encoding in ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']:
+            try:
+                with open(python_path, 'r', encoding=encoding) as f:
+                    python_results = json.load(f)
+                break
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        else:
+            raise ValueError('无法以任何已知编码读取 Python 结果文件')
 
-        with open(dart_path, 'r', encoding='utf-8') as f:
-            dart_results = json.load(f)
+        for encoding in ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']:
+            try:
+                with open(dart_path, 'r', encoding=encoding) as f:
+                    dart_results = json.load(f)
+                break
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        else:
+            raise ValueError('无法以任何已知编码读取 Dart 结果文件')
     except Exception as e:
         print(f'错误: 无法读取文件: {e}', file=sys.stderr)
         sys.exit(1)

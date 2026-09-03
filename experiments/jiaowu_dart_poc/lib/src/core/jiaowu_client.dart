@@ -3,14 +3,18 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
+import '../api/academic_situation_api.dart';
 import '../api/course_api.dart';
+import '../api/credit_requirement_api.dart';
 import '../api/grade_api.dart';
 import '../api/grade_detail_api.dart';
 import '../api/profile_api.dart';
 import '../auth/jiaowu_auth.dart';
 import '../core/jiaowu_endpoints.dart';
 import '../error/jiaowu_exception.dart';
+import '../model/academic_situation.dart';
 import '../model/captcha_challenge.dart';
+import '../model/credit_requirement.dart';
 import '../model/login_result.dart';
 import '../model/course_fetch_result.dart';
 import '../model/grade_fetch_result.dart';
@@ -51,6 +55,10 @@ final class JiaowuClient {
     courseApi = CourseApi(dio: this.dio, session: this.session);
     gradeApi = GradeApi(dio: this.dio, session: this.session);
     gradeDetailApi = GradeDetailApi(dio: this.dio, session: this.session);
+    academicSituationApi =
+        AcademicSituationApi(dio: this.dio, session: this.session);
+    creditRequirementApi =
+        CreditRequirementApi(dio: this.dio, session: this.session);
   }
 
   static Dio _createDefaultDio({
@@ -87,6 +95,8 @@ final class JiaowuClient {
   late final CourseApi courseApi;
   late final GradeApi gradeApi;
   late final GradeDetailApi gradeDetailApi;
+  late final AcademicSituationApi academicSituationApi;
+  late final CreditRequirementApi creditRequirementApi;
 
   Future<LoginResult> login({
     required String studentId,
@@ -149,6 +159,12 @@ final class JiaowuClient {
       timeout: timeout,
     );
   }
+
+  Future<AcademicSituation> getAcademicSituation() =>
+      academicSituationApi.fetch();
+
+  Future<CreditRequirement> getCreditRequirement() =>
+      creditRequirementApi.fetch();
 
   /// 主动退出或切换账号时清理完整 HTTP 会话。
   Future<void> resetSession() => auth.cancelPendingLogin();

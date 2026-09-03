@@ -48,6 +48,104 @@ func TestNormalizeCourseSubjectNameKeepsSuffixDistinct(t *testing.T) {
 	}
 }
 
+func TestNormalizeCourseSubjectNameMergesPhysicalEducationVariants(t *testing.T) {
+	names := []string{"体育1", "体育2", "体育3", "体育4", "体育５"}
+	for _, name := range names {
+		if got := NormalizeCourseSubjectName(name); got != "体育" {
+			t.Errorf("NormalizeCourseSubjectName(%q) = %q, want %q", name, got, "体育")
+		}
+	}
+	for _, name := range names[1:] {
+		if got, want := CourseEvaluationDedupKey(1, name, "张三"), CourseEvaluationDedupKey(1, names[0], "张三"); got != want {
+			t.Errorf("体育课程去重键不一致: %q = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestEnsureCourseEvaluationSchemaMergesLegacyPhysicalEducationSubject(t *testing.T) {
+	db := newCourseEvaluationTestDB(t)
+	if err := db.AutoMigrate(&CourseSubject{}, &CourseSubjectAlias{}, &CourseEvaluationSubmission{}); err != nil {
+		t.Fatalf("准备课程评价表失败: %v", err)
+	}
+
+	canonical := CourseSubject{Name: "体育", NormalizedName: "体育", Verified: true}
+	if err := db.Create(&canonical).Error; err != nil {
+		t.Fatalf("创建标准体育学科失败: %v", err)
+	}
+	legacy := CourseSubject{Name: "体育4", NormalizedName: "体育4", Verified: true}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("创建旧版体育学科失败: %v", err)
+	}
+	teacher := Teacher{
+		Name:            "体育教师",
+		Course:          "体育4",
+		Verified:        true,
+		CourseSubjectID: &legacy.ID,
+	}
+	if err := db.Create(&teacher).Error; err != nil {
+		t.Fatalf("创建旧版教师失败: %v", err)
+	}
+	submission := CourseEvaluationSubmission{
+		UserID:            1,
+		DedupKey:          CourseEvaluationDedupKey(1, "体育4", "体育教师"),
+		Source:            CourseEvaluationSourceSchedule,
+		CourseName:        "体育4",
+		TeacherName:       "体育教师",
+		Star:              5,
+		CourseSubjectID:   &legacy.ID,
+		CourseSubjectName: "体育4",
+		Status:            CourseEvaluationStatusPending,
+		Revision:          1,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("创建旧版提交记录失败: %v", err)
+	}
+	alias := CourseSubjectAlias{
+		CourseSubjectID: legacy.ID,
+		Alias:           "体育课4",
+		NormalizedAlias: "体育课4",
+	}
+	if err := db.Create(&alias).Error; err != nil {
+		t.Fatalf("创建旧版学科别名失败: %v", err)
+	}
+
+	if err := EnsureCourseEvaluationSchema(db); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	var subjects []CourseSubject
+	if err := db.Find(&subjects).Error; err != nil {
+		t.Fatalf("读取学科失败: %v", err)
+	}
+	if len(subjects) != 1 || subjects[0].ID != canonical.ID || subjects[0].NormalizedName != "体育" {
+		t.Fatalf("旧版体育学科未合并，实际=%+v", subjects)
+	}
+	var migratedTeacher Teacher
+	if err := db.First(&migratedTeacher, teacher.ID).Error; err != nil {
+		t.Fatalf("读取迁移后的教师失败: %v", err)
+	}
+	if migratedTeacher.CourseSubjectID == nil || *migratedTeacher.CourseSubjectID != canonical.ID {
+		t.Fatalf("教师未重挂到标准体育学科: %+v", migratedTeacher.CourseSubjectID)
+	}
+	var migratedSubmission CourseEvaluationSubmission
+	if err := db.First(&migratedSubmission, submission.ID).Error; err != nil {
+		t.Fatalf("读取迁移后的提交失败: %v", err)
+	}
+	if migratedSubmission.CourseSubjectID == nil || *migratedSubmission.CourseSubjectID != canonical.ID {
+		t.Fatalf("提交记录未重挂到标准体育学科: %+v", migratedSubmission.CourseSubjectID)
+	}
+	if migratedSubmission.CourseSubjectName != canonical.Name {
+		t.Fatalf("提交记录的标准学科名未更新: %q", migratedSubmission.CourseSubjectName)
+	}
+	var migratedAlias CourseSubjectAlias
+	if err := db.First(&migratedAlias, alias.ID).Error; err != nil {
+		t.Fatalf("读取迁移后的别名失败: %v", err)
+	}
+	if migratedAlias.CourseSubjectID != canonical.ID {
+		t.Fatalf("学科别名未重挂到标准体育学科: %d", migratedAlias.CourseSubjectID)
+	}
+}
+
 func TestCourseEvaluationCommentTruncationUsesRunes(t *testing.T) {
 	long := ""
 	for i := 0; i < 250; i++ {

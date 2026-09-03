@@ -14,17 +14,21 @@ import (
 //
 // 迁移分为四个阶段，全部幂等，可在 SQLite 与 PostgreSQL 上重复执行：
 //  1. AutoMigrate 新模型与新增列；
-//  2. 回填教师名规范化值；
-//  3. 从既有 teachers.course 派生标准学科并回填 course_subject_id
+//  2. 归并旧版体育序号学科；
+//  3. 回填教师名规范化值；
+//  4. 从既有 teachers.course 派生标准学科并回填 course_subject_id
 //     （同名学科按"已审核优先、ID 最小优先"收敛）；
-//  4. 合并同一学科下的重复教师，重挂评价、投票与提交记录后清理 loser；
-//  5. 建立可重复执行的唯一索引。
+//  5. 合并同一学科下的重复教师，重挂评价、投票与提交记录后清理 loser；
+//  6. 建立可重复执行的唯一索引。
 func EnsureCourseEvaluationSchema(db *gorm.DB) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}
 	if err := db.AutoMigrate(&CourseSubject{}, &CourseSubjectAlias{}, &CourseEvaluationSubmission{}, &Teacher{}, &TeacherRating{}); err != nil {
 		return fmt.Errorf("课程评价基础表迁移失败: %w", err)
+	}
+	if err := normalizeLegacyPhysicalEducationSubjects(db); err != nil {
+		return err
 	}
 	if err := backfillTeacherNameNormalized(db); err != nil {
 		return err
@@ -43,6 +47,62 @@ func EnsureCourseEvaluationSchema(db *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+// normalizeLegacyPhysicalEducationSubjects 把旧版本已落库的体育序号学科合并为“体育”。
+// 规范化规则升级后，历史 normalized_name 不会自动变化，因此必须在唯一索引检查前完成重挂。
+func normalizeLegacyPhysicalEducationSubjects(db *gorm.DB) error {
+	legacyNames := []string{"体育1", "体育2", "体育3", "体育4", "体育5"}
+	var legacySubjects []CourseSubject
+	if err := db.Where("normalized_name IN ?", legacyNames).
+		Order("verified DESC, id ASC").Find(&legacySubjects).Error; err != nil {
+		return fmt.Errorf("读取旧版体育学科失败: %w", err)
+	}
+	if len(legacySubjects) == 0 {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, legacy := range legacySubjects {
+			var canonical CourseSubject
+			err := tx.Where("normalized_name = ?", "体育").
+				Order("verified DESC, id ASC").First(&canonical).Error
+			switch {
+			case err == nil:
+				if canonical.ID == legacy.ID {
+					continue
+				}
+				if legacy.Verified && !canonical.Verified {
+					if err := tx.Model(&CourseSubject{}).Where("id = ?", canonical.ID).
+						Update("verified", true).Error; err != nil {
+						return err
+					}
+				}
+				if err := tx.Model(&CourseEvaluationSubmission{}).Where("course_subject_id = ?", legacy.ID).
+					Update("course_subject_name", canonical.Name).Error; err != nil {
+					return err
+				}
+				if err := rehangCourseSubjectRelations(tx, legacy.ID, canonical.ID); err != nil {
+					return err
+				}
+				if err := tx.Delete(&CourseSubject{}, legacy.ID).Error; err != nil {
+					return err
+				}
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				if err := tx.Model(&CourseSubject{}).Where("id = ?", legacy.ID).
+					Updates(map[string]interface{}{"name": "体育", "normalized_name": "体育"}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&CourseEvaluationSubmission{}).Where("course_subject_id = ?", legacy.ID).
+					Update("course_subject_name", "体育").Error; err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("读取标准体育学科失败: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // backfillTeacherNameNormalized 为空缺的 name_normalized 回填规范化教师名。
@@ -144,7 +204,7 @@ func dedupeCourseSubjects(db *gorm.DB) error {
 				if err := rehangCourseSubjectRelations(tx, loser.ID, keeper.ID); err != nil {
 					return err
 				}
-				if err := tx.Where("course_subject_id = ?", loser.ID).Delete(&CourseSubject{}).Error; err != nil {
+				if err := tx.Delete(&CourseSubject{}, loser.ID).Error; err != nil {
 					return err
 				}
 			}
@@ -155,7 +215,7 @@ func dedupeCourseSubjects(db *gorm.DB) error {
 	})
 }
 
-// rehangCourseSubjectRelations 把 loser 学科上的教师、提交记录重挂到 keeper。
+// rehangCourseSubjectRelations 把 loser 学科上的教师、提交记录和别名重挂到 keeper。
 func rehangCourseSubjectRelations(tx *gorm.DB, loserID, keeperID uint) error {
 	if loserID == 0 || keeperID == 0 || loserID == keeperID {
 		return nil
@@ -165,6 +225,10 @@ func rehangCourseSubjectRelations(tx *gorm.DB, loserID, keeperID uint) error {
 		return err
 	}
 	if err := tx.Model(&CourseEvaluationSubmission{}).Where("course_subject_id = ?", loserID).
+		Update("course_subject_id", keeperID).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&CourseSubjectAlias{}).Where("course_subject_id = ?", loserID).
 		Update("course_subject_id", keeperID).Error; err != nil {
 		return err
 	}

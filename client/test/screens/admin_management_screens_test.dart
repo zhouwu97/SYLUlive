@@ -350,6 +350,7 @@ void main() {
           '/majors/pending': <Object>[],
           '/admin/invitations/pending': <Object>[],
           '/admin/removals/pending': <Object>[],
+          '/admin/course-evaluations/pending': {'items': <Object>[]},
         },
       ),
     );
@@ -393,6 +394,12 @@ void main() {
           ],
           '/admin/removals/pending': <Object>[],
           '/admin/exam-papers/pending-count': {'count': 5},
+          '/canteens/pending': {'items': <Object>[]},
+          '/admin/course-evaluations/pending': {
+            'items': [
+              {'id': 1},
+            ],
+          },
         },
       ),
     );
@@ -408,6 +415,8 @@ void main() {
     expect(find.text('审核'), findsOneWidget);
     expect(find.text('试卷'), findsOneWidget);
     expect(find.text('管理员待办'), findsOneWidget);
+    // 课程评价投稿也应计入顶部“审核”待办数量（教师 1 + 专业 2 + 课程评价 1）。
+    expect(find.text('4'), findsOneWidget);
 
     // 社区治理区块
     expect(find.text('精华申请'), findsOneWidget);

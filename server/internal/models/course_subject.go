@@ -174,8 +174,16 @@ func normalizeNameKey(name string) string {
 }
 
 // NormalizeCourseSubjectName 规范化标准学科名。
+// 体育课程按教务课表中的序号归并到同一个“体育”学科，避免体育1-5被拆成多个评价入口；
+// 其他课程仍保留原有数字与后缀区分（例如高等数学A1/A2）。
 func NormalizeCourseSubjectName(name string) string {
-	return normalizeNameKey(name)
+	normalized := normalizeNameKey(name)
+	switch normalized {
+	case "体育1", "体育2", "体育3", "体育4", "体育5":
+		return "体育"
+	default:
+		return normalized
+	}
 }
 
 // NormalizeTeacherName 规范化教师名。

@@ -49,8 +49,8 @@ flutter run -d <设备ID>
 
 ### 4. 在手机上操作
 
-1. 输入学号：`[REDACTED_STUDENT_ID]`
-2. 输入密码：`[REDACTED_PASSWORD]`
+1. 输入学号：`[测试账号]`
+2. 输入密码：`[测试密码]`
 3. 点击"运行 Probe"
 4. 观察日志输出
 
@@ -60,7 +60,7 @@ flutter run -d <设备ID>
 [时间] 开始登录...
 [时间] ✓ 登录成功
 [时间] 获取 Profile...
-[时间] ✓ Profile: [REDACTED_NAME] ([REDACTED_STUDENT_ID])
+[时间] ✓ Profile: [测试用户]
 [时间] 获取成绩列表...
 [时间] ✓ 成绩列表: 13 条
 [时间] 开始查询成绩详情 (2 门课程)...

@@ -101,7 +101,7 @@
 #### 测试环境
 - Python: 旧服务器 `EduCrawler`
 - Dart: 本地 `JiaowuClient`
-- 账号: `[REDACTED_STUDENT_ID]` / `[REDACTED_PASSWORD]`
+- 账号: [已编辑 - 测试账号]
 - 查询范围: 2025-12 学期前两门课程
 
 #### 验证结果
@@ -289,7 +289,7 @@ experiments/jiaowu_dart_poc/
 Android probe 成功完成且日志输出包含：
 ```
 ✓ 登录成功
-✓ Profile: [REDACTED_NAME] ([REDACTED_STUDENT_ID])
+✓ Profile: [已编辑 - 测试用户]
 ✓ 成绩列表: 13 条
 ✓ 总评: 良好
 ✓ 分项数: 4

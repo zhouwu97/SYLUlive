@@ -32,8 +32,7 @@ type AgentCapability struct {
 // AgentCapabilityRegistry 统一维护校园 Agent、个人 Agent 和设备桥的能力声明。
 // V1 只读能力仍然以 ToolRegistry 为事实来源，行动能力则由服务端受控 API 提供。
 type AgentCapabilityRegistry struct {
-	toolRegistry      *ToolRegistry
-	schoolPersonalCut bool
+	toolRegistry *ToolRegistry
 }
 
 // RetrieveCapabilities 是轻量的语义候选检索器：先做权限/可用性过滤，再按描述、标签和能力 ID 的词重叠排序。
@@ -119,14 +118,6 @@ func capabilityTokens(value string) []string {
 
 func NewAgentCapabilityRegistry(toolRegistry *ToolRegistry) *AgentCapabilityRegistry {
 	return &AgentCapabilityRegistry{toolRegistry: toolRegistry}
-}
-
-// SetSchoolPersonalCut 让 C3 发布同时从客户端能力目录移除个人学校能力。
-// 工具注册表仍是最终事实来源；该标志只负责避免“工具已删但能力目录仍宣称可用”。
-func (r *AgentCapabilityRegistry) SetSchoolPersonalCut(cut bool) {
-	if r != nil {
-		r.schoolPersonalCut = cut
-	}
 }
 
 func (r *AgentCapabilityRegistry) Public() []AgentCapability {
@@ -259,29 +250,6 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 			PermissionScopes: []string{"ai_personal_data_access"},
 		},
 	}
-	if r != nil && r.schoolPersonalCut {
-		filtered := capabilities[:0]
-		for _, capability := range capabilities {
-			if isSchoolPersonalCapability(capability) {
-				continue
-			}
-			filtered = append(filtered, capability)
-		}
-		capabilities = filtered
-	}
 	sort.Slice(capabilities, func(i, j int) bool { return capabilities[i].ID < capabilities[j].ID })
 	return capabilities
-}
-
-func isSchoolPersonalCapability(capability AgentCapability) bool {
-	if capability.ID == "academic.summary" || capability.ID == "academic.personal_read" || capability.ID == "academic.personal_refresh" ||
-		capability.ID == "schedule.free_windows" || capability.ID == "schedule.validate_plan" {
-		return true
-	}
-	for _, toolName := range capability.ToolNames {
-		if IsSchoolPersonalToolName(toolName) {
-			return true
-		}
-	}
-	return false
 }

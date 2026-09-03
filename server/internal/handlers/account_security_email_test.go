@@ -29,50 +29,6 @@ func (m *accountSecurityTestMailer) SendVerificationCode(email string, purpose s
 	return nil
 }
 
-func TestAccountSecurityHidesLegacySchoolCapabilitiesAfterRetirement(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开数据库失败: %v", err)
-	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		t.Fatalf("迁移用户表失败: %v", err)
-	}
-	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
-	user := models.User{
-		StudentID: "2026000101", StudentVerifiedAt: &now,
-		Email: "retired@example.com", EmailVerifiedAt: &now, PasswordHash: "hash",
-		EduAuthorized: true, EduSessionState: "active",
-	}
-	if err := db.Create(&user).Error; err != nil {
-		t.Fatalf("创建用户失败: %v", err)
-	}
-
-	handler := NewAuthHandler(db, "test-secret")
-	handler.SetSchoolAcademicRoutesRetired(true)
-	router := gin.New()
-	router.GET("/account-security", func(c *gin.Context) {
-		c.Set("user_id", user.ID)
-		handler.GetAccountSecurity(c)
-	})
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/account-security", nil))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("账号安全响应=%d，内容=%s", recorder.Code, recorder.Body.String())
-	}
-	var response accountSecurityResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("解析账号安全响应失败: %v", err)
-	}
-	if response.StudentID != "" || response.StudentVerified || response.CanResetViaEdu ||
-		response.EduAuthorized || response.EduSessionState != "" {
-		t.Fatalf("退役后仍返回学校账号能力: %+v", response)
-	}
-	if len(response.LoginMethods) != 1 || response.LoginMethods[0] != "email" || !response.CanResetViaEmail {
-		t.Fatalf("退役后邮箱账号能力错误: %+v", response)
-	}
-}
-
 func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -81,9 +37,6 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.AccountSecurityAuditLog{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
-	}
-	if err := models.EnsureAccountIdentitySchema(db); err != nil {
-		t.Fatalf("迁移身份表失败: %v", err)
 	}
 	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)
 	mailer := &accountSecurityTestMailer{}
@@ -106,10 +59,6 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	if err := db.Create(&newOwner).Error; err != nil {
 		t.Fatalf("创建新所有者失败: %v", err)
 	}
-	identity, err := services.CreateEmailIdentity(db, oldOwner.ID, email, now)
-	if err != nil {
-		t.Fatalf("创建旧所有者 Identity 失败: %v", err)
-	}
 	if err := verification.Request(email, models.EmailVerificationPurposeResetPassword, &oldOwner.ID, "127.0.0.1"); err != nil {
 		t.Fatalf("请求重置验证码失败: %v", err)
 	}
@@ -120,9 +69,6 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	}
 	if err := db.Model(&models.User{}).Where("id = ?", newOwner.ID).Updates(map[string]interface{}{"email": email, "email_verified_at": now}).Error; err != nil {
 		t.Fatalf("转移邮箱失败: %v", err)
-	}
-	if err := db.Model(&models.UserLoginIdentity{}).Where("id = ?", identity.ID).Update("user_id", newOwner.ID).Error; err != nil {
-		t.Fatalf("转移邮箱 Identity 失败: %v", err)
 	}
 
 	handler := NewAuthHandlerWithEmailVerification(db, "test-secret", verification)
@@ -164,9 +110,6 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
 		t.Fatalf("迁移公开验证码测试表失败: %v", err)
 	}
-	if err := models.EnsureAccountIdentitySchema(db); err != nil {
-		t.Fatalf("迁移身份表失败: %v", err)
-	}
 	now := time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC)
 	mailer := &accountSecurityTestMailer{}
 	verification := services.NewEmailVerificationService(db, mailer, "test-ip-secret", func() time.Time { return now })
@@ -174,9 +117,6 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 	existing := models.User{StudentID: "", Email: "existing@example.com", EmailVerifiedAt: &verifiedAt, PasswordHash: "hash"}
 	if err := db.Create(&existing).Error; err != nil {
 		t.Fatalf("创建已有邮箱账号失败: %v", err)
-	}
-	if _, err := services.CreateEmailIdentity(db, existing.ID, existing.Email, verifiedAt); err != nil {
-		t.Fatalf("创建已有邮箱 Identity 失败: %v", err)
 	}
 	handler := NewAuthHandlerWithEmailVerification(db, "test-secret", verification)
 	router := gin.New()

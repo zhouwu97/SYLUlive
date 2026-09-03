@@ -99,12 +99,6 @@ type Config struct {
 	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
 	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
 	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
-	AccountIdentityReadMode     string // 账号登录读路径：legacy 或 identity
-	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
-	// SchoolAcademicRoutesRetired 表示 Release D 已完成，旧教务/个人快照路由只返回 410。
-	// 两个开关默认关闭，必须由发布证据明确开启；SCHOOL_AUTHORITY_RETIRED 会同时开启二者。
-	SchoolDeviceCapabilityCut   bool
-	SchoolAcademicRoutesRetired bool
 
 	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
 	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
@@ -122,8 +116,6 @@ const (
 	ExamPaperStorageModeLocal          = "local"
 	ExamPaperStorageModeRemote         = "remote"
 	ExamPaperStorageModeReadonlyRemote = "readonly-remote"
-	AccountIdentityReadModeLegacy      = "legacy"
-	AccountIdentityReadModeIdentity    = "identity"
 )
 
 // Load 从环境变量加载配置
@@ -320,15 +312,6 @@ func Load() *Config {
 	if legalConsentEnforcement != "off" && legalConsentEnforcement != "soft" && legalConsentEnforcement != "hard" {
 		panic(fmt.Errorf("LEGAL_CONSENT_ENFORCEMENT 只能是 off、soft 或 hard"))
 	}
-	accountIdentityReadMode, err := parseAccountIdentityReadMode(os.Getenv("ACCOUNT_IDENTITY_READ_MODE"))
-	if err != nil {
-		panic(err)
-	}
-	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
-	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
-	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
-	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
-	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
 
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
@@ -515,27 +498,11 @@ func Load() *Config {
 		AppReleaseUseAccelRedirect:          appReleaseUseAccelRedirect,
 		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
 		LegalConsentEnforcement:             legalConsentEnforcement,
-		AccountIdentityReadMode:             accountIdentityReadMode,
-		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
-		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
 		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
 		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
-	}
-}
-
-func parseAccountIdentityReadMode(value string) (string, error) {
-	mode := strings.ToLower(strings.TrimSpace(value))
-	if mode == "" {
-		return AccountIdentityReadModeLegacy, nil
-	}
-	switch mode {
-	case AccountIdentityReadModeLegacy, AccountIdentityReadModeIdentity:
-		return mode, nil
-	default:
-		return "", fmt.Errorf("ACCOUNT_IDENTITY_READ_MODE 只能是 legacy 或 identity")
 	}
 }
 

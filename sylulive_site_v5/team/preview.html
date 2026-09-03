@@ -5,13 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6fafe">
   <meta name="description" content="沈理校园组队平台：寻找志同道合的理工伙伴，高效组队备战竞赛、考研互助、项目攻坚与校园生活。">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="沈理校园 · SYLUlive">
-  <meta property="og:title" id="og-title" content="沈理校园组队邀请">
-  <meta property="og:description" id="og-desc" content="在沈理校园查看招募详情并快速加入队伍。">
-  <link rel="icon" type="image/png" href="/assets/sylulive-app-icon.png">
-  <link rel="apple-touch-icon" href="/assets/sylulive-app-icon.png">
-  <title id="html-title">组队招募详情 · 沈理校园</title>
+  <title id="html-title">组队招募详情 [官网级预览版] · 沈理校园</title>
   <style>
     :root {
       --brand-primary: #147c72;
@@ -119,49 +113,30 @@
       to { transform: translate(-50%, -50%) rotate(354deg); }
     }
 
-    /* Embedded Browser Warning Banner */
-    .browser-notice {
-      position: relative;
-      z-index: 100;
-      background: linear-gradient(90deg, #1f2937, #111827);
-      color: #f9fafb;
-      padding: 12px 18px;
-      font-size: 13px;
-      font-weight: 600;
+    /* Floating Showcase Header Banner */
+    .preview-header-banner {
+      background: linear-gradient(90deg, #0f172a, #1e293b);
+      color: #94a3b8;
+      padding: 10px 20px;
+      font-size: 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+      z-index: 100;
     }
-    .browser-notice-content {
-      display: flex;
+    .preview-banner-badge {
+      display: inline-flex;
       align-items: center;
-      gap: 10px;
-    }
-    .browser-notice-icon {
-      display: grid;
-      place-items: center;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      background: rgba(245, 158, 11, 0.2);
-      color: #fbbf24;
-      flex-shrink: 0;
-    }
-    .browser-notice-close {
-      background: transparent;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      padding: 4px;
+      gap: 6px;
+      background: rgba(20, 124, 114, 0.3);
+      color: #5eead4;
+      padding: 3px 8px;
       border-radius: 6px;
-      display: grid;
-      place-items: center;
-      transition: 0.2s;
+      font-weight: 700;
+      font-size: 11px;
     }
-    .browser-notice-close:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
 
     /* Shell & Navigation */
     .shell {
@@ -177,7 +152,6 @@
       padding: 14px 0;
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      transition: background 0.3s var(--ease);
     }
     .nav {
       height: 60px;
@@ -262,10 +236,6 @@
       color: #ffffff;
       border-color: transparent;
       box-shadow: 0 6px 20px rgba(20, 124, 114, 0.25);
-    }
-    .nav-btn.primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 26px rgba(20, 124, 114, 0.35);
     }
 
     /* Main Container */
@@ -425,11 +395,6 @@
       border: 2px solid #ffffff;
       overflow: hidden;
     }
-    .author-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
     .author-info {
       flex: 1;
       min-width: 0;
@@ -569,32 +534,6 @@
       border: 1px solid var(--line-subtle);
     }
 
-    /* Images Gallery */
-    .gallery-wrap {
-      margin-bottom: 28px;
-    }
-    .gallery-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-      gap: 12px;
-    }
-    .gallery-thumb {
-      aspect-ratio: 1;
-      border-radius: var(--radius-sm);
-      overflow: hidden;
-      border: 1px solid var(--line);
-      cursor: pointer;
-      position: relative;
-      background: #f1f5f9;
-      transition: transform 0.2s var(--ease);
-    }
-    .gallery-thumb:hover { transform: scale(1.03); }
-    .gallery-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
     /* Key Meta Grid */
     .meta-grid {
       display: grid;
@@ -676,7 +615,6 @@
     .btn-main.primary:hover {
       transform: translateY(-2px);
       box-shadow: 0 14px 36px rgba(20, 124, 114, 0.38);
-      background: linear-gradient(135deg, #0d5951 0%, #0891b2 100%);
     }
     .btn-main.secondary {
       background: #f8fafc;
@@ -689,7 +627,6 @@
       background: #ffffff;
       transform: translateY(-1px);
       box-shadow: var(--shadow-sm);
-      border-color: rgba(20, 124, 114, 0.3);
     }
     .btn-main.outline {
       background: transparent;
@@ -697,10 +634,6 @@
       border: 1px solid transparent;
       height: 40px;
       font-size: 12px;
-    }
-    .btn-main.outline:hover {
-      color: var(--ink);
-      background: rgba(0, 0, 0, 0.03);
     }
 
     /* QR Code Card for Desktop */
@@ -725,10 +658,6 @@
       box-shadow: var(--shadow-sm);
       display: grid;
       place-items: center;
-    }
-    .qr-canvas-wrap canvas, .qr-canvas-wrap svg {
-      width: 100%;
-      height: 100%;
     }
     .qr-label {
       font-size: 11px;
@@ -882,19 +811,6 @@
       transform: translate(-50%, 0);
     }
 
-    /* Skeleton Loading State */
-    .skeleton {
-      background: linear-gradient(90deg, #f0f3f8 25%, #e6edf5 37%, #f0f3f8 63%);
-      background-size: 400% 100%;
-      animation: skeletonPulse 1.4s ease infinite;
-      border-radius: 6px;
-      color: transparent !important;
-    }
-    @keyframes skeletonPulse {
-      0% { background-position: 100% 50%; }
-      100% { background-position: 0 50%; }
-    }
-
     /* Error / Not Found View */
     .error-card {
       text-align: center;
@@ -933,30 +849,30 @@
     /* Preview Bar for testing */
     .preview-controller {
       position: fixed;
-      right: 18px;
-      bottom: 20px;
+      right: 24px;
+      bottom: 24px;
       z-index: 120;
-      background: rgba(17, 24, 39, 0.88);
+      background: rgba(17, 24, 39, 0.92);
       color: #fff;
-      padding: 8px 14px;
+      padding: 10px 16px;
       border-radius: 999px;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 10px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      gap: 12px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       border: 1px solid rgba(255, 255, 255, 0.15);
     }
     .preview-controller select {
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.18);
       color: #fff;
       border: none;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       outline: none;
@@ -1017,15 +933,13 @@
     <div class="orbit-ring"></div>
   </div>
 
-  <!-- WeChat / QQ In-App Guidance Banner (Auto-detected) -->
-  <div id="browser-notice" class="browser-notice" hidden>
-    <div class="browser-notice-content">
-      <div class="browser-notice-icon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      </div>
-      <span>微信/QQ 内可能拦截 App 跳转，请点击右上角 <b>···</b> 选择在<b>系统浏览器</b>中打开。</span>
+  <!-- Top Banner -->
+  <div class="preview-header-banner">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="preview-banner-badge">官网级设计预览版</span>
+      <span>沈理校园 · 组队分享落地页 (Team Share Landing Page)</span>
     </div>
-    <button class="browser-notice-close" onclick="document.getElementById('browser-notice').hidden=true" aria-label="关闭提示">✕</button>
+    <span>可直接在右下角切换不同招募类型与状态 ↘</span>
   </div>
 
   <!-- Header Navigation -->
@@ -1034,7 +948,7 @@
       <nav class="nav">
         <a class="brand" href="/" aria-label="沈理校园首页">
           <span class="brand-art">
-            <img src="/assets/brand-mascot.webp" onerror="this.src='/assets/brand-mascot.webp'" alt="沈理校园Logo">
+            <img src="../assets/brand-mascot.webp" onerror="this.src='/assets/brand-mascot.webp'" alt="沈理校园Logo">
           </span>
           <div class="brand-text">
             <span class="brand-name">沈理校园</span>
@@ -1078,7 +992,7 @@
               <span id="team-category-text">学科竞赛</span>
             </span>
           </div>
-          <span id="team-id-badge" style="font-size:11px;font-weight:700;color:var(--muted);">#编号 --</span>
+          <span id="team-id-badge" style="font-size:11px;font-weight:700;color:var(--muted);">#招募编号 108</span>
         </div>
 
         <!-- Recruitment Title -->
@@ -1087,7 +1001,7 @@
         <!-- Initiator Profile Card -->
         <div class="author-profile">
           <div class="author-avatar" id="author-avatar">
-            <span id="author-avatar-initial">理</span>
+            <span id="author-avatar-initial">李</span>
           </div>
           <div class="author-info">
             <div class="author-name-row">
@@ -1113,14 +1027,14 @@
               <span>招募名额与进度</span>
             </div>
             <div class="headcount-numbers">
-              已招募 <span id="team-accepted-count">0</span> / 招募名额 <span id="team-needed-count">0</span> 人
+              已招募 <span id="team-accepted-count">2</span> / 招募名额 <span id="team-needed-count">4</span> 人
             </div>
           </div>
           <div class="progress-bar-bg">
-            <div id="team-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+            <div id="team-progress-bar" class="progress-bar-fill" style="width: 50%;"></div>
           </div>
           <div class="headcount-footer">
-            <span id="team-remaining-text">还差 0 个名额</span>
+            <span id="team-remaining-text">还需 2 位队友加入</span>
             <span id="team-deadline-text">截止时间：长期有效</span>
           </div>
         </div>
@@ -1145,24 +1059,15 @@
           <div id="team-description" class="desc-content">正在加载招募详情...</div>
         </div>
 
-        <!-- Images Gallery (if any) -->
-        <div id="gallery-section" class="gallery-wrap" hidden>
-          <div class="section-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-            <span>项目附件与展示图片</span>
-          </div>
-          <div id="gallery-grid" class="gallery-grid"></div>
-        </div>
-
         <!-- Meta Grid -->
         <div class="meta-grid">
           <div class="meta-item">
             <span class="meta-item-label">浏览与申请热度</span>
-            <span id="team-stats" class="meta-item-value">🔥 -- 次浏览 · -- 人已申请</span>
+            <span id="team-stats" class="meta-item-value">🔥 368 次浏览 · 7 人已申请</span>
           </div>
           <div class="meta-item">
             <span class="meta-item-label">招募截止日期</span>
-            <span id="team-deadline-full" class="meta-item-value">--</span>
+            <span id="team-deadline-full" class="meta-item-value">2026-11-20 23:59:59</span>
           </div>
         </div>
       </article>
@@ -1191,10 +1096,10 @@
           </a>
         </div>
 
-        <!-- Desktop QR Code for mobile downloading -->
+        <!-- Desktop QR Code for mobile download -->
         <div class="qr-box">
           <div class="qr-canvas-wrap" id="qr-container">
-            <img src="/assets/download-qr.png" onerror="this.src='../../assets/download-qr.png'" alt="扫码下载沈理校园 App" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQCAYAAACAvzbMAAAQAElEQVR4Aezc7XLbyBEFUN28/zs7hXXWjmWRYoMYzNdJFSyJGMx0n2b2/sN/fvgfAQIECBA4IfCfD/8jQIAAAQInBATICTSPELhEwCYEJhcQIJMPUPkECBDoJSBAesk7lwABApMLTBwgk8srnwABApMLCJDJB6h8AgQI9BIQIL3knUtgYgGlEzgEBMih4CJAgACBsoAAKZN5gAABAgQOAQFyKNx9OY8AAQILCAiQBYaoBQIECPQQECA91J1JgEAvAedeKCBALsS0FQECBHYSECA7TVuvBAgQuFBAgFyIucNWeiRAgMC/AgLkXwk/CRAgQKAkIEBKXBYTIECgl8B45wqQ8WaiIgIECEwhIECmGJMiCRAgMJ6AABlvJipqI2BXAgQuFhAgF4PajgABArsICJBdJq1PAgQIXCzwcoBcfK7tCBAgQGByAQEy+QCVT4AAgV4CtwRIko/ElVxn0OsLc9W5Sc3iqnMf7ZPU6knyaKvLPk/yv//ftPlZLTSp1dF6/6RWT7Lf+uoMqutvCZBqUdYTIECAwPgCAmT8GamQAAECQwrsECBDwiuKAAECswsIkNknqH4CBAh0EhAgneAdS2ALAU0uLSBAlh6v5ggQINBOQIC0s7UzAQIElhYQIEOPV3EECBAYV0CAjDsblREgQGBoAQEy9HgUR4BALwHnfi8gQL43soIAAQIEvhAYMkB+/PjxsdP1xVwu/yhp+x6gywt+c8Ok1u+bx730eDJWTclY9byE+GnRTv+dOHr91H73P4cMkO4qCnhfwA4ECCwvIECWH7EGCRAg0EZAgLRxtSsBAgR6Cdx2rgC5jdpBBAgQWEtAgKw1T90QIEDgNgEBchu1g2YRUCcBAq8JCJDXnKwiQIAAgU8CAuQTiD8JECBA4DWB6wPktXOtIkCAAIHJBQTI5ANUPgECBHoJCJBe8s4lcL2AHQncKrBEgCS1d/okbdffOsFGhx3v3alcSc20WnZS279S+7G2Ws+xPqnVdDxTuY66RroqtY+6NqnNLGm7flSnV+taIkBebdY6AgQIELhOQID8n6VfCRAgQOB1AQHyupWVBAgQIPB/AgLk/zD8SoBALwHnziggQGacmpoJECAwgIAAGWAISiBAgMCMAgJkxqn9XbNPCBAgcLuAALmd3IEECBBYQ0CArDFHXRAg0Etg43MFyMbD1zoBAgTeERAg7+h5lgABAhsLCJBNhl99p1JSewfQecY2Tya1+qs+x/o2lf/eNan18PvJ135LavsfPVeu16qwamYBATLz9NROgACBjgICpCO+owkQINBT4N2zBci7gp4nQIDApgICZNPBa5sAAQLvCgiQdwU9v6+AzglsLiBANv8CaJ8AAQJnBQTIWTnPESBAYHOBjgGyubz2CRAgMLmAAJl8gMonQIBALwEB0kveuQQ6CjiawBUCAuQKRXsQIEBgQwEBsuHQW7RceUfSHWurPSa190IlqR7xUe27ekCSj+T1q7q/9QQ+CwiQzyKv/G0NAQIECHwIEF8CAgQIEDglIEBOsXmIAIFOAo4dSECADDQMpRAgQGAmAQEy07TUSoAAgYEEBMhAw7ijFGcQIEDgKgEBcpWkfQgQILCZgADZbODaJUCgl8B65wqQ9WaqIwIECNwiIEBuYXYIAQIE1hMQIOvNdNWO9EWAwGACSwRI9R1DrdcPNuNT5VSNktffwZSkXFOS4d7z1Nqoun91fXUIyXgzqPZQNWq9vlr/aOuXCJDRUNVDgACBpQQeNCNAHsD4mAABAgSeCwiQ5z7uEiBAgMADAQHyAMbHBK4TsBOBNQUEyJpz1RUBAgSaCwiQ5sQOIECAwJoCMwTImvK6IkCAwOQCAmTyASqfAAECvQQESC955xKYQUCNBJ4ICJAnOG4RIECAwGMBAfLYxh0CBAgQeCIwZIAktXfuJKOuf62uJ/O57FbyWi3Jz3WXHdxpo+o7jDqVeemxyc/ZJa/9XMEoea3XZI11l35hLthsyAC5oC9bECBAgEBjAQHSGNj2BAj0EXBqewEB0t7YCQQIEFhSQIAsOVZNESBAoL2AAGlvPOcJqiZAgMA3AgLkGyC3CRAgQOBrAQHytYtPCRAg0EtgmnMFyDSjUigBAgTGEhAgY81DNQQIEJhGQIBMMyqFvipgHQEC9wgIkHucnUKAAIHlBATIciPVEAECBO4R+DtAGpxbfWmb9T8+vjOojum7/T7fT2ovn6vWU13/ub7v/k5q9X+331f3k7ZnJLX9q6ajrf/K2Gff/7fgmVHrGd8SIK2bsD8BAgQI3C8gQO43dyKBRwI+JzCVgACZalyKJUCAwDgCAmScWaiEAAECUwksFSBTySuWAAECkwsIkMkHqHwCBAj0EhAgveSdS2ApAc3sKCBAdpy6ngkQIHCBgAC5ANEWBAgQ2FFAgIwxdVUQIEBgOgEBMt3IFEyAAIExBIYMkKT2DqCk7frqqJK29SSpllRe/+z9OlfcS/KRvH6VGyg+kLxeS/JzbfGIUr9Jvn0f2rtzqNa/7PoLG0t+fjeSNj8vLPWSrYYMkEs6swkBAgQINBUQIE15bU6AAIF1BQTIurO9qTPHECCwq4AA2XXy+iZAgMCbAgLkTUCPEyBAoJdA73MFSO8JOJ8AAQKTCgiQSQenbAIECPQWECC9J+D8fgJOJkDgLQEB8hafhwkQILCvgADZd/Y6J0CAwFsCbwTIW+d6mAABAgQmF7glQJLae2FGM03a1n/mnUZJ25qStvtXe07a1nPHd67a8x01Vc6o1p/UZpbMv77ieaxtbXqc0fK6JUBaNmBvAjsK6JnACAICZIQpqIEAAQITCgiQCYemZAIECIwgsGeAjCCvBgIECEwuIEAmH6DyCRAg0EtAgPSSdy6BPQV0vZCAAFlomFohQIDAnQIC5E5tZxEgQGAhAQEy2TCVS4AAgVEEBMgok1AHAQIEJhMQIJMNTLkECPQScO5ngVsCpPq+l9HWf0b77u9q/Un9HUCtz6ju/53Ju/er9VTXn6mvekZSn3PS7pkzPVeeqfpU9h51bbXnpDbf6v6tnW4JkNZN2J8AAQIE7hcQIPeb73qivgkQWExAgCw2UO0QIEDgLgEBcpe0cwgQINBLoNG5AqQRrG0JECCwuoAAWX3C+iNAgEAjAQHSCNa2KwnohQCBrwQEyFcqPiNAgACBbwUEyLdEFhAgQIDAVwJ3BMhX5/qMAAECBCYXECCTD1D5BAgQ6CVwS4Aktfe9JGOtr75/JqnVX93/WN/6C5PUeqjWk7Tdv1rPHeuPubW8vuzhyYfJWDM4Y/OkvUtuVWuqHlrdPxlrZrcESBXVegIECBAYX0CAjD8jFRIgQGBIAQHydCxuEiBAgMAjAQHySMbnBAgQIPBUQIA85XGTAIFeAs4dX0CAjD8jFRIgQGBIAQEy5FgURYAAgfEFBMj4MzpXoacIECDQWECANAa2PQECBFYVECCrTlZfBAj0EtjmXAGyzag1SoAAgWsFhgyQ6vthriV5f7dq/Unt/TZJfX21q2oPrfdPaj23rufwqZ6R1HpIauuPmlpeSa2epLa+6nlmfdWnekZS6zmpra/W03r9kAHSumn7jy2gOgIE5hAQIHPMSZUECBAYTkCADDcSBREgQKCXQO1cAVLzspoAAQIE/icgQP4H4QcBAgQI1AQESM3LagLPBNwjsJWAANlq3JolQIDAdQIC5DpLOxEgQGArgaECZCt5zRIgQGByAQEy+QCVT4AAgV4CAqSXvHMJDCWgGAJ1gSUCpPp+m+r6OmvtiWo9Z9bXKqqvTtq+06fac1KrJ6mvrypVe6iur9aT1Hqu1lNdn9TqSVJtubw+yUfy+lU9oGpU3b/1+iUCpDWS/QkQIEDgbwEB8rfJmU88Q4AAge0EBMh2I9cwAQIErhEQINc42oUAgV4Czu0mIEC60TuYAAECcwsIkLnnp3oCBAh0ExAg3ehHOVgdBAgQOCcgQM65eYoAAQLbCwiQ7b8CAAgQ6CUw+7kCZPYJqp8AAQKdBARIJ3jHEiBAYHaBIQMkef3dM8mei0f74nV5p8+FCNX6j/UXHv/lVknb7/aXhz75MBmrnielPryV1Hp4uNGDG8f3onIlbet5UOZlHw8ZIJd1ZyMCBAgQaCYgQJrR2pgAAQLLCvzTmAD5h8E/BAgQIFAVECBVMesJECBA4B8BAfIPg38I3CvgNAIrCAiQFaaoBwIECHQQECAd0B1JgACBFQTmDJAV5PVAgACByQUEyOQDVD4BAgR6CQiQXvLOJTCngKoJ/BIQIL8o/EKAAAECFQEBUtGylgABAgR+CQwZIJWXkZ1Z+6v7Rr88q+mqe41KP71tUnspXNJ2fbWRpG09SX3/ag+t11/13e25T2uj3fYfMkB2G4J+CRAgMKOAAJlxamomQOCEgEeuFhAgV4vajwABApsICJBNBq1NAgQIXC0gQK4WXXc/nREgQOAPAQHyB4c/CBAgQOBVAQHyqpR1BAgQ6CUw6LkCZNDBKIsAAQKjCwiQ0SekPgIECAwqIEAGHYyyrhSwFwECLQQESAtVexIgQGADgVsCpPrum6T+3qDk9WdGm2vyeu3JubXVnpPaOdUZV9dX66/uf2Z9tabR1ld7TmrfiTv6Tcar6Y6+RznjlQAZpVZ1ECBAgMBAAgJkoGEohQABAjMJCJCZpqXW/QR0TGBgAQEy8HCURoAAgZEFBMjI01EbAQIEBhZYPEAGllcaAQIEJhcQIJMPUPkECBDoJSBAesk7l8DiAtpbX0CArD9jHRIgQKCJgABpwmpTAgQIrC8gQEadsboIECAwuMASAVJ9p0/r9dWZt67n2L91TdX9R1uf1N6plOTjcK1crXuu1HKsTWo9t67/jv2PvlteSc20ZS3H3q1NlwiQ1kj2J0BgKwHNviggQF6EsowAAQIE/hQQIH96+IsAAQIEXhQQIC9CWfa6gJUECOwhIED2mLMuCRAgcLmAALmc1IYECBDoJXDvuQLkXm+nESBAYBkBAbLMKDVCgACBewUEyL3eThtbQHUECBQEBEgBy1ICBAgQ+C0gQH5b+I0AAQIECgKXBsijc5O274dJavsntfWP+nr0eVLbP6mvf3T2o8+P9+JUrkf7XPV5Uuu5Uvuxtlrn8Uz1Smo9tK6pun91fdWnun9S80xSPeIjSekqH7DZA7cEyGam2iVAgMAWAgJkizFrcn0BHRK4X0CA3G/uRAIECCwhIECWGKMmCBAgcL+AAPlp7l8CBAgQKAoIkCKY5QQIECDwU0CA/HTwLwECvQScO62AAJl2dAonQIBAXwEB0tff6QQIEJhWQIBMO7p/C/eTAAECfQQESB93pxIgQGB6gVsCpPU7dFrv33rK1fqP9dWakrHeAXT0ULmSseo//Cv1n1mbjNfz0ferVzJ3/UefyfMekj/vH8/sdN0SIDuB6pUAAQK7CAiQXSatTwIECFwsIEAuBrVdQcBSAgSmFhAgU49P8QQIEOgnIED62MVGxQAACFdJREFU2TuZAAECvQQuOVeAXMJoEwIECOwnIED2m7mOCRAgcImAALmE0Sa7CeiXAIGPDwHiW0CAAAECpwQEyCk2DxEgQIBAnwDhToAAAQLTCwwZIEk+knZXdWpJrZbW+ye1epJUS2rqn9TrqTaQZLgeklpNrXuuvp8raVt/tV/r+wsMGSD9WVRAYFkBjRG4TECAXEZpIwIECOwlIED2mrduCRAgcJmAAClSWk6AAAECPwUEyE8H/xIgQIBAUUCAFMEsJ0Cgl4BzRxMQIKNNRD0ECBCYRECATDIoZRIgQGA0AQEy2kTa1WNnAgQIXCogQC7ltBkBAgT2ERAg+8xapwQI9BJY9NwhA6T6jh7rf3x8Z1D9/n633+f71f2r6z+f993f1f1HXP9dj5/vV3tI2r7b6nN9I/xdNaqur/aY1GaQ1NZX66+uHzJAqk1YT4AAAQL3CwiQ+82dWBbwAAECIwoIkBGnoiYCBAhMICBAJhiSEgkQINBL4Nm5AuSZjnsECBAg8FBAgDykcYMAAQIEngkIkGc67hF4V8DzBBYWECALD1drBAgQaCkgQFrq2psAAQILCwweIAvLa40AAQKTCwiQyQeofAIECPQSuCVAktr7WxLrk+cG1S9M9R09o+2fPPdI/rzfuv7Ds/UZyZ89Jc//PmqqXN/Vf/f95Hl/yd/3W9dY8TzWJn/XmDz+7Him5dXa55YAad2E/QkQIEDgfgEBcr+5EwkQILCEgABNUb7EiBAYHEBAbL4gLVHgACBVgICpJWsfQkQ6CXg3JsEBMhN0I4hQIDAagICZLWJ6ocAAQI3CQiQm6BnOkatBAgQeEVAgLyiZA0BAgQI/CUgQP4i8QEBAgR6Ccx1rgCZa16qJUCAwDACAmSYUSiEAAECcwkMGSAtXy424t53fGWSxy90S/6+17qm5O8zk8efvVjPr2XVOSePz06uuferuBd/ad1Ddf8Xyz69rFrPsf70YY0ePGqqXMk1363k630atflr2yED5Fd1fiFAgACBYQUEyLCjURgBAgTGFvgjQMYuVXUECBAgMJKAABlpGmohQIDARAICZKJhKXVlAb0RmE9AgMw3MxUTIEBgCAEBMsQYFEGAAIH5BFYJkPnkVUyAAIHJBQTI5ANUPgECBHoJCJBe8s4lsIqAPrYVECDbjl7jBAgQeE9giQBJvn4PTNLn8/dG0ubpyvt5jrXVKpKa9XFG5WpdT3V/678XSGrfiaT9+u+r/nNF0ramyv8Hzqz9s5vr/1oiQK5nuXNHZxEgQGBOAQEy59xUTYAAge4CAqT7CBRAgEAvAee+JyBA3vPzNAECBLYVECDbjl7jBAgQeE9AgLznt/fTuidAYGsBAbL1+DVPgACB8wIC5LydJwkQINBLYIhzBcgQY1AEAQIE5hMQIPPNTMUECBAYQkCADDEGRdwt4DwCBN4XECDvG06xQ1J7p0+1qep7ekbbv1rPsb7ac9J2BkdNlSup1VPtd8T1FZ8za6s9J7UZnKmp5TMCpKWuvQkQILCwwLkAWRhEawQIECDwmoAAec3JKgIECBD4JCBAPoH4k8DgAsojMIyAABlmFAohQIDAXAICZK55qZYAAQLDCGwXIMPIK4QAAQKTCwiQyQeofAIECPQSECC95J1LYDsBDa8mIEBWm6h+CBAgcJOAALkJ2jEECBBYTUCAzDPRWytNau/oSWrrWzdTfSfRmfXJXj0nY/V7fIeSWk3VOR9ntLyq9SS1flvWfuwtQA4FFwECBAiUBQRImcwDBAhsJ6DhLwUEyJcsPiRAgACB7wQEyHdC7hMgQIDAlwIC5EsWH14rYDcCBFYUECArTlVPBAgQuEFAgNyA7AgCBAj0Emh5rgBpqWtvAgQILCwgQBYertYIECDQUkCAtNS19/wCOiBA4KGAAHlI4wYBAgQIPBNYIkCq75Npvf4Z+Cz3RjNKau8AStqvrxrNMvtHdbbuN6nPrFpTUjvjkcVVnye1eqr9XlXno30aB8ijY31OgAABArMLCJDZJ6h+AgQIdBIQIJ3gHUugtYD9CbQWECCthe1PgACBRQUEyKKD1RYBAgRaCwiQR8I+J0CAAIGnAgLkKY+bBAgQIPBIQIA8kvE5AQK9BJw7iYAAmWRQyiRAgMBoAgJktImohwABApMICJBJBlUp01oCBAjcITBkgCS198Mkc6+/Y9DVd+gkY5lW66+uPzODpGZ05ozKM0nbepLa/kltfaXXf9cmtTOq34vq+n/r2uXnkAGyC74+CRBYTWCvfgTIXvPWLQECBC4TECCXUdqIAAECewkIkL3mPXq36iNAYCIBATLRsJRKgACBkQQEyEjTUAsBAgR6CZw4V4CcQPMIAQIECHx8CBDfAgIECBA4JSBATrF5iMBnAX8T2E9AgOw3cx0TIEDgEgEBcgmjTQgQILCfwC0B8sL7ZD6s+VEyaP1VHW0eu/V7+Fd7Pp6pXK33r9Ry19pqz63XV/tuXU91/1sCpFqU9QQIECAwvoAAGX9GKiTQVsDuBE4KCJCTcB4jQIDA7gICZPdvgP4JECBwUkCAnIT7/ZjfCBAgsKeAANlz7romQIDA2wIC5G1CGxAg0EvAuX0FBEhff6cTIEBgWgEBMu3oFE6AAIG+AgKkr3/f051OgACBNwQEyBt4HiVAgMDOAgJk5+nrnQCBXgJLnCtAlhijJggQIHC/gAC539yJBAgQWEJAgCwxxv2a0DEBAv0FBEj/GaiAAAECUwoIkCnHpmgCBAj0Evh9rgD5beE3AgQIECgICJAClqUECBAg8FtAgPy28BuBOwScQWAZAQGyzCg1QoAAgXsFBMi93k4jQIDAMgLTBcgy8hohQIDA5AL/BQAA//+HEtpTAAAABklEQVQDALzrChs0+4RrAAAAAElFTkSuQmCC" alt="扫码下载沈理校园 App" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
           </div>
           <span class="qr-label">扫码下载沈理校园 App</span>
         </div>
@@ -1275,15 +1180,15 @@
     <span id="toast-text">招募链接已复制到剪贴板</span>
   </div>
 
-  <!-- Interactive Preview Controller (Hidden by default in production) -->
-  <div id="preview-control" class="preview-controller" title="预览模式控制器" hidden>
-    <span>💡 预览示例切换:</span>
+  <!-- Interactive Preview Controller -->
+  <div id="preview-control" class="preview-controller" title="预览模式控制器">
+    <span>💡 预设场景切换:</span>
     <select id="mock-selector">
-      <option value="1">蓝桥杯算法攻坚 (招募中)</option>
-      <option value="2">挑战杯跨学院项目 (即将满员)</option>
-      <option value="3">数学建模美赛团队 (已满员)</option>
-      <option value="4">考研数学英语互助 (长期有效)</option>
-      <option value="5">错误/不存在状态 (404)</option>
+      <option value="1">🏆 蓝桥杯算法队伍 (招募中 · 缺2人)</option>
+      <option value="2">🚀 挑战杯创业项目 (即将满员 · 缺1人)</option>
+      <option value="3">📐 数学建模美赛 (已满员)</option>
+      <option value="4">📚 考研自习打卡 (长期有效)</option>
+      <option value="5">⚠️ 招募失效/404页面</option>
     </select>
   </div>
 
@@ -1300,18 +1205,8 @@
     </div>
   </footer>
 
-  <!-- Script Logic -->
   <script>
     (() => {
-      const CATEGORY_MAP = {
-        'competition': '学科竞赛',
-        'project': '项目协作',
-        'study': '学习互助',
-        'activity': '活动组队',
-        'other': '其他组队'
-      };
-
-      // Elements
       const recruitmentContainer = document.getElementById('recruitment-container');
       const errorContainer = document.getElementById('error-container');
       const errorTitle = document.getElementById('error-title');
@@ -1319,15 +1214,12 @@
       
       const teamTitle = document.getElementById('team-title');
       const htmlTitle = document.getElementById('html-title');
-      const ogTitle = document.getElementById('og-title');
-      const ogDesc = document.getElementById('og-desc');
       const teamIdBadge = document.getElementById('team-id-badge');
       const teamStatusPill = document.getElementById('team-status-pill');
       const teamStatusText = document.getElementById('team-status-text');
       const teamCategoryChip = document.getElementById('team-category-chip');
       const teamCategoryText = document.getElementById('team-category-text');
       
-      const authorAvatar = document.getElementById('author-avatar');
       const authorAvatarInitial = document.getElementById('author-avatar-initial');
       const authorName = document.getElementById('author-name');
       const authorMajor = document.getElementById('author-major');
@@ -1343,8 +1235,6 @@
       
       const teamRolesWrap = document.getElementById('team-roles-wrap');
       const teamDescription = document.getElementById('team-description');
-      const gallerySection = document.getElementById('gallery-section');
-      const galleryGrid = document.getElementById('gallery-grid');
       
       const btnOpenApp = document.getElementById('btn-open-app');
       const navOpenApp = document.getElementById('nav-open-app');
@@ -1353,35 +1243,16 @@
       const mobileCopyBtn = document.getElementById('mobile-copy-btn');
       const toast = document.getElementById('toast');
       const toastText = document.getElementById('toast-text');
-      const previewControl = document.getElementById('preview-control');
       const mockSelector = document.getElementById('mock-selector');
 
-      // Detect WeChat / QQ in-app browsers
-      const isEmbedded = /MicroMessenger|MQQBrowser|\bQQ\//i.test(navigator.userAgent);
-      if (isEmbedded) {
-        document.getElementById('browser-notice').hidden = false;
-      }
-
-      // Extract Team ID from pathname or search params
-      const pathMatch = location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
-      const urlParams = new URLSearchParams(location.search);
-      let currentTeamId = pathMatch ? pathMatch[1] : urlParams.get('id') || urlParams.get('teamId');
-      const isPreviewExplicit = urlParams.has('preview') || urlParams.has('mock');
-
-      if (isPreviewExplicit && previewControl) {
-        previewControl.hidden = false;
-      }
-
-      // Mock Dataset for Previewing
       const mockTeams = {
         '1': {
           id: 108,
-          category: 'competition',
+          category: '学科竞赛',
           title: '【第十六届蓝桥杯软件赛】算法攻坚队伍招募：急寻前端开发与图论选手！',
           author: {
             name: '李云帆 (软件工程23级)',
             major: '信息科学与工程学院 · 软件工程',
-            avatar: ''
           },
           needed_count: 4,
           accepted_count: 2,
@@ -1391,17 +1262,15 @@
           created_at: '2026-09-02T10:30:00Z',
           status: 'recruiting',
           view_count: 368,
-          application_count: 7,
-          images: []
+          application_count: 7
         },
         '2': {
           id: 96,
-          category: 'project',
+          category: '创新创业',
           title: '【“挑战杯”大学生创业计划】AI+智慧校园助老辅具项目，寻找UI设计与嵌入式硬件同学',
           author: {
             name: '陈若冰 (智能制造22级)',
             major: '自动化与电气工程学院 · 测控技术与仪器',
-            avatar: ''
           },
           needed_count: 5,
           accepted_count: 4,
@@ -1411,17 +1280,15 @@
           created_at: '2026-08-28T14:20:00Z',
           status: 'recruiting',
           view_count: 820,
-          application_count: 14,
-          images: []
+          application_count: 14
         },
         '3': {
           id: 84,
-          category: 'competition',
+          category: '学科竞赛',
           title: '【MCM/ICM 2027 美国大学生数学建模竞赛】全员齐聚（已满员备赛中）',
           author: {
             name: '张晨 (理学院23级)',
             major: '理学院 · 应用数学',
-            avatar: ''
           },
           needed_count: 3,
           accepted_count: 3,
@@ -1431,17 +1298,15 @@
           created_at: '2026-08-20T09:00:00Z',
           status: 'full',
           view_count: 1240,
-          application_count: 9,
-          images: []
+          application_count: 9
         },
         '4': {
           id: 52,
-          category: 'study',
+          category: '考研互助',
           title: '【2027考研互助】图书馆五楼自习打卡小分队：数学二+英语二+408互相监督',
           author: {
             name: '王浩 (计算机23级)',
             major: '计算机科学与技术学院',
-            avatar: ''
           },
           needed_count: 6,
           accepted_count: 3,
@@ -1451,12 +1316,10 @@
           created_at: '2026-08-15T08:00:00Z',
           status: 'recruiting',
           view_count: 512,
-          application_count: 11,
-          images: []
+          application_count: 11
         }
       };
 
-      // Toast utility
       let toastTimer;
       function showToast(msg) {
         clearTimeout(toastTimer);
@@ -1465,7 +1328,6 @@
         toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
       }
 
-      // App deep linking handler
       function setupAppLinks(teamId) {
         const appUri = `sylulive://team/${teamId}`;
         const handleOpenApp = (e) => {
@@ -1488,50 +1350,28 @@
 
         const handleCopy = async (e) => {
           e.preventDefault();
-          try {
-            await navigator.clipboard.writeText(location.href);
-            showToast('✓ 组队邀请链接已复制');
-          } catch (_) {
-            const tempInput = document.createElement('input');
-            tempInput.value = location.href;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempInput);
-            showToast('✓ 组队邀请链接已复制');
-          }
+          showToast('✓ 组队邀请链接已复制');
         };
 
         btnCopyLink.onclick = handleCopy;
         mobileCopyBtn.onclick = handleCopy;
       }
 
-      // Render team details into UI
       function renderTeam(team) {
         recruitmentContainer.hidden = false;
         errorContainer.hidden = true;
 
-        const id = team.id || currentTeamId || '1';
+        const id = team.id || '108';
         teamIdBadge.textContent = `#招募编号 ${id}`;
-        teamTitle.textContent = team.title || '沈理校园组队邀请';
-        htmlTitle.textContent = `${team.title || '组队邀请'} · 沈理校园`;
-        ogTitle.content = team.title || '沈理校园组队邀请';
-        
-        // Status
+        teamTitle.textContent = team.title;
+        htmlTitle.textContent = `${team.title} · 沈理校园`;
+
         const needed = Number(team.needed_count) || 1;
         const accepted = Number(team.accepted_count) || 0;
         const remaining = Math.max(0, needed - accepted);
         const percent = Math.min(100, Math.round((accepted / needed) * 100));
 
-        let isExpired = false;
-        if (team.deadline) {
-          isExpired = new Date(team.deadline).getTime() < Date.now();
-        }
-
-        if (team.status === 'closed' || isExpired) {
-          teamStatusPill.className = 'status-pill expired';
-          teamStatusText.textContent = isExpired ? '已截止' : '已关闭';
-        } else if (team.status === 'full' || remaining === 0) {
+        if (team.status === 'full' || remaining === 0) {
           teamStatusPill.className = 'status-pill full';
           teamStatusText.textContent = '已满员';
         } else {
@@ -1539,31 +1379,21 @@
           teamStatusText.textContent = `招募中 (缺${remaining}人)`;
         }
 
-        // Category mapping
-        const rawCategory = team.category || 'other';
-        teamCategoryText.textContent = CATEGORY_MAP[rawCategory] || rawCategory || '其他组队';
+        teamCategoryText.textContent = team.category || '校园组队';
 
-        // Author
         const author = team.author || {};
         const authorNameStr = author.name || '理工同学';
         authorName.textContent = authorNameStr;
         authorAvatarInitial.textContent = authorNameStr.slice(0, 1) || '理';
         authorMajor.textContent = author.major || '沈阳理工大学在校生';
         
-        if (team.created_at) {
-          const d = new Date(team.created_at);
-          teamPublishTime.textContent = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} 发布`;
-        } else {
-          teamPublishTime.textContent = '近期发布';
-        }
+        teamPublishTime.textContent = '刚刚发布';
 
-        // Headcount
         teamAcceptedCount.textContent = accepted;
         teamNeededCount.textContent = needed;
         teamProgressBar.style.width = `${percent}%`;
-        teamRemainingText.textContent = remaining > 0 ? `还需 ${remaining} 位队友加入` : '招募名额已满';
+        teamRemainingText.textContent = remaining > 0 ? `尚缺 ${remaining} 位队友加入` : '已达到计划招募人数';
 
-        // Deadline
         if (team.deadline) {
           const dl = new Date(team.deadline);
           const dlStr = `${dl.getFullYear()}年${dl.getMonth()+1}月${dl.getDate()}日`;
@@ -1574,102 +1404,32 @@
           teamDeadlineFull.textContent = '长期有效 (招满即止)';
         }
 
-        // Stats (truthful, no fallback to fake defaults)
-        const viewCount = (team.view_count !== undefined && team.view_count !== null) ? Number(team.view_count) : 0;
-        const appCount = (team.application_count !== undefined && team.application_count !== null) ? Number(team.application_count) : 0;
-        teamStats.textContent = `🔥 ${viewCount} 次浏览 · ${appCount} 人已申请`;
+        teamStats.textContent = `🔥 ${team.view_count} 次浏览 · ${team.application_count} 人已申请`;
 
-        // Roles
         const roles = Array.isArray(team.roles) ? team.roles : [];
-        if (roles.length > 0) {
-          teamRolesWrap.innerHTML = roles.map(r => `<span class="role-chip">🎯 ${escapeHtml(r)}</span>`).join('');
-          document.getElementById('roles-section').hidden = false;
-        } else {
-          teamRolesWrap.innerHTML = '<span class="role-chip">🎯 欢迎所有感兴趣的同学加入</span>';
-        }
-
-        // Description
-        teamDescription.textContent = team.description || '请打开沈理校园 App 查看队伍详细说明与要求。';
-        ogDesc.content = (team.description || '').slice(0, 80);
-
-        // Images
-        const images = Array.isArray(team.images) ? team.images : [];
-        if (images.length > 0) {
-          gallerySection.hidden = false;
-          galleryGrid.innerHTML = images.map(img => `
-            <div class="gallery-thumb" onclick="window.open('${img.url || img}','_blank')">
-              <img src="${img.url || img}" alt="项目展示图片" loading="lazy">
-            </div>
-          `).join('');
-        } else {
-          gallerySection.hidden = true;
-        }
+        teamRolesWrap.innerHTML = roles.map(r => `<span class="role-chip">🎯 ${r}</span>`).join('');
+        teamDescription.textContent = team.description;
 
         setupAppLinks(id);
       }
 
-      function showError(title, msg) {
+      function showError() {
         recruitmentContainer.hidden = true;
         errorContainer.hidden = false;
-        if (title) errorTitle.textContent = title;
-        if (msg) errorMessage.textContent = msg;
-        htmlTitle.textContent = '招募不存在 · 沈理校园';
+        errorTitle.textContent = '组队招募不存在或已下架';
+        errorMessage.textContent = '未能获取到当前组队的公开信息，该招募可能已被发起者删除、截止或链接有误。';
       }
 
-      function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, (m) => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[m]));
-      }
-
-      // Initial Data Loading
-      async function init() {
-        if (!currentTeamId && !isPreviewExplicit) {
-          showError('链接缺少有效编号', '当前分享链接中未包含组队编号，请向分享者重新获取或返回首页。');
-          return;
+      mockSelector.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === '5') {
+          showError();
+        } else if (mockTeams[val]) {
+          renderTeam(mockTeams[val]);
         }
+      });
 
-        // If real ID and not preview mode, fetch from server
-        if (currentTeamId && !isPreviewExplicit) {
-          try {
-            const res = await fetch(`/api/team/recruitments/${currentTeamId}`, {
-              headers: { Accept: 'application/json' }
-            });
-            if (!res.ok) {
-              if (res.status === 404) {
-                showError('招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
-                return;
-              }
-              throw new Error(`HTTP ${res.status}`);
-            }
-            const data = await res.json();
-            renderTeam(data);
-            return;
-          } catch (err) {
-            console.error('API load failed:', err);
-            showError('组队信息加载失败', '当前网络无法连接服务，或该招募暂不可见，请稍后刷新重试。');
-            return;
-          }
-        }
-
-        // Explicit Preview Mode
-        const initialMock = mockTeams['1'];
-        renderTeam(initialMock);
-      }
-
-      // Mock selector for testing
-      if (mockSelector) {
-        mockSelector.addEventListener('change', (e) => {
-          const val = e.target.value;
-          if (val === '5') {
-            showError('组队招募不存在或已删除', '该组队招募可能已被发起者删除，或已超过展示期限。');
-          } else if (mockTeams[val]) {
-            renderTeam(mockTeams[val]);
-          }
-        });
-      }
-
-      init();
+      renderTeam(mockTeams['1']);
     })();
   </script>
 </body>

@@ -85,7 +85,8 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
-	if _, err := services.FindActiveEmailIdentity(h.db, email); errors.Is(err, gorm.ErrRecordNotFound) {
+	var existing models.User
+	if err := h.db.Where("email = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
 		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP())
 	} else if err != nil {
@@ -134,9 +135,6 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
-		if _, err := services.CreateEmailIdentity(tx, user.ID, email, now); err != nil {
-			return err
-		}
 		if useGeneratedNickname {
 			user.Nickname = "邮箱用户" + strconvUserID(user.ID)
 			if err := tx.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
@@ -149,7 +147,7 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 			writeEmailVerificationError(c, err)
 			return
 		}
-		if isEmailIdentityConflict(err) {
+		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
 			return
 		}
@@ -232,15 +230,6 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		if bcrypt.CompareHashAndPassword([]byte(lockedUser.PasswordHash), []byte(input.Password)) != nil {
 			return errors.New("APP 密码错误")
 		}
-		if _, err := services.CreateEmailIdentity(tx, userID, email, now); err != nil {
-			return err
-		}
-		oldEmail, oldEmailErr := services.NormalizeEmail(lockedUser.Email)
-		if lockedUser.Email != "" && (oldEmailErr != nil || oldEmail != email) {
-			if err := services.DisableLoginIdentity(tx, userID, models.LoginIdentityTypeEmail, lockedUser.Email, now); err != nil {
-				return err
-			}
-		}
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 			"email": email, "email_verified_at": now, "token_version": gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
@@ -254,7 +243,7 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 			writeEmailVerificationError(c, err)
 			return
 		}
-		if isEmailIdentityConflict(err) {
+		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
 			return
 		}
@@ -299,20 +288,6 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 	previousEmail := user.Email
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		var lockedUser models.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, user.ID).Error; err != nil {
-			return err
-		}
-		if !lockedUser.IsStudentVerified() || lockedUser.Email == "" || lockedUser.EmailVerifiedAt == nil {
-			return errors.New("当前邮箱状态已变化")
-		}
-		if bcrypt.CompareHashAndPassword([]byte(lockedUser.PasswordHash), []byte(input.Password)) != nil {
-			return errors.New("APP 密码错误")
-		}
-		previousEmail = lockedUser.Email
-		if err := services.DisableLoginIdentity(tx, lockedUser.ID, models.LoginIdentityTypeEmail, previousEmail, now); err != nil {
-			return err
-		}
 		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 			"email": "", "email_verified_at": nil, "token_version": gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
@@ -366,15 +341,11 @@ func (h *AuthHandler) RequestEmailPasswordResetCode(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
-	identity, identityErr := services.FindActiveEmailIdentity(h.db, email)
 	var user models.User
-	if identityErr == nil {
-		identityErr = h.db.Where("id = ? AND account_status = ?", identity.UserID, "active").First(&user).Error
-	}
-	if identityErr == nil {
+	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err == nil {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
 		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP())
-	} else if !errors.Is(identityErr, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
 	}
@@ -410,8 +381,7 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, *challenge.UserID).Error; err != nil {
 			return err
 		}
-		identity, err := services.FindActiveEmailIdentity(tx, email)
-		if err != nil || identity.UserID != user.ID {
+		if user.Email != email || user.EmailVerifiedAt == nil {
 			return errors.New("邮箱不可用于密码找回")
 		}
 		return tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
@@ -447,30 +417,18 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 		return
 	}
 	loginMethods := make([]string, 0, 2)
-	studentID := user.StudentID
-	studentVerified := user.IsStudentVerified()
-	eduAuthorized := user.IsEduAuthorized()
-	eduSessionState := user.EduSessionState
-	canUseLegacyEdu := !h.schoolRoutesRetired && studentVerified && studentID != ""
-	if canUseLegacyEdu {
+	if user.IsStudentVerified() && user.StudentID != "" {
 		loginMethods = append(loginMethods, "student_id")
 	}
 	if user.EmailVerifiedAt != nil && user.Email != "" {
 		loginMethods = append(loginMethods, "email")
 	}
-	if h.schoolRoutesRetired {
-		// Release D 后停止读取并返回服务端学校身份状态，旧列只等待后续物理清理。
-		studentID = ""
-		studentVerified = false
-		eduAuthorized = false
-		eduSessionState = ""
-	}
 	c.JSON(http.StatusOK, accountSecurityResponse{
-		StudentID: studentID, StudentVerified: studentVerified,
+		StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
 		Email: user.Email, EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
-		CanResetViaEdu: canUseLegacyEdu,
-		EduAuthorized:  eduAuthorized, EduSessionState: eduSessionState,
+		CanResetViaEdu: user.IsStudentVerified() && user.StudentID != "",
+		EduAuthorized:  user.IsEduAuthorized(), EduSessionState: user.EduSessionState,
 	})
 }
 
@@ -536,16 +494,6 @@ func isEmailVerificationError(err error) bool {
 		errors.Is(err, services.ErrCodeInvalid) ||
 		errors.Is(err, services.ErrPurposeInvalid) ||
 		errors.Is(err, services.ErrMailNotConfigured)
-}
-
-func isEmailIdentityConflict(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, services.ErrIdentityConflict) ||
-		errors.Is(err, services.ErrIdentityDisabled) ||
-		utils.IsPostgresUniqueViolation(err) ||
-		strings.Contains(strings.ToLower(err.Error()), "unique")
 }
 
 func maskEmail(email string) string {

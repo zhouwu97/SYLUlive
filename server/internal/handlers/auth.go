@@ -110,16 +110,9 @@ type AuthHandler struct {
 	db          *gorm.DB
 	cleanupJobs *services.EduCredentialCleanupJobService
 
-	jwtSecret               string
-	emailVerification       *services.EmailVerificationService
-	accountIdentityReadMode string
-	schoolRoutesRetired     bool
+	jwtSecret         string
+	emailVerification *services.EmailVerificationService
 }
-
-const (
-	AccountIdentityReadModeLegacy   = "legacy"
-	AccountIdentityReadModeIdentity = "identity"
-)
 
 // NewAuthHandler 鍒涘缓璁よ瘉澶勭悊鍣
 
@@ -143,31 +136,8 @@ func NewAuthHandlerWithEmailVerificationAndCleanup(
 ) *AuthHandler {
 	return &AuthHandler{
 		db: db, jwtSecret: jwtSecret, emailVerification: emailVerification, cleanupJobs: cleanupJobs,
-		accountIdentityReadMode: AccountIdentityReadModeLegacy,
 	}
 
-}
-
-// SetAccountIdentityReadMode 只允许显式选择已定义的登录读路径；现有构造器默认 legacy。
-func (h *AuthHandler) SetAccountIdentityReadMode(mode string) error {
-	if h == nil {
-		return errors.New("认证处理器未配置")
-	}
-	normalized := strings.ToLower(strings.TrimSpace(mode))
-	switch normalized {
-	case AccountIdentityReadModeLegacy, AccountIdentityReadModeIdentity:
-		h.accountIdentityReadMode = normalized
-		return nil
-	default:
-		return errors.New("账号 Identity 读模式只能是 legacy 或 identity")
-	}
-}
-
-// SetSchoolAcademicRoutesRetired 同步 Release D 门禁，避免账号安全页继续暴露已退役能力。
-func (h *AuthHandler) SetSchoolAcademicRoutesRetired(retired bool) {
-	if h != nil {
-		h.schoolRoutesRetired = retired
-	}
 }
 
 type GraduateRegisterInput struct {
@@ -939,9 +909,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 				return err
 			}
 		}
-		if _, err := services.CreateEmailIdentity(tx, user.ID, email, now); err != nil {
-			return err
-		}
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
 	}
 	if h.emailVerification != nil {
@@ -957,8 +924,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			return
 		}
 
-		if errors.Is(err, services.ErrIdentityConflict) || errors.Is(err, services.ErrIdentityDisabled) ||
-			utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
 			return
 		}
@@ -1211,26 +1177,15 @@ type eduVerifyResult struct {
 	Major string `json:"major"`
 }
 
-// LoginEdu 是迁移期独立的旧账号登录入口，只校验 APP 密码。
-// 它不接收、不使用教务密码，也不会访问学校系统；Sunset 后由路由层在读取 Body 前返回 410。
+// LoginEdu 缁熶竴鐧诲綍锛堟暀鍔￠獙璇+鑷鍔ㄦ敞鍐岋級
+
 func (h *AuthHandler) LoginEdu(c *gin.Context) {
-	var input LoginInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
-		return
-	}
-	account := input.Account
-	if strings.TrimSpace(account) == "" {
-		account = input.StudentID
-	}
-	account = normalizeLoginAccount(account)
-	if account == "" || strings.Contains(account, "@") {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "旧账号入口只接受学号或 QQ", "code": "LEGACY_ACCOUNT_REQUIRED",
-		})
-		return
-	}
-	h.completePasswordLogin(c, account, input.Password, "legacy", h.findLegacyLoginUser, "legacy_account_login")
+	// 旧入口缺少专项授权证据，继续保留会形成绕过 /edu/bind 的第二条凭据写入链路。
+	// 统一要求用户先登录，再通过已认证接口完成教务专项授权。
+	c.JSON(http.StatusGone, gin.H{
+		"code":  "LEGACY_EDU_LOGIN_RETIRED",
+		"error": "请先使用学号或邮箱登录，再到账号与安全中授权教务",
+	})
 }
 
 // ForgotPasswordInput 蹇樿板瘑鐮佽緭鍏
@@ -1391,82 +1346,62 @@ func verifyEduWithPython(studentID, eduPassword, _ string) (*eduVerifyResult, er
 
 }
 
-// Login 在显式完成 S4 切换前保留旧 Email/StudentID/QQ 兼容读路径。
-// identity 模式只允许有效 Email Identity，且未命中时绝不回退旧字段。
+// Login 鐧诲綍
+
 func (h *AuthHandler) Login(c *gin.Context) {
+
 	var input LoginInput
+
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
+
 	}
+
 	accountInput := input.Account
 	if strings.TrimSpace(accountInput) == "" {
 		accountInput = input.StudentID
 	}
-	if h.accountIdentityReadMode != AccountIdentityReadModeIdentity {
-		account := normalizeLoginAccount(accountInput)
-		if account == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "请输入学号或邮箱"})
-			return
-		}
-		h.completePasswordLogin(c, account, input.Password, "legacy", h.findLegacyCompatibleLoginUser, "")
+	account := normalizeLoginAccount(accountInput)
+	if account == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入学号或邮箱"})
 		return
 	}
-	email, err := services.NormalizeEmail(accountInput)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "请使用已验证邮箱登录", "code": "EMAIL_LOGIN_REQUIRED",
-		})
-		return
-	}
-	h.completePasswordLogin(c, email, input.Password, "email", h.findLoginUser, "")
-}
 
-// findLegacyCompatibleLoginUser 仅供 S0-S3 普通登录读路径使用。
-func (h *AuthHandler) findLegacyCompatibleLoginUser(account string) (models.User, error) {
-	var user models.User
-	if strings.Contains(account, "@") {
-		email, err := services.NormalizeEmail(account)
-		if err != nil {
-			return user, err
-		}
-		err = h.db.Where("account_status = ? AND email = ? AND email_verified_at IS NOT NULL", "active", email).
-			First(&user).Error
-		return user, err
-	}
-	return h.findLegacyLoginUser(account)
-}
-
-type loginUserResolver func(account string) (models.User, error)
-
-// completePasswordLogin 统一邮箱和迁移期旧账号入口的限流、APP 密码校验与会话签发。
-// resolver 决定身份来源，避免普通 Login 在未命中时出现任何 Legacy fallback。
-func (h *AuthHandler) completePasswordLogin(
-	c *gin.Context,
-	account string,
-	password string,
-	throttleNamespace string,
-	resolver loginUserResolver,
-	auditAction string,
-) {
 	now := time.Now()
-	unknownKey := throttleNamespace + ":account:" + account
+
+	unknownKey := "account:" + account
 	if remaining, locked := currentLoginLock(unknownKey, now); locked {
+
 		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
+
 		c.JSON(http.StatusTooManyRequests, gin.H{
+
 			"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining)),
 		})
+
 		return
+
 	}
-	user, err := resolver(account)
+
+	user, err := h.findLoginUser(account)
 	if err != nil {
+
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			registerLoginFailure(unknownKey, now)
-			c.JSON(http.StatusNotFound, gin.H{"error": "账号或密码错误"})
+
+			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
+
 			return
+
 		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询账号失败"})
+
 		return
+
 	}
 	userKey := "user:" + strconv.FormatUint(uint64(user.ID), 10)
 	if remaining, locked := currentLoginLock(userKey, now); locked {
@@ -1474,44 +1409,71 @@ func (h *AuthHandler) completePasswordLogin(
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining))})
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+
 		lockFor := registerLoginFailure(userKey, now)
+
 		if lockFor > 0 {
+
 			c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
+
 			c.JSON(http.StatusTooManyRequests, gin.H{
+
 				"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor)),
 			})
+
 			return
+
 		}
+
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入", "code": "INVALID_PASSWORD"})
+
 		return
+
 	}
+
 	clearLoginFailures(userKey)
 	clearLoginFailures(unknownKey)
-	if auditAction != "" {
-		h.writeSecurityAudit(user.ID, auditAction, "")
+
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+		return
 	}
-	h.issueAuthSession(c, user, http.StatusOK)
+
+	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+
+	response, responseErr := selfUserResponseForDB(h.db, user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+
+		"token": token,
+
+		"user": response,
+	})
+
 }
 
-// findLoginUser 只从有效且已验证的 Email Identity 解析 user.id。
+// findLoginUser 依据新账号规则解析登录标识：邮箱、学号、兼容期 QQ 数字账号。
 func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 	var user models.User
-	identity, err := services.FindActiveEmailIdentity(h.db, account)
-	if err != nil {
-		return user, err
-	}
-	err = h.db.Where("id = ? AND account_status = ?", identity.UserID, "active").First(&user).Error
-	return user, err
-}
-
-// findLegacyLoginUser 仅供独立迁移路由使用。普通 /api/login 不得调用此函数。
-func (h *AuthHandler) findLegacyLoginUser(account string) (models.User, error) {
-	var user models.User
+	// 未完成注册清理的占位账号不得登录，避免远端身份残留时产生可用会话。
 	activeUsers := func() *gorm.DB {
 		return h.db.Where("account_status = ?", "active")
 	}
 	switch {
+	case strings.Contains(account, "@"):
+		email, err := services.NormalizeEmail(account)
+		if err != nil {
+			return user, err
+		}
+		return user, activeUsers().Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error
 	case regexp.MustCompile(`^[0-9]{8,20}$`).MatchString(account):
 		err := activeUsers().Where("student_id = ? AND student_verified_at IS NOT NULL", account).First(&user).Error
 		if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {

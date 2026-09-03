@@ -212,13 +212,13 @@ String teamCategoryLabel(String category) => _categoryLabel(category);
 Color teamCategoryColor(String category) => _categoryColor(category);
 String _categoryLabel(String value) =>
     const {
-      'competition': '竞赛',
-      'project': '项目',
-      'study': '学习',
-      'activity': '活动',
-      'other': '其他'
+      'competition': '学科竞赛',
+      'project': '项目协作',
+      'study': '学习互助',
+      'activity': '活动组队',
+      'other': '其他组队'
     }[value] ??
-    '其他';
+    '其他组队';
 Color _categoryColor(String value) =>
     const {
       'competition': CampusTheme.blue,

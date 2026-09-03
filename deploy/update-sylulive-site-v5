@@ -7,6 +7,8 @@ set -Eeuo pipefail
 readonly SITE_ROOT="/opt/sylulive-site-v5"
 readonly BACKUP_ROOT="/opt/sylulive-site-v5-backups"
 readonly MANIFEST_ROOT="/var/lib/sylulive-site-v5"
+readonly NGINX_CONFIG="/etc/nginx/conf.d/sylulive.conf"
+readonly CURRENT_RELEASE_CERT_FINGERPRINT="A3:67:48:6B:8B:5D:5E:EB:F6:7D:28:49:80:9C:B9:B0:9C:5C:3E:4D:C9:0D:80:15:13:4A:F4:16:07:7E:FB:9E"
 
 staging=""
 backup=""
@@ -15,6 +17,19 @@ switched=0
 fail() {
     printf '[错误] %s\n' "$*" >&2
     exit 1
+}
+
+require_deep_link_routes() {
+    [[ -f "$NGINX_CONFIG" ]] \
+        || fail "生产 Nginx 配置不存在: $NGINX_CONFIG"
+    grep -Fq 'location = /.well-known/assetlinks.json {' "$NGINX_CONFIG" \
+        || fail "生产 Nginx 未配置 assetlinks.json 路由"
+    grep -Fq 'try_files /.well-known/assetlinks.json =404;' "$NGINX_CONFIG" \
+        || fail "生产 Nginx 的 assetlinks.json 路由不完整"
+    grep -Fq 'location ~ ^/team/[1-9][0-9]*/?$ {' "$NGINX_CONFIG" \
+        || fail "生产 Nginx 未配置组队分享路由"
+    grep -Fq 'try_files /team/index.html =404;' "$NGINX_CONFIG" \
+        || fail "生产 Nginx 的组队分享路由不完整"
 }
 
 restore_on_failure() {
@@ -60,7 +75,15 @@ fi
 [[ -f "$source_dir/index.html" ]] || fail "缺少 index.html"
 [[ -f "$source_dir/download.html" ]] || fail "缺少 download.html"
 [[ -f "$source_dir/assets/brand-mascot.webp" ]] || fail "缺少 assets/brand-mascot.webp"
+[[ -f "$source_dir/.well-known/assetlinks.json" ]] \
+    || fail "缺少 Android App Links assetlinks.json"
+[[ -f "$source_dir/team/index.html" ]] \
+    || fail "缺少组队分享落地页 team/index.html"
+grep -Fq "$CURRENT_RELEASE_CERT_FINGERPRINT" \
+    "$source_dir/.well-known/assetlinks.json" \
+    || fail "assetlinks.json 未登记当前 release 签名指纹"
 grep -Fq '<title>沈理校园 · SYLUlive</title>' "$source_dir/index.html" || fail "首页标题不是沈理校园官网标题"
+require_deep_link_routes
 
 install -d -m 0755 "$BACKUP_ROOT" "$MANIFEST_ROOT"
 staging="${SITE_ROOT}.new.$$"

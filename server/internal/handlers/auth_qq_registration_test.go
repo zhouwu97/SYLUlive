@@ -25,9 +25,6 @@ func TestQQVerificationCredentialCanBeConsumedByRegistration(t *testing.T) {
 	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
-	if err := models.EnsureAccountIdentitySchema(db); err != nil {
-		t.Fatalf("migrate account identity schema: %v", err)
-	}
 
 	qq := "12345678"
 	verifyCodeStore.Lock()
@@ -78,15 +75,7 @@ func TestQQVerificationCredentialCanBeConsumedByRegistration(t *testing.T) {
 	if registered.QQ != qq {
 		t.Fatalf("兼容注册没有保留 QQ 登录标识: %q", registered.QQ)
 	}
-	var identity models.UserLoginIdentity
-	if err := db.Where("user_id = ? AND type = ? AND disabled_at IS NULL", registered.ID, models.LoginIdentityTypeEmail).
-		First(&identity).Error; err != nil {
-		t.Fatalf("兼容注册没有创建 Email Identity: %v", err)
-	}
-	if identity.IdentifierNormalized != qq+"@qq.com" || identity.VerifiedAt == nil {
-		t.Fatalf("兼容注册 Email Identity 错误: %+v", identity)
-	}
-	loginUser, err := handler.findLegacyLoginUser(qq)
+	loginUser, err := handler.findLoginUser(qq)
 	if err != nil || loginUser.ID != registered.ID {
 		t.Fatalf("QQ 重新登录定位用户失败: id=%d err=%v", loginUser.ID, err)
 	}
@@ -96,83 +85,6 @@ func TestQQVerificationCredentialCanBeConsumedByRegistration(t *testing.T) {
 	}
 	if consentCount != 6 {
 		t.Fatalf("legal consent count=%d, want 6", consentCount)
-	}
-}
-
-func TestQQEmailRegistrationRollsBackUserAndChallengeOnIdentityConflict(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(sqlite.Open("file:qq-registration-identity-conflict?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开数据库失败: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("关闭测试数据库失败: %v", err)
-		}
-	})
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.EmailVerificationChallenge{}); err != nil {
-		t.Fatalf("迁移测试表失败: %v", err)
-	}
-	if err := models.EnsureAccountIdentitySchema(db); err != nil {
-		t.Fatalf("迁移账号 Identity 表失败: %v", err)
-	}
-
-	qq := "12345680"
-	email := qq + "@qq.com"
-	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
-	owner := models.User{Email: "owner@example.com", EmailVerifiedAt: &now, PasswordHash: "hash", Nickname: "历史邮箱所有者"}
-	if err := db.Create(&owner).Error; err != nil {
-		t.Fatalf("创建历史所有者失败: %v", err)
-	}
-	if _, err := services.CreateEmailIdentity(db, owner.ID, email, now); err != nil {
-		t.Fatalf("创建冲突 Identity 失败: %v", err)
-	}
-	mailer := &accountSecurityTestMailer{}
-	verification := services.NewEmailVerificationService(db, mailer, "test-ip-secret", func() time.Time { return now })
-	if err := verification.Request(email, models.EmailVerificationPurposeRegister, nil, "127.0.0.1"); err != nil {
-		t.Fatalf("请求注册验证码失败: %v", err)
-	}
-	code := mailer.codes[email+":"+models.EmailVerificationPurposeRegister]
-
-	handler := NewAuthHandlerWithEmailVerification(db, "test-jwt-secret", verification)
-	recorder := httptest.NewRecorder()
-	context, _ := gin.CreateTestContext(recorder)
-	context.Request = httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{
-		"qq":"12345680","code":"`+code+`","password":"password123",
-		"user_agreement_accepted":true,"privacy_policy_accepted":true,
-		"community_rules_accepted":true,"minor_protection_accepted":true,
-		"content_complaint_accepted":true,"sdk_disclosure_accepted":true
-	}`))
-	context.Request.Header.Set("Content-Type", "application/json")
-	handler.Register(context)
-	if recorder.Code != http.StatusConflict {
-		t.Fatalf("Identity 冲突注册状态=%d，内容=%s", recorder.Code, recorder.Body.String())
-	}
-
-	var createdUsers int64
-	if err := db.Model(&models.User{}).Where("qq = ? OR email = ?", qq, email).Count(&createdUsers).Error; err != nil {
-		t.Fatal(err)
-	}
-	if createdUsers != 0 {
-		t.Fatalf("Identity 冲突后仍创建了 %d 个用户", createdUsers)
-	}
-	var consentCount int64
-	if err := db.Model(&models.UserLegalConsent{}).Count(&consentCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if consentCount != 0 {
-		t.Fatalf("Identity 冲突后仍写入了 %d 条法律同意", consentCount)
-	}
-	var challenge models.EmailVerificationChallenge
-	if err := db.Where("email = ? AND purpose = ?", email, models.EmailVerificationPurposeRegister).First(&challenge).Error; err != nil {
-		t.Fatalf("读取注册验证码失败: %v", err)
-	}
-	if challenge.ConsumedAt != nil {
-		t.Fatal("Identity 冲突时验证码不应被消费")
 	}
 }
 

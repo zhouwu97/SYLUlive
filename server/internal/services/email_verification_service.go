@@ -13,10 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -115,32 +113,11 @@ func NewEmailVerificationService(db *gorm.DB, mailer VerificationMailer, ipSecre
 }
 
 func NormalizeEmail(input string) (string, error) {
-	// 只去除协议约定的 ASCII 空白；其余控制字符一律拒绝，避免展示值与
-	// 唯一性判断使用不同的规范化规则。不会应用 Gmail 点号或 +tag 特例。
-	email := strings.Trim(input, " \t\r\n\f\v")
-	if email == "" || !utf8.ValidString(email) || len(email) > 320 || strings.IndexFunc(email, func(r rune) bool {
-		return r < 0x20 || r == 0x7f
-	}) >= 0 {
+	email := strings.ToLower(strings.TrimSpace(input))
+	if len(email) > 320 || !emailPattern.MatchString(email) {
 		return "", ErrEmailInvalid
 	}
-	if strings.Count(email, "@") != 1 || !emailPattern.MatchString(email) {
-		return "", ErrEmailInvalid
-	}
-	parts := strings.SplitN(email, "@", 2)
-	local, domain := parts[0], parts[1]
-	if local == "" || domain == "" || len(local) > 64 {
-		return "", ErrEmailInvalid
-	}
-	// IDNA 只作用于域名；本地部分按项目规则整体转小写，不做供应商特例。
-	asciiDomain, err := idna.Lookup.ToASCII(domain)
-	if err != nil || asciiDomain == "" || len(asciiDomain) > 255 {
-		return "", ErrEmailInvalid
-	}
-	normalized := strings.ToLower(local) + "@" + strings.ToLower(asciiDomain)
-	if len(normalized) > 320 || !emailPattern.MatchString(normalized) {
-		return "", ErrEmailInvalid
-	}
-	return normalized, nil
+	return email, nil
 }
 
 func IsVerificationPurpose(purpose string) bool {

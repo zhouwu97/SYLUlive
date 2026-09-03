@@ -66,24 +66,6 @@ func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) 
 	require.True(t, Load().ImageVariantWorkerEnabled)
 }
 
-func TestLoadAccountIdentityReadModeDefaultsLegacyAndAcceptsIdentity(t *testing.T) {
-	setBaseConfigEnv(t, "debug")
-	t.Setenv("ACCOUNT_IDENTITY_READ_MODE", "")
-	require.Equal(t, AccountIdentityReadModeLegacy, Load().AccountIdentityReadMode)
-
-	t.Setenv("ACCOUNT_IDENTITY_READ_MODE", " IDENTITY ")
-	require.Equal(t, AccountIdentityReadModeIdentity, Load().AccountIdentityReadMode)
-}
-
-func TestLoadRejectsInvalidAccountIdentityReadMode(t *testing.T) {
-	setBaseConfigEnv(t, "debug")
-	t.Setenv("ACCOUNT_IDENTITY_READ_MODE", "fallback")
-	require.PanicsWithError(t,
-		"ACCOUNT_IDENTITY_READ_MODE 只能是 legacy 或 identity",
-		func() { _ = Load() },
-	)
-}
-
 func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {
 	setBaseConfigEnv(t, "release")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")

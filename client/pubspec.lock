@@ -628,7 +628,7 @@ packages:
       sha256: "1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867"
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.3"
+      version: "0.20.3"
   jni:
     dependency: transitive
     description:
@@ -724,7 +724,7 @@ packages:
       sha256: "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.20"
+      version: "0.12.20"
   material_color_utilities:
     dependency: transitive
     description:
@@ -740,7 +740,7 @@ packages:
       sha256: "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"
       url: "https://pub.dev"
     source: hosted
-    version: "1.19.0"
+      version: "1.19.0"
   mime:
     dependency: transitive
     description:
@@ -1153,7 +1153,7 @@ packages:
       sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.12"
+      version: "0.7.12"
   timezone:
     dependency: "direct main"
     description:
@@ -1257,7 +1257,7 @@ packages:
       sha256: f36f9f3be64c6198714492bb455c11056e33e2f85d9a0b676a48301e44fdcf47
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.2"
+      version: "2.4.2"
   visibility_detector:
     dependency: "direct main"
     description:

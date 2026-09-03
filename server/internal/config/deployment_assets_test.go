@@ -95,10 +95,6 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		"JWT_SECRET=",
 		"SUPER_ADMIN_ID=",
 		"SUPER_ADMIN_PASSWORD=",
-		"ACCOUNT_IDENTITY_READ_MODE=legacy",
-		"SCHOOL_AUTHORITY_RETIRED=false",
-		"SCHOOL_DEVICE_CAPABILITY_CUT=",
-		"SCHOOL_ACADEMIC_ROUTES_RETIRED=",
 		"IMAGE_VARIANT_WORKER_ENABLED=",
 		"AI_EXTERNAL_MCP_ENABLED=",
 		"AI_EXTERNAL_MCP_TRANSPORT=",
@@ -115,33 +111,6 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	}
 	if !strings.Contains(composeText, "AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}") {
 		t.Fatal("Docker Compose 的不限额账号默认值必须为空")
-	}
-	if !strings.Contains(composeText, "ACCOUNT_IDENTITY_READ_MODE=${ACCOUNT_IDENTITY_READ_MODE:-legacy}") {
-		t.Fatal("Docker Compose 的账号 Identity 读路径必须默认保持 legacy")
-	}
-	if strings.Count(composeText, "SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:-false}") != 2 {
-		t.Fatal("Docker Compose 必须向 Go 与 Python 教务服务传递学校能力总退役开关")
-	}
-	for _, expected := range []string{
-		"SCHOOL_DEVICE_CAPABILITY_CUT=${SCHOOL_DEVICE_CAPABILITY_CUT:-}",
-		"SCHOOL_ACADEMIC_ROUTES_RETIRED=${SCHOOL_ACADEMIC_ROUTES_RETIRED:-}",
-	} {
-		if !strings.Contains(composeText, expected) {
-			t.Fatalf("Docker Compose 缺少可分阶段发布的学校能力退役项 %q", expected)
-		}
-	}
-	serverEnvExample, err := os.ReadFile(filepath.Join(repoRoot, "server", ".env.example"))
-	if err != nil {
-		t.Fatalf("Go 服务必须提供退役开关示例配置: %v", err)
-	}
-	for _, key := range []string{
-		"SCHOOL_AUTHORITY_RETIRED=false",
-		"SCHOOL_DEVICE_CAPABILITY_CUT=",
-		"SCHOOL_ACADEMIC_ROUTES_RETIRED=",
-	} {
-		if !strings.Contains(string(serverEnvExample), key) {
-			t.Fatalf("server/.env.example 缺少学校能力退役项 %s", key)
-		}
 	}
 
 	dockerfile, err := os.ReadFile(filepath.Join(repoRoot, "server", "Dockerfile"))

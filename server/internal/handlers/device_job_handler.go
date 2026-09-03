@@ -238,8 +238,6 @@ func writeDeviceJobError(c *gin.Context, err error) {
 		status, message = http.StatusNotFound, "设备任务不存在"
 	case "job_expired":
 		status, message = http.StatusGone, "设备任务已过期"
-	case "school_device_capability_retired":
-		status, message = http.StatusGone, "学校设备能力已退役"
 	case "invalid_device_registration", "invalid_device_job", "invalid_tool_arguments", "invalid_tool_result", "invalid_state_version", "invalid_error_code", "invalid_job_expiry", "invalid_progress_stage":
 		status, message = http.StatusBadRequest, "设备任务请求无效"
 	case "tool_not_allowed":

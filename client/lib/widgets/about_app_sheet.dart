@@ -16,6 +16,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
   String _currentVersion = '加载中...';
   static const String _pureHomozygoteEmail = '3170305904@qq.com';
   static const String _scoreDropperEmail = '2350016823@qq.com';
+  static const String _nowEmail = '1517088507@qq.com';
 
   @override
   void initState() {
@@ -475,6 +476,17 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 dialogContext: dialogContext,
                 author: '掉分员',
                 email: _scoreDropperEmail,
+                titleColor: titleColor,
+                labelColor: labelColor,
+                panelColor: valuePanelColor,
+                borderColor: valueBorderColor,
+              ),
+              const SizedBox(height: 10),
+              _buildAuthorEmailRow(
+                context: context,
+                dialogContext: dialogContext,
+                author: 'Now',
+                email: _nowEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,

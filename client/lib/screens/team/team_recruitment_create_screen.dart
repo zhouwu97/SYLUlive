@@ -157,13 +157,7 @@ class _TeamRecruitmentCreateScreenState
     final startIndex = text.indexOf(tag);
     if (startIndex == -1) return '';
     final contentStart = startIndex + tag.length;
-    final nextTags = [
-      '【队伍简介】',
-      '【当前进度】',
-      '【我们希望你】',
-      '【合作安排】',
-      '【已有资源】'
-    ];
+    final nextTags = ['【队伍简介】', '【当前进度】', '【我们希望你】', '【合作安排】', '【已有资源】'];
     int nearestEnd = text.length;
     for (final nextTag in nextTags) {
       if (nextTag == tag) continue;
@@ -394,7 +388,7 @@ class _TeamRecruitmentCreateScreenState
                     padding: const EdgeInsets.all(16),
                     children: [
                       Text(
-                        '💡 组队广场卡片样式',
+                        '组队广场预览',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -408,7 +402,7 @@ class _TeamRecruitmentCreateScreenState
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        '💡 招募详情与 Web 分享页排版',
+                        '招募详情预览',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -421,7 +415,8 @@ class _TeamRecruitmentCreateScreenState
                         decoration: BoxDecoration(
                           color: TeamUiTokens.cardBg(isDark),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: TeamUiTokens.border(isDark)),
+                          border:
+                              Border.all(color: TeamUiTokens.border(isDark)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,7 +442,7 @@ class _TeamRecruitmentCreateScreenState
                                 runSpacing: 6,
                                 children: previewItem.roles
                                     .map((r) => Chip(
-                                          label: Text('🎯 $r'),
+                                          label: Text(r),
                                           padding: EdgeInsets.zero,
                                           visualDensity: VisualDensity.compact,
                                         ))
@@ -819,34 +814,48 @@ class _TeamRecruitmentCreateScreenState
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: SizedBox(
-                    height: 48,
-                    child: OutlinedButton(
-                      style: TeamUiTokens.secondaryButtonStyle(isDark),
-                      onPressed: _showPreview,
-                      child: const Text('预览效果'),
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final useVerticalActions = constraints.maxWidth < 300 ||
+                    MediaQuery.textScalerOf(context).scale(1) > 1.2;
+                final previewButton = SizedBox(
+                  height: 48,
+                  child: OutlinedButton(
+                    style: TeamUiTokens.secondaryButtonStyle(isDark),
+                    onPressed: _showPreview,
+                    child: const Text('预览'),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 48,
-                    child: FilledButton(
-                      style: TeamUiTokens.primaryButtonStyle(isDark),
-                      onPressed: submitting ? null : _submit,
-                      child: Text(submitting
-                          ? '提交中…'
-                          : (widget.initialValue == null ? '发布组队' : '保存修改')),
-                    ),
+                );
+                final submitButton = SizedBox(
+                  height: 48,
+                  child: FilledButton(
+                    style: TeamUiTokens.primaryButtonStyle(isDark),
+                    onPressed: submitting ? null : _submit,
+                    child: Text(submitting
+                        ? '提交中…'
+                        : (widget.initialValue == null ? '发布组队' : '保存修改')),
                   ),
-                ),
-              ],
+                );
+
+                if (useVerticalActions) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(width: double.infinity, child: previewButton),
+                      const SizedBox(height: 10),
+                      SizedBox(width: double.infinity, child: submitButton),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: previewButton),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 2, child: submitButton),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -872,11 +881,11 @@ class _TeamRecruitmentCreateScreenState
                   spacing: 8,
                   runSpacing: 8,
                   children: const [
-                    ('🏆 学科竞赛', 'competition'),
-                    ('💻 项目协作', 'project'),
-                    ('📚 学习互助', 'study'),
-                    ('🎉 活动组队', 'activity'),
-                    ('💬 其他组队', 'other')
+                    ('学科竞赛', 'competition'),
+                    ('项目协作', 'project'),
+                    ('学习互助', 'study'),
+                    ('活动组队', 'activity'),
+                    ('其他组队', 'other')
                   ].map((item) {
                     final selected = _category == item.$2;
                     return ChoiceChip(
@@ -967,10 +976,9 @@ class _TeamRecruitmentCreateScreenState
             TeamFormSection(
               title: '02 招募队友',
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final countText = Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text('希望再招几名队友？',
@@ -979,7 +987,7 @@ class _TeamRecruitmentCreateScreenState
                         const SizedBox(height: 2),
                         Text(
                           acceptedCount > 0
-                              ? '已有 $acceptedCount 名队员通过申请 (招募名额不能低于 $minNeeded 人)'
+                              ? '已有 $acceptedCount 名队员通过申请（招募名额不能低于 $minNeeded 人）'
                               : '已通过申请的队友会计入招募进度（不含队长本人）',
                           style: TextStyle(
                               fontSize: 11,
@@ -988,21 +996,22 @@ class _TeamRecruitmentCreateScreenState
                                   : TeamUiTokens.subtitle(isDark)),
                         ),
                       ],
-                    ),
-                    // Stepper
-                    Container(
+                    );
+                    final stepper = Container(
                       decoration: BoxDecoration(
                         color: isDark ? Colors.white10 : Colors.grey[100],
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: borderColor),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
+                            tooltip: '减少招募人数',
                             icon: const Icon(Icons.remove, size: 18),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
-                                width: 34, height: 34),
+                                width: 44, height: 44),
                             onPressed: _neededCount > minNeeded
                                 ? () => setState(() => _neededCount--)
                                 : null,
@@ -1019,22 +1028,45 @@ class _TeamRecruitmentCreateScreenState
                             ),
                           ),
                           IconButton(
+                            tooltip: '增加招募人数',
                             icon: const Icon(Icons.add, size: 18),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints.tightFor(
-                                width: 34, height: 34),
+                                width: 44, height: 44),
                             onPressed: _neededCount < 20
                                 ? () => setState(() => _neededCount++)
                                 : null,
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    );
+
+                    if (constraints.maxWidth < 420) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          countText,
+                          const SizedBox(height: 12),
+                          Align(
+                              alignment: Alignment.centerRight, child: stepper),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: countText),
+                        const SizedBox(width: 12),
+                        stepper,
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 18),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  runSpacing: 4,
                   children: [
                     const Text('期望技能 / 招募方向',
                         style: TextStyle(
@@ -1087,7 +1119,7 @@ class _TeamRecruitmentCreateScreenState
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      '点击下方推荐标签快速添加，或自定义输入',
+                      '可从推荐标签中选择，也可自定义',
                       style: TextStyle(
                           fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
                     ),
@@ -1110,22 +1142,38 @@ class _TeamRecruitmentCreateScreenState
                           _recommendedRolesByCategory['other']!)
                       .map((recRole) {
                     final alreadyAdded = _roles.contains(recRole);
-                    return ActionChip(
-                      label: Text(alreadyAdded ? '✓ $recRole' : '+ $recRole'),
+                    return FilterChip(
+                      label: Text(recRole),
+                      selected: alreadyAdded,
+                      showCheckmark: true,
                       labelStyle: TextStyle(
                         fontSize: 11,
                         color: alreadyAdded
-                            ? TeamUiTokens.subtitle(isDark)
+                            ? TeamUiTokens.accent(isDark)
                             : TeamUiTokens.title(isDark),
                         fontWeight:
-                            alreadyAdded ? FontWeight.w400 : FontWeight.w600,
+                            alreadyAdded ? FontWeight.w700 : FontWeight.w600,
                       ),
+                      selectedColor: TeamUiTokens.accentSoft(isDark),
                       backgroundColor: isDark ? Colors.white10 : Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(color: borderColor),
+                        side: BorderSide(
+                          color: alreadyAdded
+                              ? TeamUiTokens.accent(isDark)
+                                  .withValues(alpha: 0.3)
+                              : borderColor,
+                        ),
                       ),
-                      onPressed: alreadyAdded ? null : () => _addRole(recRole),
+                      onSelected: _roles.length >= 8 && !alreadyAdded
+                          ? null
+                          : (selected) {
+                              if (selected) {
+                                _addRole(recRole);
+                              } else {
+                                _removeRole(recRole);
+                              }
+                            },
                     );
                   }).toList(),
                 ),
@@ -1135,7 +1183,8 @@ class _TeamRecruitmentCreateScreenState
                 // 自定义方向输入
                 if (!_showCustomRoleInput)
                   TextButton.icon(
-                    icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
+                    icon:
+                        const Icon(Icons.add_circle_outline_rounded, size: 16),
                     label: const Text('自定义其他方向'),
                     style: TextButton.styleFrom(
                       foregroundColor: TeamUiTokens.accent(isDark),
@@ -1175,8 +1224,7 @@ class _TeamRecruitmentCreateScreenState
                       const SizedBox(width: 8),
                       FilledButton(
                         style: TeamUiTokens.primaryButtonStyle(isDark),
-                        onPressed: () =>
-                            _addRole(_customRoleController.text),
+                        onPressed: () => _addRole(_customRoleController.text),
                         child: const Text('添加'),
                       ),
                     ],
@@ -1189,19 +1237,22 @@ class _TeamRecruitmentCreateScreenState
             TeamFormSection(
               title: '03 招募详情',
               children: [
-                // 模式切换 Segment
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // 模式切换需要在窄屏换行，避免标题和选项互相挤压。
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       _isStructuredMode ? '结构化信息模板' : '自由编辑模式',
                       style: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w700),
                     ),
-                    Row(
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
                       children: [
                         ChoiceChip(
-                          label: const Text('📋 结构化模板'),
+                          label: const Text('结构化模板'),
                           selected: _isStructuredMode,
                           selectedColor: TeamUiTokens.accentSoft(isDark),
                           labelStyle: TextStyle(
@@ -1232,7 +1283,7 @@ class _TeamRecruitmentCreateScreenState
                         ),
                         const SizedBox(width: 6),
                         ChoiceChip(
-                          label: const Text('✍️ 自由编辑'),
+                          label: const Text('自由编辑'),
                           selected: !_isStructuredMode,
                           selectedColor: TeamUiTokens.accentSoft(isDark),
                           labelStyle: TextStyle(
@@ -1314,8 +1365,7 @@ class _TeamRecruitmentCreateScreenState
                     minLines: 6,
                     maxLength: 5000,
                     decoration: InputDecoration(
-                      hintText:
-                          '介绍你的队伍愿景、参赛目标、已有成员基础与对新队友的期望...\n支持多段落与排版。',
+                      hintText: '介绍你的队伍愿景、参赛目标、已有成员基础与对新队友的期望...\n支持多段落与排版。',
                       hintStyle: TextStyle(
                           color: TeamUiTokens.subtitle(isDark), fontSize: 13),
                       filled: true,
@@ -1327,7 +1377,8 @@ class _TeamRecruitmentCreateScreenState
                       ),
                     ),
                     validator: (v) {
-                      if (!_isStructuredMode && (v == null || v.trim().isEmpty)) {
+                      if (!_isStructuredMode &&
+                          (v == null || v.trim().isEmpty)) {
                         return '请填写招募详情说明';
                       }
                       return null;
@@ -1402,7 +1453,7 @@ class _TeamRecruitmentCreateScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '💡 第一张图片将自动作为组队大厅与分享卡片的展示封面',
+                  '第一张图片将作为组队广场与分享页的封面图',
                   style: TextStyle(
                       fontSize: 11, color: TeamUiTokens.subtitle(isDark)),
                 ),
@@ -1465,8 +1516,7 @@ class _TeamRecruitmentCreateScreenState
                                     fit: BoxFit.cover,
                                   )
                                 : Image.file(
-                                    File(_images[
-                                            index - _existingImages.length]
+                                    File(_images[index - _existingImages.length]
                                         .path),
                                     fit: BoxFit.cover,
                                   ),
@@ -1541,9 +1591,8 @@ class _TeamRecruitmentCreateScreenState
     final college = user?.eduCollege ?? '';
     final major = user?.eduMajor ?? '沈阳理工大学在校生';
     final grade = user?.eduGrade ?? '';
-    final majorText = [college, major, grade]
-        .where((s) => s.isNotEmpty)
-        .join(' · ');
+    final majorText =
+        [college, major, grade].where((s) => s.isNotEmpty).join(' · ');
 
     return Container(
       width: double.infinity,

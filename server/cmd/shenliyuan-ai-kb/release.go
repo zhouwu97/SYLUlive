@@ -46,6 +46,7 @@ func runRelease(args []string, getenv environment, stdout, stderr io.Writer, cli
 	manifestPath := flags.String("manifest", defaultManifestPath(), "版本清单")
 	baseURL := flags.String("base-url", envOrDefault(getenv, "SHENLIYUAN_API_BASE_URL", "http://127.0.0.1:8080"), "服务端 API 地址")
 	ragBaseURL := flags.String("rag-base-url", envOrDefault(getenv, "RAG_SERVICE_URL", "http://127.0.0.1:18001"), "Python RAG 服务地址")
+	agentQualityReport := flags.String("agent-quality-report", "", "A3 Agent 质量门禁报告（发布必需，须为 staging/online）")
 	reportPath := flags.String("report", "", "必须新建的发布与回滚记录文件")
 	execute := flags.Bool("execute", false, "允许发出写请求")
 	confirm := flags.String("confirm", "", "精确确认短语 RELEASE:<version>")
@@ -76,11 +77,16 @@ func runRelease(args []string, getenv environment, stdout, stderr io.Writer, cli
 		fmt.Fprintln(stderr, "执行发布必须提供新的 --report 路径，以确保发布后可回滚。未发出写请求。")
 		return 2
 	}
+	if strings.TrimSpace(*agentQualityReport) == "" {
+		fmt.Fprintln(stderr, "执行 Agent 知识发布必须提供 --agent-quality-report；未发出写请求。")
+		return 2
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	options := dryRunOptions{
 		Bundle: *bundle, Manifest: *manifestPath, BaseURL: *baseURL, RAGBaseURL: *ragBaseURL,
 		CheckRemote: true, CheckRAG: true, RequireRAG: true, Timeout: *timeout,
+		AgentQualityReport: *agentQualityReport, RequireAgentQuality: true,
 	}
 	dryRun, err := buildDryRunReport(ctx, options, getenv, client)
 	if err != nil {

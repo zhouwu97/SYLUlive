@@ -1,0 +1,70 @@
+{
+  "schema_version": "campus-agent-scenarios/v1",
+  "evidence_scope": "fixture",
+  "scenarios": [
+    {
+      "id": "campus-policy-notice",
+      "domain": "policy_notice",
+      "access": "public",
+      "capability": "policy.search",
+      "requires_grant": false,
+      "expected_outcomes": ["source_required", "current_boundary"]
+    },
+    {
+      "id": "campus-calendar",
+      "domain": "calendar",
+      "access": "public",
+      "capability": "calendar.lookup",
+      "requires_grant": false,
+      "expected_outcomes": ["source_required", "freshness_required"]
+    },
+    {
+      "id": "campus-canteen-discovery",
+      "domain": "canteen_discovery",
+      "access": "public",
+      "capability": "canteen.discover",
+      "requires_grant": false,
+      "expected_outcomes": ["empty_result_safe", "freshness_required"]
+    },
+    {
+      "id": "campus-public-competition",
+      "domain": "public_competition",
+      "access": "public",
+      "capability": "competition.search",
+      "requires_grant": false,
+      "expected_outcomes": ["source_required", "empty_result_safe"]
+    },
+    {
+      "id": "campus-academic-authorized",
+      "domain": "academic_authorized",
+      "access": "personal",
+      "capability": "academic.summary",
+      "requires_grant": true,
+      "expected_outcomes": ["grant_required", "subject_isolated", "minimal_fields"]
+    },
+    {
+      "id": "campus-schedule",
+      "domain": "schedule",
+      "access": "personal",
+      "capability": "schedule.availability",
+      "requires_grant": true,
+      "expected_outcomes": ["grant_required", "subject_isolated", "freshness_required"]
+    },
+    {
+      "id": "campus-personal-calendar",
+      "domain": "personal_calendar",
+      "access": "personal",
+      "capability": "calendar.create",
+      "requires_grant": true,
+      "expected_outcomes": ["grant_required", "confirmation_required", "idempotent"]
+    },
+    {
+      "id": "campus-failure-recovery",
+      "domain": "failure_recovery",
+      "access": "recovery",
+      "capability": "runtime.recover",
+      "requires_grant": false,
+      "expected_outcomes": ["retryable_state", "cancel_closed", "reconnect_closed"]
+    }
+  ]
+}

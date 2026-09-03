@@ -466,10 +466,13 @@ func (r *Runtime) Execute(runID, message string) {
 		r.executeLangChain(ctx, &run, message)
 		return
 	}
-	toolDefinitions := r.toolDefinitions()
+	registeredToolDefinitions := r.toolDefinitions()
+	toolDefinitions := registeredToolDefinitions
+	toolRoutingMode := toolContextRoutingLegacyDeterministic
 	var requiredTool string
 	if useUnifiedAgent {
 		toolDefinitions = shortlistModelTools(message, toolDefinitions)
+		toolRoutingMode = toolContextRoutingUnifiedShortlist
 		requiredTool, _ = requiredFastPathTool(message, toolDefinitions)
 	} else {
 		toolDefinitions = routeModelTools(message, toolDefinitions)
@@ -505,15 +508,31 @@ func (r *Runtime) Execute(runID, message string) {
 	if len(retrieval.Chunks) == 0 {
 		retrieval.DegradedModes = append(retrieval.DegradedModes, "rag_insufficient_sources")
 	}
+	toolsSuppressedByVerifiedPolicyRAG := false
 	if requiredTool == "" && shouldAnswerFromVerifiedRAG(queryPlan, retrieval.Chunks) {
 		// 明确制度问题已有直接知识库证据时，不再向模型暴露公开搜索工具，
 		// 避免弱相关通知或相邻制度覆盖已核验规则。
 		toolDefinitions = nil
 		hasTools = false
+		toolsSuppressedByVerifiedPolicyRAG = true
+		toolRoutingMode = toolContextRoutingNoToolsForPolicyRAG
 	}
+	toolContext := MeasureToolContext(
+		registeredToolDefinitions,
+		toolDefinitions,
+		toolRoutingMode,
+		toolsSuppressedByVerifiedPolicyRAG,
+	)
 	_, _ = r.appendEvent(ctx, runID, "retrieval.completed", map[string]interface{}{
 		"chunk_count": len(retrieval.Chunks), "degraded_modes": retrieval.DegradedModes,
 		"policy_intent": queryPlan.Intent, "evidence_satisfied": coverage.Satisfied,
+		"registered_tool_count":                   toolContext.RegisteredToolCount,
+		"model_visible_tool_count":                toolContext.ModelVisibleToolCount,
+		"tool_schema_bytes":                       toolContext.SchemaBytes,
+		"tool_schema_token_estimate":              toolContext.SchemaTokenEstimate,
+		"tool_routing_mode":                       toolContext.RoutingMode,
+		"tools_suppressed_by_verified_policy_rag": toolContext.SuppressedByVerifiedPolicyRAG,
+		"tool_schema_measurement_available":       toolContext.SchemaMeasurementAvailable,
 	}, true)
 	if err := r.transition(ctx, &run, models.AIRunStateRetrieving, models.AIRunStatePlanning); err != nil {
 		return
@@ -1164,7 +1183,7 @@ func sanitizeTraceValue(eventType string, value interface{}) interface{} {
 		result := make(map[string]interface{}, len(typed))
 		for key, child := range typed {
 			lowerKey := strings.ToLower(strings.TrimSpace(key))
-			if sensitiveTraceKey(lowerKey) {
+			if sensitiveTraceKey(lowerKey) && !safeTraceMetricKey(lowerKey, child) {
 				continue
 			}
 			if strings.HasPrefix(eventType, "tool.") && traceRawToolKey(lowerKey) {
@@ -1186,6 +1205,16 @@ func sanitizeTraceValue(eventType string, value interface{}) interface{} {
 	default:
 		return value
 	}
+}
+
+// safeTraceMetricKey 仅放行由服务端生成且类型受限的工具上下文指标。
+// 通用 token 字段仍默认删除，避免把凭据误写入持久化 Trace。
+func safeTraceMetricKey(key string, value interface{}) bool {
+	if key != "tool_schema_token_estimate" {
+		return false
+	}
+	_, ok := value.(float64)
+	return ok
 }
 
 func sensitiveTraceKey(key string) bool {
@@ -1336,9 +1365,7 @@ func (r *Runtime) failRun(runID, code string, retryable bool) {
 			"error_code": code, "completed_at": now, "updated_at": now,
 		})
 	if result.Error == nil && result.RowsAffected == 1 {
-		_, _ = r.appendEvent(ctx, runID, "run.failed", map[string]interface{}{
-			"code": code, "retryable": retryable, "failure_reason": FailureReasonForCode(code),
-		}, true)
+		_, _ = r.appendEvent(ctx, runID, "run.failed", agentFailureEventPayload(code, retryable), true)
 	}
 }
 
@@ -1364,7 +1391,11 @@ func (r *Runtime) Cancel(ctx context.Context, userID uint, runID string) (models
 		if r.scopedGrants != nil {
 			r.scopedGrants.RevokeRun(runID)
 		}
-		_, _ = r.appendEvent(ctx, runID, "run.cancelled", map[string]interface{}{"state": models.AIRunStateCancelled}, true)
+		_, _ = r.appendEvent(ctx, runID, "run.cancelled", map[string]interface{}{
+			"state":         models.AIRunStateCancelled,
+			"failure_class": FailureCancelled,
+			"recovery_path": AgentRecoveryPathForFailure(FailureCancelled),
+		}, true)
 		r.mu.Lock()
 		cancel := r.cancels[runID]
 		r.mu.Unlock()

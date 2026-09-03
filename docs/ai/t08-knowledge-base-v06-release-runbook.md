@@ -84,8 +84,14 @@ go run ./cmd/shenliyuan-ai-kb dry-run --check-remote
 go run ./cmd/shenliyuan-ai-kb release `
   --execute `
   --confirm 'RELEASE:v0.6' `
+  --agent-quality-report '..\artifacts\a3-quality-staging.json' `
   --report '..\artifacts\t08-v06-release-record.json'
 ```
+
+Agent 知识版本发布还必须提供 `campus-agent-quality-gate/v1` 报告。工具在首个写请求
+前校验报告 schema、知识版本、全部 A3 门禁和零副作用声明；`fixture` 证据、过期来源、
+非法引用、关键结论冲突或 `blocked=true` 均会阻断发布。该报告不能用来替代 T08 的
+清单、备份、远端 hash 和 LangChain 检查。
 
 `--report` 为执行发布的必填项，目标文件必须尚不存在。工具会在首个写请求前独占创建记录文件，在原子发布前写入完整候选 ID，并在发布 API 成功后立即更新；即使后续 smoke-test 失败，也必须保留该文件用于核验和回滚。
 

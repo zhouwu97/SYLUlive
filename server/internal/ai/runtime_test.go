@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -538,6 +539,12 @@ func TestRuntimeCancelStopsProviderAndDoesNotConsumePreGenerationQuota(t *testin
 	_, err = runtime.Cancel(context.Background(), 13, run.ID)
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateCancelled)
+	var cancelledEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "run.cancelled").First(&cancelledEvent).Error)
+	var cancelledPayload map[string]interface{}
+	require.NoError(t, json.Unmarshal(cancelledEvent.Payload, &cancelledPayload))
+	require.Equal(t, string(FailureCancelled), cancelledPayload["failure_class"])
+	require.Equal(t, "acknowledge_cancel", cancelledPayload["recovery_path"])
 	require.Eventually(t, func() bool {
 		quota, quotaErr := runtime.Quota(context.Background(), 13)
 		return quotaErr == nil && quota.Remaining == 3

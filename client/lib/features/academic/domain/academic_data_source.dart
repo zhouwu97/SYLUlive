@@ -33,6 +33,19 @@ abstract interface class AcademicDataSource {
     required int semester,
   });
 
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  });
+
+  Future<AcademicSituation> getAcademicSituation();
+
+  Future<CreditRequirement> getCreditRequirements();
+
   Future<void> resetSession();
 
   void close();

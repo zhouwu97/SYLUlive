@@ -611,6 +611,28 @@ final class _FakeAcademicRepository implements AcademicRepository {
   }
 
   @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) async {
+    throw UnimplementedError('测试未实现成绩详情');
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() async {
+    throw UnimplementedError('测试未实现学业情况');
+  }
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() async {
+    throw UnimplementedError('测试未实现学分要求');
+  }
+
+  @override
   Future<void> resetSession() async {
     calls.add('reset');
     _state = SessionState.unauthenticated;

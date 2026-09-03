@@ -68,6 +68,33 @@ final class JiaowuLocalDataSource implements AcademicDataSource {
   }
 
   @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) {
+    return _activeClient.getGradeDetail(
+      year: year,
+      semester: semester,
+      classId: classId,
+      courseName: courseName,
+      courseId: courseId,
+      studentGradeId: studentGradeId,
+    );
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() =>
+      _activeClient.getAcademicSituation();
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() =>
+      _activeClient.getCreditRequirements();
+
+  @override
   Future<void> resetSession() async {
     if (_closed) return;
     await _client?.resetSession();

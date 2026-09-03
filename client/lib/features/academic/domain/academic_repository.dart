@@ -20,17 +20,17 @@ final class AcademicCapabilities {
       : supportsProfile = true,
         supportsCourses = true,
         supportsGrades = true,
-        supportsGradeDetail = false,
-        supportsAcademicSituation = false,
-        supportsCreditRequirements = false;
+        supportsGradeDetail = true,
+        supportsAcademicSituation = true,
+        supportsCreditRequirements = true;
 
   const AcademicCapabilities.legacy()
       : supportsProfile = true,
         supportsCourses = true,
         supportsGrades = true,
-        supportsGradeDetail = true,
-        supportsAcademicSituation = true,
-        supportsCreditRequirements = true;
+        supportsGradeDetail = false,
+        supportsAcademicSituation = false,
+        supportsCreditRequirements = false;
 
   final bool supportsProfile;
   final bool supportsCourses;
@@ -77,6 +77,19 @@ abstract interface class AcademicRepository {
     required String year,
     required int semester,
   });
+
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  });
+
+  Future<AcademicSituation> getAcademicSituation();
+
+  Future<CreditRequirement> getCreditRequirements();
 
   Future<void> resetSession();
 

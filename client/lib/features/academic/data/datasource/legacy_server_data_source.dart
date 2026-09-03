@@ -178,6 +178,40 @@ final class LegacyServerDataSource implements AcademicDataSource {
   }
 
   @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) async {
+    _ensureNetworkEnabled();
+    throw const NetworkException(
+      message: '成绩详情已不再由服务器提供，请使用本机直连教务',
+      code: 'LEGACY_FEATURE_RETIRED',
+    );
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() async {
+    _ensureNetworkEnabled();
+    throw const NetworkException(
+      message: '学业情况已不再由服务器提供，请使用本机直连教务',
+      code: 'LEGACY_FEATURE_RETIRED',
+    );
+  }
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() async {
+    _ensureNetworkEnabled();
+    throw const NetworkException(
+      message: '学分要求已不再由服务器提供，请使用本机直连教务',
+      code: 'LEGACY_FEATURE_RETIRED',
+    );
+  }
+
+  @override
   Future<void> resetSession() async {
     if (_closed) return;
     _studentId = null;

@@ -95,6 +95,33 @@ final class AcademicRepositoryImpl implements AcademicRepository {
   }
 
   @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) {
+    return _guard(() => _active.getGradeDetail(
+          year: year,
+          semester: semester,
+          classId: classId,
+          courseName: courseName,
+          courseId: courseId,
+          studentGradeId: studentGradeId,
+        ));
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() =>
+      _guard(_active.getAcademicSituation);
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() =>
+      _guard(_active.getCreditRequirements);
+
+  @override
   Future<void> resetSession() async {
     _ensureOpen();
     try {

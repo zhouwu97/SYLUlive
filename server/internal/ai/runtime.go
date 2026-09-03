@@ -1365,9 +1365,7 @@ func (r *Runtime) failRun(runID, code string, retryable bool) {
 			"error_code": code, "completed_at": now, "updated_at": now,
 		})
 	if result.Error == nil && result.RowsAffected == 1 {
-		_, _ = r.appendEvent(ctx, runID, "run.failed", map[string]interface{}{
-			"code": code, "retryable": retryable, "failure_reason": FailureReasonForCode(code),
-		}, true)
+		_, _ = r.appendEvent(ctx, runID, "run.failed", agentFailureEventPayload(code, retryable), true)
 	}
 }
 
@@ -1393,7 +1391,11 @@ func (r *Runtime) Cancel(ctx context.Context, userID uint, runID string) (models
 		if r.scopedGrants != nil {
 			r.scopedGrants.RevokeRun(runID)
 		}
-		_, _ = r.appendEvent(ctx, runID, "run.cancelled", map[string]interface{}{"state": models.AIRunStateCancelled}, true)
+		_, _ = r.appendEvent(ctx, runID, "run.cancelled", map[string]interface{}{
+			"state":         models.AIRunStateCancelled,
+			"failure_class": FailureCancelled,
+			"recovery_path": AgentRecoveryPathForFailure(FailureCancelled),
+		}, true)
 		r.mu.Lock()
 		cancel := r.cancels[runID]
 		r.mu.Unlock()

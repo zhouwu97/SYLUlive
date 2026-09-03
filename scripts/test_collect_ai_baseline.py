@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -16,6 +17,111 @@ import collect_ai_baseline as baseline
 
 
 class CollectAiBaselineTests(unittest.TestCase):
+    def _event(self, case_id: str, seq: int, event: str, **overrides: Any) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "schema_version": baseline.EVENT_SCHEMA_VERSION,
+            "case_id": case_id,
+            "q_hmac": "0123456789abcdef01234567",
+            "seq": seq,
+            "event": event,
+            "elapsed_ms": seq,
+            "capability": None,
+            "provider_ms": None,
+            "rag_ms": None,
+            "tool_ms": None,
+            "visible_tool_count": None,
+            "schema_token_estimate": None,
+            "grant_failures": 0,
+            "knowledge_version": None,
+            "degradation": None,
+            "reconnect_attempt": None,
+        }
+        value.update(overrides)
+        return value
+
+    def test_event_contract_accepts_fixture_and_summarizes_closed_run(self) -> None:
+        path = SCRIPT_DIR.parent / "server" / "testdata" / "ai_eval" / "campus_agent_events.fixture.jsonl"
+        events = baseline.parse_events(path)
+        self.assertEqual(len(events), 41)
+        summary = baseline.summarize_events(events)
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["case_count"], 8)
+        self.assertEqual(
+            summary["terminal_counts"],
+            {"cancel.completed": 1, "run.completed": 7},
+        )
+        self.assertEqual(summary["first_delta_cases"], 8)
+        self.assertEqual(summary["reconnected_cases"], 1)
+        self.assertEqual(summary["tool_event_count"], 6)
+        self.assertEqual(summary["knowledge_versions"], [
+            "fixture-academic-v1",
+            "fixture-calendar-v1",
+            "fixture-canteen-v1",
+            "fixture-competition-v1",
+            "fixture-policy-v1",
+            "fixture-runtime-v1",
+            "fixture-schedule-v1",
+        ])
+
+    def test_event_contract_rejects_unclosed_or_out_of_order_runs(self) -> None:
+        valid = [
+            self._event("case-a", 1, "run.accepted"),
+            self._event("case-a", 2, "tool.started", capability="policy.search"),
+            self._event("case-a", 3, "run.completed"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            path.write_text("\n".join(json.dumps(item) for item in valid) + "\n", encoding="utf-8")
+            with self.assertRaises(baseline.BaselineError):
+                baseline.parse_events(path)
+
+            out_of_order = [self._event("case-a", 1, "state.first"), self._event("case-a", 2, "run.completed")]
+            path.write_text("\n".join(json.dumps(item) for item in out_of_order) + "\n", encoding="utf-8")
+            with self.assertRaises(baseline.BaselineError):
+                baseline.parse_events(path)
+
+    def test_event_contract_rejects_unmatched_reconnect_and_cancel(self) -> None:
+        cases = [
+            [self._event("case-a", 1, "run.accepted"), self._event("case-a", 2, "run.reconnected", reconnect_attempt=1)],
+            [self._event("case-a", 1, "run.accepted"), self._event("case-a", 2, "run.cancelled"), self._event("case-a", 3, "run.completed")],
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            for events in cases:
+                path.write_text("\n".join(json.dumps(item) for item in events) + "\n", encoding="utf-8")
+                with self.assertRaises(baseline.BaselineError):
+                    baseline.parse_events(path)
+
+    def test_scenario_manifest_requires_all_domains_and_personal_grants(self) -> None:
+        path = SCRIPT_DIR.parent / "server" / "testdata" / "ai_eval" / "campus_agent_scenarios.json"
+        manifest = baseline.parse_scenario_manifest(path)
+        self.assertIsNotNone(manifest)
+        assert manifest is not None
+        self.assertEqual(len(manifest["scenarios"]), 8)
+        self.assertEqual(
+            {item["domain"] for item in manifest["scenarios"]},
+            set(baseline.SCENARIO_DOMAINS),
+        )
+        self.assertEqual(
+            sum(bool(item["requires_grant"]) for item in manifest["scenarios"]), 3
+        )
+
+    def test_preview_lists_agent_event_and_scenario_collection(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT_DIR / "collect_ai_baseline.py"), "--repo", str(SCRIPT_DIR.parent)],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        preview = json.loads(result.stdout)
+        self.assertIn("versioned_agent_events_jsonl", preview["would_collect"])
+        self.assertIn("campus_agent_scenario_manifest", preview["would_collect"])
+
     def test_env_parser_only_keeps_allowlisted_flags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
@@ -74,6 +180,9 @@ class CollectAiBaselineTests(unittest.TestCase):
     def test_sensitive_key_scan_is_recursive(self) -> None:
         with self.assertRaises(baseline.BaselineError):
             baseline._assert_no_sensitive_data({"nested": {"answer": "正文"}})
+
+    def test_schema_token_estimate_max_is_safe_metric(self) -> None:
+        baseline._assert_no_sensitive_data({"schema_token_estimate_max": 128})
 
     def test_file_metadata_hashes_without_copying_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -515,6 +515,7 @@ type AgentTraceMetrics struct {
 	TimeToFirstActivityMs      int64          `json:"time_to_first_activity_ms"`
 	TimeToUsefulAnswerMs       int64          `json:"time_to_useful_answer_ms"`
 	FailureTaxonomy            map[string]int `json:"failure_taxonomy,omitempty"`
+	FailureClasses             map[string]int `json:"failure_classes,omitempty"`
 	ModelCalls                 int            `json:"model_calls"`
 	InputTokens                int64          `json:"input_tokens"`
 	OutputTokens               int64          `json:"output_tokens"`
@@ -531,6 +532,16 @@ type AgentTraceMetrics struct {
 	ModelVisibleToolCount      int            `json:"model_visible_tool_count"`
 	ToolSchemaBytes            int            `json:"tool_schema_bytes"`
 	ToolSchemaTokenEstimate    int            `json:"tool_schema_token_estimate"`
+}
+
+func (metrics *AgentTraceMetrics) observeFailureClass(class AgentFailureClass) {
+	if metrics == nil || !class.Valid() {
+		return
+	}
+	if metrics.FailureClasses == nil {
+		metrics.FailureClasses = make(map[string]int)
+	}
+	metrics.FailureClasses[string(class)]++
 }
 
 // Observe 从一个已脱敏的 Agent 事件中提取长期指标。
@@ -558,6 +569,8 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 		TimeToFirstActivityMs int64              `json:"time_to_first_activity_ms"`
 		TokenUsageAvailable   *bool              `json:"token_usage_available"`
 		FailureReason         AgentFailureReason `json:"failure_reason"`
+		FailureClass          AgentFailureClass  `json:"failure_class"`
+		Code                  string             `json:"code"`
 		RegisteredToolCount   int                `json:"registered_tool_count"`
 		ModelVisibleToolCount int                `json:"model_visible_tool_count"`
 		ToolSchemaBytes       int                `json:"tool_schema_bytes"`
@@ -656,17 +669,25 @@ func (metrics *AgentTraceMetrics) Observe(eventType string, payload []byte) {
 			}
 			metrics.FailureTaxonomy[string(event.FailureReason)]++
 		}
+		metrics.observeFailureClass(event.FailureClass)
 	case "run.failed":
+		metrics.RunFailed = true
 		if event.FailureReason.Valid() {
 			if metrics.FailureTaxonomy == nil {
 				metrics.FailureTaxonomy = make(map[string]int)
 			}
 			metrics.FailureTaxonomy[string(event.FailureReason)]++
 		}
+		if event.FailureClass.Valid() {
+			metrics.observeFailureClass(event.FailureClass)
+		} else if strings.TrimSpace(event.Code) != "" {
+			metrics.observeFailureClass(AgentFailureClassForCode(event.Code))
+		}
 	case "run.completed":
 		metrics.RunSucceeded = true
 	case "run.cancelled", "run.expired":
 		metrics.RunFailed = true
+		metrics.observeFailureClass(event.FailureClass)
 	}
 }
 
@@ -693,6 +714,7 @@ type AgentEvalTrend struct {
 	AverageTimeToFirstActivityMs float64        `json:"average_time_to_first_activity_ms"`
 	AverageTimeToUsefulAnswerMs  float64        `json:"average_time_to_useful_answer_ms"`
 	FailureTaxonomy              map[string]int `json:"failure_taxonomy,omitempty"`
+	FailureClasses               map[string]int `json:"failure_classes,omitempty"`
 }
 
 func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
@@ -708,6 +730,7 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 	var firstActivityTotal int64
 	firstActivityCount := 0
 	trend.FailureTaxonomy = make(map[string]int)
+	trend.FailureClasses = make(map[string]int)
 	for _, sample := range samples {
 		if sample.RunSucceeded && !sample.RunFailed {
 			completed++
@@ -740,6 +763,9 @@ func BuildAgentEvalTrend(samples []AgentTraceMetrics) AgentEvalTrend {
 		}
 		for reason, count := range sample.FailureTaxonomy {
 			trend.FailureTaxonomy[reason] += count
+		}
+		for class, count := range sample.FailureClasses {
+			trend.FailureClasses[class] += count
 		}
 	}
 	trend.SuccessRate = float64(completed) / float64(len(samples))

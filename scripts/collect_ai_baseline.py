@@ -19,7 +19,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "t00-baseline/v1"
+SCHEMA_VERSION = "t00-baseline/v2"
+TIMING_SCHEMA_VERSION = "t00-timing/v1"
+EVENT_SCHEMA_VERSION = "t00-baseline-events/v1"
+SCENARIO_MANIFEST_SCHEMA_VERSION = "campus-agent-scenarios/v1"
 EVIDENCE_TYPES = ("fixture", "staging", "online")
 TIMING_FIELDS = (
     "case_id",
@@ -39,6 +42,59 @@ TIME_FIELDS = (
     "t_complete_ms",
 )
 OPTIONAL_TIME_FIELDS = {"t_first_delta_ms", "t_complete_ms"}
+EVENT_FIELDS = (
+    "schema_version",
+    "case_id",
+    "q_hmac",
+    "seq",
+    "event",
+    "elapsed_ms",
+    "capability",
+    "provider_ms",
+    "rag_ms",
+    "tool_ms",
+    "visible_tool_count",
+    "schema_token_estimate",
+    "grant_failures",
+    "knowledge_version",
+    "degradation",
+    "reconnect_attempt",
+)
+EVENT_TYPES = {
+    "run.accepted",
+    "state.first",
+    "answer.delta.first",
+    "tool.started",
+    "tool.completed",
+    "network.disconnected",
+    "run.reconnected",
+    "run.cancelled",
+    "cancel.completed",
+    "run.completed",
+    "run.degraded",
+    "run.interrupted",
+}
+TERMINAL_EVENTS = {"cancel.completed", "run.completed", "run.degraded", "run.interrupted"}
+SCENARIO_DOMAINS = (
+    "policy_notice",
+    "calendar",
+    "canteen_discovery",
+    "public_competition",
+    "academic_authorized",
+    "schedule",
+    "personal_calendar",
+    "failure_recovery",
+)
+SCENARIO_ACCESS = {"public", "personal", "recovery"}
+SCENARIO_FIELDS = {
+    "id",
+    "domain",
+    "access",
+    "capability",
+    "requires_grant",
+    "expected_outcomes",
+}
+SCENARIO_MANIFEST_FIELDS = {"schema_version", "evidence_scope", "scenarios"}
 FLAG_KEYS = (
     "AI_POLICY_RAG_ENABLED",
     "AI_LANGCHAIN_RAG_ENABLED",
@@ -77,6 +133,13 @@ FORBIDDEN_VALUE_RE = re.compile(
     r"(?:postgres(?:ql)?|mysql)://\S+|-----BEGIN\s+[^-]+-----)",
     re.IGNORECASE,
 )
+SAFE_METRIC_KEYS = {
+    "schema_token_estimate",
+    "schema_token_estimate_max",
+    "input_token_count",
+    "output_token_count",
+    "cache_hit_token_count",
+}
 
 
 class BaselineError(ValueError):
@@ -392,13 +455,328 @@ def parse_timings(path: Path | None) -> list[dict[str, Any]]:
     return records
 
 
+def _optional_nonnegative(value: Any, *, field: str) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise BaselineError(f"{field} 必须是非负整数或 null")
+    return value
+
+
+def _validate_event(record: Mapping[str, Any], line_number: int) -> dict[str, Any]:
+    """校验一行版本化事件，只留下可比较的类型化字段。"""
+
+    actual = set(record)
+    expected = set(EVENT_FIELDS)
+    missing = expected - actual
+    extra = actual - expected
+    if missing or extra:
+        detail = []
+        if missing:
+            detail.append(f"缺少 {sorted(missing)}")
+        if extra:
+            detail.append(f"多出 {sorted(extra)}")
+        raise BaselineError(
+            f"事件 JSONL 第 {line_number} 行字段不符合契约: {'; '.join(detail)}"
+        )
+    if record["schema_version"] != EVENT_SCHEMA_VERSION:
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行版本不受支持")
+    case_id = record["case_id"]
+    if not isinstance(case_id, str) or not CASE_ID_RE.fullmatch(case_id):
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 case_id 不安全")
+    q_hmac = record["q_hmac"]
+    if not isinstance(q_hmac, str) or not HMAC_RE.fullmatch(q_hmac):
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 q_hmac 不合法")
+    seq = record["seq"]
+    if not isinstance(seq, int) or isinstance(seq, bool) or seq <= 0:
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 seq 必须是正整数")
+    event = record["event"]
+    if not isinstance(event, str) or event not in EVENT_TYPES:
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 event 不受支持")
+    elapsed_ms = record["elapsed_ms"]
+    if not isinstance(elapsed_ms, int) or isinstance(elapsed_ms, bool) or elapsed_ms < 0:
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 elapsed_ms 必须是非负整数")
+    capability = record["capability"]
+    if capability is not None and (
+        not isinstance(capability, str) or not CASE_ID_RE.fullmatch(capability)
+    ):
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行 capability 不安全")
+    if event.startswith("tool.") and capability is None:
+        raise BaselineError(f"事件 JSONL 第 {line_number} 行工具事件缺少 capability")
+    reconnect_attempt = _optional_nonnegative(
+        record["reconnect_attempt"], field=f"事件 JSONL 第 {line_number} reconnect_attempt"
+    )
+    normalized: dict[str, Any] = {
+        "schema_version": EVENT_SCHEMA_VERSION,
+        "case_id": case_id,
+        "q_hmac": q_hmac,
+        "seq": seq,
+        "event": event,
+        "elapsed_ms": elapsed_ms,
+        "capability": capability,
+    }
+    for field in (
+        "provider_ms",
+        "rag_ms",
+        "tool_ms",
+        "visible_tool_count",
+        "schema_token_estimate",
+    ):
+        normalized[field] = _optional_nonnegative(
+            record[field], field=f"事件 JSONL 第 {line_number} {field}"
+        )
+    grant_failures = record["grant_failures"]
+    if not isinstance(grant_failures, int) or isinstance(grant_failures, bool) or grant_failures < 0:
+        raise BaselineError(f"事件 JSONL 第 {line_number} grant_failures 必须是非负整数")
+    normalized["grant_failures"] = grant_failures
+    for field in ("knowledge_version", "degradation"):
+        value = record[field]
+        if value is not None and (
+            not isinstance(value, str) or not value or len(value) > 120
+        ):
+            raise BaselineError(f"事件 JSONL 第 {line_number} {field} 不合法")
+        if isinstance(value, str) and any(ord(character) < 32 for character in value):
+            raise BaselineError(f"事件 JSONL 第 {line_number} {field} 含控制字符")
+        normalized[field] = value
+    normalized["reconnect_attempt"] = reconnect_attempt
+    return normalized
+
+
+def _validate_event_sequence(events: list[dict[str, Any]], case_id: str) -> None:
+    if not events:
+        return
+    if events[0]["event"] != "run.accepted" or events[0]["seq"] != 1:
+        raise BaselineError(f"事件 {case_id} 必须从 seq=1 的 run.accepted 开始")
+    active_tools: set[str] = set()
+    seen_events: set[str] = set()
+    disconnected = False
+    cancelled = False
+    terminal_index: int | None = None
+    previous_elapsed = -1
+    for index, event in enumerate(events):
+        if event["case_id"] != case_id:
+            raise BaselineError(f"事件 {case_id} 混入其他 case_id")
+        if event["seq"] != index + 1:
+            raise BaselineError(f"事件 {case_id} seq 不连续")
+        if event["elapsed_ms"] < previous_elapsed:
+            raise BaselineError(f"事件 {case_id} elapsed_ms 倒序")
+        previous_elapsed = event["elapsed_ms"]
+        event_type = event["event"]
+        if terminal_index is not None:
+            raise BaselineError(f"事件 {case_id} 在终态后仍有事件")
+        if event_type in {"run.accepted", "answer.delta.first"} and event_type in seen_events:
+            raise BaselineError(f"事件 {case_id} 重复 {event_type}")
+        if event_type == "tool.started":
+            capability = str(event["capability"])
+            if capability in active_tools:
+                raise BaselineError(f"事件 {case_id} 重复开始 capability")
+            active_tools.add(capability)
+        elif event_type == "tool.completed":
+            capability = str(event["capability"])
+            if capability not in active_tools:
+                raise BaselineError(f"事件 {case_id} 工具完成缺少开始事件")
+            active_tools.remove(capability)
+        elif event_type == "network.disconnected":
+            if disconnected:
+                raise BaselineError(f"事件 {case_id} 重复断线")
+            disconnected = True
+        elif event_type == "run.reconnected":
+            if not disconnected:
+                raise BaselineError(f"事件 {case_id} 重连缺少断线事件")
+            disconnected = False
+            if event["reconnect_attempt"] is None:
+                raise BaselineError(f"事件 {case_id} 重连缺少 attempt")
+        elif event_type == "run.cancelled":
+            if cancelled:
+                raise BaselineError(f"事件 {case_id} 重复取消")
+            cancelled = True
+        elif event_type == "cancel.completed":
+            if not cancelled:
+                raise BaselineError(f"事件 {case_id} 取消完成缺少取消请求")
+        if event_type in TERMINAL_EVENTS:
+            if active_tools or disconnected:
+                raise BaselineError(f"事件 {case_id} 终态前工具或网络状态未闭合")
+            if cancelled and event_type != "cancel.completed":
+                raise BaselineError(f"事件 {case_id} 取消后终态必须是 cancel.completed")
+            terminal_index = index
+        seen_events.add(event_type)
+    if terminal_index is None:
+        raise BaselineError(f"事件 {case_id} 缺少终态事件")
+    if cancelled and events[-1]["event"] != "cancel.completed":
+        raise BaselineError(f"事件 {case_id} 取消流程未闭合")
+
+
+def parse_events(path: Path | None) -> list[dict[str, Any]]:
+    """读取版本化事件流并校验每个 Run 的严格时序。"""
+
+    if path is None:
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise BaselineError(f"无法读取事件 JSONL: {path}") from exc
+    events: list[dict[str, Any]] = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for line_number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise BaselineError(f"事件 JSONL 第 {line_number} 行不是有效 JSON") from exc
+        if not isinstance(value, Mapping):
+            raise BaselineError(f"事件 JSONL 第 {line_number} 行必须是对象")
+        normalized = _validate_event(value, line_number)
+        events.append(normalized)
+        grouped.setdefault(str(normalized["case_id"]), []).append(normalized)
+    for case_id, case_events in grouped.items():
+        _validate_event_sequence(case_events, case_id)
+    return events
+
+
+def summarize_events(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not events:
+        return None
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        grouped.setdefault(str(event["case_id"]), []).append(event)
+    terminal_counts: dict[str, int] = {}
+    knowledge_versions: set[str] = set()
+    for event in events:
+        if event["event"] in TERMINAL_EVENTS:
+            terminal = str(event["event"])
+            terminal_counts[terminal] = terminal_counts.get(terminal, 0) + 1
+        if event["knowledge_version"]:
+            knowledge_versions.add(str(event["knowledge_version"]))
+    def total(field: str) -> int:
+        return sum(int(event[field] or 0) for event in events)
+
+    def maximum(field: str) -> int:
+        return max((int(event[field] or 0) for event in events), default=0)
+
+    return {
+        "schema_version": EVENT_SCHEMA_VERSION,
+        "case_count": len(grouped),
+        "event_count": len(events),
+        "terminal_counts": dict(sorted(terminal_counts.items())),
+        "first_delta_cases": sum(
+            any(event["event"] == "answer.delta.first" for event in case_events)
+            for case_events in grouped.values()
+        ),
+        "reconnected_cases": sum(
+            any(event["event"] == "run.reconnected" for event in case_events)
+            for case_events in grouped.values()
+        ),
+        "tool_event_count": sum(event["event"].startswith("tool.") for event in events),
+        "grant_failures": total("grant_failures"),
+        "provider_ms_total": total("provider_ms"),
+        "rag_ms_total": total("rag_ms"),
+        "tool_ms_total": total("tool_ms"),
+        "visible_tool_count_max": maximum("visible_tool_count"),
+        "schema_token_estimate_max": maximum("schema_token_estimate"),
+        "knowledge_versions": sorted(knowledge_versions),
+    }
+
+
+def parse_scenario_manifest(path: Path | None) -> dict[str, Any] | None:
+    """校验固定脱敏场景清单，确保八类校园 Agent 场景都有覆盖。"""
+
+    if path is None:
+        return None
+    source = _load_object(path, "校园 Agent 场景清单")
+    if set(source) - SCENARIO_MANIFEST_FIELDS:
+        raise BaselineError("校园 Agent 场景清单包含未知字段")
+    if source.get("schema_version") != SCENARIO_MANIFEST_SCHEMA_VERSION:
+        raise BaselineError("校园 Agent 场景清单版本不受支持")
+    scope = source.get("evidence_scope", "fixture")
+    if scope not in {"fixture", "staging", "online"}:
+        raise BaselineError("校园 Agent 场景清单 evidence_scope 不合法")
+    raw_scenarios = source.get("scenarios")
+    if not isinstance(raw_scenarios, list) or not raw_scenarios:
+        raise BaselineError("校园 Agent 场景清单必须包含 scenarios")
+    scenarios: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    domains: set[str] = set()
+    for index, raw in enumerate(raw_scenarios, 1):
+        if not isinstance(raw, Mapping) or set(raw) != SCENARIO_FIELDS:
+            raise BaselineError(f"校园 Agent 场景第 {index} 行字段不完整或未知")
+        scenario_id = raw["id"]
+        domain = raw["domain"]
+        access = raw["access"]
+        capability = raw["capability"]
+        if not isinstance(scenario_id, str) or not CASE_ID_RE.fullmatch(scenario_id):
+            raise BaselineError(f"校园 Agent 场景第 {index} 个 id 不安全")
+        if scenario_id in seen_ids:
+            raise BaselineError(f"校园 Agent 场景 id 重复: {scenario_id}")
+        if domain not in SCENARIO_DOMAINS or access not in SCENARIO_ACCESS:
+            raise BaselineError(f"校园 Agent 场景 {scenario_id} domain/access 不合法")
+        if not isinstance(capability, str) or not CASE_ID_RE.fullmatch(capability):
+            raise BaselineError(f"校园 Agent 场景 {scenario_id} capability 不安全")
+        if not isinstance(raw["requires_grant"], bool):
+            raise BaselineError(f"校园 Agent 场景 {scenario_id} requires_grant 必须是布尔值")
+        if not isinstance(raw["expected_outcomes"], list) or not raw["expected_outcomes"]:
+            raise BaselineError(f"校园 Agent 场景 {scenario_id} expected_outcomes 不能为空")
+        outcomes: list[str] = []
+        for outcome in raw["expected_outcomes"]:
+            if not isinstance(outcome, str) or not CASE_ID_RE.fullmatch(outcome):
+                raise BaselineError(f"校园 Agent 场景 {scenario_id} outcome 不安全")
+            outcomes.append(outcome)
+        if access == "personal" and not raw["requires_grant"]:
+            raise BaselineError(f"个人场景 {scenario_id} 必须要求 Grant")
+        if access == "public" and raw["requires_grant"]:
+            raise BaselineError(f"公共场景 {scenario_id} 不应要求 Grant")
+        seen_ids.add(scenario_id)
+        domains.add(str(domain))
+        scenarios.append(
+            {
+                "id": scenario_id,
+                "domain": domain,
+                "access": access,
+                "capability": capability,
+                "requires_grant": raw["requires_grant"],
+                "expected_outcomes": outcomes,
+            }
+        )
+    missing = sorted(set(SCENARIO_DOMAINS) - domains)
+    if missing:
+        raise BaselineError("校园 Agent 场景清单缺少: " + ",".join(missing))
+    return {
+        "schema_version": SCENARIO_MANIFEST_SCHEMA_VERSION,
+        "evidence_scope": scope,
+        "scenarios": scenarios,
+    }
+
+
+def summarize_scenarios(manifest: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not manifest:
+        return None
+    scenarios = manifest.get("scenarios") or []
+    by_domain: dict[str, int] = {}
+    by_access: dict[str, int] = {}
+    grants = 0
+    for scenario in scenarios:
+        domain = str(scenario["domain"])
+        access = str(scenario["access"])
+        by_domain[domain] = by_domain.get(domain, 0) + 1
+        by_access[access] = by_access.get(access, 0) + 1
+        grants += int(bool(scenario["requires_grant"]))
+    return {
+        "schema_version": SCENARIO_MANIFEST_SCHEMA_VERSION,
+        "evidence_scope": manifest.get("evidence_scope"),
+        "scenario_count": len(scenarios),
+        "grant_required_count": grants,
+        "domains": dict(sorted(by_domain.items())),
+        "access": dict(sorted(by_access.items())),
+    }
+
+
 def _assert_no_sensitive_data(value: Any, location: str = "root") -> None:
     """递归检查最终报告，防止白名单扩展时意外带出敏感字段。"""
 
     if isinstance(value, Mapping):
         for key, child in value.items():
             key_text = str(key)
-            if FORBIDDEN_KEY_RE.search(key_text):
+            if key_text not in SAFE_METRIC_KEYS and FORBIDDEN_KEY_RE.search(key_text):
                 raise BaselineError(
                     f"报告字段 {location}.{key_text} 命中敏感字段黑名单"
                 )
@@ -416,6 +794,8 @@ def _missing_items(
     mcp: Mapping[str, Any] | None,
     knowledge: Mapping[str, Any] | None,
     timings: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    scenarios: Mapping[str, Any] | None,
 ) -> list[str]:
     missing: list[str] = []
     if not binaries:
@@ -427,8 +807,18 @@ def _missing_items(
         missing.append("deployment.mcp")
     if knowledge is None:
         missing.append("deployment.knowledge")
-    if not timings:
+    if not timings and not events:
         missing.append("timings")
+    if not events:
+        missing.append("agent_events")
+    if scenarios is None:
+        missing.append("scenario_manifest")
+    elif events:
+        scenario_ids = {str(item["id"]) for item in scenarios["scenarios"]}
+        event_ids = {str(item["case_id"]) for item in events}
+        uncovered = sorted(scenario_ids - event_ids)
+        if uncovered:
+            missing.append("agent_events.cases:" + ",".join(uncovered))
     return missing
 
 
@@ -443,6 +833,8 @@ def build_bundle(
     mcp_status: Path | None,
     knowledge_manifest: Path | None,
     timings_file: Path | None,
+    events_file: Path | None = None,
+    scenario_manifest: Path | None = None,
 ) -> dict[str, Any]:
     if evidence_type not in EVIDENCE_TYPES:
         raise BaselineError(f"证据类型必须是: {', '.join(EVIDENCE_TYPES)}")
@@ -453,6 +845,8 @@ def build_bundle(
     mcp = parse_mcp_status(mcp_status)
     knowledge = parse_knowledge_manifest(knowledge_manifest)
     timings = parse_timings(timings_file)
+    events = parse_events(events_file)
+    scenarios = parse_scenario_manifest(scenario_manifest)
     bundle: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _utc_now(),
@@ -471,9 +865,11 @@ def build_bundle(
             "knowledge": knowledge,
         },
         "timings": timings,
+        "agent_events": summarize_events(events),
+        "scenario_manifest": summarize_scenarios(scenarios),
     }
     bundle["missing"] = _missing_items(
-        binary_metadata, runtime_flags, mcp, knowledge, timings
+        binary_metadata, runtime_flags, mcp, knowledge, timings, events, scenarios
     )
     _assert_no_sensitive_data(bundle)
     return bundle
@@ -574,6 +970,34 @@ def render_markdown(bundle: Mapping[str, Any]) -> str:
             )
     else:
         lines.append("| 未采集 | - | - | - | - | - | - | - |")
+    lines.extend(["", "## Agent 事件与场景覆盖", ""])
+    event_summary = bundle.get("agent_events")
+    if isinstance(event_summary, Mapping):
+        lines.extend(
+            [
+                f"- 事件契约：`{_markdown_cell(event_summary.get('schema_version'))}`",
+                f"- 用例数 / 事件数：`{_markdown_cell(event_summary.get('case_count'))}` / `{_markdown_cell(event_summary.get('event_count'))}`",
+                f"- 首个增量用例数：`{_markdown_cell(event_summary.get('first_delta_cases'))}`",
+                f"- 重连用例数：`{_markdown_cell(event_summary.get('reconnected_cases'))}`",
+                f"- Grant 失败次数：`{_markdown_cell(event_summary.get('grant_failures'))}`",
+                f"- Provider/RAG/工具耗时总和（ms）：`{_markdown_cell(event_summary.get('provider_ms_total'))}` / `{_markdown_cell(event_summary.get('rag_ms_total'))}` / `{_markdown_cell(event_summary.get('tool_ms_total'))}`",
+                f"- 最大可见工具数 / Schema token 估算：`{_markdown_cell(event_summary.get('visible_tool_count_max'))}` / `{_markdown_cell(event_summary.get('schema_token_estimate_max'))}`",
+                f"- 知识版本：`{_markdown_cell(event_summary.get('knowledge_versions'))}`",
+            ]
+        )
+    else:
+        lines.append("- 版本化事件 JSONL：未采集")
+    scenario_summary = bundle.get("scenario_manifest")
+    if isinstance(scenario_summary, Mapping):
+        lines.extend(
+            [
+                f"- 场景清单：`{_markdown_cell(scenario_summary.get('schema_version'))}`，范围 `{_markdown_cell(scenario_summary.get('evidence_scope'))}`",
+                f"- 场景数 / 需要 Grant 的场景数：`{_markdown_cell(scenario_summary.get('scenario_count'))}` / `{_markdown_cell(scenario_summary.get('grant_required_count'))}`",
+                f"- 场景域覆盖：`{_markdown_cell(scenario_summary.get('domains'))}`",
+            ]
+        )
+    else:
+        lines.append("- 固定校园 Agent 场景清单：未采集")
     lines.extend(["", "## 缺失项与门禁", ""])
     missing = bundle.get("missing") or []
     if missing:
@@ -613,6 +1037,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mcp-status", type=Path)
     parser.add_argument("--knowledge-manifest", type=Path)
     parser.add_argument("--timings-jsonl", type=Path)
+    parser.add_argument("--events-jsonl", type=Path)
+    parser.add_argument("--scenario-manifest", type=Path)
     parser.add_argument("--output", type=Path, help="执行模式下写出的 JSON 报告")
     parser.add_argument(
         "--markdown-output", type=Path, help="执行模式下写出的 Markdown 报告"
@@ -637,6 +1063,8 @@ def main(argv: list[str] | None = None) -> int:
             mcp_status=args.mcp_status,
             knowledge_manifest=args.knowledge_manifest,
             timings_file=args.timings_jsonl,
+            events_file=args.events_jsonl,
+            scenario_manifest=args.scenario_manifest,
         )
         if not args.execute:
             preview = {
@@ -652,6 +1080,8 @@ def main(argv: list[str] | None = None) -> int:
                     "mcp_allowlist",
                     "knowledge_allowlist",
                     "typed_timing_jsonl",
+                    "versioned_agent_events_jsonl",
+                    "campus_agent_scenario_manifest",
                 ],
                 "missing": bundle["missing"],
                 "write_hint": "--execute --confirm WRITE:T00-BASELINE --output <path>",

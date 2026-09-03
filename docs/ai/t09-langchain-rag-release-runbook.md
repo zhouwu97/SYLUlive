@@ -145,10 +145,17 @@ python scripts/rollout_guard.py `
   --state .\artifacts\t09-rollout.json `
   --target internal `
   --evidence .\artifacts\preflight-evidence.json `
+  --agent-quality-report .\artifacts\a3-quality-staging.json `
+  --require-agent-quality `
   --advance --confirm 'ADVANCE:internal'
 ```
 
 状态文件只生成下一阶段环境建议和证据 SHA-256，不直接修改部署。变更负责人核对输出后才能通过受审计的部署系统应用配置。每阶段至少观察一个预先批准的完整窗口，检查质量、错误率、成本、延迟、拒答、引用合法性和降级模式，再按 `internal -> 5 -> 20 -> 50 -> 100` 重复。任何门禁失败立即停止推进并回滚，禁止跳阶段补写状态。
+
+对于本计划的校园 Agent，`--agent-quality-report` 是 A3 的独立前置门禁：报告必须为
+`campus-agent-quality-gate/v1`，知识版本与待推进版本一致，所有引用/新鲜度/关键结论/
+拒答/历史边界门禁通过，且 `evidence_type` 为已授权的 `staging` 或 `online`。fixture
+报告只能做离线检查，不能授权运行时灰度；质量报告摘要和 SHA-256 会写入本地灰度历史。
 
 ## 回滚与演练
 

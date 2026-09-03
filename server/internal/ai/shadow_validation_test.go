@@ -65,8 +65,8 @@ func TestFailureReasonAndRegressionCandidateContract(t *testing.T) {
 	var metrics AgentTraceMetrics
 	metrics.Observe(string(UserSignalCorrection), nil)
 	metrics.Observe(string(UserSignalUsefulAnswer), []byte(`{"time_to_useful_answer_ms":42}`))
-	metrics.Observe("run.failed", []byte(`{"failure_reason":"answer_wrong"}`))
-	if metrics.UserCorrections != 1 || metrics.UsefulAnswers != 1 || metrics.TimeToUsefulAnswerMs != 42 || metrics.FailureTaxonomy[string(FailureAnswerWrong)] != 1 {
+	metrics.Observe("run.failed", []byte(`{"failure_reason":"answer_wrong","failure_class":"tool_error"}`))
+	if metrics.UserCorrections != 1 || metrics.UsefulAnswers != 1 || metrics.TimeToUsefulAnswerMs != 42 || metrics.FailureTaxonomy[string(FailureAnswerWrong)] != 1 || metrics.FailureClasses[string(FailureToolError)] != 1 {
 		t.Fatalf("real-user metrics contract violated: %+v", metrics)
 	}
 }

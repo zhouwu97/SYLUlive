@@ -1,7 +1,7 @@
 # T00 优化基线与验收口径（脱敏基线采集说明 + 报告模板）
 
 日期：2026-09-02
-分支：`ai-jichu-xianzhuang`
+分支：`ai-gongju-shangxiawen`
 性质：第 0 步正式交付物。仅新增基线采集说明、报告模板与验收口径，**不改变 Provider、RAG、数据库或公网配置**。
 
 > 目的：为后续“更快、更准”的判断建立统一基准，明确区分三种状态——**代码已具备的能力 / 已发布到生产的能力 / 尚待验证的优化假设**。
@@ -159,3 +159,56 @@ python scripts/collect_ai_baseline.py `
 ```powershell
 python -m pytest scripts/test_collect_ai_baseline.py -q
 ```
+
+## 9. 校园 Agent 事件与场景清单
+
+基线采集必须同时绑定一个固定场景清单和一份事件 JSONL。场景清单只包含
+脱敏的 `case_id`、能力范围和类型化预期，不包含问题、答案、Grant、subject、
+账号或个人字段；事件 JSONL 只允许保存 24 位问题 HMAC、事件顺序、耗时、工具
+计数、授权失败计数、知识版本和降级类型。采集器会拒绝缺少场景、事件越序、
+工具调用未闭合或终态缺失的输入。
+
+使用仓库 fixture 做离线契约检查（不会连接任何服务，也不会产生 staging/线上
+事实）：
+
+```powershell
+python scripts/collect_ai_baseline.py `
+  --evidence-type fixture `
+  --repo . `
+  --scenario-manifest .\server\testdata\ai_eval\campus_agent_scenarios.json `
+  --events-jsonl .\server\testdata\ai_eval\campus_agent_events.fixture.jsonl
+```
+
+在授权的 staging 采集时，先把隔离环境生成的脱敏事件文件和场景清单显式传入，
+并把输出标记为 `staging`；不得用 fixture 事件冒充 staging 运行结果：
+
+```powershell
+python scripts/collect_ai_baseline.py `
+  --evidence-type staging `
+  --repo . `
+  --scenario-manifest .\artifacts\staging-campus-scenarios.json `
+  --events-jsonl .\artifacts\staging-campus-events.jsonl `
+  --output .\artifacts\staging-t00-baseline.json `
+  --markdown-output .\artifacts\staging-t00-baseline.md `
+  --execute --confirm WRITE:T00-BASELINE
+```
+
+`online` 仅表示生产环境只读采集，必须由发布负责人另行授权并使用隔离测试账号；
+它不能复用 `fixture` 或 `staging` 的输出路径和证据标签：
+
+```powershell
+python scripts/collect_ai_baseline.py `
+  --evidence-type online `
+  --repo . `
+  --scenario-manifest .\artifacts\online-campus-scenarios.json `
+  --events-jsonl .\artifacts\online-campus-events.jsonl `
+  --output .\artifacts\online-t00-baseline.json `
+  --markdown-output .\artifacts\online-t00-baseline.md `
+  --execute --confirm WRITE:T00-ONLINE-READONLY
+```
+
+报告中的 `evidence_type` 必须与实际运行环境一致。fixture 结果只能证明代码、
+解析器和脱敏契约；staging 结果只能证明对应 staging 版本和开关快照；线上结果
+还必须附部署版本、配置真值、采集时间和灰度影响。三类证据分别存档，不能合并
+样本、拼接指标或用较弱证据替代较强证据。缺少 staging/生产授权时，停止在
+fixture 证据，不写“线上已优化”或“生产已通过”。

@@ -150,7 +150,7 @@ func NewCourseEvaluationService(db *gorm.DB) *CourseEvaluationService {
 
 // validateInput 校验并规范化提交输入。
 func validateInput(in SubmitInput) (SubmitInput, error) {
-	in.CourseName = strings.TrimSpace(in.CourseName)
+	in.CourseName = models.CanonicalCourseSubjectName(in.CourseName)
 	in.TeacherName = strings.TrimSpace(in.TeacherName)
 	in.Comment = strings.TrimSpace(in.Comment)
 	if in.CourseName == "" {
@@ -178,7 +178,7 @@ func (s *CourseEvaluationService) Resolve(userID uint, courseName, teacherName s
 	if s == nil || s.db == nil {
 		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
 	}
-	courseName = strings.TrimSpace(courseName)
+	courseName = models.CanonicalCourseSubjectName(courseName)
 	teacherName = strings.TrimSpace(teacherName)
 	if courseName == "" || teacherName == "" {
 		return nil, courseEvalErr(CodeInvalidCourseEvaluationInput, "课程名与教师名不能为空", nil)

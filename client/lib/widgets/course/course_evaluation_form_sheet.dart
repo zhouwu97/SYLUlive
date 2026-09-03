@@ -73,6 +73,11 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
   int _star = 0;
   bool _submitting = false;
 
+  String get _evaluationCourseName {
+    final resolvedName = widget.resolveResult?.courseName.trim() ?? '';
+    return resolvedName.isNotEmpty ? resolvedName : widget.courseName.trim();
+  }
+
   /// 教师名输入框展示的教师名是否来自已选教师（未被用户改写）。
   String _lastAutoTeacherName = '';
 
@@ -267,7 +272,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
         result = await provider.update(
           id: widget.submission!.id,
           revision: widget.submission!.revision,
-          courseName: widget.courseName,
+          courseName: _evaluationCourseName,
           teacherName: teacherName,
           star: _star,
           comment: comment,
@@ -276,7 +281,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
         );
       } else {
         result = await provider.submit(
-          courseName: widget.courseName,
+          courseName: _evaluationCourseName,
           teacherName: teacherName,
           star: _star,
           comment: comment,
@@ -373,7 +378,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        widget.courseName,
+                        _evaluationCourseName,
                         style: TextStyle(
                           fontSize: 13,
                           color: subColor,
@@ -443,7 +448,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
           _createOptionTile(
             isDark,
             selected: _selectedSubjectId == null,
-            title: '创建新学科「${widget.courseName}」',
+            title: '创建新学科「$_evaluationCourseName」',
             subtitle: '提交后将由管理员审核，审核通过前不公开',
             onTap: () => _onSubjectChanged(null),
           )
@@ -464,7 +469,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
           _createOptionTile(
             isDark,
             selected: _selectedSubjectId == null,
-            title: '都不是，创建新学科「${widget.courseName}」',
+            title: '都不是，创建新学科「$_evaluationCourseName」',
             subtitle: '提交后将由管理员审核，审核通过前不公开',
             onTap: () => _onSubjectChanged(null),
           ),

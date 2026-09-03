@@ -186,6 +186,16 @@ func NormalizeCourseSubjectName(name string) string {
 	}
 }
 
+// CanonicalCourseSubjectName 返回评价业务中使用的标准学科名。
+// 仅合并已明确约定的体育序号，其他课程保留原始大小写和展示文本。
+func CanonicalCourseSubjectName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if NormalizeCourseSubjectName(trimmed) == "体育" {
+		return "体育"
+	}
+	return trimmed
+}
+
 // NormalizeTeacherName 规范化教师名。
 func NormalizeTeacherName(name string) string {
 	return normalizeNameKey(name)

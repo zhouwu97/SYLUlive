@@ -128,6 +128,33 @@ func TestCourseEvaluationSubmitStaysPendingWhenSubjectMissing(t *testing.T) {
 	require.Zero(t, ratingCount, "审核前不应创建公开评价")
 }
 
+func TestCourseEvaluationNumberedSportsUsesCanonicalNameWhenSubjectMissing(t *testing.T) {
+	for _, courseName := range []string{"体育1", "体育2", "体育3", "体育4", "体育5"} {
+		t.Run(courseName, func(t *testing.T) {
+			db := newCourseEvaluationServiceTestDB(t)
+			svc := NewCourseEvaluationService(db)
+			user := createCourseEvalUser(t, db, "student-"+courseName)
+
+			resolved, err := svc.Resolve(user.ID, courseName, "体育教师")
+			require.NoError(t, err)
+			require.Equal(t, "体育", resolved.CourseName)
+			require.True(t, resolved.RequiresConfirmation)
+			require.Empty(t, resolved.CourseSubjects)
+
+			view, err := svc.Submit(user.ID, SubmitInput{
+				CourseName:  courseName,
+				TeacherName: "体育教师",
+				Star:        5,
+				Comment:     "课程评价",
+			})
+			require.NoError(t, err)
+			require.Equal(t, models.CourseEvaluationStatusPending, view.Status)
+			require.Equal(t, "体育", view.CourseName)
+			require.Equal(t, "体育", view.ProposedCourseName)
+		})
+	}
+}
+
 func TestCourseEvaluationSubmitRequiresConfirmationForAlias(t *testing.T) {
 	db := newCourseEvaluationServiceTestDB(t)
 	svc := NewCourseEvaluationService(db)

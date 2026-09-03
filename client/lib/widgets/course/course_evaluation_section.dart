@@ -33,6 +33,11 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
   bool _loading = false;
   String? _error;
 
+  String get _evaluationCourseName {
+    final resolvedName = _result?.courseName.trim() ?? '';
+    return resolvedName.isNotEmpty ? resolvedName : widget.courseName;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +84,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
   Future<void> _openForm() async {
     await CourseEvaluationFormSheet.show(
       context,
-      courseName: widget.courseName,
+      courseName: _evaluationCourseName,
       teacherName: widget.teacherName,
       resolveResult: _result,
       submission: _result?.submission,
@@ -167,8 +172,8 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
         icon: Icons.help_outline,
         title: '需要确认标准学科',
         subtitle: result.courseSubjects.length > 1
-            ? '「${widget.courseName}」匹配到多个学科，提交前需选择'
-            : '「${widget.courseName}」尚未精确收录，提交前需确认',
+            ? '「$_evaluationCourseName」匹配到多个学科，提交前需选择'
+            : '「$_evaluationCourseName」尚未精确收录，提交前需确认',
         actionText: '去确认并评价',
         onTap: _openForm,
       );
@@ -179,7 +184,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
               .where((s) => s.id == result.selectedCourseSubjectId)
               .firstOrNull
               ?.name ??
-          widget.courseName;
+          _evaluationCourseName;
       if (result.selectedTeacherId != null) {
         final teacherName = result.teachers
                 .where((t) => t.id == result.selectedTeacherId)
@@ -210,7 +215,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
     return _actionCard(
       isDark,
       icon: Icons.library_add_outlined,
-      title: '「${widget.courseName}」尚未收录',
+      title: '「$_evaluationCourseName」尚未收录',
       subtitle: '提交评价将创建新学科与教师，审核通过后公开',
       actionText: '提交评价',
       onTap: _openForm,

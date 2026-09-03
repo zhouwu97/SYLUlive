@@ -26,7 +26,6 @@ services:
       - INTERNAL_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
       - EDU_CREDENTIAL_ENCRYPTION_KEY=${EDU_CREDENTIAL_ENCRYPTION_KEY:-}
       - JWC_CRAWLER_CONTACT=${JWC_CRAWLER_CONTACT:-}
-      - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=true in .env}
     expose:
       - "8000"
     restart: unless-stopped
@@ -87,10 +86,6 @@ services:
     environment:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
-      - ACCOUNT_IDENTITY_READ_MODE=${ACCOUNT_IDENTITY_READ_MODE:-legacy}
-      - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=true in .env}
-      - SCHOOL_DEVICE_CAPABILITY_CUT=${SCHOOL_DEVICE_CAPABILITY_CUT:?set SCHOOL_DEVICE_CAPABILITY_CUT=true in .env}
-      - SCHOOL_ACADEMIC_ROUTES_RETIRED=${SCHOOL_ACADEMIC_ROUTES_RETIRED:?set SCHOOL_ACADEMIC_ROUTES_RETIRED=true in .env}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       # release 模式下 Go 拒绝在缺失或空置这两个开关时启动，必须由 .env 显式提供（生产目标值均为 true）。
       # 异常回退：在 .env 改为 false 并重启 Go（保留已生成变体 / 改回 Go 直接投递）。

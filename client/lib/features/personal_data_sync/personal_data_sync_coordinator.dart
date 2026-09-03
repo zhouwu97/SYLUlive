@@ -33,7 +33,7 @@ class PersonalErkeCredentials {
   final String erkePassword;
 }
 
-/// 复用既有 [EduProvider] 的本机教务更新能力，并沿用其本地加密缓存写入逻辑。
+/// 复用既有 [EduProvider] 的服务端教务更新能力，并沿用其本地加密缓存写入逻辑。
 class EduProviderPersonalAcademicSyncGateway
     implements PersonalAcademicSyncGateway {
   EduProviderPersonalAcademicSyncGateway(this._provider,
@@ -187,8 +187,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
   final DateTime Function() _now;
 
   @override
-  Future<PersonalSyncItemResult> syncErke(
-      {bool automationUpload = false}) async {
+  Future<PersonalSyncItemResult> syncErke({bool automationUpload = false}) async {
     final credentials = await _requestCredentials();
     if (credentials == null) {
       return const PersonalSyncItemResult(
@@ -258,8 +257,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     var policy = await policyStore.read();
     final automationOverride =
         automation && _automationUploadAllowed && _requestUploadPolicy == null;
-    if (policy == ErkeSnapshotUploadPolicy.askEveryUpdate &&
-        !automationOverride) {
+    if (policy == ErkeSnapshotUploadPolicy.askEveryUpdate && !automationOverride) {
       policy = await _requestUploadPolicy?.call() ?? policy;
     }
     switch (policy) {

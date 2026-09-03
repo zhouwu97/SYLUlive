@@ -1,43 +1,32 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Flutter-3.x-blue?logo=flutter" alt="Flutter">
   <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go" alt="Go">
-  <img src="https://img.shields.io/badge/PostgreSQL-14+-336791?logo=postgresql" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Architecture-Email%20%2B%20Local%20School-7C3AED" alt="Email primary account and local school architecture">
+  <img src="https://img.shields.io/badge/PostgreSQL-14+-336791?logo=postgresql" alt="Postgres">
+  <img src="https://img.shields.io/badge/MCP-sylulive--hy3%2F1-7C3AED" alt="MCP Contract">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </div>
 
 # 沈理校园（SYLUlive）
 
-沈理校园是面向沈阳理工大学学生的综合校园应用，采用 Flutter、Go、Python 与 PostgreSQL 构建，覆盖账号、校园社区、竞赛、生活服务、公开校园信息和本机教务等场景。
+沈理校园是面向沈阳理工大学学生的综合校园应用，采用 Flutter、Go、Python 与 PostgreSQL 构建，覆盖教务查询、课表、成绩、校园社区、竞赛、生活服务和 AI 校园助手等场景。
 
-项目正在从“学校身份驱动的社区账号 + 服务端教务能力”迁移为：
+项目将**生产校园数据检索**与**外部模型决策能力**分开：正式政策问答由主服务的 Go HybridRetriever 和已发布知识库完成；独立仓库 [SYLUlive_MCP](https://github.com/zhouwu97/SYLUlive_MCP) 通过本地 `stdio` 提供可移植、可审计的 Hy3 决策工具。
 
-```text
-Email 主账号
-        +
-一次性校园准入
-        +
-设备本地 LocalSchoolProfile
-        +
-Server Zero School Authority
-```
+## 🌟 核心功能
 
-本分支 `jiaowu` 以 `MCP` 为基线，README 描述的是本次重构的目标架构和迁移边界。目标架构尚未因文档更新而自动视为完成；只有通过最终验收后，才能宣称 `Server Zero School Authority — Verified`。
+### 📚 教务与校园工具
 
-## 🌟 核心能力
-
-### 📚 本机教务与校园服务
-
-- **本地课表与多学期数据**：课表、成绩、考试、学分要求、学业情况、二课和体测由设备本地能力处理。
-- **本地学校会话**：使用随机 UUID 的 `LocalSchoolProfile` 管理账号命名空间，学校凭据进入 Android Keystore 或 iOS Keychain-backed storage。
-- **Fail-closed 解析**：学校页面结构变化、登录页或异常响应不会被误显示为“暂无数据”，而是返回可解释的结构不匹配错误。
-- **账号隔离**：切换本机学校账号时关闭旧 Vault、清理内存并重新挂载新 Profile，避免 A/B 账号数据串流。
+- **智能课表与多学期缓存**：支持官方课表同步、学期切换、冲突检测和 Android 桌面小部件。
+- **成绩、考试与学分查询**：查询历史成绩、考试安排、培养方案学分要求和二课进度。
+- **竞赛中心**：提供学校竞赛目录、个人计划、赛事比较和面向年级、学院、专业的候选推荐。
+- **校园政策问答**：支持“挂科怎么办”“重修”“交不起学费”“勤工俭学”“奖学金怎么评”等学生口语查询。
 
 ### 🤖 AI 校园助手
 
-- **公共知识问答**：使用已发布的校园政策、公共服务说明和允许的社区数据。
-- **个人数据隔离**：成绩、课表、二课、体测等学校个人数据不进入 Server AI、Device Job 或远程 MCP 工具链。
-- **受控集成**：外部 MCP 只能作为可选的版本化、白名单化集成，不能成为学校权限或个人学校数据的隐藏入口。
+- **生产 RAG**：基于 PostgreSQL 已发布知识文档、全文检索、向量检索和确定性意图契约回答校园政策问题。
+- **个人数据授权**：成绩、课表、二课等个人数据按用途授权，支持云端快照和设备侧最小化取数。
+- **外部 MCP 决策工具**：通过严格 Schema、工具白名单和版本摘要调用竞赛比较、学业分析和周计划工具。
+- **安全降级**：Hy3 或独立 MCP 不可用时，正式校园政策检索和本地确定性结果仍可继续工作。
 
 ### 💬 校园互动社区
 
@@ -45,11 +34,11 @@ Server Zero School Authority
 - **校园集市与曝光台**：闲置物品流转、交易状态、避坑信息和标签搜索。
 - **教师与专业评价**：面向学生的教师、课程、专业和校园生活评价体系。
 
-### 🏆 竞赛、生活与治理
+### 🛡️ 社区治理与安全
 
-- **竞赛中心**：公开赛事目录、赛事详情、竞赛比较和个人计划。
-- **校园服务**：校历、食堂、公共通知和其他公开校园信息。
-- **社区治理**：版主、管理员和超级管理员的权限边界、审计以及输入和上传校验。
+- **分级管理体系**：支持版主、管理员和超级管理员的权限边界与审计。
+- **公告与通知**：系统公告、未读状态、课程提醒和隐私受控的 AI 任务通知。
+- **输入与上传校验**：限制文件类型、大小、访问范围以及个人数据字段。
 
 ---
 
@@ -96,99 +85,48 @@ Server Zero School Authority
 
 ---
 
-## 🧭 账号与领域边界
+## 🔗 SYLUlive 与 SYLUlive_MCP 如何联动
 
-| 领域 | 负责内容 | 关键边界 |
-| --- | --- | --- |
-| Account Domain | `users.id`、Email、APP Password、JWT、社区资料、角色与账号安全 | 不依赖学号、学校 Cookie、教务在线状态或 `SchoolProfile` |
-| Registration Trust Domain | 判断本次注册是否具备校园准入资格 | 只参与注册/迁移，不参与登录、找回密码或本地教务 |
-| Local School Domain | 学号、学校密码、Cookie、课表、成绩、考试、二课、体测和学业数据 | 只存在设备，不上传 Server，不决定 `users.id` |
-| School Public Information Domain | 教务通知、学校新闻、创新创业通知和公开附件 | 当前产品策略为设备抓取、本地缓存，与个人学校 Client 隔离 |
-
-目标账号模型：
-
-```text
-users.id = 永久社区账号主体
-verified Email = 唯一正式登录身份
-APP Password = SYLUlive 账号凭据
-LocalSchoolProfile = 设备本地学校账号
-```
-
-目标迁移期会引入 `user_login_identities` 和 `registration_sessions`。最终注册事务必须幂等且最多创建一个 `users.id`；邮箱变更是高风险认证操作，不是普通 Profile 字段更新。
-
-## 🏛️ 目标架构
+两个仓库不是重复实现，也不是把 App 的全部 AI 功能交给外部模型，而是分别承担生产数据与独立决策能力。
 
 ```mermaid
 flowchart LR
-    A[Flutter App]
-    S[SYLUlive Server]
-    AP[AppApiClient<br/>HTTPS + JWT]
-    P[SchoolPersonalClient<br/>独立 CookieJar]
-    U[SchoolPublicClient<br/>无个人 Cookie]
-    V[LocalSchoolProfile<br/>Secure Storage + 个人数据缓存]
-    PS[学校个人系统<br/>教务 / WebVPN / 二课 / 体测]
-    PB[学校公开网站<br/>通知 / 新闻 / 公开附件]
-    W[本地公开信息缓存]
-    K[账号 / 社区 / 竞赛 / 管理 / 公共知识]
+    U[Flutter App] --> G[SYLUlive Go AI Runtime]
 
-    A --> AP --> S
-    S --> K
-    A --> P --> V
-    P --> PS
-    A --> U --> PB
-    U --> W
+    G -->|正式校园政策问答| R[HybridRetriever]
+    R --> K[(PostgreSQL 已发布知识库)]
+    R --> E[Python RAG Embedding Service]
+
+    G -->|本地 stdio<br/>固定工具与 Schema 校验| M[SYLUlive_MCP]
+    M -->|Live 模式| H[Hy3 API]
+    M -->|Fixture / 便携问答| B[v0.8 固定 SHA Policy Bundle]
+
+    C[Cursor / CodeBuddy / 其他 MCP 客户端] --> M
 ```
 
-`Server` 与学校个人系统、本地学校缓存之间没有业务链路。学校凭据、Cookie、课表、成绩和其他学校个人数据只在设备侧安全存储与本地缓存中流转。
+### 职责划分
 
-## 🛡️ Server Zero School Authority
-
-目标架构用“四个零”验收 Server 边界：
-
-| 安全不变量 | Server 不得具备的能力 |
-| --- | --- |
-| Zero Credential | 不持有 Student Password、CAS/WebVPN 凭据、Ticket、JSESSIONID 或学校 Cookie |
-| Zero Personal School Data | 不保存学号、姓名、学院、专业、年级、课表、成绩、考试、二课、体测或学校个人快照 |
-| Zero School Authority | 不登录、代理或调用学校个人接口，不远程命令设备访问学校或读取学校缓存 |
-| Zero Hidden Fallback | 本地学校能力失败后不恢复 Server School Authority |
-
-因此，服务端最终只保留账号、社区、竞赛、管理以及经过边界审查的公共知识能力。AI Runtime 和 Device Bridge 不注册或读取 `academic.*`、个人 `schedule`、`erke`、`physical` 和学业身份工具。
-
-## 🔄 分阶段迁移
-
-迁移遵循“先建立新路径，再删除旧路径”的顺序：
-
-| 阶段 | PR 范围 | 目标 |
+| 能力 | SYLUlive 主项目 | SYLUlive_MCP |
 | --- | --- | --- |
-| 账号与安全基础 | PR0–PR4 | 收紧学校 TLS、建立边界 ADR、预检身份数据、Email Identity、一次性校园准入 |
-| 本地学校能力 | PR5–PR9 | Gateway、三套 HTTP Client、本地会话与安全存储、课表/成绩/考试/二课/公开资讯本地化 |
-| 远程能力退役 | PR10–PR12 | 先阻断旧客户端，再移除 Device School Tools、旧 `/edu/*`、服务端学校数据读写并完成清理 |
-| 最终验收 | PR13 | Canary、数据库、日志、AI Runtime、Device Job 与 egress 四个零验证 |
+| App 正式政策问答 | 使用生产 Go HybridRetriever 和数据库已发布文档 | 不读取生产数据库 |
+| “挂科、重修、资助、奖学金”等意图 | 加载共享 v0.8 意图契约并执行生产检索 | 使用相同契约检索固定 SHA Bundle |
+| 竞赛比较 | 提供真实赛事与用户授权数据，校验远端结果 | 执行四维比较并生成受约束解释 |
+| 学业分析 | 生成非身份化学业快照并执行权限控制 | 本地计算学分、挂科和完整度，再由 Hy3 解释 |
+| 周计划 | 提供固定课程、目标和用户约束 | 在睡眠、固定事件和每日上限内排程 |
+| 便携 MCP 演示 | 作为可选调用方 | 可被 Cursor、CodeBuddy 等客户端直接启动 |
 
-```text
-Local-First 新客户端稳定
-        ↓
-提高 MinimumSupportedVersionCode
-        ↓
-旧客户端 → 426 Upgrade Required
-        ↓
-删除 Server → Device School Capability
-        ↓
-旧 /edu/* → 410 Gone（读取 Body 前直接返回）
-        ↓
-停止读写后清理数据库、AI、日志、备份与密钥
-        ↓
-Canary + 四个零最终验收
-```
+### 一致性与安全边界
 
-在 PR10 完成前，不宣称 `Server Zero School Authority`；在 PR12/PR13 完成前，不宣称 `Server Zero School Data Verified`。安全边界切换后，不以修复功能为由自动恢复 Server Academic、学校上传或远程学校 Device Tool。
+- 两端共享 `policy_query_contract_v0.8.json`，保证粗略口语、精确问题和复合意图使用一致的路由规则。
+- MCP 协议版本为 `sylulive-hy3/1`；Go 客户端同时校验 `tools/list`、状态工具声明和本地固定 Schema SHA-256。
+- 当前生产兼容基线为 SYLUlive `53d8ed5f875e9d7174335b2965def05f377e1bf3`，配套
+  `SYLUlive_MCP` 标签 `sylulive-mcp-prod-20260728`（实现 `765a5b634f18aaa616b3c424462572651c54b034`）。
+- 政策 Bundle 使用 `newline-lf-v1` 规范化摘要，避免 Windows CRLF 与 Linux LF 导致部署校验漂移。
+- 主服务只向 MCP 发送工具所需的结构化最小数据，不发送教务密码、Cookie、JWT 或其他身份凭据。
+- 独立 MCP 不连接 SYLUlive 生产数据库，不修改用户账号和业务数据。
+- 当前 App 通过 MCP 使用 `compare_competitions`、`analyze_academic_snapshot` 和 `plan_student_week`；`answer_campus_question` 主要服务于独立 MCP 客户端和便携演示。
 
-## 🤖 AI 与 MCP 边界
-
-- AI 可使用已发布的公共政策、公共服务说明和允许的社区数据。
-- 个人成绩、课表、二课、体测等学校个人数据不进入 Server AI、Device Job 或远程 MCP 工具链。
-- 外部 MCP 只能作为可选的版本化、白名单化集成，不能成为学校权限或个人学校数据的隐藏入口。
-- 现有 [内部 Hy3 MCP 部署文档](./docs/ai/internal-hy3-mcp-deployment.md) 属于迁移基线参考，启用前必须重新完成 School Authority 边界审查。
+详细部署方式见 [内部 Hy3 MCP 部署文档](./docs/ai/internal-hy3-mcp-deployment.md)。
 
 ---
 
@@ -196,12 +134,12 @@ Canary + 四个零最终验收
 
 ```text
 SYLUlive/
-├── client/                 Flutter 客户端、LocalSchoolProfile 与本地校园能力
-├── server/                 Go 账号、社区、竞赛、AI Runtime 与公共服务
-├── python-edu-service/     迁移期旧教务链路，目标阶段后退出生产路径
-├── python-rag-service/     公共政策与文档解析、分词和向量服务
-├── knowledge-base/         校园公共政策资料与导入包
-├── docs/                   架构、部署、隐私和专项说明
+├── client/                 Flutter 客户端
+├── server/                 Go 后端、AI Runtime、HybridRetriever 与 MCP 客户端
+├── python-edu-service/     教务抓取与结构化服务
+├── python-rag-service/     文档解析、分词与向量服务
+├── knowledge-base/         校园政策资料、意图契约与导入包
+├── docs/                   架构、部署和专项说明
 ├── deploy/                 systemd 与部署配置
 ├── nginx/                  反向代理配置
 ├── DEPLOY.md               部署与运维文档
@@ -211,12 +149,14 @@ SYLUlive/
 
 ---
 
-## 📌 迁移状态
+## 📢 当前版本
 
-- **迁移基线**：`MCP` 分支。
-- **当前工作分支**：`jiaowu`，用于承载本次本机教务与账号架构重构。
-- **目标架构状态**：Draft for implementation，按 PR0–PR13 分阶段推进。
-- **验收声明**：在 PR13 完成前，不对外宣称 `Server Zero School Authority — Verified`。
+### v1.6.2
+
+- 上线校园政策 v0.8 检索，拆分困难认定、助学金、临时补助、助学贷款、勤工助学和奖学金资料。
+- 支持宽泛问题与精确问题分流，例如“挂科怎么办”覆盖补考与重修，而“重修”只回答重修制度。
+- 完成 Go 与独立 MCP 的版本化 Schema、摘要校验和真实 `stdio` 联调。
+- 完善个人数据授权、设备侧取数、失败降级和来源证据展示。
 
 ---
 
@@ -239,27 +179,25 @@ flutter pub get
 flutter run
 ```
 
-本地联调时，将客户端 API 地址指向开发机可访问的 Go 服务地址。学校个人服务由客户端直接连接，不通过 Go 后端代理。
+本地联调时，将客户端 API 地址指向开发机可访问的 Go 服务地址。
 
-### 3. 启动 RAG 服务
-
-```bash
-cd python-rag-service
-uvicorn app.main:app --host 127.0.0.1 --port 8090
-```
-
-### 4. 迁移期兼容教务服务（可选）
+### 3. 启动教务服务
 
 ```bash
 cd python-edu-service
 python main.py
 ```
 
-该服务仅用于迁移期旧链路维护和兼容性验证，不代表目标架构允许 Server 持有学校权限或个人教务数据。Local-First 客户端稳定后，应按迁移计划逐步退出生产路径。
+### 4. 启动 RAG 服务
 
-### 5. 外部 MCP（可选）
+```bash
+cd python-rag-service
+uvicorn app.main:app --host 127.0.0.1 --port 8090
+```
 
-MCP 不是运行本机教务所需的前置服务。若部署受控的公共信息或决策集成，请先阅读 [内部 Hy3 MCP 部署文档](./docs/ai/internal-hy3-mcp-deployment.md)，并完成工具白名单、Schema、健康检查和个人学校数据边界审查。
+### 5. 可选：连接独立 MCP
+
+克隆并安装 [SYLUlive_MCP](https://github.com/zhouwu97/SYLUlive_MCP)，再按照 [MCP 部署文档](./docs/ai/internal-hy3-mcp-deployment.md) 配置本地 `stdio` 命令。外部 MCP 默认应保持关闭，完成契约和健康检查后再启用。
 
 ---
 
@@ -267,10 +205,7 @@ MCP 不是运行本机教务所需的前置服务。若部署受控的公共信�
 
 - [部署与运维指南](./DEPLOY.md)
 - [后端 API](./server/API.md)
-- [本地存储清单](./docs/local-storage-inventory.md)
-- [隐私数据清单](./docs/privacy-data-inventory.md)
-- [留存与备份清单](./docs/retention-and-backup-inventory.md)
-- [内部 Hy3 MCP 部署基线](./docs/ai/internal-hy3-mcp-deployment.md)
+- [内部 Hy3 MCP 部署](./docs/ai/internal-hy3-mcp-deployment.md)
 - [校园政策知识库](./knowledge-base/README.md)
 - [独立 SYLUlive_MCP](https://github.com/zhouwu97/SYLUlive_MCP)
 
@@ -300,14 +235,6 @@ RAG 服务：
 cd python-rag-service
 pytest -q
 ```
-
-重构相关变更还必须检查：
-
-- 学校个人凭据、Cookie 和个人教务数据不会进入 Server、日志、AI、Device Job、队列或备份；
-- `AppApiClient`、`SchoolPersonalClient`、`SchoolPublicClient` 的 Cookie 与认证头完全隔离；
-- 本地教务失败没有 Server fallback；
-- Parser 对登录页、WAF、空页面、结构变化和字段缺失 fail-closed；
-- 生产路径没有通用 TLS 验证绕过。
 
 ---
 

@@ -35,11 +35,9 @@
 | `POST` | `/api/verify_code` | 验证邮箱验证码 |
 | `POST` | `/api/register` | 用户注册 (邮箱) |
 | `POST` | `/api/login` | 用户登录 (邮箱+密码) |
-| `POST` | `/api/login_edu` | 已退役，固定返回 `410` |
-| `POST` | `/api/register_with_edu` | 已退役，固定返回 `410` |
-| `POST` | `/api/password/email/code` | 发送邮箱密码找回验证码 |
-| `POST` | `/api/password/email/reset` | 使用邮箱验证码重置密码 |
-| `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
+| `POST` | `/api/login_edu` | 教务系统登录绑定 |
+| `POST` | `/api/register_with_edu` | 仅教务绑定的一键注册 |
+| `POST` | `/api/forgot_password` | 忘记密码找回 |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
 
 ## 2. 用户与个人中心 (User)
@@ -63,16 +61,13 @@
 
 ## 3. 教务系统 (Edu)
 
-服务端不再保存或代理个人教务会话。以下历史接口在发布配置中统一返回 `410`；
-课表和成绩由客户端本机直连学校系统，并由用户主动触发。
-
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/edu/bind` | 已退役，固定返回 `410` |
-| `DELETE` | `/api/edu/bind` | 已退役，固定返回 `410` |
-| `GET` | `/api/edu/status` | 已退役，固定返回 `410` |
-| `POST` | `/api/edu/courses` | 已退役，固定返回 `410` |
-| `POST` | `/api/edu/grades` | 已退役，固定返回 `410` |
+| `POST` | `/api/edu/bind` | 绑定强智教务系统 |
+| `DELETE` | `/api/edu/bind` | 解绑教务系统 |
+| `GET` | `/api/edu/status` | 获取当前教务绑定状态 |
+| `POST` | `/api/edu/courses` | 抓取或获取教务课表 |
+| `POST` | `/api/edu/grades` | 查询教务成绩 |
 | `POST` | `/api/exam/extract` | 融智云考题库一键提取 |
 | `POST` | `/api/erke/scores` | 青年之声（第二课堂）学分查询 |
 

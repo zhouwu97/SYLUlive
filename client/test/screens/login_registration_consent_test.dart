@@ -26,7 +26,7 @@ void main() {
     expect(accountField.keyboardType, TextInputType.emailAddress);
   });
 
-  testWidgets('邮箱注册只需要基础协议，不展示教务授权', (tester) async {
+  testWidgets('注册协议分别确认并按注册身份展示教务授权', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -48,13 +48,13 @@ void main() {
 
     final agreement = find.byKey(const ValueKey('registration-user-agreement'));
     final privacy = find.byKey(const ValueKey('registration-privacy-policy'));
+    final edu = find.byKey(const ValueKey('registration-edu-consent'));
 
     expect(find.byKey(const ValueKey('registration-consent-panel')),
         findsOneWidget);
     expect(agreement, findsOneWidget);
     expect(privacy, findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('registration-edu-consent')), findsNothing);
+    expect(edu, findsOneWidget);
     expect(find.textContaining('6 项'), findsNothing);
 
     await tester.ensureVisible(agreement);
@@ -65,10 +65,15 @@ void main() {
     expect(tester.widget<Checkbox>(agreement).value, isTrue);
     expect(tester.widget<Checkbox>(privacy).value, isTrue);
 
+    await tester.ensureVisible(find.text('邮箱注册'));
+    await tester.tap(find.text('邮箱注册'));
+    await tester.pumpAndSettle();
+
     expect(agreement, findsOneWidget);
     expect(privacy, findsOneWidget);
     expect(tester.widget<Checkbox>(agreement).value, isTrue);
     expect(tester.widget<Checkbox>(privacy).value, isTrue);
+    expect(edu, findsNothing);
     expect(find.text('毕业人员注册'), findsNothing);
     expect(tester.takeException(), isNull);
   });

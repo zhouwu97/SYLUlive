@@ -140,6 +140,34 @@ class LocalReminderNotificationClient implements ReminderNotificationClient {
   @override
   Future<void> cancelCalendarReminder(int id) => _plugin.cancel(id);
 
+  @override
+  Future<void> initializeGradeReminders() async {
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
+    );
+    await _plugin.initialize(settings);
+  }
+
+  @override
+  Future<bool> requestGradeReminderPermissions() async {
+    if (AppPlatforms.current.isIOS) {
+      final ios = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      return await ios?.requestPermissions(
+              alert: true, badge: true, sound: true) ??
+          false;
+    }
+    if (!AppPlatforms.current.isAndroid) return false;
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return await android?.requestNotificationsPermission() ?? false;
+  }
+
   NotificationDetails _courseNotificationDetails(
     String title,
     String detailText,

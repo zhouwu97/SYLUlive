@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
-import '../features/academic/application/academic_session_controller.dart';
-import '../features/academic/presentation/academic_login_dialog.dart';
+import '../services/grade_reminder_service.dart';
+import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -21,6 +21,7 @@ class EduScreen extends StatefulWidget {
 class _EduScreenState extends State<EduScreen> {
   final _studentIdController = TextEditingController();
   final _passwordController = TextEditingController();
+  static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   @override
   void initState() {
@@ -390,22 +391,116 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  Future<void> _showBindDialog(
-    BuildContext context,
-    EduProvider eduProvider,
-  ) async {
-    final controller = context.read<AcademicSessionController>();
-    final success = await AcademicLoginDialog.show(
-      context,
-      controller: controller,
+  void _showBindDialog(BuildContext context, EduProvider eduProvider) {
+    _studentIdController.clear();
+    _passwordController.clear();
+    bool isBinding = false; // 本地加载状态
+    bool eduDataConsentAccepted = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('绑定教务账号'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _studentIdController,
+                decoration: const InputDecoration(
+                  labelText: '教务学号',
+                  hintText: '请输入10位学号',
+                ),
+                maxLength: 10,
+                enabled: !isBinding,
+              ),
+              CheckboxListTile(
+                value: eduDataConsentAccepted,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('同意教务数据专项授权'),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
+                onChanged: isBinding
+                    ? null
+                    : (value) => setDialogState(
+                          () => eduDataConsentAccepted = value ?? false,
+                        ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _passwordController,
+                decoration: const InputDecoration(labelText: '教务密码'),
+                obscureText: true,
+                enabled: !isBinding,
+              ),
+              if (isBinding) ...[
+                const SizedBox(height: 20),
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text('正在连接教务系统...', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isBinding ? null : () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: isBinding
+                  ? null
+                  : () async {
+                      if (!eduDataConsentAccepted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先同意教务数据专项授权')),
+                        );
+                        return;
+                      }
+                      setDialogState(() => isBinding = true);
+                      final success = await eduProvider.bind(
+                        _studentIdController.text,
+                        _passwordController.text,
+                        eduDataConsentAccepted: true,
+                      );
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        if (success) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(const SnackBar(content: Text('绑定成功')));
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(eduProvider.errorMessage ?? '绑定失败'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: isBinding
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('绑定'),
+            ),
+          ],
+        ),
+      ),
     );
-    if (!context.mounted || success != true) return;
-    await eduProvider.refreshStatus();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机教务会话已建立')),
-      );
-    }
   }
 
   void _showUnbindDialog(BuildContext context, EduProvider eduProvider) {
@@ -422,7 +517,11 @@ class _EduScreenState extends State<EduScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
+              final userId = context.read<AuthProvider>().user?.id.toString();
               final result = await eduProvider.unbind();
+              if (result.success && userId != null) {
+                await GradeReminderService.instance.clearForUser(userId);
+              }
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

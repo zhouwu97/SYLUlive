@@ -29,6 +29,7 @@ class MainActivity : FlutterActivity() {
         private const val DEEPLINK_CHANNEL = "shenliyuan/deeplink"
         private const val FOREGROUND_CHANNEL = "shenliyuan/foreground"
         private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
+        private const val GRADE_REMINDER_CHANNEL = "shenliyuan/grade_reminders"
         private const val PRIVATE_MESSAGE_NOTIFICATION_CHANNEL =
             "shenliyuan/private_message_notifications"
         private const val NOTIFICATION_OPEN_CHANNEL =
@@ -133,8 +134,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 清理旧版本成绩提醒任务、状态和通知；新版本不再启用该能力。
-        GradeReminderScheduler.disableLegacyFeature(this)
 
         val hadLiveInstance = synchronized(activityInstanceLock) {
             val existed = liveActivityCount > 0
@@ -753,6 +752,108 @@ class MainActivity : FlutterActivity() {
                 }
             } catch (e: Exception) {
                 result.error("KEEP_ALIVE_FAILED", e.message, null)
+            }
+        }
+
+        // ── 成绩更新提醒 MethodChannel ──
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            GRADE_REMINDER_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "getGradeReminderStatus" -> {
+                        result.success(
+                            GradeReminderScheduler.status(
+                                this,
+                                call.argument<String>("userId"),
+                            ),
+                        )
+                    }
+                    "setGradeReminderEnabled" -> {
+                        val userId = call.argument<String>("userId")
+                        val year = call.argument<String>("year")
+                        val semester = call.argument<Number>("semester")?.toInt()
+                        if (userId.isNullOrBlank() || year.isNullOrBlank() || semester == null) {
+                            result.error("INVALID_ARGUMENT", "userId/year/semester 不能为空", null)
+                            return@setMethodCallHandler
+                        }
+                        val snapshot = call.argument<Map<*, *>>("snapshot")
+                            ?.let { JSONObject(it) }
+                        result.success(
+                            GradeReminderScheduler.setEnabled(
+                                this,
+                                enabled = call.argument<Boolean>("enabled") == true,
+                                userId = userId,
+                                apiBaseUrl = call.argument<String>("apiBaseUrl"),
+                                year = year,
+                                semester = semester,
+                                snapshot = snapshot,
+                                notificationGranted =
+                                    call.argument<Boolean>("notificationGranted") != false,
+                            ),
+                        )
+                    }
+                    "syncGradeReminderConfig" -> {
+                        GradeReminderScheduler.syncConfig(
+                            this,
+                            userId = call.argument<String>("userId"),
+                            apiBaseUrl = call.argument<String>("apiBaseUrl"),
+                            year = call.argument<String>("year"),
+                            semester = call.argument<Number>("semester")?.toInt(),
+                        )
+                        result.success(true)
+                    }
+                    "syncGradeReminderBaseline" -> {
+                        val userId = call.argument<String>("userId")
+                        val year = call.argument<String>("year")
+                        val semester = call.argument<Number>("semester")?.toInt()
+                        val snapshot = call.argument<Map<*, *>>("snapshot")
+                            ?.let { JSONObject(it) }
+                        if (
+                            userId.isNullOrBlank() ||
+                            year.isNullOrBlank() ||
+                            semester == null ||
+                            snapshot == null
+                        ) {
+                            result.error("INVALID_ARGUMENT", "成绩提醒基线参数不完整", null)
+                            return@setMethodCallHandler
+                        }
+                        GradeReminderScheduler.syncBaseline(
+                            this,
+                            userId,
+                            year,
+                            semester,
+                            snapshot,
+                        )
+                        result.success(true)
+                    }
+                    "clearGradeReminderForUser" -> {
+                        val userId = call.argument<String>("userId")
+                        if (!userId.isNullOrBlank()) {
+                            GradeReminderScheduler.clearForUser(this, userId)
+                        }
+                        result.success(true)
+                    }
+                    "clearGradeUpdateNotifications" -> {
+                        GradeReminderScheduler.clearAllGradeUpdateNotifications(this)
+                        result.success(true)
+                    }
+                    "openGradeNotificationSettings" -> {
+                        result.success(GradeReminderScheduler.openNotificationSettings(this))
+                    }
+                    "ensureGradeReminderScheduled" -> {
+                        GradeReminderScheduler.ensureScheduledIfEnabled(this)
+                        result.success(true)
+                    }
+                    "runGradeReminderCheckNow" -> {
+                        GradeReminderScheduler.runCheckNow(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                result.error("GRADE_REMINDER_FAILED", e.message, null)
             }
         }
 

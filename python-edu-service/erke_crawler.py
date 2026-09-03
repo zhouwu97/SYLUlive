@@ -100,8 +100,7 @@ class SyluCrawler:
         """
         # ── 创建 requests.Session (保持全局 Cookie) ──
         self.session = requests.Session()
-        # 使用 requests 的标准证书链校验；TLS 失败时请求直接中止，不得继续提交学校凭据。
-        self.session.verify = True
+        self.session.verify = False  # WebVPN 证书链不完整
         self.session.headers["User-Agent"] = self.USER_AGENT
 
         # ── 注入 WebVPN 票据 ──

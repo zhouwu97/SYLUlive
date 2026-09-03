@@ -37,4 +37,10 @@ class UnsupportedReminderNotificationClient
 
   @override
   Future<void> cancelCalendarReminder(int id) async {}
+
+  @override
+  Future<void> initializeGradeReminders() async {}
+
+  @override
+  Future<bool> requestGradeReminderPermissions() async => false;
 }

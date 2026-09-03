@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/grade_reminder_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/push_settings_service.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -176,6 +177,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final eduProvider = context.read<EduProvider>();
     final courseProvider = context.read<CourseScheduleProvider>();
 
+    if (userId != null) {
+      await GradeReminderService.instance.clearForUser(userId);
+    }
     await eduProvider.clearLocalSession();
     courseProvider.clearAllUserState();
     await authProvider.logout();

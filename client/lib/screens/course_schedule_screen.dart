@@ -10,8 +10,6 @@ import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
-import '../features/academic/application/academic_session_controller.dart';
-import '../features/academic/presentation/academic_login_dialog.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
 import '../theme/app_colors.dart';
@@ -1208,26 +1206,127 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  Future<void> _showBindDialog(
+  void _showBindDialog(
     BuildContext context,
     EduProvider edu,
-    CourseScheduleProvider schedule,
-  ) async {
-    final controller = context.read<AcademicSessionController>();
-    final success = await AcademicLoginDialog.show(
-      context,
-      controller: controller,
+    CourseScheduleProvider sc,
+  ) {
+    final sidCtrl = TextEditingController();
+    final pwdCtrl = TextEditingController();
+    bool isLoading = false;
+    bool eduDataConsentAccepted = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('绑定教务账号'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: sidCtrl,
+                decoration: const InputDecoration(
+                  labelText: '教务学号',
+                  hintText: '请输入10位学号',
+                ),
+                maxLength: 10,
+                enabled: !isLoading,
+              ),
+              CheckboxListTile(
+                value: eduDataConsentAccepted,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('同意教务数据专项授权'),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
+                onChanged: isLoading
+                    ? null
+                    : (value) => setDialogState(
+                          () => eduDataConsentAccepted = value ?? false,
+                        ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pwdCtrl,
+                decoration: const InputDecoration(labelText: '教务密码'),
+                obscureText: true,
+                enabled: !isLoading,
+              ),
+              if (isLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Text('正在连接教务系统...', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      if (!eduDataConsentAccepted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先同意教务数据专项授权')),
+                        );
+                        return;
+                      }
+                      setDialogState(() => isLoading = true);
+                      final ok = await edu.bind(
+                        sidCtrl.text,
+                        pwdCtrl.text,
+                        eduDataConsentAccepted: true,
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (ok && context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(const SnackBar(content: Text('绑定成功')));
+                        _didLoad = false;
+                        if (mounted) {
+                          setState(() {
+                            _initializing = false;
+                            _hasCache = sc.courses.isNotEmpty;
+                          });
+                        }
+                      } else if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(edu.errorMessage ?? '绑定失败')),
+                        );
+                      }
+                    },
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('绑定'),
+            ),
+          ],
+        ),
+      ),
     );
-    if (!context.mounted || success != true) return;
-    await edu.refreshStatus();
-    if (context.mounted) {
-      schedule.loadCourses(forceRefresh: true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机教务会话已建立')),
-      );
-    }
   }
 
+  // ====== 空状态视图 ======
   Widget _buildNoScheduleState(BuildContext context, bool isDark) {
     final sc = context.watch<CourseScheduleProvider>();
     final isCurrentTerm = sc.currentTerm.isCurrent;

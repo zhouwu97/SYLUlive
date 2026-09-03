@@ -19,6 +19,7 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
+import '../services/grade_reminder_service.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
 import '../services/forbidden_recovery_router.dart';
@@ -600,6 +601,10 @@ class AuthProvider extends ChangeNotifier {
     _initialized = true;
     if (_user?.legalConsentsActive ?? false) {
       await KeepAliveService.instance.syncAuthToken(_token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: _user?.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
     }
     notifyListeners();
   }
@@ -650,6 +655,10 @@ class AuthProvider extends ChangeNotifier {
     });
     if (candidate.user.legalConsentsActive) {
       await KeepAliveService.instance.syncAuthToken(candidate.token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: candidate.user.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
     } else {
       await _clearConsentDependentLocalData(candidate.user);
     }
@@ -813,6 +822,12 @@ class AuthProvider extends ChangeNotifier {
       '认证请求失败: type=${e.type}, status=${e.response?.statusCode}',
     );
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
+  }
+
+  String _maskStudentId(String studentId) {
+    final value = studentId.trim();
+    if (value.length <= 4) return '****';
+    return '${value.substring(0, 2)}****${value.substring(value.length - 2)}';
   }
 
   Future<AuthResult> register(
@@ -1045,6 +1060,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _clearConsentDependentLocalData(User user) async {
     await KeepAliveService.instance.syncAuthToken(null);
+    await GradeReminderService.instance.clearForUser(user.id.toString());
+    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
     await _clearPushAlias();
   }
 
@@ -1073,6 +1090,8 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
     final hadSession = _token != null || _user != null;
+    final oldUserId = _user?.id.toString();
+
     // 先清除持久化凭据，失败时保留内存会话，避免出现“界面已退出、下次又恢复”的状态。
     await _clearStoredAuth();
 
@@ -1105,6 +1124,11 @@ class AuthProvider extends ChangeNotifier {
       }
     }
 
+    if (oldUserId != null) {
+      try {
+        await GradeReminderService.instance.clearForUser(oldUserId);
+      } catch (_) {}
+    }
     if (!kIsWeb && _cookieJar != null) {
       try {
         await _cookieJar!.deleteAll();
@@ -1149,6 +1173,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _clearStoredAuth() async {
     await _credentialStore.clear();
     await KeepAliveService.instance.syncAuthToken(null);
+    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
   }
 
   void _showAuthExpiredOverlay() {
@@ -1335,8 +1360,31 @@ class AuthProvider extends ChangeNotifier {
     String studentId,
     String eduPassword,
     String newPassword,
-  ) async =>
-      AuthResult.failure('教务验证找回密码已关闭，请使用邮箱验证');
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/password/edu/reset',
+        data: {
+          'student_id': studentId,
+          'edu_password': eduPassword,
+          'new_password': newPassword,
+        },
+      );
+      if (response.statusCode == 200) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure('密码重置失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      debugPrint(
+        '密码重置失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      debugPrint('密码重置异常: ${e.runtimeType}');
+      return AuthResult.failure('密码重置失败');
+    }
+  }
 
   /// 发送邮箱注册验证码。服务端使用统一文案，避免枚举现有账号。
   Future<AuthResult> requestEmailRegistrationCode(String email) async {
@@ -1395,18 +1443,95 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 保留旧调用方的编译兼容性，但不再接受教务凭据或访问服务端。
-  Future<AuthResult> verifyEdu(String studentId, String eduPassword) async =>
-      AuthResult.failure('教务验证注册已关闭，请使用邮箱注册');
+  /// 验证教务账号（注册前验证学号是否属于自己）
+  Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
+    try {
+      debugPrint('=== verifyEdu 开始 ===');
+      debugPrint('student_id: ${_maskStudentId(studentId)}');
 
+      final response = await _dio.post(
+        '/edu/pre_verify',
+        data: {'student_id': studentId, 'password': eduPassword},
+      );
+
+      debugPrint('=== verifyEdu 响应 ===');
+      debugPrint('statusCode: ${response.statusCode}');
+      debugPrint('data type: ${response.data.runtimeType}');
+      if (response.data is Map) {
+        debugPrint(
+          'success: ${response.data['success']} code: ${response.data['code']}',
+        );
+      }
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure(
+        response.data['error'] ?? response.data['message'] ?? '教务验证失败',
+      );
+    } on DioException catch (e) {
+      debugPrint('=== verifyEdu DioException ===');
+      debugPrint('type: ${e.type}');
+      debugPrint('response.statusCode: ${e.response?.statusCode}');
+      if (e.response?.data is Map) {
+        final data = e.response?.data as Map;
+        debugPrint('response.code: ${data['code']}');
+      }
+      return AuthResult.failure(_parseDioError(e));
+    } catch (e, st) {
+      debugPrint('=== verifyEdu 未知异常 ===');
+      debugPrint('type: ${e.runtimeType}');
+      debugPrintStack(stackTrace: st);
+      return AuthResult.failure('未知错误');
+    }
+  }
+
+  /// 教务验证后注册
   Future<AuthResult> registerWithEdu(
     String studentId,
     String appPassword, {
     String? nickname,
     required String eduPassword,
     required RegistrationConsents consents,
-  }) async =>
-      AuthResult.failure('教务注册已关闭，请使用邮箱注册');
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await _dio.post(
+        '/register_with_edu',
+        data: {
+          'student_id': studentId,
+          'password': appPassword,
+          'edu_password': eduPassword,
+          ...consents.toJson(),
+          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+        },
+      );
+
+      _isLoading = false;
+      if (response.statusCode == 201) {
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('注册失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint(
+        '注册失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('注册异常: ${e.runtimeType}');
+      return AuthResult.failure('注册失败');
+    }
+  }
 
   /// 获取账号安全页私有资料，完整邮箱仅在此接口中返回。
   Future<Map<String, dynamic>?> getAccountSecurity() async {

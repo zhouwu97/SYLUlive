@@ -90,6 +90,44 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
   }
 
   @override
+  Future<bool> showGradeUpdate({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    await initializeCourseReminders();
+    try {
+      await _plugin.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          macOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentList: true,
+            presentSound: false,
+            threadIdentifier: 'grade_updates',
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentList: true,
+            presentSound: false,
+            threadIdentifier: 'grade_updates',
+          ),
+        ),
+        payload: payload,
+      );
+      return true;
+    } catch (error) {
+      debugPrint('Darwin 成绩更新通知失败: $error');
+      return false;
+    }
+  }
+
+  @override
   Future<bool> scheduleCalendarReminder({
     required int id,
     required String title,

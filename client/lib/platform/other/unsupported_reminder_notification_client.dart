@@ -26,6 +26,15 @@ class UnsupportedReminderNotificationClient
   Future<void> cancelCourseReminder(int id) async {}
 
   @override
+  Future<bool> showGradeUpdate({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async =>
+      false;
+
+  @override
   Future<bool> scheduleCalendarReminder({
     required int id,
     required String title,

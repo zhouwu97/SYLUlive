@@ -28,6 +28,15 @@ abstract class ReminderNotificationClient {
   });
   Future<void> cancelCourseReminder(int id);
 
+  /// 显示一次即时的本地成绩更新通知；不触发任何网络请求。
+  Future<bool> showGradeUpdate({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async =>
+      false;
+
   /// 通用个人日历提醒。平台不支持时保留服务端提醒，不影响日历数据。
   Future<bool> scheduleCalendarReminder({
     required int id,

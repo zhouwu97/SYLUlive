@@ -260,7 +260,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               iconColor:
                   isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
               title: '账号与安全',
-              subtitle: '学号、邮箱、密码和教务授权',
+              subtitle: '软件账号、邮箱、密码和本机教务授权',
               onTap: () {
                 if (isLoggedIn) {
                   Navigator.push(

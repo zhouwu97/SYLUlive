@@ -77,7 +77,7 @@ class _DeviceCredentialPromptSheetState
 
   String get _description => switch (widget.kind) {
         DeviceCredentialKind.education =>
-          '校园 Agent 需要先恢复教务授权，验证成功后会自动继续当前问题。密码由服务端加密保存。',
+          '校园 Agent 需要先恢复教务授权。凭证只用于本机直连教务，不会发送给 SYLUlive 服务器，也不会由本组件持久化。',
         DeviceCredentialKind.erke =>
           '需要在本机登录统一认证和二课系统。验证成功后只向 Agent 返回本次问题所需的二课摘要。',
         DeviceCredentialKind.physical =>

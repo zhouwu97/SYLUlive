@@ -32,6 +32,17 @@ class OhosReminderNotificationClient implements ReminderNotificationClient {
   }
 
   @override
+  Future<bool> showGradeUpdate({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    // 鸿蒙端当前没有接入统一本地通知实现。
+    return false;
+  }
+
+  @override
   Future<bool> scheduleCalendarReminder({
     required int id,
     required String title,

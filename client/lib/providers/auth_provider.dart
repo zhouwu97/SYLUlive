@@ -22,6 +22,7 @@ import '../services/keep_alive_service.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
 import '../services/forbidden_recovery_router.dart';
+import '../services/grade_reminder_service.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../platform/app_platform.dart';
@@ -1046,6 +1047,16 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _clearConsentDependentLocalData(User user) async {
     await KeepAliveService.instance.syncAuthToken(null);
     await _clearPushAlias();
+    // 撤回授权后清除成绩提醒的账号状态，避免受限会话恢复时继续触发本机教务检查。
+    try {
+      await GradeReminderService.instance.clearForUser(user.id.toString());
+    } catch (error) {
+      // 本地偏好清理失败不能阻断认证状态切换，下一次启动仍会重试清理。
+      debugPrint('清除成绩提醒状态失败: $error');
+    }
+    // 撤回授权后仍保留 App 会话以便用户办理数据权利，但必须立即关闭
+    // 本机教务会话，避免受限状态继续复用学校 Cookie。
+    await _sessionCleanupCoordinator.closeCurrentSession();
   }
 
   /// 统一的本地会话清理

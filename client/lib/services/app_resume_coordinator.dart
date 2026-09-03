@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../features/academic/application/academic_session_controller.dart';
 import 'home_widget_service.dart';
 import 'reply_notification_state.dart';
+import 'grade_reminder_service.dart';
 
 class _VisibleRefreshEntry {
   const _VisibleRefreshEntry(this.refresher, this.isVisible);
@@ -138,6 +140,28 @@ class AppResumeCoordinator {
         (refresher) => _safeRun('当前页面同步', refresher),
       ),
     );
+    if (!context.mounted ||
+        !_sameSession(
+          auth,
+          accountId,
+          sessionGeneration,
+          accountSessionEpoch,
+        )) {
+      return;
+    }
+
+    // 成绩提醒只复用本机教务会话；这里不能调用 EduProvider 的共享 Dio
+    // 或任何服务端成绩接口。
+    final academic = context.read<AcademicSessionController?>();
+    if (academic != null) {
+      GradeReminderService.instance.bindController(academic);
+      await _safeRun(
+        '本机成绩提醒检查',
+        () => GradeReminderService.instance.runCheckNow(
+          controller: academic,
+        ),
+      );
+    }
     if (!context.mounted ||
         !_sameSession(
           auth,

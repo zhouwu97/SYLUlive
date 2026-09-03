@@ -69,6 +69,7 @@ class GradeReminderStatus {
       case 'edu':
         return '教务服务暂不可用';
     }
+    if (state == 'foreground_only') return '仅在打开 App 时检查';
     if (!backgroundReady) return '后台权限不足，可能延迟';
     if (state == 'checking') return '检查中';
     if (state == 'preparing') return '准备中';

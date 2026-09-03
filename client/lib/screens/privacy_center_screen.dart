@@ -108,7 +108,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('撤销后，社区、教务、消息和其他依赖授权的功能将立即停止使用，已保存的教务凭证和推送标识会被清除。'),
+            const Text('撤销后，社区、教务、消息和其他依赖授权的功能将立即停止使用，本机教务会话、提醒状态和推送标识会被清除。'),
             const SizedBox(height: 14),
             TextField(
               key: const ValueKey('withdraw-consent-password'),
@@ -171,7 +171,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('注销不可恢复。账号身份资料、教务凭证和推送标识将被清除或匿名化；必要的内容关联与审计记录会按适用法律保留。'),
+            const Text('注销不可恢复。账号身份资料、本机教务会话和推送标识将被清除或匿名化；必要的内容关联与审计记录会按适用法律保留。'),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
@@ -265,7 +265,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                   _PrivacyActionTile(
                     icon: Icons.school_outlined,
                     title: '教务数据',
-                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
+                    subtitle: (auth.user?.eduAuthorized ?? false) ? '本机已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(
@@ -407,7 +407,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                 _PrivacyActionTile(
                   icon: Icons.tune_outlined,
                   title: '按功能管理授权',
-                  subtitle: '教务绑定、远程推送和本地提醒分别管理',
+                  subtitle: '本机教务授权、远程推送和本地提醒分别管理',
                   onTap: _showAuthorizationManagementSheet,
                 ),
               ],

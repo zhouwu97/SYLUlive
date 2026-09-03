@@ -8,7 +8,7 @@ import (
 
 const (
 	// LegalDocumentVersion 在每次调整告知内容时递增，避免将不同版本的同意混在一起。
-	LegalDocumentVersion = "2026-07-18-r2"
+	LegalDocumentVersion = "2026-09-03-r1"
 
 	LegalDocumentUserAgreement    = "user_agreement"
 	LegalDocumentPrivacyPolicy    = "privacy_policy"

@@ -110,6 +110,51 @@ class LocalReminderNotificationClient implements ReminderNotificationClient {
   Future<void> cancelCourseReminder(int id) => _plugin.cancel(id);
 
   @override
+  Future<bool> showGradeUpdate({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    try {
+      await initializeCourseReminders();
+      await _plugin.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _courseChannelId,
+            _courseChannelName,
+            channelDescription: '本机成绩更新提醒',
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            playSound: false,
+            enableVibration: false,
+            silent: true,
+            autoCancel: true,
+            category: AndroidNotificationCategory.reminder,
+            visibility: NotificationVisibility.public,
+            subText: '成绩更新',
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentList: true,
+            presentSound: false,
+            threadIdentifier: 'grade_updates',
+          ),
+        ),
+        payload: payload,
+      );
+      return true;
+    } catch (error) {
+      debugPrint('成绩更新通知失败: $error');
+      return false;
+    }
+  }
+
+  @override
   Future<bool> scheduleCalendarReminder({
     required int id,
     required String title,

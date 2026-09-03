@@ -11,4 +11,8 @@ abstract final class JiaowuEndpoints {
   static const courseMobile = '/kbcx/xskbcxMobile_cxXsKb.html';
   static const gradePage = '/cjcx/cjcx_cxDgXscj.html';
   static const gradeList = '/cjcx/cjcx_cxXsgrcj.html';
+  static const gradeDetailCandidate1 = '/cjcx/cjcx_cxCjxqGjh.html';
+  static const gradeDetailCandidate2 = '/cjcx/cjcx_getXsjcxx.html';
+  static const gradeDetailCandidate3 = '/cjcx/cjcx_cxCjmx.html';
+  static const gradeDetailCandidate4 = '/cjcx/cjcx_cxXsKscjList.html';
 }

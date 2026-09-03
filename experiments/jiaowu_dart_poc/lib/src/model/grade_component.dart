@@ -26,7 +26,8 @@ final class GradeComponent {
       };
 
   @override
-  String toString() => 'GradeComponent(name: $name, weight: $weight, score: $score)';
+  String toString() =>
+      'GradeComponent(name: $name, weight: $weight, score: $score)';
 
   @override
   bool operator ==(Object other) =>

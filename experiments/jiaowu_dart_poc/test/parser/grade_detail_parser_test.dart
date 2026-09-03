@@ -213,5 +213,30 @@ void main() {
       expect(detail.components[1].name, '期末');
       expect(detail.components[1].weight, '70%');
     });
+
+    test('skips non-Map elements in JSON array', () {
+      const body = '''
+{
+  "items": [
+    null,
+    "invalid string",
+    123,
+    {"cjxmmc": "总评", "xmcj": "85"},
+    true,
+    {"cjxmmc": "平时", "xmcj": "90", "bl": "20%"}
+  ]
+}
+''';
+
+      final detail = GradeDetailParser.parse(body, '课程');
+
+      expect(detail.success, isTrue);
+      expect(detail.components, hasLength(2));
+      expect(detail.components[0].name, '总评');
+      expect(detail.components[0].score, '85');
+      expect(detail.components[1].name, '平时');
+      expect(detail.components[1].score, '90');
+      expect(detail.components[1].weight, '20%');
+    });
   });
 }

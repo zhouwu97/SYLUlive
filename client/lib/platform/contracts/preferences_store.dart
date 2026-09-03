@@ -31,6 +31,12 @@ abstract interface class AppPreferencesStore {
     });
   }
 
+  /// 已初始化的存储实例；尚未初始化时为 null。
+  ///
+  /// 供启动关键路径同步读取（如主题首帧加载），避免等异步初始化造成
+  /// 首帧后外观跳变。为 null 时调用方应回退到 [getInstance] 异步路径。
+  static AppPreferencesStore? get maybeInstance => _instance;
+
   static Future<AppPreferencesStore> _create() async {
     AppPreferencesStore store;
     if (AppPlatforms.current == AppPlatform.ohos) {

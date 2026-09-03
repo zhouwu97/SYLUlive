@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
@@ -300,9 +301,20 @@ class ThemeProvider extends ChangeNotifier {
     bool loadOnStart = true,
     DevicePerformanceLevel? performanceLevel,
   }) : _performanceLevelOverride = performanceLevel {
-    if (loadOnStart) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
+    if (!loadOnStart) return;
+    final prewarmed = AppPreferencesStore.maybeInstance;
+    if (prewarmed != null) {
+      // 存储已在启动早期预热：同步应用，首帧即最终主题，避免加载后跳变。
+      try {
+        _applyStoredPreferences(prewarmed);
+        _isLoaded = true;
+      } catch (error) {
+        debugPrint('同步读取主题本地配置失败，使用默认主题: $error');
+        _isLoaded = true;
+      }
+      return;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
   }
 
   Future<void> loadThemeForTesting() {
@@ -334,67 +346,75 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> _loadTheme() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
-      _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
-      _backgroundImage = prefs.getString(_backgroundImageKey);
-      _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
-      _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
-      _landscapeBackgroundFillScreen =
-          prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
-      _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
-      _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
-      final storedStyle = BottomNavStyleStorage.fromStorage(
-        prefs.getString(_bottomNavStyleKey),
-      );
-      final legacyFloating = prefs.getBool(_bottomNavFloatingKey) ??
-          prefs.getBool(_floatingNavBarKey);
-      final legacyLiquid = prefs.getBool(_bottomNavLiquidGlassKey) ??
-          prefs.getBool(_liquidGlassKey) ??
-          false;
-      _bottomNavStyle = storedStyle ??
-          (legacyLiquid
-              ? BottomNavStyle.liquidGlass
-              : legacyFloating == false
-                  ? BottomNavStyle.normal
-                  : legacyFloating == true
-                      ? BottomNavStyle.floating
-                      : DevicePerformanceDetector.defaultStyleFor(
-                          devicePerformanceLevel,
-                        ));
-      _liquidGlass = _bottomNavStyle == BottomNavStyle.liquidGlass;
-      _floatingNavBar = _bottomNavStyle != BottomNavStyle.normal;
-      _bottomNavPerformanceMode = BottomNavPerformanceModeStorage.fromStorage(
-        prefs.getString(_bottomNavPerformanceModeKey),
-      );
-      _bottomNavAnimationIntensity =
-          (prefs.getDouble(_bottomNavAnimationIntensityKey) ?? 0.65)
-              .clamp(0.0, 1.0)
-              .toDouble();
-      _bottomNavLiquidGlassConfirmed =
-          prefs.getBool(_bottomNavLiquidGlassConfirmedKey) ?? false;
-      _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
-      _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
-      _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
-
-      // 旧 start_on_timetable → StartupDestinationMode 一次性迁移。
-      await StartupDestinationStore.migrateFromLegacy(prefs);
-      _startupDestination = StartupDestinationStore.read(prefs);
-
-      _backgroundMode =
-          _backgroundModeFromString(prefs.getString(_backgroundModeKey));
-
-      // 01-04 竖屏预设已下线，旧选择统一回退到黄帽子原图。
-      if (_backgroundImage != null &&
-          _retiredPhoneWallpaperPattern.hasMatch(_backgroundImage!)) {
-        _backgroundImage = _defaultPhoneWallpaper;
-        _backgroundFillScreen = false;
-        await prefs.setString(_backgroundImageKey, _defaultPhoneWallpaper);
-        await prefs.setBool(_backgroundFillScreenKey, false);
-      }
+      _applyStoredPreferences(prefs);
     } catch (error) {
       debugPrint('读取主题本地配置失败，使用默认主题: $error');
     } finally {
       _isLoaded = true;
       notifyListeners();
+    }
+  }
+
+  /// 从已初始化的偏好存储应用持久化主题值。
+  ///
+  /// 迁移写入为 fire-and-forget：两种偏好存储的读缓存均同步更新，
+  /// 不影响紧随其后的读取；同步加载与异步回退共用本方法。
+  void _applyStoredPreferences(AppPreferencesStore prefs) {
+    _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
+    _backgroundImage = prefs.getString(_backgroundImageKey);
+    _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
+    _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
+    _landscapeBackgroundFillScreen =
+        prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
+    _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
+    _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
+    final storedStyle = BottomNavStyleStorage.fromStorage(
+      prefs.getString(_bottomNavStyleKey),
+    );
+    final legacyFloating = prefs.getBool(_bottomNavFloatingKey) ??
+        prefs.getBool(_floatingNavBarKey);
+    final legacyLiquid = prefs.getBool(_bottomNavLiquidGlassKey) ??
+        prefs.getBool(_liquidGlassKey) ??
+        false;
+    _bottomNavStyle = storedStyle ??
+        (legacyLiquid
+            ? BottomNavStyle.liquidGlass
+            : legacyFloating == false
+                ? BottomNavStyle.normal
+                : legacyFloating == true
+                    ? BottomNavStyle.floating
+                    : DevicePerformanceDetector.defaultStyleFor(
+                        devicePerformanceLevel,
+                      ));
+    _liquidGlass = _bottomNavStyle == BottomNavStyle.liquidGlass;
+    _floatingNavBar = _bottomNavStyle != BottomNavStyle.normal;
+    _bottomNavPerformanceMode = BottomNavPerformanceModeStorage.fromStorage(
+      prefs.getString(_bottomNavPerformanceModeKey),
+    );
+    _bottomNavAnimationIntensity =
+        (prefs.getDouble(_bottomNavAnimationIntensityKey) ?? 0.65)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    _bottomNavLiquidGlassConfirmed =
+        prefs.getBool(_bottomNavLiquidGlassConfirmedKey) ?? false;
+    _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
+    _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
+    _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
+
+    // 旧 start_on_timetable → StartupDestinationMode 一次性迁移。
+    StartupDestinationStore.migrateFromLegacySync(prefs);
+    _startupDestination = StartupDestinationStore.read(prefs);
+
+    _backgroundMode =
+        _backgroundModeFromString(prefs.getString(_backgroundModeKey));
+
+    // 01-04 竖屏预设已下线，旧选择统一回退到黄帽子原图。
+    if (_backgroundImage != null &&
+        _retiredPhoneWallpaperPattern.hasMatch(_backgroundImage!)) {
+      _backgroundImage = _defaultPhoneWallpaper;
+      _backgroundFillScreen = false;
+      unawaited(prefs.setString(_backgroundImageKey, _defaultPhoneWallpaper));
+      unawaited(prefs.setBool(_backgroundFillScreenKey, false));
     }
   }
 

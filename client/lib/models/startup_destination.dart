@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import '../platform/contracts/preferences_store.dart';
 
 /// 统一启动目标模式。
@@ -33,7 +35,16 @@ class StartupDestinationStore {
   ///
   /// 条件：新 key 不存在 **且** 旧 key 存在。
   /// 迁移后新 key 写入，旧 key 保留一个版本不删除。
-  static Future<void> migrateFromLegacy(AppPreferencesStore prefs) async {
+  static Future<void> migrateFromLegacy(AppPreferencesStore prefs) {
+    migrateFromLegacySync(prefs);
+    return Future.value();
+  }
+
+  /// [migrateFromLegacy] 的同步版本，供主题同步加载路径在读取前保序调用。
+  ///
+  /// 两种偏好存储的读缓存均为同步更新，落盘写入 fire-and-forget 不影响
+  /// 紧随其后的 [read] 结果。
+  static void migrateFromLegacySync(AppPreferencesStore prefs) {
     final hasNew = prefs.getString(key) != null;
     if (hasNew) return;
 
@@ -43,7 +54,7 @@ class StartupDestinationStore {
     final migrated = legacyValue
         ? StartupDestinationMode.timetable
         : StartupDestinationMode.home;
-    await prefs.setString(key, migrated.name);
+    unawaited(prefs.setString(key, migrated.name));
   }
 
   /// 写入新模式。

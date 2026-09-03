@@ -411,6 +411,14 @@ Future<void> appBootstrap() async {
         );
       }
 
+      // 预热偏好存储，让 ThemeProvider 首帧同步读到持久化主题，避免加载后跳变。
+      // 失败时静默，由 ThemeProvider 的异步回退兜底。
+      try {
+        await AppPreferencesStore.getInstance();
+      } catch (e) {
+        debugPrint('预热偏好存储失败: $e');
+      }
+
       _appRecoveryRetry = () => runApp(const MyApp());
       runApp(const MyApp());
 

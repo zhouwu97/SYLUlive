@@ -18,7 +18,7 @@ void main() {
 
       final posts = <Map<String, dynamic>>[];
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           posts.add({
             'url': url,
@@ -55,7 +55,7 @@ void main() {
       expect(detail.success, isTrue);
       expect(detail.totalGrade, '60.1');
       expect(posts, hasLength(1));
-      expect(posts[0]['url'], endsWith('/cjcx_cxCjxqGjh.html'));
+      expect(posts[0]['url'], '/cjcx/cjcx_cxCjxqGjh.html');
       expect(posts[0]['queryParams'], {'gnmkdm': 'N305005'});
       expect(posts[0]['data']['jxb_id'], '44DE3FFE6E97156BE0630100050AD0D4');
       expect(posts[0]['data']['xnm'], '2025');
@@ -65,10 +65,11 @@ void main() {
       expect(posts[0]['data']['kch_id'], '210300504');
     });
 
-    test('falls back to second endpoint when first returns no components', () async {
+    test('falls back to second endpoint when first returns no components',
+        () async {
       var callCount = 0;
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           callCount++;
           if (callCount == 1) {
@@ -115,7 +116,7 @@ void main() {
 
     test('throws SessionExpiredException on 302 status', () async {
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           return Response<String>(
             requestOptions: RequestOptions(path: url),
@@ -149,7 +150,7 @@ void main() {
 
     test('throws SessionExpiredException on 901 status', () async {
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           return Response<String>(
             requestOptions: RequestOptions(path: url),
@@ -180,7 +181,7 @@ void main() {
 
     test('throws SessionExpiredException when receiving login page', () async {
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           return Response<String>(
             requestOptions: RequestOptions(path: url),
@@ -222,9 +223,10 @@ void main() {
       expect(session.state, SessionState.expired);
     });
 
-    test('returns unavailable detail when all candidates have no components', () async {
+    test('returns unavailable detail when all candidates have no components',
+        () async {
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           return Response<String>(
             requestOptions: RequestOptions(path: url),
@@ -256,7 +258,7 @@ void main() {
     });
 
     test('throws UnauthenticatedException when session not authenticated', () {
-      final mockDio = _MockDio(baseUrl: 'https://jxw.sylu.edu.cn/xtgl');
+      final mockDio = _MockDio(baseUrl: 'https://jxw.sylu.edu.cn');
       final session = JiaowuSession();
 
       final api = GradeDetailApi(dio: mockDio, session: session);
@@ -275,7 +277,7 @@ void main() {
     test('includes optional parameters in request when provided', () async {
       Map<String, dynamic>? capturedData;
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           capturedData = data;
           return Response<String>(
@@ -312,7 +314,7 @@ void main() {
     test('omits optional parameters from request when not provided', () async {
       Map<String, dynamic>? capturedData;
       final mockDio = _MockDio(
-        baseUrl: 'https://jxw.sylu.edu.cn/xtgl',
+        baseUrl: 'https://jxw.sylu.edu.cn',
         onPost: (url, queryParams, data, options) {
           capturedData = data;
           return Response<String>(
@@ -342,6 +344,152 @@ void main() {
       expect(capturedData!.containsKey('kch_id'), isFalse);
       expect(capturedData!.containsKey('kch'), isFalse);
       expect(capturedData!.containsKey('xh_id'), isFalse);
+    });
+
+    test('throws ArgumentError on invalid year and makes no HTTP calls',
+        () async {
+      var postCount = 0;
+      final mockDio = _MockDio(
+        baseUrl: 'https://jxw.sylu.edu.cn',
+        onPost: (url, queryParams, data, options) {
+          postCount++;
+          return Response<String>(
+            requestOptions: RequestOptions(path: url),
+            statusCode: 200,
+            data: '{}',
+          );
+        },
+      );
+
+      final session = JiaowuSession();
+      session.beginLogin('2021001234');
+      session.markAuthenticated();
+
+      final api = GradeDetailApi(dio: mockDio, session: session);
+
+      expect(
+        () => api.fetch(
+          year: '25',
+          semester: 12,
+          classId: 'test-class-id',
+          courseName: '课程',
+        ),
+        throwsArgumentError,
+      );
+
+      expect(postCount, 0);
+    });
+
+    test('throws ArgumentError on invalid semester and makes no HTTP calls',
+        () async {
+      var postCount = 0;
+      final mockDio = _MockDio(
+        baseUrl: 'https://jxw.sylu.edu.cn',
+        onPost: (url, queryParams, data, options) {
+          postCount++;
+          return Response<String>(
+            requestOptions: RequestOptions(path: url),
+            statusCode: 200,
+            data: '{}',
+          );
+        },
+      );
+
+      final session = JiaowuSession();
+      session.beginLogin('2021001234');
+      session.markAuthenticated();
+
+      final api = GradeDetailApi(dio: mockDio, session: session);
+
+      expect(
+        () => api.fetch(
+          year: '2025',
+          semester: 1,
+          classId: 'test-class-id',
+          courseName: '课程',
+        ),
+        throwsArgumentError,
+      );
+
+      expect(postCount, 0);
+    });
+  });
+
+  group('GradeDetailApi - failure semantics', () {
+    test('throws NetworkException when all candidates return non-2xx',
+        () async {
+      final mockDio = _MockDio(
+        baseUrl: 'https://jxw.sylu.edu.cn',
+        onPost: (url, queryParams, data, options) {
+          return Response<String>(
+            requestOptions: RequestOptions(path: url),
+            statusCode: 500,
+            data: 'Internal Server Error',
+          );
+        },
+      );
+
+      final session = JiaowuSession();
+      session.beginLogin('2021001234');
+      session.markAuthenticated();
+
+      final api = GradeDetailApi(dio: mockDio, session: session);
+
+      await expectLater(
+        api.fetch(
+          year: '2025',
+          semester: 12,
+          classId: 'test-class-id',
+          courseName: '课程',
+        ),
+        throwsA(isA<NetworkException>()),
+      );
+    });
+
+    test(
+        'returns unavailable when at least one candidate returns 200 with no components',
+        () async {
+      var callCount = 0;
+      final mockDio = _MockDio(
+        baseUrl: 'https://jxw.sylu.edu.cn',
+        onPost: (url, queryParams, data, options) {
+          callCount++;
+          if (callCount == 1) {
+            // 第一个候选：500 错误
+            return Response<String>(
+              requestOptions: RequestOptions(path: url),
+              statusCode: 500,
+              data: 'error',
+            );
+          } else {
+            // 后续候选：200 但无构成
+            return Response<String>(
+              requestOptions: RequestOptions(path: url),
+              statusCode: 200,
+              data: '{"items": []}',
+              headers: Headers.fromMap({
+                'content-type': ['application/json']
+              }),
+            );
+          }
+        },
+      );
+
+      final session = JiaowuSession();
+      session.beginLogin('2021001234');
+      session.markAuthenticated();
+
+      final api = GradeDetailApi(dio: mockDio, session: session);
+
+      final detail = await api.fetch(
+        year: '2025',
+        semester: 12,
+        classId: 'test-class-id',
+        courseName: '课程',
+      );
+
+      expect(detail.success, isFalse);
+      expect(detail.components, isEmpty);
     });
   });
 }

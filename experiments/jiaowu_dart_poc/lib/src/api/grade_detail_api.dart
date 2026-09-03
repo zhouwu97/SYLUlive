@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../auth/login_page_detector.dart';
 import '../core/jiaowu_endpoints.dart';
 import '../core/jiaowu_headers.dart';
+import '../core/jiaowu_request_validator.dart';
 import '../error/jiaowu_exception.dart';
 import '../model/grade_detail.dart';
 import '../network/transport_error_mapper.dart';
@@ -48,6 +49,10 @@ final class GradeDetailApi {
     String? studentGradeId,
     Duration timeout = const Duration(seconds: 8),
   }) async {
+    JiaowuRequestValidator.validateAcademicRequest(
+      year: year,
+      semester: semester,
+    );
     _requireAuthenticated();
 
     final baseForm = <String, String>{
@@ -68,19 +73,19 @@ final class GradeDetailApi {
     // 四候选 endpoint，按顺序尝试
     final candidates = [
       _Candidate(
-        endpoint: 'cjcx_cxCjxqGjh.html',
+        endpoint: JiaowuEndpoints.gradeDetailCandidate1,
         form: baseForm,
       ),
       _Candidate(
-        endpoint: 'cjcx_getXsjcxx.html',
+        endpoint: JiaowuEndpoints.gradeDetailCandidate2,
         form: baseForm,
       ),
       _Candidate(
-        endpoint: 'cjcx_cxCjmx.html',
+        endpoint: JiaowuEndpoints.gradeDetailCandidate3,
         form: baseForm,
       ),
       _Candidate(
-        endpoint: 'cjcx_cxXsKscjList.html',
+        endpoint: JiaowuEndpoints.gradeDetailCandidate4,
         form: {
           ...baseForm,
           'doType': 'query',
@@ -89,12 +94,14 @@ final class GradeDetailApi {
       ),
     ];
 
+    var hadSuccessfulResponse = false;
     var lastMessage = '暂未获取到成绩构成';
+    final errors = <String>[];
 
     for (final candidate in candidates) {
       try {
         final response = await _dio.post<String>(
-          '${_gradeBaseUrl}/${candidate.endpoint}',
+          candidate.endpoint,
           queryParameters: {'gnmkdm': 'N305005'},
           data: candidate.form,
           options: Options(
@@ -116,9 +123,9 @@ final class GradeDetailApi {
           throw const SessionExpiredException();
         }
 
-        // 严格错误分类：RemoteSystemUnavailable
+        // 非 2xx：记录但不算成功响应
         if (status != 200) {
-          lastMessage = '详情接口返回状态码 $status';
+          errors.add('候选端点 ${candidate.endpoint} 返回状态码 $status');
           continue;
         }
 
@@ -130,6 +137,9 @@ final class GradeDetailApi {
           throw const SessionExpiredException();
         }
 
+        // 至少获得了一个 200 响应
+        hadSuccessfulResponse = true;
+
         // 解析响应
         final parsed = GradeDetailParser.parse(body, courseName);
         if (parsed.components.isNotEmpty) {
@@ -140,21 +150,36 @@ final class GradeDetailApi {
           lastMessage = parsed.message!;
         }
       } on DioException catch (error) {
-        throw TransportErrorMapper.map(error, '成绩详情查询');
+        errors.add('候选端点 ${candidate.endpoint} 传输错误');
+        // 传输错误：如果是最后一个候选且没有成功响应，则抛出
+        if (candidate == candidates.last && !hadSuccessfulResponse) {
+          throw TransportErrorMapper.map(error, '成绩详情查询');
+        }
       } on SessionExpiredException {
         rethrow;
       } on JiaowuException {
         rethrow;
       } on Exception catch (error) {
-        // 不能 fail-open：抛出 NetworkException
-        throw NetworkException(
-          message: '成绩详情查询失败: ${error.toString()}',
-          code: 'GRADE_DETAIL_FETCH_ERROR',
-        );
+        errors.add('候选端点 ${candidate.endpoint} 异常: ${error.runtimeType}');
+        // 其他异常：如果是最后一个候选且没有成功响应，则 fail-closed
+        if (candidate == candidates.last && !hadSuccessfulResponse) {
+          throw NetworkException(
+            message: '成绩详情查询失败: ${error.toString()}',
+            code: 'GRADE_DETAIL_FETCH_ERROR',
+          );
+        }
       }
     }
 
-    // 所有候选均合法但没有构成 → GradeDetailUnavailable
+    // 如果所有候选都是 HTTP/协议故障（没有任何成功响应），fail-closed
+    if (!hadSuccessfulResponse) {
+      throw NetworkException(
+        message: '成绩详情查询失败: 所有候选端点均返回错误。${errors.join('; ')}',
+        code: 'GRADE_DETAIL_ALL_CANDIDATES_FAILED',
+      );
+    }
+
+    // 至少获得了结构合法的 200 响应，但四个候选均无 components
     return GradeDetail(
       success: false,
       courseName: courseName,
@@ -182,9 +207,6 @@ final class GradeDetailApi {
       };
 
   String get _baseUrl => _dio.options.baseUrl.replaceFirst(RegExp(r'/$'), '');
-
-  String get _gradeBaseUrl =>
-      _baseUrl.replaceFirst('/xtgl', '/jwglxt/cjcx');
 
   String get _origin {
     final uri = Uri.parse(_baseUrl);

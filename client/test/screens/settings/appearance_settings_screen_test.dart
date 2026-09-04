@@ -117,7 +117,7 @@ void main() {
     expect(find.text('悬浮式底栏导航'), findsNothing);
   });
 
-  testWidgets('字体大小滑块提供四档语义并立即持久化', (tester) async {
+  testWidgets('字体大小滑块提供六档语义并立即持久化', (tester) async {
     await tester.pumpWidget(
       _buildTestApp(
         auth: authProvider,
@@ -131,11 +131,11 @@ void main() {
       titleFinder: find.text('字体大小'),
     );
     expect(fontSizeSlider.min, 0);
-    expect(fontSizeSlider.max, 3);
-    expect(fontSizeSlider.divisions, 3);
-    expect(fontSizeSlider.value, 1);
+    expect(fontSizeSlider.max, 5);
+    expect(fontSizeSlider.divisions, 5);
+    expect(fontSizeSlider.value, 2);
     expect(fontSizeSlider.semanticFormatterCallback?.call(0), '较小 90%');
-    expect(fontSizeSlider.semanticFormatterCallback?.call(3), '特大 130%');
+    expect(fontSizeSlider.semanticFormatterCallback?.call(5), '特大 130%');
 
     final sliderFinder = find.descendant(
       of: find.ancestor(

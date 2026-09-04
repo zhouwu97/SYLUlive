@@ -22,7 +22,7 @@ void main() {
     );
   });
 
-  test('四个字体档位按约定倍率缩放文字', () {
+  test('六个字体档位按约定倍率缩放文字', () {
     const baseFontSize = 20.0;
 
     expect(
@@ -31,6 +31,13 @@ void main() {
         AppFontSizePreset.small.scaleFactor,
       ).scale(baseFontSize),
       18,
+    );
+    expect(
+      AppTextScaler(
+        TextScaler.noScaling,
+        AppFontSizePreset.slightlySmall.scaleFactor,
+      ).scale(baseFontSize),
+      19,
     );
     expect(
       AppTextScaler(
@@ -45,6 +52,13 @@ void main() {
         AppFontSizePreset.large.scaleFactor,
       ).scale(baseFontSize),
       23,
+    );
+    expect(
+      AppTextScaler(
+        TextScaler.noScaling,
+        AppFontSizePreset.largePlus.scaleFactor,
+      ).scale(baseFontSize),
+      24,
     );
     expect(
       AppTextScaler(

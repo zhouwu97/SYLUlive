@@ -349,14 +349,14 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   .indexOf(themeProvider.fontSizePreset)
                   .toDouble(),
               min: 0,
-              max: 3,
-              divisions: 3,
+              max: 5,
+              divisions: 5,
               valueLabel: _fontSizeLabel(themeProvider.fontSizePreset),
               semanticFormatterCallback: (value) => _fontSizeLabel(
-                AppFontSizePreset.values[value.round().clamp(0, 3)],
+                AppFontSizePreset.values[value.round().clamp(0, 5)],
               ),
               onChanged: (value) => themeProvider.setFontSizePreset(
-                AppFontSizePreset.values[value.round().clamp(0, 3)],
+                AppFontSizePreset.values[value.round().clamp(0, 5)],
               ),
             ),
           ],

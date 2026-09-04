@@ -30,6 +30,20 @@ void main() {
     expect(provider.fontSizePreset, AppFontSizePreset.extraLarge);
   });
 
+  test('启动时恢复新增的两个中间字体档位', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'font_size_preset': 'slightly_small',
+    });
+    final slightlySmall = await _loadProvider();
+    expect(slightlySmall.fontSizePreset, AppFontSizePreset.slightlySmall);
+
+    AppPreferencesStore.setMockInitialValues({
+      'font_size_preset': 'large_plus',
+    });
+    final largePlus = await _loadProvider();
+    expect(largePlus.fontSizePreset, AppFontSizePreset.largePlus);
+  });
+
   test('未知字体档位回退到标准大小', () async {
     AppPreferencesStore.setMockInitialValues({
       'font_size_preset': 'broken_value',

@@ -10,6 +10,11 @@ enum AppFontSizePreset {
     scaleFactor: 0.9,
     storageValue: 'small',
   ),
+  slightlySmall(
+    label: '偏小',
+    scaleFactor: 0.95,
+    storageValue: 'slightly_small',
+  ),
   standard(
     label: '标准',
     scaleFactor: 1.0,
@@ -19,6 +24,11 @@ enum AppFontSizePreset {
     label: '较大',
     scaleFactor: 1.15,
     storageValue: 'large',
+  ),
+  largePlus(
+    label: '大',
+    scaleFactor: 1.2,
+    storageValue: 'large_plus',
   ),
   extraLarge(
     label: '特大',

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
+import '../../theme/app_text_scaler.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
@@ -337,6 +338,30 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
+        SettingsSection(
+          title: '文字显示',
+          children: [
+            SettingsSliderTile(
+              icon: Icons.format_size_rounded,
+              title: '字体大小',
+              subtitle: '调整应用内文字大小，手机系统字体设置仍会继续叠加',
+              value: AppFontSizePreset.values
+                  .indexOf(themeProvider.fontSizePreset)
+                  .toDouble(),
+              min: 0,
+              max: 3,
+              divisions: 3,
+              valueLabel: _fontSizeLabel(themeProvider.fontSizePreset),
+              semanticFormatterCallback: (value) => _fontSizeLabel(
+                AppFontSizePreset.values[value.round().clamp(0, 3)],
+              ),
+              onChanged: (value) => themeProvider.setFontSizePreset(
+                AppFontSizePreset.values[value.round().clamp(0, 3)],
+              ),
+            ),
+          ],
+        ),
+
         // 自定义背景设置
         SettingsSection(
           title: '自定义背景偏好',
@@ -402,5 +427,9 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _fontSizeLabel(AppFontSizePreset preset) {
+    return '${preset.label} ${(preset.scaleFactor * 100).round()}%';
   }
 }

@@ -33,6 +33,7 @@ import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
+import 'theme/app_text_scaler.dart';
 import 'features/academic/application/academic_session_controller.dart';
 import 'features/academic/data/academic_repository_impl.dart';
 import 'features/academic/data/academic_server_access_guard.dart';
@@ -1770,10 +1771,21 @@ class _AppContent extends StatelessWidget {
       navigatorKey: appNavigatorKey,
       navigatorObservers: [appRouteObserver],
       scaffoldMessengerKey: scaffoldMessengerKey,
-      builder: (context, child) => AppUpdateGate(
-        navigatorKey: appNavigatorKey,
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: AppTextScaler(
+              mediaQuery.textScaler,
+              themeProvider.fontSizePreset.scaleFactor,
+            ),
+          ),
+          child: AppUpdateGate(
+            navigatorKey: appNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => AppNavigation.buildTimetablePage(),

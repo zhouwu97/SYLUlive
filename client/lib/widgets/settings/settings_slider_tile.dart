@@ -11,7 +11,9 @@ class SettingsSliderTile extends StatelessWidget {
   final double value;
   final double min;
   final double max;
+  final int? divisions;
   final ValueChanged<double> onChanged;
+  final SemanticFormatterCallback? semanticFormatterCallback;
   final String? valueText;
   final String? valueLabel;
   final bool enabled;
@@ -26,7 +28,9 @@ class SettingsSliderTile extends StatelessWidget {
     required this.value,
     this.min = 0.0,
     this.max = 1.0,
+    this.divisions,
     required this.onChanged,
+    this.semanticFormatterCallback,
     this.valueText,
     this.valueLabel,
     this.enabled = true,
@@ -126,6 +130,8 @@ class SettingsSliderTile extends StatelessWidget {
                 value: value,
                 min: min,
                 max: max,
+                divisions: divisions,
+                semanticFormatterCallback: semanticFormatterCallback,
                 onChanged: enabled ? onChanged : null,
               ),
             ),

@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/models/startup_destination.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
+import 'package:shenliyuan/theme/app_text_scaler.dart';
 
 enum AppBackgroundMode {
   clean,
@@ -145,6 +146,7 @@ const Color kCleanWarmBackgroundDark = Color(0xFF111315);
 
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
+  static const String _fontSizePresetKey = 'font_size_preset';
   static const String _backgroundModeKey = 'background_mode';
   static const String _backgroundImageKey = 'background_image';
   static const String _landscapeBackgroundImageKey =
@@ -178,6 +180,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool _isLoaded = false;
   bool _isDarkMode = false;
+  AppFontSizePreset _fontSizePreset = AppFontSizePreset.standard;
   AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
   String? _backgroundImage;
   String? _landscapeBackgroundImage;
@@ -200,6 +203,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isLoaded => _isLoaded;
   bool get isDarkMode => _isDarkMode;
+  AppFontSizePreset get fontSizePreset => _fontSizePreset;
   AppBackgroundMode get backgroundMode => _backgroundMode;
   bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
   bool get isCustomBackgroundMode =>
@@ -335,6 +339,9 @@ class ThemeProvider extends ChangeNotifier {
     try {
       final prefs = await AppPreferencesStore.getInstance();
       _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
+      _fontSizePreset = AppFontSizePreset.fromStorage(
+        prefs.getString(_fontSizePresetKey),
+      );
       _backgroundImage = prefs.getString(_backgroundImageKey);
       _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
       _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
@@ -426,6 +433,15 @@ class ThemeProvider extends ChangeNotifier {
     _isDarkMode = value;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_nightModeKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setFontSizePreset(AppFontSizePreset preset) async {
+    if (_fontSizePreset == preset) return;
+
+    _fontSizePreset = preset;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setString(_fontSizePresetKey, preset.storageValue);
     notifyListeners();
   }
 

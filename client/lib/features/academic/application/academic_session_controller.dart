@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import '../../../services/account_session_cleanup_coordinator.dart';
 import '../domain/academic_failure.dart';

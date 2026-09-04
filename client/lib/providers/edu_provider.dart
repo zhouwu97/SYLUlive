@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';

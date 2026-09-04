@@ -26,13 +26,14 @@ func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testi
 }
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "test-secret-0123456789-abcdefghij")
 	t.Setenv("SUPER_ADMIN_ID", "root-admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
 	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
+	t.Setenv("ANDROID_SIGNING_CERT_SHA256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
 	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
 	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
@@ -117,7 +118,7 @@ func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 
 func TestLoadReleaseRejectsExamPaperDirInsidePublicUploads(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
-	t.Setenv("JWT_SECRET", "realistic-release-secret")
+	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
@@ -264,7 +265,7 @@ func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
 func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Helper()
 	t.Setenv("GIN_MODE", ginMode)
-	t.Setenv("JWT_SECRET", "realistic-release-secret")
+	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
@@ -276,6 +277,7 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
 	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
 	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
+	t.Setenv("ANDROID_SIGNING_CERT_SHA256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")

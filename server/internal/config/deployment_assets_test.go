@@ -95,13 +95,10 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		"JWT_SECRET=",
 		"SUPER_ADMIN_ID=",
 		"SUPER_ADMIN_PASSWORD=",
-<<<<<<< HEAD
-=======
 		"ACCOUNT_IDENTITY_READ_MODE=legacy",
 		"SCHOOL_AUTHORITY_RETIRED=true",
 		"SCHOOL_DEVICE_CAPABILITY_CUT=true",
 		"SCHOOL_ACADEMIC_ROUTES_RETIRED=true",
->>>>>>> origin/jiaowu
 		"IMAGE_VARIANT_WORKER_ENABLED=",
 		"AI_EXTERNAL_MCP_ENABLED=",
 		"AI_EXTERNAL_MCP_TRANSPORT=",
@@ -119,8 +116,6 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if !strings.Contains(composeText, "AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}") {
 		t.Fatal("Docker Compose 的不限额账号默认值必须为空")
 	}
-<<<<<<< HEAD
-=======
 	if !strings.Contains(composeText, "ACCOUNT_IDENTITY_READ_MODE=${ACCOUNT_IDENTITY_READ_MODE:-legacy}") {
 		t.Fatal("Docker Compose 的账号 Identity 读路径必须默认保持 legacy")
 	}
@@ -148,7 +143,6 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 			t.Fatalf("server/.env.example 缺少学校能力退役项 %s", key)
 		}
 	}
->>>>>>> origin/jiaowu
 
 	dockerfile, err := os.ReadFile(filepath.Join(repoRoot, "server", "Dockerfile"))
 	if err != nil {

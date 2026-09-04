@@ -1,4 +1,4 @@
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 enum AcademicSourceKind { local, legacy }
 

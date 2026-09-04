@@ -425,7 +425,6 @@ class KeepAliveForegroundService : Service() {
         private const val PREFS_NAME = "FlutterSharedPreferences"
         private const val KEY_ENABLED = "flutter.keep_alive_enabled"
         private const val KEY_HIDE_RECENTS = "flutter.hide_recents_enabled"
-        private const val KEY_AUTH_TOKEN = "flutter.keep_alive_auth_token"
         private const val KEY_JPUSH_ALIAS = "flutter.jpush_alias"
         private const val KEY_JPUSH_ALIAS_STATE = "flutter.jpush_alias_state"
         private const val KEY_JPUSH_ALIAS_GEN = "flutter.jpush_alias_generation"
@@ -474,8 +473,7 @@ class KeepAliveForegroundService : Service() {
             prefs(context.applicationContext).getBoolean(KEY_HIDE_RECENTS, false)
 
         fun hasAuthToken(context: Context): Boolean =
-            !prefs(context.applicationContext)
-                .getString(KEY_AUTH_TOKEN, null).isNullOrBlank()
+            !SecureKeepAliveTokenStore.read(context.applicationContext).isNullOrBlank()
 
         /** 统一协调当前 Alias 状态（每次执行时重读，不使用历史快照） */
         fun reconcileAliasState(context: Context) {
@@ -520,19 +518,20 @@ class KeepAliveForegroundService : Service() {
                     try {
                         val sequence =
                             PrivateMessageJPushReceiver.restoreSequence(gen)
-                        JPushInterface.setAlias(appContext, sequence, alias)
+                        // 旧版本可能留下 Alias；新版本只允许清理，禁止再次建立用户 Alias。
+                        JPushInterface.deleteAlias(appContext, sequence)
                         Log.i(TAG,
                             "reconcile: restore alias ***${alias.takeLast(4)} gen=$gen")
                         DiagnosticLogStore.info(
                             appContext,
                             source = "推送",
-                            type = "Alias 恢复请求",
-                            summary = "重新协调绑定 Alias",
+                            type = "Alias 清理请求",
+                            summary = "检测到旧版 Alias，重新协调清理",
                             detail = "alias=***${alias.takeLast(4)} gen=$gen",
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "reconcile restore failed", e)
-                        PrivateMessageJPushReceiver.scheduleRestoreRetry(
+                        PrivateMessageJPushReceiver.scheduleDeleteRetry(
                             appContext,
                             gen,
                         )
@@ -561,13 +560,11 @@ class KeepAliveForegroundService : Service() {
         }
 
         fun syncAuthToken(context: Context, token: String?) {
-            val editor = prefs(context.applicationContext).edit()
             if (token.isNullOrBlank()) {
-                editor.remove(KEY_AUTH_TOKEN)
+                SecureKeepAliveTokenStore.clear(context.applicationContext)
             } else {
-                editor.putString(KEY_AUTH_TOKEN, token)
+                SecureKeepAliveTokenStore.write(context.applicationContext, token)
             }
-            editor.apply()
         }
 
         fun syncAlias(context: Context, alias: String?): Boolean {
@@ -799,7 +796,7 @@ class KeepAliveForegroundService : Service() {
             prefs(context).getBoolean(KEY_ENABLED, false)
 
         private fun authToken(context: Context): String? =
-            prefs(context).getString(KEY_AUTH_TOKEN, null)
+            SecureKeepAliveTokenStore.read(context.applicationContext)
 
         private fun immutableFlag(): Int =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

@@ -595,18 +595,6 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
-                "syncAlias" -> {
-                    val userId = call.argument<String>("userId")
-                    if (userId.isNullOrBlank()) {
-                        result.error("INVALID_ALIAS", "userId 不能为空", null)
-                    } else {
-                        val synced = KeepAliveForegroundService.syncAlias(this, userId)
-                        if (synced) {
-                            KeepAliveForegroundService.reconcileAliasState(this)
-                        }
-                        result.success(synced)
-                    }
-                }
                 "setPushOptIn" -> {
                     val enabled = call.argument<Boolean>("enabled") == true
                     KeepAliveForegroundService.setPushOptIn(this, enabled)

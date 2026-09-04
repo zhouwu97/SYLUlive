@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ const tokenVersionCacheTTL = 60 * time.Second
 type cachedSessionState struct {
 	tokenVersion      int
 	role              models.Role
+	accountStatus     string
 	legalConsentState models.LegalConsentState
 	expiresAt         time.Time
 }
@@ -37,7 +39,9 @@ const (
 
 var legalConsentEnforcement = LegalConsentEnforcementSoft
 
-// SetLegalConsentEnforcement 配置授权门禁模式；生产默认 soft，避免新后端立即阻断旧客户端。
+var jwtValidMethods = jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()})
+
+// SetLegalConsentEnforcement 配置授权门禁模式；release 配置会强制使用 hard。
 func SetLegalConsentEnforcement(mode string) {
 	switch mode {
 	case LegalConsentEnforcementOff, LegalConsentEnforcementSoft, LegalConsentEnforcementHard:
@@ -68,8 +72,11 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		claims := &Claims{}
 
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected JWT signing method")
+			}
 			return []byte(jwtSecret), nil
-		})
+		}, jwtValidMethods)
 
 		if err != nil || !token.Valid {
 			writeAPIError(c, http.StatusUnauthorized, "invalid_token", "无效的令牌")
@@ -91,6 +98,11 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		}
 		if state.role != models.Role(claims.Role) {
 			writeAPIError(c, http.StatusUnauthorized, "role_changed", "账号权限已更新，请重新登录")
+			c.Abort()
+			return
+		}
+		if state.accountStatus != "" && state.accountStatus != "active" {
+			writeAPIError(c, http.StatusUnauthorized, "account_unavailable", "账号当前不可用")
 			c.Abort()
 			return
 		}
@@ -155,11 +167,18 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		if tokenString != "" {
 			claims := &Claims{}
 			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+				if token.Method != jwt.SigningMethodHS256 {
+					return nil, fmt.Errorf("unexpected JWT signing method")
+				}
 				return []byte(jwtSecret), nil
-			})
+			}, jwtValidMethods)
 			if err == nil && token.Valid {
 				if state, err := getCachedSessionState(db, claims.UserID); err == nil {
 					if state.tokenVersion != claims.TokenVersion || state.role != models.Role(claims.Role) {
+						c.Next()
+						return
+					}
+					if state.accountStatus != "" && state.accountStatus != "active" {
 						c.Next()
 						return
 					}
@@ -192,7 +211,7 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 	tokenVersionCache.Unlock()
 
 	var user models.User
-	if err := db.Select("id", "token_version", "role", "legal_consent_revoked_at", "edu_authorized").First(&user, userID).Error; err != nil {
+	if err := db.Select("id", "token_version", "role", "account_status", "legal_consent_revoked_at", "edu_authorized").First(&user, userID).Error; err != nil {
 		return cachedSessionState{}, err
 	}
 	legalConsentState, err := models.LegalConsentStateForUser(db, user)
@@ -203,6 +222,7 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 	state := cachedSessionState{
 		tokenVersion:      user.TokenVersion,
 		role:              user.Role,
+		accountStatus:     user.AccountStatus,
 		legalConsentState: legalConsentState,
 		expiresAt:         now.Add(tokenVersionCacheTTL),
 	}

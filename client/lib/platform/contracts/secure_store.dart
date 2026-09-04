@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../app_platform.dart';
-import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
 class SecretTooLargeException implements Exception {
@@ -74,28 +73,21 @@ class OhosAssetSecretStore implements AppSecretStore {
       _channel.invokeMethod<void>('delete', {'key': key});
 }
 
-/// Web 环境使用的兜底持久化（由于无法使用系统级 KeyStore）
+/// Web 不持久化敏感凭据。认证由服务端 HttpOnly Cookie 维持，避免把 JWT
+/// 放入 localStorage/IndexedDB 后被任意脚本直接读取。
 class WebSecretStore implements AppSecretStore {
   @override
-  Future<String?> read(String key) async {
-    final prefs = await AppPreferencesStore.getInstance();
-    return prefs.getString(key);
-  }
+  Future<String?> read(String key) async => null;
 
   @override
   Future<void> write(String key, String value) async {
     if (utf8.encode(value).length > 1024) {
       throw SecretTooLargeException(utf8.encode(value).length);
     }
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(key, value);
   }
 
   @override
-  Future<void> delete(String key) async {
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.remove(key);
-  }
+  Future<void> delete(String key) async {}
 }
 
 /// 测试用内存存储

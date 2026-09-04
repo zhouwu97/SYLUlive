@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -401,14 +400,12 @@ func (h *EduHandler) issueBoundEduSession(c *gin.Context, userID uint) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号状态失败"})
 		return
 	}
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "绑定成功，学号已成为主账号，APP 密码保持不变",
-		"token":   token,
-		"user":    response,
-	})
+	payload := authSessionPayload(c, token, response)
+	payload["message"] = "绑定成功，学号已成为主账号，APP 密码保持不变"
+	c.JSON(http.StatusOK, payload)
 }
 
 func writeEduServiceError(c *gin.Context, err error) {

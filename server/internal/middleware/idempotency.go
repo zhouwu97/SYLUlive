@@ -21,6 +21,7 @@ import (
 
 const (
 	idempotencyMaxKeyLength = 200
+	idempotencyMaxBodySize  = 1 << 20
 	idempotencyWaitTimeout  = 30 * time.Second
 	idempotencyPollInterval = 25 * time.Millisecond
 )
@@ -59,12 +60,41 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			})
 			return
 		}
+		// 全局幂等中间件位于路由认证之前，先验证可用 JWT/当前会话状态，
+		// 再读取请求体，避免未认证的大请求先消耗内存和 CPU。
+		scope := idempotencyScopeWithJWT(c, db, jwtSecret)
 
-		body, err := io.ReadAll(c.Request.Body)
+		mediaType, _, mediaTypeErr := mime.ParseMediaType(c.GetHeader("Content-Type"))
+		if mediaTypeErr == nil && strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
+				"code":    "idempotency_body_too_large",
+				"message": "multipart 请求不支持全量幂等校验，请不要携带 Idempotency-Key",
+			})
+			return
+		}
+		if c.Request.ContentLength > idempotencyMaxBodySize {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
+				"code":    "idempotency_body_too_large",
+				"message": "幂等请求体不能超过 1 MiB",
+			})
+			return
+		}
+		var body []byte
+		var err error
+		if c.Request.Body != nil {
+			body, err = io.ReadAll(io.LimitReader(c.Request.Body, idempotencyMaxBodySize+1))
+		}
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"code":    "idempotency_body_unreadable",
 				"message": "请求体无法读取",
+			})
+			return
+		}
+		if len(body) > idempotencyMaxBodySize {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
+				"code":    "idempotency_body_too_large",
+				"message": "幂等请求体不能超过 1 MiB",
 			})
 			return
 		}
@@ -74,7 +104,6 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		path := c.Request.URL.RequestURI()
 		requestHash := sha256Hex([]byte(method + "\n" + path + "\n" +
 			string(canonicalIdempotencyBody(c.GetHeader("Content-Type"), body))))
-		scope := idempotencyScopeWithJWT(c, db, jwtSecret)
 		expiresAt := time.Now().UTC().Add(24 * time.Hour)
 		record := models.IdempotencyRecord{
 			Scope: scope, Key: key, Method: method, Path: path,
@@ -170,11 +199,11 @@ func authenticatedJWTUserID(c *gin.Context, db *gorm.DB, jwtSecret string) (uint
 	}
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected JWT signing method")
 		}
 		return []byte(jwtSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil || token == nil || !token.Valid || claims.UserID == 0 || db == nil {
 		return 0, false
 	}

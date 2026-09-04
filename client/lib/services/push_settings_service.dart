@@ -67,9 +67,6 @@ ResolvedPushStatus resolveRemotePushStatus(RemotePushSnapshot snapshot) {
   if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
     return ResolvedPushStatus.registrationFailed;
   }
-  if (snapshot.aliasState == 'pending_bind') {
-    return ResolvedPushStatus.configuring;
-  }
   if (!snapshot.privateChannelExists) {
     return ResolvedPushStatus.channelUnavailable;
   }

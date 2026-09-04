@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -33,13 +35,18 @@ var errFeedbackEmailTooLarge = errors.New("feedback email exceeds size limit")
 
 // FeedbackHandler 反馈处理器
 type FeedbackHandler struct {
-	db        *gorm.DB
-	uploadDir string
+	db              *gorm.DB
+	uploadDir       string
+	rateLimitSecret string
 }
 
 // NewFeedbackHandler 创建反馈处理器
-func NewFeedbackHandler(db *gorm.DB, uploadDir string) *FeedbackHandler {
-	return &FeedbackHandler{db: db, uploadDir: uploadDir}
+func NewFeedbackHandler(db *gorm.DB, uploadDir string, rateLimitSecrets ...string) *FeedbackHandler {
+	secret := "feedback-rate-limit"
+	if len(rateLimitSecrets) > 0 && strings.TrimSpace(rateLimitSecrets[0]) != "" {
+		secret = rateLimitSecrets[0]
+	}
+	return &FeedbackHandler{db: db, uploadDir: uploadDir, rateLimitSecret: secret}
 }
 
 type feedbackInput struct {
@@ -55,6 +62,10 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	var input feedbackInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "反馈内容不能为空"})
+		return
+	}
+	if len([]rune(strings.TrimSpace(input.Content))) == 0 || len([]rune(input.Content)) > 20_000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "反馈内容长度必须为 1 到 20000 字"})
 		return
 	}
 
@@ -99,6 +110,16 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	}
 	if to == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "未配置反馈接收邮箱，无法提交反馈"})
+		return
+	}
+
+	submission, status, rateMessage, err := h.reserveFeedbackSubmission(c, input.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "反馈限流服务暂不可用，请稍后重试"})
+		return
+	}
+	if status != 0 {
+		c.JSON(status, gin.H{"error": rateMessage})
 		return
 	}
 	subject := fmt.Sprintf("【沈理校园反馈】来自 %s", nickname)
@@ -178,8 +199,59 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "邮件发送失败，请稍后重试"})
 		return
 	}
+	if submission != nil {
+		_ = h.db.Model(submission).Update("email_sent", true).Error
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "反馈已提交，感谢您的建议！"})
+}
+
+// reserveFeedbackSubmission 在发信前占用一次限额，避免匿名接口被用作 SMTP 放大器。
+// 未完成迁移的开发测试库兼容放行；正式启动会在 AutoMigrate 中创建该表。
+func (h *FeedbackHandler) reserveFeedbackSubmission(c *gin.Context, content string) (*models.FeedbackSubmission, int, string, error) {
+	if h.db == nil || !h.db.Migrator().HasTable(&models.FeedbackSubmission{}) {
+		return nil, 0, "", nil
+	}
+	now := time.Now()
+	ipHash := h.feedbackDigest(c.ClientIP())
+	contentHash := h.feedbackDigest(strings.TrimSpace(content))
+	var count int64
+	if err := h.db.Model(&models.FeedbackSubmission{}).Where("ip_hash = ? AND created_at >= ?", ipHash, now.Add(-time.Hour)).Count(&count).Error; err != nil {
+		return nil, 0, "", err
+	}
+	if count >= 10 {
+		return nil, http.StatusTooManyRequests, "提交过于频繁，请一小时后再试", nil
+	}
+	if err := h.db.Model(&models.FeedbackSubmission{}).Where("created_at >= ?", now.Add(-time.Minute)).Count(&count).Error; err != nil {
+		return nil, 0, "", err
+	}
+	if count >= 60 {
+		return nil, http.StatusTooManyRequests, "当前反馈服务繁忙，请稍后再试", nil
+	}
+	if err := h.db.Model(&models.FeedbackSubmission{}).Where("content_hash = ? AND email_sent = ? AND created_at >= ?", contentHash, true, now.Add(-time.Hour)).Count(&count).Error; err != nil {
+		return nil, 0, "", err
+	}
+	if count > 0 {
+		return nil, http.StatusConflict, "相同反馈已提交，请勿重复发送", nil
+	}
+
+	var userID *uint
+	if raw, ok := c.Get("user_id"); ok {
+		if uid, ok := raw.(uint); ok && uid > 0 {
+			userID = &uid
+		}
+	}
+	submission := &models.FeedbackSubmission{IPHash: ipHash, ContentHash: contentHash, UserID: userID}
+	if err := h.db.Create(submission).Error; err != nil {
+		return nil, 0, "", err
+	}
+	return submission, 0, "", nil
+}
+
+func (h *FeedbackHandler) feedbackDigest(value string) string {
+	mac := hmac.New(sha256.New, []byte(h.rateLimitSecret))
+	_, _ = mac.Write([]byte(value))
+	return fmt.Sprintf("%x", mac.Sum(nil))
 }
 
 // buildFeedbackEmail 组装 multipart/related 邮件：HTML 为根部件，截图以 Content-ID 内嵌

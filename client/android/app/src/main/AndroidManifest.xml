@@ -26,6 +26,7 @@
         android:label="沈理校园"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher_main"
+        android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">

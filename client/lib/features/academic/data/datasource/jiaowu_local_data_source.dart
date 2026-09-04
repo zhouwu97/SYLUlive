@@ -92,7 +92,7 @@ final class JiaowuLocalDataSource implements AcademicDataSource {
 
   @override
   Future<CreditRequirement> getCreditRequirements() =>
-      _activeClient.getCreditRequirements();
+      _activeClient.getCreditRequirement();
 
   @override
   Future<void> resetSession() async {

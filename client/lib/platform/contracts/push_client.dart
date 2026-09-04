@@ -26,7 +26,6 @@ abstract interface class PushClient {
     Future<dynamic> Function(Map<String, dynamic>)? onNotifyMessageUnShow,
   });
   Future<void> clearAlias();
-  Future<void> setAlias(String alias);
   Future<void> setTags(List<String> tags);
   Future<bool> requestSystemNotificationPermission();
 }
@@ -56,9 +55,6 @@ class UnsupportedPushClient implements PushClient {
 
   @override
   Future<void> clearAlias() async {}
-
-  @override
-  Future<void> setAlias(String alias) async {}
 
   @override
   Future<void> setTags(List<String> tags) async {}

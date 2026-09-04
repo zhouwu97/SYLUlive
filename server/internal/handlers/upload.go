@@ -15,12 +15,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -128,24 +126,15 @@ type UploadHandler struct {
 	db        *gorm.DB
 	uploadDir string
 	maxSize   int64
-	jwtSecret string
 }
 
 // NewUploadHandler 创建上传处理器
-func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB, jwtSecrets ...string) *UploadHandler {
-	handler := &UploadHandler{
+func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandler {
+	return &UploadHandler{
 		db:        db,
 		uploadDir: uploadDir,
 		maxSize:   maxSize,
 	}
-	if len(jwtSecrets) > 0 {
-		handler.jwtSecret = jwtSecrets[0]
-	}
-	return handler
-}
-
-func (h *UploadHandler) SetJWTSecret(secret string) {
-	h.jwtSecret = secret
 }
 
 // isAuthorizedForPrivateFile 检查请求是否有权访问私有待审核文件（管理员/超级管理员/文件上传者）
@@ -161,34 +150,6 @@ func (h *UploadHandler) isAuthorizedForPrivateFile(c *gin.Context, file models.F
 		}
 	}
 
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		if cookieToken, err := c.Cookie("jwt"); err == nil && cookieToken != "" {
-			authHeader = "Bearer " + cookieToken
-		}
-	}
-	if authHeader == "" {
-		return false
-	}
-	tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	if tokenString == "" {
-		return false
-	}
-
-	claims := &middleware.Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(h.jwtSecret), nil
-	})
-	if err != nil || !token.Valid {
-		return false
-	}
-
-	if claims.Role == "admin" || claims.Role == "super_admin" {
-		return true
-	}
-	if claims.UserID != 0 && claims.UserID == file.UploaderID {
-		return true
-	}
 	return false
 }
 

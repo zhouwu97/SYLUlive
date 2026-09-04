@@ -134,7 +134,8 @@ type PersonalSnapshotReader interface {
 }
 
 // NewCampusMCPTools 创建服务器校园 Agent 唯一可见的语义工具白名单。
-// 底层查询、设备、Cookie、HTTP 和密码能力均不会注册为工具。
+// 底层查询、设备、Cookie、HTTP 和密码能力均不会注册为工具。设备调度器
+// 仅保留给隔离测试/兼容调用方；生产装配不注入它，避免教务数据回流服务器。
 func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSnapshots PersonalSnapshotReader, options ...CampusMCPOption) []PureReadTool {
 	mcp := &campusMCP{db: db, snapshots: snapshots, personalSnapshots: personalSnapshots, now: time.Now}
 	for _, option := range options {

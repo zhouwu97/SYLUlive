@@ -197,6 +197,8 @@ func main() {
 		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
 		&models.IdempotencyRecord{},
+		&models.FeedbackSubmission{},
+		&models.LoginThrottleRecord{},
 
 		&models.UserLegalConsent{},
 
@@ -584,7 +586,7 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID, X-Auth-Transport, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
@@ -688,7 +690,7 @@ func main() {
 
 	likeHandler := handlers.NewLikeHandler(db)
 
-	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(cfg.JPushAppKey, cfg.JPushMasterSecret))
+	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(db, cfg.JPushAppKey, cfg.JPushMasterSecret))
 	messageHandler.SetUploadDir(cfg.UploadDir)
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
@@ -699,7 +701,7 @@ func main() {
 
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
-	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db, cfg.JWTSecret)
+	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 
 	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
 	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
@@ -747,6 +749,15 @@ func main() {
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
 	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release") {
+		appReleaseService.SetAndroidAPKValidationPolicy(
+			cfg.AndroidPackageName,
+			cfg.AndroidSigningCertificate,
+			cfg.AndroidAAPT2Path,
+			cfg.AndroidAPKSignerPath,
+		)
+	}
+	appReleaseService.SetExternalMarketAllowlist(cfg.AppReleaseAllowedMarketHosts)
 	appUpdateHandler := handlers.NewAppUpdateHandler(
 		appReleaseService,
 		cfg.AppReleaseUseAccelRedirect,
@@ -772,7 +783,7 @@ func main() {
 	canteenDishPhotoHandler := handlers.NewCanteenDishPhotoHandler(db)
 	canteenDishPhotoAdminHandler := handlers.NewCanteenDishPhotoAdminHandler(db)
 
-	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir)
+	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir, cfg.JWTSecret)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
 	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
@@ -879,22 +890,10 @@ func main() {
 				}
 			}
 		}
-		deviceJobScheduler := ai.DeviceJobSchedulerFunc(func(ctx context.Context, request ai.DeviceJobRequest) (ai.DeviceJobReference, error) {
-			job, err := deviceJobService.CreateJob(ctx, services.CreateDeviceJobRequest{
-				UserID: request.UserID, RunID: request.RunID, ToolCallID: request.ToolCallID,
-				ToolName: request.ToolName, Arguments: request.Arguments, RequiredDataTypes: request.RequiredDataTypes,
-				ExpiresAt: request.ExpiresAt,
-			})
-			if err != nil {
-				return ai.DeviceJobReference{}, err
-			}
-			return ai.DeviceJobReference{ID: job.ID}, nil
-		})
 		policyRetriever := ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
 		tools := ai.NewCampusMCPTools(
 			db, academicSnapshotService, personalSnapshotService,
 			ai.WithCampusPolicyRetriever(policyRetriever),
-			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
 		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
@@ -1037,9 +1036,14 @@ func main() {
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
 		}
-		deviceJobHandler.SetRunResumer(aiRuntime)
+		if !cfg.SchoolDeviceCapabilityCut {
+			deviceJobHandler.SetRunResumer(aiRuntime)
+		}
 		eduHandler.SetUserConsentRunResumer(aiRuntime)
 		go func() {
+			if cfg.SchoolDeviceCapabilityCut {
+				return
+			}
 			reconcile := func() {
 				count, err := aiRuntime.ReconcileWaitingDeviceJobs(appCtx, 50)
 				if err != nil {
@@ -1198,20 +1202,21 @@ func main() {
 		})
 	})
 
-	// 设备工具桥接使用普通 JWT 鉴权，不能依赖校园 Agent 内测开关；
-	// 已登记安装实例仍须在每个 Handler 中按 user_id + installation_id 双重校验。
-	deviceAPI := r.Group("/api/device")
-	deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	{
-		deviceAPI.PUT("/registration", deviceJobHandler.Register)
-		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
-		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
-		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
-		deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
-		deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
-		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
-		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
-		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+	// C3 完成后不再暴露个人学校设备桥接；保留代码与数据模型用于历史迁移。
+	if !cfg.SchoolDeviceCapabilityCut {
+		deviceAPI := r.Group("/api/device")
+		deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+		{
+			deviceAPI.PUT("/registration", deviceJobHandler.Register)
+			deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
+			deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
+			deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+			deviceAPI.POST("/jobs/:id/waiting_user", deviceJobHandler.WaitForUser)
+			deviceAPI.POST("/jobs/:id/progress", deviceJobHandler.Progress)
+			deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
+			deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
+			deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+		}
 	}
 
 	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
@@ -1237,8 +1242,8 @@ func main() {
 
 	// 静态文件服务
 
-	r.GET("/uploads/*filepath", uploadHandler.ServePublic)
-	r.HEAD("/uploads/*filepath", uploadHandler.ServePublic)
+	r.GET("/uploads/*filepath", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), uploadHandler.ServePublic)
+	r.HEAD("/uploads/*filepath", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), uploadHandler.ServePublic)
 
 	// 认证路由
 

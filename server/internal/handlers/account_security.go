@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -452,7 +451,7 @@ func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成 Token"})
 		return
 	}
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 	response, err := selfUserResponseForDB(h.db, user)
@@ -460,7 +459,7 @@ func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号状态失败"})
 		return
 	}
-	c.JSON(status, gin.H{"token": token, "user": response})
+	c.JSON(status, authSessionPayload(c, token, response))
 }
 
 func (h *AuthHandler) writeSecurityAudit(userID uint, action string, metadata string) {

@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func TestJPushAliasPayloadIncludesAndroidAndIOSChannels(t *testing.T) {
+func TestJPushRegistrationPayloadIncludesAndroidAndIOSChannels(t *testing.T) {
 	payload := PushPayload{
 		Platform: "all",
-		Audience: Audience{Alias: []string{"42"}},
+		Audience: Audience{RegistrationID: []string{"rid-42"}},
 		Notification: Notification{
 			Alert:   "测试消息",
 			Android: &AndroidNotification{Alert: "测试消息", Title: "系统通知"},
@@ -22,7 +22,7 @@ func TestJPushAliasPayloadIncludesAndroidAndIOSChannels(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 	body := string(encoded)
-	for _, fragment := range []string{`"platform":"all"`, `"android"`, `"ios"`, `"badge":1`} {
+	for _, fragment := range []string{`"platform":"all"`, `"registration_id":["rid-42"]`, `"android"`, `"ios"`, `"badge":1`} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("payload missing %q: %s", fragment, body)
 		}

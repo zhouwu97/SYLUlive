@@ -538,6 +538,9 @@ setup_env() {
   upsert_env_key "$temp_env" "SUPER_ADMIN_ID" "$admin_id"
   upsert_env_key "$temp_env" "SUPER_ADMIN_PASSWORD" "$admin_pass"
   upsert_env_key "$temp_env" "GIN_MODE" "release"
+  # 生产环境拒绝缺少客户端版本头，并强制未同意最新协议的账号受限。
+  upsert_env_key "$temp_env" "APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS" "false"
+  upsert_env_key "$temp_env" "LEGAL_CONSENT_ENFORCEMENT" "hard"
   # Agent 灰测默认关闭；恢复时必须显式配置并经过发布审批。
   upsert_env_key "$temp_env" "AI_AGENT_ENABLED" "false"
   upsert_env_key "$temp_env" "AI_AGENT_ROLLOUT_PERCENT" "0"
@@ -592,6 +595,18 @@ build_app() {
 setup_service() {
   log_step "配置 systemd 服务..."
 
+  if ! id -u "$APP_NAME" >/dev/null 2>&1; then
+    useradd --system --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_NAME"
+  fi
+  install -d -o "$APP_NAME" -g "$APP_NAME" -m 0750 \
+    "${APP_DIR}/uploads" "${APP_DIR}/releases" "${APP_DIR}/private" "${APP_DIR}/private/exam-papers" \
+    "${APP_DIR}/private/competition-award-evidence" "${APP_DIR}/logs"
+  chown root:"$APP_NAME" "$APP_DIR"
+  chmod 0750 "$APP_DIR"
+  chown root:"$APP_NAME" "$CURRENT_BINARY" "${APP_DIR}/.env"
+  chmod 0750 "$CURRENT_BINARY"
+  chmod 0640 "${APP_DIR}/.env"
+
   cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=Shenliyuan Backend Service
@@ -600,13 +615,34 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-User=root
+User=${APP_NAME}
+Group=${APP_NAME}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
 ExecStart=${CURRENT_BINARY}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${APP_DIR}/uploads ${APP_DIR}/releases ${APP_DIR}/private ${APP_DIR}/logs
 
 [Install]
 WantedBy=multi-user.target

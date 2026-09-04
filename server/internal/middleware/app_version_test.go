@@ -59,6 +59,7 @@ func appVersionRequest(method, path, versionCode string) *http.Request {
 	if versionCode != "" {
 		req.Header.Set(appVersionPlatformHeader, models.AppReleasePlatformAndroid)
 		req.Header.Set(appVersionChannelHeader, models.AppReleaseChannelStable)
+		req.Header.Set(appVersionNameHeader, "1.6.3")
 		req.Header.Set(appVersionCodeHeader, versionCode)
 	}
 	return req

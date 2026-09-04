@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"os"
-
+	"crypto/sha256"
 	"encoding/json"
 
 	"errors"
 
 	"fmt"
+	"log"
 
 	crand "crypto/rand"
 	"math/big"
@@ -33,6 +33,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/middleware"
 
@@ -113,6 +114,8 @@ type AuthHandler struct {
 	jwtSecret         string
 	emailVerification *services.EmailVerificationService
 }
+
+const dummyLoginPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 // NewAuthHandler 鍒涘缓璁よ瘉澶勭悊鍣
 
@@ -508,6 +511,72 @@ func clearLoginFailures(account string) {
 
 	delete(loginThrottleStore.records, account)
 
+}
+
+func loginThrottleScope(kind, value string) string {
+	digest := sha256.Sum256([]byte(kind + "\n" + value))
+	return kind + ":" + fmt.Sprintf("%x", digest[:])
+}
+
+func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, bool) {
+	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
+		return currentLoginLock(scope, now)
+	}
+	var record models.LoginThrottleRecord
+	if err := h.db.Where("scope = ?", scope).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, false
+		}
+		return 0, false
+	}
+	if record.LockedUntil == nil || !now.Before(*record.LockedUntil) {
+		if record.LockedUntil != nil {
+			_ = h.db.Model(&record).Update("locked_until", nil).Error
+		}
+		return 0, false
+	}
+	return record.LockedUntil.Sub(now), true
+}
+
+func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Duration {
+	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
+		return registerLoginFailure(scope, now)
+	}
+	var lockFor time.Duration
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var record models.LoginThrottleRecord
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scope = ?", scope).First(&record).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			record = models.LoginThrottleRecord{Scope: scope}
+		} else if err != nil {
+			return err
+		}
+		record.FailureCount++
+		lockFor = loginLockDurationForFailures(record.FailureCount)
+		if lockFor > 0 {
+			until := now.Add(lockFor)
+			record.LockedUntil = &until
+		}
+		if record.ID == 0 {
+			return tx.Create(&record).Error
+		}
+		return tx.Save(&record).Error
+	})
+	if err != nil {
+		// 数据库异常不能绕过限流，短暂回退到进程内保护。
+		return registerLoginFailure(scope, now)
+	}
+	return lockFor
+}
+
+func (h *AuthHandler) clearLoginFailures(scope string) {
+	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
+		clearLoginFailures(scope)
+		return
+	}
+	if err := h.db.Where("scope = ?", scope).Delete(&models.LoginThrottleRecord{}).Error; err != nil {
+		log.Printf("[LOGIN_THROTTLE_CLEAR_FAILED] scope=%s err=%v", scope, err)
+	}
 }
 
 func validateQQ(qq string) bool {
@@ -1372,17 +1441,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	now := time.Now()
 
-	unknownKey := "account:" + account
-	if remaining, locked := currentLoginLock(unknownKey, now); locked {
+	accountKey := loginThrottleScope("account", account)
+	ipKey := loginThrottleScope("ip", c.ClientIP())
+	for _, scope := range []string{accountKey, ipKey} {
+		if remaining, locked := h.loginLock(scope, now); locked {
 
-		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
+			c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 
-		c.JSON(http.StatusTooManyRequests, gin.H{
+			c.JSON(http.StatusTooManyRequests, gin.H{
 
-			"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining)),
-		})
+				"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining)),
+			})
 
-		return
+			return
+		}
 
 	}
 
@@ -1390,9 +1462,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			registerLoginFailure(unknownKey, now)
-
-			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
+			// 不存在的账号也执行 bcrypt，避免从响应时间区分账号是否存在。
+			_ = bcrypt.CompareHashAndPassword([]byte(dummyLoginPasswordHash), []byte(input.Password))
+			lockFor := h.registerLoginFailure(accountKey, now)
+			if ipLockFor := h.registerLoginFailure(ipKey, now); ipLockFor > lockFor {
+				lockFor = ipLockFor
+			}
+			if lockFor > 0 {
+				c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
+				c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor))})
+				return
+			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误", "code": "INVALID_CREDENTIALS"})
 
 			return
 
@@ -1403,16 +1484,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 
 	}
-	userKey := "user:" + strconv.FormatUint(uint64(user.ID), 10)
-	if remaining, locked := currentLoginLock(userKey, now); locked {
-		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining))})
-		return
-	}
-
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
 
-		lockFor := registerLoginFailure(userKey, now)
+		lockFor := h.registerLoginFailure(accountKey, now)
+		ipLockFor := h.registerLoginFailure(ipKey, now)
+		if ipLockFor > lockFor {
+			lockFor = ipLockFor
+		}
 
 		if lockFor > 0 {
 
@@ -1427,14 +1505,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 		}
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入", "code": "INVALID_PASSWORD"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误", "code": "INVALID_CREDENTIALS"})
 
 		return
 
 	}
 
-	clearLoginFailures(userKey)
-	clearLoginFailures(unknownKey)
+	h.clearLoginFailures(accountKey)
+	h.clearLoginFailures(ipKey)
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
 	if err != nil {
@@ -1442,7 +1520,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
@@ -1451,13 +1529,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, authSessionPayload(c, token, response))
 
-		"token": token,
+}
 
-		"user": response,
-	})
+// isCookieAuthTransport 由 Web 客户端显式声明 Cookie-only 认证，避免把 JWT 放进浏览器可读响应体。
+func isCookieAuthTransport(c *gin.Context) bool {
+	return c.GetHeader("X-Auth-Transport") == "cookie"
+}
 
+func authSessionPayload(c *gin.Context, token string, user interface{}) gin.H {
+	payload := gin.H{"user": user}
+	if !isCookieAuthTransport(c) {
+		payload["token"] = token
+	}
+	return payload
 }
 
 // findLoginUser 依据新账号规则解析登录标识：邮箱、学号、兼容期 QQ 数字账号。
@@ -1570,7 +1656,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if id, ok := userID.(uint); ok {
 		middleware.InvalidateTokenVersionCache(id)
 	}
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})

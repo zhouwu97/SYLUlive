@@ -92,22 +92,24 @@ type Config struct {
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
 
 	// 应用内更新相关配置
-	AppReleaseDir               string // APK 发布根目录
-	AppReleaseMaxSize           int64  // 单个 APK 最大字节数
-	AppUpdateEnforcementEnabled bool   // 是否启用 426 最低版本拦截（阶段 D 使用）
-	AllowMissingVersionHeaders  bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
-	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
-	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
-	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
-<<<<<<< HEAD
-=======
-	AccountIdentityReadMode     string // 账号登录读路径：legacy 或 identity
+	AppReleaseDir                string   // APK 发布根目录
+	AppReleaseMaxSize            int64    // 单个 APK 最大字节数
+	AppUpdateEnforcementEnabled  bool     // 是否启用 426 最低版本拦截（阶段 D 使用）
+	AllowMissingVersionHeaders   bool     // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
+	AppReleaseUseAccelRedirect   bool     // 是否使用 Nginx X-Accel-Redirect 投递大文件
+	AppReleaseAccelPrefix        string   // X-Accel-Redirect 路径前缀
+	LegalConsentEnforcement      string   // 法律协议门禁模式：off、soft、hard
+	AndroidPackageName           string   // 发布 APK 预期包名
+	AndroidSigningCertificate    string   // 发布 APK 签名证书 SHA-256（无冒号大写）
+	AndroidAAPT2Path             string   // aapt2 可执行文件路径
+	AndroidAPKSignerPath         string   // apksigner 可执行文件路径
+	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
+	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 表示 Release D 已完成，旧教务/个人快照路由只返回 410。
 	// 学校个人能力默认关闭；SCHOOL_AUTHORITY_RETIRED 会同时作为总闸门。
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
->>>>>>> origin/jiaowu
 
 	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
 	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
@@ -251,6 +253,9 @@ func Load() *Config {
 	}
 
 	if releaseMode {
+		if len([]byte(jwtSecret)) < 32 {
+			panic(fmt.Errorf("生产环境 JWT_SECRET 长度至少为 32 字节"))
+		}
 		if isPlaceholderSecret(jwtSecret, []string{
 			"dev-only-secret-do-not-use-in-production",
 			"your-super-secret-jwt-key-change-this",
@@ -315,7 +320,7 @@ func Load() *Config {
 		}
 	}
 	appUpdateEnforcementEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_UPDATE_ENFORCEMENT_ENABLED")), "true")
-	allowMissingVersionHeaders := true
+	allowMissingVersionHeaders := !releaseMode
 	if v := strings.TrimSpace(os.Getenv("APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS")); v != "" {
 		allowMissingVersionHeaders = strings.EqualFold(v, "true")
 	}
@@ -326,13 +331,41 @@ func Load() *Config {
 	}
 	legalConsentEnforcement := strings.ToLower(strings.TrimSpace(os.Getenv("LEGAL_CONSENT_ENFORCEMENT")))
 	if legalConsentEnforcement == "" {
-		legalConsentEnforcement = "soft"
+		if releaseMode {
+			legalConsentEnforcement = "hard"
+		} else {
+			legalConsentEnforcement = "soft"
+		}
 	}
 	if legalConsentEnforcement != "off" && legalConsentEnforcement != "soft" && legalConsentEnforcement != "hard" {
 		panic(fmt.Errorf("LEGAL_CONSENT_ENFORCEMENT 只能是 off、soft 或 hard"))
 	}
-<<<<<<< HEAD
-=======
+	if releaseMode && legalConsentEnforcement != "hard" {
+		panic(fmt.Errorf("release 模式必须使用 LEGAL_CONSENT_ENFORCEMENT=hard"))
+	}
+	androidPackageName := strings.TrimSpace(os.Getenv("ANDROID_PACKAGE_NAME"))
+	if androidPackageName == "" {
+		androidPackageName = "com.example.shenliyuan"
+	}
+	androidSigningCertificate := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(os.Getenv("ANDROID_SIGNING_CERT_SHA256")), ":", ""))
+	if androidSigningCertificate != "" && !regexp.MustCompile(`^[0-9A-F]{64}$`).MatchString(androidSigningCertificate) {
+		panic(fmt.Errorf("ANDROID_SIGNING_CERT_SHA256 必须是 64 位十六进制 SHA-256 指纹"))
+	}
+	if releaseMode && androidSigningCertificate == "" {
+		panic(fmt.Errorf("release 模式必须设置 ANDROID_SIGNING_CERT_SHA256"))
+	}
+	androidAAPT2Path := strings.TrimSpace(os.Getenv("ANDROID_AAPT2_PATH"))
+	if androidAAPT2Path == "" {
+		androidAAPT2Path = "aapt2"
+	}
+	androidAPKSignerPath := strings.TrimSpace(os.Getenv("ANDROID_APKSIGNER_PATH"))
+	if androidAPKSignerPath == "" {
+		androidAPKSignerPath = "apksigner"
+	}
+	appReleaseAllowedMarketHosts := splitNonEmpty(os.Getenv("APP_RELEASE_MARKET_HOST_ALLOWLIST"))
+	if len(appReleaseAllowedMarketHosts) == 0 {
+		appReleaseAllowedMarketHosts = []string{"appgallery.huawei.com"}
+	}
 	accountIdentityReadMode, err := parseAccountIdentityReadMode(os.Getenv("ACCOUNT_IDENTITY_READ_MODE"))
 	if err != nil {
 		panic(err)
@@ -342,7 +375,6 @@ func Load() *Config {
 	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", true)
 	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
 	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
->>>>>>> origin/jiaowu
 
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
@@ -529,12 +561,31 @@ func Load() *Config {
 		AppReleaseUseAccelRedirect:          appReleaseUseAccelRedirect,
 		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
 		LegalConsentEnforcement:             legalConsentEnforcement,
+		AccountIdentityReadMode:             accountIdentityReadMode,
+		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
+		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
+		AndroidPackageName:                  androidPackageName,
+		AndroidSigningCertificate:           androidSigningCertificate,
+		AndroidAAPT2Path:                    androidAAPT2Path,
+		AndroidAPKSignerPath:                androidAPKSignerPath,
+		AppReleaseAllowedMarketHosts:        appReleaseAllowedMarketHosts,
 		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
 		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
 	}
+}
+
+func parseAccountIdentityReadMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return "legacy", nil
+	}
+	if mode != "legacy" && mode != "identity" {
+		return "", fmt.Errorf("ACCOUNT_IDENTITY_READ_MODE 只能是 legacy 或 identity")
+	}
+	return mode, nil
 }
 
 func envBool(name string, fallback bool) bool {

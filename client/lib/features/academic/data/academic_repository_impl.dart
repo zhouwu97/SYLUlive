@@ -1,4 +1,4 @@
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import '../domain/academic_data_source.dart';
 import '../domain/academic_failure.dart';

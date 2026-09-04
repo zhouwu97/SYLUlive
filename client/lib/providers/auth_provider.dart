@@ -338,7 +338,10 @@ class AuthProvider extends ChangeNotifier {
           final token = _token;
           options.extra['authSessionGeneration'] = _sessionGeneration;
           options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
-          options.extra['requestHadAuth'] = token != null && token.isNotEmpty;
+          // Web 端凭据只存在 HttpOnly Cookie，内存中没有 JWT，因此用当前用户
+          // 标记请求是否属于已认证会话，确保 Cookie 会话失效时能够收口。
+          options.extra['requestHadAuth'] =
+              (token != null && token.isNotEmpty) || (kIsWeb && _user != null);
           if (token != null && token.isNotEmpty) {
             // 将凭据写入本次请求，避免全局 headers 在异步切换会话时串值。
             options.headers['Authorization'] = 'Bearer $token';
@@ -408,7 +411,7 @@ class AuthProvider extends ChangeNotifier {
                 'errorCode': errorCode?.toString() ?? 'unknown',
               },
             );
-            _expireCurrentSession(_sessionGeneration, _token!);
+            _expireCurrentSession(_sessionGeneration, _token);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -419,7 +422,7 @@ class AuthProvider extends ChangeNotifier {
           if (status == 403 &&
               requestHadAuth &&
               isCurrentSessionRequest &&
-              _token != null) {
+              (_token != null || (kIsWeb && _user != null))) {
             _handleForbiddenRecovery(errorCode);
           }
           handler.next(error);
@@ -444,7 +447,7 @@ class AuthProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<void> _expireCurrentSession(int generation, String token) {
+  Future<void> _expireCurrentSession(int generation, String? token) {
     if (_sessionExpiryFuture != null) return _sessionExpiryFuture!;
     _sessionExpiryFuture = _enqueueAuthMutation(() async {
       if (_sessionGeneration != generation || _token != token) return;
@@ -505,7 +508,27 @@ class AuthProvider extends ChangeNotifier {
       } else {
         final stored = await _credentialStore.read();
 
-        if (stored.token != null && stored.userJson != null) {
+        if (kIsWeb && stored.userJson != null) {
+          // Web 端不恢复 JWT 文本，只用浏览器自动管理的 HttpOnly Cookie 验证会话。
+          final response = await _dio.get('/user/profile');
+          if (response.statusCode != 200 || response.data is! Map) {
+            await _clearStoredAuth();
+            _setAuthState(AuthState.guest);
+          } else {
+            final user =
+                User.fromJson(Map<String, dynamic>.from(response.data));
+            _user = user;
+            _token = null;
+            _sessionGeneration++;
+            _accountSessionEpoch++;
+            _setAuthState(AuthState.authenticated);
+            if (user.legalConsentsActive) {
+              _onAuthenticated();
+            } else {
+              await _clearConsentDependentLocalData(user);
+            }
+          }
+        } else if (stored.token != null && stored.userJson != null) {
           // 从这里开始只要解析或校验失败，就说明两项凭据已形成损坏组合。
           // 网络恢复失败（token-only）不走这条路径，避免误删可恢复会话。
           shouldClearCorruptedCredentials = true;
@@ -766,10 +789,16 @@ class AuthProvider extends ChangeNotifier {
     Object? rawToken,
     Map<String, dynamic> userJson,
   ) {
-    if (rawToken is! String || rawToken.trim().isEmpty) {
+    if (rawToken != null && rawToken is! String) {
       throw const FormatException('认证令牌无效');
     }
-    return _AuthSessionCandidate(rawToken, User.fromJson(userJson));
+    if (!kIsWeb && (rawToken is! String || rawToken.trim().isEmpty)) {
+      throw const FormatException('认证令牌无效');
+    }
+    return _AuthSessionCandidate(
+      rawToken is String ? rawToken : '',
+      User.fromJson(userJson),
+    );
   }
 
   _AuthSessionCandidate _authSessionCandidateFromResponse(Object? data) {
@@ -783,7 +812,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _commitAuthSession(_AuthSessionCandidate candidate) {
-    _token = candidate.token;
+    // 浏览器不把 JWT 留在持久化层，也不把它重新放进 Authorization 头；
+    // 服务端 Set-Cookie 的 HttpOnly 会话负责后续请求认证。
+    _token = kIsWeb ? null : candidate.token;
     _user = candidate.user;
     _lastForbiddenRecovery = null;
     _sessionGeneration++;
@@ -1013,7 +1044,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _applyLegalConsentRestriction({required bool required}) async {
-    if (_applyingConsentRestriction || _user == null || _token == null) return;
+    if (_applyingConsentRestriction || _user == null) return;
     if (!_user!.legalConsentsActive &&
         _user!.legalConsentsRequired == required) {
       return;
@@ -1029,7 +1060,8 @@ class AuthProvider extends ChangeNotifier {
         ..['edu_session_state'] = 'revoked';
       final nextUser = User.fromJson(userJson);
       await _enqueueAuthMutation(() => _credentialStore.write(
-            token: _token!,
+            // Web 端只更新已持久化的用户快照，JWT 仍由 HttpOnly Cookie 管理。
+            token: _token ?? '',
             userJson: jsonEncode(nextUser.toJson()),
           ));
       _user = nextUser;
@@ -1050,7 +1082,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// 统一的本地会话清理
   ///
-  /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
+  /// [clearPushAlias] 为 true 时清理旧版本可能遗留的极光 Alias（手动退出 / 401）。
   Future<void> _clearLocalSession({
     required bool clearPushAlias,
     bool closeAccountContext = true,
@@ -1115,7 +1147,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+  /// 清理旧版极光 Alias，防止退出后仍收到前用户私信通知；新版本不再创建 Alias。
   Future<void> _clearPushAlias() async {
     try {
       await PushClient.current().clearAlias();
@@ -1191,7 +1223,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// 从服务器刷新当前用户信息（角色变更后调用）
   Future<void> refreshUser() async {
-    if (_token == null) return;
+    if (_user == null) return;
     final generation = ++_profileGeneration;
     try {
       final response = await _dio.get('/user/profile');
@@ -1312,13 +1344,11 @@ class AuthProvider extends ChangeNotifier {
       );
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data is! Map || data['token'] is! String || data['user'] is! Map) {
+        if (data is! Map || data['user'] is! Map) {
           return AuthResult.failure('密码已修改，但会话刷新失败，请重新登录');
         }
-        await applyAuthPayload(
-          data['token'] as String,
-          Map<String, dynamic>.from(data['user'] as Map),
-        );
+        final candidate = _authSessionCandidateFromResponse(data);
+        await _saveAndCommitAuthSession(candidate);
         return AuthResult.success();
       }
       return AuthResult.failure('修改密码失败');

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -863,49 +864,6 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
     );
   }
 
-  final userId = authProvider.user?.id;
-  if (userId == null) {
-    return const RemotePushEnableResult(
-      permissionGranted: true,
-      registrationSucceeded: true,
-      message: '已开启远程消息推送',
-    );
-  }
-
-  final userIdStr = userId.toString();
-
-  // JPush 的 Alias 在 Android/iOS 都由同一个 Dart 适配器维护；原生通道
-  // 仅作为旧 Android 状态协调兼容层，不能成为 iOS 登记的硬依赖。
-  try {
-    await pushClient.setAlias(userIdStr);
-  } catch (e) {
-    debugPrint('JPush Alias 设置失败: $e');
-  }
-
-  // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
-  // KeepAliveForegroundService 的 reconcileAliasState 机制接管
-  try {
-    final aliasSynced =
-        await _privateMessageNotificationChannel.invokeMethod<bool>(
-              'syncAlias',
-              {'userId': userIdStr},
-            ) ??
-            false;
-    if (!aliasSynced) {
-      return const RemotePushEnableResult(
-        permissionGranted: true,
-        registrationSucceeded: false,
-        message: '推送设置已保存，设备绑定失败，请稍后重试',
-      );
-    }
-  } catch (e) {
-    debugPrint('同步 Alias 到原生层失败: $e');
-    return const RemotePushEnableResult(
-      permissionGranted: true,
-      registrationSucceeded: false,
-      message: '推送设置已保存，设备绑定失败，请稍后重试',
-    );
-  }
   return const RemotePushEnableResult(
     permissionGranted: true,
     registrationSucceeded: true,
@@ -1322,6 +1280,11 @@ Dio getSharedDio() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          if (kIsWeb) {
+            // 浏览器认证只使用服务端 HttpOnly Cookie；跨源部署必须显式带凭据。
+            options.extra['withCredentials'] = true;
+            options.headers['X-Auth-Transport'] = 'cookie';
+          }
           final requestId = options.headers['X-Request-ID']?.toString().trim();
           options.headers['X-Request-ID'] =
               requestId == null || requestId.isEmpty

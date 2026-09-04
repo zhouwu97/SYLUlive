@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';

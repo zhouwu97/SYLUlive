@@ -26,10 +26,7 @@ services:
       - INTERNAL_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
       - EDU_CREDENTIAL_ENCRYPTION_KEY=${EDU_CREDENTIAL_ENCRYPTION_KEY:-}
       - JWC_CRAWLER_CONTACT=${JWC_CRAWLER_CONTACT:-}
-<<<<<<< HEAD
-=======
       - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=true in .env}
->>>>>>> origin/jiaowu
     expose:
       - "8000"
     restart: unless-stopped
@@ -90,13 +87,10 @@ services:
     environment:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
-<<<<<<< HEAD
-=======
       - ACCOUNT_IDENTITY_READ_MODE=${ACCOUNT_IDENTITY_READ_MODE:-legacy}
       - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=true in .env}
       - SCHOOL_DEVICE_CAPABILITY_CUT=${SCHOOL_DEVICE_CAPABILITY_CUT:?set SCHOOL_DEVICE_CAPABILITY_CUT=true in .env}
       - SCHOOL_ACADEMIC_ROUTES_RETIRED=${SCHOOL_ACADEMIC_ROUTES_RETIRED:?set SCHOOL_ACADEMIC_ROUTES_RETIRED=true in .env}
->>>>>>> origin/jiaowu
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       # release 模式下 Go 拒绝在缺失或空置这两个开关时启动，必须由 .env 显式提供（生产目标值均为 true）。
       # 异常回退：在 .env 改为 false 并重启 Go（保留已生成变体 / 改回 Go 直接投递）。
@@ -157,6 +151,8 @@ services:
       - RAG_SERVICE_TOKEN=${RAG_SERVICE_TOKEN:-}
       - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-384-v1}
       - GIN_MODE=release
+      - APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=${APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS:?set APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=false in .env}
+      - LEGAL_CONSENT_ENFORCEMENT=${LEGAL_CONSENT_ENFORCEMENT:?set LEGAL_CONSENT_ENFORCEMENT=hard in .env}
     depends_on:
       postgres:
         condition: service_healthy

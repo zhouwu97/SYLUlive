@@ -1,15 +1,15 @@
 """Python 教务服务 - FastAPI 主入口"""
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 
 from config import HOST, PORT
 from models.database import init_db
-<<<<<<< HEAD
-from routers import auth, courses, grades, erke, spider, internal_jwc, internal_competition, academic_situation, credit_requirements, context_bundle
-import os
-=======
 
 # 公开校园资讯路由仍可独立运行；个人教务路由由应用工厂按实例加载。
 from routers import internal_jwc, internal_competition
@@ -41,7 +41,6 @@ def school_authority_retired() -> bool:
     }:
         return True
     raise RuntimeError("SCHOOL_AUTHORITY_RETIRED 必须为 true 或 false")
->>>>>>> origin/jiaowu
 
 
 @asynccontextmanager
@@ -55,57 +54,135 @@ async def lifespan(app: FastAPI):
     print("服务关闭")
 
 
-# 创建FastAPI应用
-app = FastAPI(
-    title="沈理校园 - 教务服务",
-    description="Python实现的教务系统爬取服务，提供课表和成绩查询",
-    version="1.0.0",
-    lifespan=lifespan
-)
+def _personal_routers():
+    """仅在兼容模式按需导入个人教务路由，退役模式不加载凭据代码。"""
 
-cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "")
-if cors_origins_env and cors_origins_env != "*":
-    origins = [origin.strip() for origin in cors_origins_env.split(",")]
-else:
-    # Avoid wildcard with allow_credentials=True
-    origins = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000"]
+    from routers import (
+        academic_situation,
+        auth,
+        context_bundle,
+        courses,
+        credit_requirements,
+        erke,
+        grades,
+        spider,
+    )
 
-# 配置CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 注册路由
-app.include_router(auth.router)
-app.include_router(courses.router)
-app.include_router(grades.router)
-app.include_router(academic_situation.router)
-app.include_router(credit_requirements.router)
-app.include_router(context_bundle.router)
-app.include_router(erke.router)
-app.include_router(spider.router)
-app.include_router(internal_jwc.router)
-app.include_router(internal_competition.router)
+    return (
+        auth.router,
+        courses.router,
+        grades.router,
+        academic_situation.router,
+        credit_requirements.router,
+        context_bundle.router,
+        erke.router,
+        spider.router,
+    )
 
 
-@app.get("/")
-async def root():
-    """根路径"""
-    return {
-        "service": "沈理校园 - 教务服务",
-        "version": "1.0.0",
-        "status": "running"
-    }
+def _retired_response(code: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=410,
+        content={"code": code, "error": "该能力已退役"},
+        headers={"cache-control": "no-store", "sunset": "true"},
+    )
 
 
-@app.get("/health")
-async def health_check():
-    """健康检查"""
-    return {"status": "healthy"}
+def _register_retired_routes(app: FastAPI) -> None:
+    """为已退役入口提供不读取 Body 的稳定 410 响应。"""
+
+    methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+    for path in (*_LEGACY_EDU_PATHS, *(f"{path}/" for path in _LEGACY_EDU_PATHS)):
+        app.add_api_route(
+            path,
+            lambda: _retired_response("LEGACY_EDU_ROUTE_RETIRED"),
+            methods=methods,
+            include_in_schema=False,
+        )
+    for path in _PERSONAL_SNAPSHOT_PATHS:
+        app.add_api_route(
+            path,
+            lambda: _retired_response("SCHOOL_ACADEMIC_ROUTE_RETIRED"),
+            methods=methods,
+            include_in_schema=False,
+        )
+        app.add_api_route(
+            f"{path}/{{path:path}}",
+            lambda: _retired_response("SCHOOL_ACADEMIC_ROUTE_RETIRED"),
+            methods=methods,
+            include_in_schema=False,
+        )
+    app.add_api_route(
+        "/api/edu",
+        lambda: _retired_response("SCHOOL_ACADEMIC_ROUTE_RETIRED"),
+        methods=methods,
+        include_in_schema=False,
+    )
+    app.add_api_route(
+        "/api/edu/{path:path}",
+        lambda: _retired_response("SCHOOL_ACADEMIC_ROUTE_RETIRED"),
+        methods=methods,
+        include_in_schema=False,
+    )
+
+
+def create_app(retired: bool | None = None) -> FastAPI:
+    """按创建时的退役状态构造应用，避免导入时环境变量污染测试与部署。"""
+
+    retired = school_authority_retired() if retired is None else retired
+    app = FastAPI(
+        title="沈理校园 - 教务服务",
+        description="Python实现的教务系统爬取服务，提供课表和成绩查询",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+    app.state.school_authority_retired = retired
+
+    cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "")
+    if cors_origins_env and cors_origins_env != "*":
+        origins = [origin.strip() for origin in cors_origins_env.split(",")]
+    else:
+        # 避免 allow_credentials=True 与通配 Origin 组合。
+        origins = [
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1:3000",
+        ]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    if retired:
+        _register_retired_routes(app)
+    else:
+        for router in _personal_routers():
+            app.include_router(router)
+    app.include_router(internal_jwc.router)
+    app.include_router(internal_competition.router)
+
+    @app.get("/")
+    async def root():
+        """根路径"""
+        return {
+            "service": "沈理校园 - 教务服务",
+            "version": "1.0.0",
+            "status": "running",
+        }
+
+    @app.get("/health")
+    async def health_check():
+        """健康检查"""
+        return {"status": "healthy"}
+
+    return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":

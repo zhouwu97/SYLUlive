@@ -282,7 +282,6 @@ type TeamRecruitmentListItem struct {
 	AuthorID                uint       `json:"author_id"`
 	AuthorName              string     `json:"author_name"`
 	AuthorAvatar            string     `json:"author_avatar"`
-	AuthorMajor             string     `json:"author_major"`
 	NeededCount             int        `json:"needed_count"`
 	AcceptedCount           int        `json:"accepted_count"`
 	RemainingCount          int        `json:"remaining_count"`
@@ -340,7 +339,6 @@ type UserBrief struct {
 	ID     uint   `json:"id"`
 	Name   string `json:"name"`
 	Avatar string `json:"avatar"`
-	Major  string `json:"major"`
 	Bio    string `json:"bio"`
 }
 
@@ -573,9 +571,8 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 		AuthorID       uint
 		AuthorName     string
 		AuthorAvatar   string
-		AuthorMajor    string
 	}
-	if err := query.Select("water_team_recruitments.*, posts.title as post_title, posts.content as post_content, posts.status as post_status, posts.view_count as post_view_count, posts.reply_count as post_reply_count, users.id as author_id, users.nickname as author_name, users.avatar as author_avatar, users.edu_major as author_major").
+	if err := query.Select("water_team_recruitments.*, posts.title as post_title, posts.content as post_content, posts.status as post_status, posts.view_count as post_view_count, posts.reply_count as post_reply_count, users.id as author_id, users.nickname as author_name, users.avatar as author_avatar").
 		Offset(offset).Limit(limit).
 		Find(&recruitments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取组队列表失败"})
@@ -667,7 +664,6 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 			AuthorID:                r.AuthorID,
 			AuthorName:              r.AuthorName,
 			AuthorAvatar:            r.AuthorAvatar,
-			AuthorMajor:             r.AuthorMajor,
 			NeededCount:             r.NeededCount,
 			AcceptedCount:           r.AcceptedCount,
 			RemainingCount:          remaining,
@@ -775,7 +771,6 @@ func (h *WaterTeamHandler) GetTeamRecruitment(c *gin.Context) {
 			ID:     recruitment.Post.Author.ID,
 			Name:   recruitment.Post.Author.Nickname,
 			Avatar: recruitment.Post.Author.Avatar,
-			Major:  recruitment.Post.Author.EduMajor,
 		},
 		Images:                  images,
 		NeededCount:             recruitment.NeededCount,
@@ -969,7 +964,6 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 				ID:     post.Author.ID,
 				Name:   post.Author.Nickname,
 				Avatar: post.Author.Avatar,
-				Major:  post.Author.EduMajor,
 			},
 			Images:           images,
 			NeededCount:      recruitment.NeededCount,
@@ -1353,7 +1347,6 @@ func (h *WaterTeamHandler) GetMyTeamRecruitments(c *gin.Context) {
 			AuthorID:                post.AuthorID,
 			AuthorName:              post.Author.Nickname,
 			AuthorAvatar:            post.Author.Avatar,
-			AuthorMajor:             post.Author.EduMajor,
 			NeededCount:             r.NeededCount,
 			AcceptedCount:           r.AcceptedCount,
 			RemainingCount:          remaining,

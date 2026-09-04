@@ -77,6 +77,8 @@ type loginThrottleRecord struct {
 	FailureCount int
 
 	LockedUntil time.Time
+
+	LastFailureAt time.Time
 }
 
 var verifyCodeStore = struct {
@@ -113,6 +115,7 @@ type AuthHandler struct {
 
 	jwtSecret         string
 	emailVerification *services.EmailVerificationService
+	schoolDataVisible bool
 }
 
 const dummyLoginPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
@@ -139,8 +142,14 @@ func NewAuthHandlerWithEmailVerificationAndCleanup(
 ) *AuthHandler {
 	return &AuthHandler{
 		db: db, jwtSecret: jwtSecret, emailVerification: emailVerification, cleanupJobs: cleanupJobs,
+		schoolDataVisible: true,
 	}
 
+}
+
+// SetSchoolPersonalDataVisible 控制账号安全响应中的历史学校个人字段。
+func (h *AuthHandler) SetSchoolPersonalDataVisible(visible bool) {
+	h.schoolDataVisible = visible
 }
 
 type GraduateRegisterInput struct {
@@ -465,14 +474,13 @@ func currentLoginLock(account string, now time.Time) (time.Duration, bool) {
 
 	}
 
-	if now.After(record.LockedUntil) || now.Equal(record.LockedUntil) {
-
-		record.LockedUntil = time.Time{}
-
-		loginThrottleStore.records[account] = record
-
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
+		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+		delete(loginThrottleStore.records, account)
 		return 0, false
-
+	}
+	if record.LockedUntil.IsZero() {
+		return 0, false
 	}
 
 	return record.LockedUntil.Sub(now), true
@@ -486,8 +494,13 @@ func registerLoginFailure(account string, now time.Time) time.Duration {
 	defer loginThrottleStore.Unlock()
 
 	record := loginThrottleStore.records[account]
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
+		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+		record = loginThrottleRecord{}
+	}
 
 	record.FailureCount++
+	record.LastFailureAt = now
 
 	lockFor := loginLockDurationForFailures(record.FailureCount)
 
@@ -502,6 +515,8 @@ func registerLoginFailure(account string, now time.Time) time.Duration {
 	return lockFor
 
 }
+
+const loginFailureWindow = 15 * time.Minute
 
 func clearLoginFailures(account string) {
 
@@ -529,10 +544,12 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		}
 		return 0, false
 	}
-	if record.LockedUntil == nil || !now.Before(*record.LockedUntil) {
-		if record.LockedUntil != nil {
-			_ = h.db.Model(&record).Update("locked_until", nil).Error
-		}
+	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
+		(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+		_ = h.db.Delete(&record).Error
+		return 0, false
+	}
+	if record.LockedUntil == nil {
 		return 0, false
 	}
 	return record.LockedUntil.Sub(now), true
@@ -551,7 +568,13 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 		} else if err != nil {
 			return err
 		}
+		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
+			(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+			record.FailureCount = 0
+			record.LockedUntil = nil
+		}
 		record.FailureCount++
+		record.LastFailureAt = &now
 		lockFor = loginLockDurationForFailures(record.FailureCount)
 		if lockFor > 0 {
 			until := now.Add(lockFor)

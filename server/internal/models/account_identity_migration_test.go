@@ -195,12 +195,17 @@ func assertLegacyQQMigration(t *testing.T, db *sql.DB) {
 
 func assertStudentIdentityPartialUniqueIndex(t *testing.T, db *sql.DB) {
 	t.Helper()
-	for range 2 {
-		if _, err := db.Exec(`INSERT INTO users (student_id) VALUES ('')`); err != nil {
+	for index := 0; index < 2; index++ {
+		if _, err := db.Exec(
+			`INSERT INTO users (student_id, email, email_verified_at) VALUES ('', $1, now())`,
+			fmt.Sprintf("identity-index-%d@example.com", index),
+		); err != nil {
 			t.Fatalf("部分唯一索引应允许多个空学号: %v", err)
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO users (student_id) VALUES ('2026000002')`); err == nil {
+	if _, err := db.Exec(
+		`INSERT INTO users (student_id, email, email_verified_at) VALUES ('2026000002', 'identity-index-duplicate@example.com', now())`,
+	); err == nil {
 		t.Fatal("部分唯一索引应拒绝重复的非空学号")
 	}
 }

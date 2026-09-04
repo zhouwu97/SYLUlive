@@ -557,6 +557,9 @@ func main() {
 	})))
 	r := gin.New()
 	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
+	if err := r.SetTrustedProxies(cfg.TrustedProxyCIDRs); err != nil {
+		log.Fatal("配置可信代理网段失败:", err)
+	}
 
 	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
 	allowedOrigins := make(map[string]struct{})
@@ -615,8 +618,24 @@ func main() {
 		cfg.AppUpdateEnforcementEnabled,
 		cfg.AllowMissingVersionHeaders,
 	))
+	// 全局请求体上限必须先于幂等性读取和业务 multipart 解析；特殊上传路径
+	// 使用独立上限，普通 JSON 请求保持 1 MiB。
+	r.Use(middleware.RequestBodyLimitMiddleware(
+		1<<20,
+		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
+		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
+		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
+		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
+	))
 	// 只有显式携带 Idempotency-Key 的写请求才会建立记录；无键旧客户端保持兼容。
 	r.Use(middleware.IdempotencyMiddlewareWithJWT(db, cfg.JWTSecret))
+	withSchoolRetirement := func(handlers ...gin.HandlerFunc) []gin.HandlerFunc {
+		if cfg.SchoolAuthorityRetired {
+			return append([]gin.HandlerFunc{middleware.SchoolAuthorityRetiredMiddleware}, handlers...)
+		}
+		return handlers
+	}
 
 	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -637,23 +656,33 @@ func main() {
 
 	// 初始化处理器
 
-	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
-	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
 	academicSnapshotService := services.NewAcademicSnapshotService(db, time.Now)
 	personalSnapshotService := services.NewPersonalSnapshotService(db, time.Now)
-	eduClient := clients.NewEduClient(clients.EduClientOptions{
-		BaseURL: func() string { return cfg.EduServiceURL },
-		Token:   func() string { return cfg.EduServiceToken },
-	})
-	eduFetchOrchestrator := services.NewEduFetchOrchestrator(
-		db,
-		eduClient,
-		academicSnapshotService,
-		services.EduFetchOrchestratorOptions{},
-	)
+	var eduCredentialCleanupJobs *services.EduCredentialCleanupJobService
+	var eduBindingRecovery *services.EduBindingRecoveryService
+	var eduFetchOrchestrator *services.EduFetchOrchestrator
+	if !cfg.SchoolAuthorityRetired {
+		eduCredentialCleanupJobs = services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+		eduBindingRecovery = services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
+		eduClient := clients.NewEduClient(clients.EduClientOptions{
+			BaseURL: func() string { return cfg.EduServiceURL },
+			Token:   func() string { return cfg.EduServiceToken },
+		})
+		eduFetchOrchestrator = services.NewEduFetchOrchestrator(
+			db,
+			eduClient,
+			academicSnapshotService,
+			services.EduFetchOrchestratorOptions{},
+		)
+	} else {
+		// 退役状态不初始化任何个人教务客户端或远端抓取编排器。
+		log.Println("个人教务能力已退役，跳过教务客户端初始化")
+	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	authHandler.SetSchoolPersonalDataVisible(!cfg.SchoolAuthorityRetired)
 
 	userHandler := handlers.NewUserHandler(db)
+	handlers.SetSchoolPersonalDataVisible(!cfg.SchoolAuthorityRetired)
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
@@ -744,7 +773,7 @@ func main() {
 		examPaperStorageJobs,
 	)
 
-	superAdminHandler := handlers.NewSuperAdminHandler(db)
+	superAdminHandler := handlers.NewSuperAdminHandlerWithEmailVerification(db, emailVerification)
 	adminAIHandler := handlers.NewAdminAIHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
@@ -1135,7 +1164,7 @@ func main() {
 	}
 	var eduCredentialCleanupCron *tasks.EduCredentialCleanupCron
 	var eduBindingRecoveryCron *tasks.EduBindingRecoveryCron
-	if cfg.SchoolAcademicRoutesRetired {
+	if cfg.SchoolAuthorityRetired || cfg.SchoolAcademicRoutesRetired {
 		// 个人教务路由退役后，不再启动任何会访问 Python 教务服务的后台补偿任务。
 		log.Println("服务端教务能力已退役，跳过教务凭证清理与绑定恢复后台任务")
 	} else {
@@ -1220,6 +1249,9 @@ func main() {
 	}
 
 	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
+	if cfg.SchoolAuthorityRetired {
+		personalSnapshotsAPI.Use(middleware.SchoolAuthorityRetiredMiddleware)
+	}
 	personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
@@ -1263,17 +1295,17 @@ func main() {
 
 		auth.POST("/login", authHandler.Login)
 
-		auth.POST("/login_edu", authHandler.LoginEdu)
+		auth.POST("/login_edu", withSchoolRetirement(authHandler.LoginEdu)...)
 
-		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
+		auth.POST("/register_with_edu", withSchoolRetirement(authHandler.RegisterWithEdu)...)
 
-		auth.POST("/forgot_password", authHandler.ForgotPassword)
+		auth.POST("/forgot_password", withSchoolRetirement(authHandler.ForgotPassword)...)
 
 		auth.POST("/password/email/code", authHandler.RequestEmailPasswordResetCode)
 
 		auth.POST("/password/email/reset", authHandler.ResetPasswordByEmail)
 
-		auth.POST("/password/edu/reset", authHandler.ForgotPassword)
+		auth.POST("/password/edu/reset", withSchoolRetirement(authHandler.ForgotPassword)...)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
 
@@ -1320,7 +1352,7 @@ func main() {
 		user.GET("/privacy/export", privacyHandler.ExportMyData)
 		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
 		user.DELETE("/account", privacyHandler.CancelAccount)
-		user.DELETE("/edu-binding", privacyHandler.UnbindEdu)
+		user.DELETE("/edu-binding", withSchoolRetirement(privacyHandler.UnbindEdu)...)
 
 		user.GET("/invitations", invitationHandler.GetPending)
 
@@ -1900,6 +1932,9 @@ func main() {
 	// 教务系统路由
 
 	edu := r.Group("/api/edu")
+	if cfg.SchoolAuthorityRetired {
+		edu.Use(middleware.SchoolAuthorityRetiredMiddleware)
+	}
 
 	{
 
@@ -1979,7 +2014,7 @@ func main() {
 
 	// 二课查询路由
 
-	r.POST("/api/erke/scores", middleware.AuthMiddleware(db, cfg.JWTSecret), erkeHandler.GetScores)
+	r.POST("/api/erke/scores", withSchoolRetirement(middleware.AuthMiddleware(db, cfg.JWTSecret), erkeHandler.GetScores)...)
 
 	// 用户反馈路由
 
@@ -2433,14 +2468,29 @@ func main() {
 	})
 
 	log.Println("服务器启动在 :8080")
-	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	serveErr := serveUntilShutdown(appCtx, server, 10*time.Second)
 	stopApp()
-	examPaperStorageCron.Wait()
-	eduCredentialCleanupCron.Wait()
-	eduBindingRecoveryCron.Wait()
-	idempotencyCleanupCron.Wait()
-	feedMetricsCron.Wait()
+	if examPaperStorageCron != nil {
+		examPaperStorageCron.Wait()
+	}
+	if eduCredentialCleanupCron != nil {
+		eduCredentialCleanupCron.Wait()
+	}
+	if eduBindingRecoveryCron != nil {
+		eduBindingRecoveryCron.Wait()
+	}
+	if idempotencyCleanupCron != nil {
+		idempotencyCleanupCron.Wait()
+	}
+	if feedMetricsCron != nil {
+		feedMetricsCron.Wait()
+	}
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

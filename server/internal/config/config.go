@@ -105,9 +105,11 @@ type Config struct {
 	AndroidAPKSignerPath         string   // apksigner 可执行文件路径
 	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
 	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
+	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 表示 Release D 已完成，旧教务/个人快照路由只返回 410。
 	// 学校个人能力默认关闭；SCHOOL_AUTHORITY_RETIRED 会同时作为总闸门。
+	SchoolAuthorityRetired      bool
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
 
@@ -370,6 +372,7 @@ func Load() *Config {
 	if err != nil {
 		panic(err)
 	}
+	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
 	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
 	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
 	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", true)
@@ -562,6 +565,8 @@ func Load() *Config {
 		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
 		LegalConsentEnforcement:             legalConsentEnforcement,
 		AccountIdentityReadMode:             accountIdentityReadMode,
+		TrustedProxyCIDRs:                   trustedProxyCIDRs,
+		SchoolAuthorityRetired:              schoolAuthorityRetired,
 		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
 		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
 		AndroidPackageName:                  androidPackageName,

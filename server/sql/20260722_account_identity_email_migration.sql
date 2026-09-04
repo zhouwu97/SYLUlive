@@ -174,4 +174,27 @@ CREATE INDEX IF NOT EXISTS ix_email_verification_request_email_created ON email_
 CREATE INDEX IF NOT EXISTS ix_email_verification_request_ip_created ON email_verification_requests(request_ip_hash, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_account_security_audit_user_created ON account_security_audit_logs(user_id, created_at DESC);
 
+-- 活跃账号必须始终保留至少一个已验证登录身份。迁移前若存在冲突应停止发布，
+-- 由运维先完成身份补录，不能通过自动删除或伪造字段掩盖问题。
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM users
+    WHERE account_status = 'active'
+      AND NOT (
+        (student_verified_at IS NOT NULL AND COALESCE(student_id, '') <> '')
+        OR (email_verified_at IS NOT NULL AND COALESCE(email, '') <> '')
+      )
+  ) THEN
+    RAISE EXCEPTION 'active users must retain at least one verified login identity';
+  END IF;
+END $$;
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_active_login_identity;
+ALTER TABLE users ADD CONSTRAINT ck_users_active_login_identity CHECK (
+  account_status <> 'active'
+  OR (student_verified_at IS NOT NULL AND COALESCE(student_id, '') <> '')
+  OR (email_verified_at IS NOT NULL AND COALESCE(email, '') <> '')
+);
+
 COMMIT;

@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"shenliyuan/internal/middleware"
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
@@ -78,6 +79,10 @@ type knowledgeRollbackRequest struct {
 func (h *AIKnowledgeHandler) Import(c *gin.Context) {
 	request, err := h.decodeKnowledgeImport(c)
 	if err != nil {
+		if middleware.IsRequestBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"code": "request_body_too_large", "message": "请求体超过大小限制"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "知识文档请求格式错误"})
 		return
 	}

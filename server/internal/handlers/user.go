@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -21,6 +22,18 @@ type UserHandler struct {
 	db *gorm.DB
 }
 
+var schoolPersonalDataVisible atomic.Bool
+
+func init() {
+	schoolPersonalDataVisible.Store(true)
+}
+
+// SetSchoolPersonalDataVisible 控制会话和本人资料是否包含历史学校个人字段。
+// 生产退役开关打开后由启动入口关闭，测试和分阶段迁移默认保持兼容。
+func SetSchoolPersonalDataVisible(visible bool) {
+	schoolPersonalDataVisible.Store(visible)
+}
+
 // PublicUserResponse 是公开资料接口的最小响应模型。
 type PublicUserResponse = models.PublicUserResponse
 
@@ -28,16 +41,16 @@ func publicUserResponse(user models.User) PublicUserResponse {
 	return models.PublicUser(user)
 }
 
-// SelfUserResponse 仅用于当前登录用户，保留客户端刷新会话所需的账号和教务状态。
+// SelfUserResponse 仅用于当前登录用户；学校个人字段由退役开关控制，默认只保留兼容形状。
 type SelfUserResponse struct {
 	ID                    uint        `json:"id"`
-	StudentID             string      `json:"student_id"`
-	StudentVerified       bool        `json:"student_verified"`
+	StudentID             string      `json:"student_id,omitempty"`
+	StudentVerified       bool        `json:"student_verified,omitempty"`
 	EmailMasked           string      `json:"email_masked"`
 	EmailBound            bool        `json:"email_bound"`
 	LoginMethods          []string    `json:"login_methods"`
 	CanResetViaEmail      bool        `json:"can_reset_via_email"`
-	CanResetViaEdu        bool        `json:"can_reset_via_edu"`
+	CanResetViaEdu        bool        `json:"can_reset_via_edu,omitempty"`
 	Nickname              string      `json:"nickname"`
 	Gender                string      `json:"gender"`
 	Avatar                string      `json:"avatar"`
@@ -49,13 +62,13 @@ type SelfUserResponse struct {
 	Exp                   int         `json:"exp"`
 	ReportCount           int         `json:"report_count"`
 	CreatedAt             time.Time   `json:"created_at"`
-	EduStudentID          string      `json:"edu_student_id"`
-	EduBound              bool        `json:"edu_bound"`
-	EduAuthorized         bool        `json:"edu_authorized"`
-	EduSessionState       string      `json:"edu_session_state"`
-	EduGrade              string      `json:"edu_grade"`
-	EduCollege            string      `json:"edu_college"`
-	EduMajor              string      `json:"edu_major"`
+	EduStudentID          string      `json:"edu_student_id,omitempty"`
+	EduBound              bool        `json:"edu_bound,omitempty"`
+	EduAuthorized         bool        `json:"edu_authorized,omitempty"`
+	EduSessionState       string      `json:"edu_session_state,omitempty"`
+	EduGrade              string      `json:"edu_grade,omitempty"`
+	EduCollege            string      `json:"edu_college,omitempty"`
+	EduMajor              string      `json:"edu_major,omitempty"`
 	IsCheckedInToday      bool        `json:"is_checked_in_today"`
 	FollowersCount        int         `json:"followers_count"`
 	FollowingCount        int         `json:"following_count"`
@@ -74,7 +87,7 @@ func selfUserResponse(user models.User, consentState models.LegalConsentState) S
 	if user.EmailVerifiedAt != nil && user.Email != "" {
 		loginMethods = append(loginMethods, "email")
 	}
-	return SelfUserResponse{
+	response := SelfUserResponse{
 		ID: user.ID, StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
 		EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
@@ -91,6 +104,30 @@ func selfUserResponse(user models.User, consentState models.LegalConsentState) S
 		LegalConsentsRequired: consentState == models.LegalConsentStateRequired,
 		PushEnabled:           user.PushDataProcessingEnabled,
 	}
+	if !schoolPersonalDataVisible.Load() {
+		response.StudentID = ""
+		response.StudentVerified = false
+		response.CanResetViaEdu = false
+		response.EduStudentID = ""
+		response.EduBound = false
+		response.EduAuthorized = false
+		response.EduSessionState = ""
+		response.EduGrade = ""
+		response.EduCollege = ""
+		response.EduMajor = ""
+		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
+	}
+	return response
+}
+
+func filterNonSchoolLoginMethods(methods []string) []string {
+	filtered := make([]string, 0, len(methods))
+	for _, method := range methods {
+		if method != "student_id" {
+			filtered = append(filtered, method)
+		}
+	}
+	return filtered
 }
 
 func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, error) {

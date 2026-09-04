@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/market_contact_type.dart';
-import '../../config/privileged_accounts.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
@@ -237,16 +236,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   bool get _isEditing => widget.editingPost != null;
 
-  bool get _canUploadUnlimitedImages {
-    final studentId = context.read<AuthProvider>().user?.studentId;
-    return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
-  }
-
   int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
-      _canUploadUnlimitedImages || _totalImageCount < _maxImages;
+      _totalImageCount < _maxImages;
 
   bool get _showsPriceField => _postType != 'lost' && _postType != 'found';
 

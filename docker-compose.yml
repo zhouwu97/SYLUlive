@@ -82,8 +82,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
@@ -91,6 +91,8 @@ services:
       - SCHOOL_AUTHORITY_RETIRED=${SCHOOL_AUTHORITY_RETIRED:?set SCHOOL_AUTHORITY_RETIRED=true in .env}
       - SCHOOL_DEVICE_CAPABILITY_CUT=${SCHOOL_DEVICE_CAPABILITY_CUT:?set SCHOOL_DEVICE_CAPABILITY_CUT=true in .env}
       - SCHOOL_ACADEMIC_ROUTES_RETIRED=${SCHOOL_ACADEMIC_ROUTES_RETIRED:?set SCHOOL_ACADEMIC_ROUTES_RETIRED=true in .env}
+      # 默认不信任任何转发头；仅填写实际反向代理网段后才启用 X-Forwarded-For。
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       # release 模式下 Go 拒绝在缺失或空置这两个开关时启动，必须由 .env 显式提供（生产目标值均为 true）。
       # 异常回退：在 .env 改为 false 并重启 Go（保留已生成变体 / 改回 Go 直接投递）。
@@ -99,6 +101,7 @@ services:
       - UPLOAD_ACCEL_PREFIX=${UPLOAD_ACCEL_PREFIX:-/_internal/uploads/}
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
       - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}
+      - APP_RELEASE_DIR=${APP_RELEASE_DIR:-/app/releases}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD in .env}
       - EDU_SERVICE_URL=${EDU_SERVICE_URL:-http://python-edu-service:8000}
@@ -160,14 +163,23 @@ services:
       - server_data:/app/uploads
       - exam_paper_data:/app/private/exam-papers
       - competition_award_evidence_data:/app/private/competition-award-evidence
+      - app_release_data:/app/releases
     secrets:
       - source: mcp_ssh_key
         target: mcp_ed25519
+        uid: "10001"
+        gid: "10001"
         mode: 0400
       - source: mcp_known_hosts
         target: mcp_known_hosts
+        uid: "10001"
+        gid: "10001"
         mode: 0400
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - shenliyuan_network
 
@@ -205,6 +217,7 @@ volumes:
   server_data:
   exam_paper_data:
   competition_award_evidence_data:
+  app_release_data:
   rag_model_cache:
   postgres_data:
 

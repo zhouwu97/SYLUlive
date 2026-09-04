@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
-import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
@@ -96,16 +95,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   bool get _isEditing => widget.editingPost != null;
 
-  bool get _canUploadUnlimitedImages {
-    final studentId = context.read<AuthProvider>().user?.studentId;
-    return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
-  }
-
   int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
-      _canUploadUnlimitedImages || _totalImageCount < _maxImages;
+      _totalImageCount < _maxImages;
 
   // ---- 统一图片操作 ----
 

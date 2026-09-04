@@ -48,16 +48,16 @@ type emailPasswordResetInput struct {
 }
 
 type accountSecurityResponse struct {
-	StudentID        string   `json:"student_id"`
-	StudentVerified  bool     `json:"student_verified"`
+	StudentID        string   `json:"student_id,omitempty"`
+	StudentVerified  bool     `json:"student_verified,omitempty"`
 	Email            string   `json:"email"`
 	EmailMasked      string   `json:"email_masked"`
 	EmailBound       bool     `json:"email_bound"`
 	LoginMethods     []string `json:"login_methods"`
 	CanResetViaEmail bool     `json:"can_reset_via_email"`
-	CanResetViaEdu   bool     `json:"can_reset_via_edu"`
-	EduAuthorized    bool     `json:"edu_authorized"`
-	EduSessionState  string   `json:"edu_session_state"`
+	CanResetViaEdu   bool     `json:"can_reset_via_edu,omitempty"`
+	EduAuthorized    bool     `json:"edu_authorized,omitempty"`
+	EduSessionState  string   `json:"edu_session_state,omitempty"`
 }
 
 // RequestEmailRegistrationCode 发送邮箱注册验证码。外部响应不暴露邮箱是否已注册。
@@ -272,10 +272,6 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	if !user.IsStudentVerified() {
-		c.JSON(http.StatusConflict, gin.H{"error": "未完成学生认证的邮箱账号不能解除唯一邮箱"})
-		return
-	}
 	if user.Email == "" || user.EmailVerifiedAt == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "当前未绑定邮箱"})
 		return
@@ -284,9 +280,20 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
+	if !user.IsStudentVerified() || strings.TrimSpace(user.StudentID) == "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "邮箱是当前账号唯一有效登录身份，只允许更换邮箱"})
+		return
+	}
 	previousEmail := user.Email
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedUser models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, user.ID).Error; err != nil {
+			return err
+		}
+		if lockedUser.Email == "" || lockedUser.EmailVerifiedAt == nil || !lockedUser.IsStudentVerified() || strings.TrimSpace(lockedUser.StudentID) == "" {
+			return errors.New("邮箱是当前账号唯一有效登录身份，只允许更换邮箱")
+		}
 		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 			"email": "", "email_verified_at": nil, "token_version": gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
@@ -302,6 +309,10 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		}
 		if err.Error() == "APP 密码错误" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
+			return
+		}
+		if err.Error() == "邮箱是当前账号唯一有效登录身份，只允许更换邮箱" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除邮箱失败"})
@@ -422,13 +433,22 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 	if user.EmailVerifiedAt != nil && user.Email != "" {
 		loginMethods = append(loginMethods, "email")
 	}
-	c.JSON(http.StatusOK, accountSecurityResponse{
+	response := accountSecurityResponse{
 		StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
 		Email: user.Email, EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
 		CanResetViaEdu: user.IsStudentVerified() && user.StudentID != "",
 		EduAuthorized:  user.IsEduAuthorized(), EduSessionState: user.EduSessionState,
-	})
+	}
+	if !h.schoolDataVisible {
+		response.StudentID = ""
+		response.StudentVerified = false
+		response.CanResetViaEdu = false
+		response.EduAuthorized = false
+		response.EduSessionState = ""
+		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *AuthHandler) requestEmailCode(c *gin.Context, email string, purpose string, userID *uint) error {

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
@@ -322,6 +323,10 @@ func imageVariantRequest(relative string) (variant string, original string, lega
 func (h *UploadHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
+		if middleware.IsRequestBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "请求体超过大小限制"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要上传的文件"})
 		return
 	}
@@ -469,6 +474,10 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 	form, err := c.MultipartForm()
 	if err != nil {
+		if middleware.IsRequestBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "请求体超过大小限制"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "上传失败"})
 		return
 	}

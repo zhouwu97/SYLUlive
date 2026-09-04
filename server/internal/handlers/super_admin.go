@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -11,11 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"gorm.io/gorm"
 
-	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -23,15 +19,19 @@ import (
 // SuperAdminHandler 超级管理员处理器
 
 type SuperAdminHandler struct {
-	db *gorm.DB
+	db                *gorm.DB
+	emailVerification *services.EmailVerificationService
 }
 
 // NewSuperAdminHandler 创建超级管理员处理器
 
 func NewSuperAdminHandler(db *gorm.DB) *SuperAdminHandler {
-
 	return &SuperAdminHandler{db: db}
+}
 
+// NewSuperAdminHandlerWithEmailVerification 创建支持一次性邮箱重置挑战的处理器。
+func NewSuperAdminHandlerWithEmailVerification(db *gorm.DB, emailVerification *services.EmailVerificationService) *SuperAdminHandler {
+	return &SuperAdminHandler{db: db, emailVerification: emailVerification}
 }
 
 // GetUsers 获取所有用户
@@ -207,7 +207,7 @@ func (h *SuperAdminHandler) UpdateUserCredit(c *gin.Context) {
 
 }
 
-// ResetUserPassword 重置用户密码
+// ResetUserPassword 向用户已验证邮箱发送一次性密码重置验证码。
 
 func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 
@@ -223,25 +223,26 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 
 	}
 
-	defaultPassword := os.Getenv("DEFAULT_RESET_PASSWORD")
-	if defaultPassword == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统未配置默认重置密码，请联系管理员"})
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+	if user.Email == "" || user.EmailVerifiedAt == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "该用户没有已验证邮箱，无法发起密码重置"})
 		return
 	}
-
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置密码失败"})
+	if h.emailVerification == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务器未配置邮件服务"})
 		return
 	}
-	middleware.InvalidateTokenVersionCache(uint(userID))
+	if err := h.emailVerification.Request(user.Email, models.EmailVerificationPurposeResetPassword, &user.ID, c.ClientIP()); err != nil {
+		writeEmailVerificationError(c, err)
+		return
+	}
+	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: user.ID, Action: "admin_password_reset_challenge_requested"}).Error
 
-	c.JSON(http.StatusOK, gin.H{"message": "密码已重置为系统默认密码"})
+	c.JSON(http.StatusOK, gin.H{"message": "密码重置验证码已发送至用户已验证邮箱"})
 
 }
 

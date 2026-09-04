@@ -26,7 +26,6 @@ import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_cached_image.dart';
 import '../config/api_constants.dart';
-import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
 
 import 'login_screen.dart';

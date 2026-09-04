@@ -6,7 +6,6 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
-import '../config/privileged_accounts.dart';
 import '../screens/image_viewer_screen.dart';
 
 /// 一次成功上传的图片：以服务端 file_id 为可信标识，url 供回显，previewBytes 供本地预览。
@@ -47,13 +46,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   final List<UploadedImage> _uploadedImages = [];
   bool _isUploading = false;
 
-  bool get _canUploadUnlimitedImages {
-    final studentId = context.read<AuthProvider>().user?.studentId;
-    return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
-  }
-
   bool get _canAddMoreImages =>
-      _canUploadUnlimitedImages || _uploadedImages.length < widget.maxImages;
+      _uploadedImages.length < widget.maxImages;
 
   bool get _canPickImage =>
       _canAddMoreImages ||

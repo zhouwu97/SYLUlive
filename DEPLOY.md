@@ -142,7 +142,7 @@ docker compose run --rm --no-deps nginx nginx -t
 `
 - Ubuntu 20.04+
 - PostgreSQL
-- Go 1.25+（`deploy.sh` 会自动处理）
+- Go 1.25.13+（`deploy.sh` 会自动处理）
 `
 ### 部署步骤
 `

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Flutter-3.x-blue?logo=flutter" alt="Flutter">
-  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.25.13+-00ADD8?logo=go" alt="Go">
   <img src="https://img.shields.io/badge/PostgreSQL-14+-336791?logo=postgresql" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Architecture-Email%20%2B%20Local%20School-7C3AED" alt="Email primary account and local school architecture">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">

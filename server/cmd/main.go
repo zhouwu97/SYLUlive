@@ -604,6 +604,10 @@ func main() {
 
 	})
 
+	// 学校个人能力退役闸门必须先于版本检查、请求体限制和幂等性读取，
+	// 确保旧教务请求连 body 都不会进入 Go 处理链路。
+	r.Use(middleware.SchoolAuthorityRetirementGate(cfg.SchoolAuthorityRetired))
+
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
 	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
 	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))

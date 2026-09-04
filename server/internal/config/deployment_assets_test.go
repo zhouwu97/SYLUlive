@@ -18,10 +18,10 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		t.Fatalf("读取部署脚本失败: %v", err)
 	}
 	deployScriptText := string(deployScript)
-	if !strings.Contains(deployScriptText, `GO_VER="go1.25.0"`) ||
-		!strings.Contains(deployScriptText, `"1.25" "$v"`) ||
-		!strings.Contains(deployScriptText, `head -1)" = "1.25"`) {
-		t.Fatal("部署脚本必须安装并要求 Go 1.25，以满足 server/go.mod 的 go 1.25.0 要求")
+	if !strings.Contains(deployScriptText, `GO_VER="go1.25.13"`) ||
+		!strings.Contains(deployScriptText, `"1.25.13" "$v"`) ||
+		!strings.Contains(deployScriptText, `head -1)" = "1.25.13"`) {
+		t.Fatal("部署脚本必须安装并要求 Go 1.25.13，以满足 server/go.mod 的安全版本要求")
 	}
 
 	configSource, err := os.ReadFile(filepath.Join(repoRoot, "server", "internal", "config", "config.go"))
@@ -45,15 +45,15 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取部署文档失败: %v", err)
 	}
-	if !strings.Contains(string(deployDoc), "Go 1.25+") {
-		t.Fatal("部署文档必须声明 Go 1.25+ 要求")
+	if !strings.Contains(string(deployDoc), "Go 1.25.13+") {
+		t.Fatal("部署文档必须声明 Go 1.25.13+ 要求")
 	}
 
 	readme, err := os.ReadFile(filepath.Join(repoRoot, "README.md"))
 	if err != nil {
 		t.Fatalf("读取项目说明失败: %v", err)
 	}
-	if !strings.Contains(string(readme), "Go-1.25+") {
+	if !strings.Contains(string(readme), "Go-1.25.13+") {
 		t.Fatal("项目说明中的 Go 版本标识必须与 server/go.mod 保持一致")
 	}
 

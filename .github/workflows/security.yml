@@ -56,9 +56,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.25.13'
       - name: Install gitleaks
-        run: go install github.com/gitleaks/gitleaks/v8@v8.28.0
+        run: go install github.com/zricethezav/gitleaks/v8@v8.28.0
       - name: Scan introduced commits
         env:
           EVENT_NAME: ${{ github.event_name }}

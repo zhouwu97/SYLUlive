@@ -9,12 +9,13 @@
 | 组件 | 锁定版本 | 兼容边界 |
 | --- | --- | --- |
 | Python | 3.11 | Docker 与 CI 基准版本 |
-| FastAPI | 0.116.1 | Pydantic v2 |
-| Pydantic | 2.11.7 | 禁止 v1 compatibility imports |
-| langchain | 0.3.27 | 仅使用 LCEL，不使用弃用 Chain 类 |
-| langchain-core | 0.3.72 | `Runnable`、`Document`、`BaseRetriever`、Prompt |
-| langchain-openai | 0.3.28 | OpenAI-compatible ChatModel |
-| langchain-text-splitters | 0.3.9 | T03 使用 |
+| FastAPI | 0.141.1 | Pydantic v2 |
+| Pydantic | 2.12.5 | 禁止 v1 compatibility imports |
+| langchain | 1.4.0 | 仅使用 LCEL，不使用弃用 Chain 类 |
+| langchain-classic | 1.0.8 | 仅承载 `ContextualCompressionRetriever` 兼容模块 |
+| langchain-core | 1.6.1 | `Runnable`、`Document`、`BaseRetriever`、Prompt |
+| langchain-openai | 1.6.0 | OpenAI-compatible ChatModel |
+| langchain-text-splitters | 1.1.2 | T03 使用 |
 | psycopg | 3.2.9 | 后续只读 PostgreSQL 检索 |
 
 升级时必须在单独变更中同时更新锁定版本、离线契约测试和本表。不得只升级单个 LangChain 包；先检查弃用警告，再运行 Python 全量测试及 Go `RAGClient|LangChain|Runtime` 契约测试。测试默认注入 Fake Retriever 和 Fake ChatModel，不配置 Provider、不下载模型、不访问网络。

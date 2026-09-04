@@ -2,9 +2,13 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
+import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
+import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -124,59 +128,40 @@ void main() {
   });
 
   test('延迟课表响应在换号后不会写入新账号或恢复旧界面', () async {
-    final requestStarted = Completer<void>();
+    final courseStarted = Completer<void>();
     final releaseResponse = Completer<void>();
-    var requestedServerCourseCache = false;
-    Duration? requestedReceiveTimeout;
-    final dio = Dio();
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (options.path == '/edu/courses/local') {
-            requestedServerCourseCache = true;
-            handler.reject(
-              DioException(
-                requestOptions: options,
-                type: DioExceptionType.unknown,
-                error: StateError('不应访问服务端课表持久化副本'),
-              ),
-            );
-            return;
-          }
-          if (options.path == '/edu/courses') {
-            requestedReceiveTimeout = options.receiveTimeout;
-            requestStarted.complete();
-            releaseResponse.future.then((_) {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'success': true,
-                    'courses': <Map<String, dynamic>>[
-                      <String, dynamic>{
-                        'name': '旧账号课程',
-                        'time': 1,
-                        'end_time': 2,
-                        'week_day': 1,
-                        'weeks': <int>[1],
-                      },
-                    ],
-                  },
-                ),
-              );
-            });
-            return;
-          }
-          handler.next(options);
-        },
+    final repository = _FakeCourseRepository(
+      courseStarted: courseStarted,
+      courseGate: releaseResponse,
+      courses: CourseFetchResult(
+        source: CourseSource.mobile,
+        courses: [
+          const RawCourse(
+            name: '旧账号课程',
+            teacher: '测试老师',
+            location: 'A101',
+            section: '1-2节',
+            weekDay: '1',
+            weekExpression: '1周',
+          ),
+        ],
       ),
     );
-    final provider = createProvider(dio)
-      ..syncSessionContext('1001', '2403130233');
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('1001');
+    await controller.login(studentId: '2403130233', password: 'secret');
+    final provider = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      repository,
+      controller,
+    )..syncSessionContext('1001', '2403130233');
 
     final pending = provider.loadCourses(forceRefresh: true);
-    await requestStarted.future;
+    await courseStarted.future;
     provider.syncSessionContext('2002', '2403130234');
     releaseResponse.complete();
     await pending;
@@ -194,48 +179,160 @@ void main() {
     );
     expect(await oldStore.readTerm(year: '2025', semester: 12), isNull);
     expect(await newStore.readTerm(year: '2025', semester: 12), isNull);
-    expect(requestedServerCourseCache, isFalse);
-    expect(requestedReceiveTimeout, const Duration(seconds: 25));
+    for (var i = 0; i < 20 && !provider.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    provider.dispose();
+    controller.dispose();
   });
 
   test('课程获取成功但保险箱写入失败时明确提示未持久化', () async {
-    final dio = Dio();
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (options.path == '/edu/courses') {
-            handler.resolve(
-              Response(
-                requestOptions: options,
-                statusCode: 200,
-                data: <String, dynamic>{
-                  'success': true,
-                  'courses': <Map<String, dynamic>>[
-                    <String, dynamic>{
-                      'name': '数据结构',
-                      'time': 1,
-                      'end_time': 2,
-                      'week_day': 1,
-                      'weeks': <int>[1, 2],
-                    },
-                  ],
-                },
-              ),
-            );
-            return;
-          }
-          handler.next(options);
-        },
+    final repository = _FakeCourseRepository(
+      courses: CourseFetchResult(
+        source: CourseSource.mobile,
+        courses: [
+          const RawCourse(
+            name: '数据结构',
+            teacher: '测试老师',
+            location: 'A101',
+            section: '1-2节',
+            weekDay: '1',
+            weekExpression: '1-2周',
+          ),
+        ],
       ),
     );
     files.failWrites = true;
-    final provider = createProvider(dio)
-      ..syncSessionContext('1001', '2403130233');
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('1001');
+    await controller.login(studentId: '2403130233', password: 'secret');
+    final provider = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      repository,
+      controller,
+    )..syncSessionContext('1001', '2403130233');
 
     await provider.loadCourses(forceRefresh: true);
 
     expect(provider.courses.single.name, '数据结构');
     expect(provider.errorMessage, '课程已获取，但未能安全保存，请稍后重试');
     expect(provider.isLoading, isFalse);
+    provider.dispose();
+    controller.dispose();
   });
+}
+
+final class _FakeCourseRepository implements AcademicRepository {
+  _FakeCourseRepository({
+    required this.courses,
+    this.courseStarted,
+    this.courseGate,
+  });
+
+  final CourseFetchResult courses;
+  final Completer<void>? courseStarted;
+  final Completer<void>? courseGate;
+  SessionState _state = SessionState.unauthenticated;
+  String? _studentId;
+
+  @override
+  AcademicSourceKind get sourceKind => AcademicSourceKind.local;
+
+  @override
+  AcademicCapabilities get capabilities => const AcademicCapabilities.local();
+
+  @override
+  SessionState get sessionState => _state;
+
+  @override
+  String? get studentId => _studentId;
+
+  @override
+  String get sourceName => '测试本机直连';
+
+  @override
+  Future<void> switchSource(AcademicSourceKind source) async {}
+
+  @override
+  Future<LoginResult> login({
+    required String studentId,
+    required String password,
+  }) async {
+    _studentId = studentId;
+    _state = SessionState.authenticated;
+    return LoginSuccess(studentId: studentId, cookieNames: const {'test'});
+  }
+
+  @override
+  Future<CaptchaChallenge> getCaptchaChallenge() async {
+    throw const ProtocolChangedException(message: '测试未配置验证码');
+  }
+
+  @override
+  Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
+    return LoginSuccess(
+      studentId: _studentId ?? '2403130233',
+      cookieNames: const {'test'},
+    );
+  }
+
+  @override
+  Future<StudentProfile> getProfile() async => const StudentProfile(
+        name: '测试同学',
+        grade: '2026',
+        college: '信息学院',
+        major: '软件工程',
+      );
+
+  @override
+  Future<CourseFetchResult> getCourses({
+    required String year,
+    required int semester,
+  }) async {
+    courseStarted?.complete();
+    if (courseGate != null) await courseGate!.future;
+    return courses;
+  }
+
+  @override
+  Future<GradeFetchResult> getGrades({
+    required String year,
+    required int semester,
+  }) async =>
+      GradeFetchResult(grades: const [], pages: 1);
+
+  @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) async {
+    throw UnimplementedError('测试未实现成绩详情');
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() async {
+    throw UnimplementedError('测试未实现学业情况');
+  }
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() async {
+    throw UnimplementedError('测试未实现学分要求');
+  }
+
+  @override
+  Future<void> resetSession() async {
+    _state = SessionState.unauthenticated;
+    _studentId = null;
+  }
+
+  @override
+  void close() {}
 }

@@ -1,11 +1,17 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shenliyuan/models/edu_grade.dart';
-import 'package:shenliyuan/providers/edu_provider.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
+
+import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
+import 'package:shenliyuan/models/edu_grade.dart';
+import 'package:shenliyuan/providers/edu_provider.dart';
+import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import '../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -15,7 +21,6 @@ void main() {
   const secureStorageChannel =
       MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
   final secureStore = <String, String>{};
-  late EduProvider provider;
   late MemoryPersonalSnapshotSecureStore vaultSecureStore;
   late MemoryPersonalSnapshotFileBackend vaultFiles;
   late IncrementingRandomBytes vaultRandom;
@@ -60,819 +65,184 @@ void main() {
     );
   }
 
-  Future<void> setBoundUser(EduProvider value, String userId) async {
-    value.setUserId(userId);
-    await value.ensureStatusLoaded();
-  }
-
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(secureStorageChannel, null);
   });
 
-  /// Create a provider with a Dio that intercepts /edu/grades and
-  /// resolves with the given [responseData] after an optional [delay].
-  EduProvider createProvider({
-    required List<Map<String, dynamic>> responseData,
-    Duration? delay,
-    int? statusCode,
-  }) {
-    final dio = Dio();
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (options.path == '/edu/status') {
-            handler.resolve(
-              Response(
-                requestOptions: options,
-                statusCode: 200,
-                data: <String, dynamic>{
-                  'edu_authorized': true,
-                  'edu_student_id': '2403130233',
-                },
-              ),
-            );
-            return;
-          }
-          if (options.path == '/edu/grades') {
-            if (delay != null) {
-              Future.delayed(delay, () {
-                handler.resolve(
-                  Response(
-                    requestOptions: options,
-                    statusCode: statusCode ?? 200,
-                    data: {'grades': responseData},
-                  ),
-                );
-              });
-            } else {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: statusCode ?? 200,
-                  data: {'grades': responseData},
-                ),
-              );
-            }
-            return;
-          }
-          if (options.path == '/edu/authorization' &&
-              options.method == 'DELETE') {
-            handler.resolve(
-              Response(
-                requestOptions: options,
-                statusCode: 200,
-                data: const <String, dynamic>{
-                  'edu_authorized': false,
-                  'edu_session_state': 'revoked',
-                },
-              ),
-            );
-            return;
-          }
-          // Default: pass through (will fail if unexpected)
-          handler.next(options);
-        },
-      ),
+  Future<_EduFixture> createFixture({
+    GradeFetchResult? grades,
+    CourseFetchResult? courses,
+    Completer<void>? gradeGate,
+    Completer<void>? courseGate,
+    Object? gradeError,
+  }) async {
+    final repository = _FakeAcademicRepository(
+      grades: grades,
+      courses: courses,
+      gradeGate: gradeGate,
+      courseGate: courseGate,
+      gradeError: gradeError,
     );
-    return EduProvider(dio, createSnapshotStore);
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    final provider = EduProvider(Dio(), createSnapshotStore)
+      ..setAcademicSessionController(controller);
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2403130233', password: 'secret');
+    provider.setUserId('app-user-a');
+    await provider.ensureStatusLoaded();
+    return _EduFixture(provider, controller, repository);
   }
 
-  group('EduProvider grade cache isolation', () {
-    test('getCachedGrades returns null after userId switch', () async {
-      provider = createProvider(responseData: []);
+  group('EduProvider 本机教务契约', () {
+    test('没有本机会话控制器时不会回退到旧服务端教务接口', () async {
+      final requestedPaths = <String>[];
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              requestedPaths.add(options.path);
+              handler.next(options);
+            },
+          ),
+        );
+      final provider = EduProvider(dio, createSnapshotStore)
+        ..setUserId('app-user-a');
+      await provider.ensureStatusLoaded();
 
-      // Set user A, manually add cache entry
-      await setBoundUser(provider, 'user_a');
-      // Use fetchGrades to populate cache for A
-      expect(provider.getCachedGrades('2025', 3), isNull);
-    });
-
-    test('clearGradeCacheForUser only removes targeted user entries', () async {
-      provider = createProvider(responseData: [
-        {
-          'name': '课程A',
-          'grade': '90',
-          'credits': 3,
-          'gpa': 4.0,
-          'is_degree': true
-        },
-      ]);
-
-      // Populate cache for user A
-      await setBoundUser(provider, 'user_a');
-      await provider.fetchGrades('2025', 3);
-      expect(provider.getCachedGrades('2025', 3), isNotNull);
-
-      // Populate cache for user B (setUserId clears A's cache — expected behavior)
-      await setBoundUser(provider, 'user_b');
-      await provider.fetchGrades('2025', 3);
-      expect(provider.getCachedGrades('2025', 3), isNotNull);
-
-      // Current user is B. clearGradeCacheForUser('user_a') should be a no-op
-      // since A's cache was already cleared by setUserId.
-      provider.clearGradeCacheForUser('user_a');
-      // B's cache should be unaffected
-      expect(provider.getCachedGrades('2025', 3), isNotNull);
-
-      // Now clear B — B's cache should be gone
-      provider.clearGradeCacheForUser('user_b');
-      expect(provider.getCachedGrades('2025', 3), isNull);
-    });
-
-    test('fetchGrades rejects result when user switches during request',
-        () async {
-      final completer = Completer<void>();
-
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/grades') {
-              // Don't resolve yet — wait for completer
-              completer.future.then((_) {
-                handler.resolve(
-                  Response(
-                    requestOptions: options,
-                    statusCode: 200,
-                    data: {
-                      'grades': [
-                        {
-                          'name': '课程X',
-                          'grade': '85',
-                          'credits': 3,
-                          'gpa': 3.5,
-                          'is_degree': false,
-                        },
-                      ],
-                    },
-                  ),
-                );
-              });
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final p = EduProvider(dio, createSnapshotStore);
-
-      // Set user A and fire request
-      await setBoundUser(p, 'user_a');
-      final future = p.fetchGrades('2025', 3);
-
-      // Switch to user B before the response arrives
-      p.setUserId('user_b');
-
-      // Now let the response through
-      completer.complete();
-
-      final result = await future;
-
-      // Should reject because user switched
-      expect(result.success, false);
-      expect(result.errorMessage, contains('用户已切换'));
-
-      // User B should NOT have gotten A's grades in cache
-      expect(p.getCachedGrades('2025', 3), isNull);
-    });
-
-    test('getCourses rejects delayed response after account context changes',
-        () async {
-      final responseStarted = Completer<void>();
-      final releaseResponse = Completer<void>();
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/courses') {
-              responseStarted.complete();
-              releaseResponse.future.then((_) {
-                handler.resolve(
-                  Response(
-                    requestOptions: options,
-                    statusCode: 200,
-                    data: <String, dynamic>{
-                      'courses': <Map<String, dynamic>>[
-                        <String, dynamic>{'name': '旧账号课程'},
-                      ],
-                    },
-                  ),
-                );
-              });
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final value = EduProvider(dio, createSnapshotStore);
-      await setBoundUser(value, 'user_a');
-
-      final pending = value.getCourses('2025', 3);
-      await responseStarted.future;
-      value.setUserId('user_b');
-      releaseResponse.complete();
-
-      final result = await pending;
-      expect(result?.success, isFalse);
-      expect(result?.errorMessage, contains('用户已切换'));
-    });
-
-    test('fetchGrades writes to correct user cache on success', () async {
-      provider = createProvider(responseData: [
-        {
-          'name': '数据结构',
-          'grade': '90',
-          'credits': 4,
-          'gpa': 4.0,
-          'is_degree': true
-        },
-      ]);
-
-      await setBoundUser(provider, 'user_123');
       final result = await provider.fetchGrades('2025', 3);
-
-      expect(result.success, true);
-      expect(result.data, isNotNull);
-      expect(result.data!.length, 1);
-
-      // Cache should exist for this user+semester
-      final cached = provider.getCachedGrades('2025', 3);
-      expect(cached, isNotNull);
-      expect(cached!.grades.first.name, '数据结构');
-      expect(cached.updatedAt, isNotNull);
-    });
-
-    test('fetchGrades returns fail for empty grades list', () async {
-      provider = createProvider(responseData: []);
-
-      await setBoundUser(provider, 'user_x');
-      final result = await provider.fetchGrades('2025', 3);
-
-      // Empty list is still "success" (the request succeeded, just no grades)
-      expect(result.success, true);
-      expect(result.data, isEmpty);
-    });
-
-    test('fetchGrades returns fail on network error', () async {
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/grades') {
-              handler.reject(
-                DioException(
-                  requestOptions: options,
-                  type: DioExceptionType.connectionError,
-                  error: 'Connection refused',
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final p = EduProvider(dio, createSnapshotStore);
-
-      await setBoundUser(p, 'user_x');
-      final result = await p.fetchGrades('2025', 3);
-
-      expect(result.success, false);
-      expect(result.errorMessage, isNotEmpty);
-      // No cache should be written on failure
-      expect(p.getCachedGrades('2025', 3), isNull);
-    });
-
-    test('失败的学业情况响应不会写入加密快照', () async {
-      final dio = Dio();
-      Object? academicRequestData;
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/academic-situation') {
-              academicRequestData = options.data;
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'success': false,
-                    'error_code': 'ACADEMIC_SITUATION_STRUCTURE_CHANGED',
-                    'message': '学业情况页面结构发生变化',
-                    'parser_version': 'academic-situation-v2',
-                    'courses_status': 'parse_failed',
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final value = EduProvider(dio, createSnapshotStore);
-      await setBoundUser(value, 'user_academic');
-
-      final result = await value.fetchAcademicSituation();
 
       expect(result.success, isFalse);
-      expect(result.errorMessage, '学业情况页面结构发生变化');
-      expect(academicRequestData, isA<Map<String, dynamic>>());
-      expect(
-        (academicRequestData! as Map<String, dynamic>).containsKey(
-          'force_refresh',
+      expect(result.errorCode, 'LOCAL_SESSION_NOT_READY');
+      expect(requestedPaths, isEmpty);
+      provider.dispose();
+    });
+
+    test('本机成绩会转换为应用模型并写入账号隔离缓存', () async {
+      final fixture = await createFixture(
+        grades: GradeFetchResult(
+          pages: 1,
+          grades: [
+            RawGrade(
+              raw: {
+                'kcmc': '数字逻辑',
+                'cj': '64.7',
+                'xf': 3.0,
+                'jd': 1.47,
+                'sfxwkc': '是',
+              },
+            ),
+            RawGrade(
+              raw: {
+                'kcmc': '体育4',
+                'cj': '84',
+                'xf': 1,
+                'jd': 3.4,
+                'sfxwkc': '否',
+              },
+            ),
+          ],
         ),
-        isFalse,
       );
-      final store = AcademicCacheStore(
-        appUserId: 'user_academic',
-        sourceAccountId: '2403130233',
-        snapshotStore: createSnapshotStore('user_academic'),
-      );
-      expect(await store.readSnapshot(), isNull);
-      expect(value.getCachedAcademicSituation(), isNull);
-    });
 
-    test('setUserId clears cache for old user', () async {
-      provider = createProvider(responseData: [
-        {
-          'name': '课程',
-          'grade': '80',
-          'credits': 2,
-          'gpa': 3.0,
-          'is_degree': false
-        },
-      ]);
-
-      await setBoundUser(provider, 'user_a');
-      await provider.fetchGrades('2025', 3);
-      expect(provider.getCachedGrades('2025', 3), isNotNull);
-
-      // Switch to user B — should clear A's cache
-      await setBoundUser(provider, 'user_b');
-      // Now switch back to A — cache should be cleared
-      await setBoundUser(provider, 'user_a');
-      expect(provider.getCachedGrades('2025', 3), isNull);
-    });
-
-    test('EduGrade parsed from fetchGrades has correct typed fields', () async {
-      provider = createProvider(responseData: [
-        {
-          'name': '数字逻辑',
-          'grade': '64.7',
-          'credits': 3.0,
-          'gpa': 1.47,
-          'is_degree': true,
-        },
-        {
-          'name': '体育4',
-          'grade': '84',
-          'credits': 1,
-          'gpa': 3.4,
-          'is_degree': false,
-        },
-      ]);
-
-      await setBoundUser(provider, 'user_test');
-      final result = await provider.fetchGrades('2025', 12);
-
-      expect(result.success, true);
-      final grades = result.data!;
-      expect(grades.length, 2);
-
-      expect(grades[0].name, '数字逻辑');
-      expect(grades[0].displayGrade, '64.7');
-      expect(grades[0].credits, 3.0);
-      expect(grades[0].gpa, 1.47);
-      expect(grades[0].isDegree, true);
-
-      expect(grades[1].name, '体育4');
-      expect(grades[1].isPassed, true); // 84 >= 60
-      expect(grades[0].isPassed, true); // 64.7 >= 60
-    });
-
-    test('revokeAuthorization clears in-memory and encrypted edu snapshots',
-        () async {
-      provider = createProvider(responseData: [
-        {
-          'name': '数据结构',
-          'grade': '90',
-          'credits': 4,
-          'gpa': 4.0,
-          'is_degree': true,
-        },
-      ]);
-
-      await setBoundUser(provider, 'user_revoke');
-      await provider.fetchGrades('2025', 3);
-      final store = AcademicCacheStore(
-        appUserId: 'user_revoke',
-        sourceAccountId: '2403130233',
-        snapshotStore: createSnapshotStore('user_revoke'),
-      );
-      expect(await store.readSnapshot(), isNotNull);
-
-      final result = await provider.revokeAuthorization();
+      final result = await fixture.provider.fetchGrades('2025', 12);
 
       expect(result.success, isTrue);
-      expect(provider.isAuthorized, isFalse);
-      expect(provider.sessionState, 'revoked');
-      expect(provider.getCachedGrades('2025', 3), isNull);
-      expect(await store.readSnapshot(), isNull);
+      expect(result.data, hasLength(2));
+      expect(result.data![0].name, '数字逻辑');
+      expect(result.data![0].displayGrade, '64.7');
+      expect(result.data![0].credits, 3.0);
+      expect(result.data![0].gpa, 1.47);
+      expect(result.data![0].isDegree, isTrue);
+      expect(result.data![1].isPassed, isTrue);
+      expect(fixture.provider.getCachedGrades('2025', 12), isNotNull);
+
+      fixture.dispose();
     });
 
-    test('clearMemoryForAccountTransition clears credit requirement cache',
-        () async {
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: const <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/credit-requirements') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: const <String, dynamic>{
-                    'success': true,
-                    'status': 'available',
-                    'modules': <Map<String, dynamic>>[],
-                    'improvement_courses': <Map<String, dynamic>>[],
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
+    test('本机空成绩仍是成功响应', () async {
+      final fixture = await createFixture(
+        grades: GradeFetchResult(grades: const [], pages: 1),
       );
-      final value = EduProvider(dio, createSnapshotStore);
 
-      await setBoundUser(value, 'user_credit');
-      expect((await value.fetchCreditRequirements()).success, isTrue);
-      expect(value.getCachedCreditRequirements(), isNotNull);
+      final result = await fixture.provider.fetchGrades('2025', 3);
 
-      value.clearMemoryForAccountTransition();
-      value.setUserId('user_credit');
-
-      expect(value.getCachedCreditRequirements(), isNull);
+      expect(result.success, isTrue);
+      expect(result.data, isEmpty);
+      fixture.dispose();
     });
 
-    test('clearLocalSession clears local edu state and saved keys', () async {
-      AppPreferencesStore.setMockInitialValues({
-        'edu_bound_user_a': true,
-        'edu_student_id_user_a': ' 2403130233 ',
-        'edu_grade_user_a': '2024',
-        'edu_college_user_a': '信息科学与工程学院',
-        'edu_major_user_a': '软件工程',
-        'edu_last_semester_user_a': '2025_3',
-      });
+    test('成绩请求期间切换 App 账号会丢弃旧账号结果', () async {
+      final gradeGate = Completer<void>();
+      final gradeStarted = Completer<void>();
+      final fixture = await createFixture(gradeGate: gradeGate);
+      fixture.repository.gradeStarted = gradeStarted;
 
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: {
-                    'edu_authorized': true,
-                    'edu_student_id': ' 2403130233 ',
-                    'edu_grade': '2024',
-                    'edu_college': '信息科学与工程学院',
-                    'edu_major': '软件工程',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/grades') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: {
-                    'grades': [
-                      {
-                        'name': '数据结构',
-                        'grade': '90',
-                        'credits': 4,
-                        'gpa': 4.0,
-                        'is_degree': true,
-                      }
-                    ],
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final p = EduProvider(dio, createSnapshotStore);
+      final pending = fixture.provider.fetchGrades('2025', 3);
+      await gradeStarted.future;
+      fixture.provider.setUserId('app-user-b');
+      gradeGate.complete();
 
-      await setBoundUser(p, 'user_a');
-      await p.fetchGrades('2025', 3);
-      expect(p.isBound, true);
-      expect(p.getCachedGrades('2025', 3), isNotNull);
+      final result = await pending;
 
-      await p.clearLocalSession();
-
-      expect(p.userId, isNull);
-      expect(p.isBound, false);
-      expect(p.studentId, isEmpty);
-      expect(p.grade, isEmpty);
-      expect(p.college, isEmpty);
-      expect(p.major, isEmpty);
-      expect(p.isLoading, false);
-      expect(p.isStatusLoaded, false);
-      expect(p.getCachedGrades('2025', 3), isNull);
-
-      final prefs = await AppPreferencesStore.getInstance();
-      for (final key in [
-        'edu_bound_user_a',
-        'edu_authorized_user_a',
-        'edu_session_state_user_a',
-        'edu_student_id_user_a',
-        'edu_grade_user_a',
-        'edu_college_user_a',
-        'edu_major_user_a',
-        'edu_last_semester_user_a',
-      ]) {
-        expect(prefs.containsKey(key), false, reason: key);
-      }
+      expect(result.success, isFalse);
+      expect(result.errorMessage, contains('用户已切换'));
+      expect(fixture.provider.getCachedGrades('2025', 3), isNull);
+      fixture.dispose();
     });
 
-    test('clearLocalSession prevents stale loadStatus from restoring binding',
-        () async {
-      final statusCompleter = Completer<void>();
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              statusCompleter.future.then((_) {
-                handler.resolve(
-                  Response(
-                    requestOptions: options,
-                    statusCode: 200,
-                    data: {
-                      'edu_authorized': true,
-                      'edu_student_id': '2403130233',
-                      'edu_grade': '2024',
-                      'edu_college': '信息科学与工程学院',
-                      'edu_major': '软件工程',
-                    },
-                  ),
-                );
-              });
-              return;
-            }
-            handler.next(options);
-          },
+    test('本机课表会映射为旧页面兼容字段', () async {
+      final fixture = await createFixture(
+        courses: CourseFetchResult(
+          source: CourseSource.mobile,
+          courses: const [
+            RawCourse(
+              name: '数据结构',
+              teacher: '张老师',
+              location: 'A101',
+              section: '3-4节',
+              weekDay: '2',
+              weekExpression: '1-16周',
+            ),
+          ],
         ),
       );
-      final p = EduProvider(dio, createSnapshotStore);
 
-      p.setUserId('user_a');
-      await Future<void>.delayed(Duration.zero);
-      await p.clearLocalSession();
-      statusCompleter.complete();
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      final result = await fixture.provider.getCourses('2025', 3);
 
-      expect(p.userId, isNull);
-      expect(p.isBound, false);
-      expect(p.studentId, isEmpty);
-      expect(p.isStatusLoaded, false);
+      expect(result?.success, isTrue);
+      expect(result?.data?.single['name'], '数据结构');
+      expect(result?.data?.single['weekday'], 2);
+      expect(result?.data?.single['start_section'], 3);
+      expect(result?.data?.single['end_section'], 4);
+      expect(
+        result?.data?.single['weeks'],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+      );
+      fixture.dispose();
     });
 
-    test('成绩列表可在后台预取全部构成且已缓存课程不会重复请求', () async {
-      final detailRequests = <String>[];
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: const <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/grades/detail') {
-              final data = Map<String, dynamic>.from(options.data as Map);
-              final classId = data['class_id'] as String;
-              detailRequests.add(classId);
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'success': true,
-                    'course_name': data['course_name'],
-                    'total_grade': '88',
-                    'components': const <Map<String, dynamic>>[
-                      <String, dynamic>{
-                        'name': '平时成绩',
-                        'weight': '40%',
-                        'score': '90',
-                      },
-                    ],
-                  },
-                ),
-              );
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final value = EduProvider(dio, createSnapshotStore);
-      await setBoundUser(value, 'user_prefetch');
-      final grades = <EduGrade>[
-        const EduGrade(
-          name: '数据结构',
-          classId: 'class-a',
-          displayGrade: '88',
-          credits: 3,
-          gpa: 3.7,
-          isDegree: true,
-        ),
-        const EduGrade(
-          name: '计算机网络',
-          classId: 'class-b',
-          displayGrade: '85',
-          credits: 3,
-          gpa: 3.5,
-          isDegree: true,
-        ),
-      ];
-
-      await value.prefetchGradeDetails(
-        grades,
-        '2025',
-        12,
-        initialDelay: Duration.zero,
-      );
-
-      expect(detailRequests, <String>['class-a', 'class-b']);
-      expect(value.getCachedGradeDetail(grades[0], '2025', 12), isNotNull);
-      expect(value.getCachedGradeDetail(grades[1], '2025', 12), isNotNull);
-
-      await value.prefetchGradeDetails(
-        grades,
-        '2025',
-        12,
-        initialDelay: Duration.zero,
-      );
-      expect(detailRequests, hasLength(2));
-    });
-
-    test('同时打开同一课程详情时复用进行中的请求', () async {
-      final detailCompleter = Completer<void>();
-      final detailRequestStarted = Completer<void>();
-      var detailRequestCount = 0;
-      final dio = Dio();
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            if (options.path == '/edu/status') {
-              handler.resolve(
-                Response(
-                  requestOptions: options,
-                  statusCode: 200,
-                  data: const <String, dynamic>{
-                    'edu_authorized': true,
-                    'edu_student_id': '2403130233',
-                  },
-                ),
-              );
-              return;
-            }
-            if (options.path == '/edu/grades/detail') {
-              detailRequestCount++;
-              if (!detailRequestStarted.isCompleted) {
-                detailRequestStarted.complete();
-              }
-              detailCompleter.future.then((_) {
-                handler.resolve(
-                  Response(
-                    requestOptions: options,
-                    statusCode: 200,
-                    data: const <String, dynamic>{
-                      'success': true,
-                      'course_name': '数据结构',
-                      'total_grade': '88',
-                      'components': <Map<String, dynamic>>[
-                        <String, dynamic>{
-                          'name': '期末成绩',
-                          'weight': '60%',
-                          'score': '86',
-                        },
-                      ],
-                    },
-                  ),
-                );
-              });
-              return;
-            }
-            handler.next(options);
-          },
-        ),
-      );
-      final value = EduProvider(dio, createSnapshotStore);
-      await setBoundUser(value, 'user_deduplicate');
+    test('本机教务不支持的旧详情能力会 fail-closed 且不访问 Dio', () async {
+      final requestedPaths = <String>[];
+      final fixture = await createFixture();
+      fixture.provider.dispose();
+      final guardedProvider = EduProvider(
+        Dio()
+          ..interceptors.add(
+            InterceptorsWrapper(
+              onRequest: (options, handler) {
+                requestedPaths.add(options.path);
+                handler.next(options);
+              },
+            ),
+          ),
+        createSnapshotStore,
+      )
+        ..setAcademicSessionController(fixture.controller)
+        ..setUserId('app-user-a');
       const grade = EduGrade(
         name: '数据结构',
         classId: 'class-a',
@@ -882,16 +252,205 @@ void main() {
         isDegree: true,
       );
 
-      final first = value.fetchGradeDetail(grade, '2025', 12);
-      final second = value.fetchGradeDetail(grade, '2025', 12);
-      // 等待真实请求进入拦截器，再断言并发去重；固定短延迟会把调度抖动误报成回归。
-      await detailRequestStarted.future.timeout(const Duration(seconds: 1));
-      expect(detailRequestCount, 1);
+      final detail = await guardedProvider.fetchGradeDetail(grade, '2025', 3);
+      final situation = await guardedProvider.fetchAcademicSituation();
+      final requirements = await guardedProvider.fetchCreditRequirements();
+      await guardedProvider.prefetchGradeDetails(
+        const [grade],
+        '2025',
+        3,
+        initialDelay: Duration.zero,
+      );
 
-      detailCompleter.complete();
-      final results = await Future.wait([first, second]);
-      expect(results.every((result) => result.success), isTrue);
-      expect(detailRequestCount, 1);
+      expect(detail.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
+      expect(situation.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
+      expect(requirements.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
+      expect(guardedProvider.getCachedGradeDetail(grade, '2025', 3), isNull);
+      expect(requestedPaths, isEmpty);
+      guardedProvider.dispose();
+      fixture.controller.dispose();
+    });
+
+    test('清除本机教务会话会同时清理内存和加密成绩快照', () async {
+      final fixture = await createFixture(
+        grades: GradeFetchResult(
+          grades: [
+            RawGrade(
+              raw: {
+                'kcmc': '数据结构',
+                'cj': '90',
+                'xf': 4,
+                'jd': 4.0,
+                'sfxwkc': '是',
+              },
+            ),
+          ],
+          pages: 1,
+        ),
+      );
+      await fixture.provider.fetchGrades('2025', 3);
+      final store = AcademicCacheStore(
+        appUserId: 'app-user-a',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('app-user-a'),
+      );
+      expect(await store.readSnapshot(), isNotNull);
+
+      await fixture.provider.clearLocalSession();
+
+      expect(fixture.provider.userId, isNull);
+      expect(fixture.provider.isBound, isFalse);
+      expect(fixture.provider.getCachedGrades('2025', 3), isNull);
+      expect(await store.readSnapshot(), isNull);
+      fixture.dispose();
+    });
+
+    test('本机成绩错误不会写入缓存', () async {
+      final fixture = await createFixture(
+        gradeError: const NetworkException(message: '教务系统暂时不可用'),
+      );
+
+      final result = await fixture.provider.fetchGrades('2025', 3);
+
+      expect(result.success, isFalse);
+      expect(result.errorMessage, isNotEmpty);
+      expect(fixture.provider.getCachedGrades('2025', 3), isNull);
+      fixture.dispose();
     });
   });
+}
+
+final class _EduFixture {
+  _EduFixture(this.provider, this.controller, this.repository);
+
+  final EduProvider provider;
+  final AcademicSessionController controller;
+  final _FakeAcademicRepository repository;
+
+  void dispose() {
+    provider.dispose();
+    controller.dispose();
+  }
+}
+
+final class _FakeAcademicRepository implements AcademicRepository {
+  _FakeAcademicRepository({
+    GradeFetchResult? grades,
+    CourseFetchResult? courses,
+    this.gradeGate,
+    this.courseGate,
+    this.gradeError,
+  })  : grades = grades ?? GradeFetchResult(grades: const [], pages: 1),
+        courses = courses ??
+            CourseFetchResult(courses: const [], source: CourseSource.mobile);
+
+  GradeFetchResult grades;
+  CourseFetchResult courses;
+  final Completer<void>? gradeGate;
+  final Completer<void>? courseGate;
+  final Object? gradeError;
+  Completer<void>? gradeStarted;
+  SessionState _state = SessionState.unauthenticated;
+  String? _studentId;
+
+  @override
+  AcademicSourceKind get sourceKind => AcademicSourceKind.local;
+
+  @override
+  AcademicCapabilities get capabilities => const AcademicCapabilities.local();
+
+  @override
+  SessionState get sessionState => _state;
+
+  @override
+  String? get studentId => _studentId;
+
+  @override
+  String get sourceName => '测试本机直连';
+
+  @override
+  Future<void> switchSource(AcademicSourceKind source) async {}
+
+  @override
+  Future<LoginResult> login({
+    required String studentId,
+    required String password,
+  }) async {
+    _studentId = studentId;
+    _state = SessionState.authenticated;
+    return LoginSuccess(studentId: studentId, cookieNames: const {'test'});
+  }
+
+  @override
+  Future<CaptchaChallenge> getCaptchaChallenge() async {
+    throw const ProtocolChangedException(message: '测试未配置验证码');
+  }
+
+  @override
+  Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
+    _state = SessionState.authenticated;
+    return LoginSuccess(
+      studentId: _studentId ?? '2403130233',
+      cookieNames: const {'test'},
+    );
+  }
+
+  @override
+  Future<StudentProfile> getProfile() async => const StudentProfile(
+        name: '测试同学',
+        grade: '2026',
+        college: '信息学院',
+        major: '软件工程',
+      );
+
+  @override
+  Future<CourseFetchResult> getCourses({
+    required String year,
+    required int semester,
+  }) async {
+    if (courseGate != null) await courseGate!.future;
+    return courses;
+  }
+
+  @override
+  Future<GradeFetchResult> getGrades({
+    required String year,
+    required int semester,
+  }) async {
+    gradeStarted?.complete();
+    if (gradeGate != null) await gradeGate!.future;
+    if (gradeError != null) throw gradeError!;
+    return grades;
+  }
+
+  @override
+  Future<GradeDetail> getGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) async {
+    throw UnimplementedError('测试未实现成绩详情');
+  }
+
+  @override
+  Future<AcademicSituation> getAcademicSituation() async {
+    throw UnimplementedError('测试未实现学业情况');
+  }
+
+  @override
+  Future<CreditRequirement> getCreditRequirements() async {
+    throw UnimplementedError('测试未实现学分要求');
+  }
+
+  @override
+  Future<void> resetSession() async {
+    _state = SessionState.unauthenticated;
+    _studentId = null;
+  }
+
+  @override
+  void close() {}
 }

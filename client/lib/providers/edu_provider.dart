@@ -493,10 +493,22 @@ class EduProvider extends ChangeNotifier {
 
   /// 清除本机教务登录态，不修改服务器绑定关系。
   Future<void> clearLocalSession() async {
-    await _academicSessionController?.resetSession();
+    // 先捕获命名空间：重置本机会话后 studentId 会被清空，不能再依赖当前
+    // 字段定位成绩快照。退出本机教务必须同时撤销内存和加密缓存中的个人数据。
     final oldUserId = _userId;
+    final oldSourceAccountId = _studentId.trim();
+    final academicStore = oldUserId == null
+        ? null
+        : _academicCacheStoreFor(
+            appUserId: oldUserId,
+            sourceAccountId: oldSourceAccountId,
+          );
+    await _academicSessionController?.resetSession();
     clearMemoryForAccountTransition();
 
+    if (academicStore != null) {
+      await academicStore.clearAll();
+    }
     if (oldUserId != null && oldUserId.isNotEmpty) {
       await _clearBoundStatusFor(oldUserId);
     }

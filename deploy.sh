@@ -26,7 +26,7 @@ BACKUP_DIR="/var/backups/${APP_NAME}"
 DB_NAME="shenliyuan"
 DB_USER="shenliyuan"
 DB_PASS=""
-GO_VER="go1.25.0"
+GO_VER="go1.25.13"
 
 CURRENT_BINARY="${APP_DIR}/${APP_NAME}"
 OLD_BINARY="${APP_DIR}/.${APP_NAME}.previous"
@@ -134,15 +134,15 @@ check_system() {
 setup_go() {
   if command -v go >/dev/null 2>&1; then
     local v
-    v=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+')
-    if [ "$(printf '%s\n' "1.25" "$v" | sort -V | head -1)" = "1.25" ]; then
+    v=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+\.[0-9]+')
+    if [ "$(printf '%s\n' "1.25.13" "$v" | sort -V | head -1)" = "1.25.13" ]; then
       log_info "Go 已安装: $(go version)"
       return
     fi
-    log_warn "Go $v < 1.25，将升级"
+    log_warn "Go $v < 1.25.13，将升级"
   fi
 
-  log_step "安装 Go 1.25..."
+  log_step "安装 Go 1.25.13..."
   local arch go_arch
   arch=$(uname -m)
   if [ "$arch" = "x86_64" ]; then

@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/widgets/course/course_empty_state_card.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
@@ -307,6 +308,11 @@ void main() {
     // 必须先 mock 本地偏好，否则 syncSessionContext 的 discardUnownedLegacy
     // 会等一个永不完结的通道 Future，导致 loadLastFetchedAt 挂起。
     AppPreferencesStore.setMockInitialValues({});
+    AcademicPersistenceRegistry.set('1', enabled: true);
+  });
+
+  tearDown(() {
+    AcademicPersistenceRegistry.clear('1');
   });
 
   testWidgets('本地课表今天同步显示同步时间', (tester) async {

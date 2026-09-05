@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/academic/storage/academic_credential_store.dart';
 import '../features/academic/storage/academic_persistence_policy.dart';
 import '../features/academic/storage/academic_storage_preferences.dart';
@@ -35,6 +39,7 @@ class _AcademicDataSettingsScreenState
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  int _loadGeneration = 0;
 
   AcademicSessionController get _session =>
       context.read<AcademicSessionController>();
@@ -46,6 +51,7 @@ class _AcademicDataSettingsScreenState
   }
 
   Future<void> _load() async {
+    final loadGeneration = ++_loadGeneration;
     final auth = context.read<AuthProvider>();
     final userId = auth.user?.id.toString();
     if (userId == null || userId.isEmpty) {
@@ -77,7 +83,16 @@ class _AcademicDataSettingsScreenState
       auxiliaryCleanup: AcademicPersistencePolicy.clearAuxiliaryData,
       supported: !kIsWeb,
     );
-    if (!mounted) return;
+    if (!mounted || loadGeneration != _loadGeneration) {
+      await _closePolicy(policy);
+      return;
+    }
+    final previousPolicy = _policy;
+    await _closePolicy(previousPolicy);
+    if (!mounted || loadGeneration != _loadGeneration) {
+      await _closePolicy(policy);
+      return;
+    }
     setState(() {
       _preferences = preferences;
       _credential = credential;
@@ -89,8 +104,21 @@ class _AcademicDataSettingsScreenState
   Future<void> _toggleCredentials(bool enabled) async {
     final preferences = _preferences;
     if (preferences == null) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
+      if (enabled && _credential == null) {
+        final loggedIn = await AcademicLoginDialog.show(
+          context,
+          controller: _session,
+          coordinator: _coordinatorOrNull(),
+          initialSaveCredentials: true,
+        );
+        if (loggedIn == true && mounted) await _load();
+        return;
+      }
       await preferences.setSaveCredentials(enabled);
       if (!enabled) {
         await PlatformAcademicCredentialStore().delete(preferences.appUserId);
@@ -173,6 +201,22 @@ class _AcademicDataSettingsScreenState
     );
   }
 
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _closePolicy(AcademicPersistencePolicy? policy) async {
+    try {
+      await policy?.close();
+    } catch (_) {
+      // 设置页刷新和退出不能被底层存储句柄清理异常阻断。
+    }
+  }
+
   Future<void> _deleteAcademicAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -223,6 +267,13 @@ class _AcademicDataSettingsScreenState
     if (value.length <= 4) return value.isEmpty ? '未设置' : value;
     final hidden = List<String>.filled(value.length - 6, '*').join();
     return '${value.substring(0, 4)}$hidden${value.substring(value.length - 2)}';
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration++;
+    unawaited(_closePolicy(_policy));
+    super.dispose();
   }
 
   @override

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
@@ -22,9 +23,16 @@ void main() {
 
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
+    AcademicPersistenceRegistry.set('1001', enabled: true);
+    AcademicPersistenceRegistry.set('2002', enabled: true);
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();
+  });
+
+  tearDown(() {
+    AcademicPersistenceRegistry.clear('1001');
+    AcademicPersistenceRegistry.clear('2002');
   });
 
   AccountScopedSnapshotStore createSnapshotStore(String appUserId) {

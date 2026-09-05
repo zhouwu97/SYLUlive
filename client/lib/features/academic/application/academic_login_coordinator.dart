@@ -313,6 +313,11 @@ final class AcademicLoginCoordinator {
       }
     } catch (_) {
       saveWarning = true;
+      // Secure Store 写入成功但偏好写入失败时回滚凭据，避免出现用户以为
+      // 未保存、设备却仍残留学校密码的半成功状态。
+      try {
+        await credentialStore.delete(appUserId);
+      } catch (_) {}
       // 任一凭据持久化步骤失败时关闭有效开关，避免残留凭据被自动使用。
       try {
         preferences ??=

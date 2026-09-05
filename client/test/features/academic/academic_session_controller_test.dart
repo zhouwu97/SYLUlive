@@ -426,6 +426,36 @@ void main() {
     controller.dispose();
   });
 
+  test('凭据写入成功但偏好失败时会回滚 Secure Store', () async {
+    final source = _FakeAcademicDataSource();
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    final credentialStore = _MemoryAcademicCredentialStore();
+    final preferences = _FailingCredentialPreferenceStore();
+    final coordinator = _newCoordinator(
+      controller,
+      credentialStore,
+      preferences,
+    );
+
+    final result = await coordinator.login(
+      studentId: '2026000001',
+      password: 'secret',
+      saveCredentials: true,
+      saveAcademicData: false,
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.saveCredentialWarning, isTrue);
+    expect(credentialStore.value, isNull);
+    expect(
+      AcademicStoragePreferences(appUserId: 'app-user-a', store: preferences)
+          .saveCredentials,
+      isFalse,
+    );
+    controller.dispose();
+  });
+
   testWidgets('资料加载失败时登录弹窗保留错误并提供重试', (tester) async {
     final source = _FakeAcademicDataSource(
       profileError: const ProtocolChangedException(),
@@ -487,6 +517,16 @@ final class _MemoryAcademicCredentialStore implements AcademicCredentialStore {
   @override
   Future<void> delete(String appUserId) async {
     value = null;
+  }
+}
+
+final class _FailingCredentialPreferenceStore extends MemoryPreferencesStore {
+  @override
+  Future<bool> setBool(String key, bool value) {
+    if (key.startsWith('academic_save_credentials_') && value) {
+      return Future<bool>.value(false);
+    }
+    return super.setBool(key, value);
   }
 }
 

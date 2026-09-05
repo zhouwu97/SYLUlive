@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/data/datasource/legacy_server_data_source.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -20,6 +21,11 @@ void main() {
 
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
+    AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+  });
+
+  tearDown(() {
+    AcademicPersistenceRegistry.clear('app-user-a');
   });
 
   test('本机模式下详情类能力经 SessionController 读取且不请求旧代理', () async {

@@ -26,10 +26,10 @@ final class AcademicPersistenceRegistry {
   static final Map<String, Future<void>> _readiness = <String, Future<void>>{};
 
   static bool allowsWrite(String appUserId) =>
-      _enabled[appUserId.trim()] ?? true;
+      _enabled[appUserId.trim()] ?? false;
 
   static bool allowsRead(String appUserId) =>
-      _readable[appUserId.trim()] ?? allowsWrite(appUserId);
+      _readable[appUserId.trim()] ?? false;
 
   static void set(String appUserId, {required bool enabled}) {
     final key = appUserId.trim();

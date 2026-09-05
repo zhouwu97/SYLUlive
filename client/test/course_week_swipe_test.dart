@@ -9,6 +9,7 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
@@ -142,6 +143,14 @@ DateTime _mondayOf(DateTime d) {
 }
 
 void main() {
+  setUp(() {
+    AcademicPersistenceRegistry.set('1', enabled: true);
+  });
+
+  tearDown(() {
+    AcademicPersistenceRegistry.clear('1');
+  });
+
   testWidgets('课表中部横滑切周', (tester) async {
     final page = await _pumpCourse(tester);
 

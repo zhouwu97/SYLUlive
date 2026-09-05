@@ -14,18 +14,21 @@ final class AcademicLoginDialog extends StatefulWidget {
     required this.controller,
     this.coordinator,
     this.initialStudentId,
+    this.initialSaveCredentials = false,
     super.key,
   });
 
   final AcademicSessionController controller;
   final AcademicLoginCoordinator? coordinator;
   final String? initialStudentId;
+  final bool initialSaveCredentials;
 
   static Future<bool?> show(
     BuildContext context, {
     required AcademicSessionController controller,
     AcademicLoginCoordinator? coordinator,
     String? initialStudentId,
+    bool initialSaveCredentials = false,
   }) {
     return showDialog<bool>(
       context: context,
@@ -34,6 +37,7 @@ final class AcademicLoginDialog extends StatefulWidget {
         controller: controller,
         coordinator: coordinator,
         initialStudentId: initialStudentId,
+        initialSaveCredentials: initialSaveCredentials,
       ),
     );
   }
@@ -88,7 +92,8 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         (initial.isEmpty || initial == saved.studentId.trim());
     setState(() {
       _loadingPreferences = false;
-      _saveCredentials = preferences.saveCredentials && saved != null;
+      _saveCredentials = widget.initialSaveCredentials ||
+          (preferences.saveCredentials && saved != null);
       _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
       _savedCredentialStudentId = saved?.studentId.trim();
       _usingSavedCredential = canUseSaved;

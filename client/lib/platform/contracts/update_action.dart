@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:dio/dio.dart';
+import 'package:crypto/crypto.dart' as crypto;
 
 import '../../models/app_update_info.dart';
 import '../app_platform.dart';
@@ -15,15 +17,52 @@ enum AppUpdateActionResult {
   externalStoreOpened,
 }
 
+/// 已准备好的更新包及其服务端发布元数据。
+///
+/// 只有元数据和文件内容都仍匹配当前发布信息时，才允许跨一次更新操作复用。
+class PreparedUpdatePackage {
+  const PreparedUpdatePackage({
+    required this.file,
+    required this.versionCode,
+    required this.sha256,
+    required this.fileSize,
+  });
+
+  final File file;
+  final int versionCode;
+  final String sha256;
+  final int fileSize;
+
+  /// 校验包是否仍属于当前发布，避免新版本安装流程复用旧 APK。
+  Future<bool> isValidFor(AppUpdateInfo info) async {
+    if (versionCode != info.latestVersionCode ||
+        fileSize != info.fileSize ||
+        sha256.toLowerCase() != info.sha256.toLowerCase()) {
+      return false;
+    }
+    try {
+      if (!await file.exists() || await file.length() != fileSize) return false;
+      final actualSha = await crypto.sha256.bind(file.openRead()).first;
+      return actualSha.toString().toLowerCase() == info.sha256.toLowerCase();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> deleteIfExists() async {
+    if (await file.exists()) await file.delete();
+  }
+}
+
 abstract interface class AppUpdateAction {
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
-    File? existingApk,
+    PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   });
 
-  File? get readyApk;
+  PreparedUpdatePackage? get readyPackage;
 
   factory AppUpdateAction.current(AppUpdateInfo info, AppInstaller installer,
       AppUpdateDownloadService downloadService) {
@@ -56,12 +95,12 @@ class UnsupportedUpdateAction implements AppUpdateAction {
   const UnsupportedUpdateAction();
 
   @override
-  File? get readyApk => null;
+  PreparedUpdatePackage? get readyPackage => null;
 
   @override
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
-    File? existingApk,
+    PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -73,12 +112,12 @@ class OhosMarketUpdateAction implements AppUpdateAction {
   const OhosMarketUpdateAction();
 
   @override
-  File? get readyApk => null;
+  PreparedUpdatePackage? get readyPackage => null;
 
   @override
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
-    File? existingApk,
+    PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -105,12 +144,12 @@ class IOSAppStoreUpdateAction implements AppUpdateAction {
   const IOSAppStoreUpdateAction();
 
   @override
-  File? get readyApk => null;
+  PreparedUpdatePackage? get readyPackage => null;
 
   @override
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
-    File? existingApk,
+    PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -133,29 +172,47 @@ class AndroidApkUpdateAction implements AppUpdateAction {
 
   AndroidApkUpdateAction(this._installer, this._downloadService);
 
-  File? _downloadedApk;
+  PreparedUpdatePackage? _preparedPackage;
 
   @override
-  File? get readyApk => _downloadedApk;
+  PreparedUpdatePackage? get readyPackage => _preparedPackage;
 
   @override
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
-    File? existingApk,
+    PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    // 1. Download or use existing
-    File? apk = existingApk;
-    if (apk == null || !await apk.exists()) {
+    // 1. 仅复用仍与当前发布信息完全匹配的包，避免检查期间版本变化时安装旧 APK。
+    var preparedPackage = existingPackage;
+    if (preparedPackage == null || !await preparedPackage.isValidFor(info)) {
+      if (preparedPackage != null) {
+        try {
+          await preparedPackage.deleteIfExists();
+        } catch (error) {
+          // 旧包清理失败不应阻断重新下载；新包校验成功后仍可继续安装。
+          debugPrint('清理失效更新包失败: ${error.runtimeType}');
+        }
+      }
       try {
-        apk = await _downloadService.download(
+        final apk = await _downloadService.download(
           url: info.downloadUrl,
           expectedSize: info.fileSize,
           expectedSha256: info.sha256.toLowerCase(),
           cancelToken: cancelToken,
           onProgress: onProgress,
         );
+        final downloadedPackage = PreparedUpdatePackage(
+          file: apk,
+          versionCode: info.latestVersionCode,
+          sha256: info.sha256,
+          fileSize: info.fileSize,
+        );
+        if (!await downloadedPackage.isValidFor(info)) {
+          throw StateError('更新包校验失败');
+        }
+        preparedPackage = downloadedPackage;
       } catch (e) {
         if (cancelToken?.isCancelled ?? false) {
           throw StateError('用户暂停下载');
@@ -164,7 +221,7 @@ class AndroidApkUpdateAction implements AppUpdateAction {
       }
     }
 
-    _downloadedApk = apk;
+    _preparedPackage = preparedPackage;
 
     // 2. Check Permission
     if (!await _installer.canInstallPackages()) {
@@ -174,8 +231,8 @@ class AndroidApkUpdateAction implements AppUpdateAction {
 
     // 3. Install
     try {
-      await _installer.installApk(apk);
-      _downloadedApk = null;
+      await _installer.installApk(preparedPackage.file);
+      _preparedPackage = null;
       return AppUpdateActionResult.installerOpened;
     } on PlatformException catch (e) {
       throw StateError(e.message ?? '无法打开系统安装器');

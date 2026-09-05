@@ -1,16 +1,12 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../models/app_update_info.dart';
 import '../platform/app_installer.dart';
 import '../platform/app_platform.dart';
 import '../platform/contracts/update_action.dart';
-import '../platform/platform_capabilities.dart';
 import 'app_update_api.dart';
 import 'app_update_cache.dart';
 import 'app_update_download_service.dart';
@@ -33,14 +29,15 @@ class AppVersionHeaders {
   static Future<AppVersionHeaders>? _loading;
 
   // 鸿蒙插件未接入 package_info_plus 时，仍须放行业务网络请求。
-  // 正式接入后构建脚本可用 dart-define 覆盖这两个兜底值。
+  // 正式构建由 build_harmony.ps1 注入版本；兜底值保持与当前 pubspec 一致，
+  // 防止直接构建 HAP 时把旧版本误报给服务端。
   static const _fallbackVersionName = String.fromEnvironment(
     'APP_VERSION_NAME',
-    defaultValue: '1.6.2',
+    defaultValue: '1.6.13',
   );
   static const _fallbackVersionCode = int.fromEnvironment(
     'APP_VERSION_CODE',
-    defaultValue: 1602,
+    defaultValue: 1613,
   );
 
   final String versionName;
@@ -119,9 +116,6 @@ class AppUpdateCoordinator extends ChangeNotifier {
   AppUpdatePhase _phase = AppUpdatePhase.initializing;
   AppUpdateInfo? _info;
   AppDownloadProgress? _downloadProgress;
-  File? _downloadedApk;
-  int? _downloadedVersionCode;
-  String? _downloadedSha256;
   String? _errorMessage;
   DateTime? _lastSuccessfulCheckAt;
   bool _initialized = false;
@@ -333,11 +327,12 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final oldApk = _currentAction?.readyApk;
-      _currentAction = AppUpdateAction.current(info, _installer, _downloadService);
+      final oldPackage = _currentAction?.readyPackage;
+      _currentAction =
+          AppUpdateAction.current(info, _installer, _downloadService);
       final result = await _currentAction!.execute(
         info,
-        existingApk: oldApk,
+        existingPackage: oldPackage,
         cancelToken: _downloadCancelToken,
         onProgress: (progress) {
           _downloadProgress = progress;

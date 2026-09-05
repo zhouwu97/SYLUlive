@@ -503,14 +503,44 @@ class EduProvider extends ChangeNotifier {
             appUserId: oldUserId,
             sourceAccountId: oldSourceAccountId,
           );
-    await _academicSessionController?.resetSession();
-    clearMemoryForAccountTransition();
 
+    Object? cleanupError;
+    Future<void> runCleanupStep(
+      String label,
+      Future<void> Function() step,
+    ) async {
+      try {
+        await step();
+      } catch (error) {
+        cleanupError ??= error;
+        debugPrint('$label失败: ${error.runtimeType}');
+      }
+    }
+
+    await runCleanupStep(
+      '重置本机教务会话',
+      () async {
+        final controller = _academicSessionController;
+        if (controller != null) await controller.resetSession();
+      },
+    );
+    await runCleanupStep(
+      '清理教务内存状态',
+      () async => clearMemoryForAccountTransition(),
+    );
     if (academicStore != null) {
-      await academicStore.clearAll();
+      await runCleanupStep('清理加密教务缓存', academicStore.clearAll);
     }
     if (oldUserId != null && oldUserId.isNotEmpty) {
-      await _clearBoundStatusFor(oldUserId);
+      await runCleanupStep(
+        '撤销本地教务绑定标记',
+        () => _clearBoundStatusFor(oldUserId),
+      );
+    }
+    if (cleanupError != null) {
+      // 身份撤销已独立完成；只提示缓存清理异常，避免失败异常阻断退出流程。
+      _errorMessage = '本地教务缓存清理未完成，请稍后重试';
+      notifyListeners();
     }
   }
 

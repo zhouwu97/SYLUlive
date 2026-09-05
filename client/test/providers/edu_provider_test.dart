@@ -9,6 +9,7 @@ import 'package:shenliyuan/features/academic/application/academic_session_contro
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/models/edu_grade.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
@@ -305,6 +306,33 @@ void main() {
       fixture.dispose();
     });
 
+    test('加密缓存清理失败时仍撤销本地教务绑定标记', () async {
+      final repository = _FakeAcademicRepository();
+      final controller = AcademicSessionController(
+        repository: repository,
+        cleanupCoordinator: AccountSessionCleanupCoordinator(),
+      );
+      final failingStore = _FailingClearSnapshotStore();
+      final provider = EduProvider(
+        Dio(),
+        (_) => failingStore,
+      )..setAcademicSessionController(controller);
+      await controller.syncAppUser('app-user-a');
+      await controller.login(studentId: '2403130233', password: 'secret');
+      provider.setUserId('app-user-a');
+      await provider.ensureStatusLoaded();
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setBool('edu_bound_app-user-a', true);
+
+      await provider.clearLocalSession();
+
+      expect(provider.isBound, isFalse);
+      expect(prefs.getBool('edu_bound_app-user-a'), isNull);
+      expect(provider.errorMessage, contains('缓存清理'));
+      provider.dispose();
+      controller.dispose();
+    });
+
     test('本机成绩错误不会写入缓存', () async {
       final fixture = await createFixture(
         gradeError: const NetworkException(message: '教务系统暂时不可用'),
@@ -331,6 +359,41 @@ final class _EduFixture {
     provider.dispose();
     controller.dispose();
   }
+}
+
+final class _FailingClearSnapshotStore implements AccountScopedSnapshotStore {
+  @override
+  String get accountFingerprint => 'failing-clear-account';
+
+  @override
+  Future<void> clearUser() async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<void> deleteType(PersonalDataType type) async {
+    throw StateError('模拟保险箱删除失败');
+  }
+
+  @override
+  Future<PersonalSnapshot?> read({
+    required PersonalDataType type,
+    required String sourceSystem,
+    required String sourceAccountId,
+  }) async =>
+      null;
+
+  @override
+  Future<void> write({
+    required PersonalDataType type,
+    required int schemaVersion,
+    required String sourceSystem,
+    required String sourceAccountId,
+    required Map<String, dynamic> payload,
+    DateTime? fetchedAt,
+    DateTime? expiresAt,
+  }) async {}
 }
 
 final class _FakeAcademicRepository implements AcademicRepository {

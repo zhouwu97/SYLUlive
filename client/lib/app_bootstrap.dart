@@ -76,8 +76,10 @@ import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
 import 'services/emoji_favorite_repository.dart';
 import 'services/emoji_favorite_service.dart';
+import 'services/browser_credentials_adapter.dart';
 import 'features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'features/ai_device_bridge/device_tool_worker.dart';
+
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
@@ -95,6 +97,11 @@ export 'widgets/global_background_wrapper.dart'
         GlobalBackgroundWrapper,
         PredictiveBackGate,
         backgroundWrapperKey;
+
+const _schoolDeviceCapabilityCut = bool.fromEnvironment(
+  'SCHOOL_DEVICE_CAPABILITY_CUT',
+  defaultValue: true,
+);
 
 String _hashError(
   String level,
@@ -641,6 +648,7 @@ Future<bool> _handleDeviceToolJobNotification(
 ) async {
   final extras = extractJPushExtras(message);
   if (extras['type'] != 'ai_device_job') return false;
+  if (_schoolDeviceCapabilityCut) return true;
   final jobId = extras['job_id'];
   if (jobId is String && RegExp(r'^[0-9a-fA-F-]{1,36}$').hasMatch(jobId)) {
     try {
@@ -1272,6 +1280,7 @@ Dio getSharedDio() {
         sendTimeout: ApiConstants.sendTimeout,
       ),
     );
+    configureBrowserCredentials(dio);
 
     // 本机教务使用 JiaowuClient；共享 App Dio 上的旧教务服务器出口统一阻断。
     dio.interceptors.add(const AcademicServerAccessGuard());
@@ -1283,7 +1292,6 @@ Dio getSharedDio() {
         onRequest: (options, handler) async {
           if (kIsWeb) {
             // 浏览器认证只使用服务端 HttpOnly Cookie；跨源部署必须显式带凭据。
-            options.extra['withCredentials'] = true;
             options.headers['X-Auth-Transport'] = 'cookie';
           }
           final requestId = options.headers['X-Request-ID']?.toString().trim();
@@ -1473,9 +1481,11 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const DeviceToolBridgeHost(
-        child: _WidgetDeepLinkHandler(child: _AppContent()),
-      ),
+      child: _schoolDeviceCapabilityCut
+          ? const _WidgetDeepLinkHandler(child: _AppContent())
+          : const DeviceToolBridgeHost(
+              child: _WidgetDeepLinkHandler(child: _AppContent()),
+            ),
     );
   }
 }

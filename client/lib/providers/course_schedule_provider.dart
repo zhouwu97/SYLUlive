@@ -12,6 +12,7 @@ import '../features/campus_data/storage/schedule_cache_store.dart';
 import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
+import '../utils/deterministic_course_id.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -574,6 +575,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       _hiddenCourseIds = snapshot?.hiddenCourseIds.toSet() ?? <int>{};
     }
     if (!_isCurrentOperation(operation)) return 0;
+    final hiddenCourseIdsBeforeMigration = Set<int>.of(_hiddenCourseIds);
 
     final customCourses = _courses.where((c) => c.id < 0).toList();
     final parsedCourses = <CourseBlock>[...customCourses];
@@ -582,13 +584,20 @@ class CourseScheduleProvider extends ChangeNotifier {
     for (final rawCourse in rawCourses) {
       try {
         final parsed = _courseFromFetchedMap(rawCourse);
-        if (!_hiddenCourseIds.contains(parsed.id)) {
+        if (!_isCourseHidden(parsed)) {
           parsedCourses.add(parsed);
           importedCount++;
         }
       } catch (e) {
         debugPrint('解析课程失败: ${e.runtimeType}');
       }
+    }
+
+    if (!_sameCourseIdSet(
+      hiddenCourseIdsBeforeMigration,
+      _hiddenCourseIds,
+    )) {
+      await _saveOperationHiddenCourses(operation, _hiddenCourseIds);
     }
 
     debugPrint(
@@ -626,6 +635,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     final canonical = course.toCanonicalJson();
     return {
+      'course_code': canonical['courseCode'] ?? canonical['course_code'] ?? '',
       'name': course.name,
       'teacher': course.teacher,
       'location': course.location,
@@ -644,6 +654,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       'courseName',
       'kcmc',
       'title',
+    ]);
+    final courseCode = _firstString(map, [
+      'course_code',
+      'courseCode',
+      'course_id',
+      'courseId',
+      'class_id',
+      'classId',
+      'jxb_id',
     ]);
 
     final time = _requiredInt(
@@ -696,23 +715,52 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final weeks = _parseWeeks(map['weeks'] ?? map['week_list'] ?? map['zcd']);
 
-    // 生成稳定的正数 ID
-    final idStr = '$name-$weekday-$time-$endTime-$teacher-$loc';
-    int id = idStr.hashCode.abs();
-    if (id == 0) id = 1;
-
-    return CourseBlock(
-      id: id,
-      courseCode: '',
+    final id = deterministicCourseId(
+      courseCode: courseCode,
       name: name,
       teacher: teacher,
       location: loc,
-      color: _colorPool[name.hashCode.abs() % _colorPool.length],
       weekday: weekday,
       startSection: time,
       endSection: endTime,
       weeks: weeks,
     );
+
+    return CourseBlock(
+      id: id,
+      courseCode: courseCode,
+      name: name,
+      teacher: teacher,
+      location: loc,
+      color: _colorPool[deterministicCourseColorIndex(name, _colorPool.length)],
+      weekday: weekday,
+      startSection: time,
+      endSection: endTime,
+      weeks: weeks,
+    );
+  }
+
+  int _legacyCourseId(CourseBlock course) {
+    final raw =
+        '${course.name}-${course.weekday}-${course.startSection}-${course.endSection}-${course.teacher ?? ''}-${course.location ?? ''}';
+    var id = raw.hashCode.abs();
+    if (id == 0) id = 1;
+    return id;
+  }
+
+  /// 兼容旧版用 String.hashCode 生成的隐藏课程 ID，并在命中时迁移到新 ID。
+  bool _isCourseHidden(CourseBlock course) {
+    if (_hiddenCourseIds.contains(course.id)) return true;
+    final legacyId = _legacyCourseId(course);
+    if (legacyId == course.id || !_hiddenCourseIds.remove(legacyId)) {
+      return false;
+    }
+    _hiddenCourseIds.add(course.id);
+    return true;
+  }
+
+  bool _sameCourseIdSet(Set<int> left, Set<int> right) {
+    return left.length == right.length && left.containsAll(right);
   }
 
   String _firstString(Map<String, dynamic> map, List<String> keys) {
@@ -881,6 +929,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     final hiddenSnapshot = await _loadOperationSnapshot(operation);
     if (!_isCurrentOperation(operation)) return;
     _hiddenCourseIds = hiddenSnapshot?.hiddenCourseIds.toSet() ?? <int>{};
+    final hiddenCourseIdsBeforeMigration = Set<int>.of(_hiddenCourseIds);
 
     // 缓存未命中或强制刷新 → 准备网络请求
     if (forceRefresh) {
@@ -927,10 +976,21 @@ class CourseScheduleProvider extends ChangeNotifier {
               _courses = backupCourses;
               _buildGrid();
             } else {
-              _courses = rawCourses
-                  .map(_courseFromFetchedMap)
-                  .where((c) => !_hiddenCourseIds.contains(c.id))
-                  .toList();
+              final fetchedCourses = <CourseBlock>[];
+              for (final rawCourse in rawCourses) {
+                final course = _courseFromFetchedMap(rawCourse);
+                if (!_isCourseHidden(course)) fetchedCourses.add(course);
+              }
+              _courses = fetchedCourses;
+              if (!_sameCourseIdSet(
+                hiddenCourseIdsBeforeMigration,
+                _hiddenCourseIds,
+              )) {
+                await _saveOperationHiddenCourses(
+                  operation,
+                  _hiddenCourseIds,
+                );
+              }
               _buildGrid();
               networkSuccess = true;
             }
@@ -1090,7 +1150,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? location,
   }) async {
     final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
-    final colorIdx = name.hashCode.abs() % _colorPool.length;
+    final colorIdx = deterministicCourseColorIndex(name, _colorPool.length);
     final newId = -(DateTime.now().millisecondsSinceEpoch * 100 +
         _courses.length); // 负数ID区分自定义课程
 

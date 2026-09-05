@@ -4,12 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // newCourseEvaluationTestHandler 构造不依赖数据库的处理器。
@@ -90,6 +95,97 @@ func TestCourseEvaluationRequiresAuthenticatedUser(t *testing.T) {
 		t.Fatalf("未登录应返回 403，状态码=%d 响应=%s", recorder.Code, recorder.Body.String())
 	}
 	assertCourseEvaluationCode(t, recorder, services.CodeCourseEvaluationForbidden)
+}
+
+func TestCourseEvaluationSubjectDetailUsesTheSameRatingStatsAsList(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "course-evaluation.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开测试数据库失败: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("获取测试数据库连接失败: %v", err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&models.CourseSubject{}, &models.Teacher{}, &models.TeacherRating{}); err != nil {
+		t.Fatalf("初始化测试数据库失败: %v", err)
+	}
+
+	subject := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	if err := db.Create(&subject).Error; err != nil {
+		t.Fatalf("创建测试学科失败: %v", err)
+	}
+	teacherIDs := make([]uint, 0, 2)
+	for _, name := range []string{"张老师", "李老师"} {
+		teacher := models.Teacher{
+			Name:            name,
+			Course:          subject.Name,
+			Verified:        true,
+			CourseSubjectID: &subject.ID,
+			NameNormalized:  models.NormalizeTeacherName(name),
+		}
+		if err := db.Create(&teacher).Error; err != nil {
+			t.Fatalf("创建测试教师失败: %v", err)
+		}
+		teacherIDs = append(teacherIDs, teacher.ID)
+	}
+	for _, rating := range []models.TeacherRating{
+		{TeacherID: teacherIDs[0], UserID: 1, Star: 5, Status: "normal"},
+		{TeacherID: teacherIDs[1], UserID: 2, Star: 4, Status: "normal"},
+		{TeacherID: teacherIDs[0], UserID: 3, Star: 1, Status: "pending"},
+	} {
+		if err := db.Create(&rating).Error; err != nil {
+			t.Fatalf("创建测试评价失败: %v", err)
+		}
+	}
+
+	handler := NewCourseEvaluationHandler(db)
+	listRecorder := httptest.NewRecorder()
+	listContext, _ := gin.CreateTestContext(listRecorder)
+	listContext.Request = httptest.NewRequest(http.MethodGet, "/api/course-subjects", nil)
+	handler.ListSubjects(listContext)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("学科列表状态码=%d，响应=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+	var list []courseSubjectView
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &list); err != nil {
+		t.Fatalf("学科列表响应解析失败: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("学科列表数量=%d，期望 1", len(list))
+	}
+
+	detailRecorder := httptest.NewRecorder()
+	detailContext, _ := gin.CreateTestContext(detailRecorder)
+	detailContext.Request = httptest.NewRequest(
+		http.MethodGet,
+		"/api/course-subjects/"+strconv.FormatUint(uint64(subject.ID), 10),
+		nil,
+	)
+	detailContext.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(subject.ID), 10)}}
+	handler.GetSubject(detailContext)
+	if detailRecorder.Code != http.StatusOK {
+		t.Fatalf("学科详情状态码=%d，响应=%s", detailRecorder.Code, detailRecorder.Body.String())
+	}
+	var detail courseSubjectDetailView
+	if err := json.Unmarshal(detailRecorder.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("学科详情响应解析失败: %v", err)
+	}
+
+	if list[0].RatingCount != 2 || list[0].AverageStar != 4.5 || list[0].TeacherCount != 2 {
+		t.Fatalf("学科列表统计异常: %+v", list[0])
+	}
+	if detail.RatingCount != list[0].RatingCount || detail.AverageStar != list[0].AverageStar || detail.TeacherCount != list[0].TeacherCount {
+		t.Fatalf("学科详情统计未与列表统一: list=%+v detail=%+v", list[0], detail.courseSubjectView)
+	}
+	if detail.Name != subject.Name {
+		t.Fatalf("学科详情名称=%q，期望 %q", detail.Name, subject.Name)
+	}
 }
 
 // TestCourseEvaluationResolveRoutePrecedesSubjectID 验证 resolve 路由优先于 /:id。

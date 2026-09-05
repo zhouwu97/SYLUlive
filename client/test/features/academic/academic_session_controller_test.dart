@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
@@ -8,6 +9,7 @@ import 'package:shenliyuan/features/academic/application/academic_session_contro
 import 'package:shenliyuan/features/academic/domain/academic_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_failure.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
+import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
@@ -175,6 +177,28 @@ void main() {
       controller.dispose();
     });
 
+    test('认证成功但资料加载失败时保留认证并暴露资料错误状态', () async {
+      final source = _FakeAcademicDataSource(
+        profileError: const ProtocolChangedException(),
+      );
+      final controller = _newController(source);
+
+      await controller.syncAppUser('app-user-a');
+      final result = await controller.login(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+
+      expect(result, isA<LoginSuccess>());
+      expect(controller.isAuthenticated, isTrue);
+      expect(controller.profile, isNull);
+      expect(controller.profileStatus, AcademicProfileStatus.error);
+      expect(controller.hasProfileError, isTrue);
+      expect(controller.failure?.kind, AcademicFailureKind.protocolChanged);
+
+      controller.dispose();
+    });
+
     test('验证码刷新会话失效时退出 awaitingCaptcha', () async {
       final source = _FakeAcademicDataSource(
         captchaError: const SessionExpiredException(),
@@ -255,6 +279,34 @@ void main() {
     expect(legacy.profileCalls, 0);
 
     repository.close();
+  });
+
+  testWidgets('资料加载失败时登录弹窗保留错误并提供重试', (tester) async {
+    final source = _FakeAcademicDataSource(
+      profileError: const ProtocolChangedException(),
+    );
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AcademicLoginDialog(controller: controller),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
+    await tester.enterText(find.byType(TextFormField).at(1), 'secret');
+    await tester.tap(find.text('同意本机保存教务资料'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AcademicLoginDialog), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(find.widgetWithText(TextButton, '重试资料'), findsOneWidget);
+
+    controller.dispose();
   });
 }
 

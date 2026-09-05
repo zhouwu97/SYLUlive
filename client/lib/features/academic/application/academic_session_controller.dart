@@ -16,6 +16,16 @@ enum AcademicSessionStatus {
   error,
 }
 
+/// 教务个人资料的独立加载状态。
+///
+/// 学校认证成功只代表 Cookie 会话有效，不能推导个人资料页面也一定可用。
+enum AcademicProfileStatus {
+  idle,
+  loading,
+  loaded,
+  error,
+}
+
 /// 主应用教务会话控制器。
 ///
 /// 控制器只持有当前运行时状态，不持久化教务密码或 Cookie。所有网络操作
@@ -43,6 +53,7 @@ final class AcademicSessionController extends ChangeNotifier {
   GradeFetchResult? _lastGrades;
   AcademicFailure? _failure;
   AcademicSessionStatus _status = AcademicSessionStatus.idle;
+  AcademicProfileStatus _profileStatus = AcademicProfileStatus.idle;
   int _accountGeneration = 0;
   bool _sessionResetPending = false;
   bool _disposed = false;
@@ -58,6 +69,10 @@ final class AcademicSessionController extends ChangeNotifier {
   GradeFetchResult? get lastGrades => _lastGrades;
   AcademicFailure? get failure => _failure;
   AcademicSessionStatus get status => _status;
+  AcademicProfileStatus get profileStatus => _profileStatus;
+  bool get isProfileLoaded => _profileStatus == AcademicProfileStatus.loaded;
+  bool get hasProfileError =>
+      _profileStatus == AcademicProfileStatus.error && _profile == null;
   bool get isBusy =>
       _status == AcademicSessionStatus.authenticating ||
       _status == AcademicSessionStatus.loading;
@@ -200,19 +215,22 @@ final class AcademicSessionController extends ChangeNotifier {
     return _enqueue(() async {
       if (!_canReadAcademicData()) return null;
       _status = AcademicSessionStatus.loading;
+      _profile = null;
+      _profileStatus = AcademicProfileStatus.loading;
       _failure = null;
       _notifyListeners();
       try {
         final profile = await _repository.getProfile();
         if (generation != _accountGeneration || _disposed) return null;
         _profile = profile;
+        _profileStatus = AcademicProfileStatus.loaded;
         _studentId ??= _repository.studentId;
         _status = AcademicSessionStatus.authenticated;
         _failure = null;
         _notifyListeners();
         return profile;
       } catch (error) {
-        _handleDataFailure(error, generation);
+        _handleProfileFailure(error, generation);
         return null;
       }
     });
@@ -304,6 +322,8 @@ final class AcademicSessionController extends ChangeNotifier {
     switch (result) {
       case LoginSuccess(:final studentId):
         _studentId = studentId;
+        _profile = null;
+        _profileStatus = AcademicProfileStatus.loading;
         _captchaChallenge = null;
         _failure = null;
         _status = AcademicSessionStatus.authenticated;
@@ -316,11 +336,13 @@ final class AcademicSessionController extends ChangeNotifier {
             return const LoginPageChanged(message: '教务账号上下文已切换');
           }
           _profile = profile;
+          _profileStatus = AcademicProfileStatus.loaded;
         } catch (error) {
           if (generation != _accountGeneration || _disposed) {
             return const LoginPageChanged(message: '教务账号上下文已切换');
           }
           final failure = AcademicFailure.fromException(error);
+          _profileStatus = AcademicProfileStatus.error;
           _failure = failure;
           if (failure.kind == AcademicFailureKind.sessionExpired) {
             _status = AcademicSessionStatus.error;
@@ -451,9 +473,22 @@ final class AcademicSessionController extends ChangeNotifier {
     _notifyListeners();
   }
 
+  void _handleProfileFailure(Object error, int generation) {
+    if (generation != _accountGeneration || _disposed) return;
+    _profileStatus = AcademicProfileStatus.error;
+    _failure = AcademicFailure.fromException(error);
+    // 认证会话与资料页面是两个独立边界：资料失败时保留有效会话，
+    // 让课表/成绩仍可使用，同时由 UI 明确提示资料需要重试。
+    _status = isAuthenticated
+        ? AcademicSessionStatus.authenticated
+        : AcademicSessionStatus.error;
+    _notifyListeners();
+  }
+
   void _clearViewState(AcademicSessionStatus? nextStatus) {
     _studentId = null;
     _profile = null;
+    _profileStatus = AcademicProfileStatus.idle;
     _captchaChallenge = null;
     _lastCourses = null;
     _lastGrades = null;

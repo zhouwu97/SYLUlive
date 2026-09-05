@@ -69,6 +69,13 @@ void main() {
     );
   });
 
+  test('字体档位按滑块索引保持从小到大的单调顺序', () {
+    expect(
+      AppFontSizePreset.values.map((preset) => preset.scaleFactor).toList(),
+      [0.9, 0.95, 1.0, 1.15, 1.2, 1.3],
+    );
+  });
+
   test('应用倍率叠加在系统非线性缩放结果之上', () {
     const scaler = AppTextScaler(_PiecewiseTextScaler(), 1.15);
 

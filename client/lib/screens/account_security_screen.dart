@@ -304,7 +304,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
 
     final localAcademic = context.watch<AcademicSessionController>();
     final effectiveStudentId = localAcademic.studentId ?? '';
-    final effectiveStudentVerified = localAcademic.isAuthenticated;
+    final profileError = localAcademic.hasProfileError;
+    final effectiveStudentVerified =
+        localAcademic.isAuthenticated && !profileError;
     final loginMethods = (_security?['login_methods'] as List? ?? const [])
         .map((method) => method == 'student_id' ? '学号' : '邮箱')
         .join('、');
@@ -319,14 +321,23 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.verified_user_outlined,
-              title: '学生身份认证',
-              subtitle:
-                  effectiveStudentVerified ? '学号 $effectiveStudentId' : '未完成认证',
+              title: profileError ? '学生身份资料加载失败' : '学生身份认证',
+              subtitle: profileError
+                  ? '教务认证已完成，但个人资料获取失败，请重试'
+                  : effectiveStudentVerified
+                      ? '学号 $effectiveStudentId'
+                      : '未完成认证',
               trailing: SettingsStatusBadge(
-                label: effectiveStudentVerified ? '已认证' : '未认证',
-                type: effectiveStudentVerified
-                    ? SettingsStatusBadgeType.success
-                    : SettingsStatusBadgeType.neutral,
+                label: profileError
+                    ? '资料失败'
+                    : effectiveStudentVerified
+                        ? '已认证'
+                        : '未认证',
+                type: profileError
+                    ? SettingsStatusBadgeType.warning
+                    : effectiveStudentVerified
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.neutral,
               ),
               showChevron: false,
             ),
@@ -345,12 +356,18 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务系统状态',
-              subtitle: '本机直连，不使用服务器教务授权',
+              subtitle: profileError ? '本机直连已认证，但个人资料加载失败' : '本机直连，不使用服务器教务授权',
               trailing: SettingsStatusBadge(
-                label: localAcademic.isAuthenticated ? '本机在线' : '本机未连接',
-                type: localAcademic.isAuthenticated
-                    ? SettingsStatusBadgeType.success
-                    : SettingsStatusBadgeType.neutral,
+                label: profileError
+                    ? '资料失败'
+                    : localAcademic.isAuthenticated
+                        ? '本机在线'
+                        : '本机未连接',
+                type: profileError
+                    ? SettingsStatusBadgeType.warning
+                    : localAcademic.isAuthenticated
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.neutral,
               ),
               showChevron: false,
             ),
@@ -363,10 +380,16 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.badge_outlined,
-              title: effectiveStudentVerified
-                  ? '主账号：$effectiveStudentId'
-                  : '尚未认证学生',
-              subtitle: effectiveStudentVerified ? '学生身份已认证' : '完成本机教务登录后显示学号',
+              title: profileError
+                  ? '主账号资料待重试'
+                  : effectiveStudentVerified
+                      ? '主账号：$effectiveStudentId'
+                      : '尚未认证学生',
+              subtitle: profileError
+                  ? '教务认证已完成，个人资料加载失败'
+                  : effectiveStudentVerified
+                      ? '学生身份已认证'
+                      : '完成本机教务登录后显示学号',
               showChevron: false,
             ),
             SettingsTile(
@@ -413,28 +436,39 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               icon: localAcademic.isAuthenticated
                   ? Icons.phonelink_lock_outlined
                   : Icons.phonelink_outlined,
-              title: localAcademic.isAuthenticated ? '本机教务：在线' : '本机直连教务',
-              subtitle: localAcademic.isAuthenticated
-                  ? '学号 ${localAcademic.studentId ?? '--'}；Cookie 仅保存在内存中'
-                  : '直接连接学校教务，应用退出或换号时清理会话',
+              title: localAcademic.isAuthenticated
+                  ? profileError
+                      ? '本机教务：资料失败'
+                      : '本机教务：在线'
+                  : '本机直连教务',
+              subtitle: profileError
+                  ? '学号 ${localAcademic.studentId ?? '--'}；个人资料加载失败，可重试'
+                  : localAcademic.isAuthenticated
+                      ? '学号 ${localAcademic.studentId ?? '--'}；Cookie 仅保存在内存中'
+                      : '直接连接学校教务，应用退出或换号时清理会话',
               trailing: SettingsStatusBadge(
-                label: localAcademic.isAuthenticated
-                    ? '在线'
-                    : localAcademic.isAwaitingCaptcha
-                        ? '待验证码'
+                label: profileError
+                    ? '资料失败'
+                    : localAcademic.isAuthenticated
+                        ? '在线'
+                        : localAcademic.isAwaitingCaptcha
+                            ? '待验证码'
+                            : localAcademic.status ==
+                                    AcademicSessionStatus.error
+                                ? '需重试'
+                                : '未连接',
+                type: profileError
+                    ? SettingsStatusBadgeType.warning
+                    : localAcademic.isAuthenticated
+                        ? SettingsStatusBadgeType.success
                         : localAcademic.status == AcademicSessionStatus.error
-                            ? '需重试'
-                            : '未连接',
-                type: localAcademic.isAuthenticated
-                    ? SettingsStatusBadgeType.success
-                    : localAcademic.status == AcademicSessionStatus.error
-                        ? SettingsStatusBadgeType.warning
-                        : SettingsStatusBadgeType.neutral,
+                            ? SettingsStatusBadgeType.warning
+                            : SettingsStatusBadgeType.neutral,
               ),
-              onTap: localAcademic.isAuthenticated
+              onTap: localAcademic.isAuthenticated && !profileError
                   ? null
                   : _showLocalAcademicLogin,
-              showChevron: !localAcademic.isAuthenticated,
+              showChevron: !localAcademic.isAuthenticated || profileError,
             ),
             if (localAcademic.isAuthenticated)
               SettingsTile(
@@ -445,7 +479,11 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               ),
             SettingsTile(
               icon: Icons.hub_outlined,
-              title: localAcademic.isAuthenticated ? '本机教务：已连接' : '本机教务：未连接',
+              title: localAcademic.isAuthenticated
+                  ? profileError
+                      ? '本机教务：资料待重试'
+                      : '本机教务：已连接'
+                  : '本机教务：未连接',
               subtitle: 'Cookie 仅保存在本机内存，不使用服务器教务会话',
               showChevron: false,
             ),

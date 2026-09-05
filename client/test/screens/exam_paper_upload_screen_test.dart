@@ -197,7 +197,9 @@ void main() {
     await tester.tap(find.text('确认投稿'));
     await tester.pumpAndSettle();
 
-    expect(find.text('投稿成功：操作系统 · 2025-2026'), findsOneWidget);
+    final expectedAcademicYear =
+        ExamPaperMetadata.academicYears(DateTime.now()).first;
+    expect(find.text('投稿成功：操作系统 · $expectedAcademicYear'), findsOneWidget);
     expect(find.byType(ExamPaperUploadScreen), findsNothing);
   });
 }

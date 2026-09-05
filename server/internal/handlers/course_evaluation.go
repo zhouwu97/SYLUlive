@@ -66,6 +66,53 @@ type courseSubjectDetailView struct {
 	Teachers []courseSubjectTeacherView `json:"teachers"`
 }
 
+// courseSubjectStatsRow 是列表与详情共用的学科统计查询结果。
+// 评分归属于教师评价，必须在同一处统一审核状态、评价状态和软删除条件，
+// 避免列表与详情各自维护一套容易漂移的聚合 SQL。
+type courseSubjectStatsRow struct {
+	ID           uint    `gorm:"column:id"`
+	Name         string  `gorm:"column:name"`
+	TeacherCount int     `gorm:"column:teacher_count"`
+	AverageStar  float64 `gorm:"column:average_star"`
+	RatingCount  int     `gorm:"column:rating_count"`
+}
+
+func (row courseSubjectStatsRow) view() courseSubjectView {
+	return courseSubjectView{
+		ID:           row.ID,
+		Name:         row.Name,
+		TeacherCount: row.TeacherCount,
+		AverageStar:  row.AverageStar,
+		RatingCount:  row.RatingCount,
+	}
+}
+
+// loadSubjectStats 加载已审核学科及其公开评价统计。
+// subjectID 为空时用于列表，非空时用于详情；两条入口因此始终共享相同聚合口径。
+func (h *CourseEvaluationHandler) loadSubjectStats(subjectID *uint) ([]courseSubjectStatsRow, error) {
+	query := h.db.Table("course_subjects cs").
+		Select(`cs.id AS id,
+			cs.name AS name,
+			COUNT(DISTINCT t.id) AS teacher_count,
+			COUNT(tr.id) AS rating_count,
+			COALESCE(AVG(CAST(tr.star AS FLOAT)), 0) AS average_star`).
+		Joins("LEFT JOIN teachers t ON t.course_subject_id = cs.id AND t.verified = ?", true).
+		Joins("LEFT JOIN teacher_ratings tr ON tr.teacher_id = t.id AND tr.status = ? AND tr.deleted_at IS NULL", "normal").
+		Where("cs.verified = ?", true).
+		Group("cs.id, cs.name")
+	if subjectID != nil {
+		query = query.Where("cs.id = ?", *subjectID)
+	} else {
+		query = query.Order("rating_count DESC, average_star DESC, cs.id ASC")
+	}
+
+	var rows []courseSubjectStatsRow
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // respondCourseEvaluationError 把服务层错误统一映射为稳定业务码。
 // 业务码由客户端直接消费，不依赖 HTTP 文本或数据库错误信息。
 func respondCourseEvaluationError(c *gin.Context, err error) {
@@ -211,19 +258,7 @@ func parseCourseEvaluationPage(c *gin.Context) (int, string) {
 
 // ListSubjects 公开学科列表。只返回已审核学科，统计只累计已审核教师的正常评价。
 func (h *CourseEvaluationHandler) ListSubjects(c *gin.Context) {
-	var rows []courseSubjectView
-	err := h.db.Table("course_subjects cs").
-		Select(`cs.id AS id,
-			cs.name AS name,
-			COUNT(DISTINCT t.id) AS teacher_count,
-			COUNT(tr.id) AS rating_count,
-			COALESCE(AVG(CAST(tr.star AS FLOAT)), 0) AS average_star`).
-		Joins("LEFT JOIN teachers t ON t.course_subject_id = cs.id AND t.verified = ?", true).
-		Joins("LEFT JOIN teacher_ratings tr ON tr.teacher_id = t.id AND tr.status = ? AND tr.deleted_at IS NULL", "normal").
-		Where("cs.verified = ?", true).
-		Group("cs.id").
-		Order("rating_count DESC, average_star DESC, cs.id ASC").
-		Find(&rows).Error
+	rows, err := h.loadSubjectStats(nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "获取学科列表失败",
@@ -231,10 +266,11 @@ func (h *CourseEvaluationHandler) ListSubjects(c *gin.Context) {
 		})
 		return
 	}
-	if rows == nil {
-		rows = []courseSubjectView{}
+	views := make([]courseSubjectView, 0, len(rows))
+	for _, row := range rows {
+		views = append(views, row.view())
 	}
-	c.JSON(http.StatusOK, rows)
+	c.JSON(http.StatusOK, views)
 }
 
 // GetSubject 公开学科详情。只返回已审核学科及其已审核教师。
@@ -243,25 +279,22 @@ func (h *CourseEvaluationHandler) GetSubject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var subject courseSubjectView
-	err := h.db.Table("course_subjects").
-		Select("id, name").
-		Where("id = ? AND verified = ?", subjectID, true).
-		First(&subject).Error
+	stats, err := h.loadSubjectStats(&subjectID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			respondCourseEvaluationError(c, &services.CourseEvaluationError{
-				Code:    services.CodeCourseEvaluationNotFound,
-				Message: "学科不存在或未通过审核",
-			})
-			return
-		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "获取学科失败",
 			"code":  services.CodeCourseEvaluationSubjectUnavailable,
 		})
 		return
 	}
+	if len(stats) == 0 {
+		respondCourseEvaluationError(c, &services.CourseEvaluationError{
+			Code:    services.CodeCourseEvaluationNotFound,
+			Message: "学科不存在或未通过审核",
+		})
+		return
+	}
+	subject := stats[0].view()
 
 	var teachers []courseSubjectTeacherView
 	err = h.db.Table("teachers t").
@@ -284,7 +317,6 @@ func (h *CourseEvaluationHandler) GetSubject(c *gin.Context) {
 	if teachers == nil {
 		teachers = []courseSubjectTeacherView{}
 	}
-	subject.TeacherCount = len(teachers)
 
 	c.JSON(http.StatusOK, courseSubjectDetailView{
 		courseSubjectView: subject,

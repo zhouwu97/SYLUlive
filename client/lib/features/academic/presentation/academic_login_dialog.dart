@@ -75,7 +75,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       password: password,
     );
     if (!mounted) return;
-    if (result is LoginSuccess) {
+    if (result is LoginSuccess && _controller.isProfileLoaded) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  Future<void> _retryProfile() async {
+    await _controller.loadProfile();
+    if (!mounted) return;
+    if (_controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
     }
   }
@@ -86,7 +94,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       code: _captchaController.text.trim(),
     );
     if (!mounted) return;
-    if (result is LoginSuccess) {
+    if (result is LoginSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
     }
   }
@@ -105,6 +113,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         final awaitingCaptcha = _controller.isAwaitingCaptcha;
         final challenge = _controller.captchaChallenge;
         final failure = _controller.failure;
+        final profileError = _controller.hasProfileError;
 
         return AlertDialog(
           title: const Text('本机直连教务'),
@@ -192,6 +201,11 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
               onPressed: isBusy ? null : _cancel,
               child: const Text('取消'),
             ),
+            if (profileError)
+              TextButton(
+                onPressed: isBusy ? null : _retryProfile,
+                child: const Text('重试资料'),
+              ),
             if (awaitingCaptcha)
               FilledButton(
                 onPressed: isBusy ? null : _submitCaptcha,

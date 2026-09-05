@@ -199,11 +199,14 @@ class ScheduleCacheStore {
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
     Future<AppPreferencesStore> Function()? preferencesLoader,
-    this.persistenceGate,
+    AcademicPersistenceGate? persistenceGate,
   })  : _snapshotStore = snapshotStore ??
             AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
         _preferencesLoader =
-            preferencesLoader ?? AppPreferencesStore.getInstance;
+            preferencesLoader ?? AppPreferencesStore.getInstance,
+        // 默认绑定账号策略；未知账号由 Registry 失败关闭，禁止意外落盘。
+        persistenceGate =
+            persistenceGate ?? RegistryAcademicPersistenceGate(appUserId);
 
   static const int schemaVersion = 1;
   static const Duration _expiry = Duration(days: 14);
@@ -215,17 +218,15 @@ class ScheduleCacheStore {
   final String sourceAccountId;
   final AccountScopedSnapshotStore _snapshotStore;
   final Future<AppPreferencesStore> Function() _preferencesLoader;
-  final AcademicPersistenceGate? persistenceGate;
+  final AcademicPersistenceGate persistenceGate;
 
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
 
   Future<ScheduleVaultSnapshot?> readSnapshot() async {
     if (!_hasValidNamespace) return null;
-    if (persistenceGate != null) {
-      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
-    }
-    final canRead = persistenceGate?.allowPersonalDataRead ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canRead = persistenceGate.allowPersonalDataRead;
     if (!canRead) {
       return null;
     }
@@ -472,10 +473,8 @@ class ScheduleCacheStore {
     required ScheduleTermSnapshot Function(ScheduleTermSnapshot current) update,
     bool clearNeedsResync = false,
   }) async {
-    if (persistenceGate != null) {
-      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
-    }
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -501,9 +500,7 @@ class ScheduleCacheStore {
   }
 
   Future<Map<String, dynamic>> _readTerms() async {
-    if (persistenceGate != null) {
-      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
-    }
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.schedule,
       sourceSystem: 'edu',

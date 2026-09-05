@@ -259,6 +259,7 @@ func TestEnsureCourseEvaluationSchemaCreatesUniqueIndexes(t *testing.T) {
 		"uq_course_subjects_normalized_name",
 		"uq_teachers_subject_name",
 		"uq_course_evaluation_submission_dedup",
+		"uq_teacher_rating_submission",
 	} {
 		var count int64
 		if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?", name).Scan(&count).Error; err != nil {

@@ -3,6 +3,7 @@ import '../../../campus_data/storage/account_scoped_snapshot_store.dart';
 import '../../../campus_data/storage/erke_cache_store.dart';
 import '../../../campus_data/storage/physical_cache_store.dart';
 import '../../../campus_data/storage/schedule_cache_store.dart';
+import '../../../academic/storage/academic_persistence_gate.dart';
 import '../../../../services/account_session_cleanup_coordinator.dart';
 import '../adapters/academic_gateway_adapter.dart';
 import '../adapters/erke_gateway_adapter.dart';
@@ -52,11 +53,13 @@ class PersonalDataGatewayFactory {
       appUserId: context.appUserId,
       sourceAccountId: context.sourceAccountId,
       snapshotStore: snapshotStore,
+      persistenceGate: RegistryAcademicPersistenceGate(context.appUserId),
     );
     final academicStore = AcademicCacheStore(
       appUserId: context.appUserId,
       sourceAccountId: context.sourceAccountId,
       snapshotStore: snapshotStore,
+      persistenceGate: RegistryAcademicPersistenceGate(context.appUserId),
     );
     return PersonalDataGatewayImpl(
       context: context,

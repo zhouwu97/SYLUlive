@@ -118,9 +118,12 @@ class AcademicCacheStore {
     required this.appUserId,
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
-    this.persistenceGate,
-  }) : _snapshotStore = snapshotStore ??
-            AesGcmAccountScopedSnapshotStore(appUserId: appUserId);
+    AcademicPersistenceGate? persistenceGate,
+  })  : _snapshotStore = snapshotStore ??
+            AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
+        // 默认绑定账号策略；未知账号由 Registry 失败关闭，禁止意外落盘。
+        persistenceGate =
+            persistenceGate ?? RegistryAcademicPersistenceGate(appUserId);
 
   static const int schemaVersion = 2;
   static const Duration _expiry = Duration(days: 30);
@@ -131,17 +134,15 @@ class AcademicCacheStore {
   final String appUserId;
   final String sourceAccountId;
   final AccountScopedSnapshotStore _snapshotStore;
-  final AcademicPersistenceGate? persistenceGate;
+  final AcademicPersistenceGate persistenceGate;
 
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
 
   Future<AcademicVaultSnapshot?> readSnapshot() async {
     if (!_hasValidNamespace) return null;
-    if (persistenceGate != null) {
-      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
-    }
-    final canRead = persistenceGate?.allowPersonalDataRead ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canRead = persistenceGate.allowPersonalDataRead;
     if (!canRead) {
       return null;
     }
@@ -217,7 +218,8 @@ class AcademicCacheStore {
     required List<Map<String, dynamic>> grades,
     DateTime? fetchedAt,
   }) async {
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -245,7 +247,8 @@ class AcademicCacheStore {
     required Map<String, dynamic> data,
     DateTime? fetchedAt,
   }) async {
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -263,7 +266,8 @@ class AcademicCacheStore {
 
   /// 只有所有有效学期均成功请求后才写入完成标记，防止局部成绩被当成完整 GPA 数据。
   Future<void> markGradeSyncComplete() async {
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -280,7 +284,8 @@ class AcademicCacheStore {
     required Map<String, dynamic> data,
     DateTime? fetchedAt,
   }) async {
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -323,7 +328,8 @@ class AcademicCacheStore {
   }
 
   Future<void> writeProfile({required Map<String, dynamic> profile}) async {
-    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    final canWrite = persistenceGate.allowPersonalDataPersistence;
     if (!canWrite) {
       return;
     }
@@ -345,8 +351,8 @@ class AcademicCacheStore {
     required String key,
     required Map<String, dynamic> detail,
   }) async {
-    if (persistenceGate != null &&
-        !persistenceGate!.allowPersonalDataPersistence) {
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    if (!persistenceGate.allowPersonalDataPersistence) {
       return;
     }
     _validateNamespace();
@@ -362,9 +368,7 @@ class AcademicCacheStore {
   Future<void> close() => _snapshotStore.close();
 
   Future<Map<String, dynamic>?> _readPayload() async {
-    if (persistenceGate != null) {
-      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
-    }
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.academic,
       sourceSystem: 'edu',

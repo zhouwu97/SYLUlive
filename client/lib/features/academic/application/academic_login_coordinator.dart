@@ -5,6 +5,7 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 import '../../../platform/contracts/preferences_store.dart';
 import '../storage/academic_credential_store.dart';
 import '../storage/academic_persistence_policy.dart';
+import '../storage/academic_persistence_gate.dart';
 import '../storage/academic_storage_preferences.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
 import '../../campus_data/storage/account_scoped_snapshot_store.dart';
@@ -378,11 +379,13 @@ final class AcademicLoginCoordinator {
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
         snapshotStore: vault,
+        persistenceGate: RegistryAcademicPersistenceGate(appUserId),
       ),
       scheduleStore: ScheduleCacheStore(
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
         snapshotStore: vault,
+        persistenceGate: RegistryAcademicPersistenceGate(appUserId),
       ),
       auxiliaryCleanup: AcademicPersistencePolicy.clearAuxiliaryData,
     );

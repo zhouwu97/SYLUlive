@@ -338,6 +338,7 @@ func (s *CourseEvaluationService) Submit(userID uint, input SubmitInput) (*Submi
 
 	var view *SubmissionView
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		input = canonicalizeTargetNames(tx, input)
 		existing, err := s.findSubmissionByDedupTx(tx, userID, input.CourseName, input.TeacherName)
 		if err != nil {
 			return err
@@ -392,6 +393,7 @@ func (s *CourseEvaluationService) Update(userID, submissionID uint, input Submit
 		if input.Revision != 0 && input.Revision != submission.Revision {
 			return courseEvalErr(CodeCourseEvaluationRevisionConflict, "评价已被更新，请刷新后重试", nil)
 		}
+		input = canonicalizeTargetNames(tx, input)
 		view, err = s.applySubmission(tx, &submission, input, true)
 		return err
 	})
@@ -409,6 +411,11 @@ func (s *CourseEvaluationService) Update(userID, submissionID uint, input Submit
 //   - 候选不确定：返回 course_subject_candidate_required 要求用户确认；
 //   - 不信任客户端提供的任意教师 ID，只接受属于选定学科且已审核的教师。
 func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *models.CourseEvaluationSubmission, input SubmitInput, isUpdate bool) (*SubmissionView, error) {
+	// 先保存旧关联，后续目标变化或重新进入待审核时必须在同一事务内撤销旧公开评分。
+	oldRatingID := submission.TeacherRatingID
+	oldTeacherID := submission.TeacherID
+	oldSubjectID := submission.CourseSubjectID
+	oldStatus := submission.Status
 	subject, candidates, err := s.selectSubject(tx, input)
 	if err != nil {
 		return nil, err
@@ -458,6 +465,28 @@ func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *model
 			return nil, err
 		}
 	}
+	// ID 是关系的唯一来源，展示名称始终使用数据库 canonical 值，避免 ID 与名称不一致污染历史数据。
+	if subject != nil {
+		input.CourseName = subject.Name
+	}
+	if teacher != nil {
+		input.TeacherName = teacher.Name
+	}
+	submission.DedupKey = models.CourseEvaluationDedupKey(
+		submission.UserID,
+		input.CourseName,
+		input.TeacherName,
+	)
+
+	newPublished := subject != nil && teacher != nil && subject.Verified && teacher.Verified
+	teacherChanged := !sameUintPtr(oldTeacherID, teacherIDPtr(teacher))
+	subjectChanged := !sameUintPtr(oldSubjectID, subjectIDPtr(subject))
+	if (oldRatingID != nil || oldStatus == models.CourseEvaluationStatusPublished) &&
+		(!newPublished || teacherChanged || subjectChanged) {
+		if err := deleteSubmissionRatings(tx, submission.ID, oldRatingID); err != nil {
+			return nil, err
+		}
+	}
 
 	switch {
 	case teacher == nil:
@@ -465,7 +494,7 @@ func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *model
 		submission.ProposedTeacherName = input.TeacherName
 		submission.Status = models.CourseEvaluationStatusPending
 		submission.TeacherRatingID = nil
-	case subject != nil && subject.Verified && teacher.Verified:
+	case newPublished:
 		// 已审核学科+已审核教师：先标记为已发布，保存获得稳定 ID 后再 upsert 教师评价。
 		submission.TeacherID = &teacher.ID
 		submission.ProposedTeacherName = ""
@@ -495,6 +524,62 @@ func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *model
 	}
 
 	return s.toSubmissionView(submission)
+}
+
+// canonicalizeTargetNames 只依据客户端提供的实体 ID 读取展示名称；名称字段不再可信。
+func canonicalizeTargetNames(tx *gorm.DB, input SubmitInput) SubmitInput {
+	if input.CourseSubjectID != nil && *input.CourseSubjectID != 0 {
+		var subject models.CourseSubject
+		if err := tx.Select("id", "name").First(&subject, *input.CourseSubjectID).Error; err == nil {
+			input.CourseName = subject.Name
+		}
+	}
+	if input.TeacherID != nil && *input.TeacherID != 0 {
+		var teacher models.Teacher
+		if err := tx.Select("id", "name").First(&teacher, *input.TeacherID).Error; err == nil {
+			input.TeacherName = teacher.Name
+		}
+	}
+	return input
+}
+
+func sameUintPtr(left, right *uint) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func teacherIDPtr(value *models.Teacher) *uint {
+	if value == nil {
+		return nil
+	}
+	id := value.ID
+	return &id
+}
+
+func subjectIDPtr(value *models.CourseSubject) *uint {
+	if value == nil {
+		return nil
+	}
+	id := value.ID
+	return &id
+}
+
+// deleteSubmissionRatings 软删除提交曾经发布的全部评分，保留审计历史但从公开统计中移除。
+func deleteSubmissionRatings(tx *gorm.DB, submissionID uint, ratingID *uint) error {
+	if submissionID == 0 && (ratingID == nil || *ratingID == 0) {
+		return nil
+	}
+	query := tx.Where("course_evaluation_submission_id = ?", submissionID)
+	if ratingID != nil && *ratingID != 0 {
+		// 只允许删除当前提交的评分，或历史上未绑定提交的孤立评分，避免误删其他提交的公开评价。
+		query = tx.Where("(id = ? AND (course_evaluation_submission_id IS NULL OR course_evaluation_submission_id = ?)) OR course_evaluation_submission_id = ?", *ratingID, submissionID, submissionID)
+	}
+	if err := query.Delete(&models.TeacherRating{}).Error; err != nil {
+		return courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "清理旧教师评价失败", err)
+	}
+	return nil
 }
 
 // selectSubject 确定学科。返回 (nil, candidates>0, nil) 表示需要用户确认。
@@ -559,7 +644,11 @@ func (s *CourseEvaluationService) selectTeacher(tx *gorm.DB, subject *models.Cou
 // upsertTeacherRating 维护"一位用户对一位教师一条"的唯一约束。
 func upsertTeacherRating(tx *gorm.DB, userID, teacherID uint, submission *models.CourseEvaluationSubmission) (*models.TeacherRating, error) {
 	var rating models.TeacherRating
-	err := tx.Where("teacher_id = ? AND user_id = ?", teacherID, userID).First(&rating).Error
+	err := tx.Where("course_evaluation_submission_id = ?", submission.ID).First(&rating).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// 兼容旧入口产生的无提交关联评分；一旦复用会立即补上 canonical 关联。
+		err = tx.Where("teacher_id = ? AND user_id = ? AND course_evaluation_submission_id IS NULL", teacherID, userID).First(&rating).Error
+	}
 	switch {
 	case err == nil:
 		rating.Star = submission.Star

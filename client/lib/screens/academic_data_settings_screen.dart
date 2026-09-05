@@ -9,6 +9,7 @@ import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/academic/storage/academic_credential_store.dart';
 import '../features/academic/storage/academic_persistence_policy.dart';
+import '../features/academic/storage/academic_persistence_gate.dart';
 import '../features/academic/storage/academic_storage_preferences.dart';
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -74,11 +75,13 @@ class _AcademicDataSettingsScreenState
         appUserId: userId,
         sourceAccountId: sourceAccountId,
         snapshotStore: vault,
+        persistenceGate: RegistryAcademicPersistenceGate(userId),
       ),
       scheduleStore: ScheduleCacheStore(
         appUserId: userId,
         sourceAccountId: sourceAccountId,
         snapshotStore: vault,
+        persistenceGate: RegistryAcademicPersistenceGate(userId),
       ),
       auxiliaryCleanup: AcademicPersistencePolicy.clearAuxiliaryData,
       supported: !kIsWeb,

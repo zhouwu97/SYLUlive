@@ -43,10 +43,50 @@ func EnsureCourseEvaluationSchema(db *gorm.DB) error {
 	if err := dedupeCourseSubjects(db); err != nil {
 		return err
 	}
+	if err := dedupeSubmissionRatings(db); err != nil {
+		return err
+	}
 	if err := ensureCourseEvaluationIndexes(db); err != nil {
 		return err
 	}
 	return nil
+}
+
+// dedupeSubmissionRatings 在建立提交级唯一约束前收敛历史重复评分，保留最新活动记录。
+func dedupeSubmissionRatings(db *gorm.DB) error {
+	var groups []struct {
+		SubmissionID uint
+		Total        int64
+	}
+	if err := db.Model(&TeacherRating{}).
+		Select("course_evaluation_submission_id, COUNT(*) AS total").
+		Where("course_evaluation_submission_id IS NOT NULL AND deleted_at IS NULL").
+		Group("course_evaluation_submission_id").Having("COUNT(*) > 1").Scan(&groups).Error; err != nil {
+		return fmt.Errorf("读取重复提交评分失败: %w", err)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, group := range groups {
+			var ratings []TeacherRating
+			if err := tx.Where("course_evaluation_submission_id = ? AND deleted_at IS NULL", group.SubmissionID).
+				Order("id DESC").Find(&ratings).Error; err != nil {
+				return err
+			}
+			for _, duplicate := range ratings[1:] {
+				if err := tx.Delete(&duplicate).Error; err != nil {
+					return err
+				}
+			}
+			keeper := ratings[0]
+			if err := tx.Model(&CourseEvaluationSubmission{}).Where("id = ?", group.SubmissionID).
+				Update("teacher_rating_id", keeper.ID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // normalizeLegacyPhysicalEducationSubjects 把旧版本已落库的体育序号学科合并为“体育”。
@@ -432,7 +472,10 @@ func ensureCourseEvaluationIndexes(db *gorm.DB) error {
 		 ON teachers(course_subject_id, name_normalized)
 		 WHERE course_subject_id IS NOT NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_evaluation_submission_dedup
-		 ON course_evaluation_submissions(user_id, dedup_key)`,
+			 ON course_evaluation_submissions(user_id, dedup_key)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_teacher_rating_submission
+			 ON teacher_ratings(course_evaluation_submission_id)
+			 WHERE course_evaluation_submission_id IS NOT NULL AND deleted_at IS NULL`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

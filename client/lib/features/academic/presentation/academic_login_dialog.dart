@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../application/academic_session_controller.dart';
+import '../application/academic_login_coordinator.dart';
 import '../domain/academic_failure.dart';
 
 /// 本机直连教务登录入口，包含登录、验证码和明确的本地数据授权状态。
 final class AcademicLoginDialog extends StatefulWidget {
   const AcademicLoginDialog({
     required this.controller,
+    this.coordinator,
     this.initialStudentId,
     super.key,
   });
 
   final AcademicSessionController controller;
+  final AcademicLoginCoordinator? coordinator;
   final String? initialStudentId;
 
   static Future<bool?> show(
     BuildContext context, {
     required AcademicSessionController controller,
+    AcademicLoginCoordinator? coordinator,
     String? initialStudentId,
   }) {
     return showDialog<bool>(
@@ -27,6 +32,7 @@ final class AcademicLoginDialog extends StatefulWidget {
       barrierDismissible: false,
       builder: (_) => AcademicLoginDialog(
         controller: controller,
+        coordinator: coordinator,
         initialStudentId: initialStudentId,
       ),
     );
@@ -40,8 +46,14 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   late final TextEditingController _studentIdController;
   late final TextEditingController _passwordController;
   late final TextEditingController _captchaController;
+  late final AcademicLoginCoordinator _coordinator;
   final _formKey = GlobalKey<FormState>();
-  bool _consentAccepted = false;
+  bool _saveCredentials = false;
+  bool _saveAcademicData = false;
+  bool _usingSavedCredential = false;
+  bool _loadingPreferences = true;
+  String? _savedCredentialStudentId;
+  String? _coordinatorMessage;
 
   AcademicSessionController get _controller => widget.controller;
 
@@ -52,6 +64,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         TextEditingController(text: widget.initialStudentId ?? '');
     _passwordController = TextEditingController();
     _captchaController = TextEditingController();
+    _coordinator = widget.coordinator ??
+        AcademicLoginCoordinator(controller: widget.controller);
+    _studentIdController.addListener(_handleStudentIdChanged);
+    _loadSavedState();
   }
 
   @override
@@ -62,21 +78,56 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     super.dispose();
   }
 
+  Future<void> _loadSavedState() async {
+    final saved = await _coordinator.readSavedCredential();
+    final preferences = await _coordinator.loadPreferences();
+    if (!mounted) return;
+    final initial = _studentIdController.text.trim();
+    final canUseSaved = preferences.saveCredentials &&
+        saved != null &&
+        (initial.isEmpty || initial == saved.studentId.trim());
+    setState(() {
+      _loadingPreferences = false;
+      _saveCredentials = preferences.saveCredentials && saved != null;
+      _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
+      _savedCredentialStudentId = saved?.studentId.trim();
+      _usingSavedCredential = canUseSaved;
+      if (canUseSaved) _studentIdController.text = saved.studentId;
+    });
+  }
+
+  void _handleStudentIdChanged() {
+    final savedId = _savedCredentialStudentId;
+    if (!_usingSavedCredential || savedId == null) return;
+    if (_studentIdController.text.trim() != savedId) {
+      setState(() {
+        _usingSavedCredential = false;
+        _passwordController.clear();
+      });
+    }
+  }
+
   Future<void> _submitLogin() async {
-    if (!_consentAccepted || !(_formKey.currentState?.validate() ?? false)) {
+    if (!_usingSavedCredential &&
+        !(_formKey.currentState?.validate() ?? false)) {
       return;
     }
     final password = _passwordController.text;
     // 提交前清除 UI 控制器中的密码；验证码续登所需的密码只由 POC
     // 客户端在内存 pending 会话中短暂保留。
     _passwordController.clear();
-    final result = await _controller.login(
+    final result = await _coordinator.login(
       studentId: _studentIdController.text.trim(),
       password: password,
+      saveCredentials: _saveCredentials,
+      saveAcademicData: _saveAcademicData,
+      useSavedCredential: _usingSavedCredential,
     );
     if (!mounted) return;
-    if (result is LoginSuccess && _controller.isProfileLoaded) {
+    if (result.isSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
+    } else if (result.message != null) {
+      setState(() => _coordinatorMessage = result.message);
     }
   }
 
@@ -90,12 +141,14 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   Future<void> _submitCaptcha() async {
     if (_captchaController.text.trim().isEmpty) return;
-    final result = await _controller.continueLoginWithCaptcha(
+    final result = await _coordinator.continueLoginWithCaptcha(
       code: _captchaController.text.trim(),
     );
     if (!mounted) return;
-    if (result is LoginSuccess && _controller.isProfileLoaded) {
+    if (result.isSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
+    } else if (result.message != null) {
+      setState(() => _coordinatorMessage = result.message);
     }
   }
 
@@ -112,8 +165,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         final isBusy = _controller.isBusy;
         final awaitingCaptcha = _controller.isAwaitingCaptcha;
         final challenge = _controller.captchaChallenge;
-        final failure = _controller.failure;
         final profileError = _controller.hasProfileError;
+        final failure = _controller.failure ??
+            (profileError
+                ? const AcademicFailure(
+                    kind: AcademicFailureKind.unexpected,
+                    message: '教务资料加载失败，请重试',
+                    code: 'ACADEMIC_PROFILE_FAILED',
+                  )
+                : null);
 
         return AlertDialog(
           title: const Text('本机直连教务'),
@@ -129,7 +189,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '密码只用于本次学校登录，Cookie 仅保存在内存中。',
+                      '教务登录仅在当前设备完成，密码和教务数据不会上传沈理校园服务器。',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -156,9 +216,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                       textInputAction: TextInputAction.done,
                       autofillHints: const [AutofillHints.password],
                       enabled: !isBusy && !awaitingCaptcha,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '教务密码',
-                        prefixIcon: Icon(Icons.lock_outline),
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        hintText: _usingSavedCredential ? '已安全保存' : null,
                       ),
                       validator: (value) =>
                           value == null || value.isEmpty ? '请输入教务密码' : null,
@@ -166,16 +227,38 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         if (!isBusy && !awaitingCaptcha) _submitLogin();
                       },
                     ),
-                    CheckboxListTile(
-                      value: _consentAccepted,
+                    SwitchListTile(
+                      value: _saveCredentials,
                       contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('同意本机保存教务资料'),
-                      subtitle: const Text('课程和成绩仅写入当前 App 账号隔离的本地加密保险箱。'),
-                      onChanged: isBusy || awaitingCaptcha
+                      title: const Text('在本机安全保存登录凭据'),
+                      subtitle: Text(
+                        _usingSavedCredential
+                            ? '学号和密码仅保存在设备系统安全存储中'
+                            : '用于下次自动重新登录，不上传沈理校园服务器',
+                      ),
+                      onChanged:
+                          isBusy || awaitingCaptcha || _loadingPreferences
+                              ? null
+                              : (value) => setState(
+                                    () => _saveCredentials = value,
+                                  ),
+                    ),
+                    SwitchListTile(
+                      value: _saveAcademicData,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('在本机保存教务资料'),
+                      subtitle: const Text(
+                        kIsWeb
+                            ? '网页版不会保存教务密码或教务资料'
+                            : '课表、成绩等保存到当前 App 账号隔离的本地加密保险箱',
+                      ),
+                      onChanged: kIsWeb ||
+                              isBusy ||
+                              awaitingCaptcha ||
+                              _loadingPreferences
                           ? null
                           : (value) => setState(
-                                () => _consentAccepted = value ?? false,
+                                () => _saveAcademicData = value,
                               ),
                     ),
                     if (awaitingCaptcha) ...[
@@ -190,6 +273,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                     if (failure != null) ...[
                       const SizedBox(height: AppSpacing.md),
                       _FailureMessage(failure: failure),
+                    ],
+                    if (_coordinatorMessage != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(_coordinatorMessage!),
                     ],
                   ],
                 ),
@@ -219,14 +306,14 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
               )
             else
               FilledButton(
-                onPressed: isBusy || !_consentAccepted ? null : _submitLogin,
+                onPressed: isBusy ? null : _submitLogin,
                 child: isBusy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('登录'),
+                    : const Text('登录教务'),
               ),
           ],
         );

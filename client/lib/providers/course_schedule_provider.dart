@@ -9,6 +9,7 @@ import '../features/academic/domain/academic_failure.dart';
 import '../features/academic/domain/academic_repository.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/campus_data/storage/schedule_cache_store.dart';
+import '../features/academic/storage/academic_persistence_gate.dart';
 import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
@@ -266,6 +267,7 @@ class CourseScheduleProvider extends ChangeNotifier {
             appUserId: normalizedUserId,
             sourceAccountId: normalizedSourceAccountId,
             snapshotStore: _snapshotStoreBuilder?.call(normalizedUserId),
+            persistenceGate: RegistryAcademicPersistenceGate(normalizedUserId),
           );
     final store = _scheduleStore;
     final generation = _contextGeneration;

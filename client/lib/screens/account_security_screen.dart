@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -270,12 +271,21 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final success = await AcademicLoginDialog.show(
       context,
       controller: controller,
+      coordinator: _coordinatorOrNull(),
       initialStudentId: _studentId,
     );
     if (!mounted || success != true) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('本机教务会话已建立')),
     );
+  }
+
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   Future<void> _logoutLocalAcademic() async {
@@ -473,8 +483,8 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             if (localAcademic.isAuthenticated)
               SettingsTile(
                 icon: Icons.logout_outlined,
-                title: '退出本机教务',
-                subtitle: '清除本机 Cookie 和待登录信息，不产生服务端教务授权',
+                title: '断开本次会话',
+                subtitle: '清除学校 Cookie/Session，保留本机凭据和教务资料',
                 onTap: _logoutLocalAcademic,
               ),
             SettingsTile(

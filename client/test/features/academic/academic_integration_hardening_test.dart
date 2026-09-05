@@ -22,7 +22,7 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
   });
 
-  test('本机模式下未迁移能力不会读取旧缓存或请求旧代理', () async {
+  test('本机模式下详情类能力经 SessionController 读取且不请求旧代理', () async {
     final repository = _FakeAcademicRepository();
     final controller = AcademicSessionController(
       repository: repository,
@@ -66,12 +66,12 @@ void main() {
     );
 
     expect(provider.isUsingLocalAcademicSession, isTrue);
-    expect(detail.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-    expect(situation.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-    expect(requirements.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-    expect(provider.getCachedGradeDetail(grade, '2025', 12), isNull);
-    expect(provider.getCachedAcademicSituation(), isNull);
-    expect(provider.getCachedCreditRequirements(), isNull);
+    expect(detail.success, isTrue);
+    expect(situation.success, isTrue);
+    expect(requirements.success, isTrue);
+    expect(provider.getCachedGradeDetail(grade, '2025', 12), isNotNull);
+    expect(provider.getCachedAcademicSituation(), isNotNull);
+    expect(provider.getCachedCreditRequirements(), isNotNull);
     expect(requestedPaths, isEmpty);
 
     controller.dispose();
@@ -525,6 +525,35 @@ final class _FakeAcademicRepository implements AcademicRepository {
   final Future<void>? loginGate;
   final CourseFetchResult courses;
   final GradeFetchResult grades;
+  final GradeDetail gradeDetail = GradeDetail(
+    success: true,
+    courseName: '数据结构',
+    totalGrade: '88',
+    components: const [],
+  );
+  final AcademicSituation academicSituation = const AcademicSituation(
+    success: true,
+    allGpa: 3.7,
+    degreeGpa: 3.6,
+    totalCourses: 1,
+    passedCourses: 1,
+    failedCourses: 0,
+    notStartedCourses: 0,
+    inProgressCourses: 0,
+    degreeTotalCourses: 1,
+    degreePassedCourses: 1,
+    degreeFailedCourses: 0,
+    degreeNotStartedCourses: 0,
+    degreeInProgressCourses: 0,
+    courses: const [],
+    coursesStatus: 'complete',
+  );
+  final CreditRequirement creditRequirements = const CreditRequirement(
+    success: true,
+    status: 'complete',
+    modules: [],
+    improvementCourses: [],
+  );
   final Completer<void> loginStarted = Completer<void>();
   final List<String> calls = [];
   SessionState _state = SessionState.unauthenticated;
@@ -619,17 +648,17 @@ final class _FakeAcademicRepository implements AcademicRepository {
     String? courseId,
     String? studentGradeId,
   }) async {
-    throw UnimplementedError('测试未实现成绩详情');
+    return gradeDetail;
   }
 
   @override
   Future<AcademicSituation> getAcademicSituation() async {
-    throw UnimplementedError('测试未实现学业情况');
+    return academicSituation;
   }
 
   @override
   Future<CreditRequirement> getCreditRequirements() async {
-    throw UnimplementedError('测试未实现学分要求');
+    return creditRequirements;
   }
 
   @override

@@ -11,6 +11,7 @@ import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
@@ -220,11 +221,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     // 开学日在缓存加载后才可知，先无 initialPage，等 semesterStart 到位后由 _resetWeekPager 跳到正确教学周。
     _weekPageController = PageController();
     _loadSettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoLogin());
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       _refreshAfterResume,
       isVisible: () => currentHomeTabIndex.value == 2,
     );
+  }
+
+  Future<void> _tryAutoLogin() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) return;
+    final coordinator = _coordinatorOrNull();
+    if (coordinator == null) return;
+    if (!await coordinator.hasSavedCredential()) return;
+    final outcome = await coordinator.ensureAuthenticated();
+    if (!mounted || !outcome.isSuccess) return;
+    await context.read<EduProvider>().refreshStatus();
   }
 
   @override
@@ -1218,6 +1231,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final success = await AcademicLoginDialog.show(
       context,
       controller: controller,
+      coordinator: _coordinatorOrNull(),
     );
     if (!context.mounted || success != true) return;
     await edu.refreshStatus();
@@ -1226,6 +1240,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('本机教务会话已建立')),
       );
+    }
+  }
+
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
     }
   }
 
@@ -4175,12 +4197,12 @@ $classFilterRule
                 ],
               ),
             ],
-          ],
-        ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-    ),
     );
   }
 

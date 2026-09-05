@@ -6,13 +6,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
 import 'package:shenliyuan/features/academic/domain/academic_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_failure.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
 import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
+import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_policy.dart';
+import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
+  setUp(() {
+    AppPreferencesStore.setMockInitialValues({});
+  });
+
   group('AcademicSessionController', () {
     test('验证码登录会保留 pending 会话并加载图片', () async {
       final source = _FakeAcademicDataSource(
@@ -281,6 +290,142 @@ void main() {
     repository.close();
   });
 
+  test('协调器只在验证码成功后保存凭据，并同步凭据偏好', () async {
+    final source = _FakeAcademicDataSource(
+      loginResult: const CaptchaRequired(),
+      captcha: CaptchaChallenge(imageBytes: Uint8List.fromList([1, 2, 3])),
+    );
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    final credentialStore = _MemoryAcademicCredentialStore();
+    final preferences = MemoryPreferencesStore();
+    final coordinator = AcademicLoginCoordinator(
+      controller: controller,
+      credentialStore: credentialStore,
+      preferencesLoader: () async => preferences,
+      persistencePolicy: AcademicPersistencePolicy(
+        appUserId: 'app-user-a',
+        preferences: preferences,
+        academicStore: null,
+        scheduleStore: null,
+      ),
+    );
+
+    final pending = await coordinator.login(
+      studentId: '2026000001',
+      password: 'secret',
+      saveCredentials: true,
+      saveAcademicData: false,
+    );
+    expect(pending.kind, AcademicLoginOutcomeKind.captchaRequired);
+    expect(credentialStore.value, isNull);
+    expect(
+      AcademicStoragePreferences(appUserId: 'app-user-a', store: preferences)
+          .saveCredentials,
+      isFalse,
+    );
+
+    final success = await coordinator.continueLoginWithCaptcha(code: '1234');
+
+    expect(success.isSuccess, isTrue);
+    expect(credentialStore.value?.studentId, '2026000001');
+    expect(
+      AcademicStoragePreferences(appUserId: 'app-user-a', store: preferences)
+          .saveCredentials,
+      isTrue,
+    );
+    controller.dispose();
+  });
+
+  test('协调器区分凭据错误和网络错误的删除策略', () async {
+    final invalidSource = _FakeAcademicDataSource(
+      loginResult: const InvalidCredentials(message: '教务账号或密码错误'),
+    );
+    final invalidController = _newController(invalidSource);
+    await invalidController.syncAppUser('app-user-a');
+    final invalidStore = _MemoryAcademicCredentialStore()
+      ..value = const AcademicCredential(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+    final invalidCoordinator = _newCoordinator(
+      invalidController,
+      invalidStore,
+      MemoryPreferencesStore(),
+    );
+
+    final invalid = await invalidCoordinator.login(
+      studentId: '2026000001',
+      password: 'secret',
+      saveCredentials: true,
+      saveAcademicData: false,
+    );
+    expect(invalid.kind, AcademicLoginOutcomeKind.invalidCredentials);
+    expect(invalidStore.value, isNull);
+    invalidController.dispose();
+
+    final networkSource = _FakeAcademicDataSource(
+      loginResult: NetworkUnavailable(
+        message: '教务网络连接失败',
+        cause: const NetworkException(message: '教务网络连接失败'),
+      ),
+    );
+    final networkController = _newController(networkSource);
+    await networkController.syncAppUser('app-user-a');
+    final networkStore = _MemoryAcademicCredentialStore()
+      ..value = const AcademicCredential(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+    final networkCoordinator = _newCoordinator(
+      networkController,
+      networkStore,
+      MemoryPreferencesStore(),
+    );
+
+    final network = await networkCoordinator.login(
+      studentId: '2026000001',
+      password: 'secret',
+      saveCredentials: true,
+      saveAcademicData: false,
+    );
+    expect(network.kind, AcademicLoginOutcomeKind.networkFailure);
+    expect(networkStore.value, isNotNull);
+    networkController.dispose();
+  });
+
+  test('并发自动登录共享同一个学校登录请求', () async {
+    final loginRelease = Completer<void>();
+    final loginStarted = Completer<void>();
+    final source = _FakeAcademicDataSource(
+      loginGate: loginRelease.future,
+      onLoginStarted: loginStarted.complete,
+    );
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    final credentialStore = _MemoryAcademicCredentialStore()
+      ..value = const AcademicCredential(
+        studentId: '2026000001',
+        password: 'secret',
+      );
+    final preferences = MemoryPreferencesStore();
+    await AcademicStoragePreferences(
+            appUserId: 'app-user-a', store: preferences)
+        .setSaveCredentials(true);
+    final coordinator =
+        _newCoordinator(controller, credentialStore, preferences);
+
+    final first = coordinator.ensureAuthenticated();
+    await loginStarted.future;
+    final second = coordinator.ensureAuthenticated();
+    loginRelease.complete();
+
+    final results = await Future.wait([first, second]);
+    expect(results.every((result) => result.isSuccess), isTrue);
+    expect(source.loginCalls, 1);
+    controller.dispose();
+  });
+
   testWidgets('资料加载失败时登录弹窗保留错误并提供重试', (tester) async {
     final source = _FakeAcademicDataSource(
       profileError: const ProtocolChangedException(),
@@ -297,17 +442,52 @@ void main() {
     );
     await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
     await tester.enterText(find.byType(TextFormField).at(1), 'secret');
-    await tester.tap(find.text('同意本机保存教务资料'));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
     await tester.pumpAndSettle();
 
+    expect(source.loginCalls, 1);
     expect(find.byType(AcademicLoginDialog), findsOneWidget);
     expect(find.byIcon(Icons.error_outline), findsOneWidget);
     expect(find.widgetWithText(TextButton, '重试资料'), findsOneWidget);
 
     controller.dispose();
   });
+}
+
+AcademicLoginCoordinator _newCoordinator(
+  AcademicSessionController controller,
+  _MemoryAcademicCredentialStore credentialStore,
+  AppPreferencesStore preferences,
+) {
+  return AcademicLoginCoordinator(
+    controller: controller,
+    credentialStore: credentialStore,
+    preferencesLoader: () async => preferences,
+    persistencePolicy: AcademicPersistencePolicy(
+      appUserId: 'app-user-a',
+      preferences: preferences,
+      academicStore: null,
+      scheduleStore: null,
+    ),
+  );
+}
+
+final class _MemoryAcademicCredentialStore implements AcademicCredentialStore {
+  AcademicCredential? value;
+
+  @override
+  Future<AcademicCredential?> read(String appUserId) async => value;
+
+  @override
+  Future<void> write(String appUserId, AcademicCredential credential) async {
+    value = credential;
+  }
+
+  @override
+  Future<void> delete(String appUserId) async {
+    value = null;
+  }
 }
 
 AcademicSessionController _newController(_FakeAcademicDataSource source) {

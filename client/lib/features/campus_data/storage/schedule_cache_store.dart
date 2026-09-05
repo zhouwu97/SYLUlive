@@ -1,11 +1,11 @@
 import 'dart:async';
 
-
 import 'account_cache_namespace.dart';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+import '../../academic/storage/academic_persistence_gate.dart';
 
 /// 已验证来源账号的单学期课表快照。
 ///
@@ -199,9 +199,11 @@ class ScheduleCacheStore {
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
     Future<AppPreferencesStore> Function()? preferencesLoader,
+    this.persistenceGate,
   })  : _snapshotStore = snapshotStore ??
             AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
-        _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
+        _preferencesLoader =
+            preferencesLoader ?? AppPreferencesStore.getInstance;
 
   static const int schemaVersion = 1;
   static const Duration _expiry = Duration(days: 14);
@@ -213,12 +215,20 @@ class ScheduleCacheStore {
   final String sourceAccountId;
   final AccountScopedSnapshotStore _snapshotStore;
   final Future<AppPreferencesStore> Function() _preferencesLoader;
+  final AcademicPersistenceGate? persistenceGate;
 
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
 
   Future<ScheduleVaultSnapshot?> readSnapshot() async {
     if (!_hasValidNamespace) return null;
+    if (persistenceGate != null) {
+      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    }
+    final canRead = persistenceGate?.allowPersonalDataRead ?? true;
+    if (!canRead) {
+      return null;
+    }
     final encryptedSnapshot = await _snapshotStore.read(
       type: PersonalDataType.schedule,
       sourceSystem: 'edu',
@@ -462,6 +472,13 @@ class ScheduleCacheStore {
     required ScheduleTermSnapshot Function(ScheduleTermSnapshot current) update,
     bool clearNeedsResync = false,
   }) async {
+    if (persistenceGate != null) {
+      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    }
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
     if (!_hasValidNamespace) {
       throw StateError('课表缓存缺少有效的账号命名空间');
     }
@@ -484,6 +501,9 @@ class ScheduleCacheStore {
   }
 
   Future<Map<String, dynamic>> _readTerms() async {
+    if (persistenceGate != null) {
+      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    }
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.schedule,
       sourceSystem: 'edu',
@@ -514,6 +534,14 @@ class ScheduleCacheStore {
       fetchedAt: now,
       expiresAt: now.add(_expiry),
       payload: <String, dynamic>{'terms': terms},
+    );
+  }
+
+  /// 仅删除教务课表类型，不影响体测、二课等其他个人数据。
+  Future<void> clearAll() async {
+    if (appUserId.trim().isEmpty) return;
+    await _serializeMutation(
+      () => _snapshotStore.deleteType(PersonalDataType.schedule),
     );
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
+import '../../academic/storage/academic_persistence_gate.dart';
 
 /// 已验证来源账号的单学期成绩快照。
 class AcademicTermSnapshot {
@@ -95,6 +96,8 @@ class AcademicVaultSnapshot {
     this.creditRequirements,
     this.creditRequirementsFetchedAt,
     this.isGradeSyncComplete = false,
+    this.profile,
+    this.gradeDetails = const <String, Map<String, dynamic>>{},
   }) : terms = Map<String, AcademicTermSnapshot>.unmodifiable(terms);
 
   final Map<String, AcademicTermSnapshot> terms;
@@ -105,6 +108,8 @@ class AcademicVaultSnapshot {
   final Map<String, dynamic>? creditRequirements;
   final DateTime? creditRequirementsFetchedAt;
   final bool isGradeSyncComplete;
+  final Map<String, dynamic>? profile;
+  final Map<String, Map<String, dynamic>> gradeDetails;
 }
 
 /// 成绩数据只在网络请求成功后直接写入 AES-GCM 保险箱，不创建明文迁移链路。
@@ -113,10 +118,11 @@ class AcademicCacheStore {
     required this.appUserId,
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
+    this.persistenceGate,
   }) : _snapshotStore = snapshotStore ??
             AesGcmAccountScopedSnapshotStore(appUserId: appUserId);
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const Duration _expiry = Duration(days: 30);
 
   static final Map<String, Future<void>> _mutationTails =
@@ -125,19 +131,28 @@ class AcademicCacheStore {
   final String appUserId;
   final String sourceAccountId;
   final AccountScopedSnapshotStore _snapshotStore;
+  final AcademicPersistenceGate? persistenceGate;
 
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
 
   Future<AcademicVaultSnapshot?> readSnapshot() async {
     if (!_hasValidNamespace) return null;
+    if (persistenceGate != null) {
+      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    }
+    final canRead = persistenceGate?.allowPersonalDataRead ?? true;
+    if (!canRead) {
+      return null;
+    }
     final encryptedSnapshot = await _snapshotStore.read(
       type: PersonalDataType.academic,
       sourceSystem: 'edu',
       sourceAccountId: sourceAccountId,
     );
     if (encryptedSnapshot == null) return null;
-    if (encryptedSnapshot.schemaVersion != schemaVersion) {
+    if (encryptedSnapshot.schemaVersion < 1 ||
+        encryptedSnapshot.schemaVersion > schemaVersion) {
       throw const PersonalSnapshotStoreException('成绩密文快照版本不受支持');
     }
     final payload = encryptedSnapshot.payload;
@@ -186,6 +201,10 @@ class AcademicCacheStore {
                   )?.toUtc()
                 : null,
         isGradeSyncComplete: payload['grade_sync_complete'] == true,
+        profile: payload['profile'] is Map
+            ? Map<String, dynamic>.from(payload['profile'] as Map)
+            : null,
+        gradeDetails: _copyAcademicMapOfMaps(payload['grade_details']),
       );
     } on FormatException {
       throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
@@ -198,6 +217,10 @@ class AcademicCacheStore {
     required List<Map<String, dynamic>> grades,
     DateTime? fetchedAt,
   }) async {
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
     _validateNamespace();
     final record = AcademicTermSnapshot(
       year: year,
@@ -222,6 +245,10 @@ class AcademicCacheStore {
     required Map<String, dynamic> data,
     DateTime? fetchedAt,
   }) async {
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
     _validateNamespace();
     final record = AcademicSituationSnapshot(
       fetchedAt: fetchedAt ?? DateTime.now().toUtc(),
@@ -236,6 +263,10 @@ class AcademicCacheStore {
 
   /// 只有所有有效学期均成功请求后才写入完成标记，防止局部成绩被当成完整 GPA 数据。
   Future<void> markGradeSyncComplete() async {
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
     _validateNamespace();
     await _serializeMutation(() async {
       final payload = await _readPayload() ?? _emptyPayload();
@@ -249,6 +280,10 @@ class AcademicCacheStore {
     required Map<String, dynamic> data,
     DateTime? fetchedAt,
   }) async {
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
     _validateNamespace();
     final capturedAt = fetchedAt ?? DateTime.now().toUtc();
     await _serializeMutation(() async {
@@ -261,22 +296,82 @@ class AcademicCacheStore {
   }
 
   Future<void> clearAll() async {
-    _validateNamespace();
+    if (appUserId.trim().isEmpty) return;
     await _serializeMutation(
       () => _snapshotStore.deleteType(PersonalDataType.academic),
     );
   }
 
+  Future<Map<String, dynamic>?> readProfile() async {
+    final snapshot = await readSnapshot();
+    final profile = snapshot?.profile;
+    return profile == null ? null : Map<String, dynamic>.from(profile);
+  }
+
+  Future<Map<String, dynamic>?> readAcademicSituation() async {
+    final snapshot = await readSnapshot();
+    final situation = snapshot?.situation?.data;
+    return situation == null ? null : Map<String, dynamic>.from(situation);
+  }
+
+  Future<Map<String, dynamic>?> readCreditRequirements() async {
+    final snapshot = await readSnapshot();
+    final requirements = snapshot?.creditRequirements;
+    return requirements == null
+        ? null
+        : Map<String, dynamic>.from(requirements);
+  }
+
+  Future<void> writeProfile({required Map<String, dynamic> profile}) async {
+    final canWrite = persistenceGate?.allowPersonalDataPersistence ?? true;
+    if (!canWrite) {
+      return;
+    }
+    _validateNamespace();
+    await _serializeMutation(() async {
+      final payload = await _readPayload() ?? _emptyPayload();
+      payload['profile'] = _copyAcademicMap(profile);
+      await _writePayload(payload);
+    });
+  }
+
+  Future<Map<String, dynamic>?> readGradeDetail(String key) async {
+    final snapshot = await readSnapshot();
+    final detail = snapshot?.gradeDetails[key];
+    return detail == null ? null : Map<String, dynamic>.from(detail);
+  }
+
+  Future<void> writeGradeDetail({
+    required String key,
+    required Map<String, dynamic> detail,
+  }) async {
+    if (persistenceGate != null &&
+        !persistenceGate!.allowPersonalDataPersistence) {
+      return;
+    }
+    _validateNamespace();
+    await _serializeMutation(() async {
+      final payload = await _readPayload() ?? _emptyPayload();
+      final details = _copyAcademicMapOfMaps(payload['grade_details']);
+      details[key] = _copyAcademicMap(detail);
+      payload['grade_details'] = details;
+      await _writePayload(payload);
+    });
+  }
+
   Future<void> close() => _snapshotStore.close();
 
   Future<Map<String, dynamic>?> _readPayload() async {
+    if (persistenceGate != null) {
+      await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    }
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.academic,
       sourceSystem: 'edu',
       sourceAccountId: sourceAccountId,
     );
     if (snapshot == null) return null;
-    if (snapshot.schemaVersion != schemaVersion) {
+    if (snapshot.schemaVersion < 1 || snapshot.schemaVersion > schemaVersion) {
       throw const PersonalSnapshotStoreException('成绩密文快照版本不受支持');
     }
     return Map<String, dynamic>.from(snapshot.payload);
@@ -288,6 +383,8 @@ class AcademicCacheStore {
         'credit_requirements': null,
         'credit_requirements_fetched_at': null,
         'grade_sync_complete': false,
+        'profile': null,
+        'grade_details': <String, dynamic>{},
       };
 
   Future<void> _writePayload(Map<String, dynamic> payload) async {
@@ -336,6 +433,18 @@ List<Map<String, dynamic>> _copyAcademicMapList(Object? raw, String fieldName) {
     if (value is! Map) throw FormatException('$fieldName格式错误');
     return Map<String, dynamic>.from(value);
   }).toList(growable: false);
+}
+
+Map<String, Map<String, dynamic>> _copyAcademicMapOfMaps(Object? raw) {
+  if (raw is! Map) return <String, Map<String, dynamic>>{};
+  final result = <String, Map<String, dynamic>>{};
+  for (final entry in raw.entries) {
+    if (entry.key is String && entry.value is Map) {
+      result[entry.key as String] =
+          Map<String, dynamic>.from(entry.value as Map);
+    }
+  }
+  return result;
 }
 
 DateTime _parseAcademicDateTime(Object? value, String fieldName) {

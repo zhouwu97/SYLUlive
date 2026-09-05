@@ -17,6 +17,8 @@ import '../widgets/settings/settings_tile.dart';
 import 'account_security_screen.dart';
 import 'login_screen.dart';
 import 'privacy_center_screen.dart';
+import 'academic_data_settings_screen.dart';
+import '../features/academic/application/academic_session_controller.dart';
 
 import 'settings/appearance_settings_screen.dart';
 import 'settings/diagnostics_settings_screen.dart';
@@ -152,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('退出登录'),
         content: const Text(
-          '退出后将清理本机教务会话和当前账号的课表状态，下次使用需要重新登录。',
+          '退出后会清理当前运行中的教务会话，但保留本机安全凭据和教务资料。',
         ),
         actions: [
           TextButton(
@@ -172,11 +174,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirm != true || !context.mounted) return;
 
-    final userId = authProvider.user?.id.toString();
     final eduProvider = context.read<EduProvider>();
     final courseProvider = context.read<CourseScheduleProvider>();
 
-    await eduProvider.clearLocalSession();
+    await context.read<AcademicSessionController>().resetSession();
+    eduProvider.clearMemoryForAccountTransition();
     courseProvider.clearAllUserState();
     await authProvider.logout();
 
@@ -295,6 +297,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 );
               },
+            ),
+            SettingsTile(
+              icon: Icons.school_outlined,
+              title: '本机教务',
+              subtitle: '安全保存教务凭据、课表和成绩的独立设置',
+              onTap: isLoggedIn
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AcademicDataSettingsScreen(),
+                        ),
+                      );
+                    }
+                  : null,
+              enabled: isLoggedIn,
             ),
           ],
         ),

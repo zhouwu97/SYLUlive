@@ -35,6 +35,7 @@ import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
 import 'theme/app_text_scaler.dart';
 import 'features/academic/application/academic_session_controller.dart';
+import 'features/academic/application/academic_login_coordinator.dart';
 import 'features/academic/data/academic_repository_impl.dart';
 import 'features/academic/data/academic_server_access_guard.dart';
 import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
@@ -1364,6 +1365,10 @@ class MyApp extends StatelessWidget {
           ),
           update: (_, auth, controller) =>
               controller!..syncAppUser(auth.user?.id.toString()),
+        ),
+        ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
+          update: (_, controller, previous) =>
+              previous ?? AcademicLoginCoordinator(controller: controller),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {

@@ -7,6 +7,7 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
+import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
@@ -93,6 +94,12 @@ void main() {
       ..setAcademicSessionController(controller);
     await controller.syncAppUser('app-user-a');
     await controller.login(studentId: '2403130233', password: 'secret');
+    final preferences = AcademicStoragePreferences(
+      appUserId: 'app-user-a',
+      store: await AppPreferencesStore.getInstance(),
+    );
+    await preferences.setSaveAcademicData(true);
+    await preferences.markMigrated();
     provider.setUserId('app-user-a');
     await provider.ensureStatusLoaded();
     return _EduFixture(provider, controller, repository);
@@ -226,7 +233,7 @@ void main() {
       fixture.dispose();
     });
 
-    test('本机教务不支持的旧详情能力会 fail-closed 且不访问 Dio', () async {
+    test('本机教务详情类能力走本机 Session 且不访问 Dio', () async {
       final requestedPaths = <String>[];
       final fixture = await createFixture();
       fixture.provider.dispose();
@@ -253,6 +260,36 @@ void main() {
         isDegree: true,
       );
 
+      fixture.repository.gradeDetail = GradeDetail(
+        success: true,
+        courseName: '数据结构',
+        totalGrade: '88',
+        components: const [],
+      );
+      fixture.repository.academicSituation = const AcademicSituation(
+        success: true,
+        allGpa: 3.7,
+        degreeGpa: 3.6,
+        totalCourses: 1,
+        passedCourses: 1,
+        failedCourses: 0,
+        notStartedCourses: 0,
+        inProgressCourses: 0,
+        degreeTotalCourses: 1,
+        degreePassedCourses: 1,
+        degreeFailedCourses: 0,
+        degreeNotStartedCourses: 0,
+        degreeInProgressCourses: 0,
+        courses: const [],
+        coursesStatus: 'complete',
+      );
+      fixture.repository.creditRequirements = const CreditRequirement(
+        success: true,
+        status: 'complete',
+        modules: [],
+        improvementCourses: [],
+      );
+
       final detail = await guardedProvider.fetchGradeDetail(grade, '2025', 3);
       final situation = await guardedProvider.fetchAcademicSituation();
       final requirements = await guardedProvider.fetchCreditRequirements();
@@ -263,10 +300,10 @@ void main() {
         initialDelay: Duration.zero,
       );
 
-      expect(detail.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-      expect(situation.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-      expect(requirements.errorCode, 'LOCAL_FEATURE_NOT_SUPPORTED');
-      expect(guardedProvider.getCachedGradeDetail(grade, '2025', 3), isNull);
+      expect(detail.success, isTrue);
+      expect(situation.success, isTrue);
+      expect(requirements.success, isTrue);
+      expect(guardedProvider.getCachedGradeDetail(grade, '2025', 3), isNotNull);
       expect(requestedPaths, isEmpty);
       guardedProvider.dispose();
       fixture.controller.dispose();
@@ -412,6 +449,9 @@ final class _FakeAcademicRepository implements AcademicRepository {
   final Completer<void>? gradeGate;
   final Completer<void>? courseGate;
   final Object? gradeError;
+  GradeDetail? gradeDetail;
+  AcademicSituation? academicSituation;
+  CreditRequirement? creditRequirements;
   Completer<void>? gradeStarted;
   SessionState _state = SessionState.unauthenticated;
   String? _studentId;
@@ -495,17 +535,23 @@ final class _FakeAcademicRepository implements AcademicRepository {
     String? courseId,
     String? studentGradeId,
   }) async {
-    throw UnimplementedError('测试未实现成绩详情');
+    final value = gradeDetail;
+    if (value == null) throw UnimplementedError('测试未实现成绩详情');
+    return value;
   }
 
   @override
   Future<AcademicSituation> getAcademicSituation() async {
-    throw UnimplementedError('测试未实现学业情况');
+    final value = academicSituation;
+    if (value == null) throw UnimplementedError('测试未实现学业情况');
+    return value;
   }
 
   @override
   Future<CreditRequirement> getCreditRequirements() async {
-    throw UnimplementedError('测试未实现学分要求');
+    final value = creditRequirements;
+    if (value == null) throw UnimplementedError('测试未实现学分要求');
+    return value;
   }
 
   @override

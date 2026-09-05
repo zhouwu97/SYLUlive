@@ -59,6 +59,15 @@ final class AcademicSessionController extends ChangeNotifier {
   bool _disposed = false;
 
   String? get appUserId => _appUserId;
+  int get contextGeneration => _accountGeneration;
+
+  /// 异步登录完成后供协调器确认仍属于原 App 账号。
+  bool isCurrentContext({required int generation, String? appUserId}) {
+    return !_disposed &&
+        generation == _accountGeneration &&
+        (appUserId == null || appUserId == _appUserId);
+  }
+
   String? get studentId =>
       _sessionResetPending ? null : (_studentId ?? _repository.studentId);
   AcademicSourceKind get sourceKind => _repository.sourceKind;
@@ -285,6 +294,83 @@ final class AcademicSessionController extends ChangeNotifier {
         _failure = null;
         _notifyListeners();
         return grades;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
+  Future<GradeDetail?> loadGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final detail = await _repository.getGradeDetail(
+          year: year,
+          semester: semester,
+          classId: classId,
+          courseName: courseName,
+          courseId: courseId,
+          studentGradeId: studentGradeId,
+        );
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return detail;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
+  Future<AcademicSituation?> loadAcademicSituation() {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final result = await _repository.getAcademicSituation();
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return result;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
+  Future<CreditRequirement?> loadCreditRequirements() {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final result = await _repository.getCreditRequirements();
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return result;
       } catch (error) {
         _handleDataFailure(error, generation);
         return null;

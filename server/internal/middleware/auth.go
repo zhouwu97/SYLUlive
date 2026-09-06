@@ -62,6 +62,8 @@ type Claims struct {
 // AuthMiddleware JWT认证中间件
 func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 只有通过所有前置门禁才清除此标记，避免幂等层永久重放认证拒绝。
+		c.Set("idempotency_auth_rejected", true)
 		tokenString := tokenFromRequest(c)
 
 		if tokenString == "" {
@@ -138,6 +140,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 				log.Printf("[LEGAL_CONSENT_SOFT] user_id=%d method=%s route=%s state=%s client_version=%q", claims.UserID, c.Request.Method, c.Request.URL.Path, state.legalConsentState, clientVersion(c))
 			}
 		}
+		c.Set("idempotency_auth_rejected", false)
 		c.Next()
 	}
 }
@@ -148,8 +151,13 @@ func isCommunityWriteRequest(c *gin.Context) bool {
 		return false
 	}
 	path := c.Request.URL.Path
+	if strings.HasPrefix(path, "/api/messages/") {
+		// 已读、撤回和会话管理不是发布内容，打开聊天不能触发社区确认。
+		target := strings.TrimPrefix(path, "/api/messages/")
+		return c.Request.Method == http.MethodPost && target != "" && !strings.Contains(target, "/")
+	}
 	for _, prefix := range []string{
-		"/api/posts", "/api/replies", "/api/messages/", "/api/team/",
+		"/api/posts", "/api/replies", "/api/team/",
 		"/api/water/team/", "/api/posts/", "/api/market",
 	} {
 		if strings.HasPrefix(path, prefix) {

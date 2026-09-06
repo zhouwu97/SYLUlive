@@ -12,6 +12,7 @@ import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
@@ -234,7 +235,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (!auth.isLoggedIn || auth.user == null) return;
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
-    if (!await coordinator.hasSavedCredential()) return;
+    if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
+        !await coordinator.hasSavedCredential()) return;
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();

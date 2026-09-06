@@ -5,6 +5,7 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
@@ -41,7 +42,8 @@ class _EduScreenState extends State<EduScreen> {
     if (!auth.isLoggedIn || auth.user == null) return;
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
-    if (!await coordinator.hasSavedCredential()) return;
+    if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
+        !await coordinator.hasSavedCredential()) return;
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();

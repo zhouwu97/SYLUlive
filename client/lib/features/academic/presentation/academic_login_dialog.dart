@@ -86,6 +86,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _loadSavedState() async {
+    if (_controller.sourceKind == AcademicSourceKind.legacy) {
+      // 服务端负责保管和恢复凭据，本机仅保留已授权的教务资料缓存。
+      setState(() {
+        _loadingPreferences = false;
+        _saveCredentials = false;
+        _saveAcademicData = !kIsWeb;
+      });
+      return;
+    }
     final saved = await _coordinator.readSavedCredential();
     final preferences = await _coordinator.loadPreferences();
     if (!mounted) return;

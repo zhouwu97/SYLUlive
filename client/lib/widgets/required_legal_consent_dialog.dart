@@ -51,10 +51,14 @@ class _RequiredLegalConsentDialogState
   bool _eduAccepted = false;
   bool _submitting = false;
   String? _error;
+  bool _serverRequiresEduConsent = false;
+
+  bool get _requiresEduConsent => !widget.communityRulesOnly &&
+      (widget.requiresEduDataConsent || _serverRequiresEduConsent);
 
   bool get _canConfirm =>
       _generalAccepted &&
-      (!widget.requiresEduDataConsent || _eduAccepted) &&
+      (!_requiresEduConsent || _eduAccepted) &&
       !_submitting;
 
   Future<void> _confirm() async {
@@ -67,7 +71,7 @@ class _RequiredLegalConsentDialogState
     final result = widget.communityRulesOnly
         ? await auth.acceptCommunityRules()
         : await auth.acceptRequiredLegalConsents(
-              includeEduDataConsent: widget.requiresEduDataConsent,
+              includeEduDataConsent: _requiresEduConsent && _eduAccepted,
             );
     if (!mounted) return;
     if (result.success) {
@@ -81,6 +85,10 @@ class _RequiredLegalConsentDialogState
     setState(() {
       _submitting = false;
       _error = result.errorMessage ?? '协议确认失败，请稍后重试';
+      if (result.errorCode == 'edu_data_consent_required') {
+        // 本地教务状态可能过期，按服务端要求展示独立勾选项，避免只有报错却无法补签。
+        _serverRequiresEduConsent = true;
+      }
     });
   }
 
@@ -102,7 +110,7 @@ class _RequiredLegalConsentDialogState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(widget.communityRulesOnly
-                  ? '首次点赞、评论或发布内容前，请阅读并确认社区规则。'
+                  ? '首次点赞、评论、发送私信或发布内容前，请阅读并确认社区规则。'
                   : '继续使用前，请阅读并确认以下协议与说明。'),
               const SizedBox(height: 8),
               TextButton.icon(
@@ -128,7 +136,7 @@ class _RequiredLegalConsentDialogState
                     ? '我已阅读并同意社区规则'
                     : '我已阅读并确认用户协议和隐私政策'),
               ),
-              if (widget.requiresEduDataConsent)
+              if (_requiresEduConsent)
                 CheckboxListTile(
                   key: const ValueKey('required-edu-consent'),
                   value: _eduAccepted,

@@ -9,6 +9,7 @@ import 'package:shenliyuan/features/academic/application/academic_session_contro
 import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
 import 'package:shenliyuan/features/academic/domain/academic_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_failure.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
 import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
 import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
@@ -23,6 +24,83 @@ void main() {
   });
 
   group('AcademicSessionController', () {
+    AcademicSessionController serverController(
+            _FakeAcademicDataSource source) =>
+        AcademicSessionController(
+          repository: AcademicRepositoryImpl(
+            local: _FakeAcademicDataSource(),
+            legacy: source,
+            source: AcademicSourceKind.legacy,
+          ),
+          cleanupCoordinator: AccountSessionCleanupCoordinator(),
+        );
+
+    test('服务端绑定在冷启动后恢复，不需要手机保存密码', () async {
+      final source = _FakeAcademicDataSource(restoredStudentId: '2026000001');
+      final controller = serverController(source);
+      final startup = controller.syncAppUser('app-user-a');
+      final coordinator = _newCoordinator(controller,
+          _MemoryAcademicCredentialStore(), MemoryPreferencesStore());
+      final outcome = await coordinator.ensureAuthenticated();
+      await startup;
+      expect(outcome.isSuccess, true);
+      expect(controller.isAuthenticated, true);
+      expect(source.restoreCalls, 1);
+      expect(source.loginCalls, 0);
+      controller.dispose();
+    });
+
+    test('服务端登录忽略本机保存密码偏好，仍可开启资料缓存', () async {
+      final controller = serverController(_FakeAcademicDataSource());
+      await controller.syncAppUser('app-user-a');
+      final store = _MemoryAcademicCredentialStore();
+      final preferences = MemoryPreferencesStore();
+      final coordinator = _newCoordinator(controller, store, preferences);
+      final result = await coordinator.login(
+        studentId: '2026000001',
+        password: 'test-password',
+        saveCredentials: true,
+        saveAcademicData: true,
+      );
+      expect(result.isSuccess, true);
+      expect(store.value, isNull);
+      expect((await coordinator.loadPreferences()).saveAcademicData, true);
+      controller.dispose();
+    });
+
+    test('启动断网不会永久丢绑定，网络恢复后可再次恢复', () async {
+      final source = _FakeAcademicDataSource(
+        restoredStudentId: '2026000001',
+        restoreError: const NetworkException(message: '网络暂不可用'),
+      );
+      final controller = serverController(source);
+      await controller.syncAppUser('app-user-a');
+      final coordinator = _newCoordinator(controller,
+          _MemoryAcademicCredentialStore(), MemoryPreferencesStore());
+      expect((await coordinator.ensureAuthenticated()).kind,
+          AcademicLoginOutcomeKind.networkFailure);
+      source.restoreError = null;
+      expect((await coordinator.ensureAuthenticated()).isSuccess, true);
+      expect(controller.failure, isNull);
+      expect(controller.studentId, '2026000001');
+      expect(source.loginCalls, 0);
+      controller.dispose();
+    });
+
+    test('刷新服务端状态能同步授权撤销，登出不恢复其他账号绑定', () async {
+      final source = _FakeAcademicDataSource(restoredStudentId: '2026000001');
+      final controller = serverController(source);
+      await controller.syncAppUser('app-user-a');
+      source.restoredStudentId = null;
+      await controller.restoreSession(force: true);
+      expect(controller.isAuthenticated, false);
+      expect(controller.studentId, isNull);
+      final calls = source.restoreCalls;
+      await controller.syncAppUser(null);
+      expect(source.restoreCalls, calls);
+      controller.dispose();
+    });
+
     test('验证码登录会保留 pending 会话并加载图片', () async {
       final source = _FakeAcademicDataSource(
         loginResult: const CaptchaRequired(),
@@ -561,6 +639,8 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
     this.resetError,
     this.loginGate,
     this.onLoginStarted,
+    this.restoredStudentId,
+    this.restoreError,
   })  : courses = courses ??
             CourseFetchResult(courses: const [], source: CourseSource.desktop),
         grades = grades ?? GradeFetchResult(grades: const [], pages: 1);
@@ -585,6 +665,9 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   int courseCalls = 0;
   int gradeCalls = 0;
   int resetCalls = 0;
+  int restoreCalls = 0;
+  String? restoredStudentId;
+  Object? restoreError;
   final List<String> calls = [];
 
   @override
@@ -696,7 +779,14 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   }
 
   @override
-  Future<void> restoreSession() async {}
+  Future<void> restoreSession() async {
+    restoreCalls++;
+    if (restoreError != null) throw restoreError!;
+    _studentId = restoredStudentId;
+    _state = _studentId == null
+        ? SessionState.unauthenticated
+        : SessionState.authenticated;
+  }
 
   @override
   void close() {}

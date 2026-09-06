@@ -129,7 +129,10 @@ final class AcademicSessionController extends ChangeNotifier {
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();
-      if (_repository.sourceKind == AcademicSourceKind.legacy) {
+      if (_repository.sourceKind == AcademicSourceKind.legacy &&
+          _appUserId != null) {
+        _status = AcademicSessionStatus.loading;
+        _notifyListeners();
         try {
           await _repository.restoreSession();
           if (_disposed || generation != _accountGeneration) return;
@@ -139,7 +142,10 @@ final class AcademicSessionController extends ChangeNotifier {
               : AcademicSessionStatus.idle;
           if (_repository.sessionState == SessionState.authenticated) {
             try {
-              _profile = await _repository.getProfile();
+              final profile = await _repository.getProfile();
+              if (_disposed || generation != _accountGeneration) return;
+              _profile = profile;
+              _profileStatus = AcademicProfileStatus.loaded;
             } catch (_) {
               // 绑定已恢复时，资料刷新失败不应再次要求用户绑定。
             }
@@ -424,19 +430,35 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   /// 从服务端恢复当前 App 账号已有的教务授权。
-  Future<void> restoreSession() {
+  Future<void> restoreSession({bool force = false}) {
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (_disposed || _appUserId == null || generation != _accountGeneration) {
         return;
       }
-      await _repository.restoreSession();
-      if (_disposed || generation != _accountGeneration) return;
-      _studentId = _repository.studentId;
-      _status = _repository.sessionState == SessionState.authenticated
-          ? AcademicSessionStatus.authenticated
-          : AcademicSessionStatus.idle;
+      if (_sessionResetPending) throw StateError('教务账号上下文尚未清理完成');
+      // 与启动恢复共用队列，等待中的页面不重复发起同一次恢复请求。
+      if (!force && isAuthenticated) return;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
       _notifyListeners();
+      try {
+        await _repository.restoreSession();
+        if (_disposed || generation != _accountGeneration) return;
+        _studentId = _repository.studentId;
+        _status = _repository.sessionState == SessionState.authenticated
+            ? AcademicSessionStatus.authenticated
+            : AcademicSessionStatus.idle;
+      } catch (error) {
+        if (_disposed || generation != _accountGeneration) return;
+        // 会话恢复失败不等于撤销绑定；保留服务端确认过的学号供页面重试。
+        _studentId = _repository.studentId;
+        _failure = AcademicFailure.fromException(error);
+        _status = AcademicSessionStatus.error;
+        rethrow;
+      } finally {
+        if (!_disposed && generation == _accountGeneration) _notifyListeners();
+      }
     });
   }
 

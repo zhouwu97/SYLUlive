@@ -260,12 +260,28 @@ func (h *AuthHandler) AcceptLegalConsents(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	if err := input.validate(user.IsEduAuthorized()); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 补签基础协议复用仍有效的教务专项授权，不要求客户端再次勾选或伪造授权。
+	requireEduConsent := user.IsEduAuthorized()
+	if requireEduConsent && !input.EduDataConsentAccepted {
+		var accepted int64
+		if err := h.db.Model(&models.UserLegalConsent{}).
+			Where("user_id = ? AND document = ? AND version = ? AND revoked_at IS NULL", user.ID, models.LegalDocumentEduDataConsent, models.LegalDocumentVersion).
+			Count(&accepted).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取教务授权状态失败"})
+			return
+		}
+		requireEduConsent = accepted == 0
+	}
+	if err := input.validate(requireEduConsent); err != nil {
+		response := gin.H{"error": err.Error()}
+		if input.UserAgreementAccepted && input.PrivacyPolicyAccepted && requireEduConsent {
+			response["code"] = "edu_data_consent_required"
+		}
+		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := recordLegalConsents(tx, user.ID, input, user.IsEduAuthorized()); err != nil {
+		if err := recordLegalConsents(tx, user.ID, input, user.IsEduAuthorized() && input.EduDataConsentAccepted); err != nil {
 			return err
 		}
 		return tx.Model(&models.User{}).Where("id = ?", user.ID).Update("legal_consent_revoked_at", nil).Error

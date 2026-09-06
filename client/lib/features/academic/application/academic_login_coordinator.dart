@@ -7,6 +7,8 @@ import '../storage/academic_credential_store.dart';
 import '../storage/academic_persistence_policy.dart';
 import '../storage/academic_persistence_gate.dart';
 import '../storage/academic_storage_preferences.dart';
+import '../domain/academic_repository.dart';
+import '../domain/academic_failure.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
 import '../../campus_data/storage/account_scoped_snapshot_store.dart';
 import '../../campus_data/storage/schedule_cache_store.dart';
@@ -163,6 +165,33 @@ final class AcademicLoginCoordinator {
   Future<AcademicLoginOutcome> _ensureAuthenticated({
     required bool allowSavedCredential,
   }) async {
+    if (controller.sourceKind == AcademicSourceKind.legacy) {
+      final generation = controller.contextGeneration;
+      final appUserId = controller.appUserId;
+      try {
+        // 服务端绑定不依赖手机保存密码，冷启动和短暂断网后先尝试恢复已有授权。
+        await controller.restoreSession();
+        if (!controller.isCurrentContext(
+            generation: generation, appUserId: appUserId)) {
+          return const AcademicLoginOutcome(
+              kind: AcademicLoginOutcomeKind.contextChanged);
+        }
+        return AcademicLoginOutcome(
+          kind: controller.isAuthenticated
+              ? AcademicLoginOutcomeKind.success
+              : AcademicLoginOutcomeKind.credentialsRequired,
+          message: controller.isAuthenticated ? null : '请先绑定教务账号',
+        );
+      } catch (error) {
+        final failure = AcademicFailure.fromException(error);
+        return AcademicLoginOutcome(
+          kind: failure.kind == AcademicFailureKind.network
+              ? AcademicLoginOutcomeKind.networkFailure
+              : AcademicLoginOutcomeKind.failure,
+          message: failure.message,
+        );
+      }
+    }
     if (!allowSavedCredential) {
       return const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.credentialsRequired,
@@ -302,29 +331,33 @@ final class AcademicLoginCoordinator {
     required bool saveAcademicData,
   }) async {
     var saveWarning = false;
-    AcademicStoragePreferences? preferences;
-    try {
-      preferences = persistencePolicy?.preferences ?? await _loadPreferences();
-      if (saveCredentials) {
-        await credentialStore.write(appUserId, credential);
-        await preferences.setSaveCredentials(true);
-      } else {
-        await credentialStore.delete(appUserId);
-        await preferences.setSaveCredentials(false);
-      }
-    } catch (_) {
-      saveWarning = true;
-      // Secure Store 写入成功但偏好写入失败时回滚凭据，避免出现用户以为
-      // 未保存、设备却仍残留学校密码的半成功状态。
+    // 服务端模式不读取或修改本机密码，资料缓存仍按独立策略处理。
+    if (controller.sourceKind == AcademicSourceKind.local) {
+      AcademicStoragePreferences? preferences;
       try {
-        await credentialStore.delete(appUserId);
-      } catch (_) {}
-      // 任一凭据持久化步骤失败时关闭有效开关，避免残留凭据被自动使用。
-      try {
-        preferences ??=
+        preferences =
             persistencePolicy?.preferences ?? await _loadPreferences();
-        await preferences.setSaveCredentials(false);
-      } catch (_) {}
+        if (saveCredentials) {
+          await credentialStore.write(appUserId, credential);
+          await preferences.setSaveCredentials(true);
+        } else {
+          await credentialStore.delete(appUserId);
+          await preferences.setSaveCredentials(false);
+        }
+      } catch (_) {
+        saveWarning = true;
+        // Secure Store 写入成功但偏好写入失败时回滚凭据，避免出现用户以为
+        // 未保存、设备却仍残留学校密码的半成功状态。
+        try {
+          await credentialStore.delete(appUserId);
+        } catch (_) {}
+        // 任一凭据持久化步骤失败时关闭有效开关，避免残留凭据被自动使用。
+        try {
+          preferences ??=
+              persistencePolicy?.preferences ?? await _loadPreferences();
+          await preferences.setSaveCredentials(false);
+        } catch (_) {}
+      }
     }
 
     try {

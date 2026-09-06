@@ -79,11 +79,20 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   /// 读取服务端已有绑定，并在需要时恢复教务会话。
   Future<void> restore() async {
+    try {
+      await _restore();
+    } on DioException catch (error) {
+      throw _networkException(error, '恢复教务绑定');
+    }
+  }
+
+  Future<void> _restore() async {
     _ensureOpen();
     _ensureNetworkEnabled();
     final response = await _dio.get('/edu/status');
     final data = _requireSuccessfulMap(response, '获取教务绑定状态');
-    final authorized = data['edu_authorized'] == true || data['edu_bound'] == true;
+    final authorized =
+        data['edu_authorized'] == true || data['edu_bound'] == true;
     if (!authorized) {
       _studentId = null;
       _sessionState = SessionState.unauthenticated;
@@ -95,9 +104,17 @@ final class LegacyServerDataSource implements AcademicDataSource {
       _sessionState = SessionState.authenticated;
       return;
     }
+    // 已确认过期，恢复请求失败时不能继续向页面报告在线。
+    _sessionState = SessionState.expired;
     final resumed = await _dio.post('/edu/session/resume');
     final resumedData = _requireSuccessfulMap(resumed, '恢复教务会话');
-    _studentId = _text(resumedData, const ['edu_student_id', 'student_id'], fallback: _studentId ?? '');
+    if (resumedData['edu_authorized'] != true ||
+        resumedData['edu_session_state'] != 'active') {
+      _sessionState = SessionState.expired;
+      throw const SessionExpiredException();
+    }
+    _studentId = _text(resumedData, const ['edu_student_id', 'student_id'],
+        fallback: _studentId ?? '');
     _sessionState = SessionState.authenticated;
   }
 

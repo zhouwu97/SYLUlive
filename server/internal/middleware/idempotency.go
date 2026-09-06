@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -64,14 +65,7 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		// 再读取请求体，避免未认证的大请求先消耗内存和 CPU。
 		scope := idempotencyScopeWithJWT(c, db, jwtSecret)
 
-		mediaType, _, mediaTypeErr := mime.ParseMediaType(c.GetHeader("Content-Type"))
-		if mediaTypeErr == nil && strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
-			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
-				"code":    "idempotency_body_too_large",
-				"message": "multipart 请求不支持全量幂等校验，请不要携带 Idempotency-Key",
-			})
-			return
-		}
+		// 评论的文字和已上传附件 ID 也使用 multipart；沿用大小上限，不能按格式一律拒绝。
 		if c.Request.ContentLength > idempotencyMaxBodySize {
 			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
 				"code":    "idempotency_body_too_large",
@@ -133,6 +127,14 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		}()
 
 		c.Next()
+		// 认证门禁尚未进入业务处理，确认协议或刷新会话后必须允许原键重试。
+		if c.GetBool("idempotency_auth_rejected") {
+			if err := db.Where("id = ? AND state = ?", record.ID, models.IdempotencyStateProcessing).
+				Delete(&models.IdempotencyRecord{}).Error; err != nil {
+				log.Printf("[IDEMPOTENCY_AUTH_RELEASE_FAILED] record_id=%d err=%v", record.ID, err)
+			}
+			return
+		}
 		status := capture.Status()
 		if status <= 0 {
 			status = http.StatusOK
@@ -290,8 +292,8 @@ func sha256Hex(value []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// canonicalIdempotencyBody 去掉 multipart 每次构造都会变化的 boundary，
-// 否则带图评论在同一幂等键重试时会被误判为“载荷变化”。
+// canonicalIdempotencyBody 按字段和附件内容校验 multipart，忽略传输 boundary，
+// 不替换正文中的同名字节，避免不同内容被错误地视作同一请求。
 func canonicalIdempotencyBody(contentType string, body []byte) []byte {
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err == nil {
@@ -317,7 +319,31 @@ func canonicalIdempotencyBody(contentType string, body []byte) []byte {
 	if boundary == "" {
 		return body
 	}
-	return bytes.ReplaceAll(body, []byte(boundary), []byte("__idempotency_boundary__"))
+	type canonicalPart struct {
+		Header map[string][]string
+		Body   []byte
+	}
+	var parts []canonicalPart
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		part, err := reader.NextRawPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return body
+		}
+		data, err := io.ReadAll(part)
+		if err != nil {
+			return body
+		}
+		parts = append(parts, canonicalPart{Header: part.Header, Body: data})
+	}
+	canonical, err := json.Marshal(parts)
+	if err != nil {
+		return body
+	}
+	return canonical
 }
 
 type idempotencyResponseWriter struct {

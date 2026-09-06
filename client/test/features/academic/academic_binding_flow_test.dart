@@ -24,6 +24,8 @@ void main() {
   late List<RequestOptions> requests;
   bool authorized = false;
   bool rejectRevoke = false;
+  bool expireSession = false;
+  bool rejectResume = false;
   int revokeStatus = 200;
   Completer<void>? loginGate;
 
@@ -31,6 +33,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     authorized = false;
     rejectRevoke = false;
+    expireSession = false;
+    rejectResume = false;
     revokeStatus = 200;
     loginGate = null;
     requests = [];
@@ -41,6 +45,17 @@ void main() {
         if (options.path == '/edu/bind') {
           if (loginGate != null) await loginGate!.future;
           authorized = true;
+        }
+        if (options.path == '/edu/session/resume') {
+          if (rejectResume) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+              message: '网络连接失败',
+            ));
+            return;
+          }
+          expireSession = false;
         }
         if (options.path == '/edu/authorization') {
           if (rejectRevoke) {
@@ -60,7 +75,8 @@ void main() {
             'success': true,
             'edu_authorized': authorized,
             'edu_student_id': authorized ? '2026000001' : '',
-            'edu_session_state': authorized ? 'active' : 'unbound',
+            'edu_session_state':
+                authorized ? (expireSession ? 'expired' : 'active') : 'unbound',
           },
         ));
       },
@@ -171,6 +187,27 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  test('过期会话恢复失败保留绑定，重试通过服务端凭据恢复且不重新绑定', () async {
+    initialize();
+    authorized = true;
+    await controller.syncAppUser('test-app-user');
+    expireSession = true;
+    rejectResume = true;
+    await expectLater(controller.restoreSession(force: true), throwsException);
+    expect(controller.isAuthenticated, false);
+    expect(provider.isBound, true);
+    expect(controller.studentId, '2026000001');
+    rejectResume = false;
+    await controller.restoreSession();
+    expect(controller.isAuthenticated, true);
+    expect(controller.failure, isNull);
+    final resumes =
+        requests.where((request) => request.path == '/edu/session/resume');
+    expect(resumes.length, 2);
+    expect(resumes.every((request) => request.data == null), true);
+    expect(requests.where((request) => request.path == '/edu/bind'), isEmpty);
+  });
 
   test('未同意专项授权时 Provider 也不发出绑定请求', () async {
     initialize();

@@ -550,6 +550,17 @@ class EduProvider extends ChangeNotifier {
   String? get userId => _userId;
 
   Future<void> ensureStatusLoaded() async {
+    final controller = _academicSessionController;
+    if (controller != null &&
+        controller.sourceKind == AcademicSourceKind.legacy &&
+        !controller.isAuthenticated) {
+      try {
+        await controller.restoreSession();
+      } catch (_) {
+        // 恢复错误由控制器保留，不能清除服务端绑定或伪装为恢复成功。
+      }
+      _applyAcademicSessionState();
+    }
     while (!_statusLoaded) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
@@ -568,6 +579,14 @@ class EduProvider extends ChangeNotifier {
     required int generation,
   }) async {
     if (_userId != expectedUserId || generation != _statusGeneration) return;
+    final controller = _academicSessionController;
+    if (controller != null &&
+        controller.sourceKind == AcademicSourceKind.legacy) {
+      try {
+        await controller.restoreSession(force: true);
+      } catch (_) {}
+      if (_userId != expectedUserId || generation != _statusGeneration) return;
+    }
     _applyAcademicSessionState();
     if (!_statusLoaded) {
       _statusLoaded = true;
@@ -761,6 +780,12 @@ class EduProvider extends ChangeNotifier {
 
     if (localController != null &&
         localController.sourceKind == AcademicSourceKind.legacy) {
+      if (!localController.isAuthenticated) {
+        return OperationResult.fail(
+          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
+          errorCode: 'LOCAL_SESSION_NOT_READY',
+        );
+      }
       return _runEduRequest(() async {
         try {
           final response = await _dio.post(
@@ -1127,6 +1152,12 @@ class EduProvider extends ChangeNotifier {
 
     if (localController != null &&
         localController.sourceKind == AcademicSourceKind.legacy) {
+      if (!localController.isAuthenticated) {
+        return OperationResult.fail(
+          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
+          errorCode: 'LOCAL_SESSION_NOT_READY',
+        );
+      }
       return _runEduRequest(() async {
         try {
           final response = await _dio.post(

@@ -3,9 +3,11 @@ package middleware
 import (
 	"bytes"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,6 +18,62 @@ import (
 	"gorm.io/gorm"
 	"shenliyuan/internal/models"
 )
+
+func TestIdempotencyMultipartCommentReplayAndPayloadConflict(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	var calls int
+	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+		calls++
+		if c.PostForm("content") != "评论 boundary-a" || c.PostForm("file_ids") != "12" {
+			t.Fatalf("表单未完整传递到业务层")
+		}
+		c.JSON(http.StatusCreated, gin.H{"id": calls})
+	})
+	request := func(boundary, content string) *httptest.ResponseRecorder {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.SetBoundary(boundary); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteField("content", content); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteField("file_ids", "12"); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req := requestWithKey(http.MethodPost, "/write", "comment-retry", body.String())
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		return response
+	}
+	first := request("boundary-a", "评论 boundary-a")
+	retry := request("boundary-b", "评论 boundary-a")
+	changed := request("boundary-b", "评论 boundary-b")
+	if first.Code != 201 || retry.Code != 201 || first.Body.String() != retry.Body.String() || changed.Code != 409 || calls != 1 {
+		t.Fatalf("statuses=%d/%d/%d calls=%d", first.Code, retry.Code, changed.Code, calls)
+	}
+}
+
+func TestIdempotencyMultipartStillEnforcesBodyLimit(t *testing.T) {
+	for _, unknownLength := range []bool{false, true} {
+		db := openIdempotencyTestDB(t)
+		router := newIdempotencyTestRouter(t, db, func(c *gin.Context) { t.Fatal("超大请求进入业务层") })
+		req := requestWithKey(http.MethodPost, "/write", "large", strings.Repeat("x", idempotencyMaxBodySize+1))
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+		if unknownLength {
+			req.ContentLength = -1
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != 413 {
+			t.Fatalf("status=%d", response.Code)
+		}
+	}
+}
 
 func newIdempotencyTestRouter(t *testing.T, db *gorm.DB, handler gin.HandlerFunc) *gin.Engine {
 	t.Helper()

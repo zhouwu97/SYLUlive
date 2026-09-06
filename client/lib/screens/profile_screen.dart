@@ -86,6 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    currentHomeTabIndex.addListener(_handleHomeTabVisibilityChanged);
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       _refreshAfterResume,
@@ -101,6 +102,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    currentHomeTabIndex.removeListener(_handleHomeTabVisibilityChanged);
     _unregisterResumeRefresh?.call();
     super.dispose();
   }
@@ -111,7 +113,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (widget.isActive && !oldWidget.isActive) {
       _loadUnreadCount();
       _fetchPostCount();
+      _refreshAdminOverview();
     }
+  }
+
+  void _handleHomeTabVisibilityChanged() {
+    if (mounted && currentHomeTabIndex.value == 4) {
+      _refreshAdminOverview();
+    }
+  }
+
+  Future<void> _refreshAdminOverview() async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final future = auth.user?.isAdmin == true
+        ? _loadAdminOverview(auth, auth.user)
+        : null;
+    setState(() {
+      _adminOverviewFuture = future;
+    });
+    await future;
   }
 
   Future<void> _fetchPostCount() async {
@@ -173,6 +194,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       auth.refreshUser(),
       _loadUnreadCount(),
       _fetchPostCount(),
+      _refreshAdminOverview(),
     ]);
     if (mounted) _loadPrefs();
   }
@@ -661,18 +683,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             iconColor: Colors.red,
             title: '管理处',
             subtitle:
-                adminTodo > 0 ? '处理举报、审核教师和专业 · $adminTodo 条待办' : '处理举报与社区治理',
-            badgeText: adminTodo > 0 ? '$adminTodo' : null,
+                adminTodo > 0 ? '处理举报与社区治理 · $adminTodo 条待办' : '处理举报与社区治理',
+            badgeText: adminTodo > 0 ? (adminTodo > 99 ? '99+' : '$adminTodo') : null,
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
               ).then((_) {
-                if (!mounted) return;
-                final auth = context.read<AuthProvider>();
-                setState(() {
-                  _adminOverviewFuture = _loadAdminOverview(auth, auth.user);
-                });
+                _refreshAdminOverview();
               });
             },
           ),
@@ -770,15 +788,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
-    final pendingTeachers = await loadList('/teachers/pending');
-    final pendingMajors = await loadList('/majors/pending');
-    final pendingInvitations = await loadList('/admin/invitations/pending');
-    final pendingRemovals = await loadList('/admin/removals/pending');
+    Future<int> loadCount(String path,
+        {Map<String, dynamic>? queryParameters}) async {
+      try {
+        final response =
+            await auth.dio.get(path, queryParameters: queryParameters);
+        final data = response.data;
+        if (data is List) return data.length;
+        if (data is Map) {
+          final count = data['count'];
+          if (count is num) return count.toInt();
+          final items = data['items'] ?? data['reviews'];
+          if (items is List) return items.length;
+        }
+      } catch (_) {
+        // 单类请求失败不阻断其他已确认待办的提醒。
+      }
+      return 0;
+    }
 
-    final adminCount = pendingTeachers.length +
-        pendingMajors.length +
-        pendingInvitations.where((i) => i['my_vote'] != true).length +
-        pendingRemovals.where((r) => r['can_vote'] == true).length;
+    // 入口覆盖管理处的审核队列，兼容列表、分页列表和计数接口。
+    final counts = await Future.wait<int>([
+      loadCount('/reports', queryParameters: {'status': 'pending'}),
+      loadCount('/admin/featured-applications'),
+      loadCount('/teachers/pending'),
+      loadCount('/majors/pending'),
+      loadCount('/canteens/pending'),
+      loadCount('/admin/course-evaluations/pending',
+          queryParameters: {'limit': 50}),
+      loadCount('/admin/exam-papers/pending-count'),
+      loadCount('/admin/water/section-icon-reviews',
+          queryParameters: {'status': 'pending'}),
+      loadList('/admin/invitations/pending')
+          .then((items) => items.where((i) => i['my_vote'] != true).length),
+      loadList('/admin/removals/pending')
+          .then((items) => items.where((r) => r['can_vote'] == true).length),
+    ]);
+    final adminCount = counts.fold<int>(0, (total, count) => total + count);
 
     var superCount = 0;
     if (user?.isSuperAdmin == true) {

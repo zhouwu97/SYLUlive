@@ -1238,7 +1238,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (context.mounted) {
       schedule.loadCourses(forceRefresh: true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机教务会话已建立')),
+        const SnackBar(content: Text('教务账号已绑定')),
       );
     }
   }

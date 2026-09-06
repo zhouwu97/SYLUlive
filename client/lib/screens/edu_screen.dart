@@ -417,7 +417,7 @@ class _EduScreenState extends State<EduScreen> {
     await eduProvider.refreshStatus();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本机教务会话已建立')),
+        const SnackBar(content: Text('教务账号已绑定')),
       );
     }
   }
@@ -435,7 +435,7 @@ class _EduScreenState extends State<EduScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('确认解绑'),
-        content: const Text('解绑后将在本设备清除教务账号信息，确定要解绑吗？'),
+        content: const Text('解绑将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学号和学生身份会保留。确定要解绑吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -449,7 +449,7 @@ class _EduScreenState extends State<EduScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      result.success ? '解绑成功' : (result.errorMessage ?? '解绑失败'),
+                      result.success ? '教务授权已撤销' : (result.errorMessage ?? '解绑失败'),
                     ),
                     backgroundColor: result.success ? Colors.green : Colors.red,
                   ),

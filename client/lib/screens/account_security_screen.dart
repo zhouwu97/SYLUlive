@@ -5,6 +5,7 @@ import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/auth_provider.dart';
+import '../providers/edu_provider.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/settings/settings_page_scaffold.dart';
 import '../widgets/settings/settings_section.dart';
@@ -266,7 +267,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     newPassword.dispose();
   }
 
-  Future<void> _showLocalAcademicLogin() async {
+  Future<void> _showAcademicLogin() async {
     final controller = context.read<AcademicSessionController>();
     final success = await AcademicLoginDialog.show(
       context,
@@ -276,8 +277,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     );
     if (!mounted || success != true) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('本机教务会话已建立')),
+      const SnackBar(content: Text('教务账号已绑定')),
     );
+    await _reload();
   }
 
   AcademicLoginCoordinator? _coordinatorOrNull() {
@@ -288,12 +290,33 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
   }
 
-  Future<void> _logoutLocalAcademic() async {
-    await context.read<AcademicSessionController>().resetSession();
+  Future<void> _revokeAcademicAuthorization() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('解除教务绑定'),
+        content: const Text('将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学号和学生身份会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认解绑'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    final result = await context.read<EduProvider>().revokeAuthorization();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('本机教务会话已退出')),
+      SnackBar(
+          content: Text(
+              result.success ? '教务授权已撤销' : result.errorMessage ?? '解绑失败，请重试')),
     );
+    if (result.success) await _reload();
   }
 
   @override
@@ -313,10 +336,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
 
     final localAcademic = context.watch<AcademicSessionController>();
-    final effectiveStudentId = localAcademic.studentId ?? '';
     final profileError = localAcademic.hasProfileError;
-    final effectiveStudentVerified =
-        localAcademic.isAuthenticated && !profileError;
+    final effectiveStudentId = _studentId;
+    // 学生身份属于 App 账号，不随教务会话过期或撤销授权而消失。
+    final effectiveStudentVerified = _security?['student_verified'] == true ||
+        context.watch<AuthProvider>().user?.studentVerified == true;
+    final eduAuthorized = context.watch<EduProvider>().isAuthorized ||
+        _security?['edu_authorized'] == true;
     final loginMethods = (_security?['login_methods'] as List? ?? const [])
         .map((method) => method == 'student_id' ? '学号' : '邮箱')
         .join('、');
@@ -366,18 +392,12 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务系统状态',
-              subtitle: profileError ? '本机直连已认证，但个人资料加载失败' : '本机直连，不使用服务器教务授权',
+              subtitle: '服务器加密保存登录凭据，支持自动重新登录',
               trailing: SettingsStatusBadge(
-                label: profileError
-                    ? '资料失败'
-                    : localAcademic.isAuthenticated
-                        ? '本机在线'
-                        : '本机未连接',
-                type: profileError
-                    ? SettingsStatusBadgeType.warning
-                    : localAcademic.isAuthenticated
-                        ? SettingsStatusBadgeType.success
-                        : SettingsStatusBadgeType.neutral,
+                label: localAcademic.isAuthenticated ? '已连接' : '未连接',
+                type: localAcademic.isAuthenticated
+                    ? SettingsStatusBadgeType.success
+                    : SettingsStatusBadgeType.neutral,
               ),
               showChevron: false,
             ),
@@ -390,16 +410,10 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.badge_outlined,
-              title: profileError
-                  ? '主账号资料待重试'
-                  : effectiveStudentVerified
-                      ? '主账号：$effectiveStudentId'
-                      : '尚未认证学生',
-              subtitle: profileError
-                  ? '教务认证已完成，个人资料加载失败'
-                  : effectiveStudentVerified
-                      ? '学生身份已认证'
-                      : '完成本机教务登录后显示学号',
+              title: effectiveStudentVerified
+                  ? '主账号：$effectiveStudentId'
+                  : '尚未认证学生',
+              subtitle: effectiveStudentVerified ? '学生身份已认证' : '完成教务绑定后认证学生身份',
               showChevron: false,
             ),
             SettingsTile(
@@ -446,16 +460,10 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               icon: localAcademic.isAuthenticated
                   ? Icons.phonelink_lock_outlined
                   : Icons.phonelink_outlined,
-              title: localAcademic.isAuthenticated
-                  ? profileError
-                      ? '本机教务：资料失败'
-                      : '本机教务：在线'
-                  : '本机直连教务',
-              subtitle: profileError
-                  ? '学号 ${localAcademic.studentId ?? '--'}；个人资料加载失败，可重试'
-                  : localAcademic.isAuthenticated
-                      ? '学号 ${localAcademic.studentId ?? '--'}；Cookie 仅保存在内存中'
-                      : '直接连接学校教务，应用退出或换号时清理会话',
+              title: localAcademic.isAuthenticated ? '教务账号已连接' : '绑定教务账号',
+              subtitle: localAcademic.isAuthenticated
+                  ? '学号 ${localAcademic.studentId ?? '--'}；服务器负责恢复登录'
+                  : '绑定后可读取课表、成绩，重新登录 App 后可恢复绑定',
               trailing: SettingsStatusBadge(
                 label: profileError
                     ? '资料失败'
@@ -477,24 +485,20 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               ),
               onTap: localAcademic.isAuthenticated && !profileError
                   ? null
-                  : _showLocalAcademicLogin,
-              showChevron: !localAcademic.isAuthenticated || profileError,
+                  : _showAcademicLogin,
+              showChevron: !localAcademic.isAuthenticated,
             ),
-            if (localAcademic.isAuthenticated)
+            if (eduAuthorized)
               SettingsTile(
                 icon: Icons.logout_outlined,
-                title: '断开本次会话',
-                subtitle: '清除学校 Cookie/Session，保留本机凭据和教务资料',
-                onTap: _logoutLocalAcademic,
+                title: '解除教务绑定',
+                subtitle: '撤销服务器授权并清理登录凭据，保留已认证学号',
+                onTap: _revokeAcademicAuthorization,
               ),
-            SettingsTile(
+            const SettingsTile(
               icon: Icons.hub_outlined,
-              title: localAcademic.isAuthenticated
-                  ? profileError
-                      ? '本机教务：资料待重试'
-                      : '本机教务：已连接'
-                  : '本机教务：未连接',
-              subtitle: 'Cookie 仅保存在本机内存，不使用服务器教务会话',
+              title: '本机教务资料缓存',
+              subtitle: '课表、成绩按 App 账号隔离并加密缓存，用于离线查看',
               showChevron: false,
             ),
           ],

@@ -919,6 +919,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       _buildSettingsRow(
         child: _buildSettingsTile(
+          icon: Icons.rate_review_outlined,
+          iconColor: AppColors.brandPrimary,
+          title: '学科评价',
+          subtitle: '查看与管理我的学科评价',
+          isDark: isDark,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const MyContentScreen(initialTabIndex: 2),
+              ),
+            );
+          },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
           icon: Icons.bug_report_outlined,
           iconColor: Colors.green,
           title: '功能建议 (Bug提交)',

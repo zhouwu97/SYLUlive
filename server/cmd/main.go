@@ -432,18 +432,7 @@ func main() {
 		log.Fatal("历史推送 Token 清理失败:", err)
 	}
 	// 旧客户端的一次性六项确认只保留为历史捆绑证据，不能升级成独立功能授权。
-	if err := db.Model(&models.UserLegalConsent{}).
-		Where("document IN ? AND acknowledgement_type <> ?", []string{
-			models.LegalDocumentCommunityRules,
-			models.LegalDocumentMinorProtection,
-			models.LegalDocumentContentComplaint,
-			models.LegalDocumentSDKDisclosure,
-		}, "rules_acceptance").
-		Updates(map[string]interface{}{
-			"acknowledgement_type": "legacy_bundled",
-			"scope":                "legacy",
-			"scene":                "migration",
-		}).Error; err != nil {
+	if err := models.MarkLegacyBundledConsents(db); err != nil {
 		log.Fatal("历史捆绑授权标记失败:", err)
 	}
 	if err := models.BackfillLegacyMarketContacts(db); err != nil {
@@ -913,7 +902,8 @@ func main() {
 				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
 			} else {
 				providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
-				provider, ragErr = ai.NewOpenAICompatibleProvider(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIChatModel, providerHTTPClient)
+				provider, ragErr = ai.NewOpenAICompatibleProvider(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIChatModel, cfg.AIReasoningEffort, providerHTTPClient,
+					ai.WithOpenAICompatibleFallbackModel(cfg.AIFallbackChatModel))
 				if ragErr != nil {
 					log.Fatalf("AI Provider 初始化失败: %v", ragErr)
 				}

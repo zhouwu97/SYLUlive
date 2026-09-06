@@ -44,6 +44,8 @@ type Config struct {
 	AIAPIKey                               string   // 仅从服务端环境变量读取的模型网关密钥
 	AIBaseURL                              string   // OpenAI 兼容模型网关地址
 	AIChatModel                            string   // 对话模型
+	AIReasoningEffort                      string   // 留空沿用网关默认思考深度
+	AIFallbackChatModel                    string   // 留空关闭空流故障时的备用模型。
 	AIRequestTimeoutSeconds                int      // 单次运行硬超时
 	AILegacyMaxOutputTokens                int      // 旧 Go RAG 单次生成的最大输出 token
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
@@ -391,6 +393,16 @@ func Load() *Config {
 	if aiChatModel == "" {
 		aiChatModel = "gpt-5.4"
 	}
+	aiReasoningEffort := strings.ToLower(strings.TrimSpace(os.Getenv("AI_REASONING_EFFORT")))
+	aiFallbackChatModel := strings.TrimSpace(os.Getenv("AI_FALLBACK_CHAT_MODEL"))
+	if aiFallbackChatModel != "" && !approvedAIChatModel(aiFallbackChatModel) {
+		panic("AI_FALLBACK_CHAT_MODEL 必须是已审核的模型名称")
+	}
+	switch aiReasoningEffort {
+	case "", "none", "low", "medium", "high", "xhigh", "max":
+	default:
+		panic("AI_REASONING_EFFORT 必须为空或 none、low、medium、high、xhigh、max")
+	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 7, 1, 12)
@@ -508,6 +520,8 @@ func Load() *Config {
 		AIAPIKey:                               aiAPIKey,
 		AIBaseURL:                              aiBaseURL,
 		AIChatModel:                            aiChatModel,
+		AIReasoningEffort:                      aiReasoningEffort,
+		AIFallbackChatModel:                    aiFallbackChatModel,
 		AIRequestTimeoutSeconds:                aiRequestTimeoutSeconds,
 		AILegacyMaxOutputTokens:                aiLegacyMaxOutputTokens,
 		AIMaxToolSteps:                         aiMaxToolSteps,
@@ -681,6 +695,15 @@ func envPositiveUintList(name string) []uint {
 	return result
 }
 
+func approvedAIChatModel(model string) bool {
+	switch model {
+	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateAIConfig(
 	enabled bool,
 	provider, apiKey, baseURL, model string,
@@ -700,8 +723,8 @@ func validateAIConfig(
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
-	if model != "gpt-5.4" && model != "gpt-5.4-mini" {
-		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4 或 gpt-5.4-mini")
+	if !approvedAIChatModel(model) {
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna 或 gpt-5.6-terra")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {

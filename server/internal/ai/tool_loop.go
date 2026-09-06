@@ -186,6 +186,7 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		}
 		outcome.cost.ModelCalls++
 		stream, err := r.provider.Start(ctx, ProviderRequest{
+			Model:    run.Model,
 			Messages: messages, Temperature: 0.1, MaxTokens: maxTokens,
 			Tools: requestTools, RequiredTool: forcedTool,
 		})
@@ -864,6 +865,17 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 			}
 			return "", nil, outcome
 		}
+		if event.Model != "" && event.Model != run.Model {
+			previousModel := run.Model
+			if err := r.db.WithContext(ctx).Model(&models.AIRun{}).Where("id = ?", run.ID).Update("model", event.Model).Error; err != nil {
+				outcome.failureCode = "provider_model_state_failed"
+				return "", nil, outcome
+			}
+			run.Model = event.Model
+			_, _ = r.appendEvent(ctx, run.ID, "provider.model_selected", map[string]interface{}{
+				"previous_model": previousModel, "model": event.Model,
+			}, true)
+		}
 		switch event.Type {
 		case ProviderEventTextDelta:
 			answer.WriteString(event.Text)
@@ -952,6 +964,9 @@ func fatalToolResultCode(toolName string, result json.RawMessage) string {
 		return ""
 	}
 	if toolName == "academic_get_risk_analysis" {
+		if envelope.ErrorCode != "" {
+			return envelope.ErrorCode
+		}
 		switch envelope.Status {
 		case "available", "stale", "partial", "missing", "needs_refresh",
 			"permission_required", "device_offline", "fetching":

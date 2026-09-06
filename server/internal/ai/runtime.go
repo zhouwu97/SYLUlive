@@ -456,6 +456,21 @@ func (r *Runtime) Execute(runID, message string) {
 		"page_context":    len(run.AgentContext) > 0,
 		"preflight_count": len(preflightMessages),
 	}, true)
+	// 纯问候没有事实查询需求，不应因上游空流而失去最基本的交互响应。
+	// 完整匹配避免把“你好，帮我查成绩”等真实任务截成问候。
+	if answer := campusGreetingReply(message); answer != "" {
+		if err := r.transition(ctx, &run, models.AIRunStateRetrieving, models.AIRunStatePlanning); err != nil {
+			return
+		}
+		if err := r.transition(ctx, &run, models.AIRunStatePlanning, models.AIRunStateGenerating); err != nil {
+			return
+		}
+		r.markQuotaConsumed(runID)
+		_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": answer}, false)
+		_, _ = r.appendEvent(ctx, runID, "answer.local", map[string]interface{}{"reason": "greeting"}, true)
+		r.completeRun(runID, answer, nil, ProviderEvent{UsageAvailable: true}, 0, false, "")
+		return
+	}
 	// Agent Contract v5 将页面上下文、普通文本和政策问题统一交给同一套
 	// Goal/Capability/Tool Loop；旧 LangChain Policy Runner 仅保留在灰度兼容分支。
 	useUnifiedAgent := r.config.UnifiedAgentEnabled
@@ -466,23 +481,40 @@ func (r *Runtime) Execute(runID, message string) {
 		r.executeLangChain(ctx, &run, message)
 		return
 	}
+	history, historyErr := r.loadPolicyHistory(ctx, run)
+	if historyErr != nil {
+		// 历史读取失败时不拼接未经归属校验的内容，本轮仍可独立回答。
+		history = nil
+	}
+	campusContext := needsCampusConversationContext(message, history) || contextPrompt != "" || len(preflightMessages) > 0
+	routingQuery := campusConversationRoutingQuery(message, history)
 	registeredToolDefinitions := r.toolDefinitions()
 	toolDefinitions := registeredToolDefinitions
 	toolRoutingMode := toolContextRoutingLegacyDeterministic
 	var requiredTool string
 	if useUnifiedAgent {
-		toolDefinitions = shortlistModelTools(message, toolDefinitions)
+		toolDefinitions = shortlistModelTools(routingQuery, toolDefinitions)
 		toolRoutingMode = toolContextRoutingUnifiedShortlist
-		requiredTool, _ = requiredFastPathTool(message, toolDefinitions)
+		requiredTool, _ = requiredFastPathTool(routingQuery, toolDefinitions)
 	} else {
-		toolDefinitions = routeModelTools(message, toolDefinitions)
-		requiredTool, _ = requiredDecisionTool(message, toolDefinitions)
+		toolDefinitions = routeModelTools(routingQuery, toolDefinitions)
+		requiredTool, _ = requiredDecisionTool(routingQuery, toolDefinitions)
+	}
+	if requiredTool != "" {
+		campusContext = true
+	}
+	if !campusContext {
+		toolDefinitions = nil
+		toolRoutingMode = "general_conversation"
 	}
 	hasTools := len(toolDefinitions) > 0
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)
 	retrieval := RetrievalResult{}
 	var err error
-	retrievalQuery := policyRetrievalQuery(message, requiredTool)
+	retrievalQuery := policyRetrievalQuery(routingQuery, requiredTool)
+	if !campusContext {
+		retrievalQuery = ""
+	}
 	if retrievalQuery != "" {
 		if r.retriever == nil {
 			err = errors.New("policy_retriever_unavailable")
@@ -505,7 +537,7 @@ func (r *Runtime) Execute(runID, message string) {
 	retrieval.Plan = queryPlan
 	retrieval.Chunks = selectPolicyCoverage(queryPlan, retrieval.Chunks, policyCoverageLimit)
 	coverage := evaluatePolicyEvidenceCoverage(queryPlan, retrieval.Chunks)
-	if len(retrieval.Chunks) == 0 {
+	if len(retrieval.Chunks) == 0 && campusContext {
 		retrieval.DegradedModes = append(retrieval.DegradedModes, "rag_insufficient_sources")
 	}
 	toolsSuppressedByVerifiedPolicyRAG := false
@@ -542,18 +574,25 @@ func (r *Runtime) Execute(runID, message string) {
 	// 否则“挂科怎么办”会丢掉现行重修办法那一条必答依据。
 	promptChunks := retrieval.Chunks
 	systemPrompt := campusAgentSystemPrompt
-	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
+	if !campusContext {
+		systemPrompt = generalConversationSystemPrompt
+	} else if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
 	} else if hasTools {
 		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。综合学业分析必须先调用 academic_get_risk_analysis，按‘已观察事实—主要风险—优先行动—仍需确认’组织回答；只要结果包含未通过课程、核心数据缺失或快照覆盖不完整，就不得写‘总体风险不大’或‘没有风险’。若结果的 optional_missing 仅含 erke，须明确“二课风险暂未纳入”，但可以就完整的成绩、学分和学业情况说明核心学业范围内的观察；不得把这个观察扩展为整体结论。如果结果提供 covered_terms，必须明确说明分析覆盖的学期范围，不能把单学期统计冒充全部成绩。"
 	}
-	messages := []Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: appendAgentContextPrompt(
+	currentPrompt := message
+	if campusContext {
+		currentPrompt = appendAgentContextPrompt(
 			buildPolicyPrompt(message, queryPlan, coverage, promptChunks),
 			contextPrompt,
-		)},
+		)
 	}
+	messages := []Message{{Role: "system", Content: systemPrompt + conversationHistoryInstruction}}
+	for _, item := range history {
+		messages = append(messages, Message{Role: item.Role, Content: item.Content})
+	}
+	messages = append(messages, Message{Role: "user", Content: currentPrompt})
 	messages = append(messages, preflightMessages...)
 	if !hasTools {
 		// 纯政策问答在 Provider 建连前进入生成态，使取消请求可以中断阻塞流。
@@ -584,6 +623,9 @@ func (r *Runtime) Execute(runID, message string) {
 		return
 	}
 	if outcome.failureCode != "" {
+		if r.completeVerifiedAcademicFallback(runID, outcome.failureCode, outcome.usage, time.Since(startedAt)) {
+			return
+		}
 		r.failAfterProvider(runID, outcome.generated, outcome.failureCode, outcome.usage, time.Since(startedAt))
 		return
 	}
@@ -623,6 +665,37 @@ func (r *Runtime) Execute(runID, message string) {
 	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations, outcome.citationFallback)
 }
 
+// 学业工具已完成时，模型收尾超时不能抹掉已核验结果；用户取消和权限失败不兜底。
+func (r *Runtime) completeVerifiedAcademicFallback(runID, code string, usage ProviderEvent, latency time.Duration) bool {
+	if code != ProviderErrorTimeout && code != ProviderErrorUnavailable {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	answer, _ := r.verifiedAcademicRiskFallback(ctx, runID)
+	if answer == "" {
+		return false
+	}
+	var run models.AIRun
+	if err := r.db.WithContext(ctx).First(&run, "id = ?", runID).Error; err != nil {
+		return false
+	}
+	if run.State == models.AIRunStatePlanning {
+		if err := r.transition(ctx, &run, models.AIRunStatePlanning, models.AIRunStateGenerating); err != nil {
+			return false
+		}
+	}
+	if run.State != models.AIRunStateGenerating {
+		return false
+	}
+	r.markQuotaConsumed(runID)
+	_, _ = r.appendEvent(ctx, runID, "answer.rollback", map[string]interface{}{"text": ""}, true)
+	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": answer}, false)
+	_, _ = r.appendEvent(ctx, runID, "answer.fallback", map[string]interface{}{"reason": code, "source": "verified_academic_tool"}, true)
+	r.completeRun(runID, answer, nil, usage, latency, false, "")
+	return true
+}
+
 // verifiedAcademicRiskFallback 从当前 Run 已完成的学业风险工具调用中读取
 // 持久化结果，保证最终回答和审计事实使用同一份数据。
 func (r *Runtime) verifiedAcademicRiskFallback(ctx context.Context, runID string) (string, bool) {
@@ -645,6 +718,16 @@ func (r *Runtime) verifiedAcademicRiskFallback(ctx context.Context, runID string
 		}
 	}
 	return "", false
+}
+
+func campusGreetingReply(message string) string {
+	normalized := strings.ToLower(strings.Trim(strings.TrimSpace(message), "!！?？。.,，~～ "))
+	switch normalized {
+	case "nihao", "ni hao", "你好", "您好", "你好呀", "你好啊", "嗨", "hi", "hello", "hey":
+		return "你好！想随便聊聊、讨论学习生活，还是查询校园信息，都可以直接告诉我。"
+	default:
+		return ""
+	}
 }
 
 func containsCampusProcedureClaim(answer string) bool {

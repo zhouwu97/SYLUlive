@@ -28,6 +28,14 @@ func unwrapAgentToolMessage(t *testing.T, content string) string {
 	return content
 }
 
+func TestAcademicToolFailurePreservesActualCause(t *testing.T) {
+	for _, code := range []string{"agent_personal_data_disabled", "invalid_tool_call", "tool_execution_failed"} {
+		result := json.RawMessage(`{"status":"failed","error_code":"` + code + `"}`)
+		require.Equal(t, code, fatalToolResultCode("academic_get_risk_analysis", result))
+	}
+	require.Empty(t, fatalToolResultCode("academic_get_risk_analysis", json.RawMessage(`{"status":"available","data":{"grades":{"course_count":64}}}`)))
+}
+
 type scriptedToolProvider struct {
 	mu       sync.Mutex
 	rounds   [][]ProviderEvent
@@ -128,6 +136,33 @@ func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvid
 	}, WithToolRegistry(registry))
 	require.NoError(t, err)
 	return runtime
+}
+
+func TestRuntimeToolLoopPersistsFallbackModelAcrossToolRounds(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, Model: "gpt-5.6-luna", CallID: "fallback-tool", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "fallback-tool", ToolName: "academic.get_overview", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已完成查询。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "我的成绩"})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "gpt-5.6-luna", completed.Model)
+	require.Len(t, provider.Requests(), 2)
+	require.Equal(t, "gpt-5.6-luna", provider.Requests()[1].Model)
+	var usage models.AIUsageRecord
+	require.NoError(t, db.Where("run_id = ?", run.ID).First(&usage).Error)
+	require.Equal(t, "gpt-5.6-luna", usage.Model)
 }
 
 func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *testing.T) {

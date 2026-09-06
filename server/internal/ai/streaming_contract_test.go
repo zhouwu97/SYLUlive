@@ -76,7 +76,7 @@ func TestRuntimeBroadcastsFirstDeltaBeforeProviderCompletion(t *testing.T) {
 
 	run, _, err := runtime.CreateRun(context.Background(), 23, CreateRunRequest{
 		ClientRequestID: uuid.NewString(),
-		Message:         "你好",
+		Message:         "讲一个小故事",
 	})
 	require.NoError(t, err)
 

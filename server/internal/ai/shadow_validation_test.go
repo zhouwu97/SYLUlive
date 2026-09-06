@@ -1,6 +1,32 @@
 package ai
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"shenliyuan/internal/models"
+)
+
+func TestAgentFullRolloutAllowsPersonalReadsAndPreservesKillSwitches(t *testing.T) {
+	flags := AgentFeatureFlags{Enabled: true, RolloutPercent: 100, RolloutUserIDs: []uint{2}, PersonalDataEnabled: true}
+	runtime := &Runtime{config: RuntimeConfig{FeatureFlagsConfigured: true, FeatureFlags: flags}}
+	for _, userID := range []uint{1, 2, 86, 999} {
+		snapshot := flags.Snapshot(FeatureFlagInput{UserID: userID, Mode: ExecutionNormal})
+		if !snapshot.AgentEnabled || !snapshot.PersonalDataEnabled {
+			t.Fatalf("全量发布不能遗漏名单外用户: %+v", snapshot)
+		}
+		encoded, _ := json.Marshal(AgentRunState{FeatureFlags: snapshot})
+		run := &models.AIRun{AgentStateJSON: encoded}
+		if err := runtime.agentToolAllowed(run, "academic_get_risk_analysis"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	flags.PersonalDataEnabled = false
+	encoded, _ := json.Marshal(AgentRunState{FeatureFlags: flags.Snapshot(FeatureFlagInput{UserID: 86, Mode: ExecutionNormal})})
+	if err := runtime.agentToolAllowed(&models.AIRun{AgentStateJSON: encoded}, "academic_get_risk_analysis"); err == nil {
+		t.Fatal("全量发布不得绕过个人数据功能关闭开关")
+	}
+}
 
 func TestAgentFeatureFlagsStableRolloutAndFilters(t *testing.T) {
 	flags := AgentFeatureFlags{

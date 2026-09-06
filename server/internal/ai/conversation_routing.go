@@ -25,6 +25,10 @@ func needsCampusConversationContext(message string, history []PolicyRAGHistoryMe
 
 func hasCampusConversationTopic(message string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(message))
+	// 口语化空闲时间查询同样需要个人课表，不能按无工具闲聊处理。
+	if impliesPersonalScheduleContext(normalized) {
+		return true
+	}
 	if BuildPolicyQueryPlan(normalized).IsPolicyIntent() {
 		return true
 	}

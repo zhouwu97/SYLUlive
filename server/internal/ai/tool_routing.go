@@ -24,6 +24,12 @@ func shortlistModelTools(message string, definitions []ToolDefinition) []ToolDef
 			return selected
 		}
 	}
+	// 先保留确定性课表入口，再做通用语义筛选，避免省略“我的”时过滤个人工具。
+	if isScheduleAvailabilityIntent(message) {
+		if selected := scheduleAvailabilityToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
+	}
 	sourceDefinitions := definitions
 	personal := isPersonalToolIntent(message)
 	if !personal {

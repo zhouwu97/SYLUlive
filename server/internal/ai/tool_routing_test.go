@@ -182,3 +182,21 @@ func TestUnifiedAcademicAnalysisRequiresItsDeterministicTool(t *testing.T) {
 	_, required = requiredFastPathTool("what can you do", definitions)
 	require.False(t, required)
 }
+
+func TestUnifiedScheduleAvailabilityRetainsRequiredPersonalTool(t *testing.T) {
+	definitions := []ToolDefinition{
+		{Name: "campus_search_policy", Description: "检索校园政策"},
+		{Name: modelToolSchedule, Description: "读取当前用户的课表空闲时间"},
+		{Name: modelToolAcademicRisk, Description: "分析学业成绩"},
+	}
+	for _, question := range []string{"这周哪几天下午比较空？", "明天下午有空吗", "下周哪天没课", "今天晚上有空档吗"} {
+		t.Run(question, func(t *testing.T) {
+			require.True(t, needsCampusConversationContext(question, nil))
+			selected := shortlistModelTools(question, definitions)
+			require.Equal(t, []ToolDefinition{definitions[1]}, selected)
+			name, required := requiredFastPathTool(question, selected)
+			require.True(t, required)
+			require.Equal(t, modelToolSchedule, name)
+		})
+	}
+}

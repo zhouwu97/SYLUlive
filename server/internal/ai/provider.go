@@ -69,17 +69,19 @@ type ProviderRequest struct {
 }
 
 type ProviderEvent struct {
-	Model          string
-	Type           string
-	Text           string
-	CallID         string
-	ToolName       string
-	ArgumentsDelta string
-	InputTokens    int
-	OutputTokens   int
-	CacheHitTokens int
-	UsageAvailable bool
-	FinishReason   string
+	Model            string
+	Type             string
+	Text             string
+	CallID           string
+	ToolName         string
+	ArgumentsDelta   string
+	InputTokens      int
+	OutputTokens     int
+	CacheHitTokens   int
+	CacheWriteTokens int
+	UsageAvailable   bool
+	ModelUsage       map[string]ModelTokenUsage
+	FinishReason     string
 }
 
 const (

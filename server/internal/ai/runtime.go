@@ -1389,6 +1389,7 @@ func (r *Runtime) settleBudget(runID string, usage ProviderEvent, latency time.D
 	inputCost := (int64(usage.InputTokens)*r.config.InputPriceMicroYuanPerMillion + 999_999) / 1_000_000
 	outputCost := (int64(usage.OutputTokens)*r.config.OutputPriceMicroYuanPerMillion + 999_999) / 1_000_000
 	actual := inputCost + outputCost
+	modelUsage, _ := json.Marshal(usage.ModelUsage)
 	now := time.Now()
 	_ = r.db.Transaction(func(tx *gorm.DB) error {
 		var reservation models.AIBudgetReservation
@@ -1413,6 +1414,7 @@ func (r *Runtime) settleBudget(runID string, usage ProviderEvent, latency time.D
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.AIUsageRecord{
 			RunID: runID, UserHash: r.hashUserID(run.UserID), Provider: run.Provider, Model: run.Model, Purpose: "campus_agent",
 			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheHitTokens: usage.CacheHitTokens,
+			CacheWriteTokens: usage.CacheWriteTokens, ModelUsage: modelUsage,
 			CostMicroYuan: actual, LatencyMilliseconds: latency.Milliseconds(), ErrorClass: errorClass,
 		}).Error
 	})

@@ -321,9 +321,14 @@ func (s *openAICompatibleStream) Next(ctx context.Context) (event ProviderEvent,
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens         int `json:"prompt_tokens"`
-				CompletionTokens     int `json:"completion_tokens"`
-				PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+				PromptTokens           int `json:"prompt_tokens"`
+				CompletionTokens       int `json:"completion_tokens"`
+				PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens"`
+				PromptCacheWriteTokens int `json:"prompt_cache_write_tokens"`
+				PromptTokensDetails    struct {
+					CachedTokens     *int `json:"cached_tokens"`
+					CacheWriteTokens *int `json:"cache_creation_tokens"`
+				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
@@ -335,7 +340,15 @@ func (s *openAICompatibleStream) Next(ctx context.Context) (event ProviderEvent,
 		}
 		if chunk.Usage != nil {
 			s.markProgress()
-			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens, UsageAvailable: true})
+			cacheRead, cacheWrite := chunk.Usage.PromptCacheHitTokens, chunk.Usage.PromptCacheWriteTokens
+			// 标准 cached_tokens 与兼容字段表达同一批缓存，不能重复相加。
+			if chunk.Usage.PromptTokensDetails.CachedTokens != nil {
+				cacheRead = *chunk.Usage.PromptTokensDetails.CachedTokens
+			}
+			if chunk.Usage.PromptTokensDetails.CacheWriteTokens != nil {
+				cacheWrite = *chunk.Usage.PromptTokensDetails.CacheWriteTokens
+			}
+			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: cacheRead, CacheWriteTokens: cacheWrite, UsageAvailable: true})
 		}
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" || choice.Delta.ReasoningContent != "" || len(choice.Delta.ToolCalls) > 0 || choice.FinishReason != nil {

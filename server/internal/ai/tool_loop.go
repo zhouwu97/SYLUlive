@@ -201,9 +201,9 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 
 		answer, calls, roundOutcome := r.collectProviderRound(ctx, run, stream, outcome.usage, emitter)
 		_ = stream.Close()
+		outcome.cost.InputTokens += int64(roundOutcome.usage.InputTokens - outcome.usage.InputTokens)
+		outcome.cost.OutputTokens += int64(roundOutcome.usage.OutputTokens - outcome.usage.OutputTokens)
 		outcome.usage = roundOutcome.usage
-		outcome.cost.InputTokens += int64(roundOutcome.usage.InputTokens)
-		outcome.cost.OutputTokens += int64(roundOutcome.usage.OutputTokens)
 		outcome.cost.TokenUsageAvailable = outcome.cost.TokenUsageAvailable || roundOutcome.usage.UsageAvailable
 		outcome.generated = outcome.generated || roundOutcome.generated
 		if roundOutcome.cancelled || roundOutcome.failureCode != "" {
@@ -485,7 +485,11 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 	riskLevel, _ := data["risk_level"].(string)
 	riskSeen := riskLevel != "no_observed_risk" || len(risks) > 0
 	var builder strings.Builder
-	builder.WriteString("基于当前已授权快照，能确认的范围如下：\n")
+	if data["grades"] != nil || data["credits"] != nil || data["erke"] != nil {
+		builder.WriteString("已读取你授权同步的数据，当前能确认：\n\n")
+	} else {
+		builder.WriteString("当前没有可用于本次分析的学业数据。\n\n")
+	}
 	if grades, ok := data["grades"].(map[string]interface{}); ok {
 		courseCount, courseCountOK := jsonNumber(grades["course_count"])
 		totalCredits, totalCreditsOK := jsonNumber(grades["total_credits"])
@@ -501,7 +505,7 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 			if weightedGPAOK {
 				builder.WriteString("，加权 GPA " + formatAcademicNumber(weightedGPA))
 			}
-			builder.WriteString("。\n")
+			builder.WriteString("。\n\n")
 		}
 		if terms, ok := grades["covered_terms"].([]interface{}); ok && len(terms) > 0 {
 			labels := make([]string, 0, len(terms))
@@ -511,43 +515,87 @@ func academicRiskFallback(toolName string, result json.RawMessage) (string, bool
 				}
 			}
 			if len(labels) > 0 {
-				builder.WriteString("覆盖学期：" + strings.Join(labels, "、") + "。\n")
+				builder.WriteString("覆盖学期：" + strings.Join(labels, "、") + "。\n\n")
 			}
+		}
+		failed, failedOK := jsonNumber(grades["failed_course_count"])
+		unknown, unknownOK := jsonNumber(grades["unknown_grade_count"])
+		if courseCount > 0 && failedOK && unknownOK && failed == 0 && unknown == 0 {
+			builder.WriteString("这些成绩记录中未发现未通过课程。\n\n")
 		}
 	}
 	if len(risks) > 0 {
-		builder.WriteString("主要风险：\n")
+		builder.WriteString("主要风险：\n\n")
 		for _, risk := range risks {
 			builder.WriteString("- ")
 			builder.WriteString(risk)
 			builder.WriteByte('\n')
 		}
-	} else {
-		builder.WriteString("当前可见数据没有发现明确的未通过课程或已计算学分缺口。\n")
+		builder.WriteByte('\n')
+	}
+	credits, _ := data["credits"].(map[string]interface{})
+	if gap, ok := academicCreditGap(credits); !ok || credits["requirements_incomplete"] == true {
+		builder.WriteString("毕业学分是否达标：暂不能判断，学分要求或完成情况尚不完整。\n\n")
+	} else if gap == 0 {
+		builder.WriteString("按当前快照核验的学分未见缺口，毕业要求仍以培养方案和教务审核为准。\n\n")
 	}
 	if len(actions) > 0 {
-		builder.WriteString("建议优先做：\n")
+		builder.WriteString("建议优先做：\n\n")
 		for _, action := range actions {
 			builder.WriteString("- ")
 			builder.WriteString(action)
 			builder.WriteByte('\n')
 		}
+		builder.WriteByte('\n')
 	}
-	// 数据缺口不再逐条罗列：warnings 已在服务端压缩，确认事项最多保留三条，
-	// 合并为一行数据说明，避免把同义的“已过期/需刷新”打成清单墙。
-	notes := append([]string{}, envelope.Warnings...)
-	if len(confirmations) > 3 {
-		notes = append(notes, confirmations[:3]...)
-	} else {
-		notes = append(notes, confirmations...)
-	}
+	// Markdown 的普通换行会合并成一段；用空行和列表区分事实、数据边界与操作。
+	// 只合并已被具体说明覆盖的确认项，保留刷新失败等独立原因。
+	notes := academicRiskDataNotes(envelope.Warnings, confirmations)
 	if len(notes) > 0 {
-		builder.WriteString("数据说明：" + strings.Join(notes, "；") + "。\n")
+		builder.WriteString("数据说明：\n\n")
+		for _, note := range notes {
+			builder.WriteString("- " + strings.TrimRight(note, "。；") + "。\n")
+		}
+		builder.WriteByte('\n')
 	}
-	if envelope.IsStale || len(confirmations) > 0 {
+	refresh := []string{}
+	coverage, _ := data["coverage"].(map[string]interface{})
+	for _, dataset := range academicRiskCoreDatasets() {
+		if status := coverage[string(dataset)]; status == string(academic.DataStatusNeedsRefresh) || status == string(academic.DataStatusStale) {
+			refresh = append(refresh, personalDatasetLabel(dataset))
+		}
+	}
+	if len(refresh) > 0 {
+		builder.WriteString("请在手机更新并同步" + strings.Join(refresh, "、") + "，再重新提问。")
+	} else if envelope.IsStale {
 		builder.WriteString("如需最新结论，请在手机刷新教务数据后重新提问，或让我按已有数据继续分析。\n")
 	}
 	return strings.TrimSpace(builder.String()), riskSeen
+}
+
+func academicRiskDataNotes(warnings, confirmations []string) []string {
+	notes := append([]string{}, warnings...)
+	for _, confirmation := range confirmations {
+		if confirmation == "学分要求或完成情况尚不完整，暂不能判断毕业学分是否达标" {
+			continue
+		}
+		covered := false
+		for _, warning := range warnings {
+			if strings.HasPrefix(confirmation, "二课风险暂未纳入") && strings.Contains(warning, "二课快照") {
+				covered = true
+			}
+			for _, label := range []string{"成绩", "学分要求", "学业情况", "二课"} {
+				if strings.HasPrefix(warning, label+"数据为") &&
+					(strings.HasPrefix(confirmation, label+"已同步，但需更新") || strings.HasPrefix(confirmation, label+"快照已过期")) {
+					covered = true
+				}
+			}
+		}
+		if !covered {
+			notes = append(notes, confirmation)
+		}
+	}
+	return uniqueStrings(notes)
 }
 
 func isAcademicRiskToolName(toolName string) bool {
@@ -882,10 +930,9 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 			outcome.generated = outcome.generated || strings.TrimSpace(event.Text) != ""
 			emitter.onDelta(ctx, event.Text)
 		case ProviderEventUsage:
-			outcome.usage.InputTokens += event.InputTokens
-			outcome.usage.OutputTokens += event.OutputTokens
-			outcome.usage.CacheHitTokens += event.CacheHitTokens
-			outcome.usage.UsageAvailable = outcome.usage.UsageAvailable || event.UsageAvailable
+			// 同一响应的 usage 是累计快照；保留最新一份，再与前面工具回合相加。
+			event.Model = run.Model
+			outcome.usage = mergeProviderUsage(initialUsage, event)
 		case ProviderEventToolCallStarted:
 			outcome.generated = true
 			if event.CallID == "" || event.ToolName == "" || len(calls) >= maxToolsPerRound {

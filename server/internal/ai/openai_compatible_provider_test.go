@@ -229,6 +229,14 @@ func TestOpenAICompatibleProviderStreamingContract(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleProviderReadsStandardCacheUsage(t *testing.T) {
+	stream := &openAICompatibleStream{scanner: newProviderScanner(strings.NewReader("data: {\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"prompt_cache_hit_tokens\":60,\"prompt_tokens_details\":{\"cached_tokens\":60,\"cache_creation_tokens\":20}}}\n\ndata: [DONE]\n\n"))}
+	event, err := stream.Next(context.Background())
+	if err != nil || event.CacheHitTokens != 60 || event.CacheWriteTokens != 20 || event.InputTokens != 100 {
+		t.Fatalf("cache usage = %+v, error=%v", event, err)
+	}
+}
+
 func TestOpenAICompatibleProviderPreservesLengthFinishReason(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

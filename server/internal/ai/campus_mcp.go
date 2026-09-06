@@ -2254,19 +2254,36 @@ func buildAcademicRiskAnalysis(results map[academic.DatasetType]academic.Context
 	}
 	if creditAvailable {
 		data["credits"] = credit
+		if gap, ok := academicCreditGap(credit); ok {
+			credit["credit_gap"] = gap
+		}
 		if gap, ok := jsonNumber(credit["credit_gap"]); ok && gap > 0 {
-			risks = append(risks, fmt.Sprintf("按当前快照还差 %g 学分", gap))
-			actions = append(actions, "按培养方案拆分剩余学分，优先确认必修课和毕业审核要求")
-		} else if earned, earnedOK := jsonNumber(credit["earned_credits"]); earnedOK {
-			if required, requiredOK := jsonNumber(credit["required_credits"]); requiredOK && required-earned > 0 {
-				gap := roundToolNumber(required - earned)
-				credit["credit_gap"] = gap
+			if credit["credit_scope"] == "modules" {
+				risks = append(risks, fmt.Sprintf("已核验的培养方案模块合计有 %g 学分缺口；各模块要求需分别满足", gap))
+			} else {
 				risks = append(risks, fmt.Sprintf("按当前快照还差 %g 学分", gap))
-				actions = append(actions, "按培养方案拆分剩余学分，优先确认必修课和毕业审核要求")
 			}
+			actions = append(actions, "按培养方案拆分剩余学分，优先确认必修课和毕业审核要求")
 		}
 	} else {
-		toConfirm = append(toConfirm, "学分要求快照缺失，请在手机同步学业数据后重试")
+		// 需要更新、缺失和权限不足是不同状态，不能把未参与实时分析的旧快照说成未同步。
+		for _, dataset := range creditCandidates {
+			label := personalDatasetLabel(dataset)
+			switch results[dataset].Status {
+			case academic.DataStatusNeedsRefresh:
+				toConfirm = append(toConfirm, label+"已同步，但需更新后才能用于本次实时分析")
+			case academic.DataStatusMissing:
+				toConfirm = append(toConfirm, label+"快照缺失，请在手机同步后重试")
+			case academic.DataStatusPermissionRequired:
+				toConfirm = append(toConfirm, label+"尚未授权读取")
+			default:
+				toConfirm = append(toConfirm, label+"暂时无法读取，请查看数据说明后重试")
+			}
+		}
+	}
+	if _, ok := academicCreditGap(credit); !ok || credit["requirements_incomplete"] == true {
+		coreIncomplete = true
+		toConfirm = append(toConfirm, "学分要求或完成情况尚不完整，暂不能判断毕业学分是否达标")
 	}
 
 	erke := results[academic.DatasetErke]
@@ -2512,15 +2529,65 @@ func gradeKnown(item map[string]interface{}) bool {
 func extractCreditFields(raw json.RawMessage) map[string]interface{} {
 	data := decodeJSONObject(raw)
 	result := make(map[string]interface{})
-	for _, key := range []string{"total_credits", "earned_credits", "required_credits", "completed_credits", "remaining_credits", "gpa", "warning_level", "graduation_status", "success"} {
+	for _, key := range []string{"total_credits", "earned_credits", "required_credits", "completed_credits", "remaining_credits", "credit_gap", "gpa", "warning_level", "graduation_status", "success"} {
 		if value, ok := data[key]; ok {
 			result[key] = value
+		}
+	}
+	// 官方同步载荷按培养方案模块保存。逐模块累计缺口，避免某类超修抵消另一类欠修；
+	// 缺少要求的模块不能按零处理，也不能因此生成“已达标”的结论。
+	if modules, ok := data["modules"].([]interface{}); ok {
+		delete(result, "credit_gap")
+		delete(result, "required_credits")
+		delete(result, "earned_credits")
+		result["credit_scope"] = "modules"
+		required, earned, gap := 0.0, 0.0, 0.0
+		count, incomplete := 0, len(modules) == 0
+		for _, rawModule := range modules {
+			module, ok := rawModule.(map[string]interface{})
+			if !ok {
+				incomplete = true
+				continue
+			}
+			r, requiredOK := jsonNumber(module["required_credits"])
+			e, earnedOK := jsonNumber(module["earned_credits"])
+			if !requiredOK || !earnedOK || r <= 0 || e < 0 {
+				incomplete = true
+				continue
+			}
+			count++
+			required += r
+			earned += e
+			gap += max(r-e, 0)
+		}
+		result["requirements_incomplete"] = incomplete
+		if count > 0 {
+			result["required_credits"] = roundToolNumber(required)
+			result["earned_credits"] = roundToolNumber(earned)
+			if !incomplete || gap > 0 {
+				result["credit_gap"] = roundToolNumber(gap)
+			}
 		}
 	}
 	if len(result) == 0 {
 		result["available"] = true
 	}
 	return result
+}
+
+func academicCreditGap(credit map[string]interface{}) (float64, bool) {
+	if gap, ok := jsonNumber(credit["credit_gap"]); ok && gap >= 0 {
+		return gap, true
+	}
+	if credit["requirements_incomplete"] == true {
+		return 0, false
+	}
+	earned, earnedOK := jsonNumber(credit["earned_credits"])
+	required, requiredOK := jsonNumber(credit["required_credits"])
+	if !earnedOK || !requiredOK || earned < 0 || required <= 0 {
+		return 0, false
+	}
+	return roundToolNumber(max(required-earned, 0)), true
 }
 
 func extractErkeOverview(raw json.RawMessage) map[string]interface{} {

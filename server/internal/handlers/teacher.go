@@ -59,21 +59,6 @@ func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *
 	return &id
 }
 
-// syncCourseEvaluationSubmission 把教师评价的改动同步回关联的提交记录。
-// 旧入口创建的评价没有关联提交记录，此处直接跳过，不改变既有语义。
-func syncCourseEvaluationSubmission(db *gorm.DB, rating *models.TeacherRating) {
-	if rating == nil || rating.CourseEvaluationSubmissionID == nil || *rating.CourseEvaluationSubmissionID == 0 {
-		return
-	}
-	_ = db.Model(&models.CourseEvaluationSubmission{}).
-		Where("id = ?", *rating.CourseEvaluationSubmissionID).
-		Updates(map[string]interface{}{
-			"star":    rating.Star,
-			"comment": rating.Comment,
-			"status":  models.CourseEvaluationStatusPublished,
-		}).Error
-}
-
 // detachCourseEvaluationSubmission 删除公开评价时解绑提交记录，
 // 避免提交记录仍标称 published 却指向一条已删除的评价。
 // 记录转入 needs_edit 等待用户重新提交，不直接进入管理员待审核队列。
@@ -240,9 +225,13 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 	}
 }
 
-// Rate 评价教师（星级1-5，可修改）
+// Rate 兼容旧教师评分入口，但实际写入统一进入课程评价状态机。
 func (h *TeacherHandler) Rate(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID := c.GetUint("user_id")
+	if userID == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "请先登录"})
+		return
+	}
 	tid, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
@@ -257,35 +246,29 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	// 教师存在？
-	var teacher models.Teacher
-	if err := h.db.First(&teacher, tid).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
-		return
-	}
-	// 查找已有评价
-	var rating models.TeacherRating
-	err = h.db.Where("teacher_id = ? AND user_id = ?", tid, userID).First(&rating).Error
-	if err == nil {
-		h.db.Model(&rating).Updates(map[string]interface{}{
-			"star": input.Star, "comment": input.Comment,
-		})
-		// 回读最新值，保证同步到提交记录的是已落库的星级与评论。
-		h.db.First(&rating, rating.ID)
-		syncCourseEvaluationSubmission(h.db, &rating)
-		c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
-	} else {
-		rating = models.TeacherRating{
-			TeacherID: uint(tid), UserID: userID.(uint),
-			Star: input.Star, Comment: input.Comment,
-		}
-		if err := h.db.Create(&rating).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+	view, err := services.NewCourseEvaluationService(h.db).
+		RateVerifiedTeacher(userID, uint(tid), input.Star, input.Comment)
+	if err != nil {
+		var businessErr *services.CourseEvaluationError
+		if errors.As(err, &businessErr) {
+			response := gin.H{
+				"error": businessErr.Message,
+				"code":  businessErr.Code,
+			}
+			for key, value := range businessErr.Details {
+				response[key] = value
+			}
+			c.JSON(services.CourseEvaluationHTTPStatus(businessErr.Code), response)
 			return
 		}
-		syncCourseEvaluationSubmission(h.db, &rating)
-		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "课程评价服务异常，请稍后重试"})
+		return
 	}
+	message := "评价成功"
+	if view.Status != models.CourseEvaluationStatusPublished {
+		message = "评价已提交，等待审核"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": message, "submission": view})
 }
 
 // Verify 管理员审核教师

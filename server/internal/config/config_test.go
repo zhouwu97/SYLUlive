@@ -150,8 +150,22 @@ func TestLoadReadsRemoteExamPaperStorageConfig(t *testing.T) {
 	cfg := Load()
 	require.Equal(t, "remote", cfg.ExamPaperStorageMode)
 	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStorageBaseURL)
+	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStoragePublicURL)
+	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStorageInternalURL)
 	require.Equal(t, "signing-secret", cfg.ExamPaperStorageSigningSecret)
 	require.Equal(t, "receipt-secret", cfg.ExamPaperStorageReceiptSecret)
+}
+
+func TestLoadReadsSplitExamPaperStorageEndpoints(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_PUBLIC_URL", "https://paper.sylulive.online")
+	t.Setenv("EXAM_PAPER_STORAGE_INTERNAL_URL", "http://127.0.0.1:8081")
+
+	cfg := Load()
+	require.Equal(t, "https://paper.sylulive.online", cfg.ExamPaperStoragePublicURL)
+	require.Equal(t, "http://127.0.0.1:8081", cfg.ExamPaperStorageInternalURL)
+	require.Equal(t, cfg.ExamPaperStoragePublicURL, cfg.ExamPaperStorageBaseURL)
 }
 
 func TestLoadReadsReadonlyRemoteExamPaperStorageConfig(t *testing.T) {
@@ -286,6 +300,8 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("ANDROID_SIGNING_CERT_SHA256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
+	t.Setenv("EXAM_PAPER_STORAGE_PUBLIC_URL", "")
+	t.Setenv("EXAM_PAPER_STORAGE_INTERNAL_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
 	t.Setenv("AI_ENABLED", "false")

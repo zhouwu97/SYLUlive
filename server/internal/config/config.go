@@ -24,7 +24,9 @@ type Config struct {
 	CompetitionAwardEvidenceDir      string // 竞赛证明材料私有目录
 	ExamPaperDir                     string // 试卷私有文件目录
 	ExamPaperStorageMode             string // 试卷文件存储模式
-	ExamPaperStorageBaseURL          string // 试卷文件服务地址
+	ExamPaperStorageBaseURL          string // 兼容旧调用的公网地址
+	ExamPaperStoragePublicURL        string // 客户端上传、预览和下载使用的公网地址
+	ExamPaperStorageInternalURL      string // 主服务调用内部接口使用的地址
 	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
 	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
 	MaxFileSize                      int64  // 最大文件大小(字节)
@@ -218,9 +220,17 @@ func Load() *Config {
 		examPaperStorageMode = ExamPaperStorageModeLocal
 	}
 	examPaperStorageBaseURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_BASE_URL"))
+	examPaperStoragePublicURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_PUBLIC_URL"))
+	if examPaperStoragePublicURL == "" {
+		examPaperStoragePublicURL = examPaperStorageBaseURL
+	}
+	examPaperStorageInternalURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_INTERNAL_URL"))
+	if examPaperStorageInternalURL == "" {
+		examPaperStorageInternalURL = examPaperStoragePublicURL
+	}
 	examPaperStorageSigningSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_SIGNING_SECRET"))
 	examPaperStorageReceiptSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET"))
-	if err := validateExamPaperStorageConfig(examPaperStorageMode, examPaperStorageBaseURL, examPaperStorageSigningSecret, examPaperStorageReceiptSecret, releaseMode); err != nil {
+	if err := validateExamPaperStorageConfig(examPaperStorageMode, examPaperStoragePublicURL, examPaperStorageInternalURL, examPaperStorageSigningSecret, examPaperStorageReceiptSecret, releaseMode); err != nil {
 		panic(err)
 	}
 
@@ -500,7 +510,9 @@ func Load() *Config {
 		CompetitionAwardEvidenceDir:      competitionAwardEvidenceDir,
 		ExamPaperDir:                     examPaperDir,
 		ExamPaperStorageMode:             examPaperStorageMode,
-		ExamPaperStorageBaseURL:          examPaperStorageBaseURL,
+		ExamPaperStorageBaseURL:          examPaperStoragePublicURL,
+		ExamPaperStoragePublicURL:        examPaperStoragePublicURL,
+		ExamPaperStorageInternalURL:      examPaperStorageInternalURL,
 		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
 		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
 		MaxFileSize:                      10 * 1024 * 1024, // 10MB
@@ -814,7 +826,7 @@ func validExternalMCPSSHHost(value string) bool {
 	return externalMCPSSHHostPattern.MatchString(value) && !strings.Contains(value, "..")
 }
 
-func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret string, releaseMode bool) error {
+func validateExamPaperStorageConfig(mode, publicURL, internalURL, signingSecret, receiptSecret string, releaseMode bool) error {
 	switch mode {
 	case ExamPaperStorageModeLocal:
 		return nil
@@ -822,27 +834,49 @@ func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret 
 		if !releaseMode {
 			return nil
 		}
-		if baseURL == "" || signingSecret == "" || receiptSecret == "" {
-			return fmt.Errorf("生产环境远端试卷存储必须完整设置 EXAM_PAPER_STORAGE_BASE_URL、EXAM_PAPER_STORAGE_SIGNING_SECRET 和 EXAM_PAPER_STORAGE_RECEIPT_SECRET")
+		if publicURL == "" || internalURL == "" || signingSecret == "" || receiptSecret == "" {
+			return fmt.Errorf("生产环境远端试卷存储必须完整设置公网地址、内部地址、授权密钥和回执密钥")
 		}
 		if strings.TrimSpace(signingSecret) == strings.TrimSpace(receiptSecret) {
 			return fmt.Errorf("EXAM_PAPER_STORAGE_SIGNING_SECRET 与 EXAM_PAPER_STORAGE_RECEIPT_SECRET 不能相同")
 		}
-		parsed, err := url.Parse(baseURL)
-		if err != nil ||
-			!strings.EqualFold(parsed.Scheme, "https") ||
-			parsed.Hostname() != "139.196.148.174" ||
-			(parsed.Port() != "" && parsed.Port() != "443") ||
-			parsed.User != nil ||
-			(parsed.Path != "" && parsed.Path != "/") ||
-			parsed.RawQuery != "" ||
-			parsed.Fragment != "" {
-			return fmt.Errorf("生产环境 EXAM_PAPER_STORAGE_BASE_URL 必须是 https://139.196.148.174")
+		if !validExamPaperPublicURL(publicURL) {
+			return fmt.Errorf("生产环境试卷存储公网地址必须是受信任的 HTTPS 地址")
+		}
+		if !validExamPaperInternalURL(internalURL) {
+			return fmt.Errorf("生产环境试卷存储内部地址必须是本机 HTTP 地址或受信任的 HTTPS 地址")
 		}
 		return nil
 	default:
 		return fmt.Errorf("EXAM_PAPER_STORAGE_MODE 无效: %q", mode)
 	}
+}
+
+func validExamPaperPublicURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !validStorageURLShape(parsed) {
+		return false
+	}
+	if parsed.Port() != "" && parsed.Port() != "443" {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "paper.sylulive.online") || parsed.Hostname() == "139.196.148.174"
+}
+
+func validExamPaperInternalURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || !validStorageURLShape(parsed) {
+		return false
+	}
+	if strings.EqualFold(parsed.Scheme, "http") {
+		return (parsed.Hostname() == "127.0.0.1" || strings.EqualFold(parsed.Hostname(), "localhost")) && parsed.Port() != ""
+	}
+	return strings.EqualFold(parsed.Scheme, "https") && validExamPaperPublicURL(value)
+}
+
+func validStorageURLShape(parsed *url.URL) bool {
+	return parsed != nil && parsed.Host != "" && parsed.User == nil &&
+		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func isPlaceholderSecret(value string, placeholders []string) bool {

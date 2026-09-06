@@ -18,10 +18,10 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		t.Fatalf("读取部署脚本失败: %v", err)
 	}
 	deployScriptText := string(deployScript)
-	if !strings.Contains(deployScriptText, `GO_VER="go1.25.0"`) ||
-		!strings.Contains(deployScriptText, `"1.25" "$v"`) ||
-		!strings.Contains(deployScriptText, `head -1)" = "1.25"`) {
-		t.Fatal("部署脚本必须安装并要求 Go 1.25，以满足 server/go.mod 的 go 1.25.0 要求")
+	if !strings.Contains(deployScriptText, `GO_VER="go1.25.13"`) ||
+		!strings.Contains(deployScriptText, `"1.25.13" "$v"`) ||
+		!strings.Contains(deployScriptText, `head -1)" = "1.25.13"`) {
+		t.Fatal("部署脚本必须安装并要求 Go 1.25.13，以满足 server/go.mod 的安全版本要求")
 	}
 
 	configSource, err := os.ReadFile(filepath.Join(repoRoot, "server", "internal", "config", "config.go"))
@@ -45,15 +45,15 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取部署文档失败: %v", err)
 	}
-	if !strings.Contains(string(deployDoc), "Go 1.25+") {
-		t.Fatal("部署文档必须声明 Go 1.25+ 要求")
+	if !strings.Contains(string(deployDoc), "Go 1.25.13+") {
+		t.Fatal("部署文档必须声明 Go 1.25.13+ 要求")
 	}
 
 	readme, err := os.ReadFile(filepath.Join(repoRoot, "README.md"))
 	if err != nil {
 		t.Fatalf("读取项目说明失败: %v", err)
 	}
-	if !strings.Contains(string(readme), "Go-1.25+") {
+	if !strings.Contains(string(readme), "Go-1.25.13+") {
 		t.Fatal("项目说明中的 Go 版本标识必须与 server/go.mod 保持一致")
 	}
 
@@ -539,6 +539,37 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	} {
 		if !strings.Contains(deployDoc, expected) {
 			t.Errorf("部署文档缺少文件服务运维说明 %q", expected)
+		}
+	}
+}
+
+// TestColocatedPaperStorageAssetsKeepHostBoundaries 锁住同机安装脚本不得接管主服务器。
+func TestColocatedPaperStorageAssetsKeepHostBoundaries(t *testing.T) {
+	repoRoot := deploymentRepoRoot(t)
+	assetDir := filepath.Join(repoRoot, "deploy", "paper-storage-colocated")
+	installText := readDeploymentAsset(t, assetDir, "install.sh")
+	nginxText := readDeploymentAsset(t, assetDir, "nginx-site.conf")
+	serviceText := readDeploymentAsset(t, assetDir, "paper-storage.service")
+	envText := readDeploymentAsset(t, assetDir, "paper-storage.env.example")
+
+	for _, forbidden := range []string{
+		"> /etc/nginx/nginx.conf", "mv -f /etc/nginx/nginx.conf", "ufw ", "sshd_config", "swapfile", "mkswap",
+		"postgresql", "systemctl restart shenliyuan", "systemctl stop shenliyuan",
+	} {
+		if strings.Contains(strings.ToLower(installText), strings.ToLower(forbidden)) {
+			t.Errorf("同机安装脚本包含越界操作 %q", forbidden)
+		}
+	}
+	for _, expected := range []string{
+		"/etc/nginx/sites-available/paper-storage", "nginx -t", "systemctl daemon-reload",
+		"127.0.0.1:8081", "location /internal/v1/", "return 404",
+		"PAPER_STORAGE_USE_ACCEL_REDIRECT=false", "PAPER_STORAGE_WARNING_PERCENT=60",
+		"PAPER_STORAGE_UPLOAD_STOP_PERCENT=75", "PAPER_STORAGE_READONLY_PERCENT=85",
+		"ProtectSystem=strict", "ReadWritePaths=/opt/sylg-paper-storage/data",
+	} {
+		combined := installText + nginxText + serviceText + envText
+		if !strings.Contains(combined, expected) {
+			t.Errorf("同机部署资产缺少安全约束 %q", expected)
 		}
 	}
 }

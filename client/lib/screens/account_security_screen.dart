@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
@@ -271,6 +272,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final success = await AcademicLoginDialog.show(
       context,
       controller: controller,
+      coordinator: _coordinatorOrNull(),
       initialStudentId: _studentId,
     );
     if (!mounted || success != true) return;
@@ -278,6 +280,14 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
       const SnackBar(content: Text('教务账号已绑定')),
     );
     await _reload();
+  }
+
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   Future<void> _revokeAcademicAuthorization() async {
@@ -302,9 +312,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final result = await context.read<EduProvider>().revokeAuthorization();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.success
-          ? '教务授权已撤销'
-          : result.errorMessage ?? '解绑失败，请重试')),
+      SnackBar(
+          content: Text(
+              result.success ? '教务授权已撤销' : result.errorMessage ?? '解绑失败，请重试')),
     );
     if (result.success) await _reload();
   }
@@ -326,6 +336,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
 
     final localAcademic = context.watch<AcademicSessionController>();
+    final profileError = localAcademic.hasProfileError;
     final effectiveStudentId = _studentId;
     // 学生身份属于 App 账号，不随教务会话过期或撤销授权而消失。
     final effectiveStudentVerified = _security?['student_verified'] == true ||
@@ -346,14 +357,23 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.verified_user_outlined,
-              title: '学生身份认证',
-              subtitle:
-                  effectiveStudentVerified ? '学号 $effectiveStudentId' : '未完成认证',
+              title: profileError ? '学生身份资料加载失败' : '学生身份认证',
+              subtitle: profileError
+                  ? '教务认证已完成，但个人资料获取失败，请重试'
+                  : effectiveStudentVerified
+                      ? '学号 $effectiveStudentId'
+                      : '未完成认证',
               trailing: SettingsStatusBadge(
-                label: effectiveStudentVerified ? '已认证' : '未认证',
-                type: effectiveStudentVerified
-                    ? SettingsStatusBadgeType.success
-                    : SettingsStatusBadgeType.neutral,
+                label: profileError
+                    ? '资料失败'
+                    : effectiveStudentVerified
+                        ? '已认证'
+                        : '未认证',
+                type: profileError
+                    ? SettingsStatusBadgeType.warning
+                    : effectiveStudentVerified
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.neutral,
               ),
               showChevron: false,
             ),
@@ -445,20 +465,25 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                   ? '学号 ${localAcademic.studentId ?? '--'}；服务器负责恢复登录'
                   : '绑定后可读取课表、成绩，重新登录 App 后可恢复绑定',
               trailing: SettingsStatusBadge(
-                label: localAcademic.isAuthenticated
-                    ? '在线'
-                    : localAcademic.isAwaitingCaptcha
-                        ? '待验证码'
+                label: profileError
+                    ? '资料失败'
+                    : localAcademic.isAuthenticated
+                        ? '在线'
+                        : localAcademic.isAwaitingCaptcha
+                            ? '待验证码'
+                            : localAcademic.status ==
+                                    AcademicSessionStatus.error
+                                ? '需重试'
+                                : '未连接',
+                type: profileError
+                    ? SettingsStatusBadgeType.warning
+                    : localAcademic.isAuthenticated
+                        ? SettingsStatusBadgeType.success
                         : localAcademic.status == AcademicSessionStatus.error
-                            ? '需重试'
-                            : '未连接',
-                type: localAcademic.isAuthenticated
-                    ? SettingsStatusBadgeType.success
-                    : localAcademic.status == AcademicSessionStatus.error
-                        ? SettingsStatusBadgeType.warning
-                        : SettingsStatusBadgeType.neutral,
+                            ? SettingsStatusBadgeType.warning
+                            : SettingsStatusBadgeType.neutral,
               ),
-              onTap: localAcademic.isAuthenticated
+              onTap: localAcademic.isAuthenticated && !profileError
                   ? null
                   : _showAcademicLogin,
               showChevron: !localAcademic.isAuthenticated,

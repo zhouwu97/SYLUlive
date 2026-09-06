@@ -119,7 +119,7 @@ class _MyContentScreenState extends State<MyContentScreen>
         if (!mounted) return;
         final key = _evaluationItemKeys[widget.focusCourseEvaluationId];
         final itemContext = key?.currentContext;
-        if (itemContext != null) {
+        if (itemContext != null && itemContext.mounted) {
           await Scrollable.ensureVisible(
             itemContext,
             duration: const Duration(milliseconds: 320),

@@ -4,6 +4,8 @@ import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
@@ -31,7 +33,20 @@ class _EduScreenState extends State<EduScreen> {
       if (authProvider.user != null) {
         eduProvider.setUserId(authProvider.user!.id.toString());
       }
+      _tryAutoLogin();
     });
+  }
+
+  Future<void> _tryAutoLogin() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) return;
+    final coordinator = _coordinatorOrNull();
+    if (coordinator == null) return;
+    if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
+        !await coordinator.hasSavedCredential()) return;
+    final outcome = await coordinator.ensureAuthenticated();
+    if (!mounted || !outcome.isSuccess) return;
+    await context.read<EduProvider>().refreshStatus();
   }
 
   @override
@@ -398,6 +413,7 @@ class _EduScreenState extends State<EduScreen> {
     final success = await AcademicLoginDialog.show(
       context,
       controller: controller,
+      coordinator: _coordinatorOrNull(),
     );
     if (!context.mounted || success != true) return;
     await eduProvider.refreshStatus();
@@ -405,6 +421,14 @@ class _EduScreenState extends State<EduScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('教务账号已绑定')),
       );
+    }
+  }
+
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
     }
   }
 

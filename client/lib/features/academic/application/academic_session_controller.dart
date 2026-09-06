@@ -16,6 +16,16 @@ enum AcademicSessionStatus {
   error,
 }
 
+/// 教务个人资料的独立加载状态。
+///
+/// 学校认证成功只代表 Cookie 会话有效，不能推导个人资料页面也一定可用。
+enum AcademicProfileStatus {
+  idle,
+  loading,
+  loaded,
+  error,
+}
+
 /// 主应用教务会话控制器。
 ///
 /// 控制器只持有当前运行时状态，不持久化教务密码或 Cookie。所有网络操作
@@ -43,11 +53,21 @@ final class AcademicSessionController extends ChangeNotifier {
   GradeFetchResult? _lastGrades;
   AcademicFailure? _failure;
   AcademicSessionStatus _status = AcademicSessionStatus.idle;
+  AcademicProfileStatus _profileStatus = AcademicProfileStatus.idle;
   int _accountGeneration = 0;
   bool _sessionResetPending = false;
   bool _disposed = false;
 
   String? get appUserId => _appUserId;
+  int get contextGeneration => _accountGeneration;
+
+  /// 异步登录完成后供协调器确认仍属于原 App 账号。
+  bool isCurrentContext({required int generation, String? appUserId}) {
+    return !_disposed &&
+        generation == _accountGeneration &&
+        (appUserId == null || appUserId == _appUserId);
+  }
+
   String? get studentId =>
       _sessionResetPending ? null : (_studentId ?? _repository.studentId);
   AcademicSourceKind get sourceKind => _repository.sourceKind;
@@ -58,6 +78,10 @@ final class AcademicSessionController extends ChangeNotifier {
   GradeFetchResult? get lastGrades => _lastGrades;
   AcademicFailure? get failure => _failure;
   AcademicSessionStatus get status => _status;
+  AcademicProfileStatus get profileStatus => _profileStatus;
+  bool get isProfileLoaded => _profileStatus == AcademicProfileStatus.loaded;
+  bool get hasProfileError =>
+      _profileStatus == AcademicProfileStatus.error && _profile == null;
   bool get isBusy =>
       _status == AcademicSessionStatus.authenticating ||
       _status == AcademicSessionStatus.loading;
@@ -105,7 +129,10 @@ final class AcademicSessionController extends ChangeNotifier {
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();
-      if (_repository.sourceKind == AcademicSourceKind.legacy) {
+      if (_repository.sourceKind == AcademicSourceKind.legacy &&
+          _appUserId != null) {
+        _status = AcademicSessionStatus.loading;
+        _notifyListeners();
         try {
           await _repository.restoreSession();
           if (_disposed || generation != _accountGeneration) return;
@@ -115,7 +142,10 @@ final class AcademicSessionController extends ChangeNotifier {
               : AcademicSessionStatus.idle;
           if (_repository.sessionState == SessionState.authenticated) {
             try {
-              _profile = await _repository.getProfile();
+              final profile = await _repository.getProfile();
+              if (_disposed || generation != _accountGeneration) return;
+              _profile = profile;
+              _profileStatus = AcademicProfileStatus.loaded;
             } catch (_) {
               // 绑定已恢复时，资料刷新失败不应再次要求用户绑定。
             }
@@ -222,19 +252,22 @@ final class AcademicSessionController extends ChangeNotifier {
     return _enqueue(() async {
       if (!_canReadAcademicData()) return null;
       _status = AcademicSessionStatus.loading;
+      _profile = null;
+      _profileStatus = AcademicProfileStatus.loading;
       _failure = null;
       _notifyListeners();
       try {
         final profile = await _repository.getProfile();
         if (generation != _accountGeneration || _disposed) return null;
         _profile = profile;
+        _profileStatus = AcademicProfileStatus.loaded;
         _studentId ??= _repository.studentId;
         _status = AcademicSessionStatus.authenticated;
         _failure = null;
         _notifyListeners();
         return profile;
       } catch (error) {
-        _handleDataFailure(error, generation);
+        _handleProfileFailure(error, generation);
         return null;
       }
     });
@@ -296,6 +329,83 @@ final class AcademicSessionController extends ChangeNotifier {
     });
   }
 
+  Future<GradeDetail?> loadGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final detail = await _repository.getGradeDetail(
+          year: year,
+          semester: semester,
+          classId: classId,
+          courseName: courseName,
+          courseId: courseId,
+          studentGradeId: studentGradeId,
+        );
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return detail;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
+  Future<AcademicSituation?> loadAcademicSituation() {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final result = await _repository.getAcademicSituation();
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return result;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
+  Future<CreditRequirement?> loadCreditRequirements() {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (!_canReadAcademicData()) return null;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
+      _notifyListeners();
+      try {
+        final result = await _repository.getCreditRequirements();
+        if (generation != _accountGeneration || _disposed) return null;
+        _status = AcademicSessionStatus.authenticated;
+        _failure = null;
+        _notifyListeners();
+        return result;
+      } catch (error) {
+        _handleDataFailure(error, generation);
+        return null;
+      }
+    });
+  }
+
   /// 清理学校会话，但保留当前 App 用户上下文。
   Future<void> resetSession() {
     final generation = ++_accountGeneration;
@@ -320,19 +430,35 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   /// 从服务端恢复当前 App 账号已有的教务授权。
-  Future<void> restoreSession() {
+  Future<void> restoreSession({bool force = false}) {
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (_disposed || _appUserId == null || generation != _accountGeneration) {
         return;
       }
-      await _repository.restoreSession();
-      if (_disposed || generation != _accountGeneration) return;
-      _studentId = _repository.studentId;
-      _status = _repository.sessionState == SessionState.authenticated
-          ? AcademicSessionStatus.authenticated
-          : AcademicSessionStatus.idle;
+      if (_sessionResetPending) throw StateError('教务账号上下文尚未清理完成');
+      // 与启动恢复共用队列，等待中的页面不重复发起同一次恢复请求。
+      if (!force && isAuthenticated) return;
+      _status = AcademicSessionStatus.loading;
+      _failure = null;
       _notifyListeners();
+      try {
+        await _repository.restoreSession();
+        if (_disposed || generation != _accountGeneration) return;
+        _studentId = _repository.studentId;
+        _status = _repository.sessionState == SessionState.authenticated
+            ? AcademicSessionStatus.authenticated
+            : AcademicSessionStatus.idle;
+      } catch (error) {
+        if (_disposed || generation != _accountGeneration) return;
+        // 会话恢复失败不等于撤销绑定；保留服务端确认过的学号供页面重试。
+        _studentId = _repository.studentId;
+        _failure = AcademicFailure.fromException(error);
+        _status = AcademicSessionStatus.error;
+        rethrow;
+      } finally {
+        if (!_disposed && generation == _accountGeneration) _notifyListeners();
+      }
     });
   }
 
@@ -343,6 +469,8 @@ final class AcademicSessionController extends ChangeNotifier {
     switch (result) {
       case LoginSuccess(:final studentId):
         _studentId = studentId;
+        _profile = null;
+        _profileStatus = AcademicProfileStatus.loading;
         _captchaChallenge = null;
         _failure = null;
         _status = AcademicSessionStatus.authenticated;
@@ -355,11 +483,13 @@ final class AcademicSessionController extends ChangeNotifier {
             return const LoginPageChanged(message: '教务账号上下文已切换');
           }
           _profile = profile;
+          _profileStatus = AcademicProfileStatus.loaded;
         } catch (error) {
           if (generation != _accountGeneration || _disposed) {
             return const LoginPageChanged(message: '教务账号上下文已切换');
           }
           final failure = AcademicFailure.fromException(error);
+          _profileStatus = AcademicProfileStatus.error;
           _failure = failure;
           if (failure.kind == AcademicFailureKind.sessionExpired) {
             _status = AcademicSessionStatus.error;
@@ -490,9 +620,22 @@ final class AcademicSessionController extends ChangeNotifier {
     _notifyListeners();
   }
 
+  void _handleProfileFailure(Object error, int generation) {
+    if (generation != _accountGeneration || _disposed) return;
+    _profileStatus = AcademicProfileStatus.error;
+    _failure = AcademicFailure.fromException(error);
+    // 认证会话与资料页面是两个独立边界：资料失败时保留有效会话，
+    // 让课表/成绩仍可使用，同时由 UI 明确提示资料需要重试。
+    _status = isAuthenticated
+        ? AcademicSessionStatus.authenticated
+        : AcademicSessionStatus.error;
+    _notifyListeners();
+  }
+
   void _clearViewState(AcademicSessionStatus? nextStatus) {
     _studentId = null;
     _profile = null;
+    _profileStatus = AcademicProfileStatus.idle;
     _captchaChallenge = null;
     _lastCourses = null;
     _lastGrades = null;

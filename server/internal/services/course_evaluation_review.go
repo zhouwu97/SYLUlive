@@ -119,6 +119,9 @@ func (s *CourseEvaluationService) Reject(adminID, submissionID uint, revision in
 		}
 
 		// 只把当前 revision 置为 needs_edit：保留星级与评论，清理临时关联。
+		if err := deleteSubmissionRatings(tx, submission.ID, submission.TeacherRatingID); err != nil {
+			return err
+		}
 		submission.Status = models.CourseEvaluationStatusNeedsEdit
 		submission.ReviewReason = reason
 		submission.ReviewedBy = &adminID

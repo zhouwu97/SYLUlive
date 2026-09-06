@@ -26,7 +26,8 @@ func TestPaperStorageLoadConfigUsesDefaultsAndOnlyAllowedEnvironment(t *testing.
 	if err != nil {
 		t.Fatalf("加载配置失败: %v", err)
 	}
-	if config.Listen != ":8081" || config.Dir != "./paper_storage" || config.MaxConcurrentValidations != 2 {
+	if config.Listen != ":8081" || config.Dir != "./paper_storage" || config.MaxConcurrentValidations != 2 ||
+		!config.UseAccelRedirect || config.WarningPercent != 70 || config.UploadStopPercent != 85 || config.ReadonlyPercent != 95 {
 		t.Fatalf("默认配置错误: %+v", config)
 	}
 	for _, forbidden := range []string{"DATABASE_DSN", "JWT_SECRET"} {
@@ -34,7 +35,7 @@ func TestPaperStorageLoadConfigUsesDefaultsAndOnlyAllowedEnvironment(t *testing.
 			t.Fatalf("独立文件服务不得读取 %s", forbidden)
 		}
 	}
-	if len(read) != 5 {
+	if len(read) != 9 {
 		t.Fatalf("读取了非允许环境变量: %v", read)
 	}
 }
@@ -60,6 +61,44 @@ func TestPaperStorageLoadConfigRejectsMissingSecretsAndInvalidConcurrency(t *tes
 				t.Fatal("非法配置应被拒绝")
 			}
 		})
+	}
+}
+
+func TestPaperStorageLoadConfigReadsColocatedPolicy(t *testing.T) {
+	values := map[string]string{
+		"PAPER_STORAGE_SIGNING_SECRET":      "grant-secret-012345678901234567890",
+		"PAPER_STORAGE_RECEIPT_SECRET":      "receipt-secret-012345678901234567890",
+		"PAPER_STORAGE_USE_ACCEL_REDIRECT":  "false",
+		"PAPER_STORAGE_WARNING_PERCENT":     "60",
+		"PAPER_STORAGE_UPLOAD_STOP_PERCENT": "75",
+		"PAPER_STORAGE_READONLY_PERCENT":    "85",
+	}
+	config, err := loadPaperStorageConfig(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatalf("加载同机策略失败: %v", err)
+	}
+	if config.UseAccelRedirect || config.WarningPercent != 60 || config.UploadStopPercent != 75 || config.ReadonlyPercent != 85 {
+		t.Fatalf("同机策略错误: %+v", config)
+	}
+}
+
+func TestPaperStorageLoadConfigRejectsInvalidDiskPolicy(t *testing.T) {
+	base := map[string]string{
+		"PAPER_STORAGE_SIGNING_SECRET": "grant-secret-012345678901234567890",
+		"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret-012345678901234567890",
+	}
+	for _, values := range []map[string]string{
+		{"PAPER_STORAGE_USE_ACCEL_REDIRECT": "yes"},
+		{"PAPER_STORAGE_WARNING_PERCENT": "0"},
+		{"PAPER_STORAGE_UPLOAD_STOP_PERCENT": "101"},
+		{"PAPER_STORAGE_WARNING_PERCENT": "80", "PAPER_STORAGE_UPLOAD_STOP_PERCENT": "70"},
+	} {
+		for key, value := range base {
+			values[key] = value
+		}
+		if _, err := loadPaperStorageConfig(func(key string) string { return values[key] }); err == nil {
+			t.Fatalf("非法磁盘策略应被拒绝: %v", values)
+		}
 	}
 }
 

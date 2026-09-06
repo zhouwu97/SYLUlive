@@ -183,8 +183,10 @@ FEED-H1 加固：
 |---|---|---|
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
 | `GET` | `/api/teachers/:id` | 获取教师详情及评价 |
-| `POST` | `/api/teachers/:id/rate` | 评价教师 |
+| `POST` | `/api/teachers/:id/rate` | 兼容入口：转入课程评价状态机 |
 | `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
+| `POST` | `/api/course-evaluations` | 创建课程评价（重复目标返回 409） |
+| `PATCH` | `/api/user/course-evaluations/:id` | 更新课程评价（必须携带当前 `revision`） |
 | `GET` | `/api/majors` | 获取专业评价列表 |
 | `GET` | `/api/majors/:id` | 获取专业详情及评价 |
 | `POST` | `/api/majors/:id/rate` | 评价专业 |

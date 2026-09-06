@@ -98,6 +98,29 @@ func TestExamPaperRemoteClientInternalOperationsUseScopedGrant(t *testing.T) {
 	require.Equal(t, int64(12), metadata.Size)
 }
 
+func TestExamPaperRemoteClientSplitsPublicAndInternalEndpoints(t *testing.T) {
+	now := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+	signer, err := NewExamPaperStorageSigner("remote-client-secret", func() time.Time { return now })
+	require.NoError(t, err)
+	internalCalled := false
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		internalCalled = true
+		require.Equal(t, "/internal/v1/files/paper.pdf/claim", r.URL.Path)
+		_, _ = fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer internal.Close()
+	client, err := NewExamPaperRemoteClientWithEndpoints("https://paper.sylulive.online", internal.URL, signer, internal.Client(), func() time.Time { return now })
+	require.NoError(t, err)
+
+	signedURL, err := client.SignedFileURL(models.ExamPaper{ID: 1, FileKey: "paper.pdf"}, ExamPaperStoragePurposePreview, time.Minute)
+	require.NoError(t, err)
+	parsed, err := url.Parse(signedURL)
+	require.NoError(t, err)
+	require.Equal(t, "paper.sylulive.online", parsed.Host)
+	require.NoError(t, client.Claim(context.Background(), "paper.pdf"))
+	require.True(t, internalCalled)
+}
+
 func TestExamPaperRemoteClientRejectsBadStatusAndOversizedJSON(t *testing.T) {
 	signer, err := NewExamPaperStorageSigner("remote-client-secret", time.Now)
 	require.NoError(t, err)

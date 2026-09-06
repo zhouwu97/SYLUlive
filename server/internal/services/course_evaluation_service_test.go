@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"shenliyuan/internal/models"
 
@@ -81,7 +82,7 @@ func TestCourseEvaluationSubmitPublishesWhenVerified(t *testing.T) {
 	subject := createCourseEvalSubject(t, db, "高等数学A1", true)
 	teacher := createCourseEvalTeacher(t, db, "张三", subject.Name, subject.ID, true)
 
-	view, err := svc.Submit(user.ID, SubmitInput{
+	view, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:      subject.Name,
 		CourseSubjectID: &subject.ID,
 		TeacherName:     teacher.Name,
@@ -107,7 +108,7 @@ func TestCourseEvaluationSubmitStaysPendingWhenSubjectMissing(t *testing.T) {
 	svc := NewCourseEvaluationService(db)
 	user := createCourseEvalUser(t, db, "20260002")
 
-	view, err := svc.Submit(user.ID, SubmitInput{
+	view, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "不存在的课程",
 		TeacherName: "新教师",
 		Star:        4,
@@ -141,7 +142,7 @@ func TestCourseEvaluationNumberedSportsUsesCanonicalNameWhenSubjectMissing(t *te
 			require.True(t, resolved.RequiresConfirmation)
 			require.Empty(t, resolved.CourseSubjects)
 
-			view, err := svc.Submit(user.ID, SubmitInput{
+			view, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 				CourseName:  courseName,
 				TeacherName: "体育教师",
 				Star:        5,
@@ -166,7 +167,7 @@ func TestCourseEvaluationSubmitRequiresConfirmationForAlias(t *testing.T) {
 		NormalizedAlias: models.NormalizeCourseSubjectName("高数"),
 	}).Error)
 
-	_, err := svc.Submit(user.ID, SubmitInput{
+	_, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "高数",
 		TeacherName: "张三",
 		Star:        5,
@@ -179,7 +180,7 @@ func TestCourseEvaluationUpdateIncrementsRevision(t *testing.T) {
 	svc := NewCourseEvaluationService(db)
 	user := createCourseEvalUser(t, db, "20260004")
 
-	created, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "待收录课程",
 		TeacherName: "李四",
 		Star:        3,
@@ -188,7 +189,7 @@ func TestCourseEvaluationUpdateIncrementsRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, created.Revision)
 
-	updated, err := svc.Update(user.ID, created.ID, SubmitInput{
+	updated, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
 		CourseName:  "待收录课程",
 		TeacherName: "李四",
 		Star:        4,
@@ -206,7 +207,7 @@ func TestCourseEvaluationUpdateRejectsStaleRevision(t *testing.T) {
 	svc := NewCourseEvaluationService(db)
 	user := createCourseEvalUser(t, db, "20260005")
 
-	created, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "待收录课程",
 		TeacherName: "王五",
 		Star:        3,
@@ -214,7 +215,7 @@ func TestCourseEvaluationUpdateRejectsStaleRevision(t *testing.T) {
 	require.NoError(t, err)
 
 	// 先编辑一次，revision 变为 2。
-	if _, err := svc.Update(user.ID, created.ID, SubmitInput{
+	if _, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
 		CourseName:  "待收录课程",
 		TeacherName: "王五",
 		Star:        4,
@@ -224,7 +225,7 @@ func TestCourseEvaluationUpdateRejectsStaleRevision(t *testing.T) {
 	}
 
 	// 再用旧 revision 编辑应触发冲突。
-	_, err = svc.Update(user.ID, created.ID, SubmitInput{
+	_, err = svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
 		CourseName:  "待收录课程",
 		TeacherName: "王五",
 		Star:        5,
@@ -233,13 +234,139 @@ func TestCourseEvaluationUpdateRejectsStaleRevision(t *testing.T) {
 	assertCourseEvaluationCode(t, err, CodeCourseEvaluationRevisionConflict)
 }
 
+func TestCourseEvaluationUpdateRequiresPositiveRevision(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260005-zero")
+
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName:  "待收录课程",
+		TeacherName: "零版本教师",
+		Star:        3,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
+		CourseName:  "待收录课程",
+		TeacherName: "零版本教师",
+		Star:        5,
+		Revision:    0,
+	})
+	assertCourseEvaluationCode(t, err, CodeInvalidCourseEvaluationInput)
+
+	var stored models.CourseEvaluationSubmission
+	require.NoError(t, db.First(&stored, created.ID).Error)
+	require.Equal(t, 1, stored.Revision)
+	require.Equal(t, 3, stored.Star)
+}
+
+func TestCourseEvaluationPublishedUpdateIncrementsRevision(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260005-published")
+	subject := createCourseEvalSubject(t, db, "编译原理", true)
+	teacher := createCourseEvalTeacher(t, db, "发布教师", subject.Name, subject.ID, true)
+
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: subject.Name, CourseSubjectID: &subject.ID,
+		TeacherName: teacher.Name, TeacherID: &teacher.ID, Star: 3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.CourseEvaluationStatusPublished, created.Status)
+
+	updated, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
+		CourseName: subject.Name, CourseSubjectID: &subject.ID,
+		TeacherName: teacher.Name, TeacherID: &teacher.ID, Star: 5,
+		Revision: created.Revision,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, updated.Revision)
+	require.Equal(t, models.CourseEvaluationStatusPublished, updated.Status)
+
+	var rating models.TeacherRating
+	require.NoError(t, db.Where("course_evaluation_submission_id = ?", created.ID).First(&rating).Error)
+	require.Equal(t, 5, rating.Star)
+}
+
+func TestCourseEvaluationPublishedToPendingClearsReviewMetadata(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260005-review-metadata")
+	reviewer := createCourseEvalUser(t, db, "reviewer-1")
+	subject := createCourseEvalSubject(t, db, "数据库原理", true)
+	teacher := createCourseEvalTeacher(t, db, "审核教师", subject.Name, subject.ID, true)
+
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: subject.Name, CourseSubjectID: &subject.ID,
+		TeacherName: teacher.Name, TeacherID: &teacher.ID, Star: 4,
+	})
+	require.NoError(t, err)
+	now := time.Now()
+	require.NoError(t, db.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", created.ID).
+		Updates(map[string]interface{}{
+			"reviewed_by": reviewer.ID, "reviewed_at": &now, "review_reason": "历史审核信息",
+		}).Error)
+
+	updated, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
+		CourseName:  "尚未收录课程",
+		TeacherName: "新审核教师",
+		Star:        5,
+		Revision:    created.Revision,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, updated.Revision)
+	require.Equal(t, models.CourseEvaluationStatusPending, updated.Status)
+
+	var stored models.CourseEvaluationSubmission
+	require.NoError(t, db.First(&stored, created.ID).Error)
+	require.Nil(t, stored.ReviewedBy)
+	require.Nil(t, stored.ReviewedAt)
+	require.Empty(t, stored.ReviewReason)
+}
+
+func TestCourseEvaluationUpdateRejectsDuplicateTarget(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260005-duplicate-target")
+	firstSubject := createCourseEvalSubject(t, db, "第一门课", true)
+	firstTeacher := createCourseEvalTeacher(t, db, "第一位教师", firstSubject.Name, firstSubject.ID, true)
+	secondSubject := createCourseEvalSubject(t, db, "第二门课", true)
+	secondTeacher := createCourseEvalTeacher(t, db, "第二位教师", secondSubject.Name, secondSubject.ID, true)
+
+	first, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: firstSubject.Name, CourseSubjectID: &firstSubject.ID,
+		TeacherName: firstTeacher.Name, TeacherID: &firstTeacher.ID, Star: 3,
+	})
+	require.NoError(t, err)
+	second, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: secondSubject.Name, CourseSubjectID: &secondSubject.ID,
+		TeacherName: secondTeacher.Name, TeacherID: &secondTeacher.ID, Star: 4,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.Update(user.ID, first.ID, UpdateCourseEvaluationInput{
+		CourseName: secondSubject.Name, CourseSubjectID: &secondSubject.ID,
+		TeacherName: secondTeacher.Name, TeacherID: &secondTeacher.ID, Star: 5,
+		Revision: first.Revision,
+	})
+	assertCourseEvaluationCode(t, err, CodeCourseEvaluationDuplicateTarget)
+	var duplicateErr *CourseEvaluationError
+	require.ErrorAs(t, err, &duplicateErr)
+	require.Equal(t, second.ID, duplicateErr.Details["existing_submission_id"])
+
+	var stored models.CourseEvaluationSubmission
+	require.NoError(t, db.First(&stored, first.ID).Error)
+	require.Equal(t, firstSubject.Name, stored.CourseName)
+	require.Equal(t, 1, stored.Revision)
+}
+
 func TestCourseEvaluationApprovePublishesAndNotifies(t *testing.T) {
 	db := newCourseEvaluationServiceTestDB(t)
 	svc := NewCourseEvaluationService(db)
 	user := createCourseEvalUser(t, db, "20260006")
 	admin := createCourseEvalUser(t, db, "admin01")
 
-	created, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "离散数学",
 		TeacherName: "赵老师",
 		Star:        5,
@@ -278,14 +405,14 @@ func TestCourseEvaluationApproveRejectsStaleRevision(t *testing.T) {
 	user := createCourseEvalUser(t, db, "20260007")
 	admin := createCourseEvalUser(t, db, "admin02")
 
-	created, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "待审核课程",
 		TeacherName: "钱老师",
 		Star:        3,
 	})
 	require.NoError(t, err)
 
-	if _, err := svc.Update(user.ID, created.ID, SubmitInput{
+	if _, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
 		CourseName:  "待审核课程",
 		TeacherName: "钱老师",
 		Star:        4,
@@ -305,7 +432,7 @@ func TestCourseEvaluationRejectRequiresReason(t *testing.T) {
 	user := createCourseEvalUser(t, db, "20260008")
 	admin := createCourseEvalUser(t, db, "admin03")
 
-	created, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:  "待审核课程",
 		TeacherName: "孙老师",
 		Star:        5,
@@ -329,31 +456,106 @@ func TestCourseEvaluationRatingUniquePerUserPerTeacher(t *testing.T) {
 	subject := createCourseEvalSubject(t, db, "线性代数", true)
 	teacher := createCourseEvalTeacher(t, db, "周老师", subject.Name, subject.ID, true)
 
-	if _, err := svc.Submit(user.ID, SubmitInput{
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:      subject.Name,
 		CourseSubjectID: &subject.ID,
 		TeacherName:     teacher.Name,
 		TeacherID:       &teacher.ID,
 		Star:            4,
 		Comment:         "第一次评价",
-	}); err != nil {
-		t.Fatalf("首次提交失败: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
-	// 同一用户对同一教师再次提交，应更新同一条教师评价，而不是新增。
-	if _, err := svc.Submit(user.ID, SubmitInput{
+	// POST 是 Create-only；同一去重键再次提交必须冲突且不能改写首条内容。
+	_, err = svc.Submit(user.ID, CreateCourseEvaluationInput{
 		CourseName:      subject.Name,
 		CourseSubjectID: &subject.ID,
 		TeacherName:     teacher.Name,
 		TeacherID:       &teacher.ID,
 		Star:            5,
 		Comment:         "修改后的评价",
-	}); err != nil {
-		t.Fatalf("二次提交失败: %v", err)
-	}
+	})
+	assertCourseEvaluationCode(t, err, CodeCourseEvaluationAlreadyExists)
+	var duplicateErr *CourseEvaluationError
+	require.ErrorAs(t, err, &duplicateErr)
+	require.Equal(t, created.ID, duplicateErr.Details["existing_submission_id"])
 
 	var count int64
 	require.NoError(t, db.Model(&models.TeacherRating{}).
 		Where("teacher_id = ? AND user_id = ?", teacher.ID, user.ID).Count(&count).Error)
 	require.Equal(t, int64(1), count, "一位用户对一位教师应只有一条评价")
+	var rating models.TeacherRating
+	require.NoError(t, db.Where("teacher_id = ? AND user_id = ?", teacher.ID, user.ID).First(&rating).Error)
+	require.Equal(t, 4, rating.Star)
+	require.Equal(t, "第一次评价", rating.Comment)
+}
+
+func TestCourseEvaluationUpdateReplacesPublishedRatingWithoutGhost(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260010")
+	firstSubject := createCourseEvalSubject(t, db, "高等数学", true)
+	firstTeacher := createCourseEvalTeacher(t, db, "甲老师", firstSubject.Name, firstSubject.ID, true)
+	secondSubject := createCourseEvalSubject(t, db, "大学物理", true)
+	secondTeacher := createCourseEvalTeacher(t, db, "乙老师", secondSubject.Name, secondSubject.ID, true)
+
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: firstSubject.Name, CourseSubjectID: &firstSubject.ID,
+		TeacherName: firstTeacher.Name, TeacherID: &firstTeacher.ID, Star: 1,
+	})
+	require.NoError(t, err)
+	updated, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
+		CourseName: secondSubject.Name, CourseSubjectID: &secondSubject.ID,
+		TeacherName: secondTeacher.Name, TeacherID: &secondTeacher.ID, Star: 5,
+		Revision: created.Revision,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.CourseEvaluationStatusPublished, updated.Status)
+
+	var oldCount, newCount int64
+	require.NoError(t, db.Model(&models.TeacherRating{}).Where("teacher_id = ? AND deleted_at IS NULL", firstTeacher.ID).Count(&oldCount).Error)
+	require.NoError(t, db.Model(&models.TeacherRating{}).Where("teacher_id = ? AND deleted_at IS NULL", secondTeacher.ID).Count(&newCount).Error)
+	require.Zero(t, oldCount, "编辑换教师后旧评分必须从公开统计移除")
+	require.Equal(t, int64(1), newCount)
+	var stored models.CourseEvaluationSubmission
+	require.NoError(t, db.First(&stored, created.ID).Error)
+	require.Equal(t, models.CourseEvaluationDedupKey(user.ID, secondSubject.Name, secondTeacher.Name), stored.DedupKey)
+}
+
+func TestCourseEvaluationUpdatePublishedToPendingRemovesRating(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260011")
+	subject := createCourseEvalSubject(t, db, "概率论", true)
+	teacher := createCourseEvalTeacher(t, db, "丙老师", subject.Name, subject.ID, true)
+	created, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: subject.Name, CourseSubjectID: &subject.ID,
+		TeacherName: teacher.Name, TeacherID: &teacher.ID, Star: 4,
+	})
+	require.NoError(t, err)
+	updated, err := svc.Update(user.ID, created.ID, UpdateCourseEvaluationInput{
+		CourseName: "尚未收录课程", TeacherName: "新老师", Star: 5,
+		Revision: created.Revision,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.CourseEvaluationStatusPending, updated.Status)
+	var count int64
+	require.NoError(t, db.Model(&models.TeacherRating{}).Where("teacher_id = ? AND deleted_at IS NULL", teacher.ID).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestCourseEvaluationCanonicalizesNamesFromIDs(t *testing.T) {
+	db := newCourseEvaluationServiceTestDB(t)
+	svc := NewCourseEvaluationService(db)
+	user := createCourseEvalUser(t, db, "20260012")
+	subject := createCourseEvalSubject(t, db, "线性代数", true)
+	teacher := createCourseEvalTeacher(t, db, "丁老师", subject.Name, subject.ID, true)
+	view, err := svc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName: "客户端伪造课程名", CourseSubjectID: &subject.ID,
+		TeacherName: "客户端伪造教师名", TeacherID: &teacher.ID, Star: 5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, subject.Name, view.CourseName)
+	require.Equal(t, subject.Name, view.CourseSubjectName)
+	require.Equal(t, teacher.Name, view.TeacherName)
 }

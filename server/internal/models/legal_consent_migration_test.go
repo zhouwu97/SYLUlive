@@ -13,6 +13,10 @@ import (
 func TestMarkLegacyBundledConsentsPreservesEvidenceAndIsRepeatable(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "consents.db")), &gorm.Config{})
 	require.NoError(t, err)
+	// Windows 必须先关闭连接，再由 TempDir 清理数据库文件。
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(&UserLegalConsent{}))
 	now := time.Now().UTC().Truncate(time.Second)
 	rows := []UserLegalConsent{

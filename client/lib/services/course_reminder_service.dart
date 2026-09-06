@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../providers/course_schedule_provider.dart';
+import '../utils/deterministic_course_id.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/contracts/reminder_notification_client.dart';
 
@@ -405,7 +406,7 @@ class CourseReminderService {
     // 不再依赖课程名（用户可修改）和提醒时间（会变化）
     final raw =
         '${course.courseCode}_${course.weekday}_${course.startSection}_$week';
-    return raw.hashCode.toSigned(32);
+    return deterministicStringHash(raw);
   }
 
   String _titleFor(CourseBlock course) {

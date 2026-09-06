@@ -56,22 +56,27 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
         _error = null;
         _loading = false;
       });
-      return;
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
     }
-    if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
     final result = await provider.resolveForCourse(
       widget.courseName,
       widget.teacherName,
+      // 缓存只用于立即展示；每次打开课程详情仍向服务端确认一次，
+      // 才能及时观察管理员审核后的 pending → published 状态变化。
+      refresh: cached != null,
     );
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _result = result;
-      if (result == null) {
+      if (result != null) {
+        _result = result;
+        _error = null;
+      } else if (cached == null) {
         _error = provider.resolveErrorFor(
               widget.courseName,
               widget.teacherName,

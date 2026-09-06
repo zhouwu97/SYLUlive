@@ -4,24 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/data/academic_server_access_guard.dart';
 
 void main() {
-  test('阻断共享 Dio 上的相对教务服务器路径', () async {
+  test('共享 Dio 允许服务端教务绑定、课表和会话恢复请求', () async {
+    final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid'))
-      ..interceptors.add(const AcademicServerAccessGuard());
-
-    await expectLater(
-      dio.get('/edu/status'),
-      throwsA(
-        isA<DioException>().having(
-          (error) => error.message,
-          'message',
-          '教务服务器接口已阻断，请使用本机直连教务',
-        ),
-      ),
-    );
-    await expectLater(
-      dio.post('/api/edu/courses'),
-      throwsA(isA<DioException>()),
-    );
+      ..interceptors.add(const AcademicServerAccessGuard())
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        requestedPaths.add(options.path);
+        handler.resolve(Response(requestOptions: options, statusCode: 200));
+      }));
+    addTearDown(dio.close);
+    await dio.get('/edu/status');
+    await dio.post('/api/edu/courses');
+    await dio.post('/edu/session/resume');
+    expect(requestedPaths,
+        ['/edu/status', '/api/edu/courses', '/edu/session/resume']);
   });
 
   test('普通 App 接口不受教务服务器闸门影响', () async {
@@ -49,21 +45,17 @@ void main() {
     expect(reachedNetwork, isTrue);
   });
 
-  test('教务注册、预验证和找回密码旧别名同样被阻断', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid'))
-      ..interceptors.add(const AcademicServerAccessGuard());
-
+  test('路径分类仍识别旧教务认证别名，由服务端决定是否退役', () {
     for (final path in const [
       '/register_with_edu',
       '/api/login_edu',
       '/api/forgot_password/',
       '/password/edu/reset',
     ]) {
-      await expectLater(
-        dio.post(path),
-        throwsA(isA<DioException>()),
-        reason: '旧教务认证路径未被阻断: $path',
-      );
+      expect(
+          AcademicServerAccessGuard.isAcademicServerPath(
+              RequestOptions(path: path)),
+          isTrue);
     }
   });
 }

@@ -27,6 +27,60 @@ func newCourseEvaluationTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestEnsureCourseEvaluationSchemaDeduplicatesSubmissionRatings(t *testing.T) {
+	db := newCourseEvaluationTestDB(t)
+	if err := db.AutoMigrate(&CourseEvaluationSubmission{}); err != nil {
+		t.Fatal(err)
+	}
+	teacher := Teacher{Name: "张老师", Course: "线性代数", Verified: true}
+	if err := db.Create(&teacher).Error; err != nil {
+		t.Fatal(err)
+	}
+	submission := CourseEvaluationSubmission{
+		ID: 42, UserID: 7, CourseName: teacher.Course, TeacherName: teacher.Name,
+		DedupKey:  CourseEvaluationDedupKey(7, teacher.Course, teacher.Name),
+		TeacherID: &teacher.ID, Status: CourseEvaluationStatusPublished, Revision: 1,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatal(err)
+	}
+	older := TeacherRating{TeacherID: teacher.ID, UserID: 7, Star: 3, CourseEvaluationSubmissionID: &submission.ID}
+	newer := TeacherRating{TeacherID: teacher.ID, UserID: 7, Star: 5, CourseEvaluationSubmissionID: &submission.ID}
+	unrelated := TeacherRating{TeacherID: teacher.ID, UserID: 8, Star: 4}
+	for _, rating := range []*TeacherRating{&older, &newer, &unrelated} {
+		if err := db.Create(rating).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Model(&submission).Update("teacher_rating_id", older.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	for pass := 0; pass < 2; pass++ {
+		if err := EnsureCourseEvaluationSchema(db); err != nil {
+			t.Fatalf("迁移第 %d 次失败: %v", pass+1, err)
+		}
+	}
+	var active []TeacherRating
+	if err := db.Where("course_evaluation_submission_id = ?", submission.ID).Find(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != newer.ID {
+		t.Fatalf("应保留最新评分，实际: %+v", active)
+	}
+	if err := db.First(&submission, submission.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if submission.TeacherRatingID == nil || *submission.TeacherRatingID != newer.ID {
+		t.Fatalf("提交未指向保留的评分: %+v", submission.TeacherRatingID)
+	}
+	if err := db.Unscoped().First(&older, older.ID).Error; err != nil || !older.DeletedAt.Valid {
+		t.Fatalf("旧评分应软删除并保留历史: %v", err)
+	}
+	if err := db.First(&unrelated, unrelated.ID).Error; err != nil {
+		t.Fatalf("不应清理其他用户评分: %v", err)
+	}
+}
+
 func TestNormalizeCourseSubjectNameKeepsSuffixDistinct(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"高等数学A1", "高等数学a1"},
@@ -259,6 +313,7 @@ func TestEnsureCourseEvaluationSchemaCreatesUniqueIndexes(t *testing.T) {
 		"uq_course_subjects_normalized_name",
 		"uq_teachers_subject_name",
 		"uq_course_evaluation_submission_dedup",
+		"uq_teacher_rating_submission",
 	} {
 		var count int64
 		if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?", name).Scan(&count).Error; err != nil {

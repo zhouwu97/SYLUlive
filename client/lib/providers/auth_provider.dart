@@ -41,13 +41,14 @@ class AuthResult {
   final bool success;
   final String? errorMessage;
   final int? statusCode;
+  final String? errorCode;
 
-  const AuthResult({required this.success, this.errorMessage, this.statusCode});
+  const AuthResult({required this.success, this.errorMessage, this.statusCode, this.errorCode});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message, {int? statusCode}) =>
-      AuthResult(success: false, errorMessage: message, statusCode: statusCode);
+  factory AuthResult.failure(String message, {int? statusCode, String? errorCode}) =>
+      AuthResult(success: false, errorMessage: message, statusCode: statusCode, errorCode: errorCode);
 }
 
 /// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
@@ -435,21 +436,33 @@ class AuthProvider extends ChangeNotifier {
               final epoch = _accountSessionEpoch;
               final token = _token;
               final accepted = await _requestCommunityRulesConfirmation();
-              // 此 403 在业务处理前返回。仅恢复无请求体的明确点赞操作，
-              // 不自动重放发帖、私信、上传等写请求，也不跨账号恢复。
+              // 此 403 在业务处理前返回；稳定幂等键保证确认后恢复写操作不会重复创建。
               final options = error.requestOptions;
               final isLikeRequest =
                   RegExp(r'^(?:/api)?/(posts|replies)/\d+/like$')
                       .hasMatch(options.uri.path) &&
                   (options.method == 'POST' || options.method == 'DELETE') &&
                   options.data == null;
+              final hasIdempotencyKey = options.headers.entries.any((entry) =>
+                  entry.key.toLowerCase() == 'idempotency-key' &&
+                  (entry.value?.toString().trim().isNotEmpty ?? false));
+              final canReplay = isLikeRequest ||
+                  (ForbiddenRecoveryRouter.canReplay(
+                    method: options.method,
+                    hasIdempotencyKey: hasIdempotencyKey,
+                  ) && options.data is! Stream);
               if (accepted &&
-                  isLikeRequest &&
+                  canReplay &&
                   isLoggedIn &&
                   _accountSessionEpoch == epoch &&
                   _token == token &&
                   (_user?.legalConsentsActive ?? false)) {
                 options.extra['communityRulesRetried'] = true;
+                // Dio 的 FormData 发送后已 finalize，必须克隆才能恢复评论和表单请求。
+                if (options.data is FormData) {
+                  options.data = (options.data as FormData).clone();
+                  options.headers.remove(Headers.contentLengthHeader);
+                }
                 try {
                   handler.resolve(await _dio.fetch<dynamic>(options));
                 } on DioException catch (retryError) {
@@ -1064,6 +1077,7 @@ class AuthProvider extends ChangeNotifier {
     required bool includeEduDataConsent,
   }) async {
     if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    final epoch = _accountSessionEpoch;
     _isLoading = true;
     notifyListeners();
     try {
@@ -1081,23 +1095,27 @@ class AuthProvider extends ChangeNotifier {
           payload['user'] is! Map) {
         return AuthResult.failure('协议确认失败，请稍后重试');
       }
+      if (!isLoggedIn || _accountSessionEpoch != epoch) {
+        return AuthResult.failure('登录状态已变化，请重新操作');
+      }
       await applyProfileResponse(
         Map<String, dynamic>.from(payload['user'] as Map),
       );
-      _isLoading = false;
-      notifyListeners();
       return AuthResult.success();
     } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
       return AuthResult.failure(
         _parseDioError(e),
         statusCode: e.response?.statusCode,
+        errorCode: e.response?.data is Map
+            ? (e.response!.data as Map)['code']?.toString()
+            : null,
       );
     } catch (e) {
+      return AuthResult.failure('协议确认失败: $e');
+    } finally {
+      // 响应格式异常等提前返回也必须释放提交态，否则后续确认会一直处于加载中。
       _isLoading = false;
       notifyListeners();
-      return AuthResult.failure('协议确认失败: $e');
     }
   }
 

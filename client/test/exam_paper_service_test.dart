@@ -1252,7 +1252,7 @@ void main() {
         const [],
         headers: {
           'location': [
-            'https://139.196.148.174/v1/files/papers/test.pdf?token=signed',
+            'https://paper.sylulive.online/v1/files/papers/test.pdf?token=signed',
           ],
         },
       );
@@ -1288,7 +1288,7 @@ void main() {
     expect(await file.readAsString(), '%PDF-1.7 remote');
     expect(requests.map((request) => request.adapter), ['api', 'storage']);
     final storageRequest = requests.last.options;
-    expect(storageRequest.uri.host, ExamPaperService.storageHost);
+    expect(storageRequest.uri.host, 'paper.sylulive.online');
     expect(storageRequest.followRedirects, isFalse);
     expect(storageRequest.headers['Accept'], 'application/pdf');
     expect(storageRequest.headers['Authorization'], isNull);

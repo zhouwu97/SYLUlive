@@ -139,7 +139,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           await eduProvider.ensureStatusLoaded();
           if (!mounted || _lastUserId != capturedUserId) return;
           if (!eduProvider.isBound) {
-            _showUnavailableState('请先绑定教务账号');
+            _showUnavailableState(eduProvider.errorMessage ?? '请先绑定教务账号');
             return;
           }
           await _initSemesterAndLoad(capturedUserId);

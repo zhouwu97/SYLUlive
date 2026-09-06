@@ -35,6 +35,7 @@ import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
 import 'theme/app_text_scaler.dart';
 import 'features/academic/application/academic_session_controller.dart';
+import 'features/academic/application/academic_login_coordinator.dart';
 import 'features/academic/data/academic_repository_impl.dart';
 import 'features/academic/data/academic_server_access_guard.dart';
 import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
@@ -76,8 +77,10 @@ import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
 import 'services/emoji_favorite_repository.dart';
 import 'services/emoji_favorite_service.dart';
+import 'services/browser_credentials_adapter.dart';
 import 'features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'features/ai_device_bridge/device_tool_worker.dart';
+
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
@@ -1272,6 +1275,7 @@ Dio getSharedDio() {
         sendTimeout: ApiConstants.sendTimeout,
       ),
     );
+    configureBrowserCredentials(dio);
 
     // 本机教务使用 JiaowuClient；共享 App Dio 上的旧教务服务器出口统一阻断。
     dio.interceptors.add(const AcademicServerAccessGuard());
@@ -1283,7 +1287,6 @@ Dio getSharedDio() {
         onRequest: (options, handler) async {
           if (kIsWeb) {
             // 浏览器认证只使用服务端 HttpOnly Cookie；跨源部署必须显式带凭据。
-            options.extra['withCredentials'] = true;
             options.headers['X-Auth-Transport'] = 'cookie';
           }
           final requestId = options.headers['X-Request-ID']?.toString().trim();
@@ -1363,6 +1366,10 @@ class MyApp extends StatelessWidget {
           ),
           update: (_, auth, controller) =>
               controller!..syncAppUser(auth.user?.id.toString()),
+        ),
+        ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
+          update: (_, controller, previous) =>
+              previous ?? AcademicLoginCoordinator(controller: controller),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {

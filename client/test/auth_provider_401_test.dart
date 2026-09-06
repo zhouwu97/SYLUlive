@@ -329,6 +329,100 @@ void main() {
   });
 
   group('统一 403 恢复路由', () {
+    test('协议接口返回异常结构后释放加载状态，可再次确认', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(200, {'unexpected': true})
+        ..enqueue(200, {'user': _userJson(1)});
+      final provider = makeProvider(adapter);
+      await provider.applyAuthPayload('token', _userJson(1));
+      expect((await provider.acceptRequiredLegalConsents(includeEduDataConsent: false)).success, false);
+      expect(provider.isLoading, false);
+      expect((await provider.acceptRequiredLegalConsents(includeEduDataConsent: false)).success, true);
+      expect(provider.isLoading, false);
+    });
+
+    testWidgets('教务本地状态缺失时按服务端提示补充勾选并成功关闭', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(400, {
+          'code': 'edu_data_consent_required',
+          'error': '使用教务认证前请阅读并同意教务数据专项授权',
+        })
+        ..enqueue(200, {'user': _userJson(1)});
+      late AuthProvider provider;
+      await tester.runAsync(() async {
+        provider = makeProvider(adapter);
+        await provider.applyAuthPayload('token', _userJson(1));
+      });
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: provider,
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: GoldenTextProfile.large.scaler),
+            child: child!,
+          ),
+          home: Builder(builder: (context) => Scaffold(body: TextButton(
+            onPressed: () => showRequiredLegalConsentDialog(context, requiresEduDataConsent: false),
+            child: const Text('打开'),
+          ))),
+        ),
+      ));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('required-general-consents')));
+      await tester.pump();
+      final confirm = find.byKey(const ValueKey('required-consent-confirm'));
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      final edu = find.byKey(const ValueKey('required-edu-consent'));
+      expect(edu, findsOneWidget);
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.ensureVisible(edu);
+      await tester.tap(edu);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(RequiredLegalConsentDialog), findsNothing);
+      expect((adapter.requests.first.data as Map)['edu_data_consent_accepted'], false);
+      expect((adapter.requests.last.data as Map)['edu_data_consent_accepted'], true);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final multipart in [false, true]) {
+      test('社区确认后恢复带幂等键的${multipart ? "评论表单" : "私信"}', () async {
+        final adapter = _QueuedAuthAdapter()
+          ..enqueue(403, {'code': 'community_rules_required'})
+          ..enqueue(201, {'id': 7});
+        var confirmations = 0;
+        final provider = makeProvider(adapter, onCommunityRulesRequired: () async {
+          confirmations++;
+          return true;
+        });
+        await provider.applyAuthPayload('token', _userJson(1));
+        final body = {'content': '测试内容', 'file_ids': '12'};
+        final response = await provider.dio.post(
+          multipart ? '/posts/1/replies' : '/messages/2',
+          data: multipart ? FormData.fromMap(body) : body,
+          options: Options(headers: {'Idempotency-Key': 'stable-write'}),
+        );
+        expect(response.statusCode, 201);
+        expect(confirmations, 1);
+        expect(adapter.requests, hasLength(2));
+        expect(adapter.requests.last.headers['Idempotency-Key'], 'stable-write');
+        if (multipart) {
+          expect(Map.fromEntries((adapter.requests.last.data as FormData).fields),
+              body);
+        }
+      });
+    }
+
     testWidgets('社区规则单独确认后完成原点赞，后续点赞不重复弹窗', (tester) async {
       await setGoldenViewport(tester, GoldenViewports.phone360x800);
       final adapter = _QueuedAuthAdapter()

@@ -55,8 +55,8 @@ def test_application_factory_captures_retirement_state(monkeypatch) -> None:
 
     assert retired_app.state.school_authority_retired is True
     assert active_app.state.school_authority_retired is False
-    retired_paths = {route.path for route in retired_app.routes}
-    active_paths = {route.path for route in active_app.routes}
+    retired_paths = set(retired_app.openapi()["paths"])
+    active_paths = set(active_app.openapi()["paths"])
     assert "/api/edu/bind" not in retired_paths
     assert "/api/edu/bind" in active_paths
 

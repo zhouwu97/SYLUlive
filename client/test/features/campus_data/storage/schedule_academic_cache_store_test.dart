@@ -6,6 +6,7 @@ import 'package:shenliyuan/features/campus_data/storage/account_cache_namespace.
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -23,6 +24,9 @@ void main() {
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();
+    for (final userId in const <String>['app-user-a', 'app-user-b']) {
+      AcademicPersistenceRegistry.set(userId, enabled: true);
+    }
   });
 
   AesGcmAccountScopedSnapshotStore createVault(String appUserId) {

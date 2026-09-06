@@ -7,6 +7,8 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/storage/academic_persistence_gate.dart';
+import '../features/academic/storage/academic_storage_preferences.dart';
 import '../features/academic/data/mapper/raw_grade_mapper.dart';
 import '../features/academic/domain/academic_repository.dart';
 import '../models/edu_academic_situation.dart';
@@ -95,6 +97,8 @@ class EduProvider extends ChangeNotifier {
   bool _eduRequestBusy = false;
   AcademicSessionController? _academicSessionController;
   bool _usingLocalAcademicSession = false;
+  Future<void> _persistenceReady = Future<void>.value();
+  String _persistenceContextKey = '';
 
   bool get isBound => _isBound;
   bool get isAuthorized => _isAuthorized;
@@ -170,6 +174,7 @@ class EduProvider extends ChangeNotifier {
       appUserId: appUserId,
       sourceAccountId: sourceAccountId,
       snapshotStore: _snapshotStoreBuilder?.call(appUserId),
+      persistenceGate: RegistryAcademicPersistenceGate(appUserId),
     );
   }
 
@@ -201,9 +206,7 @@ class EduProvider extends ChangeNotifier {
   AcademicSituationCacheEntry? getCachedAcademicSituation() {
     final userId = _userId;
     final sourceAccountId = _studentId.trim();
-    if (_usingLocalAcademicSession ||
-        userId == null ||
-        sourceAccountId.isEmpty) {
+    if (userId == null || sourceAccountId.isEmpty) {
       return null;
     }
     return _academicSituationCache[_academicSituationCacheKey(
@@ -217,9 +220,7 @@ class EduProvider extends ChangeNotifier {
   CreditRequirementCacheEntry? getCachedCreditRequirements() {
     final userId = _userId;
     final sourceAccountId = _studentId.trim();
-    if (_usingLocalAcademicSession ||
-        userId == null ||
-        sourceAccountId.isEmpty) {
+    if (userId == null || sourceAccountId.isEmpty) {
       return null;
     }
     return _creditRequirementCache[_creditRequirementCacheKey(
@@ -267,7 +268,7 @@ class EduProvider extends ChangeNotifier {
 
   EduGradeDetail? getCachedGradeDetail(
       EduGrade grade, String year, int semester) {
-    if (_usingLocalAcademicSession || _studentId.trim().isEmpty) return null;
+    if (_studentId.trim().isEmpty) return null;
     return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
@@ -308,6 +309,62 @@ class EduProvider extends ChangeNotifier {
 
   void _onAcademicSessionChanged() {
     _applyAcademicSessionState();
+    final userId = _userId;
+    if (userId != null) {
+      _setPersistenceReadiness(userId, _studentId.trim());
+      final profile = _academicSessionController?.profile;
+      final sourceAccountId = _studentId.trim();
+      if (profile != null && sourceAccountId.isNotEmpty) {
+        unawaited(_persistProfileSnapshot(
+          userId: userId,
+          sourceAccountId: sourceAccountId,
+          profile: profile.toJson(),
+        ));
+      }
+    }
+  }
+
+  Future<void> _persistProfileSnapshot({
+    required String userId,
+    required String sourceAccountId,
+    required Map<String, dynamic> profile,
+  }) async {
+    try {
+      await _persistenceReady;
+      await _academicCacheStoreFor(
+        appUserId: userId,
+        sourceAccountId: sourceAccountId,
+      )?.writeProfile(profile: profile);
+    } catch (error) {
+      debugPrint('保存教务 Profile 失败: ${error.runtimeType}');
+    }
+  }
+
+  void _setPersistenceReadiness(String userId, String sourceAccountId) {
+    final contextKey = '$userId|$sourceAccountId';
+    if (contextKey == _persistenceContextKey) return;
+    _persistenceContextKey = contextKey;
+    final readiness = _loadPersistencePolicy(userId, sourceAccountId);
+    _persistenceReady = readiness;
+    AcademicPersistenceRegistry.setReadiness(userId, readiness);
+  }
+
+  Future<void> _loadPersistencePolicy(
+    String userId,
+    String sourceAccountId,
+  ) async {
+    AcademicPersistenceRegistry.set(userId, enabled: false);
+    final prefs = AcademicStoragePreferences(
+      appUserId: userId,
+      store: await AppPreferencesStore.getInstance(),
+    );
+    var enabled = prefs.saveAcademicData;
+    if (!prefs.hasMigrated && sourceAccountId.isNotEmpty) {
+      // 是否存在旧快照不能覆盖用户选择，也不能关闭新账号的课表保存能力。
+      await prefs.markMigrated();
+    }
+    if (prefs.cleanupPending) enabled = false;
+    AcademicPersistenceRegistry.set(userId, enabled: enabled);
   }
 
   /// 将本机直连状态投影到旧 Provider 的兼容字段。
@@ -410,6 +467,7 @@ class EduProvider extends ChangeNotifier {
       clearGradeCacheForUser(_userId!);
     }
     _userId = userId;
+    AcademicPersistenceRegistry.set(userId, enabled: false);
     _isBound = false;
     _isAuthorized = false;
     _sessionState = 'unbound';
@@ -420,6 +478,7 @@ class EduProvider extends ChangeNotifier {
     _major = '';
     _errorMessage = null;
     _statusLoaded = false;
+    _setPersistenceReadiness(userId, _studentId.trim());
     notifyListeners();
     _applyAcademicSessionState();
     if (_usingLocalAcademicSession || _academicSessionController != null) {
@@ -451,6 +510,8 @@ class EduProvider extends ChangeNotifier {
       return;
     }
     _statusGeneration++;
+    if (_userId != null) AcademicPersistenceRegistry.clear(_userId!);
+    _persistenceContextKey = '';
     _userId = null;
     _isBound = false;
     _isAuthorized = false;
@@ -473,6 +534,17 @@ class EduProvider extends ChangeNotifier {
   String? get userId => _userId;
 
   Future<void> ensureStatusLoaded() async {
+    final controller = _academicSessionController;
+    if (controller != null &&
+        controller.sourceKind == AcademicSourceKind.legacy &&
+        !controller.isAuthenticated) {
+      try {
+        await controller.restoreSession();
+      } catch (_) {
+        // 恢复错误由控制器保留，不能清除服务端绑定或伪装为恢复成功。
+      }
+      _applyAcademicSessionState();
+    }
     while (!_statusLoaded) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
@@ -491,6 +563,14 @@ class EduProvider extends ChangeNotifier {
     required int generation,
   }) async {
     if (_userId != expectedUserId || generation != _statusGeneration) return;
+    final controller = _academicSessionController;
+    if (controller != null &&
+        controller.sourceKind == AcademicSourceKind.legacy) {
+      try {
+        await controller.restoreSession(force: true);
+      } catch (_) {}
+      if (_userId != expectedUserId || generation != _statusGeneration) return;
+    }
     _applyAcademicSessionState();
     if (!_statusLoaded) {
       _statusLoaded = true;
@@ -512,12 +592,54 @@ class EduProvider extends ChangeNotifier {
 
   /// 清除本机教务登录态，不修改服务器绑定关系。
   Future<void> clearLocalSession() async {
-    await _academicSessionController?.resetSession();
+    // 先捕获命名空间：重置本机会话后 studentId 会被清空，不能再依赖当前
+    // 字段定位成绩快照。退出本机教务必须同时撤销内存和加密缓存中的个人数据。
     final oldUserId = _userId;
-    clearMemoryForAccountTransition();
+    final oldSourceAccountId = _studentId.trim();
+    final academicStore = oldUserId == null
+        ? null
+        : _academicCacheStoreFor(
+            appUserId: oldUserId,
+            sourceAccountId: oldSourceAccountId,
+          );
 
+    Object? cleanupError;
+    Future<void> runCleanupStep(
+      String label,
+      Future<void> Function() step,
+    ) async {
+      try {
+        await step();
+      } catch (error) {
+        cleanupError ??= error;
+        debugPrint('$label失败: ${error.runtimeType}');
+      }
+    }
+
+    await runCleanupStep(
+      '重置本机教务会话',
+      () async {
+        final controller = _academicSessionController;
+        if (controller != null) await controller.resetSession();
+      },
+    );
+    await runCleanupStep(
+      '清理教务内存状态',
+      () async => clearMemoryForAccountTransition(),
+    );
+    if (academicStore != null) {
+      await runCleanupStep('清理加密教务缓存', academicStore.clearAll);
+    }
     if (oldUserId != null && oldUserId.isNotEmpty) {
-      await _clearBoundStatusFor(oldUserId);
+      await runCleanupStep(
+        '撤销本地教务绑定标记',
+        () => _clearBoundStatusFor(oldUserId),
+      );
+    }
+    if (cleanupError != null) {
+      // 身份撤销已独立完成；只提示缓存清理异常，避免失败异常阻断退出流程。
+      _errorMessage = '本地教务缓存清理未完成，请稍后重试';
+      notifyListeners();
     }
   }
 
@@ -642,6 +764,12 @@ class EduProvider extends ChangeNotifier {
 
     if (localController != null &&
         localController.sourceKind == AcademicSourceKind.legacy) {
+      if (!localController.isAuthenticated) {
+        return OperationResult.fail(
+          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
+          errorCode: 'LOCAL_SESSION_NOT_READY',
+        );
+      }
       return _runEduRequest(() async {
         try {
           final response = await _dio.post(
@@ -686,6 +814,7 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    await _persistenceReady;
     final requestSourceAccountId = _studentId.trim();
     final requestSourceKind = _activeAcademicSourceKind;
     final raw = await _fetchGradesRaw(year, semester);
@@ -757,6 +886,7 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null || requestSourceAccountId.isEmpty) {
       return OperationResult.fail('请先完成教务绑定');
     }
+    await _persistenceReady;
     final terms = EduSemester.buildSemesterList(enrollmentYear);
     var syncedTerms = 0;
     String? lastError;
@@ -815,10 +945,70 @@ class EduProvider extends ChangeNotifier {
     int semester, {
     bool forceRefresh = false,
   }) async {
-    return OperationResult.fail(
-      '本机直连暂不支持成绩构成',
-      errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
-    );
+    final requestUserId = _userId;
+    final sourceAccountId = _studentId.trim();
+    final sourceKind = _activeAcademicSourceKind;
+    if (requestUserId == null || sourceAccountId.isEmpty) {
+      return OperationResult.fail('请先登录本机教务',
+          errorCode: 'credentials_required');
+    }
+    await _persistenceReady;
+    final key = _gradeDetailCacheKey(grade, year, semester);
+    if (!forceRefresh) {
+      final cached = _gradeDetailCache[key];
+      if (cached != null) return OperationResult.ok(cached);
+      final store = _academicCacheStoreFor(
+        appUserId: requestUserId,
+        sourceAccountId: sourceAccountId,
+      );
+      final raw = await store?.readGradeDetail(key);
+      if (raw != null &&
+          _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+        final cachedDetail = EduGradeDetail.fromJson(raw);
+        _gradeDetailCache[key] = cachedDetail;
+        return OperationResult.ok(cachedDetail);
+      }
+    }
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.local) {
+      return OperationResult.fail('本机教务会话未就绪',
+          errorCode: 'LOCAL_SESSION_NOT_READY');
+    }
+    return _runEduRequest(() async {
+      final detail = await controller.loadGradeDetail(
+        year: year,
+        semester: semester,
+        classId: grade.classId,
+        courseName: grade.name,
+        courseId: grade.courseId,
+        studentGradeId: grade.studentGradeId,
+      );
+      if (detail == null ||
+          !_isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+        return OperationResult.fail(
+          controller.failure?.message ?? '获取成绩构成失败',
+          errorCode: controller.failure?.code,
+        );
+      }
+      final value = EduGradeDetail.fromJson(detail.toJson());
+      _gradeDetailCache[key] = value;
+      try {
+        await _academicCacheStoreFor(
+          appUserId: requestUserId,
+          sourceAccountId: sourceAccountId,
+        )?.writeGradeDetail(key: key, detail: detail.toJson());
+      } catch (error) {
+        debugPrint('保存成绩详情失败: ${error.runtimeType}');
+        return OperationResult(
+          success: true,
+          data: value,
+          errorMessage: '成绩构成已获取，但保存本地资料失败',
+          errorCode: 'local_storage_failed',
+        );
+      }
+      return OperationResult.ok(value);
+    });
   }
 
   /// 在成绩列表稳定后按展示顺序预取构成明细，避免进入详情页时逐门等待。
@@ -830,14 +1020,88 @@ class EduProvider extends ChangeNotifier {
     int semester, {
     Duration initialDelay = const Duration(milliseconds: 300),
   }) {
-    return Future<void>.value();
+    return _prefetchGradeDetails(grades, year, semester, initialDelay);
+  }
+
+  Future<void> _prefetchGradeDetails(
+    List<EduGrade> grades,
+    String year,
+    int semester,
+    Duration initialDelay,
+  ) async {
+    if (_userId == null || _studentId.trim().isEmpty) return;
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.local) {
+      return;
+    }
+    if (initialDelay > Duration.zero) await Future<void>.delayed(initialDelay);
+    for (final grade in grades) {
+      if (_userId == null) return;
+      await fetchGradeDetail(grade, year, semester);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
   }
 
   Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
-    return OperationResult.fail(
-      '本机直连暂不支持官方 GPA',
-      errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
+    final requestUserId = _userId;
+    final sourceAccountId = _studentId.trim();
+    final sourceKind = _activeAcademicSourceKind;
+    if (requestUserId == null || sourceAccountId.isEmpty) {
+      return OperationResult.fail('请先登录本机教务',
+          errorCode: 'credentials_required');
+    }
+    await _persistenceReady;
+    final key = _academicSituationCacheKey(
+      requestUserId,
+      sourceAccountId,
+      sourceKind,
     );
+    final cached = _academicSituationCache[key];
+    if (cached != null) return OperationResult.ok(cached.data);
+    final cachedRaw = await _academicCacheStoreFor(
+      appUserId: requestUserId,
+      sourceAccountId: sourceAccountId,
+    )?.readAcademicSituation();
+    if (cachedRaw != null &&
+        _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+      final value = EduAcademicSituation.fromJson(cachedRaw);
+      _academicSituationCache[key] = AcademicSituationCacheEntry(
+        data: value,
+        updatedAt: DateTime.now(),
+      );
+      return OperationResult.ok(value);
+    }
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.local) {
+      return OperationResult.fail('本机教务会话未就绪',
+          errorCode: 'LOCAL_SESSION_NOT_READY');
+    }
+    return _runEduRequest(() async {
+      final result = await controller.loadAcademicSituation();
+      if (result == null ||
+          !_isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+        return OperationResult.fail(
+          controller.failure?.message ?? '获取学业情况失败',
+          errorCode: controller.failure?.code,
+        );
+      }
+      final value = EduAcademicSituation.fromJson(result.toJson());
+      _academicSituationCache[key] = AcademicSituationCacheEntry(
+        data: value,
+        updatedAt: DateTime.now(),
+      );
+      try {
+        await _academicCacheStoreFor(
+          appUserId: requestUserId,
+          sourceAccountId: sourceAccountId,
+        )?.writeAcademicSituation(data: result.toJson());
+      } catch (error) {
+        debugPrint('保存学业情况失败: ${error.runtimeType}');
+      }
+      return OperationResult.ok(value);
+    });
   }
 
   // 获取成绩（原始数据，内部使用）
@@ -872,6 +1136,12 @@ class EduProvider extends ChangeNotifier {
 
     if (localController != null &&
         localController.sourceKind == AcademicSourceKind.legacy) {
+      if (!localController.isAuthenticated) {
+        return OperationResult.fail(
+          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
+          errorCode: 'LOCAL_SESSION_NOT_READY',
+        );
+      }
       return _runEduRequest(() async {
         try {
           final response = await _dio.post(
@@ -913,10 +1183,64 @@ class EduProvider extends ChangeNotifier {
 
   Future<OperationResult<EduCreditRequirementOverview>>
       fetchCreditRequirements() async {
-    return OperationResult.fail(
-      '本机直连暂不支持学分要求',
-      errorCode: 'LOCAL_FEATURE_NOT_SUPPORTED',
+    final requestUserId = _userId;
+    final sourceAccountId = _studentId.trim();
+    final sourceKind = _activeAcademicSourceKind;
+    if (requestUserId == null || sourceAccountId.isEmpty) {
+      return OperationResult.fail('请先登录本机教务',
+          errorCode: 'credentials_required');
+    }
+    await _persistenceReady;
+    final key = _creditRequirementCacheKey(
+      requestUserId,
+      sourceAccountId,
+      sourceKind,
     );
+    final cached = _creditRequirementCache[key];
+    if (cached != null) return OperationResult.ok(cached.data);
+    final cachedRaw = await _academicCacheStoreFor(
+      appUserId: requestUserId,
+      sourceAccountId: sourceAccountId,
+    )?.readCreditRequirements();
+    if (cachedRaw != null &&
+        _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+      final value = EduCreditRequirementOverview.fromJson(cachedRaw);
+      _creditRequirementCache[key] = CreditRequirementCacheEntry(
+        data: value,
+        updatedAt: DateTime.now(),
+      );
+      return OperationResult.ok(value);
+    }
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.local) {
+      return OperationResult.fail('本机教务会话未就绪',
+          errorCode: 'LOCAL_SESSION_NOT_READY');
+    }
+    return _runEduRequest(() async {
+      final result = await controller.loadCreditRequirements();
+      if (result == null ||
+          !_isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
+        return OperationResult.fail(
+          controller.failure?.message ?? '获取学分要求失败',
+          errorCode: controller.failure?.code,
+        );
+      }
+      final value = EduCreditRequirementOverview.fromJson(result.toJson());
+      _creditRequirementCache[key] = CreditRequirementCacheEntry(
+        data: value,
+        updatedAt: DateTime.now(),
+      );
+      try {
+        await _academicCacheStoreFor(
+          appUserId: requestUserId,
+          sourceAccountId: sourceAccountId,
+        )?.writeCreditRequirements(data: result.toJson());
+      } catch (error) {
+        debugPrint('保存学分要求失败: ${error.runtimeType}');
+      }
+      return OperationResult.ok(value);
+    });
   }
 
   @override

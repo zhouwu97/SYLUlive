@@ -593,6 +593,10 @@ func main() {
 
 	})
 
+	// 学校个人能力退役闸门必须先于版本检查、请求体限制和幂等性读取，
+	// 确保旧教务请求连 body 都不会进入 Go 处理链路。
+	r.Use(middleware.SchoolAuthorityRetirementGate(cfg.SchoolAuthorityRetired))
+
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
 	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
 	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
@@ -744,7 +748,13 @@ func main() {
 		if receiptErr != nil {
 			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
 		}
-		examPaperRemote, signerErr = services.NewExamPaperRemoteClient(cfg.ExamPaperStorageBaseURL, grantSigner, nil, time.Now)
+		examPaperRemote, signerErr = services.NewExamPaperRemoteClientWithEndpoints(
+			cfg.ExamPaperStoragePublicURL,
+			cfg.ExamPaperStorageInternalURL,
+			grantSigner,
+			nil,
+			time.Now,
+		)
 		if signerErr != nil {
 			log.Fatal("初始化试卷远端存储客户端失败:", signerErr)
 		}
@@ -756,7 +766,7 @@ func main() {
 		db,
 		examPaperFiles,
 		cfg.ExamPaperStorageMode,
-		cfg.ExamPaperStorageBaseURL,
+		cfg.ExamPaperStoragePublicURL,
 		examPaperUploads,
 		examPaperRemote,
 		examPaperStorageJobs,

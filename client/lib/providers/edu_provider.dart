@@ -71,6 +71,7 @@ class CreditRequirementCacheEntry {
 }
 
 class EduProvider extends ChangeNotifier {
+  final Dio _dio;
   final AccountScopedSnapshotStore Function(String appUserId)?
       _snapshotStoreBuilder;
 
@@ -273,7 +274,26 @@ class EduProvider extends ChangeNotifier {
   EduProvider(
     Dio legacyAuthDio, [
     AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
-  ]) : _snapshotStoreBuilder = snapshotStoreBuilder;
+  ])  : _dio = legacyAuthDio,
+        _snapshotStoreBuilder = snapshotStoreBuilder;
+
+  static Map<String, dynamic>? _asMap(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  static String _responseCode(Map<String, dynamic>? data) {
+    final value = data?['code'];
+    return value is String && value.isNotEmpty
+        ? value
+        : 'ACADEMIC_REQUEST_FAILED';
+  }
+
+  static String _responseMessage(Map<String, dynamic>? data, String fallback) {
+    final value = data?['message'] ?? data?['error'];
+    return value is String && value.isNotEmpty ? value : fallback;
+  }
 
   /// 接入本机教务会话；服务端教务代理不再作为运行时数据源。
   ///
@@ -301,27 +321,26 @@ class EduProvider extends ChangeNotifier {
     final localState = controller.sessionState;
     final isLocalSource = controller.sourceKind == AcademicSourceKind.local;
     if (!isLocalSource) {
-      if (!_usingLocalAcademicSession) return;
       _usingLocalAcademicSession = false;
-      _isBound = false;
-      _isAuthorized = false;
-      _sessionState = 'unbound';
-      _studentId = '';
-      _name = '';
-      _grade = '';
-      _college = '';
-      _major = '';
-      _statusLoaded = false;
+      _isAuthorized = controller.isAuthenticated ||
+          controller.studentId != null && controller.studentId!.isNotEmpty;
+      _isBound = _isAuthorized;
+      _sessionState = switch (localState) {
+        SessionState.authenticated => 'active',
+        SessionState.expired => 'expired',
+        SessionState.awaitingCaptcha => 'awaiting_captcha',
+        SessionState.authenticating => 'authenticating',
+        SessionState.unauthenticated => _isBound ? 'expired' : 'unbound',
+      };
+      _studentId = controller.studentId ?? '';
+      final profile = controller.profile;
+      _name = profile?.name ?? '';
+      _grade = profile?.grade ?? '';
+      _college = profile?.college ?? '';
+      _major = profile?.major ?? '';
+      _errorMessage = controller.failure?.message;
+      _statusLoaded = true;
       notifyListeners();
-      final userId = _userId;
-      if (userId != null && userId.isNotEmpty) {
-        unawaited(
-          loadStatus(
-            expectedUserId: userId,
-            generation: _statusGeneration,
-          ),
-        );
-      }
       return;
     }
 
@@ -508,7 +527,20 @@ class EduProvider extends ChangeNotifier {
     String password, {
     required bool eduDataConsentAccepted,
   }) async {
-    _errorMessage = '服务端教务绑定已关闭，请使用本机直连教务';
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.legacy) {
+      _errorMessage = '教务服务未就绪，请稍后重试';
+      notifyListeners();
+      return false;
+    }
+    final result =
+        await controller.login(studentId: studentId, password: password);
+    if (result is LoginSuccess) {
+      _applyAcademicSessionState();
+      return true;
+    }
+    _errorMessage = controller.failure?.message ?? '教务绑定失败';
     notifyListeners();
     return false;
   }
@@ -520,17 +552,41 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<OperationResult<void>> logoutSession() async {
-    await clearLocalSession();
-    return OperationResult.ok(null);
+    try {
+      await _dio.post('/edu/session/logout');
+      await _academicSessionController?.resetSession();
+      _applyAcademicSessionState();
+      return OperationResult.ok(null);
+    } on DioException catch (error) {
+      return OperationResult.fail(error.message ?? '退出教务会话失败');
+    }
   }
 
   Future<OperationResult<void>> resumeSession() async {
-    return OperationResult.fail('本机教务会话不支持服务端恢复，请重新登录本机教务');
+    final controller = _academicSessionController;
+    if (controller == null ||
+        controller.sourceKind != AcademicSourceKind.legacy) {
+      return OperationResult.fail('教务服务未就绪');
+    }
+    try {
+      await controller.restoreSession();
+      _applyAcademicSessionState();
+      return controller.isAuthenticated
+          ? OperationResult.ok(null)
+          : OperationResult.fail('教务绑定不存在');
+    } on DioException catch (error) {
+      return OperationResult.fail(error.message ?? '恢复教务会话失败');
+    }
   }
 
   Future<OperationResult<void>> revokeAuthorization() async {
-    await clearLocalSession();
-    return OperationResult.ok(null);
+    try {
+      await _dio.delete('/edu/authorization');
+      await clearLocalSession();
+      return OperationResult.ok(null);
+    } on DioException catch (error) {
+      return OperationResult.fail(error.message ?? '解除教务绑定失败');
+    }
   }
 
   // 获取课表
@@ -576,9 +632,38 @@ class EduProvider extends ChangeNotifier {
       });
     }
 
+    if (localController != null &&
+        localController.sourceKind == AcademicSourceKind.legacy) {
+      return _runEduRequest(() async {
+        try {
+          final response = await _dio.post(
+            '/edu/courses',
+            data: {'year': year, 'semester': semester},
+          );
+          final data = _asMap(response.data);
+          final courses = data?['courses'];
+          if (response.statusCode != 200 || courses is! List) {
+            return OperationResult.fail(
+              _responseMessage(data, '获取课表失败'),
+              errorCode: _responseCode(data),
+            );
+          }
+          if (!isCurrentContext()) return OperationResult.fail('用户已切换');
+          return OperationResult.ok(
+            courses
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList(growable: false),
+          );
+        } on DioException catch (error) {
+          return OperationResult.fail(error.message ?? '获取课表失败');
+        }
+      });
+    }
+
     return OperationResult.fail(
-      '本机教务会话未就绪，请先登录本机教务',
-      errorCode: 'LOCAL_SESSION_NOT_READY',
+      '教务会话未就绪，请先恢复教务绑定',
+      errorCode: 'ACADEMIC_SESSION_NOT_READY',
     );
   }
 
@@ -777,9 +862,44 @@ class EduProvider extends ChangeNotifier {
       });
     }
 
+    if (localController != null &&
+        localController.sourceKind == AcademicSourceKind.legacy) {
+      return _runEduRequest(() async {
+        try {
+          final response = await _dio.post(
+            '/edu/grades',
+            data: {'year': year, 'semester': semester},
+          );
+          final data = _asMap(response.data);
+          final grades = data?['grades'];
+          if (response.statusCode != 200 || grades is! List) {
+            return OperationResult.fail(
+              _responseMessage(data, '获取成绩失败'),
+              errorCode: _responseCode(data),
+            );
+          }
+          if (!_isSameAcademicContext(
+            _userId!,
+            _studentId.trim(),
+            _activeAcademicSourceKind,
+          )) {
+            return OperationResult.fail('用户已切换');
+          }
+          return OperationResult.ok(
+            grades
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList(growable: false),
+          );
+        } on DioException catch (error) {
+          return OperationResult.fail(error.message ?? '获取成绩失败');
+        }
+      });
+    }
+
     return OperationResult.fail(
-      '本机教务会话未就绪，请先登录本机教务',
-      errorCode: 'LOCAL_SESSION_NOT_READY',
+      '教务会话未就绪，请先恢复教务绑定',
+      errorCode: 'ACADEMIC_SESSION_NOT_READY',
     );
   }
 

@@ -132,6 +132,16 @@ final class AcademicRepositoryImpl implements AcademicRepository {
   }
 
   @override
+  Future<void> restoreSession() async {
+    _ensureOpen();
+    try {
+      await _active.restoreSession();
+    } catch (error) {
+      throw AcademicFailure.fromException(error);
+    }
+  }
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;

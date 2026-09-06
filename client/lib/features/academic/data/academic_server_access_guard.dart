@@ -2,9 +2,8 @@ import 'package:dio/dio.dart';
 
 /// 主 App 的教务服务器访问闸门。
 ///
-/// 本地教务使用独立的 JiaowuClient 和 CookieJar，不经过共享 Dio。生产
-/// App 因此直接阻断共享 Dio 上的所有 `/edu/*` 请求，避免旧页面或旧兼容
-/// 代码绕过本机数据源再次访问教务服务器。
+/// 服务端保存教务授权并负责会话恢复，客户端通过共享 Dio 访问教务 API。
+/// 教务凭据不会进入客户端持久化存储。
 final class AcademicServerAccessGuard extends Interceptor {
   const AcademicServerAccessGuard();
 
@@ -13,16 +12,6 @@ final class AcademicServerAccessGuard extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) {
-    if (isAcademicServerPath(options)) {
-      handler.reject(
-        DioException(
-          requestOptions: options,
-          type: DioExceptionType.cancel,
-          message: '教务服务器接口已阻断，请使用本机直连教务',
-        ),
-      );
-      return;
-    }
     handler.next(options);
   }
 

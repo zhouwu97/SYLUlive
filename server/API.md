@@ -63,16 +63,17 @@
 
 ## 3. 教务系统 (Edu)
 
-服务端不再保存或代理个人教务会话。以下历史接口在发布配置中统一返回 `410`；
-课表和成绩由客户端本机直连学校系统，并由用户主动触发。
+服务端按应用账号持久化教务绑定和加密授权，重新登录或重装客户端后可自动恢复；
+课表、成绩等拉取结果仍按应用账号隔离并缓存到客户端。只有显式解除绑定才会撤销服务端授权。
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/edu/bind` | 已退役，固定返回 `410` |
-| `DELETE` | `/api/edu/bind` | 已退役，固定返回 `410` |
-| `GET` | `/api/edu/status` | 已退役，固定返回 `410` |
-| `POST` | `/api/edu/courses` | 已退役，固定返回 `410` |
-| `POST` | `/api/edu/grades` | 已退役，固定返回 `410` |
+| `POST` | `/api/edu/bind` | 绑定并加密保存当前应用账号的教务授权 |
+| `DELETE` | `/api/edu/bind` | 显式解除绑定并撤销服务端授权 |
+| `GET` | `/api/edu/status` | 查询绑定状态和会话恢复状态，不返回密码或 Cookie |
+| `POST` | `/api/edu/session/resume` | 恢复已保存授权的教务会话 |
+| `POST` | `/api/edu/courses` | 拉取课表，结果由客户端缓存 |
+| `POST` | `/api/edu/grades` | 拉取成绩，结果由客户端缓存 |
 | `POST` | `/api/exam/extract` | 融智云考题库一键提取 |
 | `POST` | `/api/erke/scores` | 青年之声（第二课堂）学分查询 |
 

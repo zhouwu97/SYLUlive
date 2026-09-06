@@ -48,5 +48,8 @@ abstract interface class AcademicDataSource {
 
   Future<void> resetSession();
 
+  /// 从服务端恢复已有教务授权；本机数据源没有远端授权可恢复。
+  Future<void> restoreSession();
+
   void close();
 }

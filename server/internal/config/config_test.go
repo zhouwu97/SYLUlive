@@ -91,9 +91,14 @@ func TestLoadReleaseRequiresExplicitSchoolRetirementSwitches(t *testing.T) {
 
 	require.PanicsWithError(
 		t,
-		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true",
+		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true 或 false",
 		func() { _ = Load() },
 	)
+
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "false")
+	require.NotPanics(t, func() { _ = Load() })
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "invalid")
+	require.PanicsWithError(t, "release 模式 SCHOOL_ACADEMIC_ROUTES_RETIRED 必须为 true 或 false", func() { _ = Load() })
 }
 
 func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
@@ -103,8 +108,9 @@ func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
 	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
 
 	cfg := Load()
-	require.True(t, cfg.SchoolDeviceCapabilityCut)
-	require.True(t, cfg.SchoolAcademicRoutesRetired)
+	require.False(t, cfg.SchoolAuthorityRetired)
+	require.False(t, cfg.SchoolAcademicRoutesRetired)
+	require.False(t, cfg.SchoolDeviceCapabilityCut)
 }
 
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {

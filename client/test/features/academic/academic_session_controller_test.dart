@@ -424,5 +424,8 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   }
 
   @override
+  Future<void> restoreSession() async {}
+
+  @override
   void close() {}
 }

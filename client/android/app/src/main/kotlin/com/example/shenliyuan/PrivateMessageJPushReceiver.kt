@@ -202,12 +202,13 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
 
                 val sequence = restoreSequence(generation)
                 try {
-                    JPushInterface.setAlias(context, sequence, currentAlias)
+                    // 兼容旧版遗留的恢复任务，但新版本绝不重新绑定 Alias，只执行清理。
+                    JPushInterface.deleteAlias(context, sequence)
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
                         type = "Alias 恢复重试执行",
-                        summary = "已发起第 ${retryCount + 1} 次恢复重试",
+                            summary = "已发起第 ${retryCount + 1} 次旧 Alias 清理重试",
                         detail = "gen=$generation sequence=$sequence",
                     )
                 } catch (e: Exception) {
@@ -215,7 +216,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         context,
                         source = "推送",
                         type = "Alias 恢复重试异常",
-                        summary = "setAlias 调用异常，继续重试",
+                        summary = "旧 Alias 清理调用异常，继续重试",
                         detail = "gen=$generation error=${e.message}",
                     )
                     scheduleRestoreRetry(context, generation)

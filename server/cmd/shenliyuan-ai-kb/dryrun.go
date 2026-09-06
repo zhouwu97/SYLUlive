@@ -21,16 +21,18 @@ import (
 )
 
 type dryRunOptions struct {
-	Bundle      string
-	Manifest    string
-	Inventory   string
-	Report      string
-	BaseURL     string
-	RAGBaseURL  string
-	CheckRemote bool
-	CheckRAG    bool
-	RequireRAG  bool
-	Timeout     time.Duration
+	Bundle              string
+	Manifest            string
+	Inventory           string
+	Report              string
+	AgentQualityReport  string
+	RequireAgentQuality bool
+	BaseURL             string
+	RAGBaseURL          string
+	CheckRemote         bool
+	CheckRAG            bool
+	RequireRAG          bool
+	Timeout             time.Duration
 }
 
 type dryRunAction struct {
@@ -79,6 +81,7 @@ type dryRunReport struct {
 	Actions             []dryRunAction           `json:"actions"`
 	Summary             dryRunSummary            `json:"summary"`
 	LangChainInspection ragInspectionResult      `json:"langchain_inspection"`
+	AgentQuality        agentQualityInspection   `json:"agent_quality"`
 	Blocked             bool                     `json:"blocked"`
 }
 
@@ -120,6 +123,8 @@ func parseDryRunOptions(args []string, getenv environment, stderr io.Writer, for
 	flags.StringVar(&options.Manifest, "manifest", defaultManifestPath(), "版本清单")
 	flags.StringVar(&options.Inventory, "inventory", "", "离线数据库文档清单 JSON")
 	flags.StringVar(&options.Report, "report", "", "同时写入报告文件")
+	flags.StringVar(&options.AgentQualityReport, "agent-quality-report", "", "A3 Agent 质量门禁报告")
+	flags.BoolVar(&options.RequireAgentQuality, "require-agent-quality", false, "质量报告缺失或失败时阻塞候选")
 	flags.StringVar(&options.BaseURL, "base-url", envOrDefault(getenv, "SHENLIYUAN_API_BASE_URL", "http://127.0.0.1:8080"), "服务端 API 地址")
 	flags.StringVar(&options.RAGBaseURL, "rag-base-url", envOrDefault(getenv, "RAG_SERVICE_URL", "http://127.0.0.1:18001"), "Python RAG 服务地址")
 	flags.BoolVar(&options.CheckRemote, "check-remote", false, "使用管理员 API 只读比对当前文档")
@@ -147,6 +152,7 @@ func buildDryRunReport(ctx context.Context, options dryRunOptions, getenv enviro
 		RemoteComparison: "not_run", ManifestValid: true, ManifestIssues: make([]string, 0),
 		UnresolvedItems: append([]manifestUnresolvedItem(nil), manifest.UnresolvedItems...),
 		Actions:         make([]dryRunAction, len(documents)), LangChainInspection: ragInspectionResult{Status: "not_run"},
+		AgentQuality: agentQualityInspection{Status: "not_provided"},
 	}
 	report.ManifestIssues = validateManifest(manifest, documents, bundleBytes)
 	report.ManifestValid = len(report.ManifestIssues) == 0
@@ -224,8 +230,28 @@ func buildDryRunReport(ctx context.Context, options dryRunOptions, getenv enviro
 			}
 		}
 	}
+	if strings.TrimSpace(options.AgentQualityReport) != "" {
+		inspection, qualityErr := inspectAgentQualityReport(options.AgentQualityReport, manifest.Version, options.RequireAgentQuality)
+		report.AgentQuality = inspection
+		if qualityErr != nil && options.RequireAgentQuality {
+			for index := range report.Actions {
+				if report.Actions[index].Decision != "skip" {
+					report.Actions[index].Decision = "blocked"
+					report.Actions[index].Reason = "A3 Agent 质量门禁未通过"
+				}
+			}
+		}
+	} else if options.RequireAgentQuality {
+		report.AgentQuality = agentQualityInspection{Status: "failed", Error: "要求 A3 质量报告但未提供"}
+		for index := range report.Actions {
+			if report.Actions[index].Decision != "skip" {
+				report.Actions[index].Decision = "blocked"
+				report.Actions[index].Reason = "缺少 A3 Agent 质量门禁报告"
+			}
+		}
+	}
 	report.Summary = summarizeActions(report.Actions)
-	report.Blocked = report.Summary.Blocked > 0 || !report.ManifestValid || (options.RequireRAG && report.LangChainInspection.Status != "passed")
+	report.Blocked = report.Summary.Blocked > 0 || !report.ManifestValid || (options.RequireRAG && report.LangChainInspection.Status != "passed") || (options.RequireAgentQuality && report.AgentQuality.Status != "passed")
 	return report, nil
 }
 

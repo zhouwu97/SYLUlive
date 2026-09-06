@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/market_contact_type.dart';
-import '../../config/privileged_accounts.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
@@ -33,7 +32,7 @@ class MarketPublishForm extends StatefulWidget {
   State<MarketPublishForm> createState() => _MarketPublishFormState();
 }
 
-enum _PublishField { type, title, price, content, contact }
+enum _PublishField { type, title, price, content, contact, image }
 
 class _MarketPublishFormState extends State<MarketPublishForm>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
@@ -127,12 +126,36 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
+  /// 描述快捷标签 → 图标。新增标签时在此同步登记图标。
+  static const Map<String, IconData> _marketTagIcons = {
+    '自提': Icons.shopping_bag_outlined,
+    '可送宿舍楼下': Icons.delivery_dining,
+    '可小刀': Icons.local_offer_outlined,
+    '急出': Icons.bolt_rounded,
+    '可上门': Icons.directions_walk,
+    '长期求': Icons.schedule,
+    '急需': Icons.bolt_rounded,
+    '可面交': Icons.place_outlined,
+    '有酬谢': Icons.redeem,
+    '急寻': Icons.bolt_rounded,
+    '待认领': Icons.inventory_2_outlined,
+    '已交宿管': Icons.home_work_outlined,
+    '可跑腿': Icons.directions_run,
+    '当日完成': Icons.today,
+    '可议价': Icons.local_offer_outlined,
+  };
+
+  /// 按发布类型给出贴题的描述快捷标签。
   List<String> get _availableMarketTags {
     switch (_postType) {
       case 'sell':
         return ['自提', '可送宿舍楼下', '可小刀', '急出'];
       case 'buy':
         return ['自提', '可上门', '长期求', '急需'];
+      case 'lost':
+        return ['急寻', '有酬谢', '可面交'];
+      case 'found':
+        return ['待认领', '已交宿管', '可面交'];
       case 'proxy':
         return ['可跑腿', '当日完成', '可议价'];
       default:
@@ -213,22 +236,24 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   bool get _isEditing => widget.editingPost != null;
 
-  bool get _canUploadUnlimitedImages {
-    final studentId = context.read<AuthProvider>().user?.studentId;
-    return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
-  }
-
   int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
-      _canUploadUnlimitedImages || _totalImageCount < _maxImages;
+      _totalImageCount < _maxImages;
 
   bool get _showsPriceField => _postType != 'lost' && _postType != 'found';
 
   bool get _showsTitleField => _postType != 'exposure';
 
   bool get _isLostOrFound => _postType == 'lost' || _postType == 'found';
+
+  bool get _requiresImage => _postType != 'exposure';
+
+  bool get _showImageRequiredError =>
+      _hasTriedSubmit && _requiresImage && _images.isEmpty;
+
+  String get _imageSectionLabel => _requiresImage ? '商品图片（至少 1 张）' : '证据图片（选填）';
 
   String get _pageTitle {
     if (_isEditing) return '编辑帖子';
@@ -428,6 +453,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
     if (_contentController.text.trim().isEmpty) {
       fields.add(_PublishField.content);
+    }
+    if (_requiresImage && _images.isEmpty) {
+      fields.add(_PublishField.image);
     }
     final hasContactType = _contactType.isNotEmpty;
     final hasContact = _contactController.text.trim().isNotEmpty;
@@ -709,12 +737,22 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildImageSection(ColorScheme colorScheme) {
+    final needsAttention = _attentionFields.contains(_PublishField.image);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _buildSectionLabel('商品图片'),
+            _ShakingAttention(
+              active: needsAttention,
+              controller: _shakeController,
+              child: _buildSectionLabel(
+                _imageSectionLabel,
+                color: _showImageRequiredError
+                    ? colorScheme.error
+                    : colorScheme.onSurface,
+              ),
+            ),
             const Spacer(),
             Text(
               '${_totalImageCount.clamp(0, _maxImages)}/$_maxImages',
@@ -727,17 +765,41 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           ],
         ),
         const SizedBox(height: 8),
-        PublishImageGrid(
-          images: _images,
-          canAddMore: canAddMoreImages,
-          onAdd: showImageSourceDialog,
-          onRemove: _removeImage,
-          onReorder: _moveImage,
-          onRetry: _retryImage,
-          addLabel: '添加图片',
-          compact: true,
-          accent: _marketAccent,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: _showImageRequiredError
+                ? Border.all(
+                    color: colorScheme.error.withValues(alpha: 0.72),
+                  )
+                : null,
+          ),
+          child: PublishImageGrid(
+            images: _images,
+            canAddMore: canAddMoreImages,
+            onAdd: showImageSourceDialog,
+            onRemove: _removeImage,
+            onReorder: _moveImage,
+            onRetry: _retryImage,
+            addLabel: '添加图片',
+            compact: true,
+            accent: _marketAccent,
+          ),
         ),
+        if (_showImageRequiredError)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                '请至少上传 1 张商品图片',
+                key: const ValueKey('market-image-required-error'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.error,
+                    ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -864,27 +926,30 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildRequiredLabel('描述', _PublishField.content),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildDescriptionChip('自提', Icons.shopping_bag_outlined),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('可送宿舍楼下', Icons.delivery_dining),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('可小刀', Icons.local_offer_outlined),
-                  const SizedBox(width: 6),
-                  _buildDescriptionChip('急出', Icons.bolt_rounded),
-                ],
+          if (_availableMarketTags.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < _availableMarketTags.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      _buildDescriptionChip(
+                        _availableMarketTags[i],
+                        _marketTagIcons[_availableMarketTags[i]] ??
+                            Icons.label_outline,
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           TextFormField(
             controller: _contentController,
             decoration: InputDecoration(

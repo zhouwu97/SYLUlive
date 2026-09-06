@@ -2,15 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/services/forbidden_recovery_router.dart';
+import 'package:shenliyuan/widgets/required_legal_consent_dialog.dart';
+
+import 'helpers/golden_viewport.dart';
 
 /// 按序返回预设响应的 HttpClientAdapter。
 class _QueuedAuthAdapter implements HttpClientAdapter {
   final List<({int statusCode, Object? data})> _responses = [];
+  final List<RequestOptions> requests = [];
 
   void enqueue(int statusCode, Object? data) {
     _responses.add((statusCode: statusCode, data: data));
@@ -26,6 +34,7 @@ class _QueuedAuthAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     await requestStream?.drain<void>();
+    requests.add(options);
     if (_responses.isEmpty) throw StateError('缺少认证响应: ${options.path}');
     final response = _responses.removeAt(0);
     return ResponseBody.fromString(
@@ -153,7 +162,8 @@ void main() {
   });
 
   AuthProvider makeProvider(HttpClientAdapter adapter,
-      {AuthCredentialStore? store}) {
+      {AuthCredentialStore? store,
+      Future<bool> Function()? onCommunityRulesRequired}) {
     final dio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
       ..httpClientAdapter = adapter;
     return AuthProvider(
@@ -161,6 +171,7 @@ void main() {
       credentialStore: store ?? _FakeAuthCredentialStore(),
       loadStoredAuth: false,
       onAuthenticated: () {},
+      onCommunityRulesRequired: onCommunityRulesRequired,
     );
   }
 
@@ -318,7 +329,355 @@ void main() {
   });
 
   group('统一 403 恢复路由', () {
-    test('community_rules_required 进入协议限制但不退出登录', () async {
+    test('协议接口返回异常结构后释放加载状态，可再次确认', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(200, {'unexpected': true})
+        ..enqueue(200, {'user': _userJson(1)});
+      final provider = makeProvider(adapter);
+      await provider.applyAuthPayload('token', _userJson(1));
+      expect((await provider.acceptRequiredLegalConsents(includeEduDataConsent: false)).success, false);
+      expect(provider.isLoading, false);
+      expect((await provider.acceptRequiredLegalConsents(includeEduDataConsent: false)).success, true);
+      expect(provider.isLoading, false);
+    });
+
+    testWidgets('教务本地状态缺失时按服务端提示补充勾选并成功关闭', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(400, {
+          'code': 'edu_data_consent_required',
+          'error': '使用教务认证前请阅读并同意教务数据专项授权',
+        })
+        ..enqueue(200, {'user': _userJson(1)});
+      late AuthProvider provider;
+      await tester.runAsync(() async {
+        provider = makeProvider(adapter);
+        await provider.applyAuthPayload('token', _userJson(1));
+      });
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: provider,
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: GoldenTextProfile.large.scaler),
+            child: child!,
+          ),
+          home: Builder(builder: (context) => Scaffold(body: TextButton(
+            onPressed: () => showRequiredLegalConsentDialog(context, requiresEduDataConsent: false),
+            child: const Text('打开'),
+          ))),
+        ),
+      ));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('required-general-consents')));
+      await tester.pump();
+      final confirm = find.byKey(const ValueKey('required-consent-confirm'));
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      final edu = find.byKey(const ValueKey('required-edu-consent'));
+      expect(edu, findsOneWidget);
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.ensureVisible(edu);
+      await tester.tap(edu);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(RequiredLegalConsentDialog), findsNothing);
+      expect((adapter.requests.first.data as Map)['edu_data_consent_accepted'], false);
+      expect((adapter.requests.last.data as Map)['edu_data_consent_accepted'], true);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final multipart in [false, true]) {
+      test('社区确认后恢复带幂等键的${multipart ? "评论表单" : "私信"}', () async {
+        final adapter = _QueuedAuthAdapter()
+          ..enqueue(403, {'code': 'community_rules_required'})
+          ..enqueue(201, {'id': 7});
+        var confirmations = 0;
+        final provider = makeProvider(adapter, onCommunityRulesRequired: () async {
+          confirmations++;
+          return true;
+        });
+        await provider.applyAuthPayload('token', _userJson(1));
+        final body = {'content': '测试内容', 'file_ids': '12'};
+        final response = await provider.dio.post(
+          multipart ? '/posts/1/replies' : '/messages/2',
+          data: multipart ? FormData.fromMap(body) : body,
+          options: Options(headers: {'Idempotency-Key': 'stable-write'}),
+        );
+        expect(response.statusCode, 201);
+        expect(confirmations, 1);
+        expect(adapter.requests, hasLength(2));
+        expect(adapter.requests.last.headers['Idempotency-Key'], 'stable-write');
+        if (multipart) {
+          expect(Map.fromEntries((adapter.requests.last.data as FormData).fields),
+              body);
+        }
+      });
+    }
+
+    testWidgets('社区规则单独确认后完成原点赞，后续点赞不重复弹窗', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(403, {'code': 'community_rules_required'})
+        ..enqueue(500, {'error': '保存社区规则确认失败'})
+        ..enqueue(200, {'message': '已确认社区规则'})
+        ..enqueue(201, {'id': 1})
+        ..enqueue(201, {'id': 2});
+      final navigatorKey = GlobalKey<NavigatorState>();
+      late AuthProvider provider;
+      var dialogCount = 0;
+      await tester.runAsync(() async {
+        provider = makeProvider(adapter, onCommunityRulesRequired: () {
+          dialogCount++;
+          return showRequiredCommunityRulesDialog(navigatorKey.currentContext!);
+        });
+        await provider.applyAuthPayload('token', {
+          ..._userJson(1),
+          'edu_bound': true,
+          'edu_authorized': true,
+        });
+      });
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: provider,
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          theme: ThemeData.dark(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: GoldenTextProfile.large.scaler,
+            ),
+            child: child!,
+          ),
+          home: const Scaffold(body: Text('帖子列表')),
+        ),
+      ));
+      final posts = PostProvider(provider.dio, enableCache: false);
+      Post post(int id) => Post(
+            id: id,
+            title: '帖子 $id',
+            content: '测试内容',
+            boardId: 1,
+            authorId: 2,
+            createdAt: DateTime(2026, 9, 6),
+          );
+      late Future<LikeMutationResult> pendingLike;
+      await tester.runAsync(() async {
+        pendingLike = posts.toggleLikeOptimistic(post(1));
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('请确认社区规则'), findsOneWidget);
+      expect(find.byKey(const ValueKey('required-edu-consent')), findsNothing);
+      expect(provider.user?.legalConsentsActive, isTrue);
+      expect(provider.user?.eduAuthorized, isTrue);
+      expect(posts.isLikePending(1), isTrue);
+      final confirm = find.byKey(const ValueKey('required-consent-confirm'));
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('required-general-consents')));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('保存社区规则确认失败'), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        final firstLike = await pendingLike;
+        expect(firstLike.status, LikeMutationStatus.success);
+        expect(firstLike.optimisticPost?.isLiked, isTrue);
+        expect((await posts.toggleLikeOptimistic(post(2))).status,
+            LikeMutationStatus.success);
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(RequiredLegalConsentDialog), findsNothing);
+      expect(dialogCount, 1);
+      expect(posts.isLikePending(1), isFalse);
+      expect(provider.lastForbiddenRecovery, isNull);
+      expect(adapter.requests.map((request) => request.path), [
+        '/posts/1/like',
+        '/user/community-rules',
+        '/user/community-rules',
+        '/posts/1/like',
+        '/posts/2/like',
+      ]);
+      expect(adapter.requests[1].data, {'accepted': true});
+      expect(tester.takeException(), isNull);
+    });
+
+    test('并发社区限制只显示一个弹窗，弹窗异常后所有请求正常结束', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(403, {'code': 'community_rules_required'})
+        ..enqueue(403, {'code': 'community_rules_required'});
+      final confirmation = Completer<bool>();
+      var dialogCount = 0;
+      final provider = makeProvider(adapter, onCommunityRulesRequired: () {
+        dialogCount++;
+        return confirmation.future;
+      });
+      await provider.applyAuthPayload('token', _userJson(1));
+      final first = expectLater(provider.dio.post('/posts/1/like'),
+          throwsA(isA<DioException>()));
+      final second = expectLater(provider.dio.post('/posts/2/like'),
+          throwsA(isA<DioException>()));
+      await pumpEventQueue(times: 30);
+      expect(dialogCount, 1);
+      confirmation.completeError(StateError('dialog unavailable'));
+      await Future.wait([first, second]);
+      expect(adapter.requests, hasLength(2));
+    });
+
+    for (final scenario in ['cancel', 'switch_account', 'rejected_again', 'publish']) {
+      test('社区确认恢复不会误重放: $scenario', () async {
+        final adapter = _QueuedAuthAdapter()
+          ..enqueue(403, {'code': 'community_rules_required'});
+        var dialogCount = 0;
+        late AuthProvider provider;
+        provider = makeProvider(adapter, onCommunityRulesRequired: () async {
+          dialogCount++;
+          if (scenario == 'switch_account') {
+            await provider.applyAuthPayload('new-token', _userJson(2));
+          }
+          return scenario != 'cancel';
+        });
+        await provider.applyAuthPayload('token', _userJson(1));
+        if (scenario == 'rejected_again') {
+          adapter.enqueue(403, {'code': 'community_rules_required'});
+        }
+        await expectLater(
+          provider.dio.post(scenario == 'publish' ? '/posts' : '/posts/1/like'),
+          throwsA(isA<DioException>()),
+        );
+        expect(dialogCount, 1);
+        expect(adapter.requests, hasLength(scenario == 'rejected_again' ? 2 : 1));
+      });
+    }
+
+    testWidgets('教务用户点赞受限后可补签协议，提交失败可重试并关闭弹窗', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(403, {'code': 'legal_consent_required'})
+        ..enqueue(500, {'error': '保存协议确认失败'});
+      late AuthProvider provider;
+      final user = {
+        ..._userJson(1),
+        'edu_bound': true,
+        'edu_authorized': true,
+        'edu_session_state': 'active',
+      };
+      await tester.runAsync(() async {
+        provider = makeProvider(adapter);
+        await provider.applyAuthPayload('token', user);
+        await _ignoreError(provider.dio.post('/posts/1/like'));
+        await pumpEventQueue(times: 30);
+      });
+      adapter.enqueue(200, {'user': user});
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: GoldenTextProfile.large.scaler,
+              ),
+              child: child!,
+            ),
+            home: Builder(builder: (context) {
+              return Scaffold(
+                body: TextButton(
+                  onPressed: () => showRequiredLegalConsentDialog(
+                    context,
+                    requiresEduDataConsent: provider.user!.eduAuthorized,
+                  ),
+                  child: const Text('打开协议确认'),
+                ),
+              );
+            }),
+          ),
+        ),
+      );
+      await tester.tap(find.text('打开协议确认'));
+      await tester.pumpAndSettle();
+      final general = find.byKey(const ValueKey('required-general-consents'));
+      final edu = find.byKey(const ValueKey('required-edu-consent'));
+      final confirm = find.byKey(const ValueKey('required-consent-confirm'));
+      expect(edu, findsOneWidget);
+      await tester.ensureVisible(general);
+      await tester.tap(general);
+      await tester.pump();
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.ensureVisible(edu);
+      await tester.tap(edu);
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('保存协议确认失败'), findsOneWidget);
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      await tester.runAsync(() async {
+        await tester.tap(confirm);
+        await pumpEventQueue(times: 30);
+      });
+      await tester.pumpAndSettle();
+
+      final submissions = adapter.requests
+          .where((request) => request.path == '/user/legal-consents');
+      expect(submissions, hasLength(2));
+      for (final request in submissions) {
+        expect(request.data['edu_data_consent_accepted'], isTrue);
+      }
+      expect(provider.user?.legalConsentsActive, isTrue);
+      expect(find.byType(RequiredLegalConsentDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final code in [
+      'community_rules_required',
+      'legal_consent_required',
+      'legal_consent_withdrawn',
+    ]) {
+      test('$code 正确区分补签协议和撤销教务授权', () async {
+        final adapter = _QueuedAuthAdapter()..enqueue(403, {'code': code});
+        final store = _FakeAuthCredentialStore();
+        final provider = makeProvider(adapter, store: store);
+        await provider.applyAuthPayload('token', {
+          ..._userJson(1),
+          'edu_bound': true,
+          'edu_authorized': true,
+          'edu_session_state': 'active',
+        });
+
+        await _ignoreError(provider.dio.post('/posts/1/like'));
+        await pumpEventQueue(times: 30);
+
+        final keepsEduConsent = code != 'legal_consent_withdrawn';
+        expect(provider.user?.legalConsentsActive,
+            code == 'community_rules_required');
+        expect(provider.user?.legalConsentsRequired,
+            code == 'legal_consent_required');
+        expect(provider.user?.eduAuthorized, keepsEduConsent);
+        expect(provider.user?.eduBound, keepsEduConsent);
+        expect(provider.user?.eduSessionState,
+            keepsEduConsent ? 'active' : 'revoked');
+        final savedUser = jsonDecode(store.stored.userJson!) as Map;
+        expect(savedUser['edu_authorized'], keepsEduConsent);
+        expect(provider.isLoggedIn, isTrue);
+      });
+    }
+
+    test('community_rules_required 不改变基础协议和登录会话', () async {
       final adapter = _QueuedAuthAdapter()
         ..enqueue(403, {
           'code': 'community_rules_required',
@@ -343,10 +702,10 @@ void main() {
 
       expect(route?.kind, ForbiddenRecoveryKind.communityRulesRequired);
       expect(provider.token, 'token');
-      expect(provider.user?.legalConsentsActive, isFalse);
-      expect(provider.user?.legalConsentsRequired, isTrue);
+      expect(provider.user?.legalConsentsActive, isTrue);
+      expect(provider.user?.legalConsentsRequired, isFalse);
       expect(provider.authState, AuthState.authenticated);
-      expect(provider.sessionGeneration, generation + 1);
+      expect(provider.sessionGeneration, generation);
       expect(store.clearCount, 0);
     });
 

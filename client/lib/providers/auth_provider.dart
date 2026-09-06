@@ -19,7 +19,6 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
-import '../services/grade_reminder_service.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
 import '../services/forbidden_recovery_router.dart';
@@ -42,13 +41,14 @@ class AuthResult {
   final bool success;
   final String? errorMessage;
   final int? statusCode;
+  final String? errorCode;
 
-  const AuthResult({required this.success, this.errorMessage, this.statusCode});
+  const AuthResult({required this.success, this.errorMessage, this.statusCode, this.errorCode});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message, {int? statusCode}) =>
-      AuthResult(success: false, errorMessage: message, statusCode: statusCode);
+  factory AuthResult.failure(String message, {int? statusCode, String? errorCode}) =>
+      AuthResult(success: false, errorMessage: message, statusCode: statusCode, errorCode: errorCode);
 }
 
 /// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
@@ -286,6 +286,9 @@ class AuthProvider extends ChangeNotifier {
   final VoidCallback _onAuthenticated;
   final AccountSessionCleanupCoordinator _sessionCleanupCoordinator;
   final void Function(ForbiddenRecoveryRoute route)? _onForbiddenRecovery;
+  final Future<bool> Function()? _onCommunityRulesRequired;
+  Future<bool>? _communityRulesRecoveryFuture;
+  int? _communityRulesRecoveryEpoch;
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -326,12 +329,14 @@ class AuthProvider extends ChangeNotifier {
     VoidCallback? onAuthenticated,
     AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
     void Function(ForbiddenRecoveryRoute route)? onForbiddenRecovery,
+    Future<bool> Function()? onCommunityRulesRequired,
   })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
         _usesPlatformCredentialStore = credentialStore == null,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
             AccountSessionCleanupCoordinator.instance,
-        _onForbiddenRecovery = onForbiddenRecovery {
+        _onForbiddenRecovery = onForbiddenRecovery,
+        _onCommunityRulesRequired = onCommunityRulesRequired {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -339,7 +344,10 @@ class AuthProvider extends ChangeNotifier {
           final token = _token;
           options.extra['authSessionGeneration'] = _sessionGeneration;
           options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
-          options.extra['requestHadAuth'] = token != null && token.isNotEmpty;
+          // Web 端凭据只存在 HttpOnly Cookie，内存中没有 JWT，因此用当前用户
+          // 标记请求是否属于已认证会话，确保 Cookie 会话失效时能够收口。
+          options.extra['requestHadAuth'] =
+              (token != null && token.isNotEmpty) || (kIsWeb && _user != null);
           if (token != null && token.isNotEmpty) {
             // 将凭据写入本次请求，避免全局 headers 在异步切换会话时串值。
             options.headers['Authorization'] = 'Bearer $token';
@@ -348,7 +356,7 @@ class AuthProvider extends ChangeNotifier {
           }
           handler.next(options);
         },
-        onError: (error, handler) {
+        onError: (error, handler) async {
           final status = error.response?.statusCode;
           final responseBody = error.response?.data;
           final errorCode = responseBody is Map ? responseBody['code'] : null;
@@ -409,7 +417,7 @@ class AuthProvider extends ChangeNotifier {
                 'errorCode': errorCode?.toString() ?? 'unknown',
               },
             );
-            _expireCurrentSession(_sessionGeneration, _token!);
+            _expireCurrentSession(_sessionGeneration, _token);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -420,8 +428,49 @@ class AuthProvider extends ChangeNotifier {
           if (status == 403 &&
               requestHadAuth &&
               isCurrentSessionRequest &&
-              _token != null) {
+              (_token != null || (kIsWeb && _user != null))) {
             _handleForbiddenRecovery(errorCode);
+            if (errorCode == 'community_rules_required' &&
+                error.requestOptions.extra['communityRulesRetried'] != true &&
+                _onCommunityRulesRequired != null) {
+              final epoch = _accountSessionEpoch;
+              final token = _token;
+              final accepted = await _requestCommunityRulesConfirmation();
+              // 此 403 在业务处理前返回；稳定幂等键保证确认后恢复写操作不会重复创建。
+              final options = error.requestOptions;
+              final isLikeRequest =
+                  RegExp(r'^(?:/api)?/(posts|replies)/\d+/like$')
+                      .hasMatch(options.uri.path) &&
+                  (options.method == 'POST' || options.method == 'DELETE') &&
+                  options.data == null;
+              final hasIdempotencyKey = options.headers.entries.any((entry) =>
+                  entry.key.toLowerCase() == 'idempotency-key' &&
+                  (entry.value?.toString().trim().isNotEmpty ?? false));
+              final canReplay = isLikeRequest ||
+                  (ForbiddenRecoveryRouter.canReplay(
+                    method: options.method,
+                    hasIdempotencyKey: hasIdempotencyKey,
+                  ) && options.data is! Stream);
+              if (accepted &&
+                  canReplay &&
+                  isLoggedIn &&
+                  _accountSessionEpoch == epoch &&
+                  _token == token &&
+                  (_user?.legalConsentsActive ?? false)) {
+                options.extra['communityRulesRetried'] = true;
+                // Dio 的 FormData 发送后已 finalize，必须克隆才能恢复评论和表单请求。
+                if (options.data is FormData) {
+                  options.data = (options.data as FormData).clone();
+                  options.headers.remove(Headers.contentLengthHeader);
+                }
+                try {
+                  handler.resolve(await _dio.fetch<dynamic>(options));
+                } on DioException catch (retryError) {
+                  handler.reject(retryError);
+                }
+                return;
+              }
+            }
           }
           handler.next(error);
         },
@@ -445,7 +494,7 @@ class AuthProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<void> _expireCurrentSession(int generation, String token) {
+  Future<void> _expireCurrentSession(int generation, String? token) {
     if (_sessionExpiryFuture != null) return _sessionExpiryFuture!;
     _sessionExpiryFuture = _enqueueAuthMutation(() async {
       if (_sessionGeneration != generation || _token != token) return;
@@ -506,7 +555,27 @@ class AuthProvider extends ChangeNotifier {
       } else {
         final stored = await _credentialStore.read();
 
-        if (stored.token != null && stored.userJson != null) {
+        if (kIsWeb && stored.userJson != null) {
+          // Web 端不恢复 JWT 文本，只用浏览器自动管理的 HttpOnly Cookie 验证会话。
+          final response = await _dio.get('/user/profile');
+          if (response.statusCode != 200 || response.data is! Map) {
+            await _clearStoredAuth();
+            _setAuthState(AuthState.guest);
+          } else {
+            final user =
+                User.fromJson(Map<String, dynamic>.from(response.data));
+            _user = user;
+            _token = null;
+            _sessionGeneration++;
+            _accountSessionEpoch++;
+            _setAuthState(AuthState.authenticated);
+            if (user.legalConsentsActive) {
+              _onAuthenticated();
+            } else {
+              await _clearConsentDependentLocalData(user);
+            }
+          }
+        } else if (stored.token != null && stored.userJson != null) {
           // 从这里开始只要解析或校验失败，就说明两项凭据已形成损坏组合。
           // 网络恢复失败（token-only）不走这条路径，避免误删可恢复会话。
           shouldClearCorruptedCredentials = true;
@@ -601,10 +670,6 @@ class AuthProvider extends ChangeNotifier {
     _initialized = true;
     if (_user?.legalConsentsActive ?? false) {
       await KeepAliveService.instance.syncAuthToken(_token);
-      await GradeReminderService.instance.syncRuntimeConfig(
-        userId: _user?.id.toString(),
-      );
-      await GradeReminderService.instance.ensureScheduledIfEnabled();
     }
     notifyListeners();
   }
@@ -655,10 +720,6 @@ class AuthProvider extends ChangeNotifier {
     });
     if (candidate.user.legalConsentsActive) {
       await KeepAliveService.instance.syncAuthToken(candidate.token);
-      await GradeReminderService.instance.syncRuntimeConfig(
-        userId: candidate.user.id.toString(),
-      );
-      await GradeReminderService.instance.ensureScheduledIfEnabled();
     } else {
       await _clearConsentDependentLocalData(candidate.user);
     }
@@ -716,7 +777,10 @@ class AuthProvider extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
     }
 
-    if (route.requiresConsent) {
+    if (route.kind == ForbiddenRecoveryKind.communityRulesRequired) {
+      // 社区规则是写操作门禁，不得伪造基础协议撤销或清空教务状态。
+      notifyListeners();
+    } else if (route.requiresConsent) {
       unawaited(
         _applyLegalConsentRestriction(required: route.consentIsRequired),
       );
@@ -775,10 +839,16 @@ class AuthProvider extends ChangeNotifier {
     Object? rawToken,
     Map<String, dynamic> userJson,
   ) {
-    if (rawToken is! String || rawToken.trim().isEmpty) {
+    if (rawToken != null && rawToken is! String) {
       throw const FormatException('认证令牌无效');
     }
-    return _AuthSessionCandidate(rawToken, User.fromJson(userJson));
+    if (!kIsWeb && (rawToken is! String || rawToken.trim().isEmpty)) {
+      throw const FormatException('认证令牌无效');
+    }
+    return _AuthSessionCandidate(
+      rawToken is String ? rawToken : '',
+      User.fromJson(userJson),
+    );
   }
 
   _AuthSessionCandidate _authSessionCandidateFromResponse(Object? data) {
@@ -792,7 +862,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _commitAuthSession(_AuthSessionCandidate candidate) {
-    _token = candidate.token;
+    // 浏览器不把 JWT 留在持久化层，也不把它重新放进 Authorization 头；
+    // 服务端 Set-Cookie 的 HttpOnly 会话负责后续请求认证。
+    _token = kIsWeb ? null : candidate.token;
     _user = candidate.user;
     _lastForbiddenRecovery = null;
     _sessionGeneration++;
@@ -822,12 +894,6 @@ class AuthProvider extends ChangeNotifier {
       '认证请求失败: type=${e.type}, status=${e.response?.statusCode}',
     );
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
-  }
-
-  String _maskStudentId(String studentId) {
-    final value = studentId.trim();
-    if (value.length <= 4) return '****';
-    return '${value.substring(0, 2)}****${value.substring(value.length - 2)}';
   }
 
   Future<AuthResult> register(
@@ -953,11 +1019,65 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> _requestCommunityRulesConfirmation() async {
+    final epoch = _accountSessionEpoch;
+    if (_communityRulesRecoveryEpoch == epoch &&
+        _communityRulesRecoveryFuture != null) {
+      return _communityRulesRecoveryFuture!;
+    }
+    // 并发受限请求共用结果；弹窗异常也统一返回取消，确保每个请求都能结束。
+    final future = Future<bool>.sync(_onCommunityRulesRequired!).catchError(
+      (Object error) {
+        debugPrint('社区规则确认未完成: ${error.runtimeType}');
+        return false;
+      },
+    );
+    _communityRulesRecoveryEpoch = epoch;
+    _communityRulesRecoveryFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_communityRulesRecoveryFuture, future)) {
+        _communityRulesRecoveryFuture = null;
+        _communityRulesRecoveryEpoch = null;
+      }
+    }
+  }
+
+  /// 只有用户在社区规则界面明确勾选后才调用独立确认接口。
+  Future<AuthResult> acceptCommunityRules() async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    final epoch = _accountSessionEpoch;
+    try {
+      final response = await _dio.post(
+        '/user/community-rules',
+        data: {'accepted': true},
+      );
+      if (response.statusCode != 200) {
+        return AuthResult.failure('社区规则确认失败，请稍后重试');
+      }
+      if (!isLoggedIn || _accountSessionEpoch != epoch) {
+        return AuthResult.failure('登录状态已变化，请重新操作');
+      }
+      if (_lastForbiddenRecovery?.kind ==
+          ForbiddenRecoveryKind.communityRulesRequired) {
+        clearForbiddenRecovery();
+      }
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    } catch (error) {
+      return AuthResult.failure('社区规则确认失败，请稍后重试');
+    }
+  }
+
   /// 确认最新法律文件，并以服务端返回的授权状态更新本地会话。
   Future<AuthResult> acceptRequiredLegalConsents({
     required bool includeEduDataConsent,
   }) async {
     if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    final epoch = _accountSessionEpoch;
     _isLoading = true;
     notifyListeners();
     try {
@@ -966,10 +1086,6 @@ class AuthProvider extends ChangeNotifier {
         data: {
           'user_agreement_accepted': true,
           'privacy_policy_accepted': true,
-          'community_rules_accepted': true,
-          'minor_protection_accepted': true,
-          'content_complaint_accepted': true,
-          'sdk_disclosure_accepted': true,
           'edu_data_consent_accepted': includeEduDataConsent,
         },
       );
@@ -979,23 +1095,27 @@ class AuthProvider extends ChangeNotifier {
           payload['user'] is! Map) {
         return AuthResult.failure('协议确认失败，请稍后重试');
       }
+      if (!isLoggedIn || _accountSessionEpoch != epoch) {
+        return AuthResult.failure('登录状态已变化，请重新操作');
+      }
       await applyProfileResponse(
         Map<String, dynamic>.from(payload['user'] as Map),
       );
-      _isLoading = false;
-      notifyListeners();
       return AuthResult.success();
     } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
       return AuthResult.failure(
         _parseDioError(e),
         statusCode: e.response?.statusCode,
+        errorCode: e.response?.data is Map
+            ? (e.response!.data as Map)['code']?.toString()
+            : null,
       );
     } catch (e) {
+      return AuthResult.failure('协议确认失败: $e');
+    } finally {
+      // 响应格式异常等提前返回也必须释放提交态，否则后续确认会一直处于加载中。
       _isLoading = false;
       notifyListeners();
-      return AuthResult.failure('协议确认失败: $e');
     }
   }
 
@@ -1028,7 +1148,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _applyLegalConsentRestriction({required bool required}) async {
-    if (_applyingConsentRestriction || _user == null || _token == null) return;
+    if (_applyingConsentRestriction || _user == null) return;
     if (!_user!.legalConsentsActive &&
         _user!.legalConsentsRequired == required) {
       return;
@@ -1038,13 +1158,19 @@ class AuthProvider extends ChangeNotifier {
     try {
       final userJson = Map<String, dynamic>.from(currentUser.toJson())
         ..['legal_consents_active'] = false
-        ..['legal_consents_required'] = required
-        ..['edu_bound'] = false
-        ..['edu_authorized'] = false
-        ..['edu_session_state'] = 'revoked';
+        ..['legal_consents_required'] = required;
+      // 补签协议不会撤销服务端教务授权，必须保留它以展示专项授权勾选项。
+      // 只有明确撤销同意时才同步清除教务状态。
+      if (!required) {
+        userJson
+          ..['edu_bound'] = false
+          ..['edu_authorized'] = false
+          ..['edu_session_state'] = 'revoked';
+      }
       final nextUser = User.fromJson(userJson);
       await _enqueueAuthMutation(() => _credentialStore.write(
-            token: _token!,
+            // Web 端只更新已持久化的用户快照，JWT 仍由 HttpOnly Cookie 管理。
+            token: _token ?? '',
             userJson: jsonEncode(nextUser.toJson()),
           ));
       _user = nextUser;
@@ -1060,14 +1186,12 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _clearConsentDependentLocalData(User user) async {
     await KeepAliveService.instance.syncAuthToken(null);
-    await GradeReminderService.instance.clearForUser(user.id.toString());
-    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
     await _clearPushAlias();
   }
 
   /// 统一的本地会话清理
   ///
-  /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
+  /// [clearPushAlias] 为 true 时清理旧版本可能遗留的极光 Alias（手动退出 / 401）。
   Future<void> _clearLocalSession({
     required bool clearPushAlias,
     bool closeAccountContext = true,
@@ -1090,8 +1214,6 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
     final hadSession = _token != null || _user != null;
-    final oldUserId = _user?.id.toString();
-
     // 先清除持久化凭据，失败时保留内存会话，避免出现“界面已退出、下次又恢复”的状态。
     await _clearStoredAuth();
 
@@ -1124,11 +1246,6 @@ class AuthProvider extends ChangeNotifier {
       }
     }
 
-    if (oldUserId != null) {
-      try {
-        await GradeReminderService.instance.clearForUser(oldUserId);
-      } catch (_) {}
-    }
     if (!kIsWeb && _cookieJar != null) {
       try {
         await _cookieJar!.deleteAll();
@@ -1139,7 +1256,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+  /// 清理旧版极光 Alias，防止退出后仍收到前用户私信通知；新版本不再创建 Alias。
   Future<void> _clearPushAlias() async {
     try {
       await PushClient.current().clearAlias();
@@ -1173,7 +1290,6 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _clearStoredAuth() async {
     await _credentialStore.clear();
     await KeepAliveService.instance.syncAuthToken(null);
-    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
   }
 
   void _showAuthExpiredOverlay() {
@@ -1216,7 +1332,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// 从服务器刷新当前用户信息（角色变更后调用）
   Future<void> refreshUser() async {
-    if (_token == null) return;
+    if (_user == null) return;
     final generation = ++_profileGeneration;
     try {
       final response = await _dio.get('/user/profile');
@@ -1337,13 +1453,11 @@ class AuthProvider extends ChangeNotifier {
       );
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data is! Map || data['token'] is! String || data['user'] is! Map) {
+        if (data is! Map || data['user'] is! Map) {
           return AuthResult.failure('密码已修改，但会话刷新失败，请重新登录');
         }
-        await applyAuthPayload(
-          data['token'] as String,
-          Map<String, dynamic>.from(data['user'] as Map),
-        );
+        final candidate = _authSessionCandidateFromResponse(data);
+        await _saveAndCommitAuthSession(candidate);
         return AuthResult.success();
       }
       return AuthResult.failure('修改密码失败');
@@ -1360,31 +1474,8 @@ class AuthProvider extends ChangeNotifier {
     String studentId,
     String eduPassword,
     String newPassword,
-  ) async {
-    try {
-      final response = await _dio.post(
-        '/password/edu/reset',
-        data: {
-          'student_id': studentId,
-          'edu_password': eduPassword,
-          'new_password': newPassword,
-        },
-      );
-      if (response.statusCode == 200) {
-        return AuthResult.success();
-      }
-      return AuthResult.failure('密码重置失败');
-    } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      debugPrint(
-        '密码重置失败: type=${e.type}, status=${e.response?.statusCode}',
-      );
-      return AuthResult.failure(errorMsg);
-    } catch (e) {
-      debugPrint('密码重置异常: ${e.runtimeType}');
-      return AuthResult.failure('密码重置失败');
-    }
-  }
+  ) async =>
+      AuthResult.failure('教务验证找回密码已关闭，请使用邮箱验证');
 
   /// 发送邮箱注册验证码。服务端使用统一文案，避免枚举现有账号。
   Future<AuthResult> requestEmailRegistrationCode(String email) async {
@@ -1443,95 +1534,18 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 验证教务账号（注册前验证学号是否属于自己）
-  Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
-    try {
-      debugPrint('=== verifyEdu 开始 ===');
-      debugPrint('student_id: ${_maskStudentId(studentId)}');
+  /// 保留旧调用方的编译兼容性，但不再接受教务凭据或访问服务端。
+  Future<AuthResult> verifyEdu(String studentId, String eduPassword) async =>
+      AuthResult.failure('教务验证注册已关闭，请使用邮箱注册');
 
-      final response = await _dio.post(
-        '/edu/pre_verify',
-        data: {'student_id': studentId, 'password': eduPassword},
-      );
-
-      debugPrint('=== verifyEdu 响应 ===');
-      debugPrint('statusCode: ${response.statusCode}');
-      debugPrint('data type: ${response.data.runtimeType}');
-      if (response.data is Map) {
-        debugPrint(
-          'success: ${response.data['success']} code: ${response.data['code']}',
-        );
-      }
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        return AuthResult.success();
-      }
-      return AuthResult.failure(
-        response.data['error'] ?? response.data['message'] ?? '教务验证失败',
-      );
-    } on DioException catch (e) {
-      debugPrint('=== verifyEdu DioException ===');
-      debugPrint('type: ${e.type}');
-      debugPrint('response.statusCode: ${e.response?.statusCode}');
-      if (e.response?.data is Map) {
-        final data = e.response?.data as Map;
-        debugPrint('response.code: ${data['code']}');
-      }
-      return AuthResult.failure(_parseDioError(e));
-    } catch (e, st) {
-      debugPrint('=== verifyEdu 未知异常 ===');
-      debugPrint('type: ${e.runtimeType}');
-      debugPrintStack(stackTrace: st);
-      return AuthResult.failure('未知错误');
-    }
-  }
-
-  /// 教务验证后注册
   Future<AuthResult> registerWithEdu(
     String studentId,
     String appPassword, {
     String? nickname,
     required String eduPassword,
     required RegistrationConsents consents,
-  }) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final response = await _dio.post(
-        '/register_with_edu',
-        data: {
-          'student_id': studentId,
-          'password': appPassword,
-          'edu_password': eduPassword,
-          ...consents.toJson(),
-          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
-        },
-      );
-
-      _isLoading = false;
-      if (response.statusCode == 201) {
-        final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
-        notifyListeners();
-        return AuthResult.success();
-      }
-      return AuthResult.failure('注册失败，服务器返回异常');
-    } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      final errorMsg = _parseDioError(e);
-      debugPrint(
-        '注册失败: type=${e.type}, status=${e.response?.statusCode}',
-      );
-      return AuthResult.failure(errorMsg);
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      debugPrint('注册异常: ${e.runtimeType}');
-      return AuthResult.failure('注册失败');
-    }
-  }
+  }) async =>
+      AuthResult.failure('教务注册已关闭，请使用邮箱注册');
 
   /// 获取账号安全页私有资料，完整邮箱仅在此接口中返回。
   Future<Map<String, dynamic>?> getAccountSecurity() async {

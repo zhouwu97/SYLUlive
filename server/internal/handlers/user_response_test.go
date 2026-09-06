@@ -18,6 +18,7 @@ func TestPublicAndSelfUserResponsesKeepTheirBoundaries(t *testing.T) {
 		CreditScore:      88,
 		EduStudentID:     "2026000001",
 		EduBound:         true,
+		EduAuthorized:    true,
 		EduGrade:         "2026",
 		EduCollege:       "计算机学院",
 		EduMajor:         "软件工程",

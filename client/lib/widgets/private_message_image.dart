@@ -8,6 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../config/api_constants.dart';
 import '../services/diagnostic_log_service.dart';
 import '../utils/image_header_size_parser.dart';
+import '../utils/image_decode_size.dart';
 import '../utils/message_image_sizing.dart';
 import '../utils/private_message_media_cache.dart';
 
@@ -107,8 +108,7 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     super.dispose();
   }
 
-  bool get _hasServerSize =>
-      widget.serverWidth > 0 && widget.serverHeight > 0;
+  bool get _hasServerSize => widget.serverWidth > 0 && widget.serverHeight > 0;
 
   /// 服务端没给宽高时，从本地文件头或网络图片解码解析出真实 intrinsic 尺寸。
   void _resolveIntrinsic() {
@@ -156,7 +156,23 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
           widget.cacheManager ?? PrivateMessageMediaCache.instance.manager,
       cacheKey: key,
     );
-    final stream = provider.resolve(const ImageConfiguration());
+    // intrinsic 解析也限制解码尺寸，避免为了获取宽高把原图完整解码一次，
+    // 随后 CachedNetworkImage 又重复解码同一张大图。
+    final target = calculateImageDecodeTarget(
+      logicalSize: Size(widget.maxWidth, widget.maxHeight),
+      // initState 不能依赖 MediaQuery；intrinsic 只需要保持比例，使用 1x
+      // 的保守目标即可，实际展示阶段会按当前 DPR 再次限制解码。
+      devicePixelRatio: 1.0,
+      maxLongEdge: imageMediumLongEdge,
+      fallbackLogicalSize: const Size(260, 320),
+    );
+    final resolvedProvider = ResizeImage(
+      provider,
+      width: target.width,
+      height: target.height,
+      policy: ResizeImagePolicy.fit,
+    );
+    final stream = resolvedProvider.resolve(const ImageConfiguration());
     late ImageStreamListener listener;
     listener = ImageStreamListener(
       (info, _) {
@@ -265,11 +281,14 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
     final showNetwork = networkUrl != null && networkUrl.isNotEmpty;
 
     if (showLocal) {
+      final target = _decodeTarget(display);
       imageContent = Image.file(
         File(localPath),
         fit: BoxFit.cover,
         width: display?.width,
         height: display?.height,
+        cacheWidth: target?.width,
+        cacheHeight: target?.height,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) {
           _localFailed = true;
@@ -334,6 +353,7 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
           fullUrl,
           accountId: widget.accountId,
         );
+    final target = _decodeTarget(display);
     return CachedNetworkImage(
       imageUrl: fullUrl,
       cacheKey: resolvedCacheKey,
@@ -343,6 +363,8 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
       fit: display == null ? BoxFit.contain : BoxFit.cover,
       width: display?.width,
       height: display?.height,
+      memCacheWidth: target?.width,
+      memCacheHeight: target?.height,
       fadeInDuration: Duration.zero,
       fadeOutDuration: Duration.zero,
       placeholder: (_, __) => _buildSizedPlaceholder(colors, display),
@@ -350,6 +372,17 @@ class _PrivateMessageImageState extends State<PrivateMessageImage> {
         _logFailure('pm_media_load_failed');
         return _buildFailureCard(colors, compact: display == null);
       },
+    );
+  }
+
+  ImageDecodeTarget? _decodeTarget(Size? display) {
+    final logicalSize = display ?? Size(widget.maxWidth, widget.maxHeight);
+    if (logicalSize.width <= 0 || logicalSize.height <= 0) return null;
+    return calculateImageDecodeTarget(
+      logicalSize: logicalSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageMediumLongEdge,
+      fallbackLogicalSize: const Size(260, 320),
     );
   }
 

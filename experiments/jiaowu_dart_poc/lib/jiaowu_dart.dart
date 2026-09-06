@@ -1,0 +1,45 @@
+/// SYLU 教务系统纯 Dart 客户端实验包。
+library jiaowu_dart;
+
+export 'src/api/academic_situation_api.dart';
+export 'src/api/course_api.dart';
+export 'src/api/credit_requirement_api.dart';
+export 'src/api/grade_api.dart';
+export 'src/api/grade_detail_api.dart';
+export 'src/api/profile_api.dart';
+export 'src/auth/csrf_parser.dart';
+export 'src/auth/jiaowu_auth.dart';
+export 'src/auth/login_page_detector.dart';
+export 'src/auth/rsa_encryptor.dart';
+export 'src/capability/academic_capabilities.dart';
+export 'src/core/jiaowu_client.dart';
+export 'src/core/jiaowu_endpoints.dart';
+export 'src/core/jiaowu_request_validator.dart';
+export 'src/error/jiaowu_exception.dart';
+export 'src/model/academic_situation.dart';
+export 'src/model/captcha_challenge.dart';
+export 'src/model/course_fetch_result.dart';
+export 'src/model/credit_requirement.dart';
+export 'src/model/grade_component.dart';
+export 'src/model/grade_detail.dart';
+export 'src/model/grade_fetch_result.dart';
+export 'src/model/login_result.dart';
+export 'src/model/raw_course.dart';
+export 'src/model/raw_grade.dart';
+export 'src/model/rsa_public_key.dart';
+export 'src/model/student_profile.dart';
+export 'src/network/jiaowu_network_probe.dart';
+export 'src/network/jiaowu_trust_chain.dart';
+export 'src/network/safe_transport_diagnostic.dart';
+export 'src/network/transport_error_mapper.dart';
+export 'src/parser/academic_situation_parser.dart';
+export 'src/parser/course_parser.dart';
+export 'src/parser/credit_requirement_parser.dart';
+export 'src/parser/error_parser.dart';
+export 'src/parser/grade_detail_parser.dart';
+export 'src/parser/grade_parser.dart';
+export 'src/parser/profile_parser.dart';
+export 'src/parser/week_parser.dart';
+export 'src/session/jiaowu_session.dart';
+export 'src/session/session_state.dart';
+

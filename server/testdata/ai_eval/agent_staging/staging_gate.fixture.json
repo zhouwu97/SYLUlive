@@ -1,0 +1,71 @@
+{
+  "schema_version": "campus-agent-staging-fixture/v1",
+  "evidence_type": "fixture",
+  "snapshot": {
+    "code_version": "fixture-agent-code-v1",
+    "knowledge_version": "fixture-campus-kb-v1",
+    "flags": {
+      "AI_AGENT_ENABLED": "true",
+      "AI_LANGCHAIN_RAG_ENABLED": "false",
+      "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": "0",
+      "AI_LEGACY_RAG_ENABLED": "true",
+      "RAG_RERANKER_ENABLED": "false",
+      "RAG_SHADOW_INDEX_ENABLED": "true",
+      "RAG_ALLOW_LANGSMITH": "false"
+    }
+  },
+  "fault_injection": [
+    {"case_id":"fault-provider-timeout","failure_class":"provider_timeout","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"retryable_status","user_status":"可重试"},
+    {"case_id":"fault-provider-stream-reset","failure_class":"provider_stream_reset","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"resume_or_retry","user_status":"可重连"},
+    {"case_id":"fault-retrieval-timeout","failure_class":"retrieval_timeout","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"safe_degrade","user_status":"资料暂不可用"},
+    {"case_id":"fault-tool-timeout","failure_class":"tool_timeout","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"retryable_status","user_status":"工具超时可重试"},
+    {"case_id":"fault-tool-error","failure_class":"tool_error","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"safe_degrade","user_status":"工具失败已说明"},
+    {"case_id":"fault-authorization-denied","failure_class":"authorization_denied","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"reauthorize","user_status":"等待授权"},
+    {"case_id":"fault-knowledge-stale","failure_class":"knowledge_stale","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"refuse_stale_fact","user_status":"无法核验"},
+    {"case_id":"fault-network-disconnected","failure_class":"network_disconnected","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"reconnect","user_status":"正在重连"},
+    {"case_id":"fault-context-limit","failure_class":"context_limit","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"bounded_context","user_status":"已缩减上下文"},
+    {"case_id":"fault-cancelled","failure_class":"cancelled","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"cancel_ack","user_status":"已取消"},
+    {"case_id":"fault-reconnect","failure_class":"reconnect","injected":true,"recovered":true,"classified":true,"trace_recorded":true,"sensitive_data_exposed":false,"recovery_path":"checkpoint_resume","user_status":"已重连"}
+  ],
+  "observability": {
+    "trace_linkage_rate": 1.0,
+    "classification_coverage": 1.0,
+    "redaction_scan": "pass"
+  },
+  "rollback": {
+    "rollback_point": "fixture-agent-code-v0",
+    "recovered": true,
+    "recovery_time_ms": 42,
+    "before": {
+      "code_version": "fixture-agent-code-v1",
+      "knowledge_version": "fixture-campus-kb-v1",
+      "flags": {
+        "AI_AGENT_ENABLED": "true",
+        "AI_LANGCHAIN_RAG_ENABLED": "false",
+        "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": "0",
+        "AI_LEGACY_RAG_ENABLED": "true",
+        "RAG_RERANKER_ENABLED": "false",
+        "RAG_SHADOW_INDEX_ENABLED": "true",
+        "RAG_ALLOW_LANGSMITH": "false"
+      }
+    },
+    "after": {
+      "code_version": "fixture-agent-code-v0",
+      "knowledge_version": "fixture-campus-kb-v0",
+      "flags": {
+        "AI_AGENT_ENABLED": "false",
+        "AI_LANGCHAIN_RAG_ENABLED": "false",
+        "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": "0",
+        "AI_LEGACY_RAG_ENABLED": "true",
+        "RAG_RERANKER_ENABLED": "false",
+        "RAG_SHADOW_INDEX_ENABLED": "false",
+        "RAG_ALLOW_LANGSMITH": "false"
+      }
+    }
+  },
+  "side_effects": {
+    "requests_performed": 0,
+    "deployment_mutations": 0,
+    "writes_performed": false
+  }
+}

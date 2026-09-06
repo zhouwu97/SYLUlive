@@ -71,7 +71,7 @@ void main() {
           ResolvedPushStatus.registrationFailed);
     });
 
-    test('已开启且 Alias 待绑定推导为 configuring', () {
+    test('兼容旧 Alias 待绑定状态但不阻塞 RegistrationID 推送', () {
       const snapshot = RemotePushSnapshot(
         supported: true,
         optedIn: true,
@@ -81,7 +81,7 @@ void main() {
         privateChannelExists: true,
         privateChannelBlocked: false,
       );
-      expect(resolveRemotePushStatus(snapshot), ResolvedPushStatus.configuring);
+      expect(resolveRemotePushStatus(snapshot), ResolvedPushStatus.ready);
     });
 
     test('已开启但私信渠道未建立推导为 channelUnavailable', () {

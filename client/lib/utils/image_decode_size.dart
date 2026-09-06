@@ -13,7 +13,7 @@ class ImageDecodeTarget {
 }
 
 /// 帖子图片的展示资源档位。
-enum ImageResourceVariant { thumb, medium, origin }
+enum ImageResourceVariant { thumb, medium, viewer, origin, unavailable }
 
 /// 已按显示像素选择的图片资源及其解码规则。
 class ImageResourceSelection {
@@ -74,9 +74,13 @@ ImageDecodeTarget calculateImageDecodeTarget({
 
 /// 按实际需要的物理长边选择帖子图片资源。
 ///
-/// 服务端未生成变体时会将变体 URL 回退为原图 URL；此处直接返回原图，
-/// 避免客户端把回退资源误判为可用的缩略图。GIF 必须保留原图动画。
-/// [viewerUrl] 服务全屏浏览档（长边 2048），原图仅在超过该档位时兜底。
+/// 服务端未生成变体时会将变体 URL 回退为原图 URL；调用方应通过 *Ready
+/// 参数明确告诉选择器哪些档位可用，避免把回退资源误判为可用的缩略图。
+///
+/// 默认参数保留旧调用方的“没有额外状态信息时允许原图兜底”行为。Feed/详情
+/// 等掌握 `variant_status` 的入口应关闭原图兜底，以免 pending/failed 变体把大
+/// 原图带入普通信息流。GIF 默认仍选择原图；服务端提供 JPEG 静态首帧时，
+/// 入口可通过 [allowStaticAnimatedPreview] 显式开启静态预览。
 ImageResourceSelection selectImageResource({
   required ImageDecodeTarget target,
   required String thumbUrl,
@@ -84,49 +88,100 @@ ImageResourceSelection selectImageResource({
   required String originUrl,
   String viewerUrl = '',
   bool isAnimatedGif = false,
+  bool thumbReady = true,
+  bool mediumReady = true,
+  bool viewerReady = true,
+  bool allowOriginFallback = true,
+  bool allowStaticAnimatedPreview = false,
 }) {
-  if (isAnimatedGif || originUrl.isEmpty) {
+  final canUseAnimatedPreview = !isAnimatedGif || allowStaticAnimatedPreview;
+  final candidates = <ImageResourceSelection>[];
+
+  void addCandidate({
+    required ImageResourceVariant variant,
+    required String url,
+    required bool ready,
+  }) {
+    if (!canUseAnimatedPreview || !ready || url.isEmpty || url == originUrl) {
+      return;
+    }
+    candidates.add(
+      ImageResourceSelection(
+        variant: variant,
+        url: url,
+        shouldResize: true,
+      ),
+    );
+  }
+
+  void addFallbackCandidates() {
+    addCandidate(
+      variant: ImageResourceVariant.viewer,
+      url: viewerUrl,
+      ready: viewerReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.medium,
+      url: mediumUrl,
+      ready: mediumReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.thumb,
+      url: thumbUrl,
+      ready: thumbReady,
+    );
+  }
+
+  if (target.longEdge <= imageThumbLongEdge) {
+    addCandidate(
+      variant: ImageResourceVariant.thumb,
+      url: thumbUrl,
+      ready: thumbReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.medium,
+      url: mediumUrl,
+      ready: mediumReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.viewer,
+      url: viewerUrl,
+      ready: viewerReady,
+    );
+  } else if (target.longEdge <= imageMediumLongEdge) {
+    addCandidate(
+      variant: ImageResourceVariant.medium,
+      url: mediumUrl,
+      ready: mediumReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.viewer,
+      url: viewerUrl,
+      ready: viewerReady,
+    );
+    addCandidate(
+      variant: ImageResourceVariant.thumb,
+      url: thumbUrl,
+      ready: thumbReady,
+    );
+  } else {
+    addFallbackCandidates();
+  }
+
+  if (candidates.isNotEmpty) return candidates.first;
+
+  if (allowOriginFallback && originUrl.isNotEmpty) {
     return ImageResourceSelection(
       variant: ImageResourceVariant.origin,
       url: originUrl,
-      shouldResize: false,
+      shouldResize: !isAnimatedGif,
     );
   }
 
-  if (target.longEdge <= imageThumbLongEdge &&
-      thumbUrl.isNotEmpty &&
-      thumbUrl != originUrl) {
-    return ImageResourceSelection(
-      variant: ImageResourceVariant.thumb,
-      url: thumbUrl,
-      shouldResize: true,
-    );
-  }
-
-  if (target.longEdge <= imageMediumLongEdge &&
-      mediumUrl.isNotEmpty &&
-      mediumUrl != originUrl) {
-    return ImageResourceSelection(
-      variant: ImageResourceVariant.medium,
-      url: mediumUrl,
-      shouldResize: true,
-    );
-  }
-
-  if (target.longEdge <= imageViewerLongEdge &&
-      viewerUrl.isNotEmpty &&
-      viewerUrl != originUrl) {
-    return ImageResourceSelection(
-      variant: ImageResourceVariant.medium,
-      url: viewerUrl,
-      shouldResize: true,
-    );
-  }
-
-  return ImageResourceSelection(
-    variant: ImageResourceVariant.origin,
-    url: originUrl,
-    shouldResize: true,
+  return const ImageResourceSelection(
+    variant: ImageResourceVariant.unavailable,
+    url: '',
+    shouldResize: false,
   );
 }
 

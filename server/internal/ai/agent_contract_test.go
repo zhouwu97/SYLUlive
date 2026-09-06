@@ -21,6 +21,15 @@ func TestParseGoalSpecExtractsConstraintsWithoutChoosingWorkflow(t *testing.T) {
 	require.Empty(t, goal.Unknowns)
 }
 
+func TestParseGoalSpecImplicitScheduleQueryUsesPersonalBudget(t *testing.T) {
+	goal := ParseGoalSpec("这周哪几天下午比较空？", nil)
+	require.True(t, goal.RequiresPersonalContext)
+
+	profile := ExecutionProfileForGoal(goal)
+	require.Equal(t, ExecutionNormal, profile.Mode)
+	require.Equal(t, 2, profile.MaxSameToolCalls)
+}
+
 func TestAgentTraceMetricsProducesTrendFields(t *testing.T) {
 	var first AgentTraceMetrics
 	first.Observe("tool.requested", []byte(`{}`))
@@ -32,7 +41,7 @@ func TestAgentTraceMetricsProducesTrendFields(t *testing.T) {
 	second.Observe("tool.requested", []byte(`{}`))
 	second.Observe("tool.completed", []byte(`{"duration_ms":300,"capability_status":"unavailable"}`))
 	second.Observe("tool.discarded", []byte(`{}`))
-	second.Observe("run.failed", []byte(`{}`))
+	second.Observe("run.failed", []byte(`{"failure_class":"tool_error"}`))
 
 	trend := BuildAgentEvalTrend([]AgentTraceMetrics{first, second})
 	require.Equal(t, 2, trend.RunCount)
@@ -42,6 +51,7 @@ func TestAgentTraceMetricsProducesTrendFields(t *testing.T) {
 	require.Equal(t, 0.5, trend.ReplanRate)
 	require.Equal(t, 1, trend.DiscardedLateResults)
 	require.Equal(t, 1, trend.DegradedRuns)
+	require.Equal(t, 1, trend.FailureClasses[string(FailureToolError)])
 	require.Equal(t, 200.0, trend.AverageRunLatencyMs)
 }
 

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -20,6 +21,8 @@ import 'providers/team_recruitment_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
+import 'providers/course_evaluation_provider.dart';
+import 'providers/course_subject_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
@@ -30,6 +33,14 @@ import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
 import 'providers/campus_calendar_provider.dart';
 import 'providers/user_calendar_provider.dart';
+import 'theme/app_text_scaler.dart';
+import 'features/academic/application/academic_session_controller.dart';
+import 'features/academic/application/academic_login_coordinator.dart';
+import 'features/academic/data/academic_repository_impl.dart';
+import 'features/academic/data/academic_server_access_guard.dart';
+import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
+import 'features/academic/data/datasource/legacy_server_data_source.dart';
+import 'features/academic/domain/academic_repository.dart';
 import 'models/user.dart';
 import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
@@ -66,8 +77,10 @@ import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
 import 'services/emoji_favorite_repository.dart';
 import 'services/emoji_favorite_service.dart';
+import 'services/browser_credentials_adapter.dart';
 import 'features/ai_device_bridge/device_tool_bridge_host.dart';
 import 'features/ai_device_bridge/device_tool_worker.dart';
+
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
@@ -80,7 +93,8 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 export 'widgets/global_background_wrapper.dart'
-    show BackgroundWrapperState,
+    show
+        BackgroundWrapperState,
         GlobalBackgroundWrapper,
         PredictiveBackGate,
         backgroundWrapperKey;
@@ -854,49 +868,6 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
     );
   }
 
-  final userId = authProvider.user?.id;
-  if (userId == null) {
-    return const RemotePushEnableResult(
-      permissionGranted: true,
-      registrationSucceeded: true,
-      message: '已开启远程消息推送',
-    );
-  }
-
-  final userIdStr = userId.toString();
-
-  // JPush 的 Alias 在 Android/iOS 都由同一个 Dart 适配器维护；原生通道
-  // 仅作为旧 Android 状态协调兼容层，不能成为 iOS 登记的硬依赖。
-  try {
-    await pushClient.setAlias(userIdStr);
-  } catch (e) {
-    debugPrint('JPush Alias 设置失败: $e');
-  }
-
-  // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
-  // KeepAliveForegroundService 的 reconcileAliasState 机制接管
-  try {
-    final aliasSynced =
-        await _privateMessageNotificationChannel.invokeMethod<bool>(
-              'syncAlias',
-              {'userId': userIdStr},
-            ) ??
-            false;
-    if (!aliasSynced) {
-      return const RemotePushEnableResult(
-        permissionGranted: true,
-        registrationSucceeded: false,
-        message: '推送设置已保存，设备绑定失败，请稍后重试',
-      );
-    }
-  } catch (e) {
-    debugPrint('同步 Alias 到原生层失败: $e');
-    return const RemotePushEnableResult(
-      permissionGranted: true,
-      registrationSucceeded: false,
-      message: '推送设置已保存，设备绑定失败，请稍后重试',
-    );
-  }
   return const RemotePushEnableResult(
     permissionGranted: true,
     registrationSucceeded: true,
@@ -1304,12 +1275,20 @@ Dio getSharedDio() {
         sendTimeout: ApiConstants.sendTimeout,
       ),
     );
+    configureBrowserCredentials(dio);
+
+    // 本机教务使用 JiaowuClient；共享 App Dio 上的旧教务服务器出口统一阻断。
+    dio.interceptors.add(const AcademicServerAccessGuard());
 
     // 每个业务请求都带版本头；服务端开启最低支持版本限制后，426 会由根级
     // 更新门禁接管，而不是在任意业务页面弹出分散提示。
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          if (kIsWeb) {
+            // 浏览器认证只使用服务端 HttpOnly Cookie；跨源部署必须显式带凭据。
+            options.headers['X-Auth-Transport'] = 'cookie';
+          }
           final requestId = options.headers['X-Request-ID']?.toString().trim();
           options.headers['X-Request-ID'] =
               requestId == null || requestId.isEmpty
@@ -1358,13 +1337,39 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        Provider<AcademicRepository>(
+          create: (_) => AcademicRepositoryImpl(
+            local: JiaowuLocalDataSource(),
+            // 教务授权由服务端持久化，客户端只保留按账号隔离的数据快照。
+            // 这样重装或重新登录后可以通过 App 账号恢复教务会话。
+            legacy: LegacyServerDataSource(dio, networkEnabled: true),
+            source: AcademicSourceKind.legacy,
+          ),
+          dispose: (_, repository) => repository.close(),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
             dio,
             onForbiddenRecovery: _handleForbiddenRecovery,
+            onCommunityRulesRequired: () async {
+              final context = appNavigatorKey.currentContext;
+              if (context == null || !context.mounted) return false;
+              return showRequiredCommunityRulesDialog(context);
+            },
           ),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(
+          create: (context) => AcademicSessionController(
+            repository: context.read<AcademicRepository>(),
+          ),
+          update: (_, auth, controller) =>
+              controller!..syncAppUser(auth.user?.id.toString()),
+        ),
+        ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
+          update: (_, controller, previous) =>
+              previous ?? AcademicLoginCoordinator(controller: controller),
         ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {
@@ -1410,18 +1415,21 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) => provider!
             ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
         ),
-        ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, AcademicSessionController,
+            EduProvider>(
           create: (_) => EduProvider(dio),
-          update: (_, auth, provider) => provider!
-            ..setAuthCallbacks(
-              applyAuthPayload: auth.applyAuthPayload,
-              refreshAuthUser: auth.refreshUser,
-            )
+          update: (_, auth, academic, provider) => provider!
+            ..setAcademicSessionController(academic)
             ..syncSessionUser(auth.user?.id.toString()),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
             CourseScheduleProvider>(
-          create: (_) => CourseScheduleProvider(dio),
+          create: (context) => CourseScheduleProvider(
+            dio,
+            null,
+            context.read<AcademicRepository>(),
+            context.read<AcademicSessionController>(),
+          ),
           update: (_, auth, edu, provider) => provider!
             ..syncSessionContext(
               auth.user?.id.toString(),
@@ -1433,6 +1441,15 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
+        // 课程评价：会话隔离由 Provider 内部的 account epoch 保证，
+        // 切换账号时清空解析缓存与"我的内容"，丢弃旧响应。
+        ChangeNotifierProxyProvider<AuthProvider, CourseEvaluationProvider>(
+          create: (_) => CourseEvaluationProvider(dio),
+          update: (_, auth, provider) => provider!
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch),
+        ),
+        // 标准学科榜为公开数据，不依赖登录态。
+        ChangeNotifierProvider(create: (_) => CourseSubjectProvider(dio)),
         ChangeNotifierProxyProvider<AuthProvider, MajorProvider>(
           create: (_) => MajorProvider(dio),
           update: (_, auth, provider) =>
@@ -1489,9 +1506,26 @@ class _WidgetDeepLinkHandler extends StatefulWidget {
   State<_WidgetDeepLinkHandler> createState() => _WidgetDeepLinkHandlerState();
 }
 
+enum _DeepLinkHandlingResult { handled, deferred, unhandled }
+
 class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     with WidgetsBindingObserver {
   static const _channel = MethodChannel('shenliyuan/deeplink');
+  AuthProvider? _authProvider;
+  String? _pendingTeamDeepLink;
+  bool _retryScheduled = false;
+  bool _consumingDeepLink = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextAuthProvider = context.read<AuthProvider>();
+    if (!identical(_authProvider, nextAuthProvider)) {
+      _authProvider?.removeListener(_retryPendingTeamDeepLink);
+      _authProvider = nextAuthProvider..addListener(_retryPendingTeamDeepLink);
+    }
+    _schedulePendingTeamDeepLinkRetry();
+  }
 
   @override
   void initState() {
@@ -1509,17 +1543,36 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     AppResumeCoordinator.instance.onLifecycleChanged(context, state);
     if (state == AppLifecycleState.resumed) {
       _checkDeepLink();
+      _schedulePendingTeamDeepLinkRetry();
     }
+  }
+
+  @override
+  void dispose() {
+    _authProvider?.removeListener(_retryPendingTeamDeepLink);
+    _channel.setMethodCallHandler(null);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _retryPendingTeamDeepLink() {
+    if (!mounted || _pendingTeamDeepLink == null) return;
+    _schedulePendingTeamDeepLinkRetry();
+  }
+
+  void _schedulePendingTeamDeepLinkRetry() {
+    if (_retryScheduled || _pendingTeamDeepLink == null || !mounted) return;
+    _retryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _retryScheduled = false;
+      final pending = _pendingTeamDeepLink;
+      if (!mounted || pending == null) return;
+      await _consumeDeepLink(pending);
+    });
   }
 
   Future<void> _checkDeepLink() async {
@@ -1543,33 +1596,50 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   }
 
   Future<void> _consumeDeepLink(String? uri) async {
-    if (uri == null || !mounted) return;
-    final handled = await _handleDeepLinkUri(uri);
-    if (!handled) {
-      final parsed = Uri.tryParse(uri);
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '导航',
-        type: '深链无法处理',
-        summary: '应用链接格式无效或目标暂不可用',
-        detail: 'scheme=${parsed?.scheme}\nhost=${parsed?.host}',
-        eventCode: 'navigation_deep_link_unhandled',
-        category: 'navigation',
-        operation: 'open',
-        result: 'failure',
-        route: _safeDeepLinkRoute(parsed),
-      );
-      return;
-    }
+    if (uri == null || !mounted || _consumingDeepLink) return;
+    _consumingDeepLink = true;
     try {
-      await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
-    } catch (error) {
-      debugPrint('深度链接确认失败: $error');
+      final result = await _handleDeepLinkUri(uri);
+      if (result == _DeepLinkHandlingResult.deferred) {
+        // Navigator 尚未就绪或会话门禁尚未通过时，组队链接必须留在 Dart
+        // 层等待下一次状态变化；此时不能 ACK 原生 pending link。
+        if (TeamShareLink.parseRecruitmentId(uri) != null) {
+          _pendingTeamDeepLink = uri;
+        }
+        return;
+      }
+      if (result == _DeepLinkHandlingResult.unhandled) {
+        final parsed = Uri.tryParse(uri);
+        DiagnosticLogService.instance.record(
+          level: 'warning',
+          source: '导航',
+          type: '深链无法处理',
+          summary: '应用链接格式无效或目标暂不可用',
+          detail: 'scheme=${parsed?.scheme}\nhost=${parsed?.host}',
+          eventCode: 'navigation_deep_link_unhandled',
+          category: 'navigation',
+          operation: 'open',
+          result: 'failure',
+          route: _safeDeepLinkRoute(parsed),
+        );
+        return;
+      }
+
+      // 只有真正完成导航后才确认原生 pending link。未登录或未完成协议时
+      // 由 _handleDeepLinkUri 保留链接，待 AuthProvider 状态变化后重试。
+      if (_pendingTeamDeepLink == uri) _pendingTeamDeepLink = null;
+      try {
+        await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+      } catch (error) {
+        debugPrint('深度链接确认失败: $error');
+      }
+    } finally {
+      _consumingDeepLink = false;
     }
   }
 
-  Future<bool> _handleDeepLinkUri(String? uri) async {
-    if (uri == null || !mounted) return false;
+  Future<_DeepLinkHandlingResult> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return _DeepLinkHandlingResult.unhandled;
     if (appNavigatorKey.currentState == null) {
       DiagnosticLogService.instance.record(
         level: 'warning',
@@ -1583,40 +1653,45 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         result: 'retry',
         route: _safeDeepLinkRoute(Uri.tryParse(uri)),
       );
-      return false;
+      return _DeepLinkHandlingResult.deferred;
     }
     if (uri == 'widget_timetable' ||
         uri == 'campus://timetable' ||
         uri.startsWith('sylulive://schedule')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
-      return true;
+      return _DeepLinkHandlingResult.handled;
     }
     if (uri.startsWith('widget_exam') || uri.startsWith('sylulive://exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
       );
-      return true;
+      return _DeepLinkHandlingResult.handled;
     }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      return _openGradeDeepLink(uri);
+      return (await _openGradeDeepLink(uri))
+          ? _DeepLinkHandlingResult.handled
+          : _DeepLinkHandlingResult.unhandled;
     }
     final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
-    if (recruitmentId == null) return false;
+    if (recruitmentId == null) return _DeepLinkHandlingResult.unhandled;
 
     // 授权撤销或尚未登录时不得通过分享链接绕过会话门禁。
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || !(auth.user?.legalConsentsActive ?? false)) {
-      return true;
+      _pendingTeamDeepLink = uri;
+      return _DeepLinkHandlingResult.deferred;
     }
-    appNavigatorKey.currentState?.push(
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return _DeepLinkHandlingResult.deferred;
+    navigator.push(
       MaterialPageRoute(
         builder: (_) =>
             TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
       ),
     );
-    return true;
+    return _DeepLinkHandlingResult.handled;
   }
 
   Future<bool> _openGradeDeepLink(String raw) async {
@@ -1710,10 +1785,21 @@ class _AppContent extends StatelessWidget {
       navigatorKey: appNavigatorKey,
       navigatorObservers: [appRouteObserver],
       scaffoldMessengerKey: scaffoldMessengerKey,
-      builder: (context, child) => AppUpdateGate(
-        navigatorKey: appNavigatorKey,
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: AppTextScaler(
+              mediaQuery.textScaler,
+              themeProvider.fontSizePreset.scaleFactor,
+            ),
+          ),
+          child: AppUpdateGate(
+            navigatorKey: appNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => AppNavigation.buildTimetablePage(),

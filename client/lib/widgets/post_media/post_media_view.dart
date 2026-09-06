@@ -143,7 +143,8 @@ class PostMediaView extends StatelessWidget {
     final visibleCount = images.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
     return AspectRatio(
-      aspectRatio: rows == 1 ? 3 : 1.5,
+      // 固定三列时按实际行数扩展高度，避免第 3 行图片被裁切。
+      aspectRatio: 3 / rows,
       child: GridView.builder(
         padding: EdgeInsets.zero,
         physics: const NeverScrollableScrollPhysics(),
@@ -191,6 +192,7 @@ class PostMediaView extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: GestureDetector(
+        key: ValueKey<String>('post-media-tile-$index'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap ?? () => _openPreview(context, images, index),
         child: LayoutBuilder(
@@ -226,9 +228,8 @@ class PostMediaView extends StatelessWidget {
                   isHomeSection ? imageMediumLongEdge : imageThumbLongEdge,
               fallbackLogicalSize: const Size(120, 120),
             );
-            final selection = _selectResource(image, target);
-            return _networkImage(
-              selection: selection,
+            return _progressiveNetworkImage(
+              image: image,
               target: target,
               fit: BoxFit.cover,
               alignment: isHomeSection ? Alignment.topCenter : Alignment.center,
@@ -239,20 +240,101 @@ class PostMediaView extends StatelessWidget {
     );
   }
 
+  /// 为 Feed/详情统一选择状态安全的图片资源。
+  ///
+  /// 旧接口没有 `variant_status` 时仍兼容原图兜底；新接口只允许 ready
+  /// 变体，且仅对已知的小文件保留原图兜底，避免大图 pending/failed 时误下原图。
+  static ImageResourceSelection resourceForPostImage(
+    PostImage image,
+    ImageDecodeTarget target,
+  ) =>
+      _selectResource(image, target);
+
   static ImageResourceSelection _selectResource(
     PostImage image,
     ImageDecodeTarget target,
   ) {
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
     final mimeType = image.file?.mimeType.toLowerCase() ?? '';
+    final isAnimatedGif = mimeType == 'image/gif' ||
+        originUrl.toLowerCase().split('?').first.endsWith('.gif');
+    final originalSizeBytes = image.file?.size ?? 0;
+    final hasVariantStatus = image.variantStatus.isNotEmpty;
     return selectImageResource(
       target: target,
       thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
       mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
       viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
       originUrl: originUrl,
-      isAnimatedGif: mimeType == 'image/gif' ||
-          originUrl.toLowerCase().split('?').first.endsWith('.gif'),
+      isAnimatedGif: isAnimatedGif,
+      thumbReady: image.isVariantReady('thumb'),
+      mediumReady: image.isVariantReady('medium'),
+      viewerReady: image.isVariantReady('viewer'),
+      // 变体状态已经由服务端返回时，pending/failed 大图不可旁路 origin。
+      // 小图保留原图直出策略；没有状态的旧接口继续兼容原有回退行为。
+      allowOriginFallback: !hasVariantStatus ||
+          (originalSizeBytes > 0 &&
+              originalSizeBytes < imageOriginalAutoLoadThresholdBytes),
+      allowStaticAnimatedPreview: true,
+    );
+  }
+
+  static Widget _progressiveNetworkImage({
+    required PostImage image,
+    required ImageDecodeTarget target,
+    required BoxFit fit,
+    Alignment alignment = Alignment.center,
+  }) {
+    final selection = _selectResource(image, target);
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    final thumbUrl = _readyVariantUrl(
+      image,
+      image.resolvedThumbUrl,
+      originUrl,
+      'thumb',
+    );
+    final showThumbUnderlay = thumbUrl != null &&
+        selection.url.isNotEmpty &&
+        selection.url != thumbUrl &&
+        selection.variant != ImageResourceVariant.thumb &&
+        selection.variant != ImageResourceVariant.unavailable;
+
+    final primary = _networkImage(
+      selection: selection,
+      target: target,
+      fit: fit,
+      alignment: alignment,
+      placeholderColor:
+          showThumbUnderlay ? Colors.transparent : Colors.grey[200],
+      showErrorIcon: !showThumbUnderlay,
+    );
+    if (!showThumbUnderlay) return primary;
+
+    final thumbTarget = _thumbDecodeTarget(target);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _networkImage(
+          selection: ImageResourceSelection(
+            variant: ImageResourceVariant.thumb,
+            url: thumbUrl,
+            shouldResize: true,
+          ),
+          target: thumbTarget,
+          fit: fit,
+          alignment: alignment,
+        ),
+        primary,
+      ],
+    );
+  }
+
+  static ImageDecodeTarget _thumbDecodeTarget(ImageDecodeTarget target) {
+    if (target.longEdge <= imageThumbLongEdge) return target;
+    final scale = imageThumbLongEdge / target.longEdge;
+    return ImageDecodeTarget(
+      width: math.max(1, (target.width * scale).round()),
+      height: math.max(1, (target.height * scale).round()),
     );
   }
 
@@ -261,7 +343,12 @@ class PostMediaView extends StatelessWidget {
     required ImageDecodeTarget target,
     required BoxFit fit,
     Alignment alignment = Alignment.center,
+    Color? placeholderColor,
+    bool showErrorIcon = true,
   }) {
+    if (selection.url.isEmpty) {
+      return Container(color: placeholderColor ?? Colors.grey[200]);
+    }
     return CachedNetworkImage(
       cacheManager: PostImageCache.manager,
       imageUrl: selection.url,
@@ -271,47 +358,91 @@ class PostMediaView extends StatelessWidget {
       alignment: alignment,
       memCacheWidth: selection.shouldResize ? target.width : null,
       memCacheHeight: selection.shouldResize ? target.height : null,
-      placeholder: (_, __) => Container(color: Colors.grey[200]),
+      placeholder: (_, __) => Container(
+        color: placeholderColor ?? Colors.grey[200],
+      ),
       errorWidget: (_, __, ___) {
         return Container(
-          color: Colors.grey[200],
+          color: placeholderColor ?? Colors.grey[200],
           alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+          child: showErrorIcon
+              ? const Icon(Icons.broken_image_outlined, color: Colors.grey)
+              : null,
         );
       },
     );
   }
 
-  /// 全屏预览显示优先使用 viewer 档（长边 2048），保存仍走原图。
+  /// 打开全屏查看器时传递完整的图片资源链路。
+  ///
+  /// viewer 不再作为必需的首屏资源；查看器会优先复用 medium/缓存，原图只
+  /// 在用户主动请求时下载。服务端返回的 URL 在变体未 ready 时会回退原图，
+  /// 因此这里必须同时检查 [PostImage.variantStatus]，避免把回退 URL 当变体。
   static void _openPreview(
     BuildContext context,
     List<PostImage> images,
     int initialIndex,
   ) {
-    final displayUrls = <String>[];
-    final downloadUrls = <String?>[];
-    for (final image in images) {
-      final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
-      final viewerUrl = ApiConstants.fullUrl(image.resolvedViewerUrl);
-      final mimeType = image.file?.mimeType.toLowerCase() ?? '';
-      final isAnimatedGif = mimeType == 'image/gif' ||
-          originUrl.toLowerCase().split('?').first.endsWith('.gif');
-      displayUrls.add(
-        !isAnimatedGif && viewerUrl.isNotEmpty && viewerUrl != originUrl
-            ? viewerUrl
-            : originUrl,
-      );
-      downloadUrls.add(originUrl);
-    }
+    final items = images.map(viewerItemFor).toList(growable: false);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ImageViewerScreen(
-          imageUrls: displayUrls,
-          downloadUrls: downloadUrls,
+          items: items,
           initialIndex: initialIndex,
         ),
       ),
     );
+  }
+
+  /// 将帖子图片转换为全屏查看器所需的分层资源模型。
+  ///
+  /// 其他仍使用独立卡片布局的帖子入口也必须复用此转换，避免丢失原图大小、
+  /// 变体状态以及“未就绪变体不得回退 origin”的约束。
+  static ImageViewerItem viewerItemFor(PostImage image) => _toViewerItem(image);
+
+  static ImageViewerItem _toViewerItem(PostImage image) {
+    final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+
+    return ImageViewerItem(
+      // 这里不再把 origin 填入 url；查看器在 progressive 模式下会拒绝把
+      // origin 当作预览候选，保证 pending/failed 变体不会触发原图请求。
+      thumbUrl: _readyVariantUrl(
+        image,
+        image.resolvedThumbUrl,
+        originUrl,
+        'thumb',
+      ),
+      previewUrl: _readyVariantUrl(
+        image,
+        image.resolvedMediumUrl,
+        originUrl,
+        'medium',
+      ),
+      viewerUrl: _readyVariantUrl(
+        image,
+        image.resolvedViewerUrl,
+        originUrl,
+        'viewer',
+      ),
+      originalUrl: originUrl,
+      originalSizeBytes: image.file?.size ?? 0,
+      width: image.file?.width ?? 0,
+      height: image.file?.height ?? 0,
+      mimeType: image.file?.mimeType ?? '',
+      useProgressiveLoading: true,
+    );
+  }
+
+  static String? _readyVariantUrl(
+    PostImage image,
+    String rawUrl,
+    String originUrl,
+    String variant,
+  ) {
+    final url = ApiConstants.fullUrl(rawUrl);
+    if (url.isEmpty || url == originUrl) return null;
+    if (!image.isVariantReady(variant)) return null;
+    return url;
   }
 }
 
@@ -451,6 +582,7 @@ class _SinglePostImageState extends State<_SinglePostImage> {
       fallbackLogicalSize: const Size(250, 220),
     );
     final selection = PostMediaView._selectResource(widget.image, target);
+    if (selection.url.isEmpty) return;
     final provider = CachedNetworkImageProvider(
       selection.url,
       cacheManager: PostImageCache.manager,
@@ -516,7 +648,6 @@ class _SinglePostImageState extends State<_SinglePostImage> {
           maxLongEdge: imageMediumLongEdge,
           fallbackLogicalSize: const Size(250, 220),
         );
-        final selection = PostMediaView._selectResource(widget.image, target);
         return Align(
           alignment: Alignment.centerLeft,
           child: ClipRRect(
@@ -535,8 +666,8 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      PostMediaView._networkImage(
-                        selection: selection,
+                      PostMediaView._progressiveNetworkImage(
+                        image: widget.image,
                         target: target,
                         // 普通图用 contain 兑现“不裁剪”契约；仅长图 cover 裁剪。
                         fit: isHomeSection && !isLongImage

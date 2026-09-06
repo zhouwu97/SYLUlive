@@ -2,7 +2,34 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
+
+List<PostImage> _createTestImages(int count) {
+  return List.generate(
+    count,
+    (index) => PostImage(
+      id: index + 1,
+      postId: 1,
+      fileId: index + 1,
+      originUrl: '/uploads/image-$index.jpg',
+    ),
+  );
+}
+
+Widget _buildDetailMedia(List<PostImage> images) {
+  return MaterialApp(
+    home: Scaffold(
+      body: SizedBox(
+        width: 360,
+        child: PostMediaView(
+          images: images,
+          variant: PostMediaVariant.detail,
+        ),
+      ),
+    ),
+  );
+}
 
 void main() {
   group('calculateSinglePostImageSize', () {
@@ -216,6 +243,110 @@ void main() {
     expect(find.byType(PostMediaView), findsOneWidget);
   });
 
+  testWidgets('帖子图片进入查看器时传递分层资源和原图大小', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/thumb.jpg',
+      mediumUrl: '/uploads/medium.jpg',
+      viewerUrl: '/uploads/viewer.jpg',
+      variantStatus: const {
+        'thumb': 'ready',
+        'medium': 'ready',
+        'viewer': 'ready',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('single-post-image-tap-target')),
+    );
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    final item = viewer.items!.single;
+    expect(item.useProgressiveLoading, isTrue);
+    expect(item.previewUrl, contains('/uploads/medium.jpg'));
+    expect(item.viewerUrl, contains('/uploads/viewer.jpg'));
+    expect(item.originalUrl, contains('/uploads/origin.jpg'));
+    expect(item.originalSizeBytes, 1024 * 1024);
+  });
+
+  testWidgets('变体未就绪时进入查看器不把回退 origin 当预览', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/origin.jpg',
+      thumbUrl: '/uploads/origin.jpg',
+      mediumUrl: '/uploads/origin.jpg',
+      viewerUrl: '/uploads/origin.jpg',
+      variantStatus: const {
+        'thumb': 'pending',
+        'medium': 'pending',
+        'viewer': 'pending',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('single-post-image-tap-target')),
+    );
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    final item = viewer.items!.single;
+    expect(item.previewUrl, isNull);
+    expect(item.viewerUrl, isNull);
+    expect(item.thumbUrl, isNull);
+    expect(item.originalUrl, contains('/uploads/origin.jpg'));
+  });
+
   testWidgets('低分辨率 Feed 单图使用 thumb 并限制解码尺寸', (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -249,9 +380,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/thumb.jpg'));
     expect(cached.imageUrl, contains('/uploads/thumb.jpg'));
     expect(cached.memCacheWidth, 288);
     expect(cached.memCacheHeight, 162);
@@ -293,9 +424,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.imageUrl, contains('/uploads/medium.jpg'));
     expect(cached.memCacheWidth, 863);
     expect(cached.memCacheHeight, 486);
@@ -337,9 +468,9 @@ void main() {
       ),
     );
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.imageUrl, contains('/uploads/medium.jpg'));
     // 250 宽按 9:16 展开 444.4 逻辑高，×3×1.15 后长边封顶 1280，比例保持 0.5625。
     expect(cached.memCacheWidth, 720);
@@ -389,9 +520,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('长图'), findsOneWidget);
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.topCenter);
     expect(cached.fit, BoxFit.cover);
     expect(tester.takeException(), isNull);
@@ -431,9 +562,9 @@ void main() {
     );
     await tester.pump();
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.center);
     expect(cached.fit, BoxFit.contain);
     expect(find.text('长图'), findsNothing);
@@ -473,12 +604,53 @@ void main() {
     );
     await tester.pump();
 
-    final cached = tester.widget<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final cached = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .firstWhere((image) => image.imageUrl.contains('/uploads/medium.jpg'));
     expect(cached.alignment, Alignment.center);
     expect(cached.fit, BoxFit.cover);
     expect(find.text('长图'), findsNothing);
+  });
+
+  testWidgets('Feed/详情大图变体 pending 或 failed 时不请求 origin', (tester) async {
+    final image = PostImage(
+      id: 1,
+      postId: 1,
+      fileId: 1,
+      file: FileItem(
+        id: 1,
+        hash: 'pending-hash',
+        path: '/uploads/pending-origin.jpg',
+        size: 4 * 1024 * 1024,
+        mimeType: 'image/jpeg',
+        width: 1600,
+        height: 900,
+      ),
+      originUrl: '/uploads/pending-origin.jpg',
+      // 服务端未 ready 时会把这些字段回退为 origin URL。
+      thumbUrl: '/uploads/pending-origin.jpg',
+      mediumUrl: '/uploads/pending-origin.jpg',
+      variantStatus: const {
+        'thumb': 'pending',
+        'medium': 'failed',
+        'viewer': 'pending',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostMediaView(images: [image]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('homeFeed 多图瓦片顶部对齐并保持原图比例解码', (tester) async {
@@ -520,9 +692,10 @@ void main() {
     );
     await tester.pump();
 
-    final tiles = tester.widgetList<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final tiles = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .where((image) => image.imageUrl.contains('-medium.jpg'))
+        .toList();
     expect(tiles, isNotEmpty);
     for (final tile in tiles) {
       expect(tile.alignment, Alignment.topCenter);
@@ -573,9 +746,10 @@ void main() {
     );
     await tester.pump();
 
-    final tiles = tester.widgetList<CachedNetworkImage>(
-      find.byType(CachedNetworkImage),
-    );
+    final tiles = tester
+        .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+        .where((image) => image.imageUrl.contains('-medium.jpg'))
+        .toList();
     expect(tiles, isNotEmpty);
     for (final tile in tiles) {
       // 16:9 源高度占满 195，展开 (346.67, 195)，×3×1.15 = 1196×673。
@@ -681,5 +855,40 @@ void main() {
       expect(tile.memCacheWidth, 475);
       expect(tile.memCacheHeight, 480);
     }
+  });
+
+  for (final imageCount in [6, 7, 8, 9]) {
+    testWidgets('详情页 $imageCount 张图片完整显示', (tester) async {
+      await tester.pumpWidget(_buildDetailMedia(_createTestImages(imageCount)));
+      await tester.pump();
+
+      final gridFinder = find.byType(GridView);
+      final aspectRatio = tester.widget<AspectRatio>(find.byType(AspectRatio));
+      final lastTileFinder = find.byKey(
+        ValueKey<String>('post-media-tile-${imageCount - 1}'),
+      );
+
+      expect(gridFinder, findsOneWidget);
+      expect(lastTileFinder, findsOneWidget);
+      expect(aspectRatio.aspectRatio, imageCount <= 6 ? 1.5 : 1.0);
+
+      final gridRect = tester.getRect(gridFinder);
+      final lastTileRect = tester.getRect(lastTileFinder);
+      expect(lastTileRect.bottom, lessThanOrEqualTo(gridRect.bottom + 0.01));
+    });
+  }
+
+  testWidgets('详情页点击第 9 张图片会打开完整查看器', (tester) async {
+    await tester.pumpWidget(_buildDetailMedia(_createTestImages(9)));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey<String>('post-media-tile-8')));
+    await tester.pumpAndSettle();
+
+    final viewer = tester.widget<ImageViewerScreen>(
+      find.byType(ImageViewerScreen),
+    );
+    expect(viewer.items, hasLength(9));
+    expect(viewer.initialIndex, 8);
   });
 }

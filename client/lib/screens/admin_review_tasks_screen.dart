@@ -26,12 +26,65 @@ class OptionalListResult {
   });
 }
 
+/// 课程评价待审核提交的客户端视图。
+/// 字段与服务端 SubmissionView 一一对应。
+class _PendingCourseEvaluation {
+  final int id;
+  final String courseName;
+  final String courseSubjectName;
+  final bool willCreateSubject;
+  final String proposedCourseName;
+  final String teacherName;
+  final int star;
+  final String comment;
+  final int revision;
+  final String source;
+
+  const _PendingCourseEvaluation({
+    required this.id,
+    required this.courseName,
+    required this.courseSubjectName,
+    required this.willCreateSubject,
+    required this.proposedCourseName,
+    required this.teacherName,
+    required this.star,
+    required this.comment,
+    required this.revision,
+    required this.source,
+  });
+
+  factory _PendingCourseEvaluation.fromJson(Map<String, dynamic> json) {
+    return _PendingCourseEvaluation(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      courseName: json['course_name']?.toString() ?? '',
+      courseSubjectName: json['course_subject_name']?.toString() ?? '',
+      willCreateSubject: json['will_create_subject'] == true,
+      proposedCourseName: json['proposed_course_name']?.toString() ?? '',
+      teacherName: json['teacher_name']?.toString() ?? '',
+      star: (json['star'] as num?)?.toInt() ?? 0,
+      comment: json['comment']?.toString() ?? '',
+      revision: (json['revision'] as num?)?.toInt() ?? 1,
+      source: json['source']?.toString() ?? 'schedule',
+    );
+  }
+
+  String get subjectLabel {
+    if (willCreateSubject || courseSubjectName.isEmpty) {
+      final proposed =
+          proposedCourseName.isNotEmpty ? proposedCourseName : courseName;
+      return '将创建新学科「$proposed」';
+    }
+    return '候选学科：$courseSubjectName';
+  }
+}
+
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingMajors = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
   List<dynamic> _pendingCanteens = [];
+  List<_PendingCourseEvaluation> _pendingCourseEvaluations = [];
   bool _isLoading = true;
   String? _fatalError;
   String? _warningMessage;
@@ -57,6 +110,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _loadOptionalList(dio, '/admin/invitations/pending'),
         _loadOptionalList(dio, '/admin/removals/pending'),
         _loadOptionalCanteens(dio),
+        _loadOptionalCourseEvaluations(dio),
       ]);
 
       if (!mounted) return;
@@ -69,6 +123,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _pendingInvitations = results[2].items;
         _pendingRemovals = results[3].items;
         _pendingCanteens = results[4].items;
+        _pendingCourseEvaluations =
+            (results[5].items as List<_PendingCourseEvaluation>);
         _isLoading = false;
 
         if (failedCount == results.length) {
@@ -162,6 +218,191 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     } catch (_) {
       return const OptionalListResult(items: [], failed: true);
     }
+  }
+
+  /// 课程评价待审接口返回 {items: [...], next_cursor, has_more}。
+  /// 待办列表只取第一页：管理员处理完当前批次后下拉刷新即可。
+  Future<OptionalListResult> _loadOptionalCourseEvaluations(Dio dio) async {
+    try {
+      final response = await dio.get(
+        '/admin/course-evaluations/pending',
+        queryParameters: {'limit': 20},
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = response.data;
+      final items = (data is Map) ? data['items'] : null;
+      if (items is! List) {
+        return const OptionalListResult(items: [], failed: true);
+      }
+      final parsed = items
+          .whereType<Map>()
+          .map((raw) =>
+              _PendingCourseEvaluation.fromJson(Map<String, dynamic>.from(raw)))
+          .where((item) => item.id > 0)
+          .toList();
+      return OptionalListResult(items: parsed, failed: false);
+    } catch (_) {
+      return const OptionalListResult(items: [], failed: true);
+    }
+  }
+
+  /// 判断错误是否为 revision 冲突（409）：评价已被用户修改或他人处理。
+  bool _isRevisionConflict(Object error) {
+    if (error is! DioException) return false;
+    if (error.response?.statusCode != 409) return false;
+    final data = error.response?.data;
+    return data is Map &&
+        data['code']?.toString() == 'course_evaluation_revision_conflict';
+  }
+
+  /// 审核通过课程评价。通过时携带 revision，过期返回 409。
+  Future<void> _approveCourseEvaluation(
+      _PendingCourseEvaluation evaluation) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.put(
+        '/admin/course-evaluations/${evaluation.id}/approve',
+        data: {'revision': evaluation.revision},
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('课程评价已通过并发布'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // 成功只移除对应任务，其余待办保持不动。
+      setState(() => _pendingCourseEvaluations =
+          _pendingCourseEvaluations.where((e) => e.id != evaluation.id).toList());
+    } on DioException catch (e) {
+      if (!mounted) return;
+      if (_isRevisionConflict(e)) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('该评价已被修改或处理，请下拉刷新后重试'),
+          ),
+        );
+        return; // 409 时保留任务，等待刷新。
+      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  /// 驳回课程评价。原因必填 1-500 字符，驳回后用户可修改重提。
+  Future<void> _rejectCourseEvaluation(
+      _PendingCourseEvaluation evaluation) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reason = await _showCourseEvaluationRejectDialog(evaluation);
+    if (!mounted || reason == null) return;
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.put(
+        '/admin/course-evaluations/${evaluation.id}/reject',
+        data: {'revision': evaluation.revision, 'reason': reason},
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('已驳回，用户可修改后重新提交'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      setState(() => _pendingCourseEvaluations =
+          _pendingCourseEvaluations.where((e) => e.id != evaluation.id).toList());
+    } on DioException catch (e) {
+      if (!mounted) return;
+      if (_isRevisionConflict(e)) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('该评价已被修改或处理，请下拉刷新后重试'),
+          ),
+        );
+        return;
+      }
+      final data = e.response?.data;
+      final message = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : '操作失败';
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  /// 驳回原因对话框：原因必填（1-500 字符）。
+  Future<String?> _showCourseEvaluationRejectDialog(
+      _PendingCourseEvaluation evaluation) {
+    final controller = TextEditingController();
+    String? errorText;
+    return showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('驳回「${evaluation.courseName}」评价？'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('驳回后该评价转入"需修改"，用户可修改后重新提交。'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: InputDecoration(
+                  labelText: '驳回原因（必填）',
+                  hintText: '例如：课程名与学科不符、评价内容与教学无关',
+                  errorText: errorText,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  if (errorText != null) {
+                    setDialogState(() => errorText = null);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isEmpty) {
+                  setDialogState(() => errorText = '请填写 1-500 字的驳回原因');
+                  return;
+                }
+                Navigator.pop(ctx, value);
+              },
+              child: const Text('确认驳回'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _voteInvitation(dynamic inv) async {
@@ -468,8 +709,104 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
-    return Container(
+  /// 课程评价待审卡片：展示课程名、候选学科/将创建新学科、教师、
+  /// 星级、评论、revision 和来源；通过携带 revision，驳回必填原因。
+  Widget _buildCourseEvaluationCard(
+    _PendingCourseEvaluation evaluation,
+    bool isDark,
+  ) {
+    final subColor =
+        isDark ? Colors.white.withValues(alpha: 0.62) : Colors.grey[600];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: isDark ? Colors.grey[850] : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFF6366F1),
+                  child: Icon(Icons.rate_review_outlined,
+                      color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '课程评价：${evaluation.courseName} · ${evaluation.teacherName}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              evaluation.subjectLabel,
+              style: TextStyle(fontSize: 13, color: subColor),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                ...List.generate(5, (index) {
+                  return Icon(
+                    index < evaluation.star ? Icons.star : Icons.star_border,
+                    size: 16,
+                    color: Colors.amber,
+                  );
+                }),
+                const SizedBox(width: 8),
+                Text(
+                  'revision v${evaluation.revision} · 来源：${evaluation.source == 'schedule' ? '教务课表' : evaluation.source}',
+                  style: TextStyle(fontSize: 12, color: subColor),
+                ),
+              ],
+            ),
+            if (evaluation.comment.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                evaluation.comment,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                  height: 1.4,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _rejectCourseEvaluation(evaluation),
+                  icon: const Icon(Icons.cancel_outlined,
+                      color: Colors.red, size: 18),
+                  label: const Text('驳回', style: TextStyle(color: Colors.red)),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () => _approveCourseEvaluation(evaluation),
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: const Text('通过并发布'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark) {    return Container(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -510,7 +847,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            '当前没有需要你处理的教师、专业、食堂提交或管理员协作事项。',
+            '当前没有需要你处理的课程评价、教师、专业、食堂提交或管理员协作事项。',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
               color: isDark
@@ -645,6 +982,12 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
             ),
           ),
         ),
+      );
+    }
+
+    for (final evaluation in _pendingCourseEvaluations) {
+      items.add(
+        _buildCourseEvaluationCard(evaluation, isDark),
       );
     }
 

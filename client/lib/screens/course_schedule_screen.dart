@@ -10,6 +10,10 @@ import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
+import '../features/academic/presentation/academic_login_dialog.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
 import '../theme/app_colors.dart';
@@ -23,6 +27,7 @@ import '../services/home_widget_service.dart';
 import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
 import '../widgets/course/course_action_menu.dart';
+import '../widgets/course/course_evaluation_section.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
@@ -217,11 +222,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     // 开学日在缓存加载后才可知，先无 initialPage，等 semesterStart 到位后由 _resetWeekPager 跳到正确教学周。
     _weekPageController = PageController();
     _loadSettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoLogin());
     _unregisterResumeRefresh =
         AppResumeCoordinator.instance.registerVisibleRefresh(
       _refreshAfterResume,
       isVisible: () => currentHomeTabIndex.value == 2,
     );
+  }
+
+  Future<void> _tryAutoLogin() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) return;
+    final coordinator = _coordinatorOrNull();
+    if (coordinator == null) return;
+    if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
+        !await coordinator.hasSavedCredential()) return;
+    final outcome = await coordinator.ensureAuthenticated();
+    if (!mounted || !outcome.isSuccess) return;
+    await context.read<EduProvider>().refreshStatus();
   }
 
   @override
@@ -1206,127 +1224,35 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  void _showBindDialog(
+  Future<void> _showBindDialog(
     BuildContext context,
     EduProvider edu,
-    CourseScheduleProvider sc,
-  ) {
-    final sidCtrl = TextEditingController();
-    final pwdCtrl = TextEditingController();
-    bool isLoading = false;
-    bool eduDataConsentAccepted = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('绑定教务账号'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: sidCtrl,
-                decoration: const InputDecoration(
-                  labelText: '教务学号',
-                  hintText: '请输入10位学号',
-                ),
-                maxLength: 10,
-                enabled: !isLoading,
-              ),
-              CheckboxListTile(
-                value: eduDataConsentAccepted,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('同意教务数据专项授权'),
-                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
-                onChanged: isLoading
-                    ? null
-                    : (value) => setDialogState(
-                          () => eduDataConsentAccepted = value ?? false,
-                        ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: pwdCtrl,
-                decoration: const InputDecoration(labelText: '教务密码'),
-                obscureText: true,
-                enabled: !isLoading,
-              ),
-              if (isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 12),
-                      Text('正在连接教务系统...', style: TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isLoading ? null : () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isLoading
-                  ? null
-                  : () async {
-                      if (!eduDataConsentAccepted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请先同意教务数据专项授权')),
-                        );
-                        return;
-                      }
-                      setDialogState(() => isLoading = true);
-                      final ok = await edu.bind(
-                        sidCtrl.text,
-                        pwdCtrl.text,
-                        eduDataConsentAccepted: true,
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (ok && context.mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(const SnackBar(content: Text('绑定成功')));
-                        _didLoad = false;
-                        if (mounted) {
-                          setState(() {
-                            _initializing = false;
-                            _hasCache = sc.courses.isNotEmpty;
-                          });
-                        }
-                      } else if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(edu.errorMessage ?? '绑定失败')),
-                        );
-                      }
-                    },
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('绑定'),
-            ),
-          ],
-        ),
-      ),
+    CourseScheduleProvider schedule,
+  ) async {
+    final controller = context.read<AcademicSessionController>();
+    final success = await AcademicLoginDialog.show(
+      context,
+      controller: controller,
+      coordinator: _coordinatorOrNull(),
     );
+    if (!context.mounted || success != true) return;
+    await edu.refreshStatus();
+    if (context.mounted) {
+      schedule.loadCourses(forceRefresh: true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('教务账号已绑定')),
+      );
+    }
   }
 
-  // ====== 空状态视图 ======
+  AcademicLoginCoordinator? _coordinatorOrNull() {
+    try {
+      return context.read<AcademicLoginCoordinator>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
   Widget _buildNoScheduleState(BuildContext context, bool isDark) {
     final sc = context.watch<CourseScheduleProvider>();
     final isCurrentTerm = sc.currentTerm.isCurrent;
@@ -4137,18 +4063,29 @@ $classFilterRule
   void _showDetail(CourseBlock c) {
     final color = courseColors[getCourseColorIndex(c.name)];
     final wdn = _wd[c.weekday - 1];
+    // 正式教务课程才显示评价入口；手动添加与 AI 导入的自定义课程不显示。
+    final showEvaluation = c.id > 0 && c.courseCode != 'CUSTOM';
 
     showModalBottomSheet(
       context: appNavigatorKey.currentContext!,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        // 键盘弹出时上移，保证评价表单输入框可见。
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(appNavigatorKey.currentContext!).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             Center(
               child: Container(
                 width: 40,
@@ -4197,6 +4134,12 @@ $classFilterRule
             ),
             if (c.note != null && c.note!.isNotEmpty)
               _detailRow(Icons.note_outlined, '备注', c.note!),
+            // 评价区放在周次/备注之后，不包裹原有课程信息为新卡片。
+            if (showEvaluation)
+              CourseEvaluationSection(
+                courseName: c.name,
+                teacherName: c.teacher ?? '',
+              ),
             const SizedBox(height: 16),
             if (c.id < 0) ...[
               const Divider(),
@@ -4256,7 +4199,10 @@ $classFilterRule
                 ],
               ),
             ],
-          ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

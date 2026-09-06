@@ -67,6 +67,52 @@ func TestServePublicProvidesReadyVersionedVariant(t *testing.T) {
 	}
 }
 
+func TestServePublicResolvesJPEGPreviewBackToGIFOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUploadTestDB(t)
+	uploadDir := t.TempDir()
+	file := models.File{
+		Hash:        "ready-gif-preview",
+		Path:        "/uploads/ready-gif-preview.gif",
+		MimeType:    "image/gif",
+		AccessScope: models.FileAccessPublic,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ImageVariant{
+		FileID: file.ID, Variant: "thumb", RecipeVersion: 1,
+		Status: models.ImageVariantStatusReady,
+		Path:   "/uploads/ready-gif-preview_v1_thumb.jpg", MimeType: "image/jpeg",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(uploadDir, "ready-gif-preview_v1_thumb.jpg"),
+		[]byte("static gif preview"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	router := gin.New()
+	router.GET("/uploads/*filepath", NewUploadHandler(uploadDir, 10<<20, db).ServePublic)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/uploads/ready-gif-preview_v1_thumb.jpg", nil),
+	)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GIF 静态变体响应=%d，body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Fatalf("GIF 静态变体 Content-Type=%q", got)
+	}
+	if got := recorder.Body.String(); got != "static gif preview" {
+		t.Fatalf("GIF 静态变体内容=%q", got)
+	}
+}
+
 func TestServePublicLegacyVariantServesReadyCurrentVariantWithoutCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newUploadTestDB(t)

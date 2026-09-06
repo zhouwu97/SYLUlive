@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
+import 'rating_star_picker.dart';
 
 Future<void> showRatingInputSheet({
   required BuildContext context,
@@ -109,22 +110,10 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
             ),
             const SizedBox(height: 16),
             Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(
-                  5,
-                  (i) => GestureDetector(
-                    onTap: () => setState(() => _star = i + 1),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Icon(
-                        i < _star ? Icons.star : Icons.star_border,
-                        size: 40,
-                        color: i < _star ? Colors.amber : Colors.grey[400],
-                      ),
-                    ),
-                  ),
-                ),
+              child: RatingStarPicker(
+                value: _star,
+                onChanged: (star) => setState(() => _star = star),
+                iconSize: 40,
               ),
             ),
             const SizedBox(height: 24),

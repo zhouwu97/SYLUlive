@@ -2,20 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../models/teacher.dart';
-import '../providers/teacher_provider.dart';
+import '../models/course_evaluation.dart';
+import '../providers/course_subject_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
 import 'teacher_detail_screen.dart';
 
+/// 学科榜详情页。
+///
+/// 接收服务端标准学科 ID 与名称，按 ID 加载该学科的已审核教师；
+/// 不再用教师文本分组，也不通过包含关系合并 A1/A2。
+/// 教师详情评分返回后按 ID 刷新本页统计。
 class SubjectRankingDetailScreen extends StatefulWidget {
+  final int subjectId;
   final String subjectName;
-  final List<Teacher> teachers;
 
   const SubjectRankingDetailScreen({
     super.key,
+    required this.subjectId,
     required this.subjectName,
-    required this.teachers,
   });
 
   @override
@@ -25,34 +30,31 @@ class SubjectRankingDetailScreen extends StatefulWidget {
 
 class _SubjectRankingDetailScreenState
     extends State<SubjectRankingDetailScreen> {
-  late List<Teacher> _teachers;
+  CourseSubjectDetail? _detail;
+  bool _loading = true;
+  String? _error;
   bool _changed = false;
 
   @override
   void initState() {
     super.initState();
-    _teachers = List<Teacher>.from(widget.teachers);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDetail());
   }
 
-  double get _weightedAverage {
-    var weighted = 0.0;
-    var total = 0;
-    for (final teacher in _teachers) {
-      weighted += teacher.averageStar * teacher.ratingCount;
-      total += teacher.ratingCount;
-    }
-    if (total == 0) {
-      if (_teachers.isEmpty) return 0;
-      final sum = _teachers.fold<double>(
-        0,
-        (value, teacher) => value + teacher.averageStar,
-      );
-      return sum / _teachers.length;
-    }
-    return weighted / total;
+  Future<void> _loadDetail() async {
+    final provider = context.read<CourseSubjectProvider>();
+    // 评分返回后必须拿最新统计，这里始终强制刷新。
+    final detail =
+        await provider.loadSubjectDetail(widget.subjectId, force: true);
+    if (!mounted) return;
+    setState(() {
+      _detail = detail;
+      _loading = false;
+      _error = detail == null ? '学科详情加载失败，请稍后重试' : null;
+    });
   }
 
-  Future<void> _openTeacherDetail(Teacher teacher) async {
+  Future<void> _openTeacherDetail(CourseSubjectTeacher teacher) async {
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -63,28 +65,9 @@ class _SubjectRankingDetailScreenState
       ),
     );
     if (changed != true || !mounted) return;
-
     _changed = true;
-    await context.read<TeacherProvider>().loadTeachers();
-    if (!mounted) return;
-
-    final refreshed = context
-        .read<TeacherProvider>()
-        .teachers
-        .where((item) => item.course.trim() == widget.subjectName.trim())
-        .toList()
-      ..sort((a, b) {
-        final ratingCompare = b.averageStar.compareTo(a.averageStar);
-        if (ratingCompare != 0) return ratingCompare;
-        final countCompare = b.ratingCount.compareTo(a.ratingCount);
-        if (countCompare != 0) return countCompare;
-        return a.name.compareTo(b.name);
-      });
-
-    if (mounted)
-      setState(() {
-        _teachers = refreshed;
-      });
+    // 评分返回后按学科 ID 重新加载教师与统计。
+    await _loadDetail();
   }
 
   @override
@@ -92,13 +75,8 @@ class _SubjectRankingDetailScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final accent = RankingTokens.teacherAccent(isDark);
-    final sorted = [..._teachers]..sort((a, b) {
-        final ratingCompare = b.averageStar.compareTo(a.averageStar);
-        if (ratingCompare != 0) return ratingCompare;
-        final countCompare = b.ratingCount.compareTo(a.ratingCount);
-        if (countCompare != 0) return countCompare;
-        return a.name.compareTo(b.name);
-      });
+    final detail = _detail;
+    final teachers = detail?.teachers ?? const <CourseSubjectTeacher>[];
 
     return PopScope(
       canPop: themeProvider.predictiveBack,
@@ -138,162 +116,224 @@ class _SubjectRankingDetailScreenState
             onPressed: () => Navigator.pop(context, _changed),
           ),
         ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
-            // Header card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: RankingTokens.cardDecoration(isDark),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: RankingTokens.teacherAccentSoft(isDark),
-                          borderRadius: BorderRadius.circular(14),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: RankingTokens.subColor(isDark),
+                          ),
                         ),
-                        child: Icon(
-                          Icons.auto_stories_outlined,
-                          color: accent,
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _loadDetail,
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('重试'),
                         ),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _loadDetail,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.subjectName,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: RankingTokens.titleColor(isDark),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '按教师评分排序，点击可查看详情与评价',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: RankingTokens.subColor(isDark),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      _buildMetric(
-                        isDark,
-                        '教师数',
-                        '${sorted.length}',
-                        Icons.groups_2_outlined,
-                        accent,
-                      ),
-                      const SizedBox(width: 10),
-                      _buildMetric(
-                        isDark,
-                        '学科均分',
-                        _weightedAverage.toStringAsFixed(1),
-                        Icons.star_rounded,
-                        accent,
-                      ),
-                      const SizedBox(width: 10),
-                      _buildMetric(
-                        isDark,
-                        '总评价数',
-                        '${sorted.fold<int>(0, (sum, t) => sum + t.ratingCount)}',
-                        Icons.rate_review_outlined,
-                        accent,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            ...sorted.asMap().entries.map(
-              (entry) {
-                final index = entry.key;
-                final teacher = entry.value;
-                final rankColor = _rankColor(index);
-                return Padding(
-                  padding: EdgeInsets.only(bottom: RankingTokens.cardGap),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius:
-                          BorderRadius.circular(RankingTokens.cardRadius),
-                      onTap: () => _openTeacherDetail(teacher),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: RankingTokens.cardDecoration(isDark),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: rankColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '#${index + 1}',
-                                style: TextStyle(
-                                  color: rankColor,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      children: [
+                        // Header card
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: RankingTokens.cardDecoration(isDark),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(
-                                    teacher.name,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: RankingTokens.titleColor(isDark),
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          RankingTokens.teacherAccentSoft(isDark),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Icon(
+                                      Icons.auto_stories_outlined,
+                                      color: accent,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${teacher.averageStar.toStringAsFixed(1)} 分 · ${teacher.ratingCount} 条评价',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: RankingTokens.subColor(isDark),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          widget.subjectName,
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w800,
+                                            color:
+                                                RankingTokens.titleColor(isDark),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '按教师评分排序，点击可查看详情与评价',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color:
+                                                RankingTokens.subColor(isDark),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 20,
-                              color: RankingTokens.subColor(isDark),
-                            ),
-                          ],
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  _buildMetric(
+                                    isDark,
+                                    '教师数',
+                                    '${teachers.length}',
+                                    Icons.groups_2_outlined,
+                                    accent,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildMetric(
+                                    isDark,
+                                    '学科均分',
+                                    (detail?.averageStar ?? 0)
+                                        .toStringAsFixed(1),
+                                    Icons.star_rounded,
+                                    accent,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  _buildMetric(
+                                    isDark,
+                                    '总评价数',
+                                    '${detail?.ratingCount ?? 0}',
+                                    Icons.rate_review_outlined,
+                                    accent,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 14),
+                        if (teachers.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 48),
+                            child: Center(
+                              child: Text(
+                                '该学科暂无已审核教师',
+                                style: TextStyle(
+                                  color: RankingTokens.subColor(isDark),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          ...teachers.asMap().entries.map(
+                                (entry) {
+                                  final index = entry.key;
+                                  final teacher = entry.value;
+                                  final rankColor = _rankColor(index);
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: RankingTokens.cardGap,
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(
+                                          RankingTokens.cardRadius,
+                                        ),
+                                        onTap: () =>
+                                            _openTeacherDetail(teacher),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration:
+                                              RankingTokens.cardDecoration(
+                                            isDark,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 40,
+                                                height: 40,
+                                                alignment: Alignment.center,
+                                                decoration: BoxDecoration(
+                                                  color: rankColor
+                                                      .withValues(alpha: 0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '#${index + 1}',
+                                                  style: TextStyle(
+                                                    color: rankColor,
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      teacher.name,
+                                                      style: TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: RankingTokens
+                                                            .titleColor(isDark),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      '${teacher.averageStar.toStringAsFixed(1)} 分 · ${teacher.ratingCount} 条评价',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: RankingTokens
+                                                            .subColor(isDark),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Icon(
+                                                Icons
+                                                    .chevron_right_rounded,
+                                                size: 20,
+                                                color: RankingTokens.subColor(
+                                                  isDark,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -318,25 +358,27 @@ class _SubjectRankingDetailScreenState
           children: [
             Icon(icon, size: 15, color: accent),
             const SizedBox(width: 6),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: RankingTokens.subColor(isDark),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: RankingTokens.subColor(isDark),
+                    ),
                   ),
-                ),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: RankingTokens.titleColor(isDark),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: RankingTokens.titleColor(isDark),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

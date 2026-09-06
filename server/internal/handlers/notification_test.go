@@ -25,7 +25,7 @@ func TestReplyPushExtrasIncludesRecipient(t *testing.T) {
 	}
 }
 
-func TestNotificationHandlerExcludesRetiredMarketPostNotifications(t *testing.T) {
+func TestNotificationHandlerExcludesRetiredNotifications(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
@@ -36,6 +36,7 @@ func TestNotificationHandlerExcludesRetiredMarketPostNotifications(t *testing.T)
 	if err := db.Create(&[]models.Notification{
 		{UserID: 1, Type: "reply", Content: "回复内容"},
 		{UserID: 1, Type: models.RetiredNotificationTypeMarketPost, Content: "商品内容"},
+		{UserID: 1, Type: models.RetiredNotificationTypeCanteenPending, Content: "有新的食堂提交待审核"},
 	}).Error; err != nil {
 		t.Fatalf("写入通知失败: %v", err)
 	}

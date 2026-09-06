@@ -3,10 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +25,7 @@ import (
 func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260003")
+	image := createMarketTagsTestImage(t, db, user.ID)
 
 	body, contentType := buildMultipartFields(t, map[string]string{
 		"board_id":     "2",
@@ -32,6 +36,7 @@ func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 		"contact":      "wx_contact",
 		"contact_type": "wechat",
 		"market_tags":  "自提,乱传,急出",
+		"file_ids":     strconv.FormatUint(uint64(image.ID), 10),
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -70,6 +75,7 @@ func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 func TestCreateMarketPostStoresAllowedTagsOutsideContent(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260001")
+	image := createMarketTagsTestImage(t, db, user.ID)
 
 	form := url.Values{}
 	form.Set("board_id", "2")
@@ -78,6 +84,7 @@ func TestCreateMarketPostStoresAllowedTagsOutsideContent(t *testing.T) {
 	form.Set("post_type", "sell")
 	form.Set("price", "99")
 	form.Set("market_tags", "自提,乱传,急出")
+	form.Set("file_ids", strconv.FormatUint(uint64(image.ID), 10))
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -178,6 +185,7 @@ func TestUpdateMarketPostStoresTagsFromMultipartForm(t *testing.T) {
 
 func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("UPLOAD_DIR", t.TempDir())
 	dbName := strings.ReplaceAll(t.Name(), "/", "_")
 	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -187,6 +195,9 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 		&models.User{},
 		&models.ExpLog{},
 		&models.Like{},
+		&models.File{},
+		&models.FileUploadGrant{},
+		&models.ImageVariant{},
 		&models.Post{},
 		&models.PostImage{},
 	); err != nil {
@@ -212,6 +223,27 @@ func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) model
 	return user
 }
 
+func createMarketTagsTestImage(t *testing.T, db *gorm.DB, uploaderID uint) models.File {
+	t.Helper()
+	filename := fmt.Sprintf("market-image-%d-%d.png", uploaderID, time.Now().UnixNano())
+	if err := os.WriteFile(filepath.Join(os.Getenv("UPLOAD_DIR"), filename), []byte("test image"), 0o600); err != nil {
+		t.Fatalf("write market image: %v", err)
+	}
+	file := models.File{
+		Hash:        "market-" + filename,
+		Path:        "/uploads/" + filename,
+		Size:        int64(len("test image")),
+		MimeType:    "image/png",
+		UploaderID:  uploaderID,
+		Status:      "active",
+		AccessScope: models.FileAccessPublic,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create market image: %v", err)
+	}
+	return file
+}
+
 func createMarketTagsTestPost(t *testing.T, db *gorm.DB, userID uint, tags string) models.Post {
 	t.Helper()
 	post := models.Post{
@@ -226,6 +258,10 @@ func createMarketTagsTestPost(t *testing.T, db *gorm.DB, userID uint, tags strin
 	}
 	if err := db.Create(&post).Error; err != nil {
 		t.Fatalf("create post: %v", err)
+	}
+	image := createMarketTagsTestImage(t, db, userID)
+	if err := db.Create(&models.PostImage{PostID: post.ID, FileID: image.ID}).Error; err != nil {
+		t.Fatalf("create post image: %v", err)
 	}
 	return post
 }
@@ -287,4 +323,67 @@ func buildMultipartFields(t *testing.T, fields map[string]string) (*bytes.Buffer
 		t.Fatalf("close multipart writer: %v", err)
 	}
 	return &body, writer.FormDataContentType()
+}
+
+func TestNormalizeMarketTagsAcceptsTagsForAllPostTypes(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260005")
+
+	cases := []struct {
+		postType string
+		tags     string
+		want     string
+	}{
+		{"sell", "自提,可小刀,乱传", "自提,可小刀"},
+		{"buy", "自提,可上门,长期求,急需,乱传", "自提,可上门,长期求,急需"},
+		{"lost", "急寻,有酬谢,可面交,乱传", "急寻,有酬谢,可面交"},
+		{"found", "待认领,已交宿管,可面交,乱传", "待认领,已交宿管,可面交"},
+		{"proxy", "可跑腿,当日完成,可议价,乱传", "可跑腿,当日完成,可议价"},
+	}
+
+	for i, tc := range cases {
+		image := createMarketTagsTestImage(t, db, user.ID)
+		form := url.Values{}
+		form.Set("board_id", "2")
+		form.Set("title", "测试")
+		form.Set("content", "内容")
+		form.Set("post_type", tc.postType)
+		form.Set("contact", "wx_contact")
+		form.Set("contact_type", "wechat")
+		form.Set("market_tags", tc.tags)
+		form.Set("file_ids", strconv.FormatUint(uint64(image.ID), 10))
+
+		gin.SetMode(gin.TestMode)
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Set("user_id", user.ID)
+		context.Request = httptest.NewRequest(
+			http.MethodPost,
+			"/api/posts",
+			strings.NewReader(form.Encode()),
+		)
+		context.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		NewPostHandler(db, "", "").Create(context)
+
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("case %d (%s): status=%d body=%s", i, tc.postType, recorder.Code, recorder.Body.String())
+		}
+
+		var body models.Post
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatalf("case %d: decode response: %v", i, err)
+		}
+		if body.MarketTags != tc.want {
+			t.Fatalf("case %d (%s): market tags=%q, want %q", i, tc.postType, body.MarketTags, tc.want)
+		}
+
+		var saved models.Post
+		if err := db.First(&saved, body.ID).Error; err != nil {
+			t.Fatalf("case %d: load saved post: %v", i, err)
+		}
+		if saved.MarketTags != tc.want {
+			t.Fatalf("case %d (%s): saved market tags=%q, want %q", i, tc.postType, saved.MarketTags, tc.want)
+		}
+	}
 }

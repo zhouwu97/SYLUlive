@@ -307,6 +307,16 @@ func LoadEvaluationCases(directory string) ([]EvaluationCase, error) {
 			if strings.TrimSpace(scanner.Text()) == "" {
 				continue
 			}
+			candidate, err := isEvaluationCase(scanner.Bytes())
+			if err != nil {
+				file.Close()
+				return nil, fmt.Errorf("%s:%d: %w", path, line, err)
+			}
+			// 同一目录也存放 A0 的版本化事件 JSONL；它们有独立契约，
+			// 不应被当成政策评测用例解析。
+			if !candidate {
+				continue
+			}
 			testCase, err := decodeEvaluationCase(scanner.Bytes())
 			if err != nil {
 				file.Close()
@@ -337,6 +347,19 @@ func LoadEvaluationCases(directory string) ([]EvaluationCase, error) {
 		return nil, fmt.Errorf("no evaluation cases")
 	}
 	return cases, nil
+}
+
+// isEvaluationCase 判断 JSONL 行是否属于共享评测用例 Schema。
+// 事件 fixture 等同目录辅助数据没有 kind 字段，因此由对应采集器单独消费。
+func isEvaluationCase(data []byte) (bool, error) {
+	var envelope map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		return false, err
+	}
+	_, candidate := envelope["kind"]
+	return candidate, nil
 }
 
 // decodeEvaluationCase 拒绝共享 Schema 之外的字段，防止 Go 与 Python 逐步形成不同语义。

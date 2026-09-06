@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../models/reply.dart';
 import '../../models/user.dart';
-import '../../screens/image_viewer_screen.dart';
 import '../cached_avatar.dart';
 import '../emoji/sticker_catalog.dart';
 import '../post_content_link_text.dart';
+import 'reply_image_media.dart';
 
 class PostReplyList extends StatelessWidget {
   const PostReplyList({
@@ -309,48 +309,11 @@ class _ReplyContent extends StatelessWidget {
       );
     }
 
-    final imageUrls = reply.images
-        .map((image) => image.file?.url.trim() ?? '')
-        .where((url) => url.isNotEmpty)
-        .map(ApiConstants.fullUrl)
-        .toList(growable: false);
-    if (imageUrls.isNotEmpty) {
+    if (reply.images.any(ReplyImageMedia.hasAnyImageUrl)) {
       content.add(
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: List.generate(imageUrls.length, (index) {
-            final size = imageUrls.length == 1 ? 190.0 : 88.0;
-            return GestureDetector(
-              key: ValueKey('reply-image-${reply.id}-$index'),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: imageUrls,
-                    initialIndex: index,
-                  ),
-                ),
-              ),
-              onLongPress: onImageLongPress == null
-                  ? null
-                  : () => onImageLongPress!(imageUrls[index]),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrls[index],
-                  width: size,
-                  height: size,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => SizedBox(
-                    width: size,
-                    height: size,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
-                ),
-              ),
-            );
-          }),
+        ReplyImageMedia(
+          images: reply.images,
+          onImageLongPress: onImageLongPress,
         ),
       );
     }

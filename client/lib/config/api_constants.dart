@@ -39,7 +39,9 @@ class ApiConstants {
     final normalizedPath = path.trim();
     final normalizedVariant = variant.trim().toLowerCase();
     if (normalizedPath.isEmpty ||
-        (normalizedVariant != 'thumb' && normalizedVariant != 'medium')) {
+        (normalizedVariant != 'thumb' &&
+            normalizedVariant != 'medium' &&
+            normalizedVariant != 'viewer')) {
       return normalizedPath;
     }
 
@@ -50,10 +52,13 @@ class ApiConstants {
     final slashIndex = sourcePath.lastIndexOf('/');
     final dotIndex = sourcePath.lastIndexOf('.');
     final hasExtension = dotIndex > slashIndex;
-    final extension = hasExtension ? sourcePath.substring(dotIndex) : '';
+    final sourceExtension = hasExtension ? sourcePath.substring(dotIndex) : '';
+    // 服务端对 GIF 变体保存静态首帧 JPEG，不能继续请求 *_v1_*.gif。
+    final extension =
+        sourceExtension.toLowerCase() == '.gif' ? '.jpg' : sourceExtension;
     final baseEnd = hasExtension ? dotIndex : sourcePath.length;
     final basePath = sourcePath.substring(0, baseEnd).replaceFirst(
-          RegExp(r'_(?:v\d+_)?(?:thumb|medium)$'),
+          RegExp(r'_(?:v\d+_)?(?:thumb|medium|viewer)$'),
           '',
         );
     return uri

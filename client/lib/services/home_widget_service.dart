@@ -224,6 +224,19 @@ class HomeWidgetService {
     }
   }
 
+  /// 清理教务资料时同步撤回课表小组件中的个人课程数据。
+  static Future<void> clearCourseData() async {
+    try {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.remove(_courseDataKey);
+      _lastCourseProvider = null;
+      await _refreshNative();
+    } catch (error) {
+      debugPrint('清理课表小组件数据失败：${error.runtimeType}');
+      rethrow;
+    }
+  }
+
   static Future<void> syncExamData(
     Iterable<HomeWidgetExamEntry> entries,
   ) async {

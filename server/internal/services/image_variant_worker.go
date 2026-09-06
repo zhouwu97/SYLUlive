@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	_ "image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -187,8 +188,9 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	if file.AccessScope != models.FileAccessPublic {
 		return fmt.Errorf("原图不再公开")
 	}
-	if file.MimeType != job.MimeType {
-		return fmt.Errorf("原图 MIME 与任务不一致")
+	outputMimeType, ok := imageVariantOutputMimeType(file.MimeType)
+	if !ok || outputMimeType != job.MimeType {
+		return fmt.Errorf("原图/变体 MIME 与任务不一致")
 	}
 	expectedPath, ok := ImageVariantPath(file.Path, file.MimeType, job.Variant)
 	if !ok || expectedPath != job.Path || job.RecipeVersion != ImageVariantRecipeVersion {
@@ -241,7 +243,7 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := encodeImageVariant(temporary, file.MimeType, resized, quality); err != nil {
+	if err := encodeImageVariant(temporary, job.MimeType, resized, quality); err != nil {
 		_ = temporary.Close()
 		return err
 	}
@@ -252,7 +254,7 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("关闭变体临时文件失败: %w", err)
 	}
-	metadata, err := validateImageVariantOutput(temporaryPath, file.MimeType, targetWidth, targetHeight)
+	metadata, err := validateImageVariantOutput(temporaryPath, job.MimeType, targetWidth, targetHeight)
 	if err != nil {
 		return err
 	}

@@ -90,7 +90,13 @@ func main() {
 		log.Printf("初始化试卷存储授权失败: %v", err)
 		os.Exit(1)
 	}
-	remote, err := services.NewExamPaperRemoteClient(cfg.ExamPaperStorageBaseURL, grantSigner, nil, time.Now)
+	remote, err := services.NewExamPaperRemoteClientWithEndpoints(
+		cfg.ExamPaperStoragePublicURL,
+		cfg.ExamPaperStorageInternalURL,
+		grantSigner,
+		nil,
+		time.Now,
+	)
 	if err != nil {
 		log.Printf("初始化试卷远端客户端失败: %v", err)
 		os.Exit(1)

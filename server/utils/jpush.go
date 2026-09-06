@@ -27,7 +27,6 @@ type PushPayload struct {
 // Audience 推送目标。
 type Audience struct {
 	RegistrationID []string `json:"registration_id,omitempty"`
-	Alias          []string `json:"alias,omitempty"`
 }
 
 // Notification 同时承载 Android 与 APNs 通知内容。
@@ -91,28 +90,6 @@ func (c *JPushClient) SendRegistrationNotification(rid, platform, title, alert s
 		Platform:     platform,
 		Audience:     Audience{RegistrationID: []string{rid}},
 		Notification: Notification{Alert: alert, Android: android, IOS: ios},
-	})
-}
-
-// SendAliasNotification 按用户 alias 推送到该用户已绑定的所有 JPush 平台。
-func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras map[string]interface{}) error {
-	var largeIcon string
-	if avatar, ok := extras["sender_avatar"].(string); ok && avatar != "" {
-		largeIcon = avatar
-	}
-	return c.send(PushPayload{
-		Platform: "all",
-		Audience: Audience{Alias: []string{alias}},
-		Notification: Notification{
-			Alert: alert,
-			Android: &AndroidNotification{
-				Alert: alert, Title: title, Extras: extras,
-				ChannelID: "private_messages", LargeIcon: largeIcon,
-			},
-			IOS: &IOSNotification{
-				Alert: alert, Sound: "default", Badge: 1, Extras: extras,
-			},
-		},
 	})
 }
 

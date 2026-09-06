@@ -199,7 +199,7 @@ func TestLangChainRuntimeCompletesGeneralAnswerWithoutSources(t *testing.T) {
 	runtime, db := newLangChainTestRuntime(t, client)
 
 	run, _, err := runtime.CreateRun(context.Background(), 34, CreateRunRequest{
-		ClientRequestID: uuid.NewString(), Message: "hello",
+		ClientRequestID: uuid.NewString(), Message: "解释一下时间管理",
 	})
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateCompleted)

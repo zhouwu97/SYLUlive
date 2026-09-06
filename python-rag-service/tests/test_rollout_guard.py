@@ -4,12 +4,14 @@ from pathlib import Path
 import pytest
 
 from scripts.rollout_guard import (
+    AGENT_QUALITY_SCHEMA_VERSION,
     EVIDENCE_SCHEMA_VERSION,
     REQUIRED_GATES,
     RolloutGuardError,
     advance_state,
     environment_for_stage,
     load_state,
+    validate_agent_quality_report,
     validate_transition,
 )
 
@@ -89,3 +91,35 @@ def test_rollout_environment_keeps_legacy_path_during_full_observation_window():
     assert environment_for_stage("5")["AI_LANGCHAIN_RAG_ROLLOUT_PERCENT"] == "5"
     assert environment_for_stage("100")["AI_LEGACY_RAG_ENABLED"] == "true"
     assert environment_for_stage("off")["AI_LANGCHAIN_RAG_ENABLED"] == "false"
+
+
+def _quality_report(*, evidence_type: str = "staging", blocked: bool = False) -> dict:
+    return {
+        "schema_version": AGENT_QUALITY_SCHEMA_VERSION,
+        "evidence_type": evidence_type,
+        "knowledge_version": "kb-v1",
+        "blocked": blocked,
+        "publish_decision": "blocked" if blocked else "eligible_for_review",
+        "rollout_decision": "blocked" if blocked else "eligible_for_review",
+        "gates": {"holdout_citation_validity": "fail" if blocked else "pass"},
+    }
+
+
+def test_agent_quality_report_blocks_failed_or_fixture_runtime_evidence():
+    with pytest.raises(RolloutGuardError, match="not passed"):
+        validate_agent_quality_report(_quality_report(blocked=True))
+    with pytest.raises(RolloutGuardError, match="fixture"):
+        validate_agent_quality_report(
+            _quality_report(evidence_type="fixture"), require_runtime_evidence=True
+        )
+    validate_agent_quality_report(_quality_report())
+
+
+def test_advance_state_records_agent_quality_digest_and_version(tmp_path):
+    evidence = _evidence(tmp_path / "preflight.json", "preflight")
+    quality_path = tmp_path / "quality.json"
+    quality_path.write_text(json.dumps(_quality_report()), encoding="utf-8")
+    state = load_state(tmp_path / "state.json")
+    updated = advance_state(state, "internal", evidence, quality_path)
+    assert updated["history"][0]["agent_quality_knowledge_version"] == "kb-v1"
+    assert updated["history"][0]["agent_quality_sha256"]

@@ -26,7 +26,7 @@ BACKUP_DIR="/var/backups/${APP_NAME}"
 DB_NAME="shenliyuan"
 DB_USER="shenliyuan"
 DB_PASS=""
-GO_VER="go1.25.0"
+GO_VER="go1.25.13"
 
 CURRENT_BINARY="${APP_DIR}/${APP_NAME}"
 OLD_BINARY="${APP_DIR}/.${APP_NAME}.previous"
@@ -134,15 +134,15 @@ check_system() {
 setup_go() {
   if command -v go >/dev/null 2>&1; then
     local v
-    v=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+')
-    if [ "$(printf '%s\n' "1.25" "$v" | sort -V | head -1)" = "1.25" ]; then
+    v=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+\.[0-9]+')
+    if [ "$(printf '%s\n' "1.25.13" "$v" | sort -V | head -1)" = "1.25.13" ]; then
       log_info "Go 已安装: $(go version)"
       return
     fi
-    log_warn "Go $v < 1.25，将升级"
+    log_warn "Go $v < 1.25.13，将升级"
   fi
 
-  log_step "安装 Go 1.25..."
+  log_step "安装 Go 1.25.13..."
   local arch go_arch
   arch=$(uname -m)
   if [ "$arch" = "x86_64" ]; then
@@ -538,6 +538,9 @@ setup_env() {
   upsert_env_key "$temp_env" "SUPER_ADMIN_ID" "$admin_id"
   upsert_env_key "$temp_env" "SUPER_ADMIN_PASSWORD" "$admin_pass"
   upsert_env_key "$temp_env" "GIN_MODE" "release"
+  # 生产环境拒绝缺少客户端版本头，并强制未同意最新协议的账号受限。
+  upsert_env_key "$temp_env" "APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS" "false"
+  upsert_env_key "$temp_env" "LEGAL_CONSENT_ENFORCEMENT" "hard"
   # Agent 灰测默认关闭；恢复时必须显式配置并经过发布审批。
   upsert_env_key "$temp_env" "AI_AGENT_ENABLED" "false"
   upsert_env_key "$temp_env" "AI_AGENT_ROLLOUT_PERCENT" "0"
@@ -592,6 +595,18 @@ build_app() {
 setup_service() {
   log_step "配置 systemd 服务..."
 
+  if ! id -u "$APP_NAME" >/dev/null 2>&1; then
+    useradd --system --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_NAME"
+  fi
+  install -d -o "$APP_NAME" -g "$APP_NAME" -m 0750 \
+    "${APP_DIR}/uploads" "${APP_DIR}/releases" "${APP_DIR}/private" "${APP_DIR}/private/exam-papers" \
+    "${APP_DIR}/private/competition-award-evidence" "${APP_DIR}/logs"
+  chown root:"$APP_NAME" "$APP_DIR"
+  chmod 0750 "$APP_DIR"
+  chown root:"$APP_NAME" "$CURRENT_BINARY" "${APP_DIR}/.env"
+  chmod 0750 "$CURRENT_BINARY"
+  chmod 0640 "${APP_DIR}/.env"
+
   cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=Shenliyuan Backend Service
@@ -600,13 +615,34 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-User=root
+User=${APP_NAME}
+Group=${APP_NAME}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
 ExecStart=${CURRENT_BINARY}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${APP_DIR}/uploads ${APP_DIR}/releases ${APP_DIR}/private ${APP_DIR}/logs
 
 [Install]
 WantedBy=multi-user.target

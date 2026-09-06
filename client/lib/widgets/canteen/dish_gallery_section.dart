@@ -4,7 +4,6 @@ import '../../config/api_constants.dart';
 import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
 import '../../screens/canteen_dish_detail_screen.dart';
-import '../../screens/image_viewer_screen.dart';
 import '../../utils/canteen_image_failure.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_theme.dart';
@@ -107,37 +106,18 @@ class _DishGallerySectionState extends State<DishGallerySection> {
   }
 
   void _notifyStats(List<CanteenDish> dishes) {
-    // 聚合评价图片不是一道可评分菜品；菜品数/有实拍菜品数只统计真实菜品，
-    // 但图片总数包含评价实拍，保证详情头部不会漏报用户贡献的图片。
-    final realDishes = dishes.where((dish) => !dish.isReviewGallery).toList();
     widget.onStatsChanged?.call(
-      realDishes.length,
+      dishes.length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
     widget.onStatsDetailedChanged?.call(
-      realDishes.length,
-      realDishes.where((dish) => dish.photoCount > 0).length,
+      dishes.length,
+      dishes.where((dish) => dish.photoCount > 0).length,
       dishes.fold(0, (sum, d) => sum + d.photoCount),
     );
   }
 
   void _openDish(CanteenDish dish) {
-    if (dish.isReviewGallery) {
-      final images =
-          dish.photoImages.isNotEmpty ? dish.photoImages : [dish.coverImage];
-      final urls = images
-          .where((image) => image.trim().isNotEmpty)
-          .map(ApiConstants.fullUrl)
-          .toList(growable: false);
-      if (urls.isEmpty) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ImageViewerScreen(imageUrls: urls),
-        ),
-      );
-      return;
-    }
     Navigator.push(
       context,
       MaterialPageRoute(

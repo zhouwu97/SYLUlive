@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
+import '../../theme/app_text_scaler.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
@@ -13,7 +13,6 @@ import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
-import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
@@ -45,41 +44,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
         context,
         isLandscape: isLandscapeScreen,
       );
-    }
-  }
-
-  Future<void> _handleLiquidGlassToggle(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    bool value,
-  ) async {
-    if (!value) {
-      await themeProvider.setLiquidGlass(false);
-      return;
-    }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('启用液态玻璃 2.0'),
-        content: const Text(
-          '液态玻璃效果使用高阶层叠加与高斯模糊渲染。在部分低配置设备上可能增加渲染开销，确定要开启吗？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('开启'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await themeProvider.setLiquidGlass(true);
     }
   }
 
@@ -374,6 +338,30 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
+        SettingsSection(
+          title: '文字显示',
+          children: [
+            SettingsSliderTile(
+              icon: Icons.format_size_rounded,
+              title: '字体大小',
+              subtitle: '调整应用内文字大小，手机系统字体设置仍会继续叠加',
+              value: AppFontSizePreset.values
+                  .indexOf(themeProvider.fontSizePreset)
+                  .toDouble(),
+              min: 0,
+              max: 5,
+              divisions: 5,
+              valueLabel: _fontSizeLabel(themeProvider.fontSizePreset),
+              semanticFormatterCallback: (value) => _fontSizeLabel(
+                AppFontSizePreset.values[value.round().clamp(0, 5)],
+              ),
+              onChanged: (value) => themeProvider.setFontSizePreset(
+                AppFontSizePreset.values[value.round().clamp(0, 5)],
+              ),
+            ),
+          ],
+        ),
+
         // 自定义背景设置
         SettingsSection(
           title: '自定义背景偏好',
@@ -420,43 +408,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 视觉特效高级配置
-        SettingsSection(
-          title: '高级视觉特效',
-          children: [
-            SettingsTile(
-              icon: Icons.auto_awesome_outlined,
-              title: '液态玻璃 2.0 效果',
-              subtitle: '启用高阶高斯模糊与多层折射质感',
-              trailing: SettingsSwitch(
-                value: themeProvider.liquidGlass,
-                onChanged: (val) =>
-                    _handleLiquidGlassToggle(context, themeProvider, val),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.navigation_outlined,
-              title: '悬浮式底栏导航',
-              subtitle: '底部导航栏独立胶囊化悬浮显示',
-              trailing: SettingsSwitch(
-                value: themeProvider.floatingNavBar,
-                onChanged: (val) => themeProvider.setFloatingNavBar(val),
-              ),
-            ),
-            if (kDebugMode)
-              SettingsTile(
-                icon: Icons.tune_rounded,
-                title: 'Liquid Glass Reference QA',
-                subtitle: '开发专用参考参数、纹理与光学对照页',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const LiquidGlassReferenceParityScreen(),
-                  ),
-                ),
-              ),
-          ],
-        ),
-
         // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
         SettingsSection(
           title: '底部导航栏',
@@ -476,5 +427,9 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _fontSizeLabel(AppFontSizePreset preset) {
+    return '${preset.label} ${(preset.scaleFactor * 100).round()}%';
   }
 }

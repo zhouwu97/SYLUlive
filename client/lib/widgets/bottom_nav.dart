@@ -2129,8 +2129,10 @@ class _FloatingLiquidSelectionState extends State<_FloatingLiquidSelection> {
                       AppColors.brandPrimary.withValues(alpha: 0.12),
                     ]
                   : [
-                      const Color(0xFFF3FBF8),
-                      const Color(0xFFE5F5F0),
+                      // 非 liquid 悬浮模式的胶囊绘制在内容之上；浅色也必须
+                      // 半透明，否则不透明薄荷渐变会盖住选中 Tab 的内容。
+                      AppColors.brandPrimary.withValues(alpha: 0.05),
+                      AppColors.brandPrimary.withValues(alpha: 0.10),
                     ],
             ),
             borderRadius: lensRadius,

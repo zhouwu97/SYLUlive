@@ -177,11 +177,37 @@ var allowedWaterPostTypes = map[string]struct{}{
 	"campus_news":   {},
 }
 
+// 与客户端 market_publish_form.dart 的 _availableMarketTags 保持同步：
+// sell/buy/lost/found/proxy 五种发布类型的全部快捷标签都在此白名单内。
 var allowedMarketTags = map[string]struct{}{
+	// sell 出售
 	"自提":     {},
 	"可送宿舍楼下": {},
 	"可小刀":    {},
 	"急出":     {},
+	// buy 求购
+	"可上门": {},
+	"长期求": {},
+	"急需":  {},
+	// lost 失物 / found 招领 共用
+	"急寻":  {},
+	"有酬谢": {},
+	"可面交": {},
+	"待认领": {},
+	"已交宿管": {},
+	// proxy 办事
+	"可跑腿":  {},
+	"当日完成": {},
+	"可议价":  {},
+}
+
+var errMarketImageRequired = errors.New("market_image_required")
+
+// marketPostRequiresImage 判断集市帖子最终是否必须保留至少一张图片。
+// exposure 是独立的曝光流程，允许在没有证据图片时提交文字说明。
+func marketPostRequiresImage(boardID models.BoardID, postType string) bool {
+	return boardID == models.BoardMarket &&
+		!strings.EqualFold(strings.TrimSpace(postType), "exposure")
 }
 
 var (
@@ -1570,6 +1596,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 		if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
 			return err
 		}
+		if marketPostRequiresImage(post.BoardID, post.PostType) && len(fileIDs) == 0 {
+			return errMarketImageRequired
+		}
 		if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
 			return err
 		}
@@ -1611,6 +1640,13 @@ func (h *PostHandler) Create(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, errMarketImageRequired) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":  "market_image_required",
+				"error": "普通集市帖子至少需要上传 1 张图片",
+			})
+			return
+		}
 		if errors.Is(err, services.ErrInvalidImageFileReference) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -1764,9 +1800,6 @@ func (h *PostHandler) Update(c *gin.Context) {
 			if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
 				return err
 			}
-			if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
-				return err
-			}
 		}
 
 		var user models.User
@@ -1780,6 +1813,26 @@ func (h *PostHandler) Update(c *gin.Context) {
 		normalizedType, err := normalizeWaterPostType(post.BoardID, input.PostType)
 		if err != nil {
 			return fmt.Errorf("invalid_post_type")
+		}
+		if marketPostRequiresImage(post.BoardID, normalizedType) {
+			finalImageCount := len(fileIDs)
+			if !replaceImages {
+				var existingImageCount int64
+				if err := tx.Model(&models.PostImage{}).
+					Where("post_id = ?", post.ID).
+					Count(&existingImageCount).Error; err != nil {
+					return err
+				}
+				finalImageCount = int(existingImageCount)
+			}
+			if finalImageCount == 0 {
+				return errMarketImageRequired
+			}
+		}
+		if replaceImages {
+			if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
+				return err
+			}
 		}
 		var contactType models.MarketContactType
 		var contact string
@@ -1949,6 +2002,13 @@ func (h *PostHandler) Update(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, errMarketImageRequired) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":  "market_image_required",
+				"error": "普通集市帖子至少需要上传 1 张图片",
+			})
+			return
+		}
 		if errors.Is(err, services.ErrInvalidImageFileReference) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

@@ -24,7 +24,9 @@ type Config struct {
 	CompetitionAwardEvidenceDir      string // 竞赛证明材料私有目录
 	ExamPaperDir                     string // 试卷私有文件目录
 	ExamPaperStorageMode             string // 试卷文件存储模式
-	ExamPaperStorageBaseURL          string // 试卷文件服务地址
+	ExamPaperStorageBaseURL          string // 兼容旧调用的公网地址
+	ExamPaperStoragePublicURL        string // 客户端上传、预览和下载使用的公网地址
+	ExamPaperStorageInternalURL      string // 主服务调用内部接口使用的地址
 	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
 	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
 	MaxFileSize                      int64  // 最大文件大小(字节)
@@ -44,6 +46,8 @@ type Config struct {
 	AIAPIKey                               string   // 仅从服务端环境变量读取的模型网关密钥
 	AIBaseURL                              string   // OpenAI 兼容模型网关地址
 	AIChatModel                            string   // 对话模型
+	AIReasoningEffort                      string   // 留空沿用网关默认思考深度
+	AIFallbackChatModel                    string   // 留空关闭空流故障时的备用模型。
 	AIRequestTimeoutSeconds                int      // 单次运行硬超时
 	AILegacyMaxOutputTokens                int      // 旧 Go RAG 单次生成的最大输出 token
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
@@ -92,13 +96,25 @@ type Config struct {
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
 
 	// 应用内更新相关配置
-	AppReleaseDir               string // APK 发布根目录
-	AppReleaseMaxSize           int64  // 单个 APK 最大字节数
-	AppUpdateEnforcementEnabled bool   // 是否启用 426 最低版本拦截（阶段 D 使用）
-	AllowMissingVersionHeaders  bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
-	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
-	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
-	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
+	AppReleaseDir                string   // APK 发布根目录
+	AppReleaseMaxSize            int64    // 单个 APK 最大字节数
+	AppUpdateEnforcementEnabled  bool     // 是否启用 426 最低版本拦截（阶段 D 使用）
+	AllowMissingVersionHeaders   bool     // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
+	AppReleaseUseAccelRedirect   bool     // 是否使用 Nginx X-Accel-Redirect 投递大文件
+	AppReleaseAccelPrefix        string   // X-Accel-Redirect 路径前缀
+	LegalConsentEnforcement      string   // 法律协议门禁模式：off、soft、hard
+	AndroidPackageName           string   // 发布 APK 预期包名
+	AndroidSigningCertificate    string   // 发布 APK 签名证书 SHA-256（无冒号大写）
+	AndroidAAPT2Path             string   // aapt2 可执行文件路径
+	AndroidAPKSignerPath         string   // apksigner 可执行文件路径
+	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
+	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
+	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
+	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
+	// SchoolAcademicRoutesRetired 控制旧教务个人路由；教务绑定恢复依赖这些路由。
+	SchoolAuthorityRetired      bool
+	SchoolDeviceCapabilityCut   bool
+	SchoolAcademicRoutesRetired bool
 
 	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
 	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
@@ -180,6 +196,15 @@ func Load() *Config {
 
 	releaseMode := os.Getenv("GIN_MODE") == "release"
 
+	// 生产环境要求显式声明学校能力开关，避免部署时误用旧环境变量。
+	if releaseMode {
+		requireReleaseBool(
+			"SCHOOL_AUTHORITY_RETIRED",
+			"SCHOOL_DEVICE_CAPABILITY_CUT",
+			"SCHOOL_ACADEMIC_ROUTES_RETIRED",
+		)
+	}
+
 	// 图片管线两个开关直接影响生产资源链路（worker 写盘、Nginx 直传）。release 模式
 	// 必须显式设置，空值视同缺失（envBool 对空串静默回退，会形成假显式配置）。
 	if releaseMode {
@@ -195,9 +220,17 @@ func Load() *Config {
 		examPaperStorageMode = ExamPaperStorageModeLocal
 	}
 	examPaperStorageBaseURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_BASE_URL"))
+	examPaperStoragePublicURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_PUBLIC_URL"))
+	if examPaperStoragePublicURL == "" {
+		examPaperStoragePublicURL = examPaperStorageBaseURL
+	}
+	examPaperStorageInternalURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_INTERNAL_URL"))
+	if examPaperStorageInternalURL == "" {
+		examPaperStorageInternalURL = examPaperStoragePublicURL
+	}
 	examPaperStorageSigningSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_SIGNING_SECRET"))
 	examPaperStorageReceiptSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET"))
-	if err := validateExamPaperStorageConfig(examPaperStorageMode, examPaperStorageBaseURL, examPaperStorageSigningSecret, examPaperStorageReceiptSecret, releaseMode); err != nil {
+	if err := validateExamPaperStorageConfig(examPaperStorageMode, examPaperStoragePublicURL, examPaperStorageInternalURL, examPaperStorageSigningSecret, examPaperStorageReceiptSecret, releaseMode); err != nil {
 		panic(err)
 	}
 
@@ -232,6 +265,9 @@ func Load() *Config {
 	}
 
 	if releaseMode {
+		if len([]byte(jwtSecret)) < 32 {
+			panic(fmt.Errorf("生产环境 JWT_SECRET 长度至少为 32 字节"))
+		}
 		if isPlaceholderSecret(jwtSecret, []string{
 			"dev-only-secret-do-not-use-in-production",
 			"your-super-secret-jwt-key-change-this",
@@ -296,7 +332,7 @@ func Load() *Config {
 		}
 	}
 	appUpdateEnforcementEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_UPDATE_ENFORCEMENT_ENABLED")), "true")
-	allowMissingVersionHeaders := true
+	allowMissingVersionHeaders := !releaseMode
 	if v := strings.TrimSpace(os.Getenv("APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS")); v != "" {
 		allowMissingVersionHeaders = strings.EqualFold(v, "true")
 	}
@@ -307,11 +343,51 @@ func Load() *Config {
 	}
 	legalConsentEnforcement := strings.ToLower(strings.TrimSpace(os.Getenv("LEGAL_CONSENT_ENFORCEMENT")))
 	if legalConsentEnforcement == "" {
-		legalConsentEnforcement = "soft"
+		if releaseMode {
+			legalConsentEnforcement = "hard"
+		} else {
+			legalConsentEnforcement = "soft"
+		}
 	}
 	if legalConsentEnforcement != "off" && legalConsentEnforcement != "soft" && legalConsentEnforcement != "hard" {
 		panic(fmt.Errorf("LEGAL_CONSENT_ENFORCEMENT 只能是 off、soft 或 hard"))
 	}
+	if releaseMode && legalConsentEnforcement != "hard" {
+		panic(fmt.Errorf("release 模式必须使用 LEGAL_CONSENT_ENFORCEMENT=hard"))
+	}
+	androidPackageName := strings.TrimSpace(os.Getenv("ANDROID_PACKAGE_NAME"))
+	if androidPackageName == "" {
+		androidPackageName = "com.example.shenliyuan"
+	}
+	androidSigningCertificate := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(os.Getenv("ANDROID_SIGNING_CERT_SHA256")), ":", ""))
+	if androidSigningCertificate != "" && !regexp.MustCompile(`^[0-9A-F]{64}$`).MatchString(androidSigningCertificate) {
+		panic(fmt.Errorf("ANDROID_SIGNING_CERT_SHA256 必须是 64 位十六进制 SHA-256 指纹"))
+	}
+	if releaseMode && androidSigningCertificate == "" {
+		panic(fmt.Errorf("release 模式必须设置 ANDROID_SIGNING_CERT_SHA256"))
+	}
+	androidAAPT2Path := strings.TrimSpace(os.Getenv("ANDROID_AAPT2_PATH"))
+	if androidAAPT2Path == "" {
+		androidAAPT2Path = "aapt2"
+	}
+	androidAPKSignerPath := strings.TrimSpace(os.Getenv("ANDROID_APKSIGNER_PATH"))
+	if androidAPKSignerPath == "" {
+		androidAPKSignerPath = "apksigner"
+	}
+	appReleaseAllowedMarketHosts := splitNonEmpty(os.Getenv("APP_RELEASE_MARKET_HOST_ALLOWLIST"))
+	if len(appReleaseAllowedMarketHosts) == 0 {
+		appReleaseAllowedMarketHosts = []string{"appgallery.huawei.com"}
+	}
+	accountIdentityReadMode, err := parseAccountIdentityReadMode(os.Getenv("ACCOUNT_IDENTITY_READ_MODE"))
+	if err != nil {
+		panic(err)
+	}
+	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
+	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
+	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
+	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
+	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
 
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
@@ -326,6 +402,16 @@ func Load() *Config {
 	aiChatModel := firstNonEmptyEnv("AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
 	if aiChatModel == "" {
 		aiChatModel = "gpt-5.4"
+	}
+	aiReasoningEffort := strings.ToLower(strings.TrimSpace(os.Getenv("AI_REASONING_EFFORT")))
+	aiFallbackChatModel := strings.TrimSpace(os.Getenv("AI_FALLBACK_CHAT_MODEL"))
+	if aiFallbackChatModel != "" && !approvedAIChatModel(aiFallbackChatModel) {
+		panic("AI_FALLBACK_CHAT_MODEL 必须是已审核的模型名称")
+	}
+	switch aiReasoningEffort {
+	case "", "none", "low", "medium", "high", "xhigh", "max":
+	default:
+		panic("AI_REASONING_EFFORT 必须为空或 none、low、medium、high、xhigh、max")
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
@@ -424,7 +510,9 @@ func Load() *Config {
 		CompetitionAwardEvidenceDir:      competitionAwardEvidenceDir,
 		ExamPaperDir:                     examPaperDir,
 		ExamPaperStorageMode:             examPaperStorageMode,
-		ExamPaperStorageBaseURL:          examPaperStorageBaseURL,
+		ExamPaperStorageBaseURL:          examPaperStoragePublicURL,
+		ExamPaperStoragePublicURL:        examPaperStoragePublicURL,
+		ExamPaperStorageInternalURL:      examPaperStorageInternalURL,
 		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
 		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
 		MaxFileSize:                      10 * 1024 * 1024, // 10MB
@@ -444,6 +532,8 @@ func Load() *Config {
 		AIAPIKey:                               aiAPIKey,
 		AIBaseURL:                              aiBaseURL,
 		AIChatModel:                            aiChatModel,
+		AIReasoningEffort:                      aiReasoningEffort,
+		AIFallbackChatModel:                    aiFallbackChatModel,
 		AIRequestTimeoutSeconds:                aiRequestTimeoutSeconds,
 		AILegacyMaxOutputTokens:                aiLegacyMaxOutputTokens,
 		AIMaxToolSteps:                         aiMaxToolSteps,
@@ -498,12 +588,33 @@ func Load() *Config {
 		AppReleaseUseAccelRedirect:          appReleaseUseAccelRedirect,
 		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
 		LegalConsentEnforcement:             legalConsentEnforcement,
+		AccountIdentityReadMode:             accountIdentityReadMode,
+		TrustedProxyCIDRs:                   trustedProxyCIDRs,
+		SchoolAuthorityRetired:              schoolAuthorityRetired,
+		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
+		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
+		AndroidPackageName:                  androidPackageName,
+		AndroidSigningCertificate:           androidSigningCertificate,
+		AndroidAAPT2Path:                    androidAAPT2Path,
+		AndroidAPKSignerPath:                androidAPKSignerPath,
+		AppReleaseAllowedMarketHosts:        appReleaseAllowedMarketHosts,
 		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
 		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
 	}
+}
+
+func parseAccountIdentityReadMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return "legacy", nil
+	}
+	if mode != "legacy" && mode != "identity" {
+		return "", fmt.Errorf("ACCOUNT_IDENTITY_READ_MODE 只能是 legacy 或 identity")
+	}
+	return mode, nil
 }
 
 func envBool(name string, fallback bool) bool {
@@ -516,6 +627,20 @@ func envBool(name string, fallback bool) bool {
 		panic(fmt.Errorf("%s 必须为 true 或 false", name))
 	}
 	return parsed
+}
+
+func requireReleaseBool(names ...string) {
+	for _, name := range names {
+		value, ok := os.LookupEnv(name)
+		if !ok || strings.TrimSpace(value) == "" {
+			panic(fmt.Errorf("release 模式必须显式设置 %s=true 或 false", name))
+		}
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			panic(fmt.Errorf("release 模式 %s 必须为 true 或 false", name))
+		}
+		_ = parsed
+	}
 }
 
 func firstNonEmptyEnv(names ...string) string {
@@ -582,6 +707,15 @@ func envPositiveUintList(name string) []uint {
 	return result
 }
 
+func approvedAIChatModel(model string) bool {
+	switch model {
+	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateAIConfig(
 	enabled bool,
 	provider, apiKey, baseURL, model string,
@@ -601,8 +735,8 @@ func validateAIConfig(
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
-	if model != "gpt-5.4" && model != "gpt-5.4-mini" {
-		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4 或 gpt-5.4-mini")
+	if !approvedAIChatModel(model) {
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna 或 gpt-5.6-terra")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
@@ -692,7 +826,7 @@ func validExternalMCPSSHHost(value string) bool {
 	return externalMCPSSHHostPattern.MatchString(value) && !strings.Contains(value, "..")
 }
 
-func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret string, releaseMode bool) error {
+func validateExamPaperStorageConfig(mode, publicURL, internalURL, signingSecret, receiptSecret string, releaseMode bool) error {
 	switch mode {
 	case ExamPaperStorageModeLocal:
 		return nil
@@ -700,27 +834,49 @@ func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret 
 		if !releaseMode {
 			return nil
 		}
-		if baseURL == "" || signingSecret == "" || receiptSecret == "" {
-			return fmt.Errorf("生产环境远端试卷存储必须完整设置 EXAM_PAPER_STORAGE_BASE_URL、EXAM_PAPER_STORAGE_SIGNING_SECRET 和 EXAM_PAPER_STORAGE_RECEIPT_SECRET")
+		if publicURL == "" || internalURL == "" || signingSecret == "" || receiptSecret == "" {
+			return fmt.Errorf("生产环境远端试卷存储必须完整设置公网地址、内部地址、授权密钥和回执密钥")
 		}
 		if strings.TrimSpace(signingSecret) == strings.TrimSpace(receiptSecret) {
 			return fmt.Errorf("EXAM_PAPER_STORAGE_SIGNING_SECRET 与 EXAM_PAPER_STORAGE_RECEIPT_SECRET 不能相同")
 		}
-		parsed, err := url.Parse(baseURL)
-		if err != nil ||
-			!strings.EqualFold(parsed.Scheme, "https") ||
-			parsed.Hostname() != "139.196.148.174" ||
-			(parsed.Port() != "" && parsed.Port() != "443") ||
-			parsed.User != nil ||
-			(parsed.Path != "" && parsed.Path != "/") ||
-			parsed.RawQuery != "" ||
-			parsed.Fragment != "" {
-			return fmt.Errorf("生产环境 EXAM_PAPER_STORAGE_BASE_URL 必须是 https://139.196.148.174")
+		if !validExamPaperPublicURL(publicURL) {
+			return fmt.Errorf("生产环境试卷存储公网地址必须是受信任的 HTTPS 地址")
+		}
+		if !validExamPaperInternalURL(internalURL) {
+			return fmt.Errorf("生产环境试卷存储内部地址必须是本机 HTTP 地址或受信任的 HTTPS 地址")
 		}
 		return nil
 	default:
 		return fmt.Errorf("EXAM_PAPER_STORAGE_MODE 无效: %q", mode)
 	}
+}
+
+func validExamPaperPublicURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !validStorageURLShape(parsed) {
+		return false
+	}
+	if parsed.Port() != "" && parsed.Port() != "443" {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "paper.sylulive.online") || parsed.Hostname() == "139.196.148.174"
+}
+
+func validExamPaperInternalURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || !validStorageURLShape(parsed) {
+		return false
+	}
+	if strings.EqualFold(parsed.Scheme, "http") {
+		return (parsed.Hostname() == "127.0.0.1" || strings.EqualFold(parsed.Hostname(), "localhost")) && parsed.Port() != ""
+	}
+	return strings.EqualFold(parsed.Scheme, "https") && validExamPaperPublicURL(value)
+}
+
+func validStorageURLShape(parsed *url.URL) bool {
+	return parsed != nil && parsed.Host != "" && parsed.User == nil &&
+		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func isPlaceholderSecret(value string, placeholders []string) bool {

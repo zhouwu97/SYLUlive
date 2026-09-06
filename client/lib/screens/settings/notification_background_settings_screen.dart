@@ -364,7 +364,7 @@ class _NotificationBackgroundSettingsScreenState
           ],
         ),
 
-        // 智能课表与成绩提醒
+        // 智能课表提醒
         const SettingsSection(
           title: '本地消息提醒',
           children: [

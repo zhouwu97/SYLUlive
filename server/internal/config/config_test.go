@@ -26,13 +26,17 @@ func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testi
 }
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "test-secret-0123456789-abcdefghij")
 	t.Setenv("SUPER_ADMIN_ID", "root-admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
 	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
+	t.Setenv("ANDROID_SIGNING_CERT_SHA256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
 	t.Setenv("EXAM_PAPER_DIR", "")
 	production := Load()
 	if production.ExamPaperDir != "/opt/shenliyuan/private/exam-papers" {
@@ -81,6 +85,34 @@ func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {
 	assertLoadPanics(t)
 }
 
+func TestLoadReleaseRequiresExplicitSchoolRetirementSwitches(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
+
+	require.PanicsWithError(
+		t,
+		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true 或 false",
+		func() { _ = Load() },
+	)
+
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "false")
+	require.NotPanics(t, func() { _ = Load() })
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "invalid")
+	require.PanicsWithError(t, "release 模式 SCHOOL_ACADEMIC_ROUTES_RETIRED 必须为 true 或 false", func() { _ = Load() })
+}
+
+func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
+
+	cfg := Load()
+	require.False(t, cfg.SchoolAuthorityRetired)
+	require.False(t, cfg.SchoolAcademicRoutesRetired)
+	require.False(t, cfg.SchoolDeviceCapabilityCut)
+}
+
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("JWT_SECRET", "your-super-secret-jwt-key-change-this")
@@ -92,7 +124,7 @@ func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 
 func TestLoadReleaseRejectsExamPaperDirInsidePublicUploads(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
-	t.Setenv("JWT_SECRET", "realistic-release-secret")
+	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
@@ -118,8 +150,22 @@ func TestLoadReadsRemoteExamPaperStorageConfig(t *testing.T) {
 	cfg := Load()
 	require.Equal(t, "remote", cfg.ExamPaperStorageMode)
 	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStorageBaseURL)
+	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStoragePublicURL)
+	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStorageInternalURL)
 	require.Equal(t, "signing-secret", cfg.ExamPaperStorageSigningSecret)
 	require.Equal(t, "receipt-secret", cfg.ExamPaperStorageReceiptSecret)
+}
+
+func TestLoadReadsSplitExamPaperStorageEndpoints(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_PUBLIC_URL", "https://paper.sylulive.online")
+	t.Setenv("EXAM_PAPER_STORAGE_INTERNAL_URL", "http://127.0.0.1:8081")
+
+	cfg := Load()
+	require.Equal(t, "https://paper.sylulive.online", cfg.ExamPaperStoragePublicURL)
+	require.Equal(t, "http://127.0.0.1:8081", cfg.ExamPaperStorageInternalURL)
+	require.Equal(t, cfg.ExamPaperStoragePublicURL, cfg.ExamPaperStorageBaseURL)
 }
 
 func TestLoadReadsReadonlyRemoteExamPaperStorageConfig(t *testing.T) {
@@ -239,7 +285,7 @@ func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
 func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Helper()
 	t.Setenv("GIN_MODE", ginMode)
-	t.Setenv("JWT_SECRET", "realistic-release-secret")
+	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
@@ -248,8 +294,14 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/opt/shenliyuan/private/competition-award-evidence")
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "false")
 	t.Setenv("UPLOAD_USE_ACCEL_REDIRECT", "false")
+	t.Setenv("SCHOOL_AUTHORITY_RETIRED", "true")
+	t.Setenv("SCHOOL_DEVICE_CAPABILITY_CUT", "true")
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "true")
+	t.Setenv("ANDROID_SIGNING_CERT_SHA256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
+	t.Setenv("EXAM_PAPER_STORAGE_PUBLIC_URL", "")
+	t.Setenv("EXAM_PAPER_STORAGE_INTERNAL_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
 	t.Setenv("AI_ENABLED", "false")
@@ -307,7 +359,7 @@ func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 }
 
 func TestLoadAIAllowsApprovedChatModels(t *testing.T) {
-	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini"} {
+	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra"} {
 		setBaseConfigEnv(t, "debug")
 		t.Setenv("AI_ENABLED", "true")
 		t.Setenv("AI_API_KEY", "server-only-key")
@@ -322,6 +374,36 @@ func TestLoadAIRejectsUnapprovedChatModel(t *testing.T) {
 	t.Setenv("AI_API_KEY", "server-only-key")
 	t.Setenv("AI_CHAT_MODEL", "deepseek-chat")
 	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIFallbackChatModel(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	for _, model := range []string{"", "gpt-5.6-luna", "gpt-5.6-terra"} {
+		t.Setenv("AI_FALLBACK_CHAT_MODEL", " "+model+" ")
+		require.Equal(t, model, Load().AIFallbackChatModel)
+	}
+	t.Setenv("AI_FALLBACK_CHAT_MODEL", "unreviewed-model")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIReasoningEffort(t *testing.T) {
+	for _, effort := range []string{"", "none", "low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			setBaseConfigEnv(t, "debug")
+			t.Setenv("AI_REASONING_EFFORT", effort)
+			require.Equal(t, effort, Load().AIReasoningEffort)
+		})
+	}
+	t.Run("normalize", func(t *testing.T) {
+		setBaseConfigEnv(t, "debug")
+		t.Setenv("AI_REASONING_EFFORT", " MEDIUM ")
+		require.Equal(t, "medium", Load().AIReasoningEffort)
+	})
+	t.Run("reject_invalid", func(t *testing.T) {
+		setBaseConfigEnv(t, "debug")
+		t.Setenv("AI_REASONING_EFFORT", "ultra")
+		require.Panics(t, func() { Load() })
+	})
 }
 
 func TestLoadIgnoresRetiredAIUserAccessVariables(t *testing.T) {

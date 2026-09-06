@@ -47,6 +47,29 @@ func TestPostImageMarshalJSONKeepsGIFOriginal(t *testing.T) {
 	}
 }
 
+func TestPostImageMarshalJSONUsesReadyStaticGIFPreview(t *testing.T) {
+	payload, err := json.Marshal(PostImage{
+		FileID: 9,
+		File:   File{Path: "/uploads/ab/hash.gif", MimeType: "image/gif"},
+		Variants: []ImageVariant{{
+			FileID: 9, Variant: "thumb", RecipeVersion: 1,
+			Status: ImageVariantStatusReady,
+			Path:   "/uploads/ab/hash_v1_thumb.jpg", MimeType: "image/jpeg",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value["thumb_url"] != "/uploads/ab/hash_v1_thumb.jpg" ||
+		value["origin_url"] != "/uploads/ab/hash.gif" {
+		t.Fatalf("GIF 静态预览与原图 URL 错误: %s", payload)
+	}
+}
+
 func TestPostImageMarshalJSONUsesReadyVersionedVariants(t *testing.T) {
 	payload, err := json.Marshal(PostImage{
 		FileID: 9,

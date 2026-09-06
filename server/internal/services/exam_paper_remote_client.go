@@ -45,20 +45,27 @@ type ExamPaperRemoteMaintenanceResult struct {
 
 // ExamPaperRemoteClient 负责生成文件授权地址并调用文件服务内部接口。
 type ExamPaperRemoteClient struct {
-	baseURL *url.URL
-	signer  *ExamPaperStorageSigner
-	client  *http.Client
-	now     func() time.Time
+	publicURL   *url.URL
+	internalURL *url.URL
+	signer      *ExamPaperStorageSigner
+	client      *http.Client
+	now         func() time.Time
 }
 
 // NewExamPaperRemoteClient 创建限制在单一源站根路径的远端客户端。
 func NewExamPaperRemoteClient(baseURL string, signer *ExamPaperStorageSigner, client *http.Client, now func() time.Time) (*ExamPaperRemoteClient, error) {
-	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
-		return nil, ErrExamPaperRemoteInvalidURL
+	return NewExamPaperRemoteClientWithEndpoints(baseURL, baseURL, signer, client, now)
+}
+
+// NewExamPaperRemoteClientWithEndpoints 将用户可见地址与内部控制面地址分开。
+func NewExamPaperRemoteClientWithEndpoints(publicURL, internalURL string, signer *ExamPaperStorageSigner, client *http.Client, now func() time.Time) (*ExamPaperRemoteClient, error) {
+	publicParsed, err := parseExamPaperRemoteURL(publicURL)
+	if err != nil {
+		return nil, err
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost")) {
-		return nil, ErrExamPaperRemoteInvalidURL
+	internalParsed, err := parseExamPaperRemoteURL(internalURL)
+	if err != nil {
+		return nil, err
 	}
 	if signer == nil {
 		return nil, ErrStorageSecretRequired
@@ -73,13 +80,24 @@ func NewExamPaperRemoteClient(baseURL string, signer *ExamPaperStorageSigner, cl
 	if now == nil {
 		now = time.Now
 	}
+	return &ExamPaperRemoteClient{publicURL: publicParsed, internalURL: internalParsed, signer: signer, client: client, now: now}, nil
+}
+
+func parseExamPaperRemoteURL(value string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return nil, ErrExamPaperRemoteInvalidURL
+	}
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && (parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost")) {
+		return nil, ErrExamPaperRemoteInvalidURL
+	}
 	parsed.Path = ""
-	return &ExamPaperRemoteClient{baseURL: parsed, signer: signer, client: client, now: now}, nil
+	return parsed, nil
 }
 
 // SignedFileURL 生成只允许指定试卷和用途使用的短时文件地址。
 func (c *ExamPaperRemoteClient) SignedFileURL(paper models.ExamPaper, purpose string, ttl time.Duration) (string, error) {
-	if c == nil || c.baseURL == nil || c.signer == nil || c.now == nil {
+	if c == nil || c.publicURL == nil || c.internalURL == nil || c.signer == nil || c.now == nil {
 		return "", ErrExamPaperRemoteInvalidURL
 	}
 	if purpose != ExamPaperStoragePurposePreview && purpose != ExamPaperStoragePurposeDownload {
@@ -88,7 +106,7 @@ func (c *ExamPaperRemoteClient) SignedFileURL(paper models.ExamPaper, purpose st
 	if paper.ID == 0 || ttl <= 0 || !validExamPaperRemoteFileKey(paper.FileKey) {
 		return "", ErrExamPaperRemoteInvalidFileKey
 	}
-	requestURL := c.endpoint("/v1/files/" + url.PathEscape(paper.FileKey))
+	requestURL := c.publicEndpoint("/v1/files/" + url.PathEscape(paper.FileKey))
 	now := c.now()
 	token, err := c.signer.SignGrant(ExamPaperStorageGrant{
 		Purpose: purpose, FileKey: paper.FileKey, PaperID: paper.ID, Method: http.MethodGet,
@@ -158,7 +176,7 @@ func (c *ExamPaperRemoteClient) doJSON(ctx context.Context, method, escapedPath,
 	if fileKey != "" && !validExamPaperRemoteFileKey(fileKey) {
 		return ErrExamPaperRemoteInvalidFileKey
 	}
-	requestURL := c.endpoint(escapedPath)
+	requestURL := c.internalEndpoint(escapedPath)
 	now := c.now()
 	token, err := c.signer.SignGrant(ExamPaperStorageGrant{
 		Purpose: purpose, FileKey: fileKey, Method: method, Path: requestURL.EscapedPath(),
@@ -205,8 +223,16 @@ func (c *ExamPaperRemoteClient) doJSON(ctx context.Context, method, escapedPath,
 	return nil
 }
 
-func (c *ExamPaperRemoteClient) endpoint(escapedPath string) *url.URL {
-	result := *c.baseURL
+func (c *ExamPaperRemoteClient) publicEndpoint(escapedPath string) *url.URL {
+	return endpointFromBase(c.publicURL, escapedPath)
+}
+
+func (c *ExamPaperRemoteClient) internalEndpoint(escapedPath string) *url.URL {
+	return endpointFromBase(c.internalURL, escapedPath)
+}
+
+func endpointFromBase(baseURL *url.URL, escapedPath string) *url.URL {
+	result := *baseURL
 	decodedPath, _ := url.PathUnescape(escapedPath)
 	result.Path = decodedPath
 	result.RawPath = escapedPath

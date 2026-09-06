@@ -219,19 +219,21 @@ func (AIBudgetReservation) TableName() string { return "ai_budget_reservations" 
 
 // AIUsageRecord 只保存计量，不保存问题、提示词或完整工具结果。
 type AIUsageRecord struct {
-	ID                  uint64    `gorm:"primaryKey" json:"id"`
-	RunID               string    `gorm:"type:varchar(36);not null;uniqueIndex" json:"run_id"`
-	UserHash            string    `gorm:"size:64;not null;index" json:"user_hash"`
-	Provider            string    `gorm:"size:32;not null" json:"provider"`
-	Model               string    `gorm:"size:100;not null" json:"model"`
-	InputTokens         int       `gorm:"not null;default:0" json:"input_tokens"`
-	OutputTokens        int       `gorm:"not null;default:0" json:"output_tokens"`
-	CacheHitTokens      int       `gorm:"not null;default:0" json:"cache_hit_tokens"`
-	CostMicroYuan       int64     `gorm:"not null;default:0" json:"cost_micro_yuan"`
-	LatencyMilliseconds int64     `gorm:"not null;default:0" json:"latency_ms"`
-	ErrorClass          string    `gorm:"size:64;not null;default:''" json:"error_class,omitempty"`
-	Purpose             string    `gorm:"size:32;not null;default:'campus_agent';index" json:"purpose"`
-	CreatedAt           time.Time `gorm:"index" json:"created_at"`
+	ID                  uint64         `gorm:"primaryKey" json:"id"`
+	RunID               string         `gorm:"type:varchar(36);not null;uniqueIndex" json:"run_id"`
+	UserHash            string         `gorm:"size:64;not null;index" json:"user_hash"`
+	Provider            string         `gorm:"size:32;not null" json:"provider"`
+	Model               string         `gorm:"size:100;not null" json:"model"`
+	InputTokens         int            `gorm:"not null;default:0" json:"input_tokens"`
+	OutputTokens        int            `gorm:"not null;default:0" json:"output_tokens"`
+	CacheHitTokens      int            `gorm:"not null;default:0" json:"cache_hit_tokens"`
+	CacheWriteTokens    int            `gorm:"not null;default:0" json:"cache_write_tokens"`
+	ModelUsage          datatypes.JSON `gorm:"type:jsonb" json:"model_usage,omitempty"`
+	CostMicroYuan       int64          `gorm:"not null;default:0" json:"cost_micro_yuan"`
+	LatencyMilliseconds int64          `gorm:"not null;default:0" json:"latency_ms"`
+	ErrorClass          string         `gorm:"size:64;not null;default:''" json:"error_class,omitempty"`
+	Purpose             string         `gorm:"size:32;not null;default:'campus_agent';index" json:"purpose"`
+	CreatedAt           time.Time      `gorm:"index" json:"created_at"`
 }
 
 func (AIUsageRecord) TableName() string { return "ai_usage_records" }

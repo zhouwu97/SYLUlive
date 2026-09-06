@@ -35,9 +35,11 @@
 | `POST` | `/api/verify_code` | 验证邮箱验证码 |
 | `POST` | `/api/register` | 用户注册 (邮箱) |
 | `POST` | `/api/login` | 用户登录 (邮箱+密码) |
-| `POST` | `/api/login_edu` | 教务系统登录绑定 |
-| `POST` | `/api/register_with_edu` | 仅教务绑定的一键注册 |
-| `POST` | `/api/forgot_password` | 忘记密码找回 |
+| `POST` | `/api/login_edu` | 已退役，固定返回 `410` |
+| `POST` | `/api/register_with_edu` | 已退役，固定返回 `410` |
+| `POST` | `/api/password/email/code` | 发送邮箱密码找回验证码 |
+| `POST` | `/api/password/email/reset` | 使用邮箱验证码重置密码 |
+| `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
 
 ## 2. 用户与个人中心 (User)
@@ -61,13 +63,17 @@
 
 ## 3. 教务系统 (Edu)
 
+服务端按应用账号持久化教务绑定和加密授权，重新登录或重装客户端后可自动恢复；
+课表、成绩等拉取结果仍按应用账号隔离并缓存到客户端。只有显式解除绑定才会撤销服务端授权。
+
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/edu/bind` | 绑定强智教务系统 |
-| `DELETE` | `/api/edu/bind` | 解绑教务系统 |
-| `GET` | `/api/edu/status` | 获取当前教务绑定状态 |
-| `POST` | `/api/edu/courses` | 抓取或获取教务课表 |
-| `POST` | `/api/edu/grades` | 查询教务成绩 |
+| `POST` | `/api/edu/bind` | 绑定并加密保存当前应用账号的教务授权 |
+| `DELETE` | `/api/edu/bind` | 显式解除绑定并撤销服务端授权 |
+| `GET` | `/api/edu/status` | 查询绑定状态和会话恢复状态，不返回密码或 Cookie |
+| `POST` | `/api/edu/session/resume` | 恢复已保存授权的教务会话 |
+| `POST` | `/api/edu/courses` | 拉取课表，结果由客户端缓存 |
+| `POST` | `/api/edu/grades` | 拉取成绩，结果由客户端缓存 |
 | `POST` | `/api/exam/extract` | 融智云考题库一键提取 |
 | `POST` | `/api/erke/scores` | 青年之声（第二课堂）学分查询 |
 
@@ -177,8 +183,10 @@ FEED-H1 加固：
 |---|---|---|
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
 | `GET` | `/api/teachers/:id` | 获取教师详情及评价 |
-| `POST` | `/api/teachers/:id/rate` | 评价教师 |
+| `POST` | `/api/teachers/:id/rate` | 兼容入口：转入课程评价状态机 |
 | `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
+| `POST` | `/api/course-evaluations` | 创建课程评价（重复目标返回 409） |
+| `PATCH` | `/api/user/course-evaluations/:id` | 更新课程评价（必须携带当前 `revision`） |
 | `GET` | `/api/majors` | 获取专业评价列表 |
 | `GET` | `/api/majors/:id` | 获取专业详情及评价 |
 | `POST` | `/api/majors/:id/rate` | 评价专业 |
@@ -190,8 +198,11 @@ FEED-H1 加固：
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 | `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
-| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者 |
+| `POST` | `/api/canteens/:id/approve` | (管理员) 通过审核，文件转 `public`，通知提交者；提交者获得 10 经验奖励（幂等，仅用户提交，响应含 `exp_awarded`） |
 | `DELETE` | `/api/canteens/:id/pending` | (管理员) 驳回并删除待审提交，可带 `{"reason": "..."}` 通知提交者 |
+| `POST` | `/api/canteens/:id/offline` | (管理员) 下架已公开食堂（历史数据保留）；如有未收回的提交奖励经验则收回，经验扣至下限 0 |
+| `POST` | `/api/canteens/:id/online` | (管理员) 恢复已下架食堂；返还此前因下架收回的提交奖励经验 |
+| `DELETE` | `/api/canteens/:id` | (管理员) 永久删除食堂；如有未收回的提交奖励经验则收回 |
 
 ### 食堂评价投票
 

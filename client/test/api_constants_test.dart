@@ -88,5 +88,13 @@ void main() {
       ApiConstants.imageVariant('/uploads/a/a_thumb.jpg', 'medium'),
       '/uploads/a/a_v1_medium.jpg',
     );
+    expect(
+      ApiConstants.imageVariant('/uploads/a/a_v1_viewer.jpg', 'thumb'),
+      '/uploads/a/a_v1_thumb.jpg',
+    );
+    expect(
+      ApiConstants.imageVariant('/uploads/a/animation.gif', 'viewer'),
+      '/uploads/a/animation_v1_viewer.jpg',
+    );
   });
 }

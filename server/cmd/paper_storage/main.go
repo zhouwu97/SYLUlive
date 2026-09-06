@@ -26,6 +26,10 @@ type paperStorageConfig struct {
 	SigningSecret            string
 	ReceiptSecret            string
 	MaxConcurrentValidations int
+	UseAccelRedirect         bool
+	WarningPercent           float64
+	UploadStopPercent        float64
+	ReadonlyPercent          float64
 }
 
 func loadPaperStorageConfig(getenv func(string) string) (paperStorageConfig, error) {
@@ -35,8 +39,16 @@ func loadPaperStorageConfig(getenv func(string) string) (paperStorageConfig, err
 		SigningSecret:            strings.TrimSpace(getenv("PAPER_STORAGE_SIGNING_SECRET")),
 		ReceiptSecret:            strings.TrimSpace(getenv("PAPER_STORAGE_RECEIPT_SECRET")),
 		MaxConcurrentValidations: 2,
+		UseAccelRedirect:         true,
+		WarningPercent:           70,
+		UploadStopPercent:        85,
+		ReadonlyPercent:          95,
 	}
 	concurrencyText := strings.TrimSpace(getenv("PAPER_STORAGE_MAX_CONCURRENT_VALIDATIONS"))
+	accelText := strings.TrimSpace(getenv("PAPER_STORAGE_USE_ACCEL_REDIRECT"))
+	warningText := strings.TrimSpace(getenv("PAPER_STORAGE_WARNING_PERCENT"))
+	uploadStopText := strings.TrimSpace(getenv("PAPER_STORAGE_UPLOAD_STOP_PERCENT"))
+	readonlyText := strings.TrimSpace(getenv("PAPER_STORAGE_READONLY_PERCENT"))
 	if config.Listen == "" {
 		config.Listen = ":8081"
 	}
@@ -59,7 +71,38 @@ func loadPaperStorageConfig(getenv func(string) string) (paperStorageConfig, err
 		}
 		config.MaxConcurrentValidations = value
 	}
+	if accelText != "" {
+		value, err := strconv.ParseBool(accelText)
+		if err != nil {
+			return paperStorageConfig{}, fmt.Errorf("X-Accel-Redirect 开关必须为 true 或 false")
+		}
+		config.UseAccelRedirect = value
+	}
+	var err error
+	if config.WarningPercent, err = parseStoragePercent(warningText, config.WarningPercent); err != nil {
+		return paperStorageConfig{}, fmt.Errorf("磁盘告警阈值无效: %w", err)
+	}
+	if config.UploadStopPercent, err = parseStoragePercent(uploadStopText, config.UploadStopPercent); err != nil {
+		return paperStorageConfig{}, fmt.Errorf("停止上传阈值无效: %w", err)
+	}
+	if config.ReadonlyPercent, err = parseStoragePercent(readonlyText, config.ReadonlyPercent); err != nil {
+		return paperStorageConfig{}, fmt.Errorf("只读阈值无效: %w", err)
+	}
+	if !(config.WarningPercent < config.UploadStopPercent && config.UploadStopPercent < config.ReadonlyPercent) {
+		return paperStorageConfig{}, fmt.Errorf("磁盘阈值必须满足 warning < upload-stop < readonly")
+	}
 	return config, nil
+}
+
+func parseStoragePercent(text string, defaultValue float64) (float64, error) {
+	if text == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.ParseFloat(text, 64)
+	if err != nil || value <= 0 || value > 100 {
+		return 0, fmt.Errorf("必须是 0 到 100 之间的数字")
+	}
+	return value, nil
 }
 
 func run(ctx context.Context, config paperStorageConfig) error {
@@ -79,7 +122,10 @@ func run(ctx context.Context, config paperStorageConfig) error {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
-	handler := handlers.NewPaperStorageHandler(files, grantSigner, receiptSigner, config.MaxConcurrentValidations)
+	handler := handlers.NewPaperStorageHandlerWithOptions(files, grantSigner, receiptSigner, config.MaxConcurrentValidations, handlers.PaperStorageOptions{
+		UseAccelRedirect: config.UseAccelRedirect, WarningPercent: config.WarningPercent,
+		UploadStopPercent: config.UploadStopPercent, ReadonlyPercent: config.ReadonlyPercent,
+	})
 	handlers.RegisterPaperStorageRoutes(router, handler)
 
 	listener, err := net.Listen("tcp", config.Listen)

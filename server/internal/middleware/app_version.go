@@ -16,6 +16,7 @@ import (
 const (
 	appVersionPlatformHeader = "X-App-Platform"
 	appVersionChannelHeader  = "X-App-Channel"
+	appVersionNameHeader     = "X-App-Version-Name"
 	appVersionCodeHeader     = "X-App-Version-Code"
 )
 
@@ -31,8 +32,9 @@ func AppVersionMiddleware(db *gorm.DB, enabled, allowMissingVersionHeaders bool)
 
 		platform := strings.TrimSpace(c.GetHeader(appVersionPlatformHeader))
 		channel := strings.TrimSpace(c.GetHeader(appVersionChannelHeader))
+		versionName := strings.TrimSpace(c.GetHeader(appVersionNameHeader))
 		versionCodeRaw := strings.TrimSpace(c.GetHeader(appVersionCodeHeader))
-		if platform == "" || channel == "" || versionCodeRaw == "" {
+		if platform == "" || channel == "" || versionName == "" || versionCodeRaw == "" {
 			if allowMissingVersionHeaders {
 				log.Printf("[APP_VERSION] 放行缺少版本头的请求 method=%s path=%s", c.Request.Method, c.Request.URL.Path)
 				c.Next()

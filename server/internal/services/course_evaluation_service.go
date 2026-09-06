@@ -1,0 +1,957 @@
+package services
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"shenliyuan/internal/models"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// 课程评价的稳定业务错误码。客户端据此映射到已有状态，
+// 不依赖 HTTP 文本或数据库错误信息。
+const (
+	CodeInvalidCourseEvaluationInput       = "invalid_course_evaluation_input"
+	CodeCourseEvaluationCandidateRequired  = "course_subject_candidate_required"
+	CodeCourseEvaluationRevisionConflict   = "course_evaluation_revision_conflict"
+	CodeCourseEvaluationForbidden          = "course_evaluation_forbidden"
+	CodeCourseEvaluationReasonRequired     = "course_evaluation_rejection_reason_required"
+	CodeCourseEvaluationNotFound           = "course_evaluation_not_found"
+	CodeCourseEvaluationNotPending         = "course_evaluation_not_pending"
+	CodeCourseEvaluationSubjectUnavailable = "course_evaluation_subject_unavailable"
+	CodeCourseEvaluationAlreadyExists      = "course_evaluation_already_exists"
+	CodeCourseEvaluationDuplicateTarget    = "course_evaluation_duplicate_target"
+)
+
+// CourseEvaluationError 承载稳定业务码与服务内部错误。
+type CourseEvaluationError struct {
+	Code    string
+	Message string
+	Err     error
+	Details map[string]interface{}
+}
+
+func (e *CourseEvaluationError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
+	}
+	return e.Message
+}
+
+func (e *CourseEvaluationError) Unwrap() error { return e.Err }
+
+// CourseEvaluationHTTPStatus 把业务码映射为 HTTP 状态码。
+func CourseEvaluationHTTPStatus(code string) int {
+	switch code {
+	case CodeInvalidCourseEvaluationInput, CodeCourseEvaluationReasonRequired:
+		return 400
+	case CodeCourseEvaluationForbidden:
+		return 403
+	case CodeCourseEvaluationNotFound:
+		return 404
+	case CodeCourseEvaluationRevisionConflict, CodeCourseEvaluationCandidateRequired,
+		CodeCourseEvaluationNotPending, CodeCourseEvaluationSubjectUnavailable,
+		CodeCourseEvaluationAlreadyExists, CodeCourseEvaluationDuplicateTarget:
+		return 409
+	default:
+		return 500
+	}
+}
+
+func courseEvalErr(code, message string, err error) *CourseEvaluationError {
+	return &CourseEvaluationError{Code: code, Message: message, Err: err}
+}
+
+func courseEvalErrWithDetails(code, message string, details map[string]interface{}) *CourseEvaluationError {
+	return &CourseEvaluationError{Code: code, Message: message, Details: details}
+}
+
+// CourseSubjectCandidate 学科候选。
+type CourseSubjectCandidate struct {
+	ID       uint   `json:"id"`
+	Name     string `json:"name"`
+	Verified bool   `json:"verified"`
+	Match    string `json:"match"`
+}
+
+// TeacherCandidate 教师候选。
+type TeacherCandidate struct {
+	ID       uint   `json:"id"`
+	Name     string `json:"name"`
+	Verified bool   `json:"verified"`
+	Match    string `json:"match"`
+}
+
+// ResolveResult 解析结果。RequiresConfirmation 为 true 时必须由用户选择候选后再提交。
+type ResolveResult struct {
+	CourseName           string                   `json:"course_name"`
+	TeacherName          string                   `json:"teacher_name"`
+	CourseSubjects       []CourseSubjectCandidate `json:"course_subjects"`
+	Teachers             []TeacherCandidate       `json:"teachers"`
+	SelectedSubjectID    *uint                    `json:"selected_course_subject_id,omitempty"`
+	SelectedTeacherID    *uint                    `json:"selected_teacher_id,omitempty"`
+	RequiresConfirmation bool                     `json:"requires_confirmation"`
+	Code                 string                   `json:"code,omitempty"`
+	Submission           *SubmissionView          `json:"submission,omitempty"`
+}
+
+// CreateCourseEvaluationInput 用户创建课程评价时的输入。
+// 创建语义不携带 revision；同一去重键已存在时由服务返回冲突。
+// 刻意不包含教室、周次、节次等课表私有字段。
+type CreateCourseEvaluationInput struct {
+	CourseName      string `json:"course_name"`
+	CourseSubjectID *uint  `json:"course_subject_id"`
+	TeacherName     string `json:"teacher_name"`
+	TeacherID       *uint  `json:"teacher_id"`
+	Star            int    `json:"star"`
+	Comment         string `json:"comment"`
+}
+
+// UpdateCourseEvaluationInput 用户编辑既有课程评价时的输入。
+// revision 是必需的乐观并发版本，禁止使用 0 表示“忽略检查”。
+type UpdateCourseEvaluationInput struct {
+	CourseName      string `json:"course_name"`
+	CourseSubjectID *uint  `json:"course_subject_id"`
+	TeacherName     string `json:"teacher_name"`
+	TeacherID       *uint  `json:"teacher_id"`
+	Star            int    `json:"star"`
+	Comment         string `json:"comment"`
+	Revision        int    `json:"revision"`
+}
+
+// courseEvaluationInput 是状态机内部使用的统一字段集，避免把创建版本字段
+// 意外带入更新校验或反过来让创建路径承担 revision 语义。
+type courseEvaluationInput struct {
+	CourseName      string
+	CourseSubjectID *uint
+	TeacherName     string
+	TeacherID       *uint
+	Star            int
+	Comment         string
+}
+
+// SubmissionView 提交记录的对外视图。
+type SubmissionView struct {
+	ID                  uint      `json:"id"`
+	UserID              uint      `json:"user_id"`
+	CourseName          string    `json:"course_name"`
+	CourseSubjectID     *uint     `json:"course_subject_id,omitempty"`
+	CourseSubjectName   string    `json:"course_subject_name,omitempty"`
+	TeacherName         string    `json:"teacher_name"`
+	TeacherID           *uint     `json:"teacher_id,omitempty"`
+	Star                int       `json:"star"`
+	Comment             string    `json:"comment"`
+	Status              string    `json:"status"`
+	Source              string    `json:"source"`
+	Revision            int       `json:"revision"`
+	ReviewReason        string    `json:"review_reason,omitempty"`
+	TeacherRatingID     *uint     `json:"teacher_rating_id,omitempty"`
+	ProposedCourseName  string    `json:"proposed_course_name,omitempty"`
+	ProposedTeacherName string    `json:"proposed_teacher_name,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+
+	// 审核端展示用的派生字段
+	WillCreateSubject bool   `json:"will_create_subject"`
+	ReviewerName      string `json:"reviewer_name,omitempty"`
+}
+
+// SubmissionPage 游标分页结果。
+type SubmissionPage struct {
+	Items      []SubmissionView `json:"items"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+	HasMore    bool             `json:"has_more"`
+}
+
+const courseEvaluationDefaultPageSize = 20
+const courseEvaluationMaxPageSize = 50
+
+// CourseEvaluationService 课程评价状态机。
+type CourseEvaluationService struct {
+	db *gorm.DB
+}
+
+func NewCourseEvaluationService(db *gorm.DB) *CourseEvaluationService {
+	return &CourseEvaluationService{db: db}
+}
+
+// validateCourseEvaluationFields 校验并规范化创建、更新共用的业务字段。
+func validateCourseEvaluationFields(courseName, teacherName string, star int, comment string,
+	courseSubjectID, teacherID *uint) (courseEvaluationInput, error) {
+	in := courseEvaluationInput{
+		CourseName:      models.CanonicalCourseSubjectName(courseName),
+		CourseSubjectID: courseSubjectID,
+		TeacherName:     strings.TrimSpace(teacherName),
+		TeacherID:       teacherID,
+		Star:            star,
+		Comment:         strings.TrimSpace(comment),
+	}
+	if in.CourseName == "" {
+		return in, courseEvalErr(CodeInvalidCourseEvaluationInput, "课程名不能为空", nil)
+	}
+	if in.TeacherName == "" {
+		return in, courseEvalErr(CodeInvalidCourseEvaluationInput, "教师名不能为空", nil)
+	}
+	if in.Star < 1 || in.Star > 5 {
+		return in, courseEvalErr(CodeInvalidCourseEvaluationInput, "星级必须为 1-5", nil)
+	}
+	if models.CourseEvaluationCommentLength(in.Comment) > models.CourseEvaluationCommentMaxRunes {
+		return in, courseEvalErr(CodeInvalidCourseEvaluationInput,
+			fmt.Sprintf("评论不能超过 %d 字", models.CourseEvaluationCommentMaxRunes), nil)
+	}
+	if len([]rune(in.CourseName)) > models.CourseSubjectNameMaxLength {
+		return in, courseEvalErr(CodeInvalidCourseEvaluationInput, "课程名过长", nil)
+	}
+	return in, nil
+}
+
+func validateCreateInput(in CreateCourseEvaluationInput) (courseEvaluationInput, error) {
+	return validateCourseEvaluationFields(in.CourseName, in.TeacherName, in.Star, in.Comment,
+		in.CourseSubjectID, in.TeacherID)
+}
+
+func validateUpdateInput(in UpdateCourseEvaluationInput) (courseEvaluationInput, error) {
+	if in.Revision < 1 {
+		return courseEvaluationInput{}, courseEvalErr(CodeInvalidCourseEvaluationInput,
+			"revision 必须大于等于 1", nil)
+	}
+	return validateCourseEvaluationFields(in.CourseName, in.TeacherName, in.Star, in.Comment,
+		in.CourseSubjectID, in.TeacherID)
+}
+
+// Resolve 解析课程名与教师名，返回候选或当前用户的既有提交。
+// 候选多于一个、或候选来自别名/包含关系时要求用户显式确认。
+func (s *CourseEvaluationService) Resolve(userID uint, courseName, teacherName string) (*ResolveResult, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	courseName = models.CanonicalCourseSubjectName(courseName)
+	teacherName = strings.TrimSpace(teacherName)
+	if courseName == "" || teacherName == "" {
+		return nil, courseEvalErr(CodeInvalidCourseEvaluationInput, "课程名与教师名不能为空", nil)
+	}
+
+	result := &ResolveResult{
+		CourseName:     courseName,
+		TeacherName:    teacherName,
+		CourseSubjects: []CourseSubjectCandidate{},
+		Teachers:       []TeacherCandidate{},
+	}
+
+	subjects, err := s.resolveSubjects(courseName)
+	if err != nil {
+		return nil, err
+	}
+	result.CourseSubjects = subjects
+
+	if len(subjects) == 1 && subjects[0].Match == string(models.CourseSubjectMatchExact) {
+		id := subjects[0].ID
+		result.SelectedSubjectID = &id
+		result.Teachers, err = s.resolveTeachers(id, teacherName)
+		if err != nil {
+			return nil, err
+		}
+		if len(result.Teachers) == 1 && result.Teachers[0].Match == "exact" {
+			tid := result.Teachers[0].ID
+			result.SelectedTeacherID = &tid
+		}
+	}
+
+	// 需要确认的条件：多个候选，或唯一候选来自别名/包含关系。
+	if len(subjects) != 1 || subjects[0].Match != string(models.CourseSubjectMatchExact) {
+		result.RequiresConfirmation = true
+		result.Code = CodeCourseEvaluationCandidateRequired
+	}
+
+	if userID != 0 {
+		existing, err := s.findSubmissionByDedup(userID, courseName, teacherName)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			view, err := s.toSubmissionView(existing)
+			if err != nil {
+				return nil, err
+			}
+			result.Submission = view
+		}
+	}
+	return result, nil
+}
+
+// resolveSubjects 依次按精确、别名、包含关系收集学科候选。
+func (s *CourseEvaluationService) resolveSubjects(courseName string) ([]CourseSubjectCandidate, error) {
+	normalized := models.NormalizeCourseSubjectName(courseName)
+	seen := map[uint]CourseSubjectCandidate{}
+
+	var exact []models.CourseSubject
+	if err := s.db.Where("normalized_name = ?", normalized).
+		Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&exact).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
+	}
+	for _, subject := range exact {
+		seen[subject.ID] = CourseSubjectCandidate{
+			ID: subject.ID, Name: subject.Name, Verified: subject.Verified,
+			Match: string(models.CourseSubjectMatchExact),
+		}
+	}
+
+	if len(seen) == 0 {
+		var aliases []models.CourseSubjectAlias
+		if err := s.db.Where("normalized_alias = ?", normalized).
+			Order("id ASC").Limit(courseEvaluationMaxPageSize).Find(&aliases).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科别名失败", err)
+		}
+		for _, alias := range aliases {
+			if _, ok := seen[alias.CourseSubjectID]; ok {
+				continue
+			}
+			var subject models.CourseSubject
+			if err := s.db.First(&subject, alias.CourseSubjectID).Error; err != nil {
+				continue
+			}
+			seen[subject.ID] = CourseSubjectCandidate{
+				ID: subject.ID, Name: subject.Name, Verified: subject.Verified,
+				Match: string(models.CourseSubjectMatchAlias),
+			}
+		}
+	}
+
+	if len(seen) == 0 && len([]rune(normalized)) >= 2 {
+		var contains []models.CourseSubject
+		if err := s.db.Where("normalized_name LIKE ?", "%"+escapeLike(normalized)+"%").
+			Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&contains).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
+		}
+		for _, subject := range contains {
+			seen[subject.ID] = CourseSubjectCandidate{
+				ID: subject.ID, Name: subject.Name, Verified: subject.Verified,
+				Match: string(models.CourseSubjectMatchContains),
+			}
+		}
+	}
+
+	out := make([]CourseSubjectCandidate, 0, len(seen))
+	for _, c := range seen {
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// resolveTeachers 在指定学科内按规范化名称解析教师候选。
+func (s *CourseEvaluationService) resolveTeachers(subjectID uint, teacherName string) ([]TeacherCandidate, error) {
+	normalized := models.NormalizeTeacherName(teacherName)
+	if normalized == "" || subjectID == 0 {
+		return []TeacherCandidate{}, nil
+	}
+	var teachers []models.Teacher
+	if err := s.db.Where("course_subject_id = ? AND name_normalized = ?", subjectID, normalized).
+		Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&teachers).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师失败", err)
+	}
+	out := make([]TeacherCandidate, 0, len(teachers))
+	for _, t := range teachers {
+		out = append(out, TeacherCandidate{ID: t.ID, Name: t.Name, Verified: t.Verified, Match: "exact"})
+	}
+	return out, nil
+}
+
+func (s *CourseEvaluationService) findSubmissionByDedup(userID uint, courseName, teacherName string) (*models.CourseEvaluationSubmission, error) {
+	key := models.CourseEvaluationDedupKey(userID, courseName, teacherName)
+	var submission models.CourseEvaluationSubmission
+	err := s.db.Where("user_id = ? AND dedup_key = ?", userID, key).First(&submission).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取提交记录失败", err)
+	}
+	return &submission, nil
+}
+
+// Submit 创建当前用户的一条课程评价提交。
+// POST 是 Create-only：同一去重键已存在时返回冲突，不静默覆盖原提交。
+// 已审核学科 + 已审核教师直接发布并 upsert 教师评价；否则保持 pending 等待审核。
+func (s *CourseEvaluationService) Submit(userID uint, raw CreateCourseEvaluationInput) (*SubmissionView, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	if userID == 0 {
+		return nil, courseEvalErr(CodeCourseEvaluationForbidden, "请先登录", nil)
+	}
+	input, err := validateCreateInput(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var view *SubmissionView
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		input = canonicalizeTargetNames(tx, input)
+		existing, err := s.findSubmissionByDedupTx(tx, userID, input.CourseName, input.TeacherName)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			return courseEvalErrWithDetails(CodeCourseEvaluationAlreadyExists,
+				"该课程与教师已经提交过评价", map[string]interface{}{
+					"existing_submission_id": existing.ID,
+				})
+		}
+		submission := models.CourseEvaluationSubmission{
+			UserID:      userID,
+			DedupKey:    models.CourseEvaluationDedupKey(userID, input.CourseName, input.TeacherName),
+			Source:      models.CourseEvaluationSourceSchedule,
+			CourseName:  input.CourseName,
+			TeacherName: input.TeacherName,
+			Star:        input.Star,
+			Comment:     input.Comment,
+			Status:      models.CourseEvaluationStatusPending,
+			Revision:    1,
+		}
+		view, err = s.applySubmission(tx, &submission, input, false)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// Update 编辑既有提交记录。
+// 每次成功编辑都严格校验并递增 revision；最终仍为 pending 时清除旧审核元数据。
+func (s *CourseEvaluationService) Update(userID, submissionID uint, raw UpdateCourseEvaluationInput) (*SubmissionView, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	if userID == 0 {
+		return nil, courseEvalErr(CodeCourseEvaluationForbidden, "请先登录", nil)
+	}
+	input, err := validateUpdateInput(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var view *SubmissionView
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var submission models.CourseEvaluationSubmission
+		// 用户编辑也必须锁行；单纯先读再 Save 会让两个相同 revision 的并发
+		// 请求都通过检查，最后写入者静默覆盖前一个请求。
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", submissionID, userID).First(&submission).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return courseEvalErr(CodeCourseEvaluationNotFound, "评价记录不存在", nil)
+			}
+			return courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取评价记录失败", err)
+		}
+		if raw.Revision != submission.Revision {
+			return courseEvalErr(CodeCourseEvaluationRevisionConflict, "评价已被更新，请刷新后重试", nil)
+		}
+		input = canonicalizeTargetNames(tx, input)
+		target, err := s.findSubmissionByDedupTx(tx, userID, input.CourseName, input.TeacherName)
+		if err != nil {
+			return err
+		}
+		if target != nil && target.ID != submission.ID {
+			return courseEvalErrWithDetails(CodeCourseEvaluationDuplicateTarget,
+				"目标课程与教师已经存在另一条评价", map[string]interface{}{
+					"existing_submission_id": target.ID,
+				})
+		}
+		view, err = s.applySubmission(tx, &submission, input, true)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// RateVerifiedTeacher 兼容旧教师评分入口，但所有写入都转入课程评价状态机。
+// 旧接口只提供教师 ID，因此课程名和教师名均以数据库 canonical 值为准；
+// 若已经存在对应提交，则使用当前 revision 走 Update，而不是直接改 teacher_ratings。
+func (s *CourseEvaluationService) RateVerifiedTeacher(userID, teacherID uint, star int, comment string) (*SubmissionView, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	if userID == 0 {
+		return nil, courseEvalErr(CodeCourseEvaluationForbidden, "请先登录", nil)
+	}
+
+	var teacher models.Teacher
+	if err := s.db.Where("id = ? AND verified = ?", teacherID, true).First(&teacher).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, courseEvalErr(CodeCourseEvaluationNotFound, "教师不存在或未通过审核", nil)
+		}
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师失败", err)
+	}
+
+	createInput := CreateCourseEvaluationInput{
+		CourseName:      teacher.Course,
+		CourseSubjectID: teacher.CourseSubjectID,
+		TeacherName:     teacher.Name,
+		TeacherID:       &teacher.ID,
+		Star:            star,
+		Comment:         comment,
+	}
+	normalized, err := validateCreateInput(createInput)
+	if err != nil {
+		return nil, err
+	}
+	normalized = canonicalizeTargetNames(s.db, normalized)
+	existing, err := s.findSubmissionByDedup(userID, normalized.CourseName, normalized.TeacherName)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return s.Update(userID, existing.ID, UpdateCourseEvaluationInput{
+			CourseName:      normalized.CourseName,
+			CourseSubjectID: normalized.CourseSubjectID,
+			TeacherName:     normalized.TeacherName,
+			TeacherID:       normalized.TeacherID,
+			Star:            normalized.Star,
+			Comment:         normalized.Comment,
+			Revision:        existing.Revision,
+		})
+	}
+	return s.Submit(userID, createInput)
+}
+
+// applySubmission 是 Submit 与 Update 共用的核心状态机。
+//
+// 规则：
+//   - 已审核学科 + 已审核教师：upsert 教师评价并置 published；
+//   - 缺学科或缺教师：只保存 pending，不创建公开实体、教师或评价；
+//   - 候选不确定：返回 course_subject_candidate_required 要求用户确认；
+//   - 不信任客户端提供的任意教师 ID，只接受属于选定学科且已审核的教师。
+func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *models.CourseEvaluationSubmission, input courseEvaluationInput, isUpdate bool) (*SubmissionView, error) {
+	// 先保存旧关联，后续目标变化或重新进入待审核时必须在同一事务内撤销旧公开评分。
+	oldRatingID := submission.TeacherRatingID
+	oldTeacherID := submission.TeacherID
+	oldSubjectID := submission.CourseSubjectID
+	oldStatus := submission.Status
+	subject, candidates, err := s.selectSubject(tx, input)
+	if err != nil {
+		return nil, err
+	}
+	// 存在候选但无法唯一确定：要求用户确认后再提交，不自动选中。
+	// 候选为空时才走"新建学科"的 pending 路径。
+	if subject == nil && len(candidates) > 0 {
+		return nil, courseEvalErr(CodeCourseEvaluationCandidateRequired,
+			"存在多个候选学科，请选择后再提交", nil)
+	}
+
+	if isUpdate {
+		// 无论原状态和最终状态如何，业务编辑都必须推进版本，
+		// 让审核端的 revision CAS 覆盖 published → published 等路径。
+		submission.Revision++
+	}
+
+	submission.CourseName = input.CourseName
+	submission.TeacherName = input.TeacherName
+	submission.Star = input.Star
+	submission.Comment = input.Comment
+	submission.Source = models.CourseEvaluationSourceSchedule
+
+	if subject == nil {
+		// 缺学科：只保留用户提议，不创建公开实体。
+		submission.CourseSubjectID = nil
+		submission.CourseSubjectName = ""
+		submission.ProposedCourseName = input.CourseName
+		submission.Status = models.CourseEvaluationStatusPending
+		submission.TeacherRatingID = nil
+		submission.TeacherID = nil
+	} else {
+		submission.CourseSubjectID = &subject.ID
+		submission.CourseSubjectName = subject.Name
+		submission.ProposedCourseName = ""
+	}
+
+	var teacher *models.Teacher
+	if subject != nil {
+		teacher, err = s.selectTeacher(tx, subject, input)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// ID 是关系的唯一来源，展示名称始终使用数据库 canonical 值，避免 ID 与名称不一致污染历史数据。
+	if subject != nil {
+		input.CourseName = subject.Name
+	}
+	if teacher != nil {
+		input.TeacherName = teacher.Name
+	}
+	submission.DedupKey = models.CourseEvaluationDedupKey(
+		submission.UserID,
+		input.CourseName,
+		input.TeacherName,
+	)
+
+	newPublished := subject != nil && teacher != nil && subject.Verified && teacher.Verified
+	teacherChanged := !sameUintPtr(oldTeacherID, teacherIDPtr(teacher))
+	subjectChanged := !sameUintPtr(oldSubjectID, subjectIDPtr(subject))
+	if (oldRatingID != nil || oldStatus == models.CourseEvaluationStatusPublished) &&
+		(!newPublished || teacherChanged || subjectChanged) {
+		if err := deleteSubmissionRatings(tx, submission.ID, oldRatingID); err != nil {
+			return nil, err
+		}
+	}
+
+	switch {
+	case teacher == nil:
+		submission.TeacherID = nil
+		submission.ProposedTeacherName = input.TeacherName
+		submission.Status = models.CourseEvaluationStatusPending
+		submission.TeacherRatingID = nil
+	case newPublished:
+		// 已审核学科+已审核教师：先标记为已发布，保存获得稳定 ID 后再 upsert 教师评价。
+		submission.TeacherID = &teacher.ID
+		submission.ProposedTeacherName = ""
+		submission.Status = models.CourseEvaluationStatusPublished
+	default:
+		// 学科或教师未审核：保持 pending，只记录关联意图。
+		submission.TeacherID = &teacher.ID
+		submission.Status = models.CourseEvaluationStatusPending
+	}
+	if submission.Status == models.CourseEvaluationStatusPending {
+		// 进入待审核队列后，旧审核人、时间和原因都不再代表当前内容。
+		submission.ReviewedBy = nil
+		submission.ReviewedAt = nil
+		submission.ReviewReason = ""
+	}
+
+	// 先保存提交记录以获得稳定 ID。新建提交在关联教师评价前必须已有 ID，
+	// 否则教师评价的 CourseEvaluationSubmissionID 会悬空指向 0，破坏双向关联。
+	if submission.ID == 0 {
+		// 创建路径使用冲突即忽略，避免并发 POST 因唯一键竞争把数据库错误暴露给客户端。
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(submission)
+		if result.Error != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "保存评价失败", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			existing, findErr := (&CourseEvaluationService{db: tx}).findSubmissionByDedupTx(
+				tx, submission.UserID, submission.CourseName, submission.TeacherName)
+			if findErr != nil {
+				return nil, findErr
+			}
+			if existing != nil {
+				return nil, courseEvalErrWithDetails(CodeCourseEvaluationAlreadyExists,
+					"该课程与教师已经提交过评价", map[string]interface{}{
+						"existing_submission_id": existing.ID,
+					})
+			}
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "保存评价失败", nil)
+		}
+	} else if err := tx.Save(submission).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "保存评价失败", err)
+	}
+
+	// 已审核学科+已审核教师：upsert 教师评价并回填双向关联。
+	if subject != nil && teacher != nil && subject.Verified && teacher.Verified {
+		rating, err := upsertTeacherRating(tx, submission.UserID, teacher.ID, submission)
+		if err != nil {
+			return nil, err
+		}
+		submission.TeacherRatingID = &rating.ID
+		if err := tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", submission.ID).
+			Updates(map[string]interface{}{"teacher_rating_id": rating.ID}).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "保存评价失败", err)
+		}
+		submission.TeacherRatingID = &rating.ID
+	}
+
+	return s.toSubmissionView(submission)
+}
+
+// canonicalizeTargetNames 只依据客户端提供的实体 ID 读取展示名称；名称字段不再可信。
+func canonicalizeTargetNames(tx *gorm.DB, input courseEvaluationInput) courseEvaluationInput {
+	if input.CourseSubjectID != nil && *input.CourseSubjectID != 0 {
+		var subject models.CourseSubject
+		if err := tx.Select("id", "name").First(&subject, *input.CourseSubjectID).Error; err == nil {
+			input.CourseName = subject.Name
+		}
+	}
+	if input.TeacherID != nil && *input.TeacherID != 0 {
+		var teacher models.Teacher
+		if err := tx.Select("id", "name").First(&teacher, *input.TeacherID).Error; err == nil {
+			input.TeacherName = teacher.Name
+		}
+	}
+	return input
+}
+
+func sameUintPtr(left, right *uint) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func teacherIDPtr(value *models.Teacher) *uint {
+	if value == nil {
+		return nil
+	}
+	id := value.ID
+	return &id
+}
+
+func subjectIDPtr(value *models.CourseSubject) *uint {
+	if value == nil {
+		return nil
+	}
+	id := value.ID
+	return &id
+}
+
+// deleteSubmissionRatings 软删除提交曾经发布的全部评分，保留审计历史但从公开统计中移除。
+func deleteSubmissionRatings(tx *gorm.DB, submissionID uint, ratingID *uint) error {
+	if submissionID == 0 && (ratingID == nil || *ratingID == 0) {
+		return nil
+	}
+	query := tx.Where("course_evaluation_submission_id = ?", submissionID)
+	if ratingID != nil && *ratingID != 0 {
+		// 只允许删除当前提交的评分，或历史上未绑定提交的孤立评分，避免误删其他提交的公开评价。
+		query = tx.Where("(id = ? AND (course_evaluation_submission_id IS NULL OR course_evaluation_submission_id = ?)) OR course_evaluation_submission_id = ?", *ratingID, submissionID, submissionID)
+	}
+	if err := query.Delete(&models.TeacherRating{}).Error; err != nil {
+		return courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "清理旧教师评价失败", err)
+	}
+	return nil
+}
+
+// selectSubject 确定学科。返回 (nil, candidates>0, nil) 表示需要用户确认。
+func (s *CourseEvaluationService) selectSubject(tx *gorm.DB, input courseEvaluationInput) (*models.CourseSubject, []CourseSubjectCandidate, error) {
+	candidates, err := s.resolveSubjectsTx(tx, input.CourseName)
+	if err != nil {
+		return nil, nil, err
+	}
+	if input.CourseSubjectID != nil && *input.CourseSubjectID != 0 {
+		var subject models.CourseSubject
+		if err := tx.First(&subject, *input.CourseSubjectID).Error; err == nil {
+			return &subject, candidates, nil
+		}
+		// 客户端提交的 ID 不可信时回退到名称解析，不直接报错。
+	}
+	switch {
+	case len(candidates) == 1 && candidates[0].Match == string(models.CourseSubjectMatchExact):
+		var subject models.CourseSubject
+		if err := tx.First(&subject, candidates[0].ID).Error; err != nil {
+			return nil, nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
+		}
+		return &subject, candidates, nil
+	case len(candidates) == 0:
+		return nil, nil, nil
+	default:
+		return nil, candidates, nil
+	}
+}
+
+// selectTeacher 确定教师。客户端提交的 teacher_id 必须属于该学科且已审核，否则忽略。
+func (s *CourseEvaluationService) selectTeacher(tx *gorm.DB, subject *models.CourseSubject, input courseEvaluationInput) (*models.Teacher, error) {
+	if input.TeacherID != nil && *input.TeacherID != 0 {
+		var teacher models.Teacher
+		err := tx.Where("id = ? AND course_subject_id = ? AND verified = ?", *input.TeacherID, subject.ID, true).
+			First(&teacher).Error
+		if err == nil {
+			return &teacher, nil
+		}
+		// ID 不属于该学科或未审核：不信任，继续按名称解析。
+	}
+	teachers, err := s.resolveTeachersTx(tx, subject.ID, input.TeacherName)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range teachers {
+		if t.Verified {
+			var teacher models.Teacher
+			if err := tx.First(&teacher, t.ID).Error; err == nil {
+				return &teacher, nil
+			}
+		}
+	}
+	if len(teachers) > 0 {
+		var teacher models.Teacher
+		if err := tx.First(&teacher, teachers[0].ID).Error; err == nil {
+			return &teacher, nil
+		}
+	}
+	return nil, nil
+}
+
+// upsertTeacherRating 维护"一位用户对一位教师一条"的唯一约束。
+func upsertTeacherRating(tx *gorm.DB, userID, teacherID uint, submission *models.CourseEvaluationSubmission) (*models.TeacherRating, error) {
+	var rating models.TeacherRating
+	err := tx.Where("course_evaluation_submission_id = ?", submission.ID).First(&rating).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// 兼容旧入口产生的无提交关联评分；一旦复用会立即补上 canonical 关联。
+		err = tx.Where("teacher_id = ? AND user_id = ? AND course_evaluation_submission_id IS NULL", teacherID, userID).First(&rating).Error
+	}
+	switch {
+	case err == nil:
+		rating.Star = submission.Star
+		rating.Comment = submission.Comment
+		rating.Status = "normal"
+		rating.CourseEvaluationSubmissionID = &submission.ID
+		if err := tx.Save(&rating).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "更新教师评价失败", err)
+		}
+		return &rating, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		rating = models.TeacherRating{
+			TeacherID:                    teacherID,
+			UserID:                       userID,
+			Star:                         submission.Star,
+			Comment:                      submission.Comment,
+			Status:                       "normal",
+			CourseEvaluationSubmissionID: &submission.ID,
+		}
+		if err := tx.Create(&rating).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "创建教师评价失败", err)
+		}
+		return &rating, nil
+	default:
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师评价失败", err)
+	}
+}
+
+// ListMine 分页读取当前用户的提交记录。
+func (s *CourseEvaluationService) ListMine(userID uint, limit int, cursor string) (*SubmissionPage, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	if userID == 0 {
+		return nil, courseEvalErr(CodeCourseEvaluationForbidden, "请先登录", nil)
+	}
+	query := s.db.Model(&models.CourseEvaluationSubmission{}).Where("user_id = ?", userID)
+	return s.paginate(query, limit, cursor)
+}
+
+// ListPending 分页读取待审核的提交记录。
+func (s *CourseEvaluationService) ListPending(limit int, cursor string) (*SubmissionPage, error) {
+	if s == nil || s.db == nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "评价服务不可用", nil)
+	}
+	query := s.db.Model(&models.CourseEvaluationSubmission{}).
+		Where("status = ?", models.CourseEvaluationStatusPending)
+	return s.paginate(query, limit, cursor)
+}
+
+func (s *CourseEvaluationService) paginate(query *gorm.DB, limit int, cursor string) (*SubmissionPage, error) {
+	if limit <= 0 {
+		limit = courseEvaluationDefaultPageSize
+	}
+	if limit > courseEvaluationMaxPageSize {
+		limit = courseEvaluationMaxPageSize
+	}
+	if cursor != "" {
+		var cursorID uint
+		if _, err := fmt.Sscanf(cursor, "%d", &cursorID); err != nil || cursorID == 0 {
+			return nil, courseEvalErr(CodeInvalidCourseEvaluationInput, "无效的分页游标", nil)
+		}
+		query = query.Where("id < ?", cursorID)
+	}
+
+	var rows []models.CourseEvaluationSubmission
+	if err := query.Order("id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取评价列表失败", err)
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	page := &SubmissionPage{Items: []SubmissionView{}, HasMore: hasMore}
+	for i := range rows {
+		view, err := s.toSubmissionView(&rows[i])
+		if err != nil {
+			return nil, err
+		}
+		page.Items = append(page.Items, *view)
+	}
+	if hasMore && len(rows) > 0 {
+		page.NextCursor = fmt.Sprintf("%d", rows[len(rows)-1].ID)
+	}
+	return page, nil
+}
+
+func (s *CourseEvaluationService) findSubmissionByDedupTx(tx *gorm.DB, userID uint, courseName, teacherName string) (*models.CourseEvaluationSubmission, error) {
+	key := models.CourseEvaluationDedupKey(userID, courseName, teacherName)
+	var submission models.CourseEvaluationSubmission
+	err := tx.Where("user_id = ? AND dedup_key = ?", userID, key).First(&submission).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取提交记录失败", err)
+	}
+	return &submission, nil
+}
+
+func (s *CourseEvaluationService) resolveSubjectsTx(tx *gorm.DB, courseName string) ([]CourseSubjectCandidate, error) {
+	svc := &CourseEvaluationService{db: tx}
+	return svc.resolveSubjects(courseName)
+}
+
+func (s *CourseEvaluationService) resolveTeachersTx(tx *gorm.DB, subjectID uint, teacherName string) ([]TeacherCandidate, error) {
+	svc := &CourseEvaluationService{db: tx}
+	return svc.resolveTeachers(subjectID, teacherName)
+}
+
+func (s *CourseEvaluationService) toSubmissionView(sub *models.CourseEvaluationSubmission) (*SubmissionView, error) {
+	view := &SubmissionView{
+		ID:                  sub.ID,
+		UserID:              sub.UserID,
+		CourseName:          sub.CourseName,
+		CourseSubjectID:     sub.CourseSubjectID,
+		CourseSubjectName:   sub.CourseSubjectName,
+		TeacherName:         sub.TeacherName,
+		TeacherID:           sub.TeacherID,
+		Star:                sub.Star,
+		Comment:             sub.Comment,
+		Status:              sub.Status,
+		Source:              sub.Source,
+		Revision:            sub.Revision,
+		ReviewReason:        sub.ReviewReason,
+		TeacherRatingID:     sub.TeacherRatingID,
+		ProposedCourseName:  sub.ProposedCourseName,
+		ProposedTeacherName: sub.ProposedTeacherName,
+		CreatedAt:           sub.CreatedAt,
+		UpdatedAt:           sub.UpdatedAt,
+	}
+	if sub.CourseSubjectID == nil || *sub.CourseSubjectID == 0 {
+		view.WillCreateSubject = true
+	} else if sub.CourseSubjectName == "" {
+		var subject models.CourseSubject
+		if err := s.db.Select("id", "name").First(&subject, *sub.CourseSubjectID).Error; err == nil {
+			view.CourseSubjectName = subject.Name
+		}
+	}
+	if sub.ReviewedBy != nil && *sub.ReviewedBy != 0 {
+		var admin models.User
+		if err := s.db.Select("id", "nickname").First(&admin, *sub.ReviewedBy).Error; err == nil {
+			view.ReviewerName = admin.Nickname
+		}
+	}
+	return view, nil
+}
+
+// escapeLike 转义 LIKE 通配符，避免课程名中的 % 或 _ 变成通配符。
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// lockSubmissionForReview 在事务内锁定提交记录，避免并发审批互相覆盖。
+func lockSubmissionForReview(tx *gorm.DB, submissionID uint) (*models.CourseEvaluationSubmission, error) {
+	var submission models.CourseEvaluationSubmission
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", submissionID).First(&submission).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, courseEvalErr(CodeCourseEvaluationNotFound, "评价记录不存在", nil)
+	}
+	if err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "锁定评价记录失败", err)
+	}
+	return &submission, nil
+}

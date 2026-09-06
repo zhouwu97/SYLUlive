@@ -1,0 +1,36 @@
+{
+  "schema_version": "campus-agent-quality-split/v1",
+  "case_schema_version": "campus-agent-quality-case/v1",
+  "knowledge_version": "fixture-campus-kb-v1",
+  "evidence_type": "fixture",
+  "calibration": {
+    "path": "calibration/cases.jsonl",
+    "case_ids": [
+      "cal-policy-alias-retake-limit",
+      "cal-policy-colloquial-improve",
+      "cal-policy-typo-phone",
+      "cal-key-conclusion-transfer",
+      "cal-history-current-boundary"
+    ]
+  },
+  "holdout": {
+    "path": "holdout/cases.jsonl",
+    "case_ids": [
+      "holdout-stale-calendar",
+      "holdout-source-conflict",
+      "holdout-reliable-refusal",
+      "holdout-invalid-citation",
+      "holdout-history-distinguished",
+      "holdout-compound-retake",
+      "holdout-alias-scholarship",
+      "holdout-unknown-freshness"
+    ]
+  },
+  "minimums": {
+    "citation_validity": 1.0,
+    "freshness_safety": 1.0,
+    "key_conclusion_consistency": 1.0,
+    "refusal_accuracy": 1.0,
+    "historical_boundary": 1.0
+  }
+}

@@ -83,7 +83,7 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 
 	offset := (page - 1) * pageSize
 	var candidates []models.User
-	if err := query.Order("credit_score DESC, created_at DESC").Limit(pageSize+1).Offset(offset).Find(&candidates).Error; err != nil {
+	if err := query.Order("credit_score DESC, created_at DESC").Limit(pageSize + 1).Offset(offset).Find(&candidates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取候选人列表失败"})
 		return
 	}
@@ -444,14 +444,9 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-
-			"message": "已同意邀请，你已成为管理员",
-
-			"token": token,
-
-			"user": response,
-		})
+		payload := authSessionPayload(c, token, response)
+		payload["message"] = "已同意邀请，你已成为管理员"
+		c.JSON(http.StatusOK, payload)
 
 		return
 

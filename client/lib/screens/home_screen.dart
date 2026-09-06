@@ -149,7 +149,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
   VoidCallback? _unregisterResumeRefresh;
-  bool _feedFabVisible = true;
 
   int get _currentIndex => _mainTabLedger.currentIndex;
   set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
@@ -1644,9 +1643,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabTapped(int index) {
-    if (index == 0 && !_feedFabVisible) {
-      setState(() => _feedFabVisible = true);
-    }
     final useSideRail = ResponsiveUtil.useDesktopShell(context) &&
         !context.read<ThemeProvider>().floatingNavBar;
     if (useSideRail) {
@@ -1683,9 +1679,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _handleLiquidNavigationCommitted(int index) {
     if (!mounted) return;
-    if (index == 0 && !_feedFabVisible) {
-      setState(() => _feedFabVisible = true);
-    }
     if (index == _currentIndex) {
       _mainVisualIndex = index.toDouble();
       _mainVisualIndexListenable.value = _mainVisualIndex;
@@ -1726,9 +1719,7 @@ class _HomeScreenState extends State<HomeScreen>
     return _tabPages.putIfAbsent(index, () {
       switch (index) {
         case 0:
-          return ShuitieScreen(
-            onFabVisibilityChanged: _handleFeedFabVisibility,
-          );
+          return const ShuitieScreen();
         case 1:
           return const MarketScreen();
         case 2:
@@ -1741,13 +1732,6 @@ class _HomeScreenState extends State<HomeScreen>
           return const SizedBox.shrink();
       }
     });
-  }
-
-  void _handleFeedFabVisibility(bool visible) {
-    if (!mounted || _currentIndex != 0 || _feedFabVisible == visible) {
-      return;
-    }
-    setState(() => _feedFabVisible = visible);
   }
 
   List<Widget> _buildLazyTabChildren() {
@@ -1945,43 +1929,25 @@ class _HomeScreenState extends State<HomeScreen>
               },
             ),
       floatingActionButton: _currentIndex == 0 && useBottomNav
-          ? ExcludeSemantics(
-              excluding: !_feedFabVisible,
-              child: IgnorePointer(
-                ignoring: !_feedFabVisible,
-                child: AnimatedOpacity(
-                  opacity: _feedFabVisible ? 1 : 0,
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : AppMotion.micro,
-                  child: AnimatedScale(
-                    scale: _feedFabVisible ? 1 : 0.92,
-                    duration: MediaQuery.disableAnimationsOf(context)
-                        ? Duration.zero
-                        : AppMotion.micro,
-                    child: Theme(
-                      data: Theme.of(context).copyWith(
-                        floatingActionButtonTheme: Theme.of(context)
-                            .floatingActionButtonTheme
-                            .copyWith(
-                              sizeConstraints: const BoxConstraints.tightFor(
-                                width: 52,
-                                height: 52,
-                              ),
-                            ),
-                      ),
-                      child: FloatingActionButton(
-                        heroTag: 'home_fab',
-                        onPressed: () => _showPublishTypeSheet(context),
-                        backgroundColor: AppColors.brandPrimary,
-                        elevation: 2,
-                        shape: const CircleBorder(),
-                        child: const Icon(Icons.edit_rounded,
-                            color: Colors.white, size: 22),
+          ? Theme(
+              data: Theme.of(context).copyWith(
+                floatingActionButtonTheme: Theme.of(context)
+                    .floatingActionButtonTheme
+                    .copyWith(
+                      sizeConstraints: const BoxConstraints.tightFor(
+                        width: 52,
+                        height: 52,
                       ),
                     ),
-                  ),
-                ),
+              ),
+              child: FloatingActionButton(
+                heroTag: 'home_fab',
+                onPressed: () => _showPublishTypeSheet(context),
+                backgroundColor: AppColors.brandPrimary,
+                elevation: 2,
+                shape: const CircleBorder(),
+                child: const Icon(Icons.edit_rounded,
+                    color: Colors.white, size: 22),
               ),
             )
           : null,

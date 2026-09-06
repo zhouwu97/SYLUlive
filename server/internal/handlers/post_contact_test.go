@@ -62,6 +62,7 @@ func TestNormalizeMarketContact(t *testing.T) {
 func TestCreateAndUpdateMarketPostContact(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260718")
+	image := createMarketTagsTestImage(t, db, user.ID)
 	handler := NewPostHandler(db, "", "")
 
 	createForm := url.Values{
@@ -71,6 +72,7 @@ func TestCreateAndUpdateMarketPostContact(t *testing.T) {
 		"post_type":    {"sell"},
 		"contact_type": {"wechat"},
 		"contact":      {" wx_123 "},
+		"file_ids":     {strconv.FormatUint(uint64(image.ID), 10)},
 	}
 	recorder := performMarketContactRequest(t, handler.Create, user.ID, 0, createForm)
 	if recorder.Code != http.StatusCreated {
@@ -120,6 +122,7 @@ func TestCreateAndUpdateMarketPostContact(t *testing.T) {
 func TestLegacyClientCreateAndUpdateMarketPostContact(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260719")
+	image := createMarketTagsTestImage(t, db, user.ID)
 	handler := NewPostHandler(db, "", "")
 
 	createForm := url.Values{
@@ -128,6 +131,7 @@ func TestLegacyClientCreateAndUpdateMarketPostContact(t *testing.T) {
 		"content":   {"测试内容"},
 		"post_type": {"sell"},
 		"contact":   {"微信：legacy_wx"},
+		"file_ids":  {strconv.FormatUint(uint64(image.ID), 10)},
 	}
 	recorder := performMarketContactRequest(t, handler.Create, user.ID, 0, createForm)
 	if recorder.Code != http.StatusCreated {

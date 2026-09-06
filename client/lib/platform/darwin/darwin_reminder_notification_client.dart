@@ -131,13 +131,6 @@ class DarwinReminderNotificationClient implements ReminderNotificationClient {
     await _plugin.cancel(id);
   }
 
-  @override
-  Future<void> initializeGradeReminders() => initializeCourseReminders();
-
-  @override
-  Future<bool> requestGradeReminderPermissions() =>
-      requestCourseReminderPermissions();
-
   DarwinNotificationDetails _courseNotificationDetails(String detailText) {
     return DarwinNotificationDetails(
       presentAlert: true,

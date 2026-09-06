@@ -26,9 +26,10 @@ from Crypto.PublicKey import RSA
 #  配置
 # ====================================================================
 
-STUDENT_ID = "2403060128"
-VPN_PASSWORD = "@Zhoukangwu0"
-ERKE_PASSWORD = "@Zhoukangwu0"
+# 测试账号只允许通过本地环境变量注入，禁止把真实教务凭据写入脚本。
+STUDENT_ID = os.getenv("ERKE_STUDENT_ID", "").strip()
+VPN_PASSWORD = os.getenv("ERKE_VPN_PASSWORD", "")
+ERKE_PASSWORD = os.getenv("ERKE_PASSWORD", "")
 
 AES_KEY = b"wrdvpnisthebest!"
 AES_IV  = b"wrdvpnisthebest!"
@@ -432,6 +433,9 @@ def _fallback_parse_full(soup, result: dict) -> dict:
 # ====================================================================
 
 def main():
+    if not all((STUDENT_ID, VPN_PASSWORD, ERKE_PASSWORD)):
+        print("未设置 ERKE_STUDENT_ID、ERKE_VPN_PASSWORD、ERKE_PASSWORD，跳过二课测试")
+        return
     print("=" * 60)
     print("  二课成绩测试爬取")
     print("=" * 60)

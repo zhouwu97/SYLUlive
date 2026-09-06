@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import Any
 
-from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
 from langchain_core.documents import Document
 from langchain_core.documents.compressor import BaseDocumentCompressor
 from langchain_core.language_models.chat_models import BaseChatModel

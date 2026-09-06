@@ -80,8 +80,19 @@ void main() {
 
   test('查看器只返回当前页相邻一页', () {
     expect(adjacentImageIndexes(currentIndex: 0, itemCount: 3), [1]);
-    expect(adjacentImageIndexes(currentIndex: 1, itemCount: 3), [0, 2]);
+    expect(adjacentImageIndexes(currentIndex: 1, itemCount: 3), [2, 0]);
     expect(adjacentImageIndexes(currentIndex: 2, itemCount: 3), [1]);
     expect(adjacentImageIndexes(currentIndex: 0, itemCount: 1), isEmpty);
+  });
+
+  test('向后翻页时优先预取上一张', () {
+    expect(
+      adjacentImageIndexes(
+        currentIndex: 1,
+        itemCount: 3,
+        priorityDirection: -1,
+      ),
+      [0, 2],
+    );
   });
 }

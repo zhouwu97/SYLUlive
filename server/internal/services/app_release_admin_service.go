@@ -60,6 +60,11 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 	if err := validateDraftInput(&input); err != nil {
 		return nil, err
 	}
+	if input.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+		if err := s.validateExternalMarketURL(input.ActionURL); err != nil {
+			return nil, err
+		}
+	}
 
 	var size int64
 	var sha string
@@ -81,6 +86,9 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 			return nil, err
 		}
 		defer func() { _ = os.Remove(temporaryPath) }()
+		if err := s.validateAndroidAPK(ctx, temporaryPath, input.VersionName, input.VersionCode); err != nil {
+			return nil, err
+		}
 
 		size = apkSize
 		sha = apkSha
@@ -231,7 +239,7 @@ func (s *AppReleaseService) PublishDraft(ctx context.Context, releaseID, operato
 		if release.Status != models.AppReleaseStatusDraft {
 			return ErrAppReleaseNotDraft
 		}
-		if err := s.verifyReleaseFile(&release); err != nil {
+		if err := s.verifyReleaseFile(ctx, &release); err != nil {
 			return err
 		}
 		if release.MinimumSupportedVersionCode <= 0 || release.MinimumSupportedVersionCode > release.VersionCode {
@@ -395,8 +403,8 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 
 	if input.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
 		parsedURL, err := url.ParseRequestURI(input.ActionURL)
-		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
-			return fmt.Errorf("%w: action_url 必须是有效的 HTTP 或 HTTPS 链接", ErrAppReleaseInvalid)
+		if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" {
+			return fmt.Errorf("%w: action_url 必须是有效的 HTTPS 链接", ErrAppReleaseInvalid)
 		}
 		if parsedURL.User != nil {
 			return fmt.Errorf("%w: action_url 不允许包含用户信息", ErrAppReleaseInvalid)
@@ -439,7 +447,7 @@ func validateNewReleaseVersion(tx *gorm.DB, release *models.AppRelease) error {
 	return nil
 }
 
-func (s *AppReleaseService) verifyReleaseFile(release *models.AppRelease) error {
+func (s *AppReleaseService) verifyReleaseFile(ctx context.Context, release *models.AppRelease) error {
 	if release.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
 		return nil
 	}
@@ -463,7 +471,7 @@ func (s *AppReleaseService) verifyReleaseFile(release *models.AppRelease) error 
 	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), release.SHA256) {
 		return fmt.Errorf("%w: APK SHA-256 不匹配", ErrAppReleaseInvalid)
 	}
-	return nil
+	return s.validateAndroidAPK(ctx, path, release.VersionName, release.VersionCode)
 }
 
 func writeAppReleaseAdminLog(tx *gorm.DB, adminID uint, action string, release models.AppRelease, detail string) error {

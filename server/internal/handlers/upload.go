@@ -20,7 +20,6 @@ import (
 	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -128,24 +127,15 @@ type UploadHandler struct {
 	db        *gorm.DB
 	uploadDir string
 	maxSize   int64
-	jwtSecret string
 }
 
 // NewUploadHandler 创建上传处理器
-func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB, jwtSecrets ...string) *UploadHandler {
-	handler := &UploadHandler{
+func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandler {
+	return &UploadHandler{
 		db:        db,
 		uploadDir: uploadDir,
 		maxSize:   maxSize,
 	}
-	if len(jwtSecrets) > 0 {
-		handler.jwtSecret = jwtSecrets[0]
-	}
-	return handler
-}
-
-func (h *UploadHandler) SetJWTSecret(secret string) {
-	h.jwtSecret = secret
 }
 
 // isAuthorizedForPrivateFile 检查请求是否有权访问私有待审核文件（管理员/超级管理员/文件上传者）
@@ -161,34 +151,6 @@ func (h *UploadHandler) isAuthorizedForPrivateFile(c *gin.Context, file models.F
 		}
 	}
 
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		if cookieToken, err := c.Cookie("jwt"); err == nil && cookieToken != "" {
-			authHeader = "Bearer " + cookieToken
-		}
-	}
-	if authHeader == "" {
-		return false
-	}
-	tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	if tokenString == "" {
-		return false
-	}
-
-	claims := &middleware.Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(h.jwtSecret), nil
-	})
-	if err != nil || !token.Valid {
-		return false
-	}
-
-	if claims.Role == "admin" || claims.Role == "super_admin" {
-		return true
-	}
-	if claims.UserID != 0 && claims.UserID == file.UploaderID {
-		return true
-	}
 	return false
 }
 
@@ -201,10 +163,11 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	}
 	var file models.File
 	variant, originalRelative, legacyVariant := imageVariantRequest(relative)
+	originalPathCandidates := imageVariantSourcePathCandidates(originalRelative, variant != "")
 	isPublic := true
-	if err := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPublic).First(&file).Error; err != nil {
+	if err := h.db.Where("path IN ? AND access_scope = ?", originalPathCandidates, models.FileAccessPublic).First(&file).Error; err != nil {
 		// 如果不是公开文件，尝试检查是否为私有待审核文件并校验管理员/上传者身份
-		if privErr := h.db.Where("path IN ? AND access_scope = ?", uploadPathCandidates(originalRelative), models.FileAccessPrivate).First(&file).Error; privErr != nil {
+		if privErr := h.db.Where("path IN ? AND access_scope = ?", originalPathCandidates, models.FileAccessPrivate).First(&file).Error; privErr != nil {
 			servePublicNotFound(c)
 			return
 		}
@@ -286,6 +249,30 @@ func uploadPathCandidates(publicPath string) []string {
 	return []string{normalized, strings.TrimPrefix(normalized, "/")}
 }
 
+// imageVariantSourcePathCandidates 允许 GIF 静态预览使用 .jpg 变体路径，
+// 同时仍能反查 .gif 原图。普通 JPEG/PNG 变体保持原有路径解析不变。
+func imageVariantSourcePathCandidates(originalPath string, isVariant bool) []string {
+	candidates := uploadPathCandidates(originalPath)
+	if !isVariant || !strings.EqualFold(filepath.Ext(originalPath), ".jpg") {
+		return candidates
+	}
+
+	gifPath := strings.TrimSuffix(originalPath, filepath.Ext(originalPath)) + ".gif"
+	for _, candidate := range uploadPathCandidates(gifPath) {
+		found := false
+		for _, existing := range candidates {
+			if existing == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates
+}
+
 func normalizeUploadPath(publicPath string) string {
 	normalized := filepath.ToSlash(filepath.Clean(publicPath))
 	if strings.HasPrefix(normalized, "uploads/") {
@@ -336,6 +323,10 @@ func imageVariantRequest(relative string) (variant string, original string, lega
 func (h *UploadHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
+		if middleware.IsRequestBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "请求体超过大小限制"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要上传的文件"})
 		return
 	}
@@ -483,6 +474,10 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 	form, err := c.MultipartForm()
 	if err != nil {
+		if middleware.IsRequestBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "请求体超过大小限制"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "上传失败"})
 		return
 	}

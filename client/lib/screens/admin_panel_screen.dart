@@ -34,7 +34,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   // Pending counts
   int? _reportsCount;
   int? _featuredCount;
-  int? _reviewTasksCount; // Teachers + Majors + Canteens
+  int? _reviewTasksCount; // 教师、专业、食堂与课程评价
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   bool _hasLoadError = false;
@@ -70,6 +70,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/admin/removals/pending')),
       safeGet(dio.get('/admin/exam-papers/pending-count')),
       safeGet(dio.get('/canteens/pending')),
+      safeGet(dio.get('/admin/course-evaluations/pending',
+          queryParameters: {'limit': 50})),
     ]);
 
     if (!mounted) return;
@@ -100,7 +102,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
-      _reviewTasksCount = sumCounts([responses[2], responses[3], responses[7]]);
+      _reviewTasksCount =
+          sumCounts([responses[2], responses[3], responses[7], responses[8]]);
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _hasLoadError = responses.any((response) => response == null);

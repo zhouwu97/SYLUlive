@@ -27,7 +27,7 @@ class SpiderRequest(BaseModel):
         min_length=1,
         max_length=20,
         description="学号",
-        example="2101010101",
+        json_schema_extra={"example": "2101010101"},
     )
     password: str = Field(
         ...,

@@ -19,6 +19,7 @@
 - 生产 Nginx 官网根目录为 `/opt/sylulive-site-v5`，该目录默认设置为不可写保护
 - `/opt/shenliyuan/web` 不是官网发布入口，禁止把 `client/build/web` 复制到该目录或官网根目录
 - 官网更新只能使用服务器上的 `/usr/local/sbin/update-sylulive-site-v5`，脚本会检查首页标题、必需资源，并拒绝 Flutter Web 特征文件
+- 官网 HTTPS server 必须包含仓库中的 `nginx/sylulive-site-v5-deep-links.conf` 路由片段，确保 Android App Links 与 `/team/{id}` 落地页不被首页回退规则吞掉
 - Android 模拟器调试、`flutter run` 和 `flutter build apk` 不需要也不允许触碰官网目录
 
 发布官网时，将完整的 `sylulive_site_v5` 目录传到服务器临时目录后执行：
@@ -28,6 +29,16 @@ sudo /usr/local/sbin/update-sylulive-site-v5 /tmp/sylulive_site_v5
 ```
 
 脚本会先保留上一版官网、校验 Nginx 配置，再 reload；发布失败会恢复上一版。后端 `deploy-shenliyuan` 只更新后端二进制，不得扩展为网页目录同步。
+
+官网 v5 的深链基础设施随静态发布包管理：
+
+- `/.well-known/assetlinks.json` 返回 `sylulive_site_v5/.well-known/assetlinks.json`
+- `/team/{id}` 使用 `try_files /team/index.html =404`，不做 302/301 到 `/team/index.html`
+- `deploy/update-sylulive-site-v5` 会拒绝缺少上述两个资源的发布包，也会拒绝未安装深链 Nginx 路由的生产环境
+
+Android release 发布前必须执行 `apksigner verify --print-certs app-release.apk`，并确认 SHA-256
+包含在 `assetlinks.json` 中。当前 release 指纹为
+`A3:67:48:6B:8B:5D:5E:EB:F6:7D:28:49:80:9C:B9:B0:9C:5C:3E:4D:C9:0D:80:15:13:4A:F4:16:07:7E:FB:9E`；发布脚本也会对该指纹执行门禁检查。
 ## 当前部署结构
 `
 服务配置以 systemd 为准：
@@ -131,7 +142,7 @@ docker compose run --rm --no-deps nginx nginx -t
 `
 - Ubuntu 20.04+
 - PostgreSQL
-- Go 1.25+（`deploy.sh` 会自动处理）
+- Go 1.25.13+（`deploy.sh` 会自动处理）
 `
 ### 部署步骤
 `
@@ -730,7 +741,28 @@ mkdir -p /opt/shenliyuan/private/exam-papers
 chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 ```
 
-## 独立试卷文件服务器
+## HK 主服务器同机部署 paper-storage
+
+单机生产形态使用一个 Nginx、`shenliyuan:8080`、`paper-storage:8081` 和 PostgreSQL。`paper-storage` 仍以独立用户和 systemd 服务运行，并且只监听 `127.0.0.1:8081`；试卷目录 `/opt/sylg-paper-storage/data/exam-papers` 不得与社区上传目录混用。
+
+主服务配置：
+
+```env
+EXAM_PAPER_STORAGE_MODE=remote
+EXAM_PAPER_STORAGE_PUBLIC_URL=https://paper.sylulive.online
+EXAM_PAPER_STORAGE_INTERNAL_URL=http://127.0.0.1:8081
+EXAM_PAPER_STORAGE_SIGNING_SECRET=<随机密钥A>
+EXAM_PAPER_STORAGE_RECEIPT_SECRET=<随机密钥B>
+EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
+```
+
+文件服务配置见 `deploy/paper-storage-colocated/paper-storage.env.example`。两边的同名密钥必须分别一致，但密钥 A 与 B 不得相同，且均不少于 32 字节。同机默认由 Go 返回 PDF，不要求 Nginx 读取 `0700/0600` 的私有文件；共享根盘的保护阈值为 60% 告警、75% 停止上传、85% 只读。
+
+使用 `deploy/paper-storage-colocated/install.sh` 安装。该脚本只增加独立 Nginx site，不覆盖全局 `nginx.conf`，也不修改 UFW、SSH、PostgreSQL、Swap 或主服务。公网 `/internal/v1/` 必须返回 404；主服务直接通过回环地址访问内部接口。
+
+`EXAM_PAPER_STORAGE_BASE_URL` 只用于兼容旧环境：未设置 `PUBLIC_URL` 时公网地址回退到它，未设置 `INTERNAL_URL` 时内部地址再回退到公网地址。迁移期间客户端桥接版本同时接受旧 IP 和 `paper.sylulive.online`，覆盖率稳定后再删除旧 IP allowlist。
+
+## 旧版独立试卷文件服务器
 
 试卷文件服务直接使用公网 IP `139.196.148.174`，不配置或复用 `sylulive.online` 业务域名。生产 TLS 证书的 SAN 必须包含 `IP Address:139.196.148.174`，客户端上传、预览和下载均直连该 IP。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
 

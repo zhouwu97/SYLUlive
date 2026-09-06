@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -13,9 +12,12 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
+import '../utils/campus_article_image.dart';
+import '../utils/image_decode_size.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/campus/campus_article_html.dart';
 import '../widgets/campus/campus_theme.dart';
+import 'image_viewer_screen.dart';
 
 /// 文章详情页。
 ///
@@ -171,43 +173,32 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       return;
     }
 
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (dialogContext) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 4,
-              child: Center(
-                child: CachedNetworkImage(
-                  imageUrl: uri.toString(),
-                  fit: BoxFit.contain,
-                  placeholder: (context, url) =>
-                      const CircularProgressIndicator.adaptive(),
-                  errorWidget: (context, url, error) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white70,
-                    size: 48,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: SafeArea(
-                child: IconButton(
-                  tooltip: '关闭图片',
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                ),
-              ),
-            ),
-          ],
+    final resources = CampusArticleImageResources.fromUri(uri);
+    final screenTarget = calculateImageDecodeTarget(
+      logicalSize: MediaQuery.sizeOf(context),
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      maxLongEdge: imageViewerLongEdge,
+      fallbackLogicalSize: const Size(360, 640),
+    );
+    final isManagedUpload = resources.isManagedUpload;
+    final item = ImageViewerItem(
+      url: isManagedUpload ? null : resources.originalUrl,
+      thumbUrl: isManagedUpload ? resources.thumbUrl : null,
+      previewUrl: isManagedUpload ? resources.mediumUrl : null,
+      viewerUrl: isManagedUpload ? resources.viewerUrl : null,
+      originalUrl: resources.originalUrl,
+      useProgressiveLoading: isManagedUpload,
+      // 文章接口未返回变体状态，只有所有变体都失败时才允许回退原图。
+      allowOriginalPreviewFallback: isManagedUpload,
+    );
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          items: [item],
+          decodeMaxLongEdge: clampCampusArticleDecodeLongEdge(
+            screenTarget.longEdge,
+          ),
         ),
       ),
     );

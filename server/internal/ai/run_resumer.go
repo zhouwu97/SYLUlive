@@ -367,7 +367,24 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		return
 	}
 	usage := decodeResumeUsage(json.RawMessage(resume.UsageJSON))
-	toolDefinitions := routeModelToolsForMessages(messages, r.toolDefinitions())
+	registeredToolDefinitions := r.toolDefinitions()
+	toolDefinitions := routeModelToolsForMessages(messages, registeredToolDefinitions)
+	toolContext := MeasureToolContext(
+		registeredToolDefinitions,
+		toolDefinitions,
+		toolContextRoutingResumeDeterministic,
+		false,
+	)
+	_, _ = r.appendEvent(ctx, resume.RunID, "retrieval.completed", map[string]interface{}{
+		"resumed":                                 true,
+		"registered_tool_count":                   toolContext.RegisteredToolCount,
+		"model_visible_tool_count":                toolContext.ModelVisibleToolCount,
+		"tool_schema_bytes":                       toolContext.SchemaBytes,
+		"tool_schema_token_estimate":              toolContext.SchemaTokenEstimate,
+		"tool_routing_mode":                       toolContext.RoutingMode,
+		"tools_suppressed_by_verified_policy_rag": toolContext.SuppressedByVerifiedPolicyRAG,
+		"tool_schema_measurement_available":       toolContext.SchemaMeasurementAvailable,
+	}, true)
 	requiredTool, _ := requiredDecisionToolForMessages(messages, toolDefinitions)
 	requiredToolCompleted := requiredTool == ""
 	var run models.AIRun
@@ -704,7 +721,25 @@ func mergeProviderUsage(left, right ProviderEvent) ProviderEvent {
 	left.InputTokens += right.InputTokens
 	left.OutputTokens += right.OutputTokens
 	left.CacheHitTokens += right.CacheHitTokens
+	left.CacheWriteTokens += right.CacheWriteTokens
 	left.UsageAvailable = left.UsageAvailable || right.UsageAvailable
+	merged := make(map[string]ModelTokenUsage, len(left.ModelUsage)+1)
+	for model, usage := range left.ModelUsage {
+		merged[model] = usage
+	}
+	rightModels := right.ModelUsage
+	if len(rightModels) == 0 && right.Model != "" && right.UsageAvailable {
+		rightModels = map[string]ModelTokenUsage{right.Model: {InputTokens: right.InputTokens, OutputTokens: right.OutputTokens, CacheHitTokens: right.CacheHitTokens, CacheWriteTokens: right.CacheWriteTokens}}
+	}
+	for model, usage := range rightModels {
+		previous := merged[model]
+		previous.InputTokens += usage.InputTokens
+		previous.OutputTokens += usage.OutputTokens
+		previous.CacheHitTokens += usage.CacheHitTokens
+		previous.CacheWriteTokens += usage.CacheWriteTokens
+		merged[model] = previous
+	}
+	left.ModelUsage = merged
 	return left
 }
 

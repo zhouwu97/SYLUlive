@@ -46,8 +46,11 @@ func TestLoginThrottleEscalatesAndClears(t *testing.T) {
 	if remaining, locked := currentLoginLock(account, base.Add(time.Minute)); locked || remaining != 0 {
 		t.Fatalf("expected lock to expire at boundary, got locked=%v remaining=%v", locked, remaining)
 	}
-	if got := registerLoginFailure(account, base.Add(time.Minute)); got != 3*time.Minute {
-		t.Fatalf("fourth failure got %v want %v", got, 3*time.Minute)
+	if got := registerLoginFailure(account, base.Add(time.Minute)); got != 0 {
+		t.Fatalf("lock expiry should reset the failure window, got %v", got)
+	}
+	if got := registerLoginFailure(account, base.Add(16*time.Minute)); got != 0 {
+		t.Fatalf("failure window expiry should reset the counter, got %v", got)
 	}
 
 	clearLoginFailures(account)

@@ -6,6 +6,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -28,9 +29,11 @@ class _FakePostProvider extends Fake
     with ChangeNotifier
     implements PostProvider {
   int createPostCalls = 0;
+  int updatePostCalls = 0;
   String? lastContent;
   String? lastContactType;
   String? lastContact;
+  List<int>? lastFileIds;
   List<String>? lastMarketTags;
 
   @override
@@ -57,6 +60,36 @@ class _FakePostProvider extends Fake
     lastContent = content;
     lastContactType = contactType;
     lastContact = contact;
+    lastFileIds = fileIds;
+    lastMarketTags = marketTags;
+    return const CreatePostResult(success: true);
+  }
+
+  @override
+  Future<CreatePostResult> updatePost({
+    required int postId,
+    required int boardId,
+    required String content,
+    String? title,
+    String? postType,
+    int? waterTagId,
+    double? price,
+    String? contactType,
+    String? contact,
+    List<int>? fileIds,
+    List<String>? marketTags,
+    int? teamNeededCount,
+    List<String>? teamRoles,
+    DateTime? teamDeadline,
+    bool sendTeamFields = false,
+    bool sendWaterTagField = false,
+    List<TopicSelection>? topics,
+  }) async {
+    updatePostCalls++;
+    lastContent = content;
+    lastContactType = contactType;
+    lastContact = contact;
+    lastFileIds = fileIds;
     lastMarketTags = marketTags;
     return const CreatePostResult(success: true);
   }
@@ -78,6 +111,9 @@ Widget _buildMarketForm({
       ),
       ChangeNotifierProvider<PostProvider>.value(
         value: postProvider ?? _FakePostProvider(),
+      ),
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
       ),
     ],
     child: MaterialApp(
@@ -106,6 +142,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> addLocalImage(WidgetTester tester) async {
+    final dynamic state = tester.state(find.byType(MarketPublishForm));
+    state.onImageAdded(XFile('/tmp/market-publish-form-test.png'));
+    await tester.pump();
+  }
+
   testWidgets('发布商品时把点亮的描述选项作为 marketTags 提交', (tester) async {
     final postProvider = _FakePostProvider();
 
@@ -120,6 +162,7 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(0), '出一台显示器');
     await tester.enterText(find.byType(TextFormField).at(1), '99');
     await tester.enterText(find.byType(TextFormField).at(2), '成色很好，无坏点');
+    await addLocalImage(tester);
     await tester.tap(find.text('发布出售').last);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 2));
@@ -135,6 +178,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
     await selectContactType(tester, '微信');
     await tester.enterText(
       find.byKey(const ValueKey('market-contact-value')),
@@ -146,6 +190,48 @@ void main() {
     expect(postProvider.createPostCalls, 1);
     expect(postProvider.lastContactType, 'wechat');
     expect(postProvider.lastContact, 'wx_123');
+  });
+
+  testWidgets('普通商品无图时阻止发布并显示图片必填提示', (tester) async {
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(postProvider.createPostCalls, 0);
+    expect(
+      find.byKey(const ValueKey('market-image-required-error')),
+      findsOneWidget,
+    );
+    expect(find.text('请至少上传 1 张商品图片'), findsOneWidget);
+  });
+
+  testWidgets('曝光帖子无图仍可提交', (tester) async {
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(
+      _buildMarketForm(
+        postProvider: postProvider,
+        form: const MarketPublishForm(defaultPostType: 'exposure'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('证据图片（选填）'), findsOneWidget);
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.minLines == 4,
+      ),
+      '请核实这条曝光说明',
+    );
+    await tester.tap(find.text('提交曝光').last);
+    await tester.pumpAndSettle();
+
+    expect(postProvider.createPostCalls, 1);
+    expect(postProvider.lastFileIds, isNull);
   });
 
   testWidgets('输入账号但未选择类型时阻止提交', (tester) async {
@@ -262,5 +348,68 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('放弃编辑？'), findsOneWidget);
+  });
+
+  testWidgets('编辑商品保留已有图片时可以保存', (tester) async {
+    final postProvider = _FakePostProvider();
+    final post = Post(
+      id: 4,
+      title: '显示器',
+      content: '成色很好',
+      boardId: 2,
+      authorId: 1,
+      postType: 'sell',
+      price: 99,
+      images: [PostImage(id: 40, postId: 4, fileId: 400)],
+      createdAt: DateTime(2026, 7, 3),
+    );
+
+    await tester.pumpWidget(
+      _buildMarketForm(
+        postProvider: postProvider,
+        form: MarketPublishForm(editingPost: post),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存修改').last);
+    await tester.pumpAndSettle();
+
+    expect(postProvider.updatePostCalls, 1);
+    expect(postProvider.lastFileIds, [400]);
+  });
+
+  testWidgets('编辑商品删除最后一张图片时阻止保存', (tester) async {
+    final postProvider = _FakePostProvider();
+    final post = Post(
+      id: 5,
+      title: '显示器',
+      content: '成色很好',
+      boardId: 2,
+      authorId: 1,
+      postType: 'sell',
+      price: 99,
+      images: [PostImage(id: 50, postId: 5, fileId: 500)],
+      createdAt: DateTime(2026, 7, 3),
+    );
+
+    await tester.pumpWidget(
+      _buildMarketForm(
+        postProvider: postProvider,
+        form: MarketPublishForm(editingPost: post),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    await tester.tap(find.text('保存修改').last);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(postProvider.updatePostCalls, 0);
+    expect(
+      find.byKey(const ValueKey('market-image-required-error')),
+      findsOneWidget,
+    );
   });
 }

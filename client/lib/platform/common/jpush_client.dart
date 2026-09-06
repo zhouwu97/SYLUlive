@@ -75,9 +75,6 @@ class JPushClient implements PushClient {
   Future<void> clearAlias() => _jpush.deleteAlias();
 
   @override
-  Future<void> setAlias(String alias) => _jpush.setAlias(alias);
-
-  @override
   Future<void> setTags(List<String> tags) => _jpush.setTags(tags);
 
   @override

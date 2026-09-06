@@ -18,6 +18,18 @@ func shortlistModelTools(message string, definitions []ToolDefinition) []ToolDef
 	if len(definitions) == 0 {
 		return nil
 	}
+	// 综合学业分析已有唯一的确定性入口，全量路径也必须先取得这份事实。
+	if isComprehensiveAcademicIntent(message) {
+		if selected := academicAnalysisToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
+	}
+	// 先保留确定性课表入口，再做通用语义筛选，避免省略“我的”时过滤个人工具。
+	if isScheduleAvailabilityIntent(message) {
+		if selected := scheduleAvailabilityToolDefinitions(definitions); len(selected) > 0 {
+			return selected
+		}
+	}
 	sourceDefinitions := definitions
 	personal := isPersonalToolIntent(message)
 	if !personal {
@@ -58,6 +70,13 @@ func shortlistModelTools(message string, definitions []ToolDefinition) []ToolDef
 // requiredFastPathTool 只保留确定性、低歧义的硬约束入口；复杂请求交给模型在
 // shortlist 后自主规划，避免把旧路由器变成第二套隐式 Agent。
 func requiredFastPathTool(message string, definitions []ToolDefinition) (string, bool) {
+	if isComprehensiveAcademicIntent(message) {
+		for _, definition := range definitions {
+			if definition.Name == modelToolAcademicRisk {
+				return definition.Name, true
+			}
+		}
+	}
 	if isScheduleAvailabilityIntent(message) {
 		for _, definition := range definitions {
 			if definition.Name == modelToolSchedule {

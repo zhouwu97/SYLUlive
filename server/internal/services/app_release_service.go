@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -29,9 +33,14 @@ const (
 // AppReleaseService 负责读取最新发布版本并推导更新决策；它不负责 APK 文件
 // 写入和管理员操作（那是后续阶段的发布接口的职责）。
 type AppReleaseService struct {
-	db         *gorm.DB
-	releaseDir string
-	maxSize    int64
+	db                         *gorm.DB
+	releaseDir                 string
+	maxSize                    int64
+	androidPackageName         string
+	androidSigningCertificate  string
+	androidAAPT2Path           string
+	androidAPKSignerPath       string
+	externalMarketAllowedHosts []string
 }
 
 // NewAppReleaseService 构造一个 AppReleaseService。releaseDir 是配置中的
@@ -42,6 +51,69 @@ func NewAppReleaseService(db *gorm.DB, releaseDir string, maxSizes ...int64) *Ap
 		maxSize = maxSizes[0]
 	}
 	return &AppReleaseService{db: db, releaseDir: releaseDir, maxSize: maxSize}
+}
+
+// SetAndroidAPKValidationPolicy 启用包名、版本和签名证书的发布校验。
+// 未配置策略时保留开发/单元测试的 ZIP fixture 兼容性；生产启动由 main 注入完整策略。
+func (s *AppReleaseService) SetAndroidAPKValidationPolicy(packageName, certificate, aapt2Path, apksignerPath string) {
+	s.androidPackageName = strings.TrimSpace(packageName)
+	s.androidSigningCertificate = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(certificate), ":", ""))
+	s.androidAAPT2Path = strings.TrimSpace(aapt2Path)
+	s.androidAPKSignerPath = strings.TrimSpace(apksignerPath)
+}
+
+// SetExternalMarketAllowlist 设置外部市场跳转域名白名单。
+func (s *AppReleaseService) SetExternalMarketAllowlist(hosts []string) {
+	s.externalMarketAllowedHosts = append([]string(nil), hosts...)
+}
+
+func (s *AppReleaseService) validateExternalMarketURL(actionURL string) error {
+	parsedURL, err := url.ParseRequestURI(actionURL)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.Port() != "" {
+		return fmt.Errorf("%w: 外部市场 action_url 必须是 HTTPS 且不能包含用户信息或端口", ErrAppReleaseInvalid)
+	}
+	if len(s.externalMarketAllowedHosts) == 0 {
+		return nil
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsedURL.Hostname(), "."))
+	for _, allowed := range s.externalMarketAllowedHosts {
+		if host == strings.ToLower(strings.TrimSuffix(strings.TrimSpace(allowed), ".")) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: 外部市场域名不在白名单内", ErrAppReleaseInvalid)
+}
+
+func (s *AppReleaseService) validateAndroidAPK(ctx context.Context, path, versionName string, versionCode int64) error {
+	if s.androidPackageName == "" && s.androidSigningCertificate == "" && s.androidAAPT2Path == "" && s.androidAPKSignerPath == "" {
+		return nil
+	}
+	if s.androidPackageName == "" || s.androidSigningCertificate == "" || s.androidAAPT2Path == "" || s.androidAPKSignerPath == "" {
+		return fmt.Errorf("%w: APK 发布校验策略未完整配置", ErrAppReleaseInvalid)
+	}
+
+	badgingOutput, err := exec.CommandContext(ctx, s.androidAAPT2Path, "dump", "badging", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: APK 包信息校验失败", ErrAppReleaseInvalid)
+	}
+	packageMatch := regexp.MustCompile(`package: name='([^']+)' versionCode='([^']+)' versionName='([^']*)'`).FindStringSubmatch(string(badgingOutput))
+	if len(packageMatch) != 4 || packageMatch[1] != s.androidPackageName || packageMatch[2] != strconv.FormatInt(versionCode, 10) || packageMatch[3] != versionName {
+		return fmt.Errorf("%w: APK 包名或版本与发布记录不一致", ErrAppReleaseInvalid)
+	}
+
+	if output, err := exec.CommandContext(ctx, s.androidAPKSignerPath, "verify", "--verbose", path).CombinedOutput(); err != nil {
+		_ = output
+		return fmt.Errorf("%w: APK 签名校验失败", ErrAppReleaseInvalid)
+	}
+	certOutput, err := exec.CommandContext(ctx, s.androidAPKSignerPath, "verify", "--print-certs", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: APK 签名证书读取失败", ErrAppReleaseInvalid)
+	}
+	digests := regexp.MustCompile(`(?im)certificate SHA-256 digest:\s*([0-9a-f:]+)`).FindAllStringSubmatch(string(certOutput), -1)
+	if len(digests) != 1 || strings.ToUpper(strings.ReplaceAll(digests[0][1], ":", "")) != s.androidSigningCertificate {
+		return fmt.Errorf("%w: APK 签名证书不匹配", ErrAppReleaseInvalid)
+	}
+	return nil
 }
 
 // DB 暴露内部 *gorm.DB 给同包 handler 使用，避免重复构造和散落的 db 句柄。

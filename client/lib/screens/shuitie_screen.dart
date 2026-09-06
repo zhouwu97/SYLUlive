@@ -44,6 +44,7 @@ import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/post_card.dart';
+import '../widgets/post_media/post_media_view.dart';
 import '../widgets/feed/feed_exposure_tracker.dart';
 import '../widgets/feed/feed_post_action_menu.dart';
 import '../widgets/report_sheet.dart';
@@ -121,13 +122,9 @@ class ShuitieScreen extends StatefulWidget {
   /// 可选注入仅用于测试；生产环境创建内部实例。
   final FeedSessionService? feedSessionService;
   final FeedEventService? feedEventService;
-  final ValueChanged<bool>? onFabVisibilityChanged;
 
   const ShuitieScreen(
-      {super.key,
-      this.feedSessionService,
-      this.feedEventService,
-      this.onFabVisibilityChanged});
+      {super.key, this.feedSessionService, this.feedEventService});
 
   @override
   State<ShuitieScreen> createState() => _ShuitieScreenState();
@@ -154,11 +151,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   double _feedSwipeStartVisualIndex = kDefaultFeedModeIndex.toDouble();
   double _feedSwipeDx = 0;
   double? _pendingRestoredScrollOffset;
-
-  // 首页发布 FAB：下滑超过阈值后隐藏，反向滚动立即恢复。
-  double? _lastFabScrollOffset;
-  double _fabDownwardScroll = 0;
-  bool _fabReportedHidden = false;
 
   // 后台新鲜度探测：列表未在顶部时不直接覆写，显示“内容有更新”浮条。
   bool _freshnessBannerVisible = false;
@@ -216,34 +208,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _canLoadFeedMode(String mode) {
     if (mode != 'following') return true;
     return context.read<AuthProvider>().isLoggedIn;
-  }
-
-  void _handleFabVisibilityScroll(ScrollNotification notification) {
-    if (notification is ScrollStartNotification) {
-      _lastFabScrollOffset = notification.metrics.pixels;
-      _fabDownwardScroll = 0;
-      return;
-    }
-
-    final currentOffset = notification.metrics.pixels;
-    final previousOffset = _lastFabScrollOffset;
-    _lastFabScrollOffset = currentOffset;
-    if (previousOffset == null) return;
-
-    final delta = currentOffset - previousOffset;
-    if (delta > 0) {
-      _fabDownwardScroll += delta;
-      if (_fabDownwardScroll > 16 && !_fabReportedHidden) {
-        _fabReportedHidden = true;
-        widget.onFabVisibilityChanged?.call(false);
-      }
-    } else if (delta < 0) {
-      _fabDownwardScroll = 0;
-      if (_fabReportedHidden) {
-        _fabReportedHidden = false;
-        widget.onFabVisibilityChanged?.call(true);
-      }
-    }
   }
 
   @override
@@ -2222,18 +2186,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ImageDecodeTarget target,
   ) {
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
-    if (originUrl.isEmpty ||
-        image.file?.mimeType.toLowerCase() == 'image/gif' ||
-        originUrl.toLowerCase().split('?').first.endsWith('.gif')) {
-      return null;
-    }
-    final selection = selectImageResource(
-      target: target,
-      thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
-      mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
-      viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
-      originUrl: originUrl,
-    );
+    if (originUrl.isEmpty) return null;
+    final selection = PostMediaView.resourceForPostImage(image, target);
     if (!selection.shouldResize || selection.url.isEmpty) return null;
 
     return ImagePrefetchTask(
@@ -2355,7 +2309,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
-                _handleFabVisibilityScroll(notification);
                 final nearNextViewport = notification.metrics.extentAfter <=
                     notification.metrics.viewportDimension * 1.5;
                 if (nearNextViewport && !_feedPrefetchNearViewport) {

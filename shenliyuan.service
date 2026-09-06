@@ -4,12 +4,33 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=shenliyuan
+Group=shenliyuan
 WorkingDirectory=/opt/shenliyuan
 EnvironmentFile=/opt/shenliyuan/.env
 ExecStart=/opt/shenliyuan/shenliyuan
 Restart=always
 RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/opt/shenliyuan/uploads /opt/shenliyuan/releases /opt/shenliyuan/private /opt/shenliyuan/logs
 
 [Install]
 WantedBy=multi-user.target

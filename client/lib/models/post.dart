@@ -93,6 +93,9 @@ class PostImage {
   final String viewerUrl;
   final String originUrl;
 
+  /// 服务端图片变体状态。只有状态为 `ready` 的变体才可被全屏查看器当作预览资源使用。
+  final Map<String, String> variantStatus;
+
   PostImage({
     required this.id,
     required this.postId,
@@ -103,6 +106,7 @@ class PostImage {
     this.mediumUrl = '',
     this.viewerUrl = '',
     this.originUrl = '',
+    this.variantStatus = const {},
   });
 
   factory PostImage.fromJson(Map<String, dynamic> json) {
@@ -125,6 +129,10 @@ class PostImage {
       originUrl: json['origin_url']?.toString() ??
           (fileJson is Map ? fileJson['origin_url']?.toString() : null) ??
           '',
+      variantStatus: _parseVariantStatus(
+        json['variant_status'] ??
+            (fileJson is Map ? fileJson['variant_status'] : null),
+      ),
     );
   }
 
@@ -133,6 +141,23 @@ class PostImage {
   String get resolvedMediumUrl => mediumUrl.isNotEmpty ? mediumUrl : url;
   String get resolvedViewerUrl => viewerUrl.isNotEmpty ? viewerUrl : url;
   String get resolvedOriginUrl => originUrl.isNotEmpty ? originUrl : url;
+
+  bool isVariantReady(String variant) {
+    final status = variantStatus[variant];
+    // 兼容尚未返回 variant_status 的旧接口：只要 URL 不是回退原图，仍允许使用。
+    return status == null || status == 'ready';
+  }
+
+  static Map<String, String> _parseVariantStatus(dynamic raw) {
+    if (raw is! Map) return const {};
+    final parsed = <String, String>{};
+    raw.forEach((key, value) {
+      if (key != null && value != null) {
+        parsed[key.toString()] = value.toString();
+      }
+    });
+    return parsed.isEmpty ? const {} : Map.unmodifiable(parsed);
+  }
 }
 
 // 文件模型

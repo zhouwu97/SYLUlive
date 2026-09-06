@@ -16,37 +16,30 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _studentIdController = TextEditingController();
   final _emailController = TextEditingController();
-  final _eduPasswordController = TextEditingController(); // 教务密码
   final _appPasswordController = TextEditingController(); // APP密码
   final _nicknameController = TextEditingController(); // 昵称
   final _verifyCodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final _eduPasswordFocus = FocusNode();
   Timer? _codeCooldownTimer;
 
   bool _isRegister = false;
   bool _isLoading = false;
-  String _registerMode = 'campus';
   int _codeCooldown = 0;
   bool _obscureAppPassword = true;
-  bool _obscureEduPassword = true;
   bool _userAgreementAccepted = false;
   bool _privacyPolicyAccepted = false;
   final bool _communityRulesAccepted = false;
   final bool _minorProtectionAccepted = false;
   final bool _contentComplaintAccepted = false;
   final bool _sdkDisclosureAccepted = false;
-  bool _eduDataConsentAccepted = false;
 
   @override
   void dispose() {
     _studentIdController.dispose();
     _emailController.dispose();
-    _eduPasswordController.dispose();
     _appPasswordController.dispose();
     _nicknameController.dispose();
     _verifyCodeController.dispose();
-    _eduPasswordFocus.dispose();
     _codeCooldownTimer?.cancel();
     super.dispose();
   }
@@ -59,12 +52,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
-  bool get _isEmailRegister => _isRegister && _registerMode == 'email';
-
   bool get _hasRequiredRegistrationConsents =>
-      _userAgreementAccepted &&
-      _privacyPolicyAccepted &&
-      (_isEmailRegister || _eduDataConsentAccepted);
+      _userAgreementAccepted && _privacyPolicyAccepted;
 
   RegistrationConsents get _registrationConsents => RegistrationConsents(
         userAgreementAccepted: _userAgreementAccepted,
@@ -73,7 +62,6 @@ class _LoginScreenState extends State<LoginScreen> {
         minorProtectionAccepted: _minorProtectionAccepted,
         contentComplaintAccepted: _contentComplaintAccepted,
         sdkDisclosureAccepted: _sdkDisclosureAccepted,
-        eduDataConsentAccepted: _eduDataConsentAccepted,
       );
 
   InputDecoration _inputDecoration(
@@ -159,27 +147,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) setState(() => _isLoading = true);
 
     if (_isRegister) {
-      if (_registerMode == 'email') {
-        result = await authProvider.registerWithEmail(
-          _emailController.text.trim(),
-          _verifyCodeController.text.trim(),
-          _appPasswordController.text,
-          nickname: _nicknameController.text.trim().isNotEmpty
-              ? _nicknameController.text.trim()
-              : null,
-          consents: _registrationConsents,
-        );
-      } else {
-        result = await authProvider.registerWithEdu(
-          _studentIdController.text.trim(),
-          _appPasswordController.text,
-          nickname: _nicknameController.text.trim().isNotEmpty
-              ? _nicknameController.text.trim()
-              : null,
-          eduPassword: _eduPasswordController.text,
-          consents: _registrationConsents,
-        );
-      }
+      result = await authProvider.registerWithEmail(
+        _emailController.text.trim(),
+        _verifyCodeController.text.trim(),
+        _appPasswordController.text,
+        nickname: _nicknameController.text.trim().isNotEmpty
+            ? _nicknameController.text.trim()
+            : null,
+        consents: _registrationConsents,
+      );
     } else {
       final account = _studentIdController.text.trim();
       result = await authProvider.login(account, _appPasswordController.text);
@@ -205,16 +181,10 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) {
           setState(() {
             _isRegister = true;
-            _eduPasswordController.clear();
             _appPasswordController.clear();
             _nicknameController.clear();
           });
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _eduPasswordFocus.requestFocus();
-          }
-        });
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -267,18 +237,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _showForgotPasswordDialog() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final studentIdController = TextEditingController(
-      text: _studentIdController.text.trim(),
-    );
     final emailController = TextEditingController();
     final codeController = TextEditingController();
-    final eduPasswordController = TextEditingController();
     final newPasswordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var isSubmitting = false;
-    var useEmail = true;
-    var obscureEduPassword = true;
     var obscureNewPassword = true;
     var obscureConfirmPassword = true;
 
@@ -307,9 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        useEmail
-                            ? '通过已绑定邮箱验证后重置 APP 密码。'
-                            : '通过已认证学号和教务密码验证后重置 APP 密码。',
+                        '通过已绑定邮箱验证后重置 APP 密码。',
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
@@ -317,101 +279,63 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      SegmentedButton<bool>(
-                        segments: const [
-                          ButtonSegment(value: true, label: Text('邮箱验证')),
-                          ButtonSegment(value: false, label: Text('教务验证')),
-                        ],
-                        selected: {useEmail},
-                        onSelectionChanged: (selection) =>
-                            setLocalState(() => useEmail = selection.first),
+                      TextFormField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: _inputDecoration(
+                          context,
+                          label: '邮箱',
+                          icon: Icons.email_outlined,
+                        ),
+                        validator: (value) =>
+                            value == null || !value.contains('@')
+                                ? '请输入有效邮箱'
+                                : null,
                       ),
                       const SizedBox(height: 12),
-                      if (useEmail) ...[
-                        TextFormField(
-                          controller: emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _inputDecoration(
-                            context,
-                            label: '邮箱',
-                            icon: Icons.email_outlined,
-                          ),
-                          validator: (value) =>
-                              value == null || !value.contains('@')
-                                  ? '请输入有效邮箱'
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: codeController,
+                              keyboardType: TextInputType.number,
+                              decoration: _inputDecoration(
+                                context,
+                                label: '验证码',
+                                icon: Icons.verified_outlined,
+                              ),
+                              validator: (value) => value?.trim().length != 6
+                                  ? '请输入 6 位验证码'
                                   : null,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: codeController,
-                                keyboardType: TextInputType.number,
-                                decoration: _inputDecoration(
-                                  context,
-                                  label: '验证码',
-                                  icon: Icons.verified_outlined,
-                                ),
-                                validator: (value) => value?.trim().length != 6
-                                    ? '请输入 6 位验证码'
-                                    : null,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: '发送验证码',
-                              onPressed: () async {
-                                final result = await context
-                                    .read<AuthProvider>()
-                                    .requestEmailPasswordResetCode(
-                                        emailController.text.trim());
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(result.success
-                                            ? '验证码已发送'
-                                            : result.errorMessage ?? '发送失败')),
-                                  );
-                                }
-                              },
-                              icon: const Icon(Icons.send_outlined),
-                            ),
-                          ],
-                        ),
-                      ] else ...[
-                        TextFormField(
-                          controller: studentIdController,
-                          maxLength: 10,
-                          keyboardType: TextInputType.number,
-                          decoration: _inputDecoration(
-                            context,
-                            label: '学号',
-                            icon: Icons.person_outline,
-                          ).copyWith(counterText: ''),
-                          validator: (value) =>
-                              value?.trim().length != 10 ? '请输入 10 位学号' : null,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: eduPasswordController,
-                          obscureText: obscureEduPassword,
-                          decoration: _inputDecoration(
-                            context,
-                            label: '教务密码',
-                            icon: Icons.school_outlined,
-                            suffixIcon: IconButton(
-                              onPressed: () => setLocalState(
-                                () => obscureEduPassword = !obscureEduPassword,
-                              ),
-                              icon: Icon(obscureEduPassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined),
                             ),
                           ),
-                          validator: (value) =>
-                              value?.isEmpty == true ? '请输入教务密码' : null,
-                        ),
-                      ],
+                          IconButton(
+                            tooltip: '发送验证码',
+                            onPressed: isSubmitting
+                                ? null
+                                : () async {
+                                    final result = await context
+                                        .read<AuthProvider>()
+                                        .requestEmailPasswordResetCode(
+                                          emailController.text.trim(),
+                                        );
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            result.success
+                                                ? '验证码已发送'
+                                                : result.errorMessage ?? '发送失败',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.send_outlined),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: newPasswordController,
@@ -454,9 +378,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return '请再次输入新密码';
-                          if (v != newPasswordController.text) {
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return '请再次输入新密码';
+                          }
+                          if (value != newPasswordController.text) {
                             return '两次输入的密码不一致';
                           }
                           return null;
@@ -479,33 +405,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       : () async {
                           if (!formKey.currentState!.validate()) return;
                           setLocalState(() => isSubmitting = true);
-                          final authProvider = context.read<AuthProvider>();
-                          final result = useEmail
-                              ? await authProvider.resetPasswordWithEmail(
-                                  email: emailController.text.trim(),
-                                  code: codeController.text.trim(),
-                                  newPassword: newPasswordController.text,
-                                )
-                              : await authProvider.resetPasswordWithEdu(
-                                  studentIdController.text.trim(),
-                                  eduPasswordController.text,
-                                  newPasswordController.text,
-                                );
+                          final result = await context
+                              .read<AuthProvider>()
+                              .resetPasswordWithEmail(
+                                email: emailController.text.trim(),
+                                code: codeController.text.trim(),
+                                newPassword: newPasswordController.text,
+                              );
                           if (!mounted) return;
                           if (result.success) {
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
                             }
-                            if (mounted) {
-                              setState(() {
-                                _isRegister = false;
-                                _studentIdController.text = useEmail
-                                    ? emailController.text.trim()
-                                    : studentIdController.text.trim();
-                                _appPasswordController.clear();
-                                _eduPasswordController.clear();
-                              });
-                            }
+                            setState(() {
+                              _isRegister = false;
+                              _studentIdController.text =
+                                  emailController.text.trim();
+                              _appPasswordController.clear();
+                            });
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('密码已重置，请使用新密码登录'),
@@ -543,51 +460,10 @@ class _LoginScreenState extends State<LoginScreen> {
       },
     );
 
-    studentIdController.dispose();
     emailController.dispose();
     codeController.dispose();
-    eduPasswordController.dispose();
     newPasswordController.dispose();
     confirmPasswordController.dispose();
-  }
-
-  Widget _buildRegisterSegment(String value, String label, Color accent,
-      Color accentSoft, Color border, Color subText) {
-    final isSelected = _registerMode == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          FocusManager.instance.primaryFocus?.unfocus();
-          if (mounted) {
-            setState(() {
-              _registerMode = value;
-              _appPasswordController.clear();
-              _eduPasswordController.clear();
-              _verifyCodeController.clear();
-            });
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? accentSoft : Colors.transparent,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: isSelected ? accent : border,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              color: isSelected ? accent : subText,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -684,16 +560,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (_isRegister) ...[
-                              Row(
-                                children: [
-                                  _buildRegisterSegment('campus', '在校生注册',
-                                      accent, accentSoft, border, subText),
-                                  const SizedBox(width: 12),
-                                  _buildRegisterSegment('email', '邮箱注册', accent,
-                                      accentSoft, border, subText),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
@@ -704,9 +570,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  _isEmailRegister
-                                      ? '邮箱用于登录和找回 APP 密码。完成教务绑定后，学号将成为主账号，当前邮箱仍可使用。'
-                                      : '在校生使用学号与教务密码完成认证，注册成功后可使用校园全部功能。',
+                                  '使用邮箱注册。邮箱用于登录和找回 APP 密码；教务账号将在本机教务连接中单独登录。',
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     height: 1.45,
@@ -720,35 +584,25 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
 
                             TextFormField(
-                              controller: _isEmailRegister
+                              controller: _isRegister
                                   ? _emailController
                                   : _studentIdController,
-                              maxLength: (!_isRegister || _isEmailRegister)
-                                  ? 254
-                                  : 20,
-                              keyboardType: (!_isRegister || _isEmailRegister)
-                                  ? TextInputType.emailAddress
-                                  : TextInputType.text,
+                              maxLength: 254,
+                              keyboardType: TextInputType.emailAddress,
                               decoration: _inputDecoration(
                                 context,
-                                label: _isRegister
-                                    ? (_isEmailRegister ? '邮箱' : '学号')
-                                    : '学号 / 邮箱',
+                                label: _isRegister ? '邮箱' : '学号 / 邮箱',
                                 icon: Icons.person_outline,
                                 helperText: _isRegister
-                                    ? (_isEmailRegister
-                                        ? '用于登录和找回 APP 密码'
-                                        : '仅在校生使用学号注册')
+                                    ? '用于登录和找回 APP 密码'
                                     : '已认证学生可用学号或已绑定邮箱登录',
                               ).copyWith(counterText: ''),
                               validator: (v) {
                                 if (v == null || v.isEmpty) {
-                                  if (_isRegister) {
-                                    return _isEmailRegister ? '请输入邮箱' : '请输入学号';
-                                  }
+                                  if (_isRegister) return '请输入邮箱';
                                   return '请输入学号或邮箱';
                                 }
-                                if (_isEmailRegister && !v.contains('@')) {
+                                if (_isRegister && !v.contains('@')) {
                                   return '请输入有效邮箱';
                                 }
                                 return null;
@@ -767,74 +621,49 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              if (_registerMode == 'campus')
-                                TextFormField(
-                                  controller: _eduPasswordController,
-                                  focusNode: _eduPasswordFocus,
-                                  obscureText: _obscureEduPassword,
-                                  decoration: _inputDecoration(
-                                    context,
-                                    label: '教务密码',
-                                    icon: Icons.lock_outline,
-                                    helperText: '用于验证学号真实性',
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(() {
-                                        _obscureEduPassword =
-                                            !_obscureEduPassword;
-                                      }),
-                                      icon: Icon(
-                                        _obscureEduPassword
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _verifyCodeController,
+                                      keyboardType: TextInputType.number,
+                                      decoration: _inputDecoration(
+                                        context,
+                                        label: '验证码',
+                                        icon: Icons.verified_outlined,
+                                        helperText: '10 分钟内有效',
+                                      ),
+                                      validator: (value) =>
+                                          value?.trim().length != 6
+                                              ? '请输入6位验证码'
+                                              : null,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  SizedBox(
+                                    height: 52,
+                                    child: FilledButton.tonal(
+                                      onPressed:
+                                          (_isLoading || _codeCooldown > 0)
+                                              ? null
+                                              : _sendEmailCode,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: accentSoft,
+                                        foregroundColor: accent,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _codeCooldown > 0
+                                            ? '${_codeCooldown}s'
+                                            : '发送验证码',
                                       ),
                                     ),
                                   ),
-                                  validator: (v) => (v == null || v.isEmpty)
-                                      ? '请输入教务密码'
-                                      : null,
-                                )
-                              else
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _verifyCodeController,
-                                        keyboardType: TextInputType.number,
-                                        decoration: _inputDecoration(
-                                          context,
-                                          label: '验证码',
-                                          icon: Icons.verified_outlined,
-                                          helperText: '10 分钟内有效',
-                                        ),
-                                        validator: (v) =>
-                                            (v == null || v.trim().length != 6)
-                                                ? '请输入6位验证码'
-                                                : null,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    SizedBox(
-                                      height: 52,
-                                      child: FilledButton.tonal(
-                                        onPressed:
-                                            (_isLoading || _codeCooldown > 0)
-                                                ? null
-                                                : _sendEmailCode,
-                                        style: FilledButton.styleFrom(
-                                            backgroundColor: accentSoft,
-                                            foregroundColor: accent,
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(16))),
-                                        child: Text(
-                                          _codeCooldown > 0
-                                              ? '${_codeCooldown}s'
-                                              : '发送验证码',
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                ],
+                              ),
                             ],
 
                             const SizedBox(height: 16),
@@ -925,7 +754,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 if (mounted) {
                                   setState(() {
                                     _isRegister = !_isRegister;
-                                    _eduPasswordController.clear();
                                     _nicknameController.clear();
                                     _appPasswordController.clear();
                                     _verifyCodeController.clear();
@@ -982,19 +810,6 @@ class _LoginScreenState extends State<LoginScreen> {
           documentId: 'privacy_policy',
           onChanged: (value) => setState(() => _privacyPolicyAccepted = value),
         ),
-        if (!_isEmailRegister) ...[
-          const SizedBox(height: 4),
-          _buildConsentItem(
-            context,
-            checkboxKey: const ValueKey('registration-edu-consent'),
-            value: _eduDataConsentAccepted,
-            title: '我同意《教务数据专项授权》',
-            documentId: 'edu_data_consent',
-            onChanged: (value) =>
-                setState(() => _eduDataConsentAccepted = value),
-            emphasize: true,
-          ),
-        ],
         const SizedBox(height: 4),
         Text(
           '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看。',

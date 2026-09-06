@@ -12,7 +12,6 @@ CanteenDish _dish(
   int id,
   String name, {
   String coverImage = '',
-  String source = '',
   int photoCount = 1,
 }) {
   return CanteenDish(
@@ -21,7 +20,6 @@ CanteenDish _dish(
     coverImage: coverImage,
     photoCount: photoCount,
     lastPhotoAt: '2026-08-13',
-    source: source,
   );
 }
 
@@ -106,7 +104,7 @@ void main() {
     expect(find.byIcon(Icons.cloud_off_rounded), findsOneWidget);
   });
 
-  testWidgets('统计回传排除评价图聚合且区分有实拍菜品数', (tester) async {
+  testWidgets('统计回传菜品数并区分有实拍菜品数', (tester) async {
     int? realDishCount;
     int? withPhotoCount;
     int? photoCount;
@@ -114,7 +112,6 @@ void main() {
       [
         _dish(1, '麻辣拌', coverImage: '/uploads/a.jpg', photoCount: 2),
         _dish(2, '无图凉菜', photoCount: 0),
-        _dish(0, '', source: 'review_images', photoCount: 3),
       ],
       onStatsDetailedChanged: (dishCount, dishWithPhoto, dishPhoto) {
         realDishCount = dishCount;
@@ -126,6 +123,6 @@ void main() {
 
     expect(realDishCount, 2);
     expect(withPhotoCount, 1);
-    expect(photoCount, 5);
+    expect(photoCount, 2);
   });
 }

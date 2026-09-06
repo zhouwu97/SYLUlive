@@ -29,6 +29,11 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing tables: %s", strings.Join(missing, ", "))
 	}
+	for _, column := range []string{"cache_write_tokens", "model_usage"} {
+		if !db.Migrator().HasColumn("ai_usage_records", column) {
+			return fmt.Errorf("missing ai_usage_records.%s; apply 20260906_ai_model_usage.sql", column)
+		}
+	}
 	if db.Dialector.Name() == "postgres" {
 		var extensionCount int64
 		if err := db.Raw("SELECT count(*) FROM pg_extension WHERE extname IN ('vector', 'pg_trgm')").Scan(&extensionCount).Error; err != nil {

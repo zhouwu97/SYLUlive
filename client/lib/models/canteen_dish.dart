@@ -10,8 +10,6 @@ class CanteenDish {
   final String lastPhotoAt;
   final double averageScore;
   final int reviewerCount;
-  final String source;
-  final List<String> photoImages;
 
   const CanteenDish({
     required this.id,
@@ -24,8 +22,6 @@ class CanteenDish {
     required this.lastPhotoAt,
     this.averageScore = 0,
     this.reviewerCount = 0,
-    this.source = '',
-    this.photoImages = const [],
   });
 
   factory CanteenDish.fromJson(Map<String, dynamic> json) {
@@ -41,13 +37,6 @@ class CanteenDish {
       lastPhotoAt: json['last_photo_at']?.toString() ?? '',
       averageScore: (json['average_score'] ?? 0).toDouble(),
       reviewerCount: (json['reviewer_count'] ?? 0).toInt(),
-      source: json['source']?.toString() ?? '',
-      photoImages: json['photo_images'] is List
-          ? (json['photo_images'] as List)
-              .map((item) => item.toString().trim())
-              .where((item) => item.isNotEmpty)
-              .toList(growable: false)
-          : const [],
     );
   }
 
@@ -55,9 +44,6 @@ class CanteenDish {
 
   /// 图片型菜品入口只展示存在有效图片地址的数据，避免用占位图冒充实拍。
   bool get hasDisplayImage => coverImage.trim().isNotEmpty;
-
-  /// 没有明确菜名的评价图片聚合卡，不应跳转到 dishId=0 的详情接口。
-  bool get isReviewGallery => source == 'review_images';
 }
 
 /// 菜品实拍（公开接口仅含 approved）。

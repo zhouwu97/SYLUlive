@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
@@ -27,6 +28,7 @@ void main() {
   Completer<void>? loginGate;
 
   void initialize() {
+    SharedPreferences.setMockInitialValues({});
     authorized = false;
     rejectRevoke = false;
     revokeStatus = 200;
@@ -134,7 +136,14 @@ void main() {
             .text,
         isEmpty);
     loginGate!.complete();
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    // 凭据及缓存清理包含真实异步调用，等待弹窗完成整个登录流程。
+    for (var attempt = 0;
+        attempt < 100 && find.byType(AcademicLoginDialog).evaluate().isNotEmpty;
+        attempt++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+    }
     await tester.pumpAndSettle();
     expect(find.byType(AcademicLoginDialog), findsNothing);
     final binding = requests.singleWhere((r) => r.path == '/edu/bind');

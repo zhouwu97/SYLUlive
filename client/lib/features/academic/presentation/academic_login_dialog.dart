@@ -117,7 +117,9 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   Future<void> _submitLogin() async {
     if (_controller.sourceKind == AcademicSourceKind.legacy &&
-        !_consentAccepted) return;
+        !_consentAccepted) {
+      return;
+    }
     if (!_usingSavedCredential &&
         !(_formKey.currentState?.validate() ?? false)) {
       return;
@@ -241,40 +243,42 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         if (!isBusy && !awaitingCaptcha) _submitLogin();
                       },
                     ),
-                    SwitchListTile(
-                      value: _saveCredentials,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('在本机安全保存登录凭据'),
-                      subtitle: Text(
-                        _usingSavedCredential
-                            ? '学号和密码仅保存在设备系统安全存储中'
-                            : '用于下次自动重新登录，不上传沈理校园服务器',
+                    if (!serverBinding)
+                      SwitchListTile(
+                        value: _saveCredentials,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('在本机安全保存登录凭据'),
+                        subtitle: Text(
+                          _usingSavedCredential
+                              ? '学号和密码仅保存在设备系统安全存储中'
+                              : '用于下次自动重新登录，不上传沈理校园服务器',
+                        ),
+                        onChanged:
+                            isBusy || awaitingCaptcha || _loadingPreferences
+                                ? null
+                                : (value) => setState(
+                                      () => _saveCredentials = value,
+                                    ),
                       ),
-                      onChanged:
-                          isBusy || awaitingCaptcha || _loadingPreferences
-                              ? null
-                              : (value) => setState(
-                                    () => _saveCredentials = value,
-                                  ),
-                    ),
-                    SwitchListTile(
-                      value: _saveAcademicData,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('在本机保存教务资料'),
-                      subtitle: const Text(
-                        kIsWeb
-                            ? '网页版不会保存教务密码或教务资料'
-                            : '课表、成绩等保存到当前 App 账号隔离的本地加密保险箱',
+                    if (!serverBinding)
+                      SwitchListTile(
+                        value: _saveAcademicData,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('在本机保存教务资料'),
+                        subtitle: const Text(
+                          kIsWeb
+                              ? '网页版不会保存教务密码或教务资料'
+                              : '课表、成绩等保存到当前 App 账号隔离的本地加密保险箱',
+                        ),
+                        onChanged: kIsWeb ||
+                                isBusy ||
+                                awaitingCaptcha ||
+                                _loadingPreferences
+                            ? null
+                            : (value) => setState(
+                                  () => _saveAcademicData = value,
+                                ),
                       ),
-                      onChanged: kIsWeb ||
-                              isBusy ||
-                              awaitingCaptcha ||
-                              _loadingPreferences
-                          ? null
-                          : (value) => setState(
-                                () => _saveAcademicData = value,
-                              ),
-                    ),
                     if (serverBinding)
                       CheckboxListTile(
                         value: _consentAccepted,
@@ -358,7 +362,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(serverBinding ? '同意并绑定' : '登录'),
+                    : Text(serverBinding ? '同意并绑定' : '登录教务'),
               ),
           ],
         );

@@ -31,6 +31,11 @@ abstract interface class AppPreferencesStore {
     });
   }
 
+  /// 已初始化的偏好存储实例；未预热时为 null。
+  ///
+  /// 启动关键路径可据此同步读取持久化外观，避免首帧先使用默认主题再跳变。
+  static AppPreferencesStore? get maybeInstance => _instance;
+
   static Future<AppPreferencesStore> _create() async {
     AppPreferencesStore store;
     if (AppPlatforms.current == AppPlatform.ohos) {

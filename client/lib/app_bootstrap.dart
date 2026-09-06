@@ -425,6 +425,14 @@ Future<void> appBootstrap() async {
         );
       }
 
+      // 在创建 ThemeProvider 前预热偏好存储，使首帧直接采用用户的主题、壁纸
+      // 与字体档位。失败时 ThemeProvider 仍会异步回退，不阻断应用启动。
+      try {
+        await AppPreferencesStore.getInstance();
+      } catch (error) {
+        debugPrint('预热偏好存储失败: $error');
+      }
+
       _appRecoveryRetry = () => runApp(const MyApp());
       runApp(const MyApp());
 

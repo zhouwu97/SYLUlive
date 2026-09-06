@@ -6,7 +6,6 @@ import '../providers/auth_provider.dart';
 import '../providers/course_evaluation_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
-import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_route.dart';
@@ -16,9 +15,9 @@ import '../widgets/app_cached_image.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/poll/poll_post_card.dart';
 import '../widgets/post_media/post_media_view.dart';
+import '../widgets/global_background_wrapper.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
-import 'dart:io' show File;
 
 /// 我的内容管理页面
 /// 查看并管理自己发布的帖子、评论、集市物品与学科评价，支持多选删除
@@ -63,7 +62,8 @@ class _MyContentScreenState extends State<MyContentScreen>
     final initialIndex = widget.initialTabIndex == null
         ? 0
         : widget.initialTabIndex!.clamp(0, 2);
-    _tabController = TabController(length: 3, vsync: this, initialIndex: initialIndex);
+    _tabController =
+        TabController(length: 3, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(_onTabChanged);
     _evaluationScrollController.addListener(_onEvaluationScroll);
     if (widget.focusCourseEvaluationId != null) {
@@ -113,7 +113,8 @@ class _MyContentScreenState extends State<MyContentScreen>
       );
       if (found) {
         if (mounted) {
-          setState(() => _highlightEvaluationId = widget.focusCourseEvaluationId);
+          setState(
+              () => _highlightEvaluationId = widget.focusCourseEvaluationId);
         }
         await Future<void>.delayed(const Duration(milliseconds: 350));
         if (!mounted) return;
@@ -371,7 +372,6 @@ class _MyContentScreenState extends State<MyContentScreen>
     final authProvider = context.watch<AuthProvider>();
     _syncSessionScope(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
     final evaluationProvider = context.watch<CourseEvaluationProvider>();
     final evaluationCount = evaluationProvider.mine.length;
 
@@ -400,9 +400,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       ),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: _buildBackground(themeProvider, isDark),
-          ),
+          const Positioned.fill(child: CustomBackgroundLayer()),
           SafeArea(
             child: Column(
               children: [
@@ -465,52 +463,6 @@ class _MyContentScreenState extends State<MyContentScreen>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.shouldShowCustomBackground &&
-        themeProvider.getCustomBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(bgPath)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : ThemeProvider.isLocalFileBackground(bgPath)
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: bgPath,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
     );
   }
 
@@ -980,8 +932,7 @@ class _MyContentScreenState extends State<MyContentScreen>
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(5),
@@ -1070,7 +1021,8 @@ class _MyContentScreenState extends State<MyContentScreen>
     );
   }
 
-  Future<void> _editCourseEvaluation(CourseEvaluationSubmission submission) async {
+  Future<void> _editCourseEvaluation(
+      CourseEvaluationSubmission submission) async {
     await CourseEvaluationFormSheet.show(
       context,
       courseName: submission.courseName,

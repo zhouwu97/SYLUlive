@@ -126,9 +126,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _refreshAdminOverview() async {
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
-    final future = auth.user?.isAdmin == true
-        ? _loadAdminOverview(auth, auth.user)
-        : null;
+    final future =
+        auth.user?.isAdmin == true ? _loadAdminOverview(auth, auth.user) : null;
     setState(() {
       _adminOverviewFuture = future;
     });
@@ -517,22 +516,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSocialStatsSection(BuildContext context, user, bool isDark) {
     if (user == null) return const SizedBox();
-    return Container(
+    return GlassContainer(
       margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 24),
       padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E1E1E).withOpacity(0.6)
-            : Colors.white.withOpacity(0.6),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10.0,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      borderRadius: 20,
+      blur: 12,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
@@ -684,7 +672,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: '管理处',
             subtitle:
                 adminTodo > 0 ? '处理举报与社区治理 · $adminTodo 条待办' : '处理举报与社区治理',
-            badgeText: adminTodo > 0 ? (adminTodo > 99 ? '99+' : '$adminTodo') : null,
+            badgeText:
+                adminTodo > 0 ? (adminTodo > 99 ? '99+' : '$adminTodo') : null,
             onTap: () {
               Navigator.push(
                 context,

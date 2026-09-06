@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:package_info_plus/package_info_plus.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../services/app_update_preferences.dart';
 import '../utils/update_checker.dart';
 import 'group_chat_dialog.dart';
 
@@ -14,8 +15,10 @@ class AboutAppSheet extends StatefulWidget {
 
 class _AboutAppSheetState extends State<AboutAppSheet> {
   String _currentVersion = '加载中...';
+  String _autoUpdateStatus = '加载中...';
   static const String _pureHomozygoteEmail = '3170305904@qq.com';
   static const String _scoreDropperEmail = '2350016823@qq.com';
+  static const String _nowEmail = '1517088507@qq.com';
 
   @override
   void initState() {
@@ -28,6 +31,12 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     if (mounted) {
       setState(() {
         _currentVersion = packageInfo.version;
+      });
+    }
+    final preferences = await AppUpdatePreferences().read();
+    if (mounted) {
+      setState(() {
+        _autoUpdateStatus = preferences.silentDownload ? '已开启' : '已关闭';
       });
     }
   }
@@ -159,17 +168,37 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 color: border,
                                 indent: 16,
                                 endIndent: 16),
+                            _buildInfoRow(
+                                '自动更新状态', _autoUpdateStatus, text, subText,
+                                height: 52),
+                            Divider(
+                                height: 1,
+                                color: border,
+                                indent: 16,
+                                endIndent: 16),
                             InkWell(
                               onTap: () {
                                 Navigator.pop(context);
                                 UpdateChecker.check(context,
                                     showNoUpdateToast: true, manual: true);
                               },
+                              child: _buildActionRow('检查更新', text, subText,
+                                  height: 52),
+                            ),
+                            Divider(
+                                height: 1,
+                                color: border,
+                                indent: 16,
+                                endIndent: 16),
+                            InkWell(
+                              onTap: () => _launchUrl(
+                                  'https://github.com/zhouwu97/SYLUlive/releases?utm_source=chatgpt.com'),
                               borderRadius: const BorderRadius.only(
                                 bottomLeft: Radius.circular(20),
                                 bottomRight: Radius.circular(20),
                               ),
-                              child: _buildActionRow('检查更新', text, subText,
+                              child: _buildActionRow(
+                                  'GitHub Releases 备用下载', text, subText,
                                   height: 52),
                             ),
                           ],
@@ -341,8 +370,24 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(title, style: TextStyle(fontSize: 15, color: text)),
-            Text(value, style: TextStyle(fontSize: 14, color: subText)),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, color: text),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: TextStyle(fontSize: 14, color: subText),
+              ),
+            ),
           ],
         ),
       ),
@@ -358,7 +403,15 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(title, style: TextStyle(fontSize: 15, color: text)),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, color: text),
+              ),
+            ),
+            const SizedBox(width: 12),
             Icon(Icons.chevron_right_rounded, color: subText, size: 20),
           ],
         ),
@@ -480,6 +533,17 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 panelColor: valuePanelColor,
                 borderColor: valueBorderColor,
               ),
+              const SizedBox(height: 10),
+              _buildAuthorEmailRow(
+                context: context,
+                dialogContext: dialogContext,
+                author: 'Now',
+                email: _nowEmail,
+                titleColor: titleColor,
+                labelColor: labelColor,
+                panelColor: valuePanelColor,
+                borderColor: valueBorderColor,
+              ),
               const SizedBox(height: 12),
               Text(
                 '欢迎通过邮件反馈问题或提出建议。',
@@ -497,7 +561,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
             ),
-
           ],
         );
       },

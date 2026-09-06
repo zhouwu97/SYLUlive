@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
@@ -30,7 +31,7 @@ void main() {
   Completer<void>? loginGate;
 
   void initialize() {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     authorized = false;
     rejectRevoke = false;
     expireSession = false;
@@ -98,11 +99,18 @@ void main() {
 
   Future<void> openDialog(
     WidgetTester tester, {
+    bool saveData = false,
     ThemeMode theme = ThemeMode.light,
     TextScaler scaler = TextScaler.noScaling,
   }) async {
-    initialize();
-    await tester.runAsync(() => controller.syncAppUser('test-app-user'));
+    await tester.runAsync(() async {
+      initialize();
+      final preferences = AcademicStoragePreferences(
+          appUserId: 'test-app-user',
+          store: await AppPreferencesStore.getInstance());
+      await preferences.setSaveAcademicData(saveData);
+      await controller.syncAppUser('test-app-user');
+    });
     await setGoldenViewport(tester, GoldenViewports.phone360x800);
     await tester.pumpWidget(GoldenTestApp(
       themeMode: theme,
@@ -121,51 +129,62 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('明确授权后才发送服务器绑定请求，提交中禁用重复操作', (tester) async {
-    await openDialog(tester);
-    expect(find.text('绑定教务账号'), findsOneWidget);
-    expect(find.textContaining('服务器将加密保存'), findsOneWidget);
-    expect(find.byType(Switch), findsNothing);
-    final button = find.widgetWithText(FilledButton, '同意并绑定');
-    expect(tester.widget<FilledButton>(button).onPressed, isNull);
-    await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
-    await tester.enterText(find.byType(TextFormField).at(1), 'test-password');
-    await tester.pumpAndSettle();
-    expect(requests.where((r) => r.path == '/edu/bind'), isEmpty);
-    await tester.ensureVisible(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
-    expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
-        isTrue);
-    loginGate = Completer<void>();
-    await tester.tap(button);
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    await tester.pump();
-    expect(controller.isBusy, isTrue);
-    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-        isNull);
-    expect(
-        tester
-            .widget<TextFormField>(find.byType(TextFormField).at(1))
-            .controller!
-            .text,
-        isEmpty);
-    loginGate!.complete();
-    // 凭据及缓存清理包含真实异步调用，等待弹窗完成整个登录流程。
-    for (var attempt = 0;
-        attempt < 100 && find.byType(AcademicLoginDialog).evaluate().isNotEmpty;
-        attempt++) {
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+  for (final saveData in [false, true]) {
+    testWidgets('绑定保留资料缓存选择 $saveData，明确授权后发送且禁止重复提交', (tester) async {
+      await openDialog(tester, saveData: saveData);
+      expect(find.text('绑定教务账号'), findsOneWidget);
+      expect(find.textContaining('服务器将加密保存'), findsOneWidget);
+      expect(find.byType(Switch), findsNothing);
+      final button = find.widgetWithText(FilledButton, '同意并绑定');
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+      await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
+      await tester.enterText(find.byType(TextFormField).at(1), 'test-password');
       await tester.pumpAndSettle();
-    }
-    await tester.pumpAndSettle();
-    expect(find.byType(AcademicLoginDialog), findsNothing);
-    final binding = requests.singleWhere((r) => r.path == '/edu/bind');
-    expect(binding.data['edu_data_consent_accepted'], isTrue);
-    expect(controller.isAuthenticated, isTrue);
-  });
+      expect(requests.where((r) => r.path == '/edu/bind'), isEmpty);
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isTrue);
+      loginGate = Completer<void>();
+      await tester.tap(button);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      expect(controller.isBusy, isTrue);
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+          isNull);
+      expect(
+          tester
+              .widget<TextFormField>(find.byType(TextFormField).at(1))
+              .controller!
+              .text,
+          isEmpty);
+      loginGate!.complete();
+      // 凭据及缓存清理包含真实异步调用，等待弹窗完成整个登录流程。
+      for (var attempt = 0;
+          attempt < 100 &&
+              find.byType(AcademicLoginDialog).evaluate().isNotEmpty;
+          attempt++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pumpAndSettle();
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      final binding = requests.singleWhere((r) => r.path == '/edu/bind');
+      expect(binding.data['edu_data_consent_accepted'], isTrue);
+      expect(controller.isAuthenticated, isTrue);
+      final storedChoice = await tester.runAsync(() async {
+        final preferences = AcademicStoragePreferences(
+            appUserId: 'test-app-user',
+            store: await AppPreferencesStore.getInstance());
+        return preferences.saveAcademicData;
+      });
+      expect(storedChoice, saveData);
+    });
+  }
 
   for (final theme in [ThemeMode.light, ThemeMode.dark]) {
     testWidgets('授权说明可打开，1.3倍字号无溢出：${theme.name}', (tester) async {

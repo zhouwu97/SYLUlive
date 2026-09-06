@@ -99,11 +99,6 @@ export 'widgets/global_background_wrapper.dart'
         PredictiveBackGate,
         backgroundWrapperKey;
 
-const _schoolDeviceCapabilityCut = bool.fromEnvironment(
-  'SCHOOL_DEVICE_CAPABILITY_CUT',
-  defaultValue: true,
-);
-
 String _hashError(
   String level,
   String source,
@@ -649,7 +644,6 @@ Future<bool> _handleDeviceToolJobNotification(
 ) async {
   final extras = extractJPushExtras(message);
   if (extras['type'] != 'ai_device_job') return false;
-  if (_schoolDeviceCapabilityCut) return true;
   final jobId = extras['job_id'];
   if (jobId is String && RegExp(r'^[0-9a-fA-F-]{1,36}$').hasMatch(jobId)) {
     try {
@@ -1493,11 +1487,9 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: _schoolDeviceCapabilityCut
-          ? const _WidgetDeepLinkHandler(child: _AppContent())
-          : const DeviceToolBridgeHost(
-              child: _WidgetDeepLinkHandler(child: _AppContent()),
-            ),
+      child: const DeviceToolBridgeHost(
+        child: _WidgetDeepLinkHandler(child: _AppContent()),
+      ),
     );
   }
 }

@@ -87,11 +87,13 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   Future<void> _loadSavedState() async {
     if (_controller.sourceKind == AcademicSourceKind.legacy) {
-      // 服务端负责保管和恢复凭据，本机仅保留已授权的教务资料缓存。
+      // 绑定授权不代表同意开启本机缓存，沿用当前 App 账号的独立选择。
+      final preferences = await _coordinator.loadPreferences();
+      if (!mounted) return;
       setState(() {
         _loadingPreferences = false;
         _saveCredentials = false;
-        _saveAcademicData = !kIsWeb;
+        _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
       });
       return;
     }
@@ -125,6 +127,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _submitLogin() async {
+    if (_loadingPreferences) return;
     if (_controller.sourceKind == AcademicSourceKind.legacy &&
         !_consentAccepted) {
       return;
@@ -362,7 +365,9 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   textStyle: Theme.of(context).textTheme.labelLarge,
                   minimumSize: const Size(64, 44),
                 ),
-                onPressed: isBusy || (serverBinding && !_consentAccepted)
+                onPressed: isBusy ||
+                        _loadingPreferences ||
+                        (serverBinding && !_consentAccepted)
                     ? null
                     : _submitLogin,
                 child: isBusy

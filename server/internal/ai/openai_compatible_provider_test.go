@@ -7,7 +7,81 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestOpenAICompatibleProviderDistinguishesDeadlineFromCancellation(t *testing.T) {
+	for _, timeout := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		want := ProviderErrorCancelled
+		if timeout {
+			cancel()
+			ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			want = ProviderErrorTimeout
+		}
+		cancel()
+		provider, err := NewOpenAICompatibleProvider("https://example.test/v1", "test-key", "gpt-5.6-luna", "medium", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, startErr := provider.Start(ctx, ProviderRequest{})
+		stream := &openAICompatibleStream{}
+		_, nextErr := stream.Next(ctx)
+		for _, got := range []error{startErr, nextErr, classifyProviderTransportError(ctx, ctx.Err())} {
+			if providerErrorClass(got) != want {
+				t.Fatalf("timeout=%v class=%s want=%s", timeout, providerErrorClass(got), want)
+			}
+		}
+	}
+}
+
+func TestOpenAICompatibleProviderReasoningEffortOnBothRequestPaths(t *testing.T) {
+	for _, effort := range []string{"", "none", "low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				got, present := payload["reasoning_effort"]
+				if effort == "" && present || effort != "" && got != effort {
+					t.Errorf("reasoning_effort = %v, present = %v, want %q", got, present, effort)
+				}
+				if payload["stream"] == true {
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"OK"}}]}`))
+			}))
+			defer server.Close()
+			provider, err := NewOpenAICompatibleProvider(server.URL, "test-key", "gpt-5.6-luna", effort, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.Chat(context.Background(), ChatRequest{Messages: []Message{{Role: "user", Content: "OK"}}}); err != nil {
+				t.Fatal(err)
+			}
+			stream, err := provider.Start(context.Background(), ProviderRequest{Messages: []Message{{Role: "user", Content: "OK"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if event, err := stream.Next(context.Background()); err != nil || event.Text != "OK" {
+				t.Fatalf("event = %#v, err = %v", event, err)
+			}
+		})
+	}
+}
+
+func TestOpenAICompatibleProviderRejectsInvalidReasoningEffort(t *testing.T) {
+	if _, err := NewOpenAICompatibleProvider("https://example.test/v1", "test-key", "gpt-5.6-luna", "ultra", nil); err == nil {
+		t.Fatal("非法思考深度应在发出请求前被拒绝")
+	}
+}
 
 func TestOpenAICompatibleProviderForcesRequiredTool(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +109,7 @@ func TestOpenAICompatibleProviderForcesRequiredTool(t *testing.T) {
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
-	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", "", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +137,7 @@ func TestOpenAICompatibleProviderContract(t *testing.T) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"回答"}}],"usage":{"prompt_tokens":12,"completion_tokens":3}}`))
 	}))
 	defer server.Close()
-	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", "", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +159,7 @@ func TestOpenAICompatibleProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 		_, _ = w.Write([]byte(`{"secret":"remote-sensitive-detail"}`))
 	}))
 	defer server.Close()
-	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", "", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +203,7 @@ func TestOpenAICompatibleProviderStreamingContract(t *testing.T) {
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
-	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", "", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +229,14 @@ func TestOpenAICompatibleProviderStreamingContract(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleProviderReadsStandardCacheUsage(t *testing.T) {
+	stream := &openAICompatibleStream{scanner: newProviderScanner(strings.NewReader("data: {\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"prompt_cache_hit_tokens\":60,\"prompt_tokens_details\":{\"cached_tokens\":60,\"cache_creation_tokens\":20}}}\n\ndata: [DONE]\n\n"))}
+	event, err := stream.Next(context.Background())
+	if err != nil || event.CacheHitTokens != 60 || event.CacheWriteTokens != 20 || event.InputTokens != 100 {
+		t.Fatalf("cache usage = %+v, error=%v", event, err)
+	}
+}
+
 func TestOpenAICompatibleProviderPreservesLengthFinishReason(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -165,7 +247,7 @@ func TestOpenAICompatibleProviderPreservesLengthFinishReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", "", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}

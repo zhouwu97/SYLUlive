@@ -675,6 +675,9 @@ final class _FakeAcademicRepository implements AcademicRepository {
   }
 
   @override
+  Future<void> restoreSession() async {}
+
+  @override
   void close() {}
 }
 

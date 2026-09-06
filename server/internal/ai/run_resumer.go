@@ -721,7 +721,25 @@ func mergeProviderUsage(left, right ProviderEvent) ProviderEvent {
 	left.InputTokens += right.InputTokens
 	left.OutputTokens += right.OutputTokens
 	left.CacheHitTokens += right.CacheHitTokens
+	left.CacheWriteTokens += right.CacheWriteTokens
 	left.UsageAvailable = left.UsageAvailable || right.UsageAvailable
+	merged := make(map[string]ModelTokenUsage, len(left.ModelUsage)+1)
+	for model, usage := range left.ModelUsage {
+		merged[model] = usage
+	}
+	rightModels := right.ModelUsage
+	if len(rightModels) == 0 && right.Model != "" && right.UsageAvailable {
+		rightModels = map[string]ModelTokenUsage{right.Model: {InputTokens: right.InputTokens, OutputTokens: right.OutputTokens, CacheHitTokens: right.CacheHitTokens, CacheWriteTokens: right.CacheWriteTokens}}
+	}
+	for model, usage := range rightModels {
+		previous := merged[model]
+		previous.InputTokens += usage.InputTokens
+		previous.OutputTokens += usage.OutputTokens
+		previous.CacheHitTokens += usage.CacheHitTokens
+		previous.CacheWriteTokens += usage.CacheWriteTokens
+		merged[model] = previous
+	}
+	left.ModelUsage = merged
 	return left
 }
 

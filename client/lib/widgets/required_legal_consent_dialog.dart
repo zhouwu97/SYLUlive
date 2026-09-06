@@ -17,13 +17,27 @@ Future<void> showRequiredLegalConsentDialog(
   );
 }
 
+Future<bool> showRequiredCommunityRulesDialog(BuildContext context) async {
+  return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const RequiredLegalConsentDialog(
+          requiresEduDataConsent: false,
+          communityRulesOnly: true,
+        ),
+      ) ??
+      false;
+}
+
 // RequiredLegalConsentDialog 阻止旧用户在确认最新法律文件前进入业务功能。
 class RequiredLegalConsentDialog extends StatefulWidget {
   final bool requiresEduDataConsent;
+  final bool communityRulesOnly;
 
   const RequiredLegalConsentDialog({
     super.key,
     required this.requiresEduDataConsent,
+    this.communityRulesOnly = false,
   });
 
   @override
@@ -49,13 +63,19 @@ class _RequiredLegalConsentDialogState
       _submitting = true;
       _error = null;
     });
-    final result =
-        await context.read<AuthProvider>().acceptRequiredLegalConsents(
+    final auth = context.read<AuthProvider>();
+    final result = widget.communityRulesOnly
+        ? await auth.acceptCommunityRules()
+        : await auth.acceptRequiredLegalConsents(
               includeEduDataConsent: widget.requiresEduDataConsent,
             );
     if (!mounted) return;
     if (result.success) {
-      Navigator.of(context).pop();
+      if (widget.communityRulesOnly) {
+        Navigator.of(context).pop(true);
+      } else {
+        Navigator.of(context).pop();
+      }
       return;
     }
     setState(() {
@@ -75,21 +95,25 @@ class _RequiredLegalConsentDialogState
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        title: const Text('请确认协议与隐私政策'),
+        title: Text(widget.communityRulesOnly ? '请确认社区规则' : '请确认协议与隐私政策'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('继续使用前，请阅读并确认以下协议与说明。'),
+              Text(widget.communityRulesOnly
+                  ? '首次点赞、评论或发布内容前，请阅读并确认社区规则。'
+                  : '继续使用前，请阅读并确认以下协议与说明。'),
               const SizedBox(height: 8),
               TextButton.icon(
                 key: const ValueKey('required-consent-documents'),
                 onPressed: _submitting
                     ? null
-                    : () => LegalDocumentsScreen.open(context),
+                    : () => LegalDocumentsScreen.open(context,
+                        documentId:
+                            widget.communityRulesOnly ? 'community_rules' : null),
                 icon: const Icon(Icons.description_outlined),
-                label: const Text('查看协议与隐私政策'),
+                label: Text(widget.communityRulesOnly ? '查看社区规则' : '查看协议与隐私政策'),
               ),
               CheckboxListTile(
                 key: const ValueKey('required-general-consents'),
@@ -100,7 +124,9 @@ class _RequiredLegalConsentDialogState
                         setState(() => _generalAccepted = value ?? false),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('我已阅读并确认用户协议和隐私政策'),
+                title: Text(widget.communityRulesOnly
+                    ? '我已阅读并同意社区规则'
+                    : '我已阅读并确认用户协议和隐私政策'),
               ),
               if (widget.requiresEduDataConsent)
                 CheckboxListTile(
@@ -127,8 +153,12 @@ class _RequiredLegalConsentDialogState
         actions: [
           TextButton(
             key: const ValueKey('required-consent-logout'),
-            onPressed: _submitting ? null : _logout,
-            child: const Text('退出登录'),
+            onPressed: _submitting
+                ? null
+                : widget.communityRulesOnly
+                    ? () => Navigator.of(context).pop(false)
+                    : _logout,
+            child: Text(widget.communityRulesOnly ? '暂不同意' : '退出登录'),
           ),
           FilledButton(
             key: const ValueKey('required-consent-confirm'),

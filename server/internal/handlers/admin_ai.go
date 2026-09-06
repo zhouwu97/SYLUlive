@@ -34,13 +34,21 @@ func (h *AdminAIHandler) GetMetrics(c *gin.Context) {
 		return
 	}
 	totalTokens, totalCost, successCount := 0, int64(0), 0
+	totalUSD, pricedCount := int64(0), 0
 	latencies := make([]int64, 0, len(records))
 	byProvider := map[string]map[string]interface{}{}
+	byModel := map[string]map[string]interface{}{}
 	byPurpose := map[string]int{}
 	byError := map[string]int{}
 	for _, record := range records {
 		totalTokens += record.InputTokens + record.OutputTokens
 		totalCost += record.CostMicroYuan
+		usd, priced := ai.EstimateUsageCostUSD(record)
+		if priced {
+			totalUSD += usd
+			pricedCount++
+		}
+		addAICostGroup(byModel, record.Model, record, usd, priced)
 		if record.ErrorClass == "" {
 			successCount++
 		} else {
@@ -49,15 +57,7 @@ func (h *AdminAIHandler) GetMetrics(c *gin.Context) {
 		if record.LatencyMilliseconds >= 0 {
 			latencies = append(latencies, record.LatencyMilliseconds)
 		}
-		key := record.Provider
-		item := byProvider[key]
-		if item == nil {
-			item = map[string]interface{}{"provider": key, "requests": 0, "tokens": 0, "cost_micro_yuan": int64(0)}
-			byProvider[key] = item
-		}
-		item["requests"] = item["requests"].(int) + 1
-		item["tokens"] = item["tokens"].(int) + record.InputTokens + record.OutputTokens
-		item["cost_micro_yuan"] = item["cost_micro_yuan"].(int64) + record.CostMicroYuan
+		addAICostGroup(byProvider, record.Provider, record, usd, priced)
 		purpose := record.Purpose
 		if purpose == "" {
 			purpose = "campus_agent"
@@ -66,8 +66,14 @@ func (h *AdminAIHandler) GetMetrics(c *gin.Context) {
 	}
 	providers := make([]map[string]interface{}, 0, len(byProvider))
 	for _, value := range byProvider {
+		value["provider"] = value["name"]
 		providers = append(providers, value)
 	}
+	modelGroups := make([]map[string]interface{}, 0, len(byModel))
+	for _, value := range byModel {
+		modelGroups = append(modelGroups, value)
+	}
+	sort.Slice(modelGroups, func(i, j int) bool { return modelGroups[i]["name"].(string) < modelGroups[j]["name"].(string) })
 	sort.Slice(providers, func(i, j int) bool { return providers[i]["provider"].(string) < providers[j]["provider"].(string) })
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 	percentile := func(p float64) int64 {
@@ -80,7 +86,26 @@ func (h *AdminAIHandler) GetMetrics(c *gin.Context) {
 	var toolCalls, deviceJobs int64
 	_ = h.db.WithContext(c.Request.Context()).Model(&models.AIToolCall{}).Where("created_at >= ?", from).Count(&toolCalls).Error
 	_ = h.db.WithContext(c.Request.Context()).Model(&models.DeviceToolJob{}).Where("created_at >= ?", from).Count(&deviceJobs).Error
-	c.JSON(http.StatusOK, gin.H{"from": from, "to": time.Now().UTC(), "days": days, "requests": len(records), "success_count": successCount, "success_rate": rate(successCount, len(records)), "input_output_tokens": totalTokens, "cost_micro_yuan": totalCost, "latency_ms": gin.H{"p50": percentile(0.5), "p95": percentile(0.95)}, "by_provider": providers, "by_purpose": byPurpose, "errors": byError, "mcp_tool_calls": toolCalls, "device_jobs": deviceJobs})
+	c.JSON(http.StatusOK, gin.H{"from": from, "to": time.Now().UTC(), "days": days, "requests": len(records), "success_count": successCount, "success_rate": rate(successCount, len(records)), "input_output_tokens": totalTokens, "cost_micro_yuan": totalCost,
+		"cost_currency": "USD", "cost_nano_usd": totalUSD, "priced_requests": pricedCount, "unpriced_requests": len(records) - pricedCount, "pricing_version": ai.ModelPricingVersion,
+		"latency_ms": gin.H{"p50": percentile(0.5), "p95": percentile(0.95)}, "by_provider": providers, "by_model": modelGroups, "by_purpose": byPurpose, "errors": byError, "mcp_tool_calls": toolCalls, "device_jobs": deviceJobs})
+}
+
+func addAICostGroup(groups map[string]map[string]interface{}, key string, record models.AIUsageRecord, usd int64, priced bool) {
+	item := groups[key]
+	if item == nil {
+		item = map[string]interface{}{"name": key, "requests": 0, "tokens": 0, "cost_micro_yuan": int64(0), "cost_nano_usd": int64(0), "priced_requests": 0, "unpriced_requests": 0, "cost_currency": "USD"}
+		groups[key] = item
+	}
+	item["requests"] = item["requests"].(int) + 1
+	item["tokens"] = item["tokens"].(int) + record.InputTokens + record.OutputTokens
+	item["cost_micro_yuan"] = item["cost_micro_yuan"].(int64) + record.CostMicroYuan
+	if priced {
+		item["cost_nano_usd"] = item["cost_nano_usd"].(int64) + usd
+		item["priced_requests"] = item["priced_requests"].(int) + 1
+	} else {
+		item["unpriced_requests"] = item["unpriced_requests"].(int) + 1
+	}
 }
 
 func rate(success, total int) float64 {

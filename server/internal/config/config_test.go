@@ -91,9 +91,14 @@ func TestLoadReleaseRequiresExplicitSchoolRetirementSwitches(t *testing.T) {
 
 	require.PanicsWithError(
 		t,
-		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true",
+		"release 模式必须显式设置 SCHOOL_ACADEMIC_ROUTES_RETIRED=true 或 false",
 		func() { _ = Load() },
 	)
+
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "false")
+	require.NotPanics(t, func() { _ = Load() })
+	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "invalid")
+	require.PanicsWithError(t, "release 模式 SCHOOL_ACADEMIC_ROUTES_RETIRED 必须为 true 或 false", func() { _ = Load() })
 }
 
 func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
@@ -103,8 +108,9 @@ func TestLoadSchoolCapabilityDefaultsClosed(t *testing.T) {
 	t.Setenv("SCHOOL_ACADEMIC_ROUTES_RETIRED", "")
 
 	cfg := Load()
-	require.True(t, cfg.SchoolDeviceCapabilityCut)
-	require.True(t, cfg.SchoolAcademicRoutesRetired)
+	require.False(t, cfg.SchoolAuthorityRetired)
+	require.False(t, cfg.SchoolAcademicRoutesRetired)
+	require.False(t, cfg.SchoolDeviceCapabilityCut)
 }
 
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
@@ -337,7 +343,7 @@ func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 }
 
 func TestLoadAIAllowsApprovedChatModels(t *testing.T) {
-	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini"} {
+	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra"} {
 		setBaseConfigEnv(t, "debug")
 		t.Setenv("AI_ENABLED", "true")
 		t.Setenv("AI_API_KEY", "server-only-key")
@@ -352,6 +358,36 @@ func TestLoadAIRejectsUnapprovedChatModel(t *testing.T) {
 	t.Setenv("AI_API_KEY", "server-only-key")
 	t.Setenv("AI_CHAT_MODEL", "deepseek-chat")
 	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIFallbackChatModel(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	for _, model := range []string{"", "gpt-5.6-luna", "gpt-5.6-terra"} {
+		t.Setenv("AI_FALLBACK_CHAT_MODEL", " "+model+" ")
+		require.Equal(t, model, Load().AIFallbackChatModel)
+	}
+	t.Setenv("AI_FALLBACK_CHAT_MODEL", "unreviewed-model")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIReasoningEffort(t *testing.T) {
+	for _, effort := range []string{"", "none", "low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			setBaseConfigEnv(t, "debug")
+			t.Setenv("AI_REASONING_EFFORT", effort)
+			require.Equal(t, effort, Load().AIReasoningEffort)
+		})
+	}
+	t.Run("normalize", func(t *testing.T) {
+		setBaseConfigEnv(t, "debug")
+		t.Setenv("AI_REASONING_EFFORT", " MEDIUM ")
+		require.Equal(t, "medium", Load().AIReasoningEffort)
+	})
+	t.Run("reject_invalid", func(t *testing.T) {
+		setBaseConfigEnv(t, "debug")
+		t.Setenv("AI_REASONING_EFFORT", "ultra")
+		require.Panics(t, func() { Load() })
+	})
 }
 
 func TestLoadIgnoresRetiredAIUserAccessVariables(t *testing.T) {

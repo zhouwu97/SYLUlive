@@ -129,6 +129,28 @@ final class AcademicSessionController extends ChangeNotifier {
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
       _notifyListeners();
+      if (_repository.sourceKind == AcademicSourceKind.legacy) {
+        try {
+          await _repository.restoreSession();
+          if (_disposed || generation != _accountGeneration) return;
+          _studentId = _repository.studentId;
+          _status = _repository.sessionState == SessionState.authenticated
+              ? AcademicSessionStatus.authenticated
+              : AcademicSessionStatus.idle;
+          if (_repository.sessionState == SessionState.authenticated) {
+            try {
+              _profile = await _repository.getProfile();
+            } catch (_) {
+              // 绑定已恢复时，资料刷新失败不应再次要求用户绑定。
+            }
+          }
+        } catch (error) {
+          if (_disposed || generation != _accountGeneration) return;
+          _failure = AcademicFailure.fromException(error);
+          _status = AcademicSessionStatus.error;
+        }
+        _notifyListeners();
+      }
     });
   }
 
@@ -397,6 +419,23 @@ final class AcademicSessionController extends ChangeNotifier {
       }
       if (_disposed || generation != _accountGeneration) return;
       _sessionResetPending = false;
+      _notifyListeners();
+    });
+  }
+
+  /// 从服务端恢复当前 App 账号已有的教务授权。
+  Future<void> restoreSession() {
+    final generation = _accountGeneration;
+    return _enqueue(() async {
+      if (_disposed || _appUserId == null || generation != _accountGeneration) {
+        return;
+      }
+      await _repository.restoreSession();
+      if (_disposed || generation != _accountGeneration) return;
+      _studentId = _repository.studentId;
+      _status = _repository.sessionState == SessionState.authenticated
+          ? AcademicSessionStatus.authenticated
+          : AcademicSessionStatus.idle;
       _notifyListeners();
     });
   }

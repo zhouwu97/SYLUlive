@@ -5,9 +5,8 @@ import '../../domain/academic_data_source.dart';
 
 /// 旧服务端代理数据源。
 ///
-/// 这是迁移期间的兼容实现：它只使用 App JWT 所在的 Dio，不接触本机直连
-/// 数据源的 CookieJar。新功能默认使用 [JiaowuLocalDataSource]；生产 App
-/// 通过 [networkEnabled] 关闭本类的网络出口，测试和独立旧版构建仍可显式启用。
+/// 服务端教务数据源只使用 App JWT 所在的 Dio，不接触本机直连数据源的
+/// CookieJar。教务密码和 Cookie 由服务端加密保存并负责自动恢复。
 final class LegacyServerDataSource implements AcademicDataSource {
   LegacyServerDataSource(this._dio, {this.networkEnabled = false});
 
@@ -76,6 +75,30 @@ final class LegacyServerDataSource implements AcademicDataSource {
         ),
       );
     }
+  }
+
+  /// 读取服务端已有绑定，并在需要时恢复教务会话。
+  Future<void> restore() async {
+    _ensureOpen();
+    _ensureNetworkEnabled();
+    final response = await _dio.get('/edu/status');
+    final data = _requireSuccessfulMap(response, '获取教务绑定状态');
+    final authorized = data['edu_authorized'] == true || data['edu_bound'] == true;
+    if (!authorized) {
+      _studentId = null;
+      _sessionState = SessionState.unauthenticated;
+      return;
+    }
+    _studentId = _text(data, const ['edu_student_id', 'student_id']);
+    final state = _text(data, const ['edu_session_state'], fallback: 'active');
+    if (state == 'active') {
+      _sessionState = SessionState.authenticated;
+      return;
+    }
+    final resumed = await _dio.post('/edu/session/resume');
+    final resumedData = _requireSuccessfulMap(resumed, '恢复教务会话');
+    _studentId = _text(resumedData, const ['edu_student_id', 'student_id'], fallback: _studentId ?? '');
+    _sessionState = SessionState.authenticated;
   }
 
   @override
@@ -217,12 +240,12 @@ final class LegacyServerDataSource implements AcademicDataSource {
     _studentId = null;
     _sessionState = SessionState.unauthenticated;
     if (!networkEnabled) return;
-    // 旧代理的会话由服务端管理；退出失败不能阻止本地账号切换清理。
-    try {
-      await _dio.post('/edu/session/logout');
-    } on DioException {
-      // 不记录响应体、Cookie 或请求参数。
-    }
+    // App 账号退出不撤销教务授权，服务端凭据继续保留供下次登录恢复。
+  }
+
+  @override
+  Future<void> restoreSession() async {
+    await restore();
   }
 
   @override

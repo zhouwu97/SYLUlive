@@ -224,7 +224,8 @@ func recordLegalConsents(tx *gorm.DB, userID uint, input LegalConsentInput, incl
 			UserID: userID, Document: document, Version: models.LegalDocumentVersion,
 			AcknowledgementType: "legacy_bundled", Scope: "legacy", Scene: "registration",
 		}
-		if err := tx.Where("user_id = ? AND document = ? AND version = ?", userID, document, models.LegalDocumentVersion).
+		// 注册捆绑告知与首次写操作确认分场景保存，避免补签时覆盖独立确认。
+		if err := tx.Where("user_id = ? AND document = ? AND version = ? AND scene = ?", userID, document, models.LegalDocumentVersion, consent.Scene).
 			Assign(map[string]interface{}{"accepted_at": now, "revoked_at": nil, "acknowledgement_type": "legacy_bundled", "scope": "legacy", "scene": "registration"}).
 			FirstOrCreate(&consent).Error; err != nil {
 			return err
@@ -303,7 +304,7 @@ func (h *AuthHandler) AcceptCommunityRules(c *gin.Context) {
 		Version: models.LegalDocumentVersion, AcknowledgementType: "rules_acceptance",
 		Scope: "community_write", Scene: "first_write",
 	}
-	if err := h.db.Where("user_id = ? AND document = ? AND version = ?", userID, consent.Document, consent.Version).
+	if err := h.db.Where("user_id = ? AND document = ? AND version = ? AND scene = ?", userID, consent.Document, consent.Version, consent.Scene).
 		Assign(map[string]interface{}{
 			"accepted_at": now, "revoked_at": nil,
 			"acknowledgement_type": consent.AcknowledgementType,

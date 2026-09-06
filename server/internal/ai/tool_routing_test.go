@@ -165,3 +165,20 @@ func TestShortlistModelToolsKeepsPersonalToolsOutOfPublicRequests(t *testing.T) 
 	require.Equal(t, []ToolDefinition{{Name: "campus_search_policy", Description: "检索已发布校园政策"}}, shortlistModelTools("补考成绩怎么算", definitions))
 	require.Len(t, shortlistModelTools("查看我的成绩", definitions), 3)
 }
+
+func TestUnifiedAcademicAnalysisRequiresItsDeterministicTool(t *testing.T) {
+	definitions := []ToolDefinition{
+		{Name: "campus_search_policy"},
+		{Name: modelToolAcademicRisk},
+		{Name: "academic_get_grade_summary"},
+		{Name: "competition_search_catalog"},
+	}
+	question := "分析我的学业情况，找出主要风险并给出改进建议"
+	selected := shortlistModelTools(question, definitions)
+	require.Equal(t, []ToolDefinition{{Name: modelToolAcademicRisk}}, selected)
+	name, required := requiredFastPathTool(question, selected)
+	require.True(t, required)
+	require.Equal(t, modelToolAcademicRisk, name)
+	_, required = requiredFastPathTool("what can you do", definitions)
+	require.False(t, required)
+}

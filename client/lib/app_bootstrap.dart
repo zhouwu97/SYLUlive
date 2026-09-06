@@ -1346,8 +1346,10 @@ class MyApp extends StatelessWidget {
         Provider<AcademicRepository>(
           create: (_) => AcademicRepositoryImpl(
             local: JiaowuLocalDataSource(),
-            legacy: LegacyServerDataSource(dio, networkEnabled: false),
-            source: AcademicSourceKind.local,
+            // 教务授权由服务端持久化，客户端只保留按账号隔离的数据快照。
+            // 这样重装或重新登录后可以通过 App 账号恢复教务会话。
+            legacy: LegacyServerDataSource(dio, networkEnabled: true),
+            source: AcademicSourceKind.legacy,
           ),
           dispose: (_, repository) => repository.close(),
         ),
@@ -1357,6 +1359,11 @@ class MyApp extends StatelessWidget {
           create: (_) => AuthProvider(
             dio,
             onForbiddenRecovery: _handleForbiddenRecovery,
+            onCommunityRulesRequired: () async {
+              final context = appNavigatorKey.currentContext;
+              if (context == null || !context.mounted) return false;
+              return showRequiredCommunityRulesDialog(context);
+            },
           ),
         ),
         ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(

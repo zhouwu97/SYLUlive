@@ -242,8 +242,7 @@ func TestRuntimeAnswersGreetingWithoutKnowledgeSources(t *testing.T) {
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
 
-	require.Len(t, provider.Requests, 1)
-	require.Contains(t, provider.Requests[0].Messages[0].Content, "直接自然回答")
+	require.Empty(t, provider.Requests, "纯问候无需等待上游模型")
 	var messages []models.AIConversationMessage
 	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
 	require.Len(t, messages, 2)

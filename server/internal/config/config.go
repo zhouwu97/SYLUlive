@@ -44,6 +44,8 @@ type Config struct {
 	AIAPIKey                               string   // 仅从服务端环境变量读取的模型网关密钥
 	AIBaseURL                              string   // OpenAI 兼容模型网关地址
 	AIChatModel                            string   // 对话模型
+	AIReasoningEffort                      string   // 留空沿用网关默认思考深度
+	AIFallbackChatModel                    string   // 留空关闭空流故障时的备用模型。
 	AIRequestTimeoutSeconds                int      // 单次运行硬超时
 	AILegacyMaxOutputTokens                int      // 旧 Go RAG 单次生成的最大输出 token
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
@@ -107,8 +109,7 @@ type Config struct {
 	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
 	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
-	// SchoolAcademicRoutesRetired 表示 Release D 已完成，旧教务/个人快照路由只返回 410。
-	// 学校个人能力默认关闭；SCHOOL_AUTHORITY_RETIRED 会同时作为总闸门。
+	// SchoolAcademicRoutesRetired 控制旧教务个人路由；教务绑定恢复依赖这些路由。
 	SchoolAuthorityRetired      bool
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
@@ -193,10 +194,9 @@ func Load() *Config {
 
 	releaseMode := os.Getenv("GIN_MODE") == "release"
 
-	// 生产环境禁止重新打开服务端学校个人能力。子开关必须显式为 true，
-	// 防止空值回退或仅设置总开关时误开放历史教务路由。
+	// 生产环境要求显式声明学校能力开关，避免部署时误用旧环境变量。
 	if releaseMode {
-		requireReleaseTrue(
+		requireReleaseBool(
 			"SCHOOL_AUTHORITY_RETIRED",
 			"SCHOOL_DEVICE_CAPABILITY_CUT",
 			"SCHOOL_ACADEMIC_ROUTES_RETIRED",
@@ -375,7 +375,7 @@ func Load() *Config {
 	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
 	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
 	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
-	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", true)
+	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
 	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
 	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
 
@@ -392,6 +392,16 @@ func Load() *Config {
 	aiChatModel := firstNonEmptyEnv("AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
 	if aiChatModel == "" {
 		aiChatModel = "gpt-5.4"
+	}
+	aiReasoningEffort := strings.ToLower(strings.TrimSpace(os.Getenv("AI_REASONING_EFFORT")))
+	aiFallbackChatModel := strings.TrimSpace(os.Getenv("AI_FALLBACK_CHAT_MODEL"))
+	if aiFallbackChatModel != "" && !approvedAIChatModel(aiFallbackChatModel) {
+		panic("AI_FALLBACK_CHAT_MODEL 必须是已审核的模型名称")
+	}
+	switch aiReasoningEffort {
+	case "", "none", "low", "medium", "high", "xhigh", "max":
+	default:
+		panic("AI_REASONING_EFFORT 必须为空或 none、low、medium、high、xhigh、max")
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
@@ -510,6 +520,8 @@ func Load() *Config {
 		AIAPIKey:                               aiAPIKey,
 		AIBaseURL:                              aiBaseURL,
 		AIChatModel:                            aiChatModel,
+		AIReasoningEffort:                      aiReasoningEffort,
+		AIFallbackChatModel:                    aiFallbackChatModel,
 		AIRequestTimeoutSeconds:                aiRequestTimeoutSeconds,
 		AILegacyMaxOutputTokens:                aiLegacyMaxOutputTokens,
 		AIMaxToolSteps:                         aiMaxToolSteps,
@@ -605,16 +617,17 @@ func envBool(name string, fallback bool) bool {
 	return parsed
 }
 
-func requireReleaseTrue(names ...string) {
+func requireReleaseBool(names ...string) {
 	for _, name := range names {
 		value, ok := os.LookupEnv(name)
 		if !ok || strings.TrimSpace(value) == "" {
-			panic(fmt.Errorf("release 模式必须显式设置 %s=true", name))
+			panic(fmt.Errorf("release 模式必须显式设置 %s=true 或 false", name))
 		}
 		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
-		if err != nil || !parsed {
-			panic(fmt.Errorf("release 模式必须设置 %s=true", name))
+		if err != nil {
+			panic(fmt.Errorf("release 模式 %s 必须为 true 或 false", name))
 		}
+		_ = parsed
 	}
 }
 
@@ -682,6 +695,15 @@ func envPositiveUintList(name string) []uint {
 	return result
 }
 
+func approvedAIChatModel(model string) bool {
+	switch model {
+	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateAIConfig(
 	enabled bool,
 	provider, apiKey, baseURL, model string,
@@ -701,8 +723,8 @@ func validateAIConfig(
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
-	if model != "gpt-5.4" && model != "gpt-5.4-mini" {
-		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4 或 gpt-5.4-mini")
+	if !approvedAIChatModel(model) {
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna 或 gpt-5.6-terra")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {

@@ -101,6 +101,11 @@ final class JiaowuLocalDataSource implements AcademicDataSource {
   }
 
   @override
+  Future<void> restoreSession() async {
+    // 本机直连没有服务端凭据，登录态只能由用户重新建立。
+  }
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;

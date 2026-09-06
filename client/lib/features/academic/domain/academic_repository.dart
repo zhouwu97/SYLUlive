@@ -93,5 +93,7 @@ abstract interface class AcademicRepository {
 
   Future<void> resetSession();
 
+  Future<void> restoreSession();
+
   void close();
 }

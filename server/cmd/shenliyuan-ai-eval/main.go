@@ -137,7 +137,8 @@ func buildLiveRunner(ctx context.Context, k int, getenv func(string) string) (*a
 		closeLive()
 		return nil, func() {}, fmt.Errorf("RAG 健康检查失败：%w", err)
 	}
-	provider, err := ai.NewOpenAICompatibleProvider(required["AI_BASE_URL"], required["AI_API_KEY"], required["AI_CHAT_MODEL"], httpClient)
+	provider, err := ai.NewOpenAICompatibleProvider(required["AI_BASE_URL"], required["AI_API_KEY"], required["AI_CHAT_MODEL"], getenv("AI_REASONING_EFFORT"), httpClient,
+		ai.WithOpenAICompatibleFallbackModel(getenv("AI_FALLBACK_CHAT_MODEL")))
 	if err != nil {
 		closeLive()
 		return nil, func() {}, fmt.Errorf("Provider 配置无效：%w", err)

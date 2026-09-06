@@ -58,6 +58,7 @@ type ToolDefinition struct {
 }
 
 type ProviderRequest struct {
+	Model       string // 仅用于沿用本轮已选定的配置内备用模型，不能请求任意模型。
 	Messages    []Message
 	Temperature float64
 	MaxTokens   int
@@ -68,16 +69,19 @@ type ProviderRequest struct {
 }
 
 type ProviderEvent struct {
-	Type           string
-	Text           string
-	CallID         string
-	ToolName       string
-	ArgumentsDelta string
-	InputTokens    int
-	OutputTokens   int
-	CacheHitTokens int
-	UsageAvailable bool
-	FinishReason   string
+	Model            string
+	Type             string
+	Text             string
+	CallID           string
+	ToolName         string
+	ArgumentsDelta   string
+	InputTokens      int
+	OutputTokens     int
+	CacheHitTokens   int
+	CacheWriteTokens int
+	UsageAvailable   bool
+	ModelUsage       map[string]ModelTokenUsage
+	FinishReason     string
 }
 
 const (

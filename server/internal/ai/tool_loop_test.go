@@ -28,6 +28,14 @@ func unwrapAgentToolMessage(t *testing.T, content string) string {
 	return content
 }
 
+func TestAcademicToolFailurePreservesActualCause(t *testing.T) {
+	for _, code := range []string{"agent_personal_data_disabled", "invalid_tool_call", "tool_execution_failed"} {
+		result := json.RawMessage(`{"status":"failed","error_code":"` + code + `"}`)
+		require.Equal(t, code, fatalToolResultCode("academic_get_risk_analysis", result))
+	}
+	require.Empty(t, fatalToolResultCode("academic_get_risk_analysis", json.RawMessage(`{"status":"available","data":{"grades":{"course_count":64}}}`)))
+}
+
 type scriptedToolProvider struct {
 	mu       sync.Mutex
 	rounds   [][]ProviderEvent
@@ -128,6 +136,33 @@ func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvid
 	}, WithToolRegistry(registry))
 	require.NoError(t, err)
 	return runtime
+}
+
+func TestRuntimeToolLoopPersistsFallbackModelAcrossToolRounds(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, Model: "gpt-5.6-luna", CallID: "fallback-tool", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "fallback-tool", ToolName: "academic.get_overview", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已完成查询。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "我的成绩"})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "gpt-5.6-luna", completed.Model)
+	require.Len(t, provider.Requests(), 2)
+	require.Equal(t, "gpt-5.6-luna", provider.Requests()[1].Model)
+	var usage models.AIUsageRecord
+	require.NoError(t, db.Where("run_id = ?", run.ID).First(&usage).Error)
+	require.Equal(t, "gpt-5.6-luna", usage.Model)
 }
 
 func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *testing.T) {
@@ -620,7 +655,7 @@ func TestAcademicRiskMissingDataCanStillProduceBoundedAnswer(t *testing.T) {
 	require.Contains(t, fallback, "刷新或授权读取成绩快照")
 }
 
-func TestAcademicRiskFallbackCompactsDataNotesIntoOneLine(t *testing.T) {
+func TestAcademicRiskFallbackSeparatesNotesAndPreservesIndependentFailures(t *testing.T) {
 	fallback, riskSeen := academicRiskFallback("academic_get_risk_analysis", json.RawMessage(`{
 		"status":"incomplete",
 		"is_stale":true,
@@ -647,9 +682,11 @@ func TestAcademicRiskFallbackCompactsDataNotesIntoOneLine(t *testing.T) {
 	require.Contains(t, fallback, "已尝试通过手机刷新学业数据但任务超时")
 	require.Contains(t, fallback, "如需最新结论，请在手机刷新教务数据后重新提问")
 	require.NotContains(t, fallback, "仍需确认")
-	require.NotContains(t, fallback, "- ")
-	// 确认事项最多保留三条，超出的直接丢弃。
-	require.NotContains(t, fallback, "第五条多余的确认事项")
+	require.Contains(t, fallback, "数据说明：\n\n- ")
+	require.NotContains(t, fallback, "成绩快照已过期")
+	require.NotContains(t, fallback, "没有发现明确的未通过课程或已计算学分缺口")
+	// 同义过期说明可合并，独立信息不能按列表位置截断。
+	require.Contains(t, fallback, "第五条多余的确认事项")
 }
 
 func TestToolRegistryMapsModelAliasesBackToCanonicalNames(t *testing.T) {

@@ -118,10 +118,14 @@ func (h *CourseEvaluationHandler) loadSubjectStats(subjectID *uint) ([]courseSub
 func respondCourseEvaluationError(c *gin.Context, err error) {
 	var businessErr *services.CourseEvaluationError
 	if errors.As(err, &businessErr) {
-		c.JSON(services.CourseEvaluationHTTPStatus(businessErr.Code), gin.H{
+		response := gin.H{
 			"error": businessErr.Message,
 			"code":  businessErr.Code,
-		})
+		}
+		for key, value := range businessErr.Details {
+			response[key] = value
+		}
+		c.JSON(services.CourseEvaluationHTTPStatus(businessErr.Code), response)
 		return
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -342,13 +346,13 @@ func (h *CourseEvaluationHandler) Resolve(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// Submit 提交或复用当前用户的课程评价。
+// Submit 创建当前用户的课程评价；重复目标由服务层返回 409。
 func (h *CourseEvaluationHandler) Submit(c *gin.Context) {
 	userID, ok := requireCourseEvaluationUser(c)
 	if !ok {
 		return
 	}
-	var input services.SubmitInput
+	var input services.CreateCourseEvaluationInput
 	if err := decodeCourseEvaluationBody(c, &input); err != nil {
 		respondCourseEvaluationError(c, err)
 		return
@@ -386,7 +390,7 @@ func (h *CourseEvaluationHandler) Update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var input services.SubmitInput
+	var input services.UpdateCourseEvaluationInput
 	if err := decodeCourseEvaluationBody(c, &input); err != nil {
 		respondCourseEvaluationError(c, err)
 		return

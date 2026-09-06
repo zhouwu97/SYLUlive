@@ -52,7 +52,7 @@ class CourseEvaluationService {
     }
   }
 
-  /// 提交或复用当前用户的评价记录。
+  /// 创建当前用户的评价记录；同一课程与教师重复提交由服务端返回冲突。
   Future<CourseEvaluationSubmission> submit({
     required String courseName,
     required String teacherName,

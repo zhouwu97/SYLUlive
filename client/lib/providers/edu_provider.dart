@@ -527,6 +527,11 @@ class EduProvider extends ChangeNotifier {
     String password, {
     required bool eduDataConsentAccepted,
   }) async {
+    if (!eduDataConsentAccepted) {
+      _errorMessage = '请先阅读并同意教务数据专项授权';
+      notifyListeners();
+      return false;
+    }
     final controller = _academicSessionController;
     if (controller == null ||
         controller.sourceKind != AcademicSourceKind.legacy) {
@@ -545,8 +550,11 @@ class EduProvider extends ChangeNotifier {
     return false;
   }
 
-  /// 兼容旧页面的“解绑”入口，现仅清除本机教务会话。
+  /// 服务端绑定必须撤销远端授权，否则重登 App 后会再次恢复绑定。
   Future<OperationResult<void>> unbind() async {
+    if (_academicSessionController?.sourceKind == AcademicSourceKind.legacy) {
+      return revokeAuthorization();
+    }
     await clearLocalSession();
     return OperationResult.ok(null);
   }

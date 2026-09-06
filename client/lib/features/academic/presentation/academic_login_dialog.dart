@@ -3,10 +3,12 @@ import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../screens/legal_documents_screen.dart';
 import '../application/academic_session_controller.dart';
 import '../domain/academic_failure.dart';
+import '../domain/academic_repository.dart';
 
-/// 本机直连教务登录入口，包含登录、验证码和明确的本地数据授权状态。
+/// 教务登录入口，按实际数据源说明凭据保存方式并取得对应授权。
 final class AcademicLoginDialog extends StatefulWidget {
   const AcademicLoginDialog({
     required this.controller,
@@ -105,9 +107,11 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         final awaitingCaptcha = _controller.isAwaitingCaptcha;
         final challenge = _controller.captchaChallenge;
         final failure = _controller.failure;
+        final serverBinding =
+            _controller.sourceKind == AcademicSourceKind.legacy;
 
         return AlertDialog(
-          title: const Text('本机直连教务'),
+          title: Text(serverBinding ? '绑定教务账号' : '本机直连教务'),
           content: ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.sizeOf(context).height * 0.68,
@@ -120,7 +124,9 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '密码只用于本次学校登录，Cookie 仅保存在内存中。',
+                      serverBinding
+                          ? '绑定后，沈理校园服务器将加密保存教务登录凭据，用于读取课表、成绩和自动重新登录。重新登录 App 后可恢复教务绑定。'
+                          : '密码只用于本次学校登录，Cookie 仅保存在内存中。',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -161,14 +167,27 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                       value: _consentAccepted,
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('同意本机保存教务资料'),
-                      subtitle: const Text('课程和成绩仅写入当前 App 账号隔离的本地加密保险箱。'),
+                      title: Text(
+                          serverBinding ? '我已阅读并同意教务数据专项授权' : '同意本机保存教务资料'),
+                      subtitle: Text(serverBinding
+                          ? '课表、成绩也会在本机加密缓存，供离线查看。可在教务设置中解除绑定并撤销授权。'
+                          : '课程和成绩仅写入当前 App 账号隔离的本地加密保险箱。'),
                       onChanged: isBusy || awaitingCaptcha
                           ? null
                           : (value) => setState(
                                 () => _consentAccepted = value ?? false,
                               ),
                     ),
+                    if (serverBinding)
+                      TextButton(
+                        onPressed: isBusy
+                            ? null
+                            : () => LegalDocumentsScreen.open(
+                                  context,
+                                  documentId: 'edu_data_consent',
+                                ),
+                        child: const Text('查看教务数据专项授权'),
+                      ),
                     if (awaitingCaptcha) ...[
                       const SizedBox(height: AppSpacing.sm),
                       _CaptchaPanel(
@@ -194,6 +213,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
             ),
             if (awaitingCaptcha)
               FilledButton(
+                style: FilledButton.styleFrom(
+                  textStyle: Theme.of(context).textTheme.labelLarge,
+                  minimumSize: const Size(64, 44),
+                ),
                 onPressed: isBusy ? null : _submitCaptcha,
                 child: isBusy
                     ? const SizedBox(
@@ -205,6 +228,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
               )
             else
               FilledButton(
+                style: FilledButton.styleFrom(
+                  textStyle: Theme.of(context).textTheme.labelLarge,
+                  minimumSize: const Size(64, 44),
+                ),
                 onPressed: isBusy || !_consentAccepted ? null : _submitLogin,
                 child: isBusy
                     ? const SizedBox(
@@ -212,7 +239,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('登录'),
+                    : Text(serverBinding ? '同意并绑定' : '登录'),
               ),
           ],
         );

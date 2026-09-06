@@ -741,7 +741,28 @@ mkdir -p /opt/shenliyuan/private/exam-papers
 chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 ```
 
-## 独立试卷文件服务器
+## HK 主服务器同机部署 paper-storage
+
+单机生产形态使用一个 Nginx、`shenliyuan:8080`、`paper-storage:8081` 和 PostgreSQL。`paper-storage` 仍以独立用户和 systemd 服务运行，并且只监听 `127.0.0.1:8081`；试卷目录 `/opt/sylg-paper-storage/data/exam-papers` 不得与社区上传目录混用。
+
+主服务配置：
+
+```env
+EXAM_PAPER_STORAGE_MODE=remote
+EXAM_PAPER_STORAGE_PUBLIC_URL=https://paper.sylulive.online
+EXAM_PAPER_STORAGE_INTERNAL_URL=http://127.0.0.1:8081
+EXAM_PAPER_STORAGE_SIGNING_SECRET=<随机密钥A>
+EXAM_PAPER_STORAGE_RECEIPT_SECRET=<随机密钥B>
+EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
+```
+
+文件服务配置见 `deploy/paper-storage-colocated/paper-storage.env.example`。两边的同名密钥必须分别一致，但密钥 A 与 B 不得相同，且均不少于 32 字节。同机默认由 Go 返回 PDF，不要求 Nginx 读取 `0700/0600` 的私有文件；共享根盘的保护阈值为 60% 告警、75% 停止上传、85% 只读。
+
+使用 `deploy/paper-storage-colocated/install.sh` 安装。该脚本只增加独立 Nginx site，不覆盖全局 `nginx.conf`，也不修改 UFW、SSH、PostgreSQL、Swap 或主服务。公网 `/internal/v1/` 必须返回 404；主服务直接通过回环地址访问内部接口。
+
+`EXAM_PAPER_STORAGE_BASE_URL` 只用于兼容旧环境：未设置 `PUBLIC_URL` 时公网地址回退到它，未设置 `INTERNAL_URL` 时内部地址再回退到公网地址。迁移期间客户端桥接版本同时接受旧 IP 和 `paper.sylulive.online`，覆盖率稳定后再删除旧 IP allowlist。
+
+## 旧版独立试卷文件服务器
 
 试卷文件服务直接使用公网 IP `139.196.148.174`，不配置或复用 `sylulive.online` 业务域名。生产 TLS 证书的 SAN 必须包含 `IP Address:139.196.148.174`，客户端上传、预览和下载均直连该 IP。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
 

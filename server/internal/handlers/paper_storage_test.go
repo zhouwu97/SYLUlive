@@ -618,6 +618,25 @@ func TestPaperStorageDownloadUsesAuthorizedInternalRedirect(t *testing.T) {
 	}
 }
 
+func TestPaperStorageDownloadCanStreamWithoutNginxFileAccess(t *testing.T) {
+	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
+	handler.useAccelRedirect = false
+	stored, err := files.StoreUploadReader("paper.pdf", bytes.NewReader(paperStoragePDF()))
+	require.NoError(t, err)
+	path := "/v1/files/" + stored.FileKey
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposePreview, http.MethodGet, path, "", stored.FileKey)
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+
+	paperStorageRouter(handler).ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Empty(t, response.Header().Get("X-Accel-Redirect"))
+	require.Equal(t, "application/pdf", response.Header().Get("Content-Type"))
+	require.Equal(t, paperStoragePDF(), response.Body.Bytes())
+}
+
 func TestPaperStorageDownloadRejectsWrongPurposeAndExpiredGrant(t *testing.T) {
 	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
 	stored, err := files.StoreUploadReader("paper.pdf", bytes.NewReader(paperStoragePDF()))

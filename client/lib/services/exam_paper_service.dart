@@ -77,7 +77,12 @@ class ExamPaperDeleteResult {
 
 class ExamPaperService {
   static const int maxFileSize = 20 * 1024 * 1024;
-  static const String storageHost = '139.196.148.174';
+  // 桥接版本同时接受旧文件服务器与稳定域名，避免切换期间旧记录或灰度配置失效。
+  // 用户覆盖率稳定后可删除旧 IP，仅保留域名。
+  static const Set<String> storageHosts = {
+    'paper.sylulive.online',
+    '139.196.148.174',
+  };
   static const int _maxPendingCompletions = 16;
   static const Duration _pendingCompletionTTL = Duration(minutes: 15);
 
@@ -798,7 +803,7 @@ class ExamPaperService {
         query['token']!.single.trim().isNotEmpty;
     if (uri == null ||
         uri.scheme != 'https' ||
-        uri.host != storageHost ||
+        !storageHosts.contains(uri.host) ||
         uri.port != 443 ||
         uri.userInfo.isNotEmpty ||
         uri.hasFragment ||
@@ -887,7 +892,7 @@ class ExamPaperService {
     final uri = Uri.tryParse(uploadURL);
     if (uri == null ||
         uri.scheme != 'https' ||
-        uri.host != storageHost ||
+        !storageHosts.contains(uri.host) ||
         uri.port != 443 ||
         uri.userInfo.isNotEmpty ||
         uri.path != '/v1/uploads/${Uri.encodeComponent(id)}' ||

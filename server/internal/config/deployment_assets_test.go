@@ -543,6 +543,37 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	}
 }
 
+// TestColocatedPaperStorageAssetsKeepHostBoundaries 锁住同机安装脚本不得接管主服务器。
+func TestColocatedPaperStorageAssetsKeepHostBoundaries(t *testing.T) {
+	repoRoot := deploymentRepoRoot(t)
+	assetDir := filepath.Join(repoRoot, "deploy", "paper-storage-colocated")
+	installText := readDeploymentAsset(t, assetDir, "install.sh")
+	nginxText := readDeploymentAsset(t, assetDir, "nginx-site.conf")
+	serviceText := readDeploymentAsset(t, assetDir, "paper-storage.service")
+	envText := readDeploymentAsset(t, assetDir, "paper-storage.env.example")
+
+	for _, forbidden := range []string{
+		"> /etc/nginx/nginx.conf", "mv -f /etc/nginx/nginx.conf", "ufw ", "sshd_config", "swapfile", "mkswap",
+		"postgresql", "systemctl restart shenliyuan", "systemctl stop shenliyuan",
+	} {
+		if strings.Contains(strings.ToLower(installText), strings.ToLower(forbidden)) {
+			t.Errorf("同机安装脚本包含越界操作 %q", forbidden)
+		}
+	}
+	for _, expected := range []string{
+		"/etc/nginx/sites-available/paper-storage", "nginx -t", "systemctl daemon-reload",
+		"127.0.0.1:8081", "location /internal/v1/", "return 404",
+		"PAPER_STORAGE_USE_ACCEL_REDIRECT=false", "PAPER_STORAGE_WARNING_PERCENT=60",
+		"PAPER_STORAGE_UPLOAD_STOP_PERCENT=75", "PAPER_STORAGE_READONLY_PERCENT=85",
+		"ProtectSystem=strict", "ReadWritePaths=/opt/sylg-paper-storage/data",
+	} {
+		combined := installText + nginxText + serviceText + envText
+		if !strings.Contains(combined, expected) {
+			t.Errorf("同机部署资产缺少安全约束 %q", expected)
+		}
+	}
+}
+
 // TestPaperStorageNginxRendererRequiresTrustedIPCertificate 验证正式配置只接受受信任的 IP SAN 证书。
 func TestPaperStorageNginxRendererRequiresTrustedIPCertificate(t *testing.T) {
 	if runtime.GOOS == "windows" {

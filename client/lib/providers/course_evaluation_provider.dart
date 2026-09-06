@@ -101,14 +101,15 @@ class CourseEvaluationProvider extends ChangeNotifier {
 
   /// 解析课程名与教师名。命中缓存直接返回。
   Future<CourseEvaluationResolveResult?> resolveForCourse(
-    String courseName,
-    String teacherName,
-  ) async {
+      String courseName, String teacherName,
+      {bool refresh = false}) async {
     final service = _service;
     if (service == null) return null;
     final key = _resolveKey(courseName, teacherName);
-    final cached = _resolveCache[key];
-    if (cached != null) return cached;
+    if (!refresh) {
+      final cached = _resolveCache[key];
+      if (cached != null) return cached;
+    }
 
     final generation = _sessionGeneration;
     try {
@@ -182,8 +183,11 @@ class CourseEvaluationProvider extends ChangeNotifier {
       );
       if (_isStale(generation)) return null;
       _isSubmitting = false;
-      _resolveCache.remove(_resolveKey(courseName, teacherName));
-      _resolveErrors.remove(_resolveKey(courseName, teacherName));
+      // 解析缓存使用课表原始名称作为 key，而提交可能使用服务端返回的
+      // canonical 名称。只删除提交名称对应的 key 会让原始入口继续展示
+      // “去评价”的旧状态，因此成功写入后统一失效全部评价解析缓存。
+      _resolveCache.clear();
+      _resolveErrors.clear();
       _indexSubmission(submission);
       if (!_mine.any((item) => item.id == submission.id)) {
         _mine = [submission, ..._mine];
@@ -232,7 +236,9 @@ class CourseEvaluationProvider extends ChangeNotifier {
       );
       if (_isStale(generation)) return null;
       _isSubmitting = false;
-      _resolveCache.remove(_resolveKey(courseName, teacherName));
+      // 编辑可能改变学科或教师，旧目标和新目标的解析结果都不能继续复用。
+      _resolveCache.clear();
+      _resolveErrors.clear();
       _indexSubmission(submission);
       notifyListeners();
       return submission;

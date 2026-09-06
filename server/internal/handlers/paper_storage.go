@@ -33,17 +33,39 @@ type PaperStorageHandler struct {
 	beginUploadSession    func(string, string, uint, int64, time.Time, time.Time) (services.ExamPaperUploadSessionBeginResult, error)
 	completeUploadSession func(string, string, string, services.StoredExamPaperFile, time.Time) error
 	failUploadSession     func(string, string, time.Time) error
+	useAccelRedirect      bool
+	warningPercent        float64
+	uploadStopPercent     float64
+	readonlyPercent       float64
+}
+
+// PaperStorageOptions 控制同机部署的文件投递方式和共享磁盘保护阈值。
+type PaperStorageOptions struct {
+	UseAccelRedirect  bool
+	WarningPercent    float64
+	UploadStopPercent float64
+	ReadonlyPercent   float64
 }
 
 // NewPaperStorageHandler 创建独立文件服务处理器。
 func NewPaperStorageHandler(files *services.ExamPaperFileService, grantSigner, receiptSigner *services.ExamPaperStorageSigner, maxConcurrentValidations int) *PaperStorageHandler {
+	return NewPaperStorageHandlerWithOptions(files, grantSigner, receiptSigner, maxConcurrentValidations, PaperStorageOptions{
+		UseAccelRedirect: true, WarningPercent: 70, UploadStopPercent: 85, ReadonlyPercent: 95,
+	})
+}
+
+// NewPaperStorageHandlerWithOptions 创建带部署策略的文件服务处理器。
+func NewPaperStorageHandlerWithOptions(files *services.ExamPaperFileService, grantSigner, receiptSigner *services.ExamPaperStorageSigner, maxConcurrentValidations int, options PaperStorageOptions) *PaperStorageHandler {
 	if maxConcurrentValidations <= 0 {
 		maxConcurrentValidations = 1
 	}
 	handler := &PaperStorageHandler{
 		files: files, grantSigner: grantSigner, receiptSigner: receiptSigner,
 		now: time.Now, diskUsage: services.ExamPaperDiskUsagePercent,
-		validations: make(chan struct{}, maxConcurrentValidations),
+		validations:      make(chan struct{}, maxConcurrentValidations),
+		useAccelRedirect: options.UseAccelRedirect,
+		warningPercent:   options.WarningPercent, uploadStopPercent: options.UploadStopPercent,
+		readonlyPercent: options.ReadonlyPercent,
 	}
 	if files != nil {
 		handler.storePending = files.StorePendingUploadReaderExpected
@@ -100,9 +122,9 @@ func (h *PaperStorageHandler) Health(c *gin.Context) {
 		return
 	}
 	status := "ok"
-	if usage >= 95 {
+	if usage >= h.readonlyPercent {
 		status = "readonly"
-	} else if usage >= 70 {
+	} else if usage >= h.warningPercent {
 		status = "warning"
 	}
 	c.JSON(http.StatusOK, gin.H{"status": status, "disk_usage_percent": usage})
@@ -139,7 +161,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 		return
 	}
-	if usage >= 85 {
+	if usage >= h.uploadStopPercent {
 		c.JSON(http.StatusInsufficientStorage, gin.H{"error": "insufficient storage"})
 		return
 	}
@@ -257,7 +279,7 @@ func (h *PaperStorageHandler) writeMultipartError(c *gin.Context, err error) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart request"})
 }
 
-// Download 验证用途后交由 Nginx 内部位置返回文件。
+// Download 验证用途后按部署策略由 Nginx 或 Go 返回文件。
 func (h *PaperStorageHandler) Download(c *gin.Context) {
 	fileKey := c.Param("file_key")
 	grant, previewOK := h.authorizeFileWithoutResponse(c, services.ExamPaperStoragePurposePreview, fileKey)
@@ -282,8 +304,20 @@ func (h *PaperStorageHandler) Download(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, fileKey))
 	c.Header("Cache-Control", "private, no-store")
 	c.Header("Referrer-Policy", "no-referrer")
-	c.Header("X-Accel-Redirect", "/_paper_files/"+url.PathEscape(fileKey))
-	c.Status(http.StatusOK)
+	if h.useAccelRedirect {
+		c.Header("X-Accel-Redirect", "/_paper_files/"+url.PathEscape(fileKey))
+		c.Status(http.StatusOK)
+		return
+	}
+	file, err := h.files.Open(fileKey)
+	if err != nil {
+		h.writeFileError(c, err)
+		return
+	}
+	defer file.Close()
+	c.Header("Content-Type", "application/pdf")
+	c.Header("X-Content-Type-Options", "nosniff")
+	http.ServeContent(c.Writer, c.Request, fileKey, info.ModTime(), file)
 }
 
 func (h *PaperStorageHandler) authorizeFileWithoutResponse(c *gin.Context, purpose, fileKey string) (services.ExamPaperStorageGrant, bool) {

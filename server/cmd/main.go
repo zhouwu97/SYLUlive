@@ -748,7 +748,13 @@ func main() {
 		if receiptErr != nil {
 			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
 		}
-		examPaperRemote, signerErr = services.NewExamPaperRemoteClient(cfg.ExamPaperStorageBaseURL, grantSigner, nil, time.Now)
+		examPaperRemote, signerErr = services.NewExamPaperRemoteClientWithEndpoints(
+			cfg.ExamPaperStoragePublicURL,
+			cfg.ExamPaperStorageInternalURL,
+			grantSigner,
+			nil,
+			time.Now,
+		)
 		if signerErr != nil {
 			log.Fatal("初始化试卷远端存储客户端失败:", signerErr)
 		}
@@ -760,7 +766,7 @@ func main() {
 		db,
 		examPaperFiles,
 		cfg.ExamPaperStorageMode,
-		cfg.ExamPaperStorageBaseURL,
+		cfg.ExamPaperStoragePublicURL,
 		examPaperUploads,
 		examPaperRemote,
 		examPaperStorageJobs,

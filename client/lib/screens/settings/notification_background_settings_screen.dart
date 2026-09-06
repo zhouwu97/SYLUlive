@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../platform/platform_capabilities.dart';
+import '../../platform/update_download_bridge.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/keep_alive_service.dart';
+import '../../services/app_update_preferences.dart';
+import '../../services/app_update_coordinator.dart';
 import '../../services/push_settings_service.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/campus/campus_theme.dart';
@@ -44,12 +47,35 @@ class _NotificationBackgroundSettingsScreenState
 
   RemotePushUiStatus _pushStatus = RemotePushUiStatus.loading;
   String? _pushErrorMessage;
+  final AppUpdatePreferences _updatePreferences = AppUpdatePreferences();
+  AppUpdatePreferencesSnapshot? _updatePreferencesSnapshot;
 
   @override
   void initState() {
     super.initState();
     _loadKeepAliveStatus();
     _loadPushState();
+    _loadUpdatePreferences();
+  }
+
+  Future<void> _loadUpdatePreferences() async {
+    final snapshot = await _updatePreferences.read();
+    if (mounted) setState(() => _updatePreferencesSnapshot = snapshot);
+  }
+
+  Future<void> _setSilentDownload(bool value) async {
+    await _updatePreferences.setSilentDownload(value);
+    await _loadUpdatePreferences();
+  }
+
+  Future<void> _setWifiOnly(bool value) async {
+    await _updatePreferences.setWifiOnly(value);
+    await _loadUpdatePreferences();
+  }
+
+  Future<void> _setBackgroundDownload(bool value) async {
+    await _updatePreferences.setBackgroundDownload(value);
+    await _loadUpdatePreferences();
   }
 
   Future<void> _loadPushState() async {
@@ -322,6 +348,7 @@ class _NotificationBackgroundSettingsScreenState
       onRefresh: () async {
         await _loadKeepAliveStatus();
         await _loadPushState();
+        await _loadUpdatePreferences();
       },
       children: [
         // 远程推送
@@ -382,6 +409,52 @@ class _NotificationBackgroundSettingsScreenState
           ],
         ),
 
+        if (PlatformCapabilities.current.supportsInAppPackageInstall)
+          SettingsSection(
+            title: '应用更新',
+            children: [
+              SettingsTile(
+                icon: Icons.download_for_offline_outlined,
+                title: '自动静默下载更新',
+                subtitle: '发现普通新版本后在后台准备安装包',
+                trailing: SettingsSwitch(
+                  value: _updatePreferencesSnapshot?.silentDownload ?? true,
+                  onChanged: _updatePreferencesSnapshot == null
+                      ? null
+                      : _setSilentDownload,
+                ),
+              ),
+              SettingsTile(
+                icon: Icons.wifi_outlined,
+                title: '仅 WLAN 自动下载',
+                subtitle: '静默下载不会消耗移动数据',
+                trailing: SettingsSwitch(
+                  value: _updatePreferencesSnapshot?.wifiOnly ?? true,
+                  onChanged:
+                      _updatePreferencesSnapshot == null ? null : _setWifiOnly,
+                ),
+              ),
+              SettingsTile(
+                icon: Icons.cloud_download_outlined,
+                title: '允许后台继续下载',
+                subtitle: '切到桌面或锁屏后仍由系统继续下载',
+                trailing: SettingsSwitch(
+                  value: _updatePreferencesSnapshot?.backgroundDownload ?? true,
+                  onChanged: _updatePreferencesSnapshot == null
+                      ? null
+                      : _setBackgroundDownload,
+                ),
+              ),
+              SettingsTile(
+                icon: Icons.system_update_alt_outlined,
+                title: '当前更新状态',
+                subtitle:
+                    _updateStatusText(context.watch<AppUpdateCoordinator>()),
+                showChevron: false,
+              ),
+            ],
+          ),
+
         // 后台保活服务 (Android 专用)
         if (_keepAliveStatus.supported)
           SettingsSection(
@@ -422,5 +495,25 @@ class _NotificationBackgroundSettingsScreenState
           ),
       ],
     );
+  }
+
+  String _updateStatusText(AppUpdateCoordinator coordinator) {
+    final status = coordinator.downloadStatus;
+    switch (status.state) {
+      case AppUpdateDownloadState.ready:
+        return '更新包已准备完成';
+      case AppUpdateDownloadState.downloading:
+      case AppUpdateDownloadState.queued:
+      case AppUpdateDownloadState.verifying:
+        return status.totalBytes > 0
+            ? '正在后台下载 ${(status.progress * 100).toStringAsFixed(0)}%'
+            : '正在后台下载';
+      case AppUpdateDownloadState.paused:
+        return '下载已暂停，等待网络或手动继续';
+      case AppUpdateDownloadState.failed:
+        return '下载失败，可稍后重试或使用 GitHub Releases';
+      case AppUpdateDownloadState.idle:
+        return '无更新包正在下载';
+    }
   }
 }

@@ -35,4 +35,11 @@ class AppInstaller {
     await _channel
         .invokeMethod<void>('deleteDownloadedApk', {'path': apkFile.path});
   }
+
+  Future<void> installPreparedUpdate(Map<String, Object> release) async {
+    if (!AppPlatforms.current.isAndroid) {
+      throw PlatformException(code: 'UNSUPPORTED_PLATFORM');
+    }
+    await _channel.invokeMethod<void>('installPreparedUpdate', release);
+  }
 }

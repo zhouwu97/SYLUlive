@@ -21,10 +21,12 @@ class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
   int downloadCalls = 0;
 
   @override
-  AppUpdatePhase get phase => AppUpdatePhase.required;
+  bool get isRequired => true;
 
   @override
-  bool get isBlocking => true;
+  Future<void> enqueueDownload({bool? wifiOnly}) async {
+    downloadCalls++;
+  }
 
   @override
   AppUpdateInfo get info => AppUpdateInfo(
@@ -46,11 +48,6 @@ class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
         publishedAt: null,
         checkAfterSeconds: 21600,
       );
-
-  @override
-  Future<void> downloadOrInstall() async {
-    downloadCalls++;
-  }
 }
 
 void main() {
@@ -88,7 +85,7 @@ void main() {
     expect(coordinator.isBlocking, isFalse);
   });
 
-  testWidgets('低于最低支持版本时显示强制更新下载按钮', (tester) async {
+  testWidgets('低于最低支持版本时显示紧凑更新下载对话框', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final coordinator = _RequiredAppUpdateCoordinator();
     addTearDown(coordinator.dispose);
@@ -107,10 +104,11 @@ void main() {
       ),
     );
 
-    expect(find.text('发现必须安装的新版本'), findsOneWidget);
-    expect(find.text('下载更新'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('需要更新沈理校园'), findsOneWidget);
+    expect(find.text('后台下载'), findsOneWidget);
 
-    await tester.tap(find.text('下载更新'));
+    await tester.tap(find.text('后台下载'));
     await tester.pump();
     expect(coordinator.downloadCalls, 1);
   });

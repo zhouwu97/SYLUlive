@@ -18,6 +18,7 @@ import cn.jpush.android.api.JPushInterface
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodCall
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -394,6 +395,40 @@ class MainActivity : FlutterActivity() {
                     }
                     "openInstallPermissionSettings" -> {
                         result.success(openInstallPermissionSettings())
+                    }
+                    "enqueueUpdateDownload" -> {
+                        val release = updateReleaseFromCall(call)
+                        val wifiOnly = call.argument<Boolean>("wifiOnly") ?: true
+                        UpdateDownloadScheduler.enqueue(this, release, wifiOnly)
+                        result.success(true)
+                    }
+                    "queryUpdateDownload" -> {
+                        val release = updateReleaseFromCall(call)
+                        UpdateDownloadScheduler.clearSuperseded(this, release)
+                        result.success(updateDownloadStatus(release))
+                    }
+                    "cancelUpdateDownload" -> {
+                        val release = updateReleaseFromCall(call)
+                        UpdateDownloadScheduler.cancel(this, release)
+                        result.success(true)
+                    }
+                    "clearPreparedUpdate" -> {
+                        val release = updateReleaseFromCall(call)
+                        UpdateDownloadScheduler.cancel(this, release, deleteFiles = true)
+                        result.success(true)
+                    }
+                    "installPreparedUpdate" -> {
+                        val release = updateReleaseFromCall(call)
+                        val manifest = UpdateManifestStore.read(this, release)
+                        if (manifest?.state != "ready") {
+                            result.error("UPDATE_NOT_READY", "更新包尚未准备完成", null)
+                            return@setMethodCallHandler
+                        }
+                        startActivity(Intent(this, UpdateInstallActivity::class.java).apply {
+                            putExtra(UpdateInstallActivity.EXTRA_VERSION_CODE, release.versionCode)
+                            putExtra(UpdateInstallActivity.EXTRA_SHA256, release.sha256)
+                        })
+                        result.success(true)
                     }
                     "installApk" -> {
                         val path = call.argument<String>("path")
@@ -897,6 +932,35 @@ class MainActivity : FlutterActivity() {
         if (!apk.path.startsWith(root.path + File.separator)) return null
         if (!apk.isFile || !apk.name.endsWith(".apk", ignoreCase = true)) return null
         return apk
+    }
+
+    private fun updateReleaseFromCall(call: MethodCall): UpdateRelease {
+        return UpdateRelease(
+            versionCode = call.argument<Number>("versionCode")?.toLong() ?: 0,
+            versionName = call.argument<String>("versionName").orEmpty(),
+            downloadUrl = call.argument<String>("downloadUrl").orEmpty(),
+            fileSize = call.argument<Number>("fileSize")?.toLong() ?: 0,
+            sha256 = call.argument<String>("sha256").orEmpty(),
+        ).also { it.validate() }
+    }
+
+    private fun updateDownloadStatus(release: UpdateRelease): Map<String, Any?> {
+        val manifest = UpdateManifestStore.read(this, release)
+            ?: return mapOf(
+                "state" to "idle",
+                "receivedBytes" to 0,
+                "totalBytes" to 0,
+                "bytesPerSecond" to 0,
+            )
+        val received = if (manifest.state == "ready") release.fileSize else manifest.receivedBytes()
+        return mapOf(
+            "state" to manifest.state,
+            "receivedBytes" to received,
+            "totalBytes" to release.fileSize,
+            "bytesPerSecond" to manifest.bytesPerSecond,
+            "apkPath" to manifest.apkPath,
+            "errorCode" to manifest.errorCode,
+        )
     }
 
     /** Android API 24+ 的确定性中文词边界；低版本返回 null 走 Dart 回退。 */

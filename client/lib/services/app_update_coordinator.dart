@@ -1,17 +1,21 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../models/app_update_info.dart';
-import '../platform/app_installer.dart';
 import '../platform/app_platform.dart';
-import '../platform/contracts/update_action.dart';
+import '../platform/platform_capabilities.dart';
+import '../platform/update_download_bridge.dart';
 import 'app_update_api.dart';
 import 'app_update_cache.dart';
-import 'app_update_download_service.dart';
+import 'app_update_preferences.dart';
 
-/// 更新门禁与下载流程的可视状态。
+/// 发布策略与下载进度刻意分离：前者决定是否提示用户，后者只描述包体准备过程。
+enum AppUpdateRequirement { none, optional, required }
+
+/// 兼容旧调用点的派生态，新增代码应使用 [requirement] 与 [downloadState]。
+@Deprecated('请分别使用 AppUpdateRequirement 和 AppUpdateDownloadState')
 enum AppUpdatePhase {
   initializing,
   checking,
@@ -23,14 +27,8 @@ enum AppUpdatePhase {
   installing,
 }
 
-/// 所有业务请求共用的 App 版本头。服务端根据 versionCode 做最低版本限制，
-/// 因而不能只在版本检查接口上传一次版本信息。
 class AppVersionHeaders {
   static Future<AppVersionHeaders>? _loading;
-
-  // 鸿蒙插件未接入 package_info_plus 时，仍须放行业务网络请求。
-  // 正式构建由 build_harmony.ps1 注入版本；兜底值保持与当前 pubspec 一致，
-  // 防止直接构建 HAP 时把旧版本误报给服务端。
   static const _fallbackVersionName = String.fromEnvironment(
     'APP_VERSION_NAME',
     defaultValue: '1.6.13',
@@ -42,7 +40,6 @@ class AppVersionHeaders {
 
   final String versionName;
   final int versionCode;
-
   const AppVersionHeaders._(this.versionName, this.versionCode);
 
   @visibleForTesting
@@ -52,35 +49,24 @@ class AppVersionHeaders {
   }) =>
       AppVersionHeaders._(versionName, versionCode);
 
-  static Future<AppVersionHeaders> load() {
-    return _loading ??= _load();
-  }
+  static Future<AppVersionHeaders> load() => _loading ??= _load();
 
   static Future<AppVersionHeaders> _load() async {
-    // package_info_plus 尚无 OHOS 注册器时，MethodChannel 的空回复不会完成。
-    // 鸿蒙构建版本由 dart-define 注入，因此无需等待该插件即可安全放行业务请求。
     if (AppPlatforms.current.isOhos) {
       return const AppVersionHeaders._(
-        _fallbackVersionName,
-        _fallbackVersionCode,
-      );
+          _fallbackVersionName, _fallbackVersionCode);
     }
     try {
       final info = await PackageInfo.fromPlatform();
-      final versionCode = int.tryParse(info.buildNumber.trim());
-      if (versionCode == null ||
-          versionCode <= 0 ||
-          info.version.trim().isEmpty) {
-        throw StateError('应用版本信息无效: ${info.version}+${info.buildNumber}');
+      final code = int.tryParse(info.buildNumber.trim());
+      if (code == null || code <= 0 || info.version.trim().isEmpty) {
+        throw StateError('应用版本信息无效');
       }
-      return AppVersionHeaders._(info.version.trim(), versionCode);
+      return AppVersionHeaders._(info.version.trim(), code);
     } catch (error) {
-      // 非鸿蒙平台读取异常时使用构建兜底版本，避免版本检查阻断业务请求。
       debugPrint('读取应用版本失败，使用构建兜底版本: $error');
       return const AppVersionHeaders._(
-        _fallbackVersionName,
-        _fallbackVersionCode,
-      );
+          _fallbackVersionName, _fallbackVersionCode);
     }
   }
 
@@ -92,84 +78,78 @@ class AppVersionHeaders {
       };
 }
 
-/// 根级更新状态机。所有入口（冷启动、回前台、手动检查、业务接口 426）都调用
-/// 这里，避免多个页面自行弹窗后产生相互覆盖或错误放行。
+/// 根级更新提示协调器。它从不绘制全屏门禁；服务端 426 仍负责收紧业务 API。
 class AppUpdateCoordinator extends ChangeNotifier {
   AppUpdateCoordinator({
     AppUpdateApi? api,
     AppUpdateCache? cache,
-    AppUpdateDownloadService? downloadService,
-    AppInstaller? installer,
+    AppUpdatePreferences? preferences,
+    UpdateDownloadBridge? downloadBridge,
     Future<AppVersionHeaders> Function()? versionHeadersLoader,
   })  : _api = api ?? AppUpdateApi(),
         _cache = cache ?? AppUpdateCache(),
-        _downloadService = downloadService ?? AppUpdateDownloadService(),
-        _installer = installer ?? AppInstaller(),
+        _preferences = preferences ?? AppUpdatePreferences(),
+        _downloadBridge = downloadBridge ?? UpdateDownloadBridge(),
         _versionHeadersLoader = versionHeadersLoader ?? AppVersionHeaders.load;
 
   final AppUpdateApi _api;
   final AppUpdateCache _cache;
-  final AppUpdateDownloadService _downloadService;
-  final AppInstaller _installer;
+  final AppUpdatePreferences _preferences;
+  final UpdateDownloadBridge _downloadBridge;
   final Future<AppVersionHeaders> Function() _versionHeadersLoader;
 
-  AppUpdatePhase _phase = AppUpdatePhase.initializing;
+  AppUpdateRequirement _requirement = AppUpdateRequirement.none;
+  NativeUpdateDownloadStatus _downloadStatus = NativeUpdateDownloadStatus.idle;
   AppUpdateInfo? _info;
-  AppDownloadProgress? _downloadProgress;
   String? _errorMessage;
   DateTime? _lastSuccessfulCheckAt;
   bool _initialized = false;
   bool _checking = false;
   bool _requiredByApi426 = false;
-  bool _requiredByServer = false;
   bool _requiredByCache = false;
+  bool _optionalDeferred = false;
   Future<void>? _deferredInitialCheck;
-  CancelToken? _downloadCancelToken;
+  Timer? _downloadPollingTimer;
 
-  bool get _requiredLatched =>
-      _requiredByApi426 || _requiredByServer || _requiredByCache;
-
-  AppUpdatePhase get phase => _phase;
+  AppUpdateRequirement get requirement =>
+      _requiredByApi426 ? AppUpdateRequirement.required : _requirement;
   AppUpdateInfo? get info => _info;
-  AppDownloadProgress? get downloadProgress => _downloadProgress;
+  NativeUpdateDownloadStatus get downloadStatus => _downloadStatus;
+  AppUpdateDownloadState get downloadState => _downloadStatus.state;
   String? get errorMessage => _errorMessage;
+  bool get isRequired => requirement == AppUpdateRequirement.required;
+  bool get isDownloading => _downloadStatus.isActive;
+  bool get hasReadyPackage =>
+      _downloadStatus.state == AppUpdateDownloadState.ready;
+  bool get isBlocking => false;
+  bool get shouldPromptOptional =>
+      requirement == AppUpdateRequirement.optional &&
+      !_optionalDeferred &&
+      _downloadStatus.state == AppUpdateDownloadState.idle;
 
-  /// 冷启动和回前台检查均在后台完成，不能遮挡原有开屏或当前页面。
-  /// 仅在已确认强制更新，或用户已进入安装流程后启用全屏门禁。
-  bool get isBlocking => switch (_phase) {
-        AppUpdatePhase.required ||
-        AppUpdatePhase.downloading ||
-        AppUpdatePhase.readyToInstall ||
-        AppUpdatePhase.installing =>
-          true,
-        AppUpdatePhase.initializing ||
-        AppUpdatePhase.checking ||
-        AppUpdatePhase.allowed ||
-        AppUpdatePhase.optional =>
-          false,
-      };
-  bool get isRequired =>
-      _requiredLatched ||
-      _info?.updateType == AppUpdateType.required ||
-      _phase == AppUpdatePhase.required;
-  bool get isDownloading => _phase == AppUpdatePhase.downloading;
-  bool get hasReadyPackage => _phase == AppUpdatePhase.readyToInstall;
-
-  /// 延迟的首次检查入口。首页首屏结束或兜底计时器都可以调用，实际请求只会启动一次。
-  Future<void> startDeferredInitialCheck() {
-    return _deferredInitialCheck ??= initialize();
+  /// 旧界面与测试的兼容投影；它不再决定任何全屏渲染。
+  AppUpdatePhase get phase {
+    if (!_initialized) return AppUpdatePhase.initializing;
+    if (_checking) return AppUpdatePhase.checking;
+    if (isRequired) return AppUpdatePhase.required;
+    return switch (_downloadStatus.state) {
+      AppUpdateDownloadState.queued ||
+      AppUpdateDownloadState.downloading ||
+      AppUpdateDownloadState.verifying =>
+        AppUpdatePhase.downloading,
+      AppUpdateDownloadState.ready => AppUpdatePhase.readyToInstall,
+      _ when requirement == AppUpdateRequirement.optional =>
+        AppUpdatePhase.optional,
+      _ => AppUpdatePhase.allowed,
+    };
   }
 
-  /// 启动时先读取缓存的 required 策略，再联网重验。旧缓存只能收紧门禁，不能
-  /// 把新的强制策略降级为可用状态。
+  Future<void> startDeferredInitialCheck() =>
+      _deferredInitialCheck ??= initialize();
+
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    if (!_requiredLatched && _phase != AppUpdatePhase.required) {
-      _phase = AppUpdatePhase.checking;
-      notifyListeners();
-    }
-
     try {
       final headers = await _versionHeadersLoader();
       final cached = await _cache.read();
@@ -179,21 +159,21 @@ class AppUpdateCoordinator extends ChangeNotifier {
             headers.versionCode < cached.info.minimumSupportedVersionCode) {
           _info = cached.info;
           _requiredByCache = true;
-          _phase = AppUpdatePhase.required;
-          notifyListeners();
+          _requirement = AppUpdateRequirement.required;
         }
       }
     } catch (error) {
       _errorMessage = '读取本机版本信息失败: $error';
     }
-
+    notifyListeners();
     await check(force: true, initial: true);
   }
 
-  /// 检查服务器策略。前后台恢复时按服务端 check_after_seconds 限流；手动检查
-  /// 与 426 强制刷新可传 force=true 绕过间隔。
-  Future<void> check(
-      {bool force = false, bool manual = false, bool initial = false}) async {
+  Future<void> check({
+    bool force = false,
+    bool manual = false,
+    bool initial = false,
+  }) async {
     if (_checking) return;
     if (!_initialized) {
       await initialize();
@@ -203,53 +183,49 @@ class AppUpdateCoordinator extends ChangeNotifier {
 
     _checking = true;
     _errorMessage = null;
-    if (initial && !_requiredLatched && _phase != AppUpdatePhase.required) {
-      _phase = AppUpdatePhase.checking;
-      notifyListeners();
-    }
+    notifyListeners();
     try {
       final headers = await _versionHeadersLoader();
-      final info = await _api.checkUpdate(
+      final next = await _api.checkUpdate(
         platform: AppPlatforms.current.wireName,
         channel: 'stable',
         versionName: headers.versionName,
         versionCode: headers.versionCode,
       );
-      _info = info;
+      final previous = _info;
+      _info = next;
       _lastSuccessfulCheckAt = DateTime.now().toUtc();
-      // 缓存故障不能影响已经从服务端获得的有效策略；下一次成功检查会覆盖它。
-      unawaited(_cache.write(info, _lastSuccessfulCheckAt!).catchError((_) {}));
-
-      // 成功的服务端响应会覆盖旧缓存策略；只有 426 需要在当前进程中永久锁存。
+      unawaited(_cache.write(next, _lastSuccessfulCheckAt!).catchError((_) {}));
       _requiredByCache = false;
-      _requiredByServer = info.updateType == AppUpdateType.required;
-      if (_requiredByApi426) {
-        // 426 已由业务接口确认当前版本不可用，任何后续响应都不能解除门禁。
-        _phase = AppUpdatePhase.required;
-      } else if (_requiredByServer) {
-        _phase = AppUpdatePhase.required;
-      } else {
-        switch (info.updateType) {
-          case AppUpdateType.required:
-            _phase = AppUpdatePhase.required;
-          case AppUpdateType.optional:
-            await _cache.clearIgnoredVersionWhenChanged(info.latestVersionCode);
-            final ignored = !manual &&
-                await _cache.isOptionalVersionIgnored(info.latestVersionCode);
-            _phase = ignored ? AppUpdatePhase.allowed : AppUpdatePhase.optional;
-          case AppUpdateType.none:
-            _phase = AppUpdatePhase.allowed;
+      _requirement = switch (next.updateType) {
+        AppUpdateType.required => AppUpdateRequirement.required,
+        AppUpdateType.optional => AppUpdateRequirement.optional,
+        AppUpdateType.none => AppUpdateRequirement.none,
+      };
+      if (previous?.latestVersionCode != next.latestVersionCode) {
+        _optionalDeferred = false;
+      }
+      await _refreshDownloadStatus(next);
+
+      // 静默只对普通更新生效；手动检查必须让用户先确认下载。
+      if (!manual &&
+          next.updateType == AppUpdateType.optional &&
+          next.deliveryMode == AppUpdateDeliveryMode.directPackage &&
+          _downloadStatus.state == AppUpdateDownloadState.idle) {
+        final preferences = await _preferences.read();
+        if (preferences.silentDownload) {
+          try {
+            await enqueueDownload(wifiOnly: preferences.wifiOnly);
+          } catch (error) {
+            // 下载排队失败不能把已确认的 optional 发布误判为“没有更新”。
+            _errorMessage = _errorText(error);
+          }
         }
       }
     } catch (error) {
       _errorMessage = _errorText(error);
-      // 已锁存的 required 策略（缓存、服务端响应或 426）不能因临时网络错误放行；
-      // 其余首次检查失败默认进入应用，避免普通网络故障阻断本地可用功能。
-      if (!_requiredByApi426 &&
-          !_requiredByServer &&
-          !_requiredByCache &&
-          _phase != AppUpdatePhase.required) {
-        _phase = AppUpdatePhase.allowed;
+      if (!_requiredByApi426 && !_requiredByCache) {
+        _requirement = AppUpdateRequirement.none;
       }
     } finally {
       _checking = false;
@@ -257,133 +233,152 @@ class AppUpdateCoordinator extends ChangeNotifier {
     }
   }
 
-  /// 业务接口返回 426 时立即进入强制门禁，并后台重拉完整发布信息。
   void requireUpdateFromApi() {
     _requiredByApi426 = true;
-    _phase = AppUpdatePhase.required;
+    _requirement = AppUpdateRequirement.required;
     notifyListeners();
     unawaited(check(force: true));
   }
 
-  /// App 回到前台时调用。若用户从未知来源安装权限页返回，恢复为可点击的
-  /// “继续安装”状态；同时按缓存间隔检查是否有新的策略。
   Future<void> onAppResumed() async {
-    // 首页首屏尚未完成时，不允许生命周期回调抢先触发更新请求。
     if (!_initialized) return;
-    if (_phase == AppUpdatePhase.installing) {
-      _phase = AppUpdatePhase.readyToInstall;
-      notifyListeners();
-      return;
-    }
-    if (_requiredByApi426) return;
-    await check();
+    await _refreshCurrentDownloadStatus();
+    if (!_requiredByApi426) await check();
+  }
+
+  /// 关闭“允许后台继续下载”时，离开前台立即暂停 WorkManager 任务并保留分片。
+  Future<void> onAppBackgrounded() async {
+    if (!isDownloading) return;
+    final preferences = await _preferences.read();
+    if (!preferences.backgroundDownload) await cancelDownload();
   }
 
   Future<void> deferOptionalUpdate() async {
-    if (_requiredByApi426 || _info?.updateType != AppUpdateType.optional) {
-      return;
-    }
-    _phase = AppUpdatePhase.allowed;
+    if (requirement != AppUpdateRequirement.optional) return;
+    _optionalDeferred = true;
     notifyListeners();
   }
 
-  Future<void> ignoreOptionalUpdate() async {
-    final info = _info;
-    if (_requiredByApi426 ||
-        info == null ||
-        info.updateType != AppUpdateType.optional) {
-      return;
-    }
-    await _cache.ignoreOptionalVersion(info.latestVersionCode);
-    _phase = AppUpdatePhase.allowed;
+  /// 保留旧名称，行为由“忽略版本”改为本次不再弹窗，不会阻止静默下载策略。
+  Future<void> ignoreOptionalUpdate() => deferOptionalUpdate();
+
+  Future<void> enqueueDownload({bool? wifiOnly}) async {
+    final release = _directReleaseOrThrow();
+    final preferences = await _preferences.read();
+    await _downloadBridge.enqueue(
+      release,
+      wifiOnly: wifiOnly ?? preferences.wifiOnly,
+      allowBackground: preferences.backgroundDownload,
+    );
+    await _refreshDownloadStatus(release);
+    _startDownloadPolling();
     notifyListeners();
   }
 
-  AppUpdateAction? _currentAction;
-
-  /// 开始更新操作
+  /// 兼容原按钮入口：ready 时仅打开安装器，否则排队后台下载，绝不串行下载后安装。
   Future<void> downloadOrInstall() async {
-    final info = _info;
-    if (info == null || !info.updateAvailable) {
-      _errorMessage = '更新包信息不完整，请重新检查';
-      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
-      notifyListeners();
+    if (hasReadyPackage) {
+      await installPreparedUpdate();
       return;
     }
+    await enqueueDownload(wifiOnly: false);
+  }
 
-    final hasDirectPackage = info.downloadUrl.trim().isNotEmpty;
-    final hasExternalAction = info.actionUrl.trim().isNotEmpty;
-    if (!hasDirectPackage && !hasExternalAction) {
-      _errorMessage = '更新包信息不完整，请重新检查';
-      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
-      notifyListeners();
-      return;
-    }
+  Future<void> installReadyPackage() => installPreparedUpdate();
 
-    _downloadCancelToken = CancelToken();
-    _downloadProgress = null;
-    _errorMessage = null;
-    _phase = AppUpdatePhase.downloading;
-    notifyListeners();
-
+  Future<void> installPreparedUpdate() async {
+    final release = _directReleaseOrThrow();
+    if (!hasReadyPackage) throw StateError('更新包尚未准备完成');
     try {
-      final oldPackage = _currentAction?.readyPackage;
-      _currentAction =
-          AppUpdateAction.current(info, _installer, _downloadService);
-      final result = await _currentAction!.execute(
-        info,
-        existingPackage: oldPackage,
-        cancelToken: _downloadCancelToken,
-        onProgress: (progress) {
-          _downloadProgress = progress;
-          notifyListeners();
-        },
-      );
-
-      if (result == AppUpdateActionResult.permissionRequired) {
-        _errorMessage = '请在系统设置中允许“沈理校园”安装未知应用';
-        _phase = AppUpdatePhase.readyToInstall;
-      } else if (result == AppUpdateActionResult.installerOpened) {
-        _errorMessage = null;
-        _phase = AppUpdatePhase.installing;
-      } else if (result == AppUpdateActionResult.externalStoreOpened) {
-        _errorMessage = null;
-        _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.allowed;
-      }
-      notifyListeners();
+      await _downloadBridge.installPrepared(release);
     } catch (error) {
       _errorMessage = _errorText(error);
-      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
       notifyListeners();
-    } finally {
-      _downloadCancelToken = null;
+      rethrow;
     }
   }
 
-  void cancelDownload() {
-    _downloadCancelToken?.cancel('用户暂停下载');
+  Future<void> cancelDownload() async {
+    final release = _info;
+    if (release == null ||
+        release.deliveryMode != AppUpdateDeliveryMode.directPackage) {
+      return;
+    }
+    await _downloadBridge.cancel(release);
+    await _refreshDownloadStatus(release);
+    _downloadPollingTimer?.cancel();
+    _downloadPollingTimer = null;
+    notifyListeners();
   }
 
-  Future<void> installReadyPackage() async {
-    // Retry installation directly through action
-    await downloadOrInstall();
+  Future<void> refreshDownloadStatus() => _refreshCurrentDownloadStatus();
+
+  Future<void> _refreshCurrentDownloadStatus() async {
+    final release = _info;
+    if (release == null ||
+        release.deliveryMode != AppUpdateDeliveryMode.directPackage) {
+      return;
+    }
+    await _refreshDownloadStatus(release);
+    notifyListeners();
+  }
+
+  Future<void> _refreshDownloadStatus(AppUpdateInfo release) async {
+    if (!PlatformCapabilities.current.supportsInAppPackageInstall) {
+      _downloadStatus = NativeUpdateDownloadStatus.idle;
+      return;
+    }
+    try {
+      _downloadStatus = await _downloadBridge.query(release);
+      if (_downloadStatus.isActive) _startDownloadPolling();
+    } catch (_) {
+      // 原生桥接不可用不能阻断版本检查；下次进入 Android 前台会重新读取。
+      _downloadStatus = NativeUpdateDownloadStatus.idle;
+    }
+  }
+
+  void _startDownloadPolling() {
+    _downloadPollingTimer ??=
+        Timer.periodic(const Duration(milliseconds: 750), (_) async {
+      await _refreshCurrentDownloadStatus();
+      if (!_downloadStatus.isActive) {
+        _downloadPollingTimer?.cancel();
+        _downloadPollingTimer = null;
+      }
+    });
+  }
+
+  AppUpdateInfo _directReleaseOrThrow() {
+    final release = _info;
+    if (release == null ||
+        !release.updateAvailable ||
+        release.deliveryMode != AppUpdateDeliveryMode.directPackage ||
+        release.downloadUrl.isEmpty) {
+      throw StateError('更新包信息不完整，请重新检查');
+    }
+    return release;
   }
 
   bool _shouldCheckNow() {
     final checkedAt = _lastSuccessfulCheckAt;
     if (checkedAt == null) return true;
     final seconds = _info?.checkAfterSeconds ?? 300;
-    final interval = Duration(seconds: seconds.clamp(60, 86400));
-    return DateTime.now().toUtc().difference(checkedAt) >= interval;
+    return DateTime.now().toUtc().difference(checkedAt) >=
+        Duration(seconds: seconds.clamp(60, 86400));
   }
 
   String _errorText(Object error) {
-    if (error is AppUpdateApiException || error is AppDownloadError) {
+    if (error is AppUpdateApiException) {
       return error.toString().replaceFirst(RegExp(r'^.*?\): '), '');
     }
     return '更新操作失败: $error';
   }
+
+  @override
+  void dispose() {
+    _downloadPollingTimer?.cancel();
+    super.dispose();
+  }
 }
 
-/// 共享 Dio 的 426 拦截器和根级 Provider 共用同一个协调器实例。
 final AppUpdateCoordinator appUpdateCoordinator = AppUpdateCoordinator();

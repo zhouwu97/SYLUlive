@@ -178,13 +178,31 @@ class AndroidApkUpdateAction implements AppUpdateAction {
   PreparedUpdatePackage? get readyPackage => _preparedPackage;
 
   @override
+
+  /// 旧的前台兼容入口。后台任务不得调用它；新下载链路分别调用原生 prepare / install。
   Future<AppUpdateActionResult> execute(
     AppUpdateInfo info, {
     PreparedUpdatePackage? existingPackage,
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    // 1. 仅复用仍与当前发布信息完全匹配的包，避免检查期间版本变化时安装旧 APK。
+    final preparedPackage = await prepareUpdate(
+      info,
+      existingPackage: existingPackage,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+    return installPreparedUpdate(preparedPackage, info);
+  }
+
+  /// 只下载并校验，不唤起系统安装器，供前台兼容路径复用。
+  Future<PreparedUpdatePackage> prepareUpdate(
+    AppUpdateInfo info, {
+    PreparedUpdatePackage? existingPackage,
+    void Function(AppDownloadProgress)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    // 仅复用仍与当前发布信息完全匹配的包，避免检查期间版本变化时安装旧 APK。
     var preparedPackage = existingPackage;
     if (preparedPackage == null || !await preparedPackage.isValidFor(info)) {
       if (preparedPackage != null) {
@@ -222,8 +240,19 @@ class AndroidApkUpdateAction implements AppUpdateAction {
     }
 
     _preparedPackage = preparedPackage;
+    return preparedPackage;
+  }
 
-    // 2. Check Permission
+  /// 只安装已经验证的包；下载完成本身绝不会触发这里。
+  Future<AppUpdateActionResult> installPreparedUpdate(
+    PreparedUpdatePackage preparedPackage,
+    AppUpdateInfo info,
+  ) async {
+    if (!await preparedPackage.isValidFor(info)) {
+      throw StateError('更新包校验失败');
+    }
+
+    // Check Permission
     if (!await _installer.canInstallPackages()) {
       await _installer.openInstallPermissionSettings();
       return AppUpdateActionResult.permissionRequired;

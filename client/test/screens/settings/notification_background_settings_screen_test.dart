@@ -6,15 +6,20 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/settings/notification_background_settings_screen.dart';
+import 'package:shenliyuan/services/app_update_coordinator.dart';
 
 Widget _buildTestApp({
   required AuthProvider auth,
   required ThemeProvider theme,
+  required AppUpdateCoordinator updateCoordinator,
 }) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthProvider>.value(value: auth),
       ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+      ChangeNotifierProvider<AppUpdateCoordinator>.value(
+        value: updateCoordinator,
+      ),
     ],
     child: const MaterialApp(
       home: NotificationBackgroundSettingsScreen(),
@@ -27,6 +32,7 @@ void main() {
 
   late AuthProvider authProvider;
   late ThemeProvider themeProvider;
+  late AppUpdateCoordinator updateCoordinator;
 
   setUp(() async {
     AppPreferencesStore.setMockInitialValues({});
@@ -36,6 +42,8 @@ void main() {
     );
     themeProvider = ThemeProvider(loadOnStart: false);
     await themeProvider.loadThemeForTesting();
+    updateCoordinator = AppUpdateCoordinator();
+    addTearDown(updateCoordinator.dispose);
   });
 
   testWidgets('通知与后台页面展示状态概览与本地提醒说明', (tester) async {
@@ -43,6 +51,7 @@ void main() {
       _buildTestApp(
         auth: authProvider,
         theme: themeProvider,
+        updateCoordinator: updateCoordinator,
       ),
     );
     await tester.pumpAndSettle();

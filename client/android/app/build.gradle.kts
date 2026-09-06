@@ -102,6 +102,8 @@ dependencies {
 
     // WorkManager — 后台定时刷新
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // 更新下载明确锁定 HTTP 客户端版本，避免依赖 Flutter 插件的传递版本。
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("cn.jiguang.sdk:jpush:6.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

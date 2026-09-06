@@ -102,6 +102,8 @@ services:
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
       - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}
       - APP_RELEASE_DIR=${APP_RELEASE_DIR:-/app/releases}
+      - APP_RELEASE_USE_ACCEL_REDIRECT=${APP_RELEASE_USE_ACCEL_REDIRECT:-true}
+      - APP_RELEASE_ACCEL_PREFIX=${APP_RELEASE_ACCEL_PREFIX:-/_internal/app-releases/}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD in .env}
       - EDU_SERVICE_URL=${EDU_SERVICE_URL:-http://python-edu-service:8000}
@@ -208,6 +210,8 @@ services:
       - ./client/build/web:/usr/share/nginx/html:ro
       # 与 server_data 使用同一命名卷，仅以只读方式提供给 internal location。
       - server_data:/var/lib/sylulive/uploads:ro
+      # APK 下载必须先经 Go 校验 release，再由 internal X-Accel 路径送入 Nginx。
+      - app_release_data:/var/lib/sylulive/releases:ro
     depends_on:
       - server
     networks:

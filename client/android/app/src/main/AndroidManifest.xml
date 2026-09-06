@@ -105,6 +105,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_file_paths" />
         </provider>
+        <activity
+            android:name=".UpdateInstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
         <receiver
             android:name=".PrivateMessageJPushReceiver"
             android:enabled="true"

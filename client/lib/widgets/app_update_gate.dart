@@ -4,20 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_update_info.dart';
+import '../platform/contracts/external_navigator.dart';
+import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
-import '../services/app_update_download_service.dart';
 
-/// 根级更新门禁。它包裹登录页与首页，因此 required 状态不能通过返回、切换
-/// 页面或未登录路径绕过；普通更新仅在首次发现时提示一次，仍可继续使用 App。
+const _githubReleasesUrl =
+    'https://github.com/zhouwu97/SYLUlive/releases?utm_source=chatgpt.com';
+
+/// 根级更新提示协调器。它只在需要用户决策时呈现紧凑 Dialog，下载始终留在后台。
 class AppUpdateGate extends StatefulWidget {
-  final Widget child;
-  final GlobalKey<NavigatorState> navigatorKey;
-
   const AppUpdateGate({
     super.key,
     required this.child,
     required this.navigatorKey,
   });
+
+  final Widget child;
+  final GlobalKey<NavigatorState> navigatorKey;
 
   @override
   State<AppUpdateGate> createState() => _AppUpdateGateState();
@@ -26,8 +29,11 @@ class AppUpdateGate extends StatefulWidget {
 class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
   bool _optionalDialogVisible = false;
+  bool _requiredDialogVisible = false;
   int? _presentedOptionalVersion;
-  Timer? _optionalRetryTimer;
+  int? _presentedRequiredVersion;
+  int? _presentedFailedVersion;
+  Timer? _retryTimer;
 
   @override
   void initState() {
@@ -38,7 +44,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _optionalRetryTimer?.cancel();
+    _retryTimer?.cancel();
     super.dispose();
   }
 
@@ -46,6 +52,8 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       context.read<AppUpdateCoordinator>().onAppResumed();
+    } else if (state == AppLifecycleState.paused) {
+      context.read<AppUpdateCoordinator>().onAppBackgrounded();
     }
   }
 
@@ -53,288 +61,250 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   Widget build(BuildContext context) {
     final coordinator = context.watch<AppUpdateCoordinator>();
     final info = coordinator.info;
-    if (coordinator.phase != AppUpdatePhase.optional) {
-      _presentedOptionalVersion = null;
-    }
-    if (coordinator.phase == AppUpdatePhase.optional &&
-        info != null &&
+    if (info != null &&
+        coordinator.shouldPromptOptional &&
         _presentedOptionalVersion != info.latestVersionCode) {
       _presentedOptionalVersion = info.latestVersionCode;
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _showOptionalDialog());
     }
+    if (info != null &&
+        coordinator.isRequired &&
+        _presentedRequiredVersion != info.latestVersionCode) {
+      _presentedRequiredVersion = info.latestVersionCode;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _showRequiredDialog());
+    }
+    if (info != null &&
+        coordinator.downloadState == AppUpdateDownloadState.failed &&
+        _presentedFailedVersion != info.latestVersionCode) {
+      _presentedFailedVersion = info.latestVersionCode;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showFailedDialog());
+    }
 
     return Stack(
       children: [
         widget.child,
-        if (coordinator.isBlocking)
-          Positioned.fill(
-            child: PopScope(
-              canPop: false,
-              child: AppUpdateScreen(coordinator: coordinator),
-            ),
-          ),
+        if (coordinator.isRequired && info != null)
+          _RequiredDownloadBanner(info: info, coordinator: coordinator),
       ],
     );
   }
 
+  BuildContext? get _dialogContext =>
+      widget.navigatorKey.currentState?.overlay?.context;
+
   Future<void> _showOptionalDialog() async {
     if (!mounted || _optionalDialogVisible) return;
     final coordinator = context.read<AppUpdateCoordinator>();
-    if (coordinator.phase != AppUpdatePhase.optional ||
-        coordinator.info == null) {
-      return;
-    }
-    final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
-    if (dialogContext == null) {
-      _presentedOptionalVersion = null;
-      _retryOptionalDialogLater();
-      return;
-    }
-    final navigator = widget.navigatorKey.currentState;
-    if (navigator == null || navigator.canPop()) {
-      _retryOptionalDialogLater();
-      return;
-    }
+    final info = coordinator.info;
+    if (info == null || !coordinator.shouldPromptOptional) return;
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return _retryLater(_showOptionalDialog);
+
     _optionalDialogVisible = true;
-    final action = await showDialog<_OptionalUpdateAction>(
+    final action = await showDialog<_UpdateDialogAction>(
       context: dialogContext,
-      barrierDismissible: true,
-      builder: (dialogContext) => _OptionalUpdateDialog(
-        info: coordinator.info!,
-        onLater: () =>
-            Navigator.of(dialogContext).pop(_OptionalUpdateAction.later),
-        onIgnore: () =>
-            Navigator.of(dialogContext).pop(_OptionalUpdateAction.ignore),
-        onUpdate: () =>
-            Navigator.of(dialogContext).pop(_OptionalUpdateAction.update),
+      builder: (_) => _UpdateDialog(
+        info: info,
+        required: false,
+        downloadStatus: coordinator.downloadStatus,
       ),
     );
     _optionalDialogVisible = false;
-    if (!mounted || coordinator.phase != AppUpdatePhase.optional) return;
-
+    if (!mounted) return;
     switch (action) {
-      case _OptionalUpdateAction.update:
-        await coordinator.downloadOrInstall();
-      case _OptionalUpdateAction.ignore:
-        await coordinator.ignoreOptionalUpdate();
-      case _OptionalUpdateAction.later:
+      case _UpdateDialogAction.download:
+        await coordinator.enqueueDownload(wifiOnly: false);
+      case _UpdateDialogAction.github:
+        await _openGithub();
+        await coordinator.deferOptionalUpdate();
+      case _UpdateDialogAction.later:
       case null:
         await coordinator.deferOptionalUpdate();
     }
   }
 
-  void _retryOptionalDialogLater() {
-    _optionalRetryTimer ??= Timer(const Duration(seconds: 2), () {
-      _optionalRetryTimer = null;
-      _showOptionalDialog();
+  Future<void> _showRequiredDialog() async {
+    if (!mounted || _requiredDialogVisible) return;
+    final coordinator = context.read<AppUpdateCoordinator>();
+    final info = coordinator.info;
+    if (info == null || !coordinator.isRequired) return;
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return _retryLater(_showRequiredDialog);
+
+    _requiredDialogVisible = true;
+    final action = await showDialog<_UpdateDialogAction>(
+      context: dialogContext,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: _UpdateDialog(
+          info: info,
+          required: true,
+          downloadStatus: coordinator.downloadStatus,
+        ),
+      ),
+    );
+    _requiredDialogVisible = false;
+    if (!mounted) return;
+    switch (action) {
+      case _UpdateDialogAction.download:
+        await coordinator.enqueueDownload(wifiOnly: false);
+      case _UpdateDialogAction.github:
+        await _openGithub();
+      case _UpdateDialogAction.later:
+      case null:
+        break;
+    }
+  }
+
+  Future<void> _showFailedDialog() async {
+    if (!mounted) return;
+    final coordinator = context.read<AppUpdateCoordinator>();
+    final info = coordinator.info;
+    if (info == null ||
+        coordinator.downloadState != AppUpdateDownloadState.failed) {
+      return;
+    }
+    final dialogContext = _dialogContext;
+    if (dialogContext == null) return _retryLater(_showFailedDialog);
+    final retry = await showDialog<bool>(
+      context: dialogContext,
+      builder: (_) => AlertDialog(
+        title: const Text('更新包下载失败'),
+        content: const Text('可以稍后重试，也可以前往 GitHub Releases 手动下载。'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await _openGithub();
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop(false);
+            },
+            child: const Text('GitHub 下载'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('稍后重试'),
+          ),
+        ],
+      ),
+    );
+    if (retry == true) await coordinator.enqueueDownload(wifiOnly: false);
+  }
+
+  void _retryLater(Future<void> Function() callback) {
+    _retryTimer ??= Timer(const Duration(seconds: 1), () {
+      _retryTimer = null;
+      callback();
     });
+  }
+
+  Future<void> _openGithub() async {
+    final uri = Uri.parse(_githubReleasesUrl);
+    await ExternalNavigator.current().open(uri);
   }
 }
 
-enum _OptionalUpdateAction { later, ignore, update }
+enum _UpdateDialogAction { later, github, download }
 
-class _OptionalUpdateDialog extends StatelessWidget {
-  final AppUpdateInfo info;
-  final VoidCallback onLater;
-  final VoidCallback onIgnore;
-  final VoidCallback onUpdate;
-
-  const _OptionalUpdateDialog({
+class _UpdateDialog extends StatelessWidget {
+  const _UpdateDialog({
     required this.info,
-    required this.onLater,
-    required this.onIgnore,
-    required this.onUpdate,
+    required this.required,
+    required this.downloadStatus,
   });
+
+  final AppUpdateInfo info;
+  final bool required;
+  final NativeUpdateDownloadStatus downloadStatus;
 
   @override
   Widget build(BuildContext context) {
+    final active = downloadStatus.isActive;
+    final ready = downloadStatus.state == AppUpdateDownloadState.ready;
     return AlertDialog(
-      title: Row(
-        children: [
-          Image.asset('assets/images/mingfeng.png', width: 24, height: 24),
-          const SizedBox(width: 10),
-          Expanded(child: Text('发现新版本 ${info.latestVersionName}')),
-        ],
-      ),
+      title: Text(required ? '需要更新沈理校园' : '发现新版本 ${info.latestVersionName}'),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 300),
+        constraints: const BoxConstraints(maxHeight: 260),
         child: SingleChildScrollView(
-          child: Text(info.changelog.isEmpty ? '本次更新优化了使用体验。' : info.changelog),
+          child: Text(
+            required
+                ? (ready
+                    ? '当前版本已停止服务，更新包已经准备完成，请安装后继续使用。'
+                    : active
+                        ? '当前版本已停止服务。安装包正在后台下载 ${_progressText(downloadStatus)}，完成后可直接安装。'
+                        : '当前版本已停止服务，请下载更新后继续使用。')
+                : '${_sizeText(info.fileSize)}\n\n${info.changelog.isEmpty ? '本次更新优化了使用体验。' : info.changelog}',
+          ),
         ),
       ),
       actions: [
-        TextButton(onPressed: onIgnore, child: const Text('忽略此版本')),
-        TextButton(onPressed: onLater, child: const Text('稍后')),
-        FilledButton(onPressed: onUpdate, child: const Text('立即更新')),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_UpdateDialogAction.github),
+          child: const Text('GitHub 下载'),
+        ),
+        if (!required)
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_UpdateDialogAction.later),
+            child: const Text('稍后'),
+          ),
+        if (!active && !ready)
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_UpdateDialogAction.download),
+            child: const Text('后台下载'),
+          ),
       ],
     );
   }
+
+  static String _sizeText(int bytes) =>
+      '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+
+  static String _progressText(NativeUpdateDownloadStatus status) {
+    if (status.totalBytes <= 0) return '';
+    return '${(status.progress * 100).toStringAsFixed(0)}%';
+  }
 }
 
-/// 全屏更新页，仅覆盖强制更新、下载、校验完成和唤起安装器的状态。
-class AppUpdateScreen extends StatelessWidget {
-  final AppUpdateCoordinator coordinator;
+class _RequiredDownloadBanner extends StatelessWidget {
+  const _RequiredDownloadBanner(
+      {required this.info, required this.coordinator});
 
-  const AppUpdateScreen({super.key, required this.coordinator});
+  final AppUpdateInfo info;
+  final AppUpdateCoordinator coordinator;
 
   @override
   Widget build(BuildContext context) {
-    final info = coordinator.info;
-    final phase = coordinator.phase;
-    final theme = Theme.of(context);
-    final progress = coordinator.downloadProgress;
-    final isInitial = phase == AppUpdatePhase.initializing ||
-        phase == AppUpdatePhase.checking;
-    final isDownloading = phase == AppUpdatePhase.downloading;
-    final isInstalling = phase == AppUpdatePhase.installing;
-    final canDownload = info != null && info.updateAvailable && !isInitial;
-
-    return Material(
-      color: theme.scaffoldBackgroundColor,
-      child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 36, 28, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  UnconstrainedBox(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        'assets/images/mingfeng.png',
-                        width: 64,
-                        height: 64,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    isInitial
-                        ? '正在检查更新'
-                        : info == null
-                            ? '需要更新应用'
-                            : info.title.replaceAll('神理院', '沈理校园'),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _description(phase, info),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (isDownloading) ...[
-                    const SizedBox(height: 28),
-                    LinearProgressIndicator(value: progress?.percent),
-                    const SizedBox(height: 10),
-                    Text(
-                      _progressText(progress),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                  if (info?.changelog.isNotEmpty == true) ...[
-                    const SizedBox(height: 28),
-                    Text('更新内容', style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Text(info!.changelog,
-                            style: theme.textTheme.bodyMedium),
-                      ),
-                    ),
-                  ] else
-                    const Spacer(),
-                  if (coordinator.errorMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      coordinator.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: isInitial || isDownloading || isInstalling
-                        ? null
-                        : canDownload
-                            ? coordinator.downloadOrInstall
-                            : () =>
-                                coordinator.check(force: true, manual: true),
-                    child: Text(_primaryActionText(phase, canDownload)),
-                  ),
-                  if (isDownloading && !coordinator.isRequired) ...[
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: coordinator.cancelDownload,
-                      child: const Text('暂停下载'),
-                    ),
-                  ],
-                ],
-              ),
+    final status = coordinator.downloadStatus;
+    final text = status.state == AppUpdateDownloadState.ready
+        ? '版本需要更新 · 更新包已准备完成'
+        : status.isActive
+            ? '版本需要更新 · 正在后台下载 ${(status.progress * 100).toStringAsFixed(0)}%'
+            : '版本需要更新 · 请下载新版本';
+    return SafeArea(
+      child: Material(
+        color: Theme.of(context).colorScheme.errorContainer,
+        child: InkWell(
+          onTap: status.state == AppUpdateDownloadState.ready
+              ? coordinator.installPreparedUpdate
+              : coordinator.downloadOrInstall,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.system_update_alt_rounded,
+                    color: Theme.of(context).colorScheme.onErrorContainer),
+                const SizedBox(width: 8),
+                Expanded(child: Text(text)),
+                const Icon(Icons.chevron_right_rounded),
+              ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  String _description(AppUpdatePhase phase, AppUpdateInfo? info) {
-    switch (phase) {
-      case AppUpdatePhase.initializing:
-      case AppUpdatePhase.checking:
-        return '请稍候';
-      case AppUpdatePhase.downloading:
-        return '正在下载并校验安装包';
-      case AppUpdatePhase.readyToInstall:
-        return '安装包已准备完成';
-      case AppUpdatePhase.installing:
-        return '请在系统安装界面完成更新';
-      case AppUpdatePhase.required:
-        return info == null ? '请重新检查更新信息' : '当前版本已停止服务，请更新后继续使用';
-      case AppUpdatePhase.allowed:
-      case AppUpdatePhase.optional:
-        return '发现新版本';
-    }
-  }
-
-  String _primaryActionText(AppUpdatePhase phase, bool canDownload) {
-    switch (phase) {
-      case AppUpdatePhase.readyToInstall:
-        return '继续安装';
-      case AppUpdatePhase.installing:
-        return '已打开系统安装器';
-      case AppUpdatePhase.required:
-        return canDownload ? '下载更新' : '重新检查';
-      case AppUpdatePhase.initializing:
-      case AppUpdatePhase.checking:
-        return '正在检查';
-      case AppUpdatePhase.downloading:
-        return '正在下载';
-      case AppUpdatePhase.allowed:
-      case AppUpdatePhase.optional:
-        return '立即更新';
-    }
-  }
-
-  String _progressText(AppDownloadProgress? progress) {
-    if (progress == null) return '正在连接服务器';
-    final received = _formatBytes(progress.receivedBytes);
-    final total = _formatBytes(progress.totalBytes);
-    if (progress.bytesPerSecond <= 0) return '$received / $total';
-    return '$received / $total  ${_formatBytes(progress.bytesPerSecond)}/s';
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 }

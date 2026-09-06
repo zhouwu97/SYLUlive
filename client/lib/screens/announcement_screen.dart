@@ -1,5 +1,3 @@
-import 'dart:io' show File;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +12,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../widgets/glass_container.dart';
-import '../widgets/app_cached_image.dart';
+import '../widgets/global_background_wrapper.dart';
 
 class AnnouncementScreen extends StatefulWidget {
   const AnnouncementScreen({super.key, this.onAnnouncementRead});
@@ -140,50 +138,6 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
     }
   }
 
-  Widget _buildDefaultBg(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getCustomBackgroundImageFor(context);
-    if (themeProvider.shouldShowCustomBackground &&
-        path != null &&
-        path.isNotEmpty) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(path)
-              ? Image.asset(
-                  ThemeProvider.resolveBundledAssetPath(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : ThemeProvider.isLocalFileBackground(path)
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : AppCachedImage.public(
-                      imageUrl: path,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                      errorWidget: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.34)
-                : Colors.white.withValues(alpha: 0.20),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBg(isDark);
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -228,7 +182,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
         ),
         body: Stack(
           children: [
-            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+            const Positioned.fill(child: CustomBackgroundLayer()),
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _announcements.isEmpty

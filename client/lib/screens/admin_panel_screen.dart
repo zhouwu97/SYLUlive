@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
-import 'dart:io' show File;
 import 'admin_reports_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
@@ -19,7 +17,7 @@ import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
-import '../widgets/app_cached_image.dart';
+import '../widgets/global_background_wrapper.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -114,7 +112,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -152,8 +149,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
           body: Stack(
             children: [
-              Positioned.fill(
-                  child: _buildBackground(context, themeProvider, isDark)),
+              const Positioned.fill(child: CustomBackgroundLayer()),
               SafeArea(
                 child: ListView(
                   physics: const BouncingScrollPhysics(),
@@ -504,36 +500,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
       ],
     );
-  }
-
-  Widget _buildBackground(
-      BuildContext context, ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.shouldShowCustomBackground &&
-        themeProvider.getCustomBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ThemeProvider.isBundledAssetBackground(bgPath)
-              ? Image.asset(ThemeProvider.resolveBundledAssetPath(bgPath),
-                  fit: BoxFit.cover)
-              : ThemeProvider.isLocalFileBackground(bgPath)
-                  ? Image.file(File(bgPath), fit: BoxFit.cover)
-                  : AppCachedImage.public(
-                      imageUrl: bgPath,
-                      fit: BoxFit.cover,
-                      memCacheWidth: 2048,
-                      memCacheHeight: 2048,
-                    ),
-          Container(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.4)
-                  : Colors.white.withValues(alpha: 0.3)),
-        ],
-      );
-    }
-    return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight);
   }
 }
 

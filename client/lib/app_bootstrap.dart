@@ -1350,6 +1350,11 @@ class MyApp extends StatelessWidget {
           create: (_) => AuthProvider(
             dio,
             onForbiddenRecovery: _handleForbiddenRecovery,
+            onCommunityRulesRequired: () async {
+              final context = appNavigatorKey.currentContext;
+              if (context == null || !context.mounted) return false;
+              return showRequiredCommunityRulesDialog(context);
+            },
           ),
         ),
         ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(

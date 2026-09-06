@@ -285,6 +285,9 @@ class AuthProvider extends ChangeNotifier {
   final VoidCallback _onAuthenticated;
   final AccountSessionCleanupCoordinator _sessionCleanupCoordinator;
   final void Function(ForbiddenRecoveryRoute route)? _onForbiddenRecovery;
+  final Future<bool> Function()? _onCommunityRulesRequired;
+  Future<bool>? _communityRulesRecoveryFuture;
+  int? _communityRulesRecoveryEpoch;
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -325,12 +328,14 @@ class AuthProvider extends ChangeNotifier {
     VoidCallback? onAuthenticated,
     AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
     void Function(ForbiddenRecoveryRoute route)? onForbiddenRecovery,
+    Future<bool> Function()? onCommunityRulesRequired,
   })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
         _usesPlatformCredentialStore = credentialStore == null,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
             AccountSessionCleanupCoordinator.instance,
-        _onForbiddenRecovery = onForbiddenRecovery {
+        _onForbiddenRecovery = onForbiddenRecovery,
+        _onCommunityRulesRequired = onCommunityRulesRequired {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -350,7 +355,7 @@ class AuthProvider extends ChangeNotifier {
           }
           handler.next(options);
         },
-        onError: (error, handler) {
+        onError: (error, handler) async {
           final status = error.response?.statusCode;
           final responseBody = error.response?.data;
           final errorCode = responseBody is Map ? responseBody['code'] : null;
@@ -424,6 +429,35 @@ class AuthProvider extends ChangeNotifier {
               isCurrentSessionRequest &&
               (_token != null || (kIsWeb && _user != null))) {
             _handleForbiddenRecovery(errorCode);
+            if (errorCode == 'community_rules_required' &&
+                error.requestOptions.extra['communityRulesRetried'] != true &&
+                _onCommunityRulesRequired != null) {
+              final epoch = _accountSessionEpoch;
+              final token = _token;
+              final accepted = await _requestCommunityRulesConfirmation();
+              // 此 403 在业务处理前返回。仅恢复无请求体的明确点赞操作，
+              // 不自动重放发帖、私信、上传等写请求，也不跨账号恢复。
+              final options = error.requestOptions;
+              final isLikeRequest =
+                  RegExp(r'^(?:/api)?/(posts|replies)/\d+/like$')
+                      .hasMatch(options.uri.path) &&
+                  (options.method == 'POST' || options.method == 'DELETE') &&
+                  options.data == null;
+              if (accepted &&
+                  isLikeRequest &&
+                  isLoggedIn &&
+                  _accountSessionEpoch == epoch &&
+                  _token == token &&
+                  (_user?.legalConsentsActive ?? false)) {
+                options.extra['communityRulesRetried'] = true;
+                try {
+                  handler.resolve(await _dio.fetch<dynamic>(options));
+                } on DioException catch (retryError) {
+                  handler.reject(retryError);
+                }
+                return;
+              }
+            }
           }
           handler.next(error);
         },
@@ -730,7 +764,10 @@ class AuthProvider extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace);
     }
 
-    if (route.requiresConsent) {
+    if (route.kind == ForbiddenRecoveryKind.communityRulesRequired) {
+      // 社区规则是写操作门禁，不得伪造基础协议撤销或清空教务状态。
+      notifyListeners();
+    } else if (route.requiresConsent) {
       unawaited(
         _applyLegalConsentRestriction(required: route.consentIsRequired),
       );
@@ -969,6 +1006,59 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> _requestCommunityRulesConfirmation() async {
+    final epoch = _accountSessionEpoch;
+    if (_communityRulesRecoveryEpoch == epoch &&
+        _communityRulesRecoveryFuture != null) {
+      return _communityRulesRecoveryFuture!;
+    }
+    // 并发受限请求共用结果；弹窗异常也统一返回取消，确保每个请求都能结束。
+    final future = Future<bool>.sync(_onCommunityRulesRequired!).catchError(
+      (Object error) {
+        debugPrint('社区规则确认未完成: ${error.runtimeType}');
+        return false;
+      },
+    );
+    _communityRulesRecoveryEpoch = epoch;
+    _communityRulesRecoveryFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_communityRulesRecoveryFuture, future)) {
+        _communityRulesRecoveryFuture = null;
+        _communityRulesRecoveryEpoch = null;
+      }
+    }
+  }
+
+  /// 只有用户在社区规则界面明确勾选后才调用独立确认接口。
+  Future<AuthResult> acceptCommunityRules() async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    final epoch = _accountSessionEpoch;
+    try {
+      final response = await _dio.post(
+        '/user/community-rules',
+        data: {'accepted': true},
+      );
+      if (response.statusCode != 200) {
+        return AuthResult.failure('社区规则确认失败，请稍后重试');
+      }
+      if (!isLoggedIn || _accountSessionEpoch != epoch) {
+        return AuthResult.failure('登录状态已变化，请重新操作');
+      }
+      if (_lastForbiddenRecovery?.kind ==
+          ForbiddenRecoveryKind.communityRulesRequired) {
+        clearForbiddenRecovery();
+      }
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    } catch (error) {
+      return AuthResult.failure('社区规则确认失败，请稍后重试');
+    }
+  }
+
   /// 确认最新法律文件，并以服务端返回的授权状态更新本地会话。
   Future<AuthResult> acceptRequiredLegalConsents({
     required bool includeEduDataConsent,
@@ -982,10 +1072,6 @@ class AuthProvider extends ChangeNotifier {
         data: {
           'user_agreement_accepted': true,
           'privacy_policy_accepted': true,
-          'community_rules_accepted': true,
-          'minor_protection_accepted': true,
-          'content_complaint_accepted': true,
-          'sdk_disclosure_accepted': true,
           'edu_data_consent_accepted': includeEduDataConsent,
         },
       );
@@ -1054,10 +1140,15 @@ class AuthProvider extends ChangeNotifier {
     try {
       final userJson = Map<String, dynamic>.from(currentUser.toJson())
         ..['legal_consents_active'] = false
-        ..['legal_consents_required'] = required
-        ..['edu_bound'] = false
-        ..['edu_authorized'] = false
-        ..['edu_session_state'] = 'revoked';
+        ..['legal_consents_required'] = required;
+      // 补签协议不会撤销服务端教务授权，必须保留它以展示专项授权勾选项。
+      // 只有明确撤销同意时才同步清除教务状态。
+      if (!required) {
+        userJson
+          ..['edu_bound'] = false
+          ..['edu_authorized'] = false
+          ..['edu_session_state'] = 'revoked';
+      }
       final nextUser = User.fromJson(userJson);
       await _enqueueAuthMutation(() => _credentialStore.write(
             // Web 端只更新已持久化的用户快照，JWT 仍由 HttpOnly Cookie 管理。

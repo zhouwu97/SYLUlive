@@ -154,6 +154,83 @@ class GradeInfo(BaseModel):
     course_category: Optional[str] = None  # ���޿γ� / ���޿γ̵�
     assessment_method: Optional[str] = None  # ���� / ����
 
+    # 聚合接口已规范化成绩字段，同时保留学校原始字段别名，让旧版本客户端
+    # 在服务端先行发布时也能完整读取成绩，不会把有效成绩降级成空白记录。
+    @computed_field
+    @property
+    def kcmc(self) -> str:
+        return self.name
+
+    @computed_field
+    @property
+    def kch_id(self) -> str:
+        return self.course_id
+
+    @computed_field
+    @property
+    def kch(self) -> str:
+        return self.course_code
+
+    @computed_field
+    @property
+    def jxb_id(self) -> str:
+        return self.class_id
+
+    @computed_field
+    @property
+    def xh_id(self) -> str:
+        return self.student_grade_id
+
+    @computed_field
+    @property
+    def jsxm(self) -> str:
+        return self.teacher or ""
+
+    @computed_field
+    @property
+    def sfxwkc(self) -> str:
+        return "是" if self.is_degree else "否"
+
+    @computed_field
+    @property
+    def xf(self) -> float:
+        return self.credits
+
+    @computed_field
+    @property
+    def jd(self) -> float:
+        return self.gpa
+
+    @computed_field
+    @property
+    def xfjd(self) -> float:
+        return self.grade_points
+
+    @computed_field
+    @property
+    def bfzcj(self) -> float:
+        return self.fraction
+
+    @computed_field
+    @property
+    def cj(self) -> str:
+        return self.grade
+
+    @computed_field
+    @property
+    def ksxz(self) -> str:
+        return self.exam_type or ""
+
+    @computed_field
+    @property
+    def kklxdm(self) -> str:
+        return self.course_category or ""
+
+    @computed_field
+    @property
+    def khfsmc(self) -> str:
+        return self.assessment_method or ""
+
 
 class GradesInput(BaseModel):
     """�ɼ���ѯ����"""

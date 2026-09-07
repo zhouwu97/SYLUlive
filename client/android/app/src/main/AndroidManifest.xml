@@ -149,6 +149,11 @@
             android:name=".KeepAliveForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- WorkManager 的长时更新下载同样必须声明 dataSync；Android 14+ 会校验。 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
         <service
             android:name=".KeepAliveTileService"
             android:label="沈理保活"

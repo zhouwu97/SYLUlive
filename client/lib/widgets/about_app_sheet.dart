@@ -192,7 +192,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 endIndent: 16),
                             InkWell(
                               onTap: () => _launchUrl(
-                                  'https://github.com/zhouwu97/SYLUlive/releases?utm_source=chatgpt.com'),
+                                  'https://github.com/zhouwu97/SYLUlive/releases'),
                               borderRadius: const BorderRadius.only(
                                 bottomLeft: Radius.circular(20),
                                 bottomRight: Radius.circular(20),

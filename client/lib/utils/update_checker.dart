@@ -6,8 +6,7 @@ import '../platform/contracts/external_navigator.dart';
 import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
 
-const githubReleasesUrl =
-    'https://github.com/zhouwu97/SYLUlive/releases?utm_source=chatgpt.com';
+const githubReleasesUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
 
 /// 手动检查将本地 ready / downloading 视为一等结果，避免重复下载同一 release。
 class UpdateChecker {
@@ -111,7 +110,9 @@ class UpdateChecker {
         ],
       ),
     );
-    if (download == true) await coordinator.enqueueDownload(wifiOnly: false);
+    if (download == true) {
+      await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+    }
   }
 
   static Future<void> _openGithub() =>

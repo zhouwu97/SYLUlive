@@ -9,7 +9,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
 internal object UpdateDownloadScheduler {
-    fun enqueue(context: Context, release: UpdateRelease, wifiOnly: Boolean) {
+    fun enqueue(
+        context: Context,
+        release: UpdateRelease,
+        wifiOnly: Boolean,
+        userInitiated: Boolean,
+    ) {
         release.validate()
         clearOtherReleases(context, release)
         val constraints = Constraints.Builder()
@@ -34,7 +39,10 @@ internal object UpdateDownloadScheduler {
             UpdateManifestStore.write(context, existing)
         }
         WorkManager.getInstance(context).enqueueUniqueWork(
-            UpdateDownloadWorker.uniqueName(release.versionCode), ExistingWorkPolicy.KEEP, request)
+            UpdateDownloadWorker.uniqueName(release.versionCode),
+            if (userInitiated) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+            request,
+        )
     }
 
     fun cancel(context: Context, release: UpdateRelease, deleteFiles: Boolean = false) {

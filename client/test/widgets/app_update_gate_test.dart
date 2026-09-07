@@ -24,7 +24,8 @@ class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
   bool get isRequired => true;
 
   @override
-  Future<void> enqueueDownload({bool? wifiOnly}) async {
+  Future<void> enqueueDownload(
+      {bool? wifiOnly, bool userInitiated = false}) async {
     downloadCalls++;
   }
 

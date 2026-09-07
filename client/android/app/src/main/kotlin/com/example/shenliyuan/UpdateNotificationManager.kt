@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
@@ -14,7 +15,15 @@ internal object UpdateNotificationManager {
     private const val NOTIFICATION_ID = 41031
 
     fun foregroundInfo(context: Context, manifest: UpdateDownloadManifest): androidx.work.ForegroundInfo =
-        androidx.work.ForegroundInfo(NOTIFICATION_ID, progressNotification(context, manifest))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            androidx.work.ForegroundInfo(
+                NOTIFICATION_ID,
+                progressNotification(context, manifest),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            androidx.work.ForegroundInfo(NOTIFICATION_ID, progressNotification(context, manifest))
+        }
 
     fun showProgress(context: Context, manifest: UpdateDownloadManifest) {
         notificationManager(context).notify(NOTIFICATION_ID, progressNotification(context, manifest))

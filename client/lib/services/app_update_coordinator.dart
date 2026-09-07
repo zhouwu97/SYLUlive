@@ -110,6 +110,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool _optionalDeferred = false;
   Future<void>? _deferredInitialCheck;
   Timer? _downloadPollingTimer;
+  bool _pausedForBackgroundPreference = false;
 
   AppUpdateRequirement get requirement =>
       _requiredByApi426 ? AppUpdateRequirement.required : _requirement;
@@ -243,6 +244,14 @@ class AppUpdateCoordinator extends ChangeNotifier {
   Future<void> onAppResumed() async {
     if (!_initialized) return;
     await _refreshCurrentDownloadStatus();
+    if (_downloadStatus.state == AppUpdateDownloadState.paused) {
+      final preferences = await _preferences.read();
+      await enqueueDownload(
+        wifiOnly: _pausedForBackgroundPreference ? false : preferences.wifiOnly,
+        userInitiated: _pausedForBackgroundPreference,
+      );
+      _pausedForBackgroundPreference = false;
+    }
     if (!_requiredByApi426) await check();
   }
 
@@ -250,7 +259,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
   Future<void> onAppBackgrounded() async {
     if (!isDownloading) return;
     final preferences = await _preferences.read();
-    if (!preferences.backgroundDownload) await cancelDownload();
+    if (!preferences.backgroundDownload) {
+      _pausedForBackgroundPreference = true;
+      await cancelDownload();
+    }
   }
 
   Future<void> deferOptionalUpdate() async {
@@ -262,13 +274,17 @@ class AppUpdateCoordinator extends ChangeNotifier {
   /// 保留旧名称，行为由“忽略版本”改为本次不再弹窗，不会阻止静默下载策略。
   Future<void> ignoreOptionalUpdate() => deferOptionalUpdate();
 
-  Future<void> enqueueDownload({bool? wifiOnly}) async {
+  Future<void> enqueueDownload({
+    bool? wifiOnly,
+    bool userInitiated = false,
+  }) async {
     final release = _directReleaseOrThrow();
     final preferences = await _preferences.read();
     await _downloadBridge.enqueue(
       release,
       wifiOnly: wifiOnly ?? preferences.wifiOnly,
       allowBackground: preferences.backgroundDownload,
+      userInitiated: userInitiated,
     );
     await _refreshDownloadStatus(release);
     _startDownloadPolling();
@@ -281,7 +297,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
       await installPreparedUpdate();
       return;
     }
-    await enqueueDownload(wifiOnly: false);
+    await enqueueDownload(wifiOnly: false, userInitiated: true);
   }
 
   Future<void> installReadyPackage() => installPreparedUpdate();

@@ -50,6 +50,6 @@ void main() {
     );
 
     expect(find.text('原有开屏内容'), findsOneWidget);
-    expect(find.byType(AppUpdateScreen), findsNothing);
+    expect(find.byType(AppUpdateGate), findsOneWidget);
   });
 }

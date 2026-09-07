@@ -15,7 +15,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-import kotlin.math.min
 
 /**
  * 更新包的唯一下载实现。每个 Range 段写入独立文件，避免并发写一个 part 文件；
@@ -170,14 +169,38 @@ internal class UpdatePackageDownloader(private val context: Context) {
     ): UpdateDownloadManifest {
         val release = manifest.release
         val file = singleFile(release)
-        var downloaded = if (file.isFile) file.length().coerceAtMost(release.fileSize) else 0L
-        if (file.length() > release.fileSize) file.delete()
+        var downloaded = if (file.isFile) file.length() else 0L
+        if (downloaded > release.fileSize) {
+            file.delete()
+            downloaded = 0
+        }
+        // 分片回退后若单流文件已经完整，不再发送一个会得到 416 的 Range 请求。
+        if (downloaded == release.fileSize) {
+            manifest.segments.clear()
+            manifest.segments += UpdateSegment(0, release.fileSize - 1, downloaded)
+            return manifest
+        }
         val request = Request.Builder().url(release.downloadUrl).apply {
             if (downloaded > 0) header("Range", "bytes=$downloaded-")
         }.build()
         client.newCall(request).execute().use { response ->
+            if (response.code == 416) {
+                // 服务器对陈旧断点拒绝 Range：删掉不完整文件，改为完整单流重下。
+                file.delete()
+                manifest.segments.clear()
+                return singleStreamDownload(manifest, onProgress)
+            }
             if (response.code != 200 && response.code != 206) {
                 throw UpdateNetworkException("single_http_${response.code}")
+            }
+            if (response.code == 206) {
+                validateContentRange(
+                    response.header("Content-Range")
+                        ?: throw UpdateNetworkException("single_content_range_missing"),
+                    downloaded,
+                    release.fileSize - 1,
+                    release.fileSize,
+                )
             }
             val append = response.code == 206 && downloaded > 0
             if (!append) downloaded = 0

@@ -71,11 +71,13 @@ class UpdateDownloadBridge {
     AppUpdateInfo info, {
     required bool wifiOnly,
     required bool allowBackground,
+    required bool userInitiated,
   }) async {
     await _channel.invokeMethod<void>('enqueueUpdateDownload', {
       ..._releaseArguments(info),
       'wifiOnly': wifiOnly,
       'allowBackground': allowBackground,
+      'userInitiated': userInitiated,
     });
   }
 

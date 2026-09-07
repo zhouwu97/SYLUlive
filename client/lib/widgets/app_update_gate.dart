@@ -8,8 +8,7 @@ import '../platform/contracts/external_navigator.dart';
 import '../platform/update_download_bridge.dart';
 import '../services/app_update_coordinator.dart';
 
-const _githubReleasesUrl =
-    'https://github.com/zhouwu97/SYLUlive/releases?utm_source=chatgpt.com';
+const _githubReleasesUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
 
 /// 根级更新提示协调器。它只在需要用户决策时呈现紧凑 Dialog，下载始终留在后台。
 class AppUpdateGate extends StatefulWidget {
@@ -115,7 +114,9 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (!mounted) return;
     switch (action) {
       case _UpdateDialogAction.download:
-        await coordinator.enqueueDownload(wifiOnly: false);
+        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+      case _UpdateDialogAction.install:
+        await coordinator.installPreparedUpdate();
       case _UpdateDialogAction.github:
         await _openGithub();
         await coordinator.deferOptionalUpdate();
@@ -150,7 +151,9 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (!mounted) return;
     switch (action) {
       case _UpdateDialogAction.download:
-        await coordinator.enqueueDownload(wifiOnly: false);
+        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+      case _UpdateDialogAction.install:
+        await coordinator.installPreparedUpdate();
       case _UpdateDialogAction.github:
         await _openGithub();
       case _UpdateDialogAction.later:
@@ -189,7 +192,9 @@ class _AppUpdateGateState extends State<AppUpdateGate>
         ],
       ),
     );
-    if (retry == true) await coordinator.enqueueDownload(wifiOnly: false);
+    if (retry == true) {
+      await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+    }
   }
 
   void _retryLater(Future<void> Function() callback) {
@@ -205,7 +210,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   }
 }
 
-enum _UpdateDialogAction { later, github, download }
+enum _UpdateDialogAction { later, github, download, install }
 
 class _UpdateDialog extends StatelessWidget {
   const _UpdateDialog({
@@ -250,7 +255,19 @@ class _UpdateDialog extends StatelessWidget {
                 Navigator.of(context).pop(_UpdateDialogAction.later),
             child: const Text('稍后'),
           ),
-        if (!active && !ready)
+        if (ready)
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_UpdateDialogAction.install),
+            child: const Text('立即安装'),
+          )
+        else if (active && required)
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_UpdateDialogAction.later),
+            child: const Text('知道了'),
+          )
+        else if (!active)
           FilledButton(
             onPressed: () =>
                 Navigator.of(context).pop(_UpdateDialogAction.download),

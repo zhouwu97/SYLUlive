@@ -399,7 +399,8 @@ class MainActivity : FlutterActivity() {
                     "enqueueUpdateDownload" -> {
                         val release = updateReleaseFromCall(call)
                         val wifiOnly = call.argument<Boolean>("wifiOnly") ?: true
-                        UpdateDownloadScheduler.enqueue(this, release, wifiOnly)
+                        val userInitiated = call.argument<Boolean>("userInitiated") ?: false
+                        UpdateDownloadScheduler.enqueue(this, release, wifiOnly, userInitiated)
                         result.success(true)
                     }
                     "queryUpdateDownload" -> {

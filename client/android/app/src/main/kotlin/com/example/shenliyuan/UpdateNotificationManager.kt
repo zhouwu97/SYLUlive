@@ -12,21 +12,23 @@ import androidx.core.app.NotificationCompat
 
 internal object UpdateNotificationManager {
     private const val CHANNEL_ID = "app_update_download"
-    private const val NOTIFICATION_ID = 41031
+    // WorkManager 会在 Worker 结束时清理前台通知，完成通知必须使用独立 ID 才能保留安装入口。
+    private const val FOREGROUND_NOTIFICATION_ID = 41031
+    private const val READY_NOTIFICATION_ID = 41032
 
     fun foregroundInfo(context: Context, manifest: UpdateDownloadManifest): androidx.work.ForegroundInfo =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             androidx.work.ForegroundInfo(
-                NOTIFICATION_ID,
+                FOREGROUND_NOTIFICATION_ID,
                 progressNotification(context, manifest),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
         } else {
-            androidx.work.ForegroundInfo(NOTIFICATION_ID, progressNotification(context, manifest))
+            androidx.work.ForegroundInfo(FOREGROUND_NOTIFICATION_ID, progressNotification(context, manifest))
         }
 
     fun showProgress(context: Context, manifest: UpdateDownloadManifest) {
-        notificationManager(context).notify(NOTIFICATION_ID, progressNotification(context, manifest))
+        notificationManager(context).notify(FOREGROUND_NOTIFICATION_ID, progressNotification(context, manifest))
     }
 
     fun showReady(context: Context, manifest: UpdateDownloadManifest) {
@@ -40,7 +42,7 @@ internal object UpdateNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         notificationManager(context).notify(
-            NOTIFICATION_ID,
+            READY_NOTIFICATION_ID,
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle("沈理校园 ${manifest.release.versionName} 已准备完成")
@@ -53,7 +55,10 @@ internal object UpdateNotificationManager {
         )
     }
 
-    fun cancel(context: Context) = notificationManager(context).cancel(NOTIFICATION_ID)
+    fun cancel(context: Context) {
+        notificationManager(context).cancel(FOREGROUND_NOTIFICATION_ID)
+        notificationManager(context).cancel(READY_NOTIFICATION_ID)
+    }
 
     private fun progressNotification(context: Context, manifest: UpdateDownloadManifest): Notification {
         ensureChannel(context)

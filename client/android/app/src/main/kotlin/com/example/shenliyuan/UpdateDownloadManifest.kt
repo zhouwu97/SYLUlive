@@ -34,6 +34,9 @@ internal data class UpdateDownloadManifest(
     var bytesPerSecond: Long = 0,
     var errorCode: String? = null,
     var apkPath: String? = null,
+    // 任务策略随断点持久化，前后台切换后不能擅自改变 WLAN / 移动网络约束。
+    var wifiOnly: Boolean = true,
+    var userInitiated: Boolean = false,
     val segments: MutableList<UpdateSegment> = mutableListOf(),
 ) {
     fun receivedBytes(): Long = segments.sumOf { it.downloaded }
@@ -48,6 +51,8 @@ internal data class UpdateDownloadManifest(
         .put("bytesPerSecond", bytesPerSecond)
         .put("errorCode", errorCode)
         .put("apkPath", apkPath)
+        .put("wifiOnly", wifiOnly)
+        .put("userInitiated", userInitiated)
         .put("segments", JSONArray().apply {
             segments.forEach { segment ->
                 put(JSONObject()
@@ -83,6 +88,8 @@ internal data class UpdateDownloadManifest(
                 bytesPerSecond = json.optLong("bytesPerSecond", 0),
                 errorCode = json.optString("errorCode").takeIf { it.isNotBlank() },
                 apkPath = json.optString("apkPath").takeIf { it.isNotBlank() },
+                wifiOnly = json.optBoolean("wifiOnly", true),
+                userInitiated = json.optBoolean("userInitiated", false),
                 segments = segments,
             )
         }

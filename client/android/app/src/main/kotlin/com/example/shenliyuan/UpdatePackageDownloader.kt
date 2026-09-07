@@ -4,17 +4,22 @@ import android.content.Context
 import android.os.StatFs
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 更新包的唯一下载实现。每个 Range 段写入独立文件，避免并发写一个 part 文件；
@@ -26,6 +31,8 @@ internal class UpdatePackageDownloader(private val context: Context) {
         .readTimeout(60, TimeUnit.MINUTES)
         .build()
     private val lock = Any()
+    private val activeCalls = ConcurrentHashMap.newKeySet<Call>()
+    private val cancelled = AtomicBoolean(false)
     private var lastPersistNanos = System.nanoTime()
     private var lastPersistBytes = 0L
 
@@ -62,6 +69,8 @@ internal class UpdatePackageDownloader(private val context: Context) {
                 Log.i(TAG, "update_download_ready version=${release.versionCode}")
                 manifest
             } catch (error: Exception) {
+                // onStopped 已取消 HTTP 调用；旧 Worker 不得再覆盖替换任务的新 manifest。
+                if (cancelled.get()) throw error
                 manifest.state = if (error is UpdateNetworkException) "paused" else "failed"
                 manifest.errorCode = error.javaClass.simpleName
                 UpdateManifestStore.write(context, manifest)
@@ -81,7 +90,13 @@ internal class UpdatePackageDownloader(private val context: Context) {
         manifest.segments.forEachIndexed { index, segment ->
             val file = segmentFile(release, index)
             val actual = if (file.isFile) file.length() else 0L
-            segment.downloaded = actual.coerceAtMost(segment.end - segment.start + 1)
+            val expectedLength = segment.end - segment.start + 1
+            if (actual > expectedLength) {
+                file.delete()
+                segment.downloaded = 0
+            } else {
+                segment.downloaded = actual
+            }
         }
         UpdateManifestStore.write(context, manifest)
         Log.i(TAG, "update_download_started version=${release.versionCode} segments=${manifest.segments.size}")
@@ -102,10 +117,11 @@ internal class UpdatePackageDownloader(private val context: Context) {
         val file = segmentFile(manifest.release, index)
         repeat(3) { attempt ->
             try {
+                ensureNotCancelled()
                 val start = segment.start + segment.downloaded
                 val request = Request.Builder().url(manifest.release.downloadUrl)
                     .header("Range", "bytes=$start-${segment.end}").build()
-                client.newCall(request).execute().use { response ->
+                execute(request) { response ->
                     if (response.code != 206) throw RangeUnsupportedException("http_${response.code}")
                     val range = response.header("Content-Range")
                         ?: throw RangeUnsupportedException("content_range_missing")
@@ -134,7 +150,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
             } catch (error: Exception) {
                 if (attempt == 2) throw UpdateNetworkException("segment_$index: ${error.message}")
                 Log.i(TAG, "update_segment_retry segment=$index attempt=${attempt + 2}")
-                Thread.sleep(1_000L shl attempt)
+                delay(1_000L shl attempt)
             }
         }
     }
@@ -163,7 +179,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
         }
     }
 
-    private fun singleStreamDownload(
+    private suspend fun singleStreamDownload(
         manifest: UpdateDownloadManifest,
         onProgress: (UpdateDownloadManifest) -> Unit,
     ): UpdateDownloadManifest {
@@ -183,46 +199,52 @@ internal class UpdatePackageDownloader(private val context: Context) {
         val request = Request.Builder().url(release.downloadUrl).apply {
             if (downloaded > 0) header("Range", "bytes=$downloaded-")
         }.build()
-        client.newCall(request).execute().use { response ->
+        ensureNotCancelled()
+        val restartFromZero = execute(request) { response ->
             if (response.code == 416) {
-                // 服务器对陈旧断点拒绝 Range：删掉不完整文件，改为完整单流重下。
-                file.delete()
-                manifest.segments.clear()
-                return singleStreamDownload(manifest, onProgress)
-            }
-            if (response.code != 200 && response.code != 206) {
-                throw UpdateNetworkException("single_http_${response.code}")
-            }
-            if (response.code == 206) {
-                validateContentRange(
-                    response.header("Content-Range")
-                        ?: throw UpdateNetworkException("single_content_range_missing"),
-                    downloaded,
-                    release.fileSize - 1,
-                    release.fileSize,
-                )
-            }
-            val append = response.code == 206 && downloaded > 0
-            if (!append) downloaded = 0
-            val body = response.body ?: throw UpdateNetworkException("single_empty_body")
-            body.byteStream().use { input ->
-                FileOutputStream(file, append).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        if (downloaded + count > release.fileSize) {
-                            throw UpdateNetworkException("single_response_overflow")
-                        }
-                        output.write(buffer, 0, count)
-                        downloaded += count
-                        manifest.segments.clear()
-                        manifest.segments += UpdateSegment(0, release.fileSize - 1, downloaded)
-                        updateProgress(manifest, manifest.segments.single(), 0, onProgress)
-                    }
-                    output.fd.sync()
+                true
+            } else {
+                if (response.code != 200 && response.code != 206) {
+                    throw UpdateNetworkException("single_http_${response.code}")
                 }
+                if (response.code == 206) {
+                    validateContentRange(
+                        response.header("Content-Range")
+                            ?: throw UpdateNetworkException("single_content_range_missing"),
+                        downloaded,
+                        release.fileSize - 1,
+                        release.fileSize,
+                    )
+                }
+                val append = response.code == 206 && downloaded > 0
+                if (!append) downloaded = 0
+                val body = response.body ?: throw UpdateNetworkException("single_empty_body")
+                body.byteStream().use { input ->
+                    FileOutputStream(file, append).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (downloaded + count > release.fileSize) {
+                                throw UpdateNetworkException("single_response_overflow")
+                            }
+                            output.write(buffer, 0, count)
+                            downloaded += count
+                            manifest.segments.clear()
+                            manifest.segments += UpdateSegment(0, release.fileSize - 1, downloaded)
+                            updateProgress(manifest, manifest.segments.single(), 0, onProgress)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                false
             }
+        }
+        if (restartFromZero) {
+            // 服务器对陈旧断点拒绝 Range：删掉不完整文件，改为完整单流重下。
+            file.delete()
+            manifest.segments.clear()
+            return singleStreamDownload(manifest, onProgress)
         }
         if (downloaded != release.fileSize) throw UpdateNetworkException("single_short_read")
         return manifest
@@ -249,7 +271,8 @@ internal class UpdatePackageDownloader(private val context: Context) {
             output.fd.sync()
         }
         if (merge.length() != release.fileSize || digest.digest().toHex() != release.sha256.lowercase()) {
-            merge.delete()
+            clearPartialFiles(release)
+            manifest.segments.clear()
             throw IllegalStateException("checksum_mismatch")
         }
         val apk = apkFile(release)
@@ -335,6 +358,43 @@ internal class UpdatePackageDownloader(private val context: Context) {
         UpdateManifestStore.rootDirectory(context).listFiles()
             ?.filter { it.name.startsWith(release.sha256.lowercase()) && it.name.contains(".segment-") }
             ?.forEach { it.delete() }
+    }
+
+    /** Worker 被取消或替换时立即终止阻塞读，避免旧任务继续写入同一分片。 */
+    fun cancel() {
+        cancelled.set(true)
+        activeCalls.forEach { call -> call.cancel() }
+    }
+
+    private suspend fun <T> execute(request: Request, block: suspend (okhttp3.Response) -> T): T {
+        ensureNotCancelled()
+        val call = client.newCall(request)
+        activeCalls += call
+        return try {
+            // cancel() 与 newCall() 可能交错；登记后再次检查，避免漏掉刚加入的调用。
+            if (cancelled.get()) {
+                call.cancel()
+                ensureNotCancelled()
+            }
+            val response = call.execute()
+            try {
+                block(response)
+            } finally {
+                response.close()
+            }
+        } finally {
+            activeCalls -= call
+        }
+    }
+
+    private fun ensureNotCancelled() {
+        if (cancelled.get()) throw CancellationException("update_download_cancelled")
+    }
+
+    private fun clearPartialFiles(release: UpdateRelease) {
+        removeSegmentFiles(release)
+        singleFile(release).delete()
+        mergeFile(release).delete()
     }
 
     private class RangeUnsupportedException(message: String) : Exception(message)

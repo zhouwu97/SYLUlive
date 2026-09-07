@@ -178,7 +178,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 endIndent: 16),
                             InkWell(
                               onTap: () {
-                                Navigator.pop(context);
                                 UpdateChecker.check(context,
                                     showNoUpdateToast: true, manual: true);
                               },

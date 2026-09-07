@@ -22,6 +22,8 @@ class NativeUpdateDownloadStatus {
     required this.bytesPerSecond,
     this.apkPath,
     this.errorCode,
+    this.wifiOnly = true,
+    this.userInitiated = false,
   });
 
   final AppUpdateDownloadState state;
@@ -30,6 +32,8 @@ class NativeUpdateDownloadStatus {
   final int bytesPerSecond;
   final String? apkPath;
   final String? errorCode;
+  final bool wifiOnly;
+  final bool userInitiated;
 
   double get progress =>
       totalBytes <= 0 ? 0 : (receivedBytes / totalBytes).clamp(0.0, 1.0);
@@ -60,6 +64,8 @@ class NativeUpdateDownloadStatus {
       bytesPerSecond: intValue('bytesPerSecond'),
       apkPath: map['apkPath'] as String?,
       errorCode: map['errorCode'] as String?,
+      wifiOnly: map['wifiOnly'] as bool? ?? true,
+      userInitiated: map['userInitiated'] as bool? ?? false,
     );
   }
 }

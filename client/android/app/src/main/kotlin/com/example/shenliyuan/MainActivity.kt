@@ -953,6 +953,15 @@ class MainActivity : FlutterActivity() {
                 "totalBytes" to 0,
                 "bytesPerSecond" to 0,
             )
+        if (manifest.state == "ready") {
+            val apk = manifest.apkPath?.let(::File)
+            if (apk?.isFile != true || apk.length() != release.fileSize) {
+                manifest.state = "failed"
+                manifest.errorCode = "prepared_apk_missing"
+                manifest.apkPath = null
+                UpdateManifestStore.write(this, manifest)
+            }
+        }
         val received = if (manifest.state == "ready") release.fileSize else manifest.receivedBytes()
         return mapOf(
             "state" to manifest.state,
@@ -961,6 +970,8 @@ class MainActivity : FlutterActivity() {
             "bytesPerSecond" to manifest.bytesPerSecond,
             "apkPath" to manifest.apkPath,
             "errorCode" to manifest.errorCode,
+            "wifiOnly" to manifest.wifiOnly,
+            "userInitiated" to manifest.userInitiated,
         )
     }
 

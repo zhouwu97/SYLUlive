@@ -115,6 +115,8 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     switch (action) {
       case _UpdateDialogAction.download:
         await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+      case _UpdateDialogAction.currentNetwork:
+        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
       case _UpdateDialogAction.install:
         await coordinator.installPreparedUpdate();
       case _UpdateDialogAction.github:
@@ -151,6 +153,8 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (!mounted) return;
     switch (action) {
       case _UpdateDialogAction.download:
+        await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+      case _UpdateDialogAction.currentNetwork:
         await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
       case _UpdateDialogAction.install:
         await coordinator.installPreparedUpdate();
@@ -210,7 +214,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
   }
 }
 
-enum _UpdateDialogAction { later, github, download, install }
+enum _UpdateDialogAction { later, github, download, currentNetwork, install }
 
 class _UpdateDialog extends StatelessWidget {
   const _UpdateDialog({
@@ -254,6 +258,12 @@ class _UpdateDialog extends StatelessWidget {
             onPressed: () =>
                 Navigator.of(context).pop(_UpdateDialogAction.later),
             child: const Text('稍后'),
+          ),
+        if (downloadStatus.state == AppUpdateDownloadState.queued)
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_UpdateDialogAction.currentNetwork),
+            child: const Text('使用当前网络下载'),
           ),
         if (ready)
           FilledButton(
@@ -307,7 +317,9 @@ class _RequiredDownloadBanner extends StatelessWidget {
         child: InkWell(
           onTap: status.state == AppUpdateDownloadState.ready
               ? coordinator.installPreparedUpdate
-              : coordinator.downloadOrInstall,
+              : status.isActive
+                  ? null
+                  : coordinator.downloadOrInstall,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(

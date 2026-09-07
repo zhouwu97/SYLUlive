@@ -32,10 +32,17 @@ internal object UpdateDownloadScheduler {
             .build()
         val existing = UpdateManifestStore.read(context, release)
         if (existing == null) {
-            UpdateManifestStore.write(context, UpdateDownloadManifest(release, "queued"))
+            UpdateManifestStore.write(context, UpdateDownloadManifest(
+                release = release,
+                state = "queued",
+                wifiOnly = wifiOnly,
+                userInitiated = userInitiated,
+            ))
         } else if (existing.state != "ready") {
             existing.state = "queued"
             existing.errorCode = null
+            existing.wifiOnly = wifiOnly
+            existing.userInitiated = userInitiated
             UpdateManifestStore.write(context, existing)
         }
         WorkManager.getInstance(context).enqueueUniqueWork(

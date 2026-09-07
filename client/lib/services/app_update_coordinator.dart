@@ -110,7 +110,6 @@ class AppUpdateCoordinator extends ChangeNotifier {
   bool _optionalDeferred = false;
   Future<void>? _deferredInitialCheck;
   Timer? _downloadPollingTimer;
-  bool _pausedForBackgroundPreference = false;
 
   AppUpdateRequirement get requirement =>
       _requiredByApi426 ? AppUpdateRequirement.required : _requirement;
@@ -245,12 +244,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
     if (!_initialized) return;
     await _refreshCurrentDownloadStatus();
     if (_downloadStatus.state == AppUpdateDownloadState.paused) {
-      final preferences = await _preferences.read();
       await enqueueDownload(
-        wifiOnly: _pausedForBackgroundPreference ? false : preferences.wifiOnly,
-        userInitiated: _pausedForBackgroundPreference,
+        wifiOnly: _downloadStatus.wifiOnly,
+        userInitiated: _downloadStatus.userInitiated,
       );
-      _pausedForBackgroundPreference = false;
     }
     if (!_requiredByApi426) await check();
   }
@@ -260,7 +257,6 @@ class AppUpdateCoordinator extends ChangeNotifier {
     if (!isDownloading) return;
     final preferences = await _preferences.read();
     if (!preferences.backgroundDownload) {
-      _pausedForBackgroundPreference = true;
       await cancelDownload();
     }
   }

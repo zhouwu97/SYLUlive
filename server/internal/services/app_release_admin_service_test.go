@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -118,6 +120,35 @@ func TestAppReleaseAdminServiceDeleteDraftRemovesPrivateAPK(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&models.AppRelease{}).Count(&count).Error)
 	require.Zero(t, count)
+}
+
+func TestAppReleaseStoragePermissionsAllowNginxToReadAPK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 不提供 Unix 权限位语义")
+	}
+	svc, _, admin := newAppReleaseAdminTestService(t)
+	draft := createAppReleaseDraftForTest(t, svc, admin, 1603, 1601)
+	path, err := svc.LocateAPK(draft)
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), info.Mode().Perm())
+
+	legacyPath := filepath.Join(svc.releaseDir, "android", "stable", "1602", "legacy.apk")
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o700))
+	require.NoError(t, os.WriteFile(legacyPath, apkFixture(1602), 0o600))
+	require.NoError(t, os.Chmod(legacyPath, 0o600))
+	require.NoError(t, svc.EnsureStoragePermissions())
+
+	legacyInfo, err := os.Stat(legacyPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), legacyInfo.Mode().Perm())
+	stableInfo, err := os.Stat(filepath.Join(svc.releaseDir, "android", "stable"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o755), stableInfo.Mode().Perm())
+	temporaryInfo, err := os.Stat(filepath.Join(svc.releaseDir, "android", "stable", ".tmp"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), temporaryInfo.Mode().Perm())
 }
 
 func TestAppReleaseAdminServiceOhosExternalMarketLifecycle(t *testing.T) {

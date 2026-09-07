@@ -37,7 +37,7 @@ class UpdateChecker {
     if (status.state == AppUpdateDownloadState.ready) {
       await _showReady(context, coordinator, info);
     } else if (status.isActive) {
-      await _showDownloading(context, info, status);
+      await _showDownloading(context, coordinator, info, status);
     } else {
       await _showAvailable(context, coordinator, info);
     }
@@ -68,25 +68,35 @@ class UpdateChecker {
 
   static Future<void> _showDownloading(
     BuildContext context,
+    AppUpdateCoordinator coordinator,
     AppUpdateInfo info,
     NativeUpdateDownloadStatus status,
-  ) =>
-      showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: Text('沈理校园 ${info.latestVersionName} 正在后台下载'),
-          content: Text(
-            '${_size(status.receivedBytes)} / ${_size(status.totalBytes)}'
-            '${status.bytesPerSecond > 0 ? ' · ${_size(status.bytesPerSecond)}/s' : ''}\n\n可以继续正常使用应用。',
-          ),
-          actions: [
-            const TextButton(onPressed: _openGithub, child: Text('GitHub 下载')),
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('知道了')),
-          ],
+  ) async {
+    final useCurrentNetwork = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('沈理校园 ${info.latestVersionName} 正在后台下载'),
+        content: Text(
+          '${_size(status.receivedBytes)} / ${_size(status.totalBytes)}'
+          '${status.bytesPerSecond > 0 ? ' · ${_size(status.bytesPerSecond)}/s' : ''}\n\n可以继续正常使用应用。',
         ),
-      );
+        actions: [
+          const TextButton(onPressed: _openGithub, child: Text('GitHub 下载')),
+          if (status.state == AppUpdateDownloadState.queued)
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('使用当前网络下载'),
+            ),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了')),
+        ],
+      ),
+    );
+    if (useCurrentNetwork == true) {
+      await coordinator.enqueueDownload(wifiOnly: false, userInitiated: true);
+    }
+  }
 
   static Future<void> _showAvailable(
     BuildContext context,

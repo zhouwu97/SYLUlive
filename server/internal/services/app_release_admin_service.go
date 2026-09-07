@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -96,8 +97,11 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		fileNameForDb = buildAppReleaseFileName(input.VersionName, input.VersionCode)
 		finalPath = filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
 
-		if err := os.MkdirAll(filepath.Dir(finalPath), 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
 			return nil, fmt.Errorf("创建 APK 发布目录: %w", err)
+		}
+		if err := os.Chmod(filepath.Dir(finalPath), 0o755); err != nil {
+			return nil, fmt.Errorf("设置 APK 发布目录权限: %w", err)
 		}
 		if _, err := os.Stat(finalPath); err == nil {
 			return nil, fmt.Errorf("%w: 相同版本文件已存在", ErrAppReleaseInvalid)
@@ -106,6 +110,11 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		}
 		if err := os.Rename(temporaryPath, finalPath); err != nil {
 			return nil, fmt.Errorf("移动 APK 到发布目录: %w", err)
+		}
+		// X-Accel 由独立的 nginx 用户读取最终 APK；临时文件仍维持 0600。
+		if err := os.Chmod(finalPath, 0o644); err != nil {
+			_ = os.Remove(finalPath)
+			return nil, fmt.Errorf("设置 APK 发布文件权限: %w", err)
 		}
 		moved = true
 		defer func() {
@@ -336,8 +345,11 @@ func (s *AppReleaseService) DeleteDraft(ctx context.Context, releaseID, operator
 
 func (s *AppReleaseService) storeTemporaryAPK(source io.Reader, maxSize int64) (string, int64, string, error) {
 	temporaryDir := filepath.Join(s.releaseDir, "android", "stable", ".tmp")
-	if err := os.MkdirAll(temporaryDir, 0o750); err != nil {
+	if err := os.MkdirAll(temporaryDir, 0o700); err != nil {
 		return "", 0, "", fmt.Errorf("创建 APK 临时目录: %w", err)
+	}
+	if err := os.Chmod(temporaryDir, 0o700); err != nil {
+		return "", 0, "", fmt.Errorf("设置 APK 临时目录权限: %w", err)
 	}
 	temporaryFile, err := os.CreateTemp(temporaryDir, "upload-*.apk")
 	if err != nil {
@@ -376,6 +388,39 @@ func (s *AppReleaseService) storeTemporaryAPK(source io.Reader, maxSize int64) (
 	path := temporaryPath
 	temporaryPath = ""
 	return path, written, sha, nil
+}
+
+// EnsureStoragePermissions 修复已发布 APK 的可读权限，并保留上传临时区的私有属性。
+// Nginx 只能通过 internal X-Accel 路径读取文件，文件系统权限不承担业务授权职责。
+func (s *AppReleaseService) EnsureStoragePermissions() error {
+	stableDir := filepath.Join(s.releaseDir, "android", "stable")
+	temporaryDir := filepath.Join(stableDir, ".tmp")
+	if err := os.MkdirAll(temporaryDir, 0o700); err != nil {
+		return fmt.Errorf("创建 APK 发布目录: %w", err)
+	}
+	for _, directory := range []string{s.releaseDir, filepath.Join(s.releaseDir, "android"), stableDir} {
+		if err := os.Chmod(directory, 0o755); err != nil {
+			return fmt.Errorf("设置 APK 发布目录权限: %w", err)
+		}
+	}
+	if err := os.Chmod(temporaryDir, 0o700); err != nil {
+		return fmt.Errorf("设置 APK 临时目录权限: %w", err)
+	}
+	return filepath.WalkDir(stableDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == temporaryDir {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			return os.Chmod(path, 0o755)
+		}
+		if entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(entry.Name()), ".apk") {
+			return os.Chmod(path, 0o644)
+		}
+		return nil
+	})
 }
 
 func validateDraftInput(input *AppReleaseDraftInput) error {

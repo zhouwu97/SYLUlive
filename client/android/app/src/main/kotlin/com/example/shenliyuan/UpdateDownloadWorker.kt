@@ -1,14 +1,17 @@
 package com.example.shenliyuan
 
 import android.content.Context
-import androidx.work.CoroutineWorker
+import androidx.work.Worker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.runBlocking
 
 internal class UpdateDownloadWorker(
     appContext: Context,
     parameters: WorkerParameters,
-) : CoroutineWorker(appContext, parameters) {
-    override suspend fun doWork(): Result {
+) : Worker(appContext, parameters) {
+    private val downloader = UpdatePackageDownloader(appContext)
+
+    override fun doWork(): Result {
         val release = try {
             UpdateRelease(
                 versionCode = inputData.getLong(KEY_VERSION_CODE, 0),
@@ -20,22 +23,29 @@ internal class UpdateDownloadWorker(
         } catch (_: Exception) {
             return Result.failure()
         }
-        val downloader = UpdatePackageDownloader(applicationContext)
         return try {
             val initial = UpdateManifestStore.read(applicationContext, release)
                 ?: UpdateDownloadManifest(release, "queued")
-            setForeground(UpdateNotificationManager.foregroundInfo(applicationContext, initial))
-            downloader.prepare(release) { manifest ->
-                UpdateNotificationManager.showProgress(applicationContext, manifest)
-            }.also { manifest ->
-                UpdateNotificationManager.showReady(applicationContext, manifest)
+            setForegroundAsync(UpdateNotificationManager.foregroundInfo(applicationContext, initial)).get()
+            runBlocking {
+                downloader.prepare(release) { manifest ->
+                    UpdateNotificationManager.showProgress(applicationContext, manifest)
+                }.also { manifest ->
+                    UpdateNotificationManager.showReady(applicationContext, manifest)
+                }
             }
             Result.success()
         } catch (_: Exception) {
+            if (isStopped) return Result.failure()
             // 网络中断交给 WorkManager 的网络约束重新调度；manifest 保留断点。
             val state = UpdateManifestStore.read(applicationContext, release)?.state
             if (state == "paused") Result.retry() else Result.failure()
         }
+    }
+
+    override fun onStopped() {
+        downloader.cancel()
+        super.onStopped()
     }
 
     companion object {

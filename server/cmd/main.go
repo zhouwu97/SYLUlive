@@ -151,9 +151,6 @@ func main() {
 		log.Fatal("创建竞赛证明材料私有目录失败:", err)
 	}
 
-	// 确保 APK 发布根目录与 .tmp 已就绪，避免后续上传 Handler 在缺目录时报错。
-	os.MkdirAll(filepath.Join(cfg.AppReleaseDir, "android", "stable", ".tmp"), 0755)
-
 	var db *gorm.DB
 
 	var err error
@@ -777,6 +774,10 @@ func main() {
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
 	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
+	// 修复旧 APK 权限，并确保 nginx 的只读挂载可通过 internal X-Accel 读取最终包体。
+	if err := appReleaseService.EnsureStoragePermissions(); err != nil {
+		log.Fatal("初始化 APK 发布目录权限失败:", err)
+	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release") {
 		appReleaseService.SetAndroidAPKValidationPolicy(
 			cfg.AndroidPackageName,

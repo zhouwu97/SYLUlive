@@ -155,6 +155,7 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         appInForeground = true
+        UpdateAppForeground.onActivityResumed()
         PrivateMessageNotificationState.setAppForeground(this, true)
         recordActivityTransition("resume", "应用进入前台")
         try {
@@ -165,6 +166,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onPause() {
         appInForeground = false
+        UpdateAppForeground.onActivityPaused()
+        // Flutter 生命周期异常时也由 Native 兜底撤销禁止后台运行的更新任务。
+        UpdateDownloadScheduler.pauseDisallowedBackground(this)
         PrivateMessageNotificationState.setAppForeground(this, false)
         recordActivityTransition("pause", "应用离开前台")
         super.onPause()
@@ -400,7 +404,14 @@ class MainActivity : FlutterActivity() {
                         val release = updateReleaseFromCall(call)
                         val wifiOnly = call.argument<Boolean>("wifiOnly") ?: true
                         val userInitiated = call.argument<Boolean>("userInitiated") ?: false
-                        UpdateDownloadScheduler.enqueue(this, release, wifiOnly, userInitiated)
+                        val allowBackground = call.argument<Boolean>("allowBackground") ?: true
+                        UpdateDownloadScheduler.enqueue(
+                            this,
+                            release,
+                            wifiOnly,
+                            userInitiated,
+                            allowBackground,
+                        )
                         result.success(true)
                     }
                     "queryUpdateDownload" -> {
@@ -972,6 +983,7 @@ class MainActivity : FlutterActivity() {
             "errorCode" to manifest.errorCode,
             "wifiOnly" to manifest.wifiOnly,
             "userInitiated" to manifest.userInitiated,
+            "allowBackground" to manifest.allowBackground,
         )
     }
 

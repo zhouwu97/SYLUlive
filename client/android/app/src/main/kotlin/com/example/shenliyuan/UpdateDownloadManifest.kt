@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicInteger
 
 internal data class UpdateRelease(
     val versionCode: Long,
@@ -37,6 +38,9 @@ internal data class UpdateDownloadManifest(
     // 任务策略随断点持久化，前后台切换后不能擅自改变 WLAN / 移动网络约束。
     var wifiOnly: Boolean = true,
     var userInitiated: Boolean = false,
+    var allowBackground: Boolean = true,
+    // 每次 WorkRequest 都有独立 generation，过期 Worker 不得覆盖当前任务状态。
+    var currentWorkerId: String? = null,
     val segments: MutableList<UpdateSegment> = mutableListOf(),
 ) {
     fun receivedBytes(): Long = segments.sumOf { it.downloaded }
@@ -53,6 +57,8 @@ internal data class UpdateDownloadManifest(
         .put("apkPath", apkPath)
         .put("wifiOnly", wifiOnly)
         .put("userInitiated", userInitiated)
+        .put("allowBackground", allowBackground)
+        .put("currentWorkerId", currentWorkerId)
         .put("segments", JSONArray().apply {
             segments.forEach { segment ->
                 put(JSONObject()
@@ -90,6 +96,8 @@ internal data class UpdateDownloadManifest(
                 apkPath = json.optString("apkPath").takeIf { it.isNotBlank() },
                 wifiOnly = json.optBoolean("wifiOnly", true),
                 userInitiated = json.optBoolean("userInitiated", false),
+                allowBackground = json.optBoolean("allowBackground", true),
+                currentWorkerId = json.optString("currentWorkerId").takeIf { it.isNotBlank() },
                 segments = segments,
             )
         }
@@ -115,6 +123,44 @@ internal object UpdateManifestStore {
         if (!temporary.renameTo(target)) error("无法原子写入更新 manifest")
     }
 
+    @Synchronized
+    fun writeIfCurrentWorker(
+        context: Context,
+        manifest: UpdateDownloadManifest,
+        workerId: String,
+    ): Boolean {
+        val current = read(context, manifest.release)
+        if (current?.currentWorkerId != workerId) return false
+        write(context, manifest)
+        return true
+    }
+
+    @Synchronized
+    fun isCurrentWorker(context: Context, release: UpdateRelease, workerId: String): Boolean =
+        read(context, release)?.currentWorkerId == workerId
+
+    @Synchronized
+    fun runIfCurrentWorker(
+        context: Context,
+        release: UpdateRelease,
+        workerId: String,
+        action: () -> Unit,
+    ): Boolean {
+        if (!isCurrentWorker(context, release, workerId)) return false
+        action()
+        return true
+    }
+
+    @Synchronized
+    fun pauseIfCurrentWorker(context: Context, release: UpdateRelease, workerId: String): Boolean {
+        val manifest = read(context, release) ?: return false
+        if (manifest.currentWorkerId != workerId) return false
+        manifest.state = "paused"
+        manifest.currentWorkerId = null
+        write(context, manifest)
+        return true
+    }
+
     fun read(context: Context, release: UpdateRelease): UpdateDownloadManifest? = try {
         val target = manifestFile(context, release)
         if (!target.isFile) null else UpdateDownloadManifest.fromJson(JSONObject(target.readText()))
@@ -133,3 +179,15 @@ internal object UpdateManifestStore {
         directory.listFiles()?.filter { it.name.startsWith(prefix) }?.forEach { it.delete() }
     }
 }
+
+/** 进程未持有前台 Activity 时保持 false；Worker 因进程重启被拉起时不会误判为前台。 */
+internal object UpdateAppForeground {
+    private val resumedActivities = AtomicInteger(0)
+    fun onActivityResumed() = resumedActivities.incrementAndGet()
+    fun onActivityPaused() {
+        resumedActivities.updateAndGet { count -> (count - 1).coerceAtLeast(0) }
+    }
+    fun isActive(): Boolean = resumedActivities.get() > 0
+}
+
+internal class UpdateWorkSupersededException : Exception("update_work_superseded")

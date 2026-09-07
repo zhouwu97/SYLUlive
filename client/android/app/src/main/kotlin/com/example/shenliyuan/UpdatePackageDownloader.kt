@@ -25,7 +25,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 更新包的唯一下载实现。每个 Range 段写入独立文件，避免并发写一个 part 文件；
  * 当链路不严格支持 206 / Content-Range 时，立即退回单连接续传。
  */
-internal class UpdatePackageDownloader(private val context: Context) {
+internal class UpdatePackageDownloader(
+    private val context: Context,
+    private val workerId: String,
+) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.MINUTES)
@@ -44,7 +47,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
             if (manifest.state == "ready" && validReadyFile(manifest)) return@withContext manifest
             manifest.state = "downloading"
             manifest.errorCode = null
-            UpdateManifestStore.write(context, manifest)
+            persist(manifest)
             onProgress(manifest)
             try {
                 manifest = try {
@@ -56,14 +59,14 @@ internal class UpdatePackageDownloader(private val context: Context) {
                     singleStreamDownload(fallback, onProgress)
                 }
                 manifest.state = "verifying"
-                UpdateManifestStore.write(context, manifest)
+                persist(manifest)
                 onProgress(manifest)
                 val apk = mergeAndVerify(manifest)
                 manifest.state = "ready"
                 manifest.apkPath = apk.canonicalPath
                 manifest.errorCode = null
                 manifest.segments.clear()
-                UpdateManifestStore.write(context, manifest)
+                persist(manifest)
                 removeSegmentFiles(release)
                 onProgress(manifest)
                 Log.i(TAG, "update_download_ready version=${release.versionCode}")
@@ -73,7 +76,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
                 if (cancelled.get()) throw error
                 manifest.state = if (error is UpdateNetworkException) "paused" else "failed"
                 manifest.errorCode = error.javaClass.simpleName
-                UpdateManifestStore.write(context, manifest)
+                persist(manifest)
                 onProgress(manifest)
                 throw error
             }
@@ -98,7 +101,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
                 segment.downloaded = actual
             }
         }
-        UpdateManifestStore.write(context, manifest)
+        persist(manifest)
         Log.i(TAG, "update_download_started version=${release.versionCode} segments=${manifest.segments.size}")
         manifest.segments.mapIndexed { index, segment ->
             async { downloadSegment(manifest, index, segment, onProgress) }
@@ -172,7 +175,7 @@ internal class UpdatePackageDownloader(private val context: Context) {
                 .coerceAtLeast(0)
             lastPersistBytes = bytes
             lastPersistNanos = now
-            UpdateManifestStore.write(context, manifest)
+            persist(manifest)
             onProgress(manifest)
         } else if (previousBytes < 0) {
             manifest.bytesPerSecond = 0
@@ -395,6 +398,12 @@ internal class UpdatePackageDownloader(private val context: Context) {
         removeSegmentFiles(release)
         singleFile(release).delete()
         mergeFile(release).delete()
+    }
+
+    private fun persist(manifest: UpdateDownloadManifest) {
+        if (!UpdateManifestStore.writeIfCurrentWorker(context, manifest, workerId)) {
+            throw UpdateWorkSupersededException()
+        }
     }
 
     private class RangeUnsupportedException(message: String) : Exception(message)

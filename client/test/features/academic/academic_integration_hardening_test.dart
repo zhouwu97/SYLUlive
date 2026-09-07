@@ -84,6 +84,53 @@ void main() {
     controller.dispose();
   });
 
+  test('服务端模式下详情类能力也经 SessionController 读取', () async {
+    final repository = _FakeAcademicRepository()
+      ..currentSource = AcademicSourceKind.legacy;
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2026000001', password: 'secret');
+
+    final requestedPaths = <String>[];
+    final provider = EduProvider(
+      Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              requestedPaths.add(options.path);
+              handler.reject(DioException(requestOptions: options));
+            },
+          ),
+        ),
+      (_) => _NoopSnapshotStore('app-user-a'),
+    )
+      ..setAcademicSessionController(controller)
+      ..syncSessionUser('app-user-a');
+    const grade = EduGrade(
+      name: '数据结构',
+      classId: 'class-a',
+      displayGrade: '88',
+      credits: 3,
+      gpa: 3.7,
+      isDegree: true,
+    );
+
+    final detail = await provider.fetchGradeDetail(grade, '2025', 12);
+    final situation = await provider.fetchAcademicSituation();
+    final requirements = await provider.fetchCreditRequirements();
+
+    expect(detail.success, isTrue);
+    expect(situation.success, isTrue);
+    expect(requirements.success, isTrue);
+    expect(requestedPaths, isEmpty);
+
+    provider.dispose();
+    controller.dispose();
+  });
+
   test('本机来源尚未登录时不会回退到旧服务端课表接口', () async {
     final repository = _FakeAcademicRepository();
     final controller = AcademicSessionController(
@@ -323,7 +370,7 @@ void main() {
 
     final legacyResult = await provider.fetchGrades('2024', 3);
     expect(legacyResult.success, isFalse);
-    expect(legacyResult.errorCode, 'LOCAL_SESSION_NOT_READY');
+    expect(legacyResult.errorCode, 'UNAUTHENTICATED');
     expect(requestedPaths, isEmpty);
 
     repository.currentSource = AcademicSourceKind.local;
@@ -552,7 +599,7 @@ final class _FakeAcademicRepository implements AcademicRepository {
     degreeFailedCourses: 0,
     degreeNotStartedCourses: 0,
     degreeInProgressCourses: 0,
-    courses: const [],
+    courses: [],
     coursesStatus: 'complete',
   );
   final CreditRequirement creditRequirements = const CreditRequirement(

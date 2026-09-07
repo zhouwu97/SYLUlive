@@ -2676,34 +2676,41 @@ def _parse_completed_status_from_text(status: str | None, grade: str | None) -> 
 # ============== 辅助函数 ==============
 
 def parse_weeks(week_str: str) -> List[int]:
-    """解析周数字符串，如'1-16周,18周' -> [1,2,3,...,16,18]"""
-    weeks = []
-    if not week_str:
-        return weeks
+    """解析教务周次表达式，并保留单双周与中文标点的真实语义。"""
+    if not week_str or not week_str.strip():
+        return []
 
-    # 移除"周"
-    week_str = week_str.replace("周", "")
-
-    # 按逗号分割
-    parts = week_str.split(",")
-    for part in parts:
-        part = part.strip()
-        if "-" in part:
-            # 范围,如 "1-16"
-            try:
-                start, end = part.split("-")
-                for i in range(int(start), int(end) + 1):
-                    weeks.append(i)
-            except ValueError:
-                continue
-        else:
-            # 单周
-            try:
-                weeks.append(int(part))
-            except ValueError:
-                continue
-
-    return sorted(list(set(weeks)))
+    normalized = (
+        week_str.replace("，", ",")
+        .replace("－", "-")
+        .replace("—", "-")
+        .replace("–", "-")
+        .replace("～", "-")
+        .replace("至", "-")
+        .replace("到", "-")
+    )
+    weeks: set[int] = set()
+    pattern = re.compile(r"(\d+)\s*-\s*(\d+)|(\d+)")
+    found_week_number = False
+    for segment in normalized.split(","):
+        only_odd_weeks = "单" in segment
+        only_even_weeks = "双" in segment
+        for match in pattern.finditer(segment):
+            found_week_number = True
+            start = int(match.group(1) or match.group(3))
+            end = int(match.group(2) or start)
+            lower, upper = sorted((start, end))
+            for week in range(lower, upper + 1):
+                if week < 1:
+                    continue
+                if only_odd_weeks and week % 2 == 0:
+                    continue
+                if only_even_weeks and week % 2 == 1:
+                    continue
+                weeks.add(week)
+    if not found_week_number:
+        raise ValueError("课表记录周次格式无法识别")
+    return sorted(weeks)
 
 
 def parse_time_sections(time_str: str) -> Tuple[int, int]:
@@ -2714,18 +2721,30 @@ def parse_time_sections(time_str: str) -> Tuple[int, int]:
       - "0102" / "0304" ↁ(1, 2) / (3, 4)!位数字,剁位是起始节,吁位是结束节)
     """
     if not time_str:
-        return (1, 2)
+        raise ValueError("课表记录缺少节次")
     # 格式1: "3-4芁 戁"3-4"
-    match = re.search(r'(\d+)[-~](\d+)', time_str)
+    match = re.search(r'(\d+)\s*[-~至到—–]\s*(\d+)', time_str)
     if match:
-        return (int(match.group(1)), int(match.group(2)))
+        start, end = int(match.group(1)), int(match.group(2))
+        if start < 1 or end < start:
+            raise ValueError("课表记录节次无效")
+        return (start, end)
     # 格式2: "0304"!位数字,取前2位和吁位)
     if time_str.isdigit() and len(time_str) >= 4:
-        return (int(time_str[:2]), int(time_str[2:4]))
+        start, end = int(time_str[:2]), int(time_str[2:4])
+        if start < 1 or end < start:
+            raise ValueError("课表记录节次无效")
+        return (start, end)
     # 格式3: 纯数字或逗号分隔
     nums = re.findall(r'\d+', time_str)
     if len(nums) >= 2:
-        return (int(nums[0]), int(nums[-1]))
+        start, end = int(nums[0]), int(nums[-1])
+        if start < 1 or end < start:
+            raise ValueError("课表记录节次无效")
+        return (start, end)
     elif nums:
-        return (int(nums[0]), int(nums[0]))
-    return (1, 2)
+        section = int(nums[0])
+        if section < 1:
+            raise ValueError("课表记录节次无效")
+        return (section, section)
+    raise ValueError("课表记录节次格式无法识别")

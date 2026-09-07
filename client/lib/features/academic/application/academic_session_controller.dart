@@ -56,6 +56,7 @@ final class AcademicSessionController extends ChangeNotifier {
   AcademicProfileStatus _profileStatus = AcademicProfileStatus.idle;
   int _accountGeneration = 0;
   bool _sessionResetPending = false;
+  bool _serverBindingStatusResolved = false;
   bool _disposed = false;
 
   String? get appUserId => _appUserId;
@@ -90,6 +91,13 @@ final class AcademicSessionController extends ChangeNotifier {
   bool get isAuthenticated =>
       !_sessionResetPending &&
       _repository.sessionState == SessionState.authenticated;
+
+  /// 服务端来源只有在 `/edu/status` 成功返回后，才允许页面把未认证解释为未绑定。
+  ///
+  /// 网络故障、服务端异常等情况只是“暂时未知”，不能误导用户重复绑定。
+  bool get hasResolvedServerBindingStatus =>
+      _repository.sourceKind != AcademicSourceKind.legacy ||
+      _serverBindingStatusResolved;
   SessionState get sessionState => _sessionResetPending
       ? SessionState.unauthenticated
       : _repository.sessionState;
@@ -108,7 +116,15 @@ final class AcademicSessionController extends ChangeNotifier {
     _appUserId = next;
     final generation = ++_accountGeneration;
     _sessionResetPending = true;
-    _clearViewState(AcademicSessionStatus.idle);
+    _serverBindingStatusResolved =
+        _repository.sourceKind != AcademicSourceKind.legacy || next == null;
+    // 服务端授权恢复尚未完成前，页面只能显示恢复中，不能把暂时清空的
+    // runtime session 误判为未绑定并引导用户重复输入账号密码。
+    _clearViewState(
+      _repository.sourceKind == AcademicSourceKind.legacy && next != null
+          ? AcademicSessionStatus.loading
+          : AcademicSessionStatus.idle,
+    );
     _notifyListeners();
 
     // 账号切换不能复用旧学校 Cookie；清理排入同一队列，避免与进行中的登录
@@ -137,6 +153,7 @@ final class AcademicSessionController extends ChangeNotifier {
           await _repository.restoreSession();
           if (_disposed || generation != _accountGeneration) return;
           _studentId = _repository.studentId;
+          _serverBindingStatusResolved = true;
           _status = _repository.sessionState == SessionState.authenticated
               ? AcademicSessionStatus.authenticated
               : AcademicSessionStatus.idle;
@@ -152,6 +169,8 @@ final class AcademicSessionController extends ChangeNotifier {
           }
         } catch (error) {
           if (_disposed || generation != _accountGeneration) return;
+          // 服务端已经返回过学号时，说明授权仍存在；仅恢复学校会话失败。
+          _serverBindingStatusResolved = _repository.studentId != null;
           _failure = AcademicFailure.fromException(error);
           _status = AcademicSessionStatus.error;
         }
@@ -446,6 +465,7 @@ final class AcademicSessionController extends ChangeNotifier {
         await _repository.restoreSession();
         if (_disposed || generation != _accountGeneration) return;
         _studentId = _repository.studentId;
+        _serverBindingStatusResolved = true;
         _status = _repository.sessionState == SessionState.authenticated
             ? AcademicSessionStatus.authenticated
             : AcademicSessionStatus.idle;
@@ -453,6 +473,7 @@ final class AcademicSessionController extends ChangeNotifier {
         if (_disposed || generation != _accountGeneration) return;
         // 会话恢复失败不等于撤销绑定；保留服务端确认过的学号供页面重试。
         _studentId = _repository.studentId;
+        _serverBindingStatusResolved = _repository.studentId != null;
         _failure = AcademicFailure.fromException(error);
         _status = AcademicSessionStatus.error;
         rethrow;
@@ -469,6 +490,7 @@ final class AcademicSessionController extends ChangeNotifier {
     switch (result) {
       case LoginSuccess(:final studentId):
         _studentId = studentId;
+        _serverBindingStatusResolved = true;
         _profile = null;
         _profileStatus = AcademicProfileStatus.loading;
         _captchaChallenge = null;

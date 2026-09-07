@@ -226,29 +226,145 @@ final class LegacyServerDataSource implements AcademicDataSource {
     String? courseId,
     String? studentGradeId,
   }) async {
+    _ensureAuthenticated();
     _ensureNetworkEnabled();
-    throw const NetworkException(
-      message: '成绩详情已不再由服务器提供，请使用本机直连教务',
-      code: 'LEGACY_FEATURE_RETIRED',
-    );
+    try {
+      final response = await _dio.post(
+        '/edu/grades/detail',
+        data: {
+          'year': year,
+          'semester': semester,
+          'class_id': classId,
+          'course_name': courseName,
+          if (courseId != null && courseId.isNotEmpty) 'course_id': courseId,
+          if (studentGradeId != null && studentGradeId.isNotEmpty)
+            'student_grade_id': studentGradeId,
+        },
+      );
+      final data = _requireSuccessfulMap(response, '获取成绩详情');
+      final rawComponents = data['components'];
+      if (rawComponents is! List) {
+        throw const ProtocolChangedException(message: '成绩详情响应缺少 components');
+      }
+      final components = <GradeComponent>[];
+      for (final raw in rawComponents) {
+        final component = _asMap(raw);
+        if (component == null) {
+          throw const ProtocolChangedException(message: '成绩详情分项结构异常');
+        }
+        components.add(
+          GradeComponent(
+            name: _text(component, const ['name']),
+            weight: _nullableText(component, const ['weight']),
+            score: _text(component, const ['score']),
+          ),
+        );
+      }
+      return GradeDetail(
+        success: data['success'] == true,
+        courseName: _text(data, const ['course_name'], fallback: courseName),
+        totalGrade: _text(data, const ['total_grade']),
+        components: components,
+        message: _nullableText(data, const ['message']),
+      );
+    } on DioException catch (error) {
+      throw _networkException(error, '获取成绩详情');
+    }
   }
 
   @override
   Future<AcademicSituation> getAcademicSituation() async {
+    _ensureAuthenticated();
     _ensureNetworkEnabled();
-    throw const NetworkException(
-      message: '学业情况已不再由服务器提供，请使用本机直连教务',
-      code: 'LEGACY_FEATURE_RETIRED',
-    );
+    try {
+      final response = await _dio.post('/edu/academic-situation');
+      final data = _requireSuccessfulMap(response, '获取学业情况');
+      final rawCourses = data['courses'];
+      if (rawCourses is! List) {
+        throw const ProtocolChangedException(message: '学业情况响应缺少 courses');
+      }
+      final courses = <AcademicCourse>[];
+      for (final raw in rawCourses) {
+        final course = _asMap(raw);
+        if (course == null) {
+          throw const ProtocolChangedException(message: '学业情况课程结构异常');
+        }
+        courses.add(_academicCourseFromMap(course));
+      }
+      return AcademicSituation(
+        success: data['success'] == true,
+        allGpa: _doubleValue(data['all_gpa']),
+        degreeGpa: _doubleValue(data['degree_gpa']),
+        totalCourses: _firstInt(data, const ['total_courses']),
+        passedCourses: _firstInt(data, const ['passed_courses']),
+        failedCourses: _firstInt(data, const ['failed_courses']),
+        notStartedCourses: _firstInt(data, const ['not_started_courses']),
+        inProgressCourses: _firstInt(data, const ['in_progress_courses']),
+        degreeTotalCourses: _firstInt(data, const ['degree_total_courses']),
+        degreePassedCourses: _firstInt(data, const ['degree_passed_courses']),
+        degreeFailedCourses: _firstInt(data, const ['degree_failed_courses']),
+        degreeNotStartedCourses:
+            _firstInt(data, const ['degree_not_started_courses']),
+        degreeInProgressCourses:
+            _firstInt(data, const ['degree_in_progress_courses']),
+        courses: courses,
+        coursesStatus:
+            _text(data, const ['courses_status'], fallback: 'unknown'),
+        message: _nullableText(data, const ['message']),
+        errorCode: _nullableText(data, const ['error_code']),
+      );
+    } on DioException catch (error) {
+      throw _networkException(error, '获取学业情况');
+    }
   }
 
   @override
   Future<CreditRequirement> getCreditRequirements() async {
+    _ensureAuthenticated();
     _ensureNetworkEnabled();
-    throw const NetworkException(
-      message: '学分要求已不再由服务器提供，请使用本机直连教务',
-      code: 'LEGACY_FEATURE_RETIRED',
-    );
+    try {
+      final response = await _dio.post('/edu/credit-requirements');
+      final data = _requireSuccessfulMap(response, '获取学分要求');
+      final rawModules = data['modules'];
+      final rawImprovementCourses = data['improvement_courses'];
+      if (rawModules is! List || rawImprovementCourses is! List) {
+        throw const ProtocolChangedException(message: '学分要求响应缺少课程模块');
+      }
+      final modules = <CreditModule>[];
+      for (final raw in rawModules) {
+        final module = _asMap(raw);
+        if (module == null) {
+          throw const ProtocolChangedException(message: '学分要求模块结构异常');
+        }
+        modules.add(_creditModuleFromMap(module));
+      }
+      final improvementCourses = <ImprovementCourse>[];
+      for (final raw in rawImprovementCourses) {
+        final course = _asMap(raw);
+        if (course == null) {
+          throw const ProtocolChangedException(message: '提高课程结构异常');
+        }
+        improvementCourses.add(
+          ImprovementCourse(
+            courseId: _text(course, const ['course_code', 'course_id']),
+            courseName: _text(course, const ['course_name']),
+            credits: _doubleValue(course['credits']) ?? 0,
+            grade: _text(course, const ['grade']),
+            status: _text(course, const ['raw_status', 'status']),
+          ),
+        );
+      }
+      return CreditRequirement(
+        success: data['success'] == true,
+        status: _text(data, const ['status'], fallback: 'unknown'),
+        modules: modules,
+        improvementCourses: improvementCourses,
+        message: _nullableText(data, const ['message']),
+        errorCode: _nullableText(data, const ['error_code']),
+      );
+    } on DioException catch (error) {
+      throw _networkException(error, '获取学分要求');
+    }
   }
 
   @override
@@ -393,6 +509,76 @@ final class LegacyServerDataSource implements AcademicDataSource {
       }
     }
     return fallback;
+  }
+
+  static String? _nullableText(Map<String, dynamic> map, List<String> keys) {
+    final value = _text(map, keys);
+    return value.isEmpty ? null : value;
+  }
+
+  static double? _doubleValue(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString().trim() ?? '');
+  }
+
+  static bool _boolValue(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final text = value?.toString().trim().toLowerCase();
+    return text == 'true' || text == '1' || text == '是';
+  }
+
+  static AcademicCourse _academicCourseFromMap(Map<String, dynamic> map) {
+    return AcademicCourse(
+      courseName: _text(map, const ['course_name']),
+      courseId: _text(map, const ['course_code', 'course_id']),
+      credits: _doubleValue(map['credits']) ?? 0,
+      status: _text(map, const ['study_status', 'status']),
+      effectiveGrade: _text(map, const ['effective_grade']),
+      effectivePassed: _boolValue(map['effective_passed']),
+      isDegree: _boolValue(map['is_degree']),
+      hasRetake: _boolValue(map['has_retake']),
+      maxGrade: _nullableText(map, const ['max_grade']),
+      gpa: _doubleValue(map['gpa']),
+      courseCategory: _nullableText(map, const ['course_category']),
+      courseNature: _nullableText(map, const ['course_nature']),
+    );
+  }
+
+  static CreditModule _creditModuleFromMap(Map<String, dynamic> map) {
+    final rawCourses = map['courses'];
+    if (rawCourses is! List) {
+      throw const ProtocolChangedException(message: '学分要求模块缺少课程列表');
+    }
+    final courses = <ModuleCourse>[];
+    for (final raw in rawCourses) {
+      final course = _asMap(raw);
+      if (course == null) {
+        throw const ProtocolChangedException(message: '学分要求课程结构异常');
+      }
+      courses.add(
+        ModuleCourse(
+          courseId: _text(course, const ['course_code', 'course_id']),
+          courseName: _text(course, const ['course_name']),
+          credits: _doubleValue(course['credits']) ?? 0,
+          grade: _text(course, const ['grade']),
+          status: _text(course, const ['raw_status', 'status']),
+          suggestedYear: _nullableText(course, const ['suggested_year']),
+          suggestedSemester:
+              _nullableText(course, const ['suggested_semester']),
+          actualYear: _nullableText(course, const ['actual_year']),
+          actualSemester: _nullableText(course, const ['actual_semester']),
+        ),
+      );
+    }
+    return CreditModule(
+      name: _text(map, const ['name']),
+      requiredCredits: _doubleValue(map['required_credits']),
+      earnedCredits: _doubleValue(map['earned_credits']) ?? 0,
+      status: _text(map, const ['status'], fallback: 'unknown'),
+      courses: courses,
+      requiredCourseCount: _firstInt(map, const ['required_course_count']),
+    );
   }
 
   static int? _firstInt(Map<String, dynamic> map, List<String> keys) {

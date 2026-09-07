@@ -278,25 +278,7 @@ class EduProvider extends ChangeNotifier {
   ])  : _dio = legacyAuthDio,
         _snapshotStoreBuilder = snapshotStoreBuilder;
 
-  static Map<String, dynamic>? _asMap(Object? value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return null;
-  }
-
-  static String _responseCode(Map<String, dynamic>? data) {
-    final value = data?['code'];
-    return value is String && value.isNotEmpty
-        ? value
-        : 'ACADEMIC_REQUEST_FAILED';
-  }
-
-  static String _responseMessage(Map<String, dynamic>? data, String fallback) {
-    final value = data?['message'] ?? data?['error'];
-    return value is String && value.isNotEmpty ? value : fallback;
-  }
-
-  /// 接入本机教务会话；服务端教务代理不再作为运行时数据源。
+  /// 接入由仓储选择来源的教务会话。
   ///
   /// 该 setter 保持独立于构造函数，避免破坏已有测试和旧页面的依赖注入。
   void setAcademicSessionController(AcademicSessionController controller) {
@@ -367,10 +349,11 @@ class EduProvider extends ChangeNotifier {
     AcademicPersistenceRegistry.set(userId, enabled: enabled);
   }
 
-  /// 将本机直连状态投影到旧 Provider 的兼容字段。
+  /// 将教务会话状态投影到旧 Provider 的兼容字段。
   ///
-  /// 旧页面仍可读取 [isBound]、[studentId] 等字段，但网络请求是否走本机
-  /// 直连由下面的本地分支决定；本地状态不会写入旧的服务端绑定偏好设置。
+  /// 旧页面仍可读取 [isBound]、[studentId] 等字段；实际请求统一由
+  /// [AcademicSessionController] 和仓储按当前来源发起，避免 Provider 再复制
+  /// 一份本机/服务端分流规则。
   void _applyAcademicSessionState() {
     final controller = _academicSessionController;
     if (controller == null) return;
@@ -396,7 +379,9 @@ class EduProvider extends ChangeNotifier {
       _college = profile?.college ?? '';
       _major = profile?.major ?? '';
       _errorMessage = controller.failure?.message;
-      _statusLoaded = true;
+      // 未成功读取服务端状态时，只能显示恢复中/恢复失败，不能把网络异常
+      // 解释为“没有绑定”并引导用户重复输入账号密码。
+      _statusLoaded = controller.hasResolvedServerBindingStatus;
       notifyListeners();
       return;
     }
@@ -544,6 +529,8 @@ class EduProvider extends ChangeNotifier {
         // 恢复错误由控制器保留，不能清除服务端绑定或伪装为恢复成功。
       }
       _applyAcademicSessionState();
+      // 服务端状态不可达时保留未解析状态，调用方可呈现恢复失败而非未绑定。
+      return;
     }
     while (!_statusLoaded) {
       await Future.delayed(const Duration(milliseconds: 50));
@@ -737,73 +724,34 @@ class EduProvider extends ChangeNotifier {
           requestSourceKind,
         );
 
-    final localController = _academicSessionController;
-    if (localController != null &&
-        localController.sourceKind == AcademicSourceKind.local) {
-      if (requestSourceAccountId.isEmpty) {
-        return OperationResult.fail('教务账号未就绪');
-      }
-      return _runEduRequest(() async {
-        final result = await localController.loadCourses(
-          year: year,
-          semester: semester,
-        );
-        if (result == null) {
-          final failure = localController.failure;
-          return OperationResult.fail(
-            failure?.message ?? '获取课表失败',
-            errorCode: failure?.code,
-          );
-        }
-        if (!isCurrentContext()) return OperationResult.fail('用户已切换');
-        return OperationResult.ok(
-          result.courses.map(_rawCourseToLegacyMap).toList(growable: false),
-        );
-      });
+    final controller = _academicSessionController;
+    if (controller == null) {
+      return OperationResult.fail(
+        '教务会话未就绪，请先恢复教务绑定',
+        errorCode: 'ACADEMIC_SESSION_NOT_READY',
+      );
     }
-
-    if (localController != null &&
-        localController.sourceKind == AcademicSourceKind.legacy) {
-      if (!localController.isAuthenticated) {
+    if (requestSourceAccountId.isEmpty) {
+      return OperationResult.fail('教务账号未就绪');
+    }
+    return _runEduRequest(() async {
+      final result =
+          await controller.loadCourses(year: year, semester: semester);
+      if (result == null) {
+        final failure = controller.failure;
         return OperationResult.fail(
-          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
-          errorCode: 'LOCAL_SESSION_NOT_READY',
+          failure?.message ?? '获取课表失败',
+          errorCode: failure?.code,
         );
       }
-      return _runEduRequest(() async {
-        try {
-          final response = await _dio.post(
-            '/edu/courses',
-            data: {'year': year, 'semester': semester},
-          );
-          final data = _asMap(response.data);
-          final courses = data?['courses'];
-          if (response.statusCode != 200 || courses is! List) {
-            return OperationResult.fail(
-              _responseMessage(data, '获取课表失败'),
-              errorCode: _responseCode(data),
-            );
-          }
-          if (!isCurrentContext()) return OperationResult.fail('用户已切换');
-          return OperationResult.ok(
-            courses
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList(growable: false),
-          );
-        } on DioException catch (error) {
-          return OperationResult.fail(error.message ?? '获取课表失败');
-        }
-      });
-    }
-
-    return OperationResult.fail(
-      '教务会话未就绪，请先恢复教务绑定',
-      errorCode: 'ACADEMIC_SESSION_NOT_READY',
-    );
+      if (!isCurrentContext()) return OperationResult.fail('用户已切换');
+      return OperationResult.ok(
+        result.courses.map(_rawCourseToLegacyMap).toList(growable: false),
+      );
+    });
   }
 
-  /// 获取成绩 — 通过本机教务会话按需读取。
+  /// 获取成绩 — 通过当前教务会话按需读取。
   /// 成功时自动写入内存缓存并记录更新时间。
   Future<OperationResult<List<EduGrade>>> fetchGrades(
     String year,
@@ -949,7 +897,7 @@ class EduProvider extends ChangeNotifier {
     final sourceAccountId = _studentId.trim();
     final sourceKind = _activeAcademicSourceKind;
     if (requestUserId == null || sourceAccountId.isEmpty) {
-      return OperationResult.fail('请先登录本机教务',
+      return OperationResult.fail('请先恢复教务绑定',
           errorCode: 'credentials_required');
     }
     await _persistenceReady;
@@ -970,10 +918,11 @@ class EduProvider extends ChangeNotifier {
       }
     }
     final controller = _academicSessionController;
-    if (controller == null ||
-        controller.sourceKind != AcademicSourceKind.local) {
-      return OperationResult.fail('本机教务会话未就绪',
-          errorCode: 'LOCAL_SESSION_NOT_READY');
+    if (controller == null) {
+      return OperationResult.fail(
+        '教务会话未就绪，请先恢复教务绑定',
+        errorCode: 'ACADEMIC_SESSION_NOT_READY',
+      );
     }
     return _runEduRequest(() async {
       final detail = await controller.loadGradeDetail(
@@ -1031,10 +980,7 @@ class EduProvider extends ChangeNotifier {
   ) async {
     if (_userId == null || _studentId.trim().isEmpty) return;
     final controller = _academicSessionController;
-    if (controller == null ||
-        controller.sourceKind != AcademicSourceKind.local) {
-      return;
-    }
+    if (controller == null) return;
     if (initialDelay > Duration.zero) await Future<void>.delayed(initialDelay);
     for (final grade in grades) {
       if (_userId == null) return;
@@ -1048,7 +994,7 @@ class EduProvider extends ChangeNotifier {
     final sourceAccountId = _studentId.trim();
     final sourceKind = _activeAcademicSourceKind;
     if (requestUserId == null || sourceAccountId.isEmpty) {
-      return OperationResult.fail('请先登录本机教务',
+      return OperationResult.fail('请先恢复教务绑定',
           errorCode: 'credentials_required');
     }
     await _persistenceReady;
@@ -1073,10 +1019,11 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.ok(value);
     }
     final controller = _academicSessionController;
-    if (controller == null ||
-        controller.sourceKind != AcademicSourceKind.local) {
-      return OperationResult.fail('本机教务会话未就绪',
-          errorCode: 'LOCAL_SESSION_NOT_READY');
+    if (controller == null) {
+      return OperationResult.fail(
+        '教务会话未就绪，请先恢复教务绑定',
+        errorCode: 'ACADEMIC_SESSION_NOT_READY',
+      );
     }
     return _runEduRequest(() async {
       final result = await controller.loadAcademicSituation();
@@ -1113,16 +1060,13 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
-    final localController = _academicSessionController;
-    if (localController != null &&
-        localController.sourceKind == AcademicSourceKind.local) {
+    final controller = _academicSessionController;
+    if (controller != null) {
       return _runEduRequest(() async {
-        final result = await localController.loadGrades(
-          year: year,
-          semester: semester,
-        );
+        final result =
+            await controller.loadGrades(year: year, semester: semester);
         if (result == null) {
-          final failure = localController.failure;
+          final failure = controller.failure;
           return OperationResult.fail(
             failure?.message ?? '获取成绩失败',
             errorCode: failure?.code,
@@ -1131,47 +1075,6 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.ok(
           result.grades.map(RawGradeMapper.toAppJson).toList(growable: false),
         );
-      });
-    }
-
-    if (localController != null &&
-        localController.sourceKind == AcademicSourceKind.legacy) {
-      if (!localController.isAuthenticated) {
-        return OperationResult.fail(
-          localController.failure?.message ?? '教务会话尚未恢复，请稍后重试',
-          errorCode: 'LOCAL_SESSION_NOT_READY',
-        );
-      }
-      return _runEduRequest(() async {
-        try {
-          final response = await _dio.post(
-            '/edu/grades',
-            data: {'year': year, 'semester': semester},
-          );
-          final data = _asMap(response.data);
-          final grades = data?['grades'];
-          if (response.statusCode != 200 || grades is! List) {
-            return OperationResult.fail(
-              _responseMessage(data, '获取成绩失败'),
-              errorCode: _responseCode(data),
-            );
-          }
-          if (!_isSameAcademicContext(
-            _userId!,
-            _studentId.trim(),
-            _activeAcademicSourceKind,
-          )) {
-            return OperationResult.fail('用户已切换');
-          }
-          return OperationResult.ok(
-            grades
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList(growable: false),
-          );
-        } on DioException catch (error) {
-          return OperationResult.fail(error.message ?? '获取成绩失败');
-        }
       });
     }
 
@@ -1187,7 +1090,7 @@ class EduProvider extends ChangeNotifier {
     final sourceAccountId = _studentId.trim();
     final sourceKind = _activeAcademicSourceKind;
     if (requestUserId == null || sourceAccountId.isEmpty) {
-      return OperationResult.fail('请先登录本机教务',
+      return OperationResult.fail('请先恢复教务绑定',
           errorCode: 'credentials_required');
     }
     await _persistenceReady;
@@ -1212,10 +1115,11 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.ok(value);
     }
     final controller = _academicSessionController;
-    if (controller == null ||
-        controller.sourceKind != AcademicSourceKind.local) {
-      return OperationResult.fail('本机教务会话未就绪',
-          errorCode: 'LOCAL_SESSION_NOT_READY');
+    if (controller == null) {
+      return OperationResult.fail(
+        '教务会话未就绪，请先恢复教务绑定',
+        errorCode: 'ACADEMIC_SESSION_NOT_READY',
+      );
     }
     return _runEduRequest(() async {
       final result = await controller.loadCreditRequirements();

@@ -830,28 +830,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
 
     if (raw is String) {
-      final result = <int>{};
-      final text = raw.replaceAll('周', '').replaceAll(' ', '');
-
-      for (final part in text.split(',')) {
-        if (part.contains('-')) {
-          final seg = part.split('-');
-          if (seg.length == 2) {
-            final start = int.tryParse(seg[0]);
-            final end = int.tryParse(seg[1]);
-            if (start != null && end != null) {
-              for (var i = start; i <= end; i++) {
-                result.add(i);
-              }
-            }
-          }
-        } else {
-          final v = int.tryParse(part);
-          if (v != null) result.add(v);
-        }
+      final weeks = WeekParser.parse(raw).weeks.toList()..sort();
+      if (raw.trim().isNotEmpty && weeks.isEmpty) {
+        throw const ProtocolChangedException(message: '课表记录周次格式无法识别');
       }
-
-      return result.toList()..sort();
+      return weeks;
     }
 
     return <int>[];
@@ -1113,6 +1096,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (!_isCurrentOperation(operation)) return;
     _currentTerm = currentTerm.copyWith(startDate: start);
     notifyListeners();
+    _syncWidget();
   }
 
   /// 从加密课表快照加载当前学期起始日期。
@@ -1126,6 +1110,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       startDate:
           start == null ? null : DateTime(start.year, start.month, start.day),
     );
+    _syncWidget();
   }
 
   /// 计算给定日期对应的教学周号（1-based），未设置则返回 null

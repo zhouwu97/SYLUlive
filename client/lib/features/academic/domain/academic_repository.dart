@@ -28,9 +28,9 @@ final class AcademicCapabilities {
       : supportsProfile = true,
         supportsCourses = true,
         supportsGrades = true,
-        supportsGradeDetail = false,
-        supportsAcademicSituation = false,
-        supportsCreditRequirements = false;
+        supportsGradeDetail = true,
+        supportsAcademicSituation = true,
+        supportsCreditRequirements = true;
 
   final bool supportsProfile;
   final bool supportsCourses;

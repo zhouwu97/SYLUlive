@@ -79,10 +79,12 @@ void main() {
           _MemoryAcademicCredentialStore(), MemoryPreferencesStore());
       expect((await coordinator.ensureAuthenticated()).kind,
           AcademicLoginOutcomeKind.networkFailure);
+      expect(controller.hasResolvedServerBindingStatus, isFalse);
       source.restoreError = null;
       expect((await coordinator.ensureAuthenticated()).isSuccess, true);
       expect(controller.failure, isNull);
       expect(controller.studentId, '2026000001');
+      expect(controller.hasResolvedServerBindingStatus, isTrue);
       expect(source.loginCalls, 0);
       controller.dispose();
     });
@@ -443,9 +445,9 @@ void main() {
     invalidController.dispose();
 
     final networkSource = _FakeAcademicDataSource(
-      loginResult: NetworkUnavailable(
+      loginResult: const NetworkUnavailable(
         message: '教务网络连接失败',
-        cause: const NetworkException(message: '教务网络连接失败'),
+        cause: NetworkException(message: '教务网络连接失败'),
       ),
     );
     final networkController = _newController(networkSource);

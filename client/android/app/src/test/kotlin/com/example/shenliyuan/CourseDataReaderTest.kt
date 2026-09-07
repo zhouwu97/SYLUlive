@@ -8,6 +8,36 @@ import java.util.Calendar
 class CourseDataReaderTest {
 
     @Test
+    fun `Schema v2 在第三周周一十点仍显示第三节课程`() {
+        val json = """
+        {
+          "schema_version": 2,
+          "semester_start": "2026-08-24",
+          "courses": [
+            {
+              "name": "数学",
+              "weekday": 1,
+              "start_section": 3,
+              "end_section": 3,
+              "weeks": [3],
+              "location": "综A101",
+              "teacher": "张老师"
+            }
+          ]
+        }
+        """.trimIndent()
+        val cal = Calendar.getInstance().apply {
+            set(2026, Calendar.SEPTEMBER, 7, 10, 1, 0)
+        }
+
+        val data = CourseDataReader.parse(json, cal)
+
+        assertEquals("9.7 第3周 周一", data.date)
+        assertEquals(1, data.courses.size)
+        assertEquals("数学", data.courses.single().name)
+    }
+
+    @Test
     fun `Schema v2 动态根据开学日期计算教学周并过滤当天课程`() {
         val json = """
         {

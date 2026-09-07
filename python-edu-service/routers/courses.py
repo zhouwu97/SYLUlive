@@ -100,19 +100,31 @@ async def fetch_courses(
     # 仅记录数量，避免课程名称、教师、地点和周次进入服务端日志。
     print(f"[COURSES] fetched_count={len(raw_courses)}")
     courses = []
-    for raw in raw_courses:
-        start_section, end_section = parse_time_sections(raw.time)
-        courses.append(
-            CourseInfo(
-                name=raw.name,
-                teacher=raw.teacher or None,
-                location=raw.location or None,
-                time=start_section,
-                end_time=end_section,
-                week_day=int(raw.week_day) if raw.week_day.isdigit() else 1,
-                weeks=parse_weeks(raw.week_str),
+    try:
+        for raw in raw_courses:
+            start_section, end_section = parse_time_sections(raw.time)
+            try:
+                week_day = int(raw.week_day)
+            except (TypeError, ValueError) as error:
+                raise ValueError("课表记录星期格式无效") from error
+            if not 1 <= week_day <= 7:
+                raise ValueError("课表记录星期超出范围")
+            courses.append(
+                CourseInfo(
+                    name=raw.name,
+                    teacher=raw.teacher or None,
+                    location=raw.location or None,
+                    time=start_section,
+                    end_time=end_section,
+                    week_day=week_day,
+                    weeks=parse_weeks(raw.week_str),
+                )
             )
-        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "COURSE_PARSE_FAILED", "message": str(error)},
+        ) from error
 
     return CourseFetchResponse(
         success=True,

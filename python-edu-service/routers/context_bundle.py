@@ -120,19 +120,28 @@ async def _fetch_dataset(
                 ),
             )
             courses = []
-            for raw in raw_courses:
-                start_section, end_section = parse_time_sections(raw.time)
-                courses.append(
-                    CourseInfo(
-                        name=raw.name,
-                        teacher=raw.teacher or None,
-                        location=raw.location or None,
-                        time=start_section,
-                        end_time=end_section,
-                        week_day=int(raw.week_day) if raw.week_day.isdigit() else 1,
-                        weeks=parse_weeks(raw.week_str),
+            try:
+                for raw in raw_courses:
+                    start_section, end_section = parse_time_sections(raw.time)
+                    try:
+                        week_day = int(raw.week_day)
+                    except (TypeError, ValueError) as error:
+                        raise ValueError("课表记录星期格式无效") from error
+                    if not 1 <= week_day <= 7:
+                        raise ValueError("课表记录星期超出范围")
+                    courses.append(
+                        CourseInfo(
+                            name=raw.name,
+                            teacher=raw.teacher or None,
+                            location=raw.location or None,
+                            time=start_section,
+                            end_time=end_section,
+                            week_day=week_day,
+                            weeks=parse_weeks(raw.week_str),
+                        )
                     )
-                )
+            except ValueError:
+                return _failed("COURSE_PARSE_FAILED", "课表结构发生变化，请稍后重试")
             return _success(
                 CourseFetchResponse(
                     success=True,

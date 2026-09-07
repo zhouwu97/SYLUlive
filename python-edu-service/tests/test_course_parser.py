@@ -1,6 +1,7 @@
 import pytest
 
 from services.crawler import parse_time_sections, parse_weeks
+from models.schemas import CourseInfo
 
 
 @pytest.mark.parametrize(
@@ -38,3 +39,25 @@ def test_parse_time_sections_keeps_real_section_range(expression, expected):
 def test_parse_time_sections_never_fabricates_first_two_sections(expression):
     with pytest.raises(ValueError):
         parse_time_sections(expression)
+
+
+def test_course_response_exposes_compatible_section_coordinates():
+    course = CourseInfo(
+        name="数字图像处理",
+        time=3,
+        end_time=4,
+        week_day=1,
+        weeks=[1, 2, 3],
+    )
+
+    assert course.model_dump(mode="json") == {
+        "name": "数字图像处理",
+        "teacher": None,
+        "location": None,
+        "time": 3,
+        "end_time": 4,
+        "week_day": 1,
+        "weeks": [1, 2, 3],
+        "start_section": 3,
+        "end_section": 4,
+    }

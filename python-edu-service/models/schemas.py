@@ -1,5 +1,5 @@
 """Pydantic 数据模型"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from typing import Optional, List
 from datetime import datetime
 
@@ -105,6 +105,17 @@ class CourseInfo(BaseModel):
     end_time: int = 0  # �����ڴ�
     week_day: int  # �ܼ� (1-7)
     weeks: List[int]  # �Ͽ�����
+
+    # 同时输出新旧课表坐标字段，保证仍在使用历史代理解析的客户端不会丢失结束节次。
+    @computed_field
+    @property
+    def start_section(self) -> int:
+        return self.time
+
+    @computed_field
+    @property
+    def end_section(self) -> int:
+        return self.end_time
 
 
 class CourseFetchInput(BaseModel):

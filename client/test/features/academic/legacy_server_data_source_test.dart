@@ -4,6 +4,50 @@ import 'package:shenliyuan/features/academic/data/datasource/legacy_server_data_
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 
 void main() {
+  test('服务端课表响应保留结束节次', () async {
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            final payload = switch (options.path) {
+              '/edu/status' => const <String, dynamic>{
+                  'success': true,
+                  'edu_authorized': true,
+                  'edu_student_id': '2026000001',
+                  'edu_session_state': 'active',
+                },
+              '/edu/courses' => const <String, dynamic>{
+                  'success': true,
+                  'courses': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': '数字图像处理',
+                      'time': 3,
+                      'end_time': 4,
+                      'week_day': 1,
+                      'weeks': <int>[1, 2, 3],
+                    },
+                  ],
+                },
+              _ => throw StateError('未预期的请求: ${options.path}'),
+            };
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: payload,
+              ),
+            );
+          },
+        ),
+      );
+    final source = LegacyServerDataSource(dio, networkEnabled: true);
+
+    await source.restoreSession();
+    final result = await source.getCourses(year: '2026-2027', semester: 3);
+
+    expect(result.courses.single.section, '3-4节');
+  });
+
   test('服务端数据源恢复成绩详情、学业情况和学分要求能力', () async {
     final requestedPaths = <String>[];
     final dio = Dio()

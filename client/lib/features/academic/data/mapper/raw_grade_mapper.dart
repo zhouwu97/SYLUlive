@@ -9,23 +9,41 @@ abstract final class RawGradeMapper {
   static Map<String, dynamic> toAppJson(RawGrade grade) {
     final raw = grade.raw;
     return <String, dynamic>{
-      'name': _text(raw['kcmc']),
-      'course_id': _text(raw['kch_id']),
-      'course_code': _text(raw['kch']),
-      'class_id': _text(raw['jxb_id']),
-      'student_grade_id': _text(raw['xh_id']),
-      'teacher': _text(raw['jsxm']),
-      'is_degree': _text(raw['sfxwkc']) == '是',
-      'credits': raw['xf'],
-      'gpa': raw['jd'],
-      'grade_points': raw['xfjd'],
-      'fraction': raw['bfzcj'],
-      'grade': _text(raw['cj']),
-      'exam_type': raw['ksxz'],
-      'course_category': raw['kklxdm'],
-      'assessment_method': raw['khfsmc'],
+      'name': _textOf(raw, const ['kcmc', 'name']),
+      'course_id': _textOf(raw, const ['kch_id', 'course_id']),
+      'course_code': _textOf(raw, const ['kch', 'course_code']),
+      'class_id': _textOf(raw, const ['jxb_id', 'class_id']),
+      'student_grade_id': _textOf(
+        raw,
+        const ['xh_id', 'student_grade_id'],
+      ),
+      'teacher': _textOf(raw, const ['jsxm', 'teacher']),
+      'is_degree': _isDegree(raw),
+      'credits': _valueOf(raw, const ['xf', 'credits']),
+      'gpa': _valueOf(raw, const ['jd', 'gpa']),
+      'grade_points': _valueOf(raw, const ['xfjd', 'grade_points']),
+      'fraction': _valueOf(raw, const ['bfzcj', 'fraction']),
+      'grade': _textOf(raw, const ['cj', 'grade']),
+      'exam_type': _valueOf(raw, const ['ksxz', 'exam_type']),
+      'course_category': _valueOf(raw, const ['kklxdm', 'course_category']),
+      'assessment_method': _valueOf(raw, const ['khfsmc', 'assessment_method']),
     };
   }
 
-  static String _text(Object? value) => value?.toString().trim() ?? '';
+  static Object? _valueOf(Map<String, Object?> raw, List<String> keys) {
+    for (final key in keys) {
+      if (raw.containsKey(key) && raw[key] != null) return raw[key];
+    }
+    return null;
+  }
+
+  static String _textOf(Map<String, Object?> raw, List<String> keys) =>
+      _valueOf(raw, keys)?.toString().trim() ?? '';
+
+  static bool _isDegree(Map<String, Object?> raw) {
+    final legacyValue = _textOf(raw, const ['sfxwkc']);
+    if (legacyValue.isNotEmpty) return legacyValue == '是';
+    final value = _valueOf(raw, const ['is_degree']);
+    return value == true || value == 1 || value == '1' || value == '是';
+  }
 }

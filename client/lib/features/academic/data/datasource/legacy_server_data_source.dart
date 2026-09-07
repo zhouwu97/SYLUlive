@@ -430,6 +430,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     final end = _firstInt(map, const [
           'end_section',
           'endSection',
+          'end_time',
           'jc_end',
         ]) ??
         (sectionNumbers.length > 1 ? sectionNumbers.last : start);

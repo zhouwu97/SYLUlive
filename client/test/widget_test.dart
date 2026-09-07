@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/app_bootstrap.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/widgets/app_update_gate.dart';
@@ -15,6 +16,11 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     expect(tester.takeException(), isNull);
+    final repository = Provider.of<AcademicRepository>(
+      tester.element(find.byType(AppUpdateGate)),
+      listen: false,
+    );
+    expect(repository.sourceKind, AcademicSourceKind.legacy);
   });
 
   testWidgets('应用字体档位叠加系统字体缩放并保留更新门禁', (tester) async {

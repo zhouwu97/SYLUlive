@@ -45,4 +45,36 @@ void main() {
     expect(grade.assessmentMethod, '考试');
     expect(grade.isDegree, isTrue);
   });
+
+  test('服务端规范成绩响应不会丢失展示字段', () {
+    final normalized = RawGradeMapper.toAppJson(
+      RawGrade(
+        raw: <String, Object?>{
+          'name': '数字图像处理',
+          'class_id': 'JXB002',
+          'course_id': 'KC002',
+          'course_code': 'IMG201',
+          'student_grade_id': 'XH002',
+          'teacher': '李老师',
+          'is_degree': true,
+          'credits': 2.5,
+          'gpa': 3.5,
+          'grade_points': 8.75,
+          'fraction': 85,
+          'grade': '85',
+          'exam_type': '正常考试',
+          'course_category': '专业选修',
+          'assessment_method': '考试',
+        },
+      ),
+    );
+    final grade = EduGrade.fromJson(normalized);
+
+    expect(grade.name, '数字图像处理');
+    expect(grade.classId, 'JXB002');
+    expect(grade.displayGrade, '85');
+    expect(grade.credits, 2.5);
+    expect(grade.gpa, 3.5);
+    expect(grade.isDegree, isTrue);
+  });
 }

@@ -1,6 +1,64 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
+/// 导入预览同时承接本机教务和历史代理两种标准化结果，统一在这里读取坐标字段。
+///
+/// 本机链路输出 `weekday/start_section/end_section`，历史代理保留
+/// `week_day/time/end_time`。字段缺失时显式保留为 0，避免误显示为周一或第 0 节。
+class CoursePreviewFields {
+  const CoursePreviewFields._();
+
+  static int weekDay(Map<String, dynamic> course) {
+    final value = _firstInt(course, const [
+      'weekday',
+      'week_day',
+      'dayOfWeek',
+      'day_of_week',
+      'xqj',
+    ]);
+    return value != null && value >= 1 && value <= 7 ? value : 0;
+  }
+
+  static int startSection(Map<String, dynamic> course) {
+    return _firstInt(course, const [
+          'start_section',
+          'startSection',
+          'time',
+          'start_time',
+          'jc_start',
+        ]) ??
+        0;
+  }
+
+  static int endSection(Map<String, dynamic> course, int startSection) {
+    return _firstInt(course, const [
+          'end_section',
+          'endSection',
+          'end_time',
+          'jc_end',
+        ]) ??
+        startSection;
+  }
+
+  static bool hasValidCoordinate(Map<String, dynamic> course) {
+    final start = startSection(course);
+    final end = endSection(course, start);
+    return weekDay(course) > 0 && start > 0 && end >= start;
+  }
+
+  static int? _firstInt(Map<String, dynamic> course, List<String> keys) {
+    for (final key in keys) {
+      final value = course[key];
+      final parsed = switch (value) {
+        num() => value.toInt(),
+        _ => int.tryParse(value?.toString().trim() ?? ''),
+      };
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+}
+
 class CoursePreviewTile extends StatelessWidget {
   final Map<String, dynamic> course;
   final bool isDark;
@@ -16,8 +74,9 @@ class CoursePreviewTile extends StatelessWidget {
     final name = course['name']?.toString() ?? '未知课程';
     final location = course['location']?.toString();
     final teacher = course['teacher']?.toString();
-    final time = course['time']?.toString() ?? '0';
-    final endTime = course['end_time']?.toString() ?? time;
+    final startSection = CoursePreviewFields.startSection(course);
+    final endSection = CoursePreviewFields.endSection(course, startSection);
+    final hasValidSection = startSection > 0 && endSection >= startSection;
 
     String weekStr = '';
     final rawWeeks = course['weeks'];
@@ -53,7 +112,7 @@ class CoursePreviewTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              '第$time-$endTime节',
+              hasValidSection ? '第$startSection-$endSection节' : '节次未知',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,

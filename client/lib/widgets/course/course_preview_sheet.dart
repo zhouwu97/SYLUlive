@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:provider/provider.dart';
 import '../campus/campus_theme.dart';
-import '../../providers/course_schedule_provider.dart';
 import '../../providers/edu_provider.dart';
 import 'course_preview_tile.dart';
 
@@ -47,20 +45,25 @@ class CoursePreviewSheet extends StatelessWidget {
     // 按星期分组
     final Map<int, List<Map<String, dynamic>>> grouped = {};
     for (var c in courses) {
-      final wd = (c['week_day'] as num?)?.toInt() ?? 1;
+      final wd = CoursePreviewFields.weekDay(c);
       grouped.putIfAbsent(wd, () => []).add(c);
     }
 
     // 排序
     for (var list in grouped.values) {
       list.sort((a, b) {
-        final ta = (a['time'] as num?)?.toInt() ?? 0;
-        final tb = (b['time'] as num?)?.toInt() ?? 0;
+        final ta = CoursePreviewFields.startSection(a);
+        final tb = CoursePreviewFields.startSection(b);
         return ta.compareTo(tb);
       });
     }
 
     final sortedKeys = grouped.keys.toList()..sort();
+    final courseDayCount =
+        sortedKeys.where((day) => day >= 1 && day <= 7).length;
+    final invalidCoordinateCount = courses
+        .where((course) => !CoursePreviewFields.hasValidCoordinate(course))
+        .length;
     final weekNames = ['一', '二', '三', '四', '五', '六', '日'];
 
     return Container(
@@ -98,7 +101,8 @@ class CoursePreviewSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '共 ${courses.length} 门课 · ${sortedKeys.length} 个上课日',
+                        '共 ${courses.length} 门课 · $courseDayCount 个上课日'
+                        '${invalidCoordinateCount == 0 ? '' : ' · $invalidCoordinateCount 门课程缺少有效排课坐标'}',
                         style: const TextStyle(
                           fontSize: 13,
                           color: CampusTheme.subText,
@@ -134,7 +138,9 @@ class CoursePreviewSheet extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(top: 8, bottom: 12),
                             child: Text(
-                              '周${wd >= 1 && wd <= 7 ? weekNames[wd - 1] : wd}',
+                              wd >= 1 && wd <= 7
+                                  ? '周${weekNames[wd - 1]}'
+                                  : '星期未知',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,

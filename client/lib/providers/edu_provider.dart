@@ -10,7 +10,9 @@ import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/storage/academic_persistence_gate.dart';
 import '../features/academic/storage/academic_storage_preferences.dart';
 import '../features/academic/data/mapper/raw_grade_mapper.dart';
+import '../features/academic/domain/academic_failure.dart';
 import '../features/academic/domain/academic_repository.dart';
+import '../features/academic/domain/academic_provider.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
@@ -115,6 +117,11 @@ class EduProvider extends ChangeNotifier {
   AcademicCapabilities get academicCapabilities =>
       _academicSessionController?.capabilities ??
       const AcademicCapabilities.local();
+
+  /// 当前教务身份的物理缓存命名空间；服务端兼容身份尚未解析时为空，
+  /// 由缓存层沿用旧兼容命名空间，解析完成后会随会话状态重新创建。
+  String? get academicIdentityNamespace =>
+      _academicSessionController?.identity?.storageId;
   int get enrollmentYear {
     int startYear = DateTime.now().year - 4; // 默认往前推4年
     if (_studentId.length >= 2) {
@@ -173,6 +180,7 @@ class EduProvider extends ChangeNotifier {
     return AcademicCacheStore(
       appUserId: appUserId,
       sourceAccountId: sourceAccountId,
+      identityNamespace: academicIdentityNamespace,
       snapshotStore: _snapshotStoreBuilder?.call(appUserId),
       persistenceGate: RegistryAcademicPersistenceGate(appUserId),
     );
@@ -387,16 +395,21 @@ class EduProvider extends ChangeNotifier {
     }
 
     _usingLocalAcademicSession = true;
-    _isAuthorized = controller.isAuthenticated;
-    _isBound = _isAuthorized;
+    // 服务端已确认的身份和本机学校会话是两个独立状态。启动时即使
+    // 本机 Cookie/Artifact 尚未恢复，也必须保留“已绑定”投影，页面才能
+    // 引导用户恢复本机会话，而不是要求重复绑定。
+    final identity = controller.identity;
+    final hasBoundIdentity = controller.hasBoundIdentity;
+    _isAuthorized = hasBoundIdentity;
+    _isBound = hasBoundIdentity;
     _sessionState = switch (localState) {
       SessionState.authenticated => 'active',
       SessionState.expired => 'expired',
       SessionState.awaitingCaptcha => 'awaiting_captcha',
       SessionState.authenticating => 'authenticating',
-      SessionState.unauthenticated => 'unbound',
+      SessionState.unauthenticated => hasBoundIdentity ? 'expired' : 'unbound',
     };
-    _studentId = controller.studentId ?? '';
+    _studentId = controller.studentId ?? identity?.studentId ?? '';
     final profile = controller.profile;
     _name = profile?.name ?? '';
     _grade = profile?.grade ?? '';
@@ -408,27 +421,46 @@ class EduProvider extends ChangeNotifier {
   }
 
   static Map<String, dynamic> _rawCourseToLegacyMap(RawCourse course) {
-    final sectionMatch = RegExp(
-      r'^\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节?\s*$',
-    ).firstMatch(course.section);
-    final startSection =
-        sectionMatch == null ? null : int.tryParse(sectionMatch.group(1)!);
-    final endSection = sectionMatch == null
-        ? null
-        : int.tryParse(sectionMatch.group(2) ?? sectionMatch.group(1)!);
-    if (startSection == null ||
-        endSection == null ||
-        startSection < 1 ||
-        endSection < startSection) {
-      throw const ProtocolChangedException(message: '本机课表记录缺少有效节次');
+    final hasProviderPeriod = course.periodOrder != null ||
+        (course.periodLabel?.trim().isNotEmpty ?? false);
+    late final int startSection;
+    late final int endSection;
+    if (hasProviderPeriod) {
+      final periodOrder = course.periodOrder;
+      final periodLabel = course.periodLabel?.trim();
+      if (periodOrder == null ||
+          periodOrder < 0 ||
+          periodLabel == null ||
+          periodLabel.isEmpty) {
+        throw const ParseException(
+          message: '本机课表记录缺少研究生节次元数据',
+          code: 'COURSE_SECTION_INVALID',
+        );
+      }
+      // 这里只把 Provider 行序转换为网格坐标，不能把“上午3”等标签
+      // 当作本科第 3 节解析；原标签通过 period_label 继续向展示层传递。
+      startSection = periodOrder + 1;
+      endSection = startSection;
+    } else {
+      final section = _parseCourseSection(course.section);
+      if (section == null) {
+        throw const ParseException(
+          message: '本机课表记录的节次字段无法映射',
+          code: 'COURSE_SECTION_INVALID',
+        );
+      }
+      startSection = section[0];
+      endSection = section[1];
     }
-
     final weekday = int.tryParse(course.weekDay.trim());
     if (weekday == null || weekday < 1 || weekday > 7) {
-      throw const ProtocolChangedException(message: '本机课表记录缺少有效星期');
+      throw const ParseException(
+        message: '本机课表记录的星期字段无效',
+        code: 'COURSE_WEEKDAY_INVALID',
+      );
     }
     final canonical = course.toCanonicalJson();
-    return {
+    final mapped = <String, dynamic>{
       'name': course.name,
       'teacher': course.teacher,
       'location': course.location,
@@ -438,6 +470,26 @@ class EduProvider extends ChangeNotifier {
       'weekExpression': canonical['weekExpression'] ?? course.weekExpression,
       'weeks': canonical['weeks'] ?? const <int>[],
     };
+    if (hasProviderPeriod) {
+      mapped['period_order'] = course.periodOrder;
+      mapped['period_label'] = course.periodLabel!.trim();
+    }
+    return mapped;
+  }
+
+  static List<int>? _parseCourseSection(String value) {
+    final sectionMatch = RegExp(
+      r'^\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节?\s*$',
+    ).firstMatch(value);
+    final explicitGraduateMatch = RegExp(
+      r'第\s*(\d+)\s*(?:[-~至到—–]\s*(\d+)\s*)?节\s*$',
+    ).firstMatch(value.trim());
+    final match = sectionMatch ?? explicitGraduateMatch;
+    if (match == null) return null;
+    final start = int.tryParse(match.group(1)!);
+    final end = int.tryParse(match.group(2) ?? match.group(1)!);
+    if (start == null || end == null || start < 1 || end < start) return null;
+    return <int>[start, end];
   }
 
   void setUserId(String userId) {
@@ -709,8 +761,9 @@ class EduProvider extends ChangeNotifier {
   // 获取课表
   Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(
     String year,
-    int semester,
-  ) async {
+    int semester, {
+    String? providerTermId,
+  }) async {
     final requestUserId = _userId;
     final requestSourceAccountId = _studentId.trim();
     final requestSourceKind = _activeAcademicSourceKind;
@@ -735,19 +788,96 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('教务账号未就绪');
     }
     return _runEduRequest(() async {
-      final result =
-          await controller.loadCourses(year: year, semester: semester);
-      if (result == null) {
+      try {
+        final result = await controller.loadCourses(
+          year: year,
+          semester: semester,
+          providerTermId: providerTermId,
+        );
+        if (result == null) {
+          final failure = controller.failure;
+          _logAcademicCourseDiagnostic(
+            stage: 'controller',
+            failure: failure,
+          );
+          return OperationResult.fail(
+            failure?.message ?? '获取课表失败',
+            errorCode: failure?.code,
+          );
+        }
+        if (!isCurrentContext()) {
+          _logAcademicCourseDiagnostic(stage: 'context_changed');
+          return OperationResult.fail('用户已切换');
+        }
+        try {
+          return OperationResult.ok(
+            result.courses.map(_rawCourseToLegacyMap).toList(growable: false),
+          );
+        } catch (error) {
+          _logAcademicCourseDiagnostic(stage: 'legacy_mapping', error: error);
+          rethrow;
+        }
+      } catch (error) {
+        _logAcademicCourseDiagnostic(stage: 'edu_request', error: error);
+        rethrow;
+      }
+    });
+  }
+
+  void _logAcademicCourseDiagnostic({
+    required String stage,
+    Object? error,
+    AcademicFailure? failure,
+  }) {
+    if (!kDebugMode) return;
+    final mappedFailure = failure ??
+        (error == null ? null : AcademicFailure.fromException(error));
+    final controller = _academicSessionController;
+    final providerId = controller?.providerRouter?.selectedProviderId?.value ??
+        controller?.providerId?.value ??
+        (controller?.sourceKind == AcademicSourceKind.legacy
+            ? 'legacy'
+            : 'unknown');
+    debugPrint(
+      '教务课表诊断 stage=$stage runtimeType=${error?.runtimeType ?? 'none'} '
+      'kind=${mappedFailure?.kind.name ?? 'none'} '
+      'code=${mappedFailure?.code ?? 'none'} '
+      'providerId=$providerId',
+    );
+  }
+
+  /// 获取本机 Provider 从学校返回的真实学期列表。
+  Future<OperationResult<List<AcademicTerm>>?> getAcademicTerms() async {
+    final requestUserId = _userId;
+    final requestSourceAccountId = _studentId.trim();
+    final requestSourceKind = _activeAcademicSourceKind;
+    if (requestUserId == null) return OperationResult.fail('用户未登录');
+    if (requestSourceKind != AcademicSourceKind.local) return null;
+
+    final controller = _academicSessionController;
+    if (controller == null) {
+      return OperationResult.fail(
+        '教务会话未就绪，请先恢复教务绑定',
+        errorCode: 'ACADEMIC_SESSION_NOT_READY',
+      );
+    }
+    return _runEduRequest(() async {
+      final terms = await controller.loadTerms();
+      if (terms == null) {
         final failure = controller.failure;
         return OperationResult.fail(
-          failure?.message ?? '获取课表失败',
+          failure?.message ?? '获取学校学期列表失败',
           errorCode: failure?.code,
         );
       }
-      if (!isCurrentContext()) return OperationResult.fail('用户已切换');
-      return OperationResult.ok(
-        result.courses.map(_rawCourseToLegacyMap).toList(growable: false),
-      );
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
+        return OperationResult.fail('用户已切换');
+      }
+      return OperationResult.ok(terms);
     });
   }
 

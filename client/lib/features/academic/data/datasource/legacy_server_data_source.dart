@@ -2,11 +2,12 @@ import 'package:dio/dio.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import '../../domain/academic_data_source.dart';
+import '../../domain/academic_provider.dart';
 
-/// 旧服务端代理数据源。
+/// 仅用于历史兼容部署的旧服务端代理数据源。
 ///
-/// 服务端教务数据源只使用 App JWT 所在的 Dio，不接触本机直连数据源的
-/// CookieJar。教务密码和 Cookie 由服务端加密保存并负责自动恢复。
+/// 该旧接口可能持久化教务登录凭据或会话，不能代表新的身份绑定路径。
+/// 新部署应使用 provider-aware 身份接口，并由本机 provider 独立建立学校会话。
 final class LegacyServerDataSource implements AcademicDataSource {
   LegacyServerDataSource(this._dio, {this.networkEnabled = false});
 
@@ -14,6 +15,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
   final bool networkEnabled;
   SessionState _sessionState = SessionState.unauthenticated;
   String? _studentId;
+  AcademicProviderId? _providerId;
   bool _closed = false;
 
   @override
@@ -24,6 +26,8 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   @override
   String? get studentId => _studentId;
+
+  AcademicProviderId? get providerId => _providerId;
 
   @override
   Future<LoginResult> login({
@@ -51,6 +55,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
         if (resolvedStudentId.isNotEmpty &&
             (user['edu_authorized'] == true || data['success'] == true)) {
           _studentId = resolvedStudentId;
+          _providerId = _providerFrom(data) ?? _providerFrom(user);
           _sessionState = SessionState.authenticated;
           return LoginSuccess(
             studentId: resolvedStudentId,
@@ -95,10 +100,12 @@ final class LegacyServerDataSource implements AcademicDataSource {
         data['edu_authorized'] == true || data['edu_bound'] == true;
     if (!authorized) {
       _studentId = null;
+      _providerId = null;
       _sessionState = SessionState.unauthenticated;
       return;
     }
     _studentId = _text(data, const ['edu_student_id', 'student_id']);
+    _providerId = _providerFrom(data);
     final state = _text(data, const ['edu_session_state'], fallback: 'active');
     if (state == 'active') {
       _sessionState = SessionState.authenticated;
@@ -115,6 +122,7 @@ final class LegacyServerDataSource implements AcademicDataSource {
     }
     _studentId = _text(resumedData, const ['edu_student_id', 'student_id'],
         fallback: _studentId ?? '');
+    _providerId = _providerFrom(resumedData) ?? _providerId;
     _sessionState = SessionState.authenticated;
   }
 
@@ -471,6 +479,14 @@ final class LegacyServerDataSource implements AcademicDataSource {
 
   void _ensureOpen() {
     if (_closed) throw StateError('旧教务数据源已关闭');
+  }
+
+  AcademicProviderId? _providerFrom(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final raw = data['provider_id'] ??
+        data['academic_provider_id'] ??
+        data['edu_provider_id'];
+    return raw == null ? null : AcademicProviderId.tryParse(raw.toString());
   }
 
   void _ensureNetworkEnabled() {

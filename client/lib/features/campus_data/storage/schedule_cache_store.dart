@@ -181,9 +181,14 @@ class ScheduleVaultSnapshot {
     required this.fetchedAt,
     required this.expiresAt,
     required this.isStale,
-  }) : terms = Map<String, ScheduleTermSnapshot>.unmodifiable(terms);
+    Map<String, dynamic>? selectedTerm,
+  })  : terms = Map<String, ScheduleTermSnapshot>.unmodifiable(terms),
+        selectedTerm = selectedTerm == null
+            ? null
+            : Map<String, dynamic>.unmodifiable(selectedTerm);
 
   final Map<String, ScheduleTermSnapshot> terms;
+  final Map<String, dynamic>? selectedTerm;
   final DateTime fetchedAt;
   final DateTime? expiresAt;
   final bool isStale;
@@ -197,11 +202,16 @@ class ScheduleCacheStore {
   ScheduleCacheStore({
     required this.appUserId,
     required this.sourceAccountId,
+    this.sourceSystem = 'edu',
+    this.identityNamespace,
     AccountScopedSnapshotStore? snapshotStore,
     Future<AppPreferencesStore> Function()? preferencesLoader,
     AcademicPersistenceGate? persistenceGate,
   })  : _snapshotStore = snapshotStore ??
-            AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
+            AesGcmAccountScopedSnapshotStore(
+              appUserId: appUserId,
+              identityNamespace: identityNamespace,
+            ),
         _preferencesLoader =
             preferencesLoader ?? AppPreferencesStore.getInstance,
         // 默认绑定账号策略；未知账号由 Registry 失败关闭，禁止意外落盘。
@@ -216,6 +226,10 @@ class ScheduleCacheStore {
 
   final String appUserId;
   final String sourceAccountId;
+  final String sourceSystem;
+
+  /// 完整 AcademicIdentityKey.storageId；为空时兼容旧 app 账号分区。
+  final String? identityNamespace;
   final AccountScopedSnapshotStore _snapshotStore;
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistenceGate persistenceGate;
@@ -232,7 +246,7 @@ class ScheduleCacheStore {
     }
     final encryptedSnapshot = await _snapshotStore.read(
       type: PersonalDataType.schedule,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
     );
     if (encryptedSnapshot == null) return null;
@@ -243,8 +257,15 @@ class ScheduleCacheStore {
     if (rawTerms is! Map) {
       throw const PersonalSnapshotStoreException('课表密文快照格式错误');
     }
+    final rawSelectedTerm = encryptedSnapshot.payload['selected_term'];
+    if (rawSelectedTerm != null && rawSelectedTerm is! Map) {
+      throw const PersonalSnapshotStoreException('课表选中学期格式错误');
+    }
+    final selectedTerm = rawSelectedTerm == null
+        ? null
+        : Map<String, dynamic>.from(rawSelectedTerm as Map);
     final terms = Map<String, dynamic>.from(rawTerms);
-    if (terms.isEmpty) return null;
+    if (terms.isEmpty && selectedTerm == null) return null;
 
     final parsed = <String, ScheduleTermSnapshot>{};
     for (final entry in terms.entries) {
@@ -261,6 +282,7 @@ class ScheduleCacheStore {
     }
     return ScheduleVaultSnapshot(
       terms: parsed,
+      selectedTerm: selectedTerm,
       fetchedAt: encryptedSnapshot.fetchedAt,
       expiresAt: encryptedSnapshot.expiresAt,
       isStale: encryptedSnapshot.isStale,
@@ -273,6 +295,34 @@ class ScheduleCacheStore {
   }) async {
     final snapshot = await readSnapshot();
     return snapshot?.terms[_termId(year, semester)];
+  }
+
+  /// 读取当前身份上次选中的完整学期，供冷启动恢复 Provider 学期语义。
+  Future<Map<String, dynamic>?> readSelectedTerm() async {
+    final selectedTerm = (await readSnapshot())?.selectedTerm;
+    return selectedTerm == null
+        ? null
+        : Map<String, dynamic>.from(selectedTerm);
+  }
+
+  /// 保存当前身份选中的完整学期；与课程共用同一份加密快照和账号命名空间。
+  Future<void> writeSelectedTerm(Map<String, dynamic> selectedTerm) async {
+    final normalized = Map<String, dynamic>.from(selectedTerm);
+    final id = normalized['id']?.toString().trim() ?? '';
+    final year = normalized['year']?.toString().trim() ?? '';
+    final title = normalized['title']?.toString().trim() ?? '';
+    final semester = normalized['semester'];
+    if (id.isEmpty ||
+        year.isEmpty ||
+        title.isEmpty ||
+        semester is! num ||
+        semester <= 0 ||
+        semester % 1 != 0) {
+      throw const PersonalSnapshotStoreException('选中学期参数无效');
+    }
+    await _mutateVault(
+      (terms) => _writeTerms(terms, selectedTerm: normalized),
+    );
   }
 
   Future<void> writeCourses({
@@ -430,7 +480,10 @@ class ScheduleCacheStore {
     if (appUserId.trim().isEmpty) return true;
     final preferences = await _preferencesLoader();
     return preferences.getBool(
-          AccountCacheNamespace.scheduleNeedsResync(appUserId),
+          AccountCacheNamespace.scheduleNeedsResync(
+            appUserId,
+            identityNamespace: identityNamespace,
+          ),
         ) ??
         false;
   }
@@ -503,7 +556,7 @@ class ScheduleCacheStore {
     await AcademicPersistenceRegistry.waitUntilReady(appUserId);
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.schedule,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
     );
     if (snapshot == null) return <String, dynamic>{};
@@ -517,21 +570,51 @@ class ScheduleCacheStore {
     return Map<String, dynamic>.from(terms);
   }
 
-  Future<void> _writeTerms(Map<String, dynamic> terms) async {
-    if (terms.isEmpty) {
+  Future<void> _writeTerms(
+    Map<String, dynamic> terms, {
+    Map<String, dynamic>? selectedTerm,
+  }) async {
+    final existing = await _snapshotStore.read(
+      type: PersonalDataType.schedule,
+      sourceSystem: sourceSystem,
+      sourceAccountId: sourceAccountId,
+    );
+    final existingSelected = existing?.payload['selected_term'];
+    if (selectedTerm == null && existingSelected is Map) {
+      selectedTerm = Map<String, dynamic>.from(existingSelected);
+    }
+    if (terms.isEmpty && selectedTerm == null) {
       await _snapshotStore.deleteType(PersonalDataType.schedule);
       return;
     }
     final now = DateTime.now().toUtc();
+    final payload = <String, dynamic>{
+      'terms': terms,
+    };
+    if (selectedTerm != null) payload['selected_term'] = selectedTerm;
     await _snapshotStore.write(
       type: PersonalDataType.schedule,
       schemaVersion: schemaVersion,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
       fetchedAt: now,
       expiresAt: now.add(_expiry),
-      payload: <String, dynamic>{'terms': terms},
+      payload: payload,
     );
+  }
+
+  Future<void> _mutateVault(
+    Future<void> Function(Map<String, dynamic> terms) update,
+  ) async {
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    if (!persistenceGate.allowPersonalDataPersistence) return;
+    if (!_hasValidNamespace) {
+      throw StateError('课表缓存缺少有效的账号命名空间');
+    }
+    await _serializeMutation(() async {
+      final terms = await _readTerms();
+      await update(terms);
+    });
   }
 
   /// 仅删除教务课表类型，不影响体测、二课等其他个人数据。
@@ -544,7 +627,8 @@ class ScheduleCacheStore {
 
   Future<T> _serializeMutation<T>(Future<T> Function() operation) {
     final queueKey =
-        '${_snapshotStore.accountFingerprint}/${PersonalDataType.schedule.storageValue}';
+        '${_snapshotStore.accountFingerprint}/${identityNamespace ?? sourceSystem}|'
+        '${sourceAccountId.trim().toLowerCase()}/${PersonalDataType.schedule.storageValue}';
     final previous = _mutationTails[queueKey] ?? Future<void>.value();
     final guarded = previous.then<T>((_) => operation());
     final tail = guarded.then<void>(
@@ -573,13 +657,19 @@ class ScheduleCacheStore {
     if (appUserId.trim().isEmpty) return;
     final preferences = await _preferencesLoader();
     await preferences.remove(
-      AccountCacheNamespace.scheduleNeedsResync(appUserId),
+      AccountCacheNamespace.scheduleNeedsResync(
+        appUserId,
+        identityNamespace: identityNamespace,
+      ),
     );
   }
 
   Future<void> _markNeedsResync(AppPreferencesStore preferences) {
     return preferences.setBool(
-      AccountCacheNamespace.scheduleNeedsResync(appUserId),
+      AccountCacheNamespace.scheduleNeedsResync(
+        appUserId,
+        identityNamespace: identityNamespace,
+      ),
       true,
     );
   }

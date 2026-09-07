@@ -1,16 +1,19 @@
 """认证路由 - 绑定/解绑教务账号"""
+import logging
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, update
 
 from models.database import EduUser, get_db
 from models.schemas import AuthorizationCleanupInput, BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
-from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
+from services.crawler import EduCrawler, EduError, CookieLapseError, LoginFailedError, NetworkError
 from services.security import decrypt_credential, encrypt_credential, require_internal_service, require_internal_user
 
 router = APIRouter(prefix="/api/edu", tags=["认证"], dependencies=[Depends(require_internal_service)])
+logger = logging.getLogger(__name__)
 
 
 def _error_code(exc: Exception) -> str:
@@ -19,6 +22,22 @@ def _error_code(exc: Exception) -> str:
 
 def _error_detail(exc: Exception) -> dict:
     return {"code": _error_code(exc), "message": str(exc)}
+
+
+def _require_school_verified_student_id(student_info, requested_student_id: str) -> str:
+    """只接受学校 profile 三字段一致且与请求一致的学号。"""
+    verified_student_id = (student_info.school_verified_student_id or "").strip()
+    if not verified_student_id:
+        raise LoginFailedError(
+            "学校未返回可核验的学号身份，无法完成教务验证",
+            "EDU_IDENTITY_UNVERIFIED",
+        )
+    if verified_student_id != requested_student_id:
+        raise LoginFailedError(
+            "学校返回的学号与请求身份不一致，无法完成教务验证",
+            "EDU_IDENTITY_MISMATCH",
+        )
+    return verified_student_id
 
 
 def _session_response(edu_user: EduUser, message: str) -> EduSessionResponse:
@@ -92,18 +111,23 @@ async def pre_verify_edu_account(
     input: PreVerifyInput,
 ):
     """预验证教务账号（注册前验证学号和密码是否匹配）"""
+    stage = "login"
     async with EduCrawler() as crawler:
         try:
             # 1. 尝试登录教务系统
             cookie = await crawler.login(input.student_id, input.password)
 
             # 2. 获取学生信息
+            stage = "profile_get"
             student_info = await crawler.get_student_info(cookie, input.student_id)
+            stage = "identity_validate"
+            verified_student_id = _require_school_verified_student_id(student_info, input.student_id)
 
             return PreVerifyResponse(
                 success=True,
                 message="验证成功",
                 student_id=input.student_id,
+                school_verified_student_id=verified_student_id,
                 name=student_info.name
             )
 
@@ -125,7 +149,31 @@ async def pre_verify_edu_account(
                 message=str(e),
                 code=_error_code(e),
             )
+        except httpx.HTTPError as e:
+            # httpx 的连接/超时异常属于上游不可用，不能伪装成账号密码拒绝。
+            logger.warning(
+                "教务预验证网络异常 stage=pre_verify/%s exception_type=%s category=network",
+                stage,
+                type(e).__name__,
+            )
+            return PreVerifyResponse(
+                success=False,
+                message="教务系统暂时不可用，请稍后重试",
+                code="REMOTE_SYSTEM_UNAVAILABLE",
+            )
+        except EduError as e:
+            return PreVerifyResponse(
+                success=False,
+                message=str(e),
+                code=_error_code(e),
+            )
         except Exception as e:
+            # 这里只记录异常类型和阶段，避免凭据、Cookie、响应正文进入日志。
+            logger.warning(
+                "教务预验证发生未分类异常 stage=pre_verify/%s exception_type=%s",
+                stage,
+                type(e).__name__,
+            )
             return PreVerifyResponse(
                 success=False,
                 message="教务验证失败，请稍后重试",
@@ -171,6 +219,7 @@ async def bind_edu_account(
         async with EduCrawler() as crawler:
             cookie = await crawler.login(input.student_id, input.password)
             student_info = await crawler.get_student_info(cookie, input.student_id)
+            _require_school_verified_student_id(student_info, input.student_id)
 
         if existing_user:
             existing_user.student_id = input.student_id
@@ -429,11 +478,12 @@ async def login_edu_account(
 
             # 2. 获取学生信息
             student_info = await crawler.get_student_info(cookie, input.student_id)
+            verified_student_id = _require_school_verified_student_id(student_info, input.student_id)
 
             return LoginEduResponse(
                 success=True,
                 message="验证成功",
-                student_id=input.student_id,
+                student_id=verified_student_id,
                 name=student_info.name,
                 grade=student_info.grade,
                 college=student_info.college,

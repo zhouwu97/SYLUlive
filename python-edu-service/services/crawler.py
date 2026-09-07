@@ -7,6 +7,7 @@ import json
 import logging
 import random
 import re
+import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
@@ -29,6 +30,18 @@ ACADEMIC_REQUIREMENT_SOURCE_PATH = "/xjyj/xjyj_cxXjyjIndex.html"
 ACADEMIC_REQUIREMENT_PARSER_VERSION = "credit-requirement-v2"
 STUDENT_INFO_URL = "https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html"
 INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
+
+# 学校入口只提供 TLS 1.2 的旧式 RSA 套件。显式补充该套件，仍由系统
+# CA 和主机名校验保证证书安全；上下文只用于本爬虫固定的 jxw.sylu.edu.cn。
+ACADEMIC_TLS_CIPHER = "DEFAULT:AES256-SHA"
+
+
+def _academic_tls_context() -> ssl.SSLContext:
+    """创建本科教务专用 TLS 上下文，不降低协议版本或证书校验。"""
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.set_ciphers(ACADEMIC_TLS_CIPHER)
+    return context
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +114,8 @@ class StudentInfo:
     grade: str
     college: str
     major: str
+    # 仅接受学校 profile 页面三个独立字段一致时的学号，不能由请求参数回填。
+    school_verified_student_id: Optional[str] = None
 
 
 # ============== 爬虫核心籁==============
@@ -119,7 +134,7 @@ class EduCrawler:
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=False,
-            verify=True,  # 启用SSL验证
+            verify=_academic_tls_context(),
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -171,8 +186,13 @@ class EduCrawler:
                 name, _, value = part.partition("=")
                 self.client.cookies.set(name.strip(), value.strip(), domain="jxw.sylu.edu.cn")
 
-    def _cookie_string(self) -> str:
-        return "; ".join(f"{name}={value}" for name, value in self.client.cookies.items()) if self.client else ""
+    def _cookie_string(self, url: str = "") -> str:
+        """按目标路径生成 Cookie 头，避免同名不同 Path 触发 CookieConflict。"""
+        if not self.client:
+            return ""
+        request = httpx.Request("GET", url or f"{INDEX_URL}/")
+        self.client.cookies.set_cookie_header(request)
+        return request.headers.get("cookie", "")
 
     def _cookie_names(self, cookie: str) -> List[str]:
         return re.findall(r"(?:^|;\s*)([^=;\s]+)=", cookie or "")
@@ -200,6 +220,7 @@ class EduCrawler:
             "grade": bool(info.grade),
             "college": bool(info.college),
             "major": bool(info.major),
+            "school_verified_student_id": bool(info.school_verified_student_id),
         }
 
     def _log_unknown_login(self, resp: httpx.Response, probe: Dict[str, Any]) -> None:
@@ -227,32 +248,51 @@ class EduCrawler:
 
     def _parse_student_info_body(self, body: str) -> StudentInfo:
         # 学校页面字段稳定在 col_xxx 容器里，这里集中解析供登录探活和正式接口复用。
-        name = ""
-        grade = ""
-        college = ""
-        major = ""
+        soup = BeautifulSoup(body or "", "html.parser")
 
-        xm_match = re.search(r'id="col_xm"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if xm_match:
-            name = xm_match.group(1).strip()
+        def field_text(element_id: str) -> str:
+            element = soup.find(id=element_id)
+            if element is None:
+                return ""
+            if element.name == "input":
+                return str(element.get("value", "")).strip()
+            paragraph = element.find("p")
+            return (paragraph or element).get_text(" ", strip=True)
 
-        nj_match = re.search(r'id="col_njdm_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if nj_match:
-            grade = nj_match.group(1).strip()
+        name = field_text("col_xm")
+        grade = field_text("col_njdm_id")
+        college = field_text("col_jg_id")
+        major = field_text("col_zyh_id")
 
-        jg_match = re.search(r'id="col_jg_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if jg_match:
-            college = jg_match.group(1).strip()
+        # 真实 profile 同时返回可见容器和两个 hidden input。三者缺一或不一致
+        # 都只能视为未核验，绝不能用 su/yhm 或调用方输入补齐。
+        school_ids = [field_text(field_id) for field_id in ("col_xh", "xh_id", "curXh_id")]
+        school_verified_student_id = school_ids[0] if school_ids and all(school_ids) and len(set(school_ids)) == 1 else None
 
-        zy_match = re.search(r'id="col_zyh_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if zy_match:
-            major = zy_match.group(1).strip()
-
-        return StudentInfo(name=name, grade=grade, college=college, major=major)
+        return StudentInfo(
+            name=name,
+            grade=grade,
+            college=college,
+            major=major,
+            school_verified_student_id=school_verified_student_id,
+        )
 
     def _has_student_info_fields(self, html: str) -> bool:
         info = self._parse_student_info_body(html)
         return any((info.name, info.grade, info.college, info.major))
+
+    def _identity_probe_error(self, probe: Dict[str, Any]) -> Optional[LoginFailedError]:
+        if probe.get("identity_mismatch"):
+            return LoginFailedError(
+                "学校返回的学号与请求身份不一致，无法完成教务验证",
+                "EDU_IDENTITY_MISMATCH",
+            )
+        if probe.get("identity_unverified"):
+            return LoginFailedError(
+                "学校未返回可核验的学号身份，无法完成教务验证",
+                "EDU_IDENTITY_UNVERIFIED",
+            )
+        return None
 
     def _has_homepage_fields(self, html: str) -> bool:
         if _looks_like_login_page(html):
@@ -287,12 +327,16 @@ class EduCrawler:
                 "cookie_probe_body_hint": self._response_body_preview(info_resp.text),
                 "student_info_parse_result": self._student_info_parse_result(info_resp.text),
             })
-            if (
-                info_resp.status_code == 200
-                and not _looks_like_login_page(info_resp.text)
-                and self._has_student_info_fields(info_resp.text)
-            ):
-                return True, probe
+            info = self._parse_student_info_body(info_resp.text)
+            if info_resp.status_code == 200 and not _looks_like_login_page(info_resp.text):
+                if info.school_verified_student_id == student_id:
+                    return True, probe
+                if info.school_verified_student_id:
+                    probe["identity_mismatch"] = True
+                else:
+                    probe["identity_unverified"] = True
+                # profile 已返回但身份未核验时，不能降级到只看首页 token。
+                return False, probe
 
             menu_resp = await self.client.get(
                 INDEX_INIT_MENU_URL,
@@ -304,17 +348,38 @@ class EduCrawler:
                 "menu_probe_body_hint": self._response_body_preview(menu_resp.text),
             })
             if menu_resp.status_code == 200 and self._has_homepage_fields(menu_resp.text):
-                return True, probe
+                probe["identity_unverified"] = True
+                return False, probe
             if menu_resp.status_code == 302:
                 location = menu_resp.headers.get("location", "")
                 probe["menu_probe_location"] = location
                 success = "index_initMenu" in location or ("index" in location and "login_slogin" not in location)
-                return success, probe
+                if success:
+                    probe["identity_unverified"] = True
+                return False, probe
         except httpx.HTTPError as exc:
             probe["cookie_probe_error"] = str(exc)
             logger.warning("[EDU-LOGIN-PROBE] cookie validation failed: %s", exc)
 
         return False, probe
+
+    async def _warm_login_session(self, cookie: str) -> bool:
+        """复现学校登录后的续跳探活，避免 profile 请求过早读取旧会话。"""
+        if not self.client or not any(name.lower() == "jsessionid" for name in self._cookie_names(cookie)):
+            return False
+
+        try:
+            response = await self.client.get(f"{INDEX_URL}/login_slogin.html")
+        except httpx.HTTPError as exc:
+            raise NetworkError("教务登录会话探活失败，请稍后重试") from exc
+
+        if response.status_code != 302:
+            return False
+        location = (response.headers.get("location") or "").lower()
+        return (
+            ("index_initmenu" in location or "/index" in location)
+            and "login_slogin" not in location
+        )
 
     # ============== 认证相关 ==============
 
@@ -454,17 +519,21 @@ class EduCrawler:
         if credential_message:
             raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
 
-        cookie = self._cookie_string()
+        cookie = self._cookie_string(f"{INDEX_URL}/login_slogin.html")
 
-        if resp.status_code == 302:
-            location = resp.headers.get("location", "")
-            if ("index_initMenu" in location or "index" in location) and "login_slogin" not in location and cookie:
-                return cookie
+        # 学校 SouthSoft 登录成功后，必须先访问一次登录页完成服务端续跳，
+        # 否则紧接着读取 profile 可能仍被当作旧会话，探活结果会误判为未知。
+        if resp.status_code in (200, 302) and cookie:
+            await self._warm_login_session(cookie)
+            cookie = self._cookie_string(STUDENT_INFO_URL) or cookie
 
         # 登录后优先用当前 cookie 访问学生信息页/主页，避免只靠登录页二次 302 误判。
         cookie_ok, cookie_probe = await self._verify_login_cookie(cookie, student_id)
         if cookie_ok:
             return cookie
+        identity_error = self._identity_probe_error(cookie_probe)
+        if identity_error:
+            raise identity_error
 
         # 如果上面的方法失败,检查原始响庁
         if resp.status_code == 302:
@@ -479,6 +548,9 @@ class EduCrawler:
                             cookie_ok, cookie_probe = await self._verify_login_cookie(cookie, student_id)
                             if cookie_ok:
                                 return cookie
+                            identity_error = self._identity_probe_error(cookie_probe)
+                            if identity_error:
+                                raise identity_error
             self._log_unknown_login(resp, cookie_probe)
             raise LoginFailedError("教务登录会话建立失败，请稍后重试", "SESSION_COOKIE_MISSING")
         elif resp.status_code == 200:
@@ -1282,8 +1354,29 @@ def _academic_structure_signature(soup: BeautifulSoup) -> str:
 
 
 def _looks_like_login_page(html: str) -> bool:
-    text = html or ""
-    return any(token in text for token in ("login_slogin", "统一身份认证", "用户登录"))
+    soup = BeautifulSoup(html or "", "html.parser")
+    if not soup:
+        return False
+
+    # 路径或提示词可能出现在受保护页面的脚本、导航和帮助文案里，
+    # 只有真实登录表单才足以判定会话失效。
+    forms = soup.find_all("form")
+    for form in forms:
+        action = str(form.get("action") or "").lower()
+        has_username = form.find(attrs={"name": "yhm"}) is not None
+        has_password = form.find(attrs={"name": "mm"}) is not None
+        if "login_slogin" in action or (has_username and has_password):
+            return True
+
+    # 兼容登录表单属性变化，但仍要求页面确实包含 form，避免普通脚本/文案误判。
+    auxiliary_text = " ".join(
+        part.get_text(" ", strip=True)
+        for part in (soup.find("title"), soup.body)
+        if part is not None
+    )
+    return bool(forms) and any(
+        marker in auxiliary_text for marker in ("统一身份认证", "用户登录")
+    )
 
 
 def _split_academic_summary(text: str) -> Tuple[str, str]:

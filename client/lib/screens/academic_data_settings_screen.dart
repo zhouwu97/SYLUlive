@@ -73,19 +73,25 @@ class _AcademicDataSettingsScreenState
         : null;
     final sourceAccountId =
         _session.studentId?.trim() ?? credential?.studentId ?? '';
-    final vault = AesGcmAccountScopedSnapshotStore(appUserId: userId);
+    final identityNamespace = _session.identity?.storageId;
+    final vault = AesGcmAccountScopedSnapshotStore(
+      appUserId: userId,
+      identityNamespace: identityNamespace,
+    );
     final policy = AcademicPersistencePolicy(
       appUserId: userId,
       preferences: prefs,
       academicStore: AcademicCacheStore(
         appUserId: userId,
         sourceAccountId: sourceAccountId,
+        identityNamespace: identityNamespace,
         snapshotStore: vault,
         persistenceGate: RegistryAcademicPersistenceGate(userId),
       ),
       scheduleStore: ScheduleCacheStore(
         appUserId: userId,
         sourceAccountId: sourceAccountId,
+        identityNamespace: identityNamespace,
         snapshotStore: vault,
         persistenceGate: RegistryAcademicPersistenceGate(userId),
       ),
@@ -162,12 +168,15 @@ class _AcademicDataSettingsScreenState
   }
 
   Future<void> _confirmDisable(AcademicPersistencePolicy policy) async {
+    final retainedData = _session.capabilities.supportsGrades
+        ? '课表（含自定义课程、隐藏记录和存档）、成绩、学业情况和课程提醒'
+        : '课表（含自定义课程、隐藏记录和存档）和课程提醒';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('关闭本机教务资料保存？'),
-        content: const Text(
-            '关闭后会删除本机课表（含自定义课程、隐藏记录和存档）、成绩、学业情况和课程提醒。此后课表修改不会在重启后保留；教务绑定和登录凭据不受影响。'),
+        content: Text(
+            '关闭后会删除本机$retainedData。此后课表修改不会在重启后保留；教务绑定和登录凭据不受影响。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -228,11 +237,14 @@ class _AcademicDataSettingsScreenState
   }
 
   Future<void> _deleteAcademicAccount() async {
+    final retainedData = _session.capabilities.supportsGrades
+        ? '教务凭据、课表、成绩和本机设置'
+        : '教务凭据、课表和本机设置';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除本机教务账号？'),
-        content: const Text('将删除教务凭据、课表、成绩和本机设置，不会删除沈理校园 App 账号。此操作不可恢复。'),
+        content: Text('将删除$retainedData，不会删除沈理校园 App 账号。此操作不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -306,6 +318,11 @@ class _AcademicDataSettingsScreenState
     final saveData = !kIsWeb &&
         preferences?.saveAcademicData == true &&
         policy?.cleanupPending != true;
+    final supportsGrades = _session.capabilities.supportsGrades;
+    final savedDataTitle = supportsGrades ? '保存课表和成绩' : '保存课表';
+    final clearDataSubtitle = supportsGrades
+        ? '清理课表、成绩、个人资料、小组件和课程提醒，保留教务绑定'
+        : '清理课表、个人资料、小组件和课程提醒，保留教务绑定';
     return SettingsPageScaffold(
       title: '教务资料',
       onRefresh: _load,
@@ -357,7 +374,7 @@ class _AcademicDataSettingsScreenState
               ),
             SettingsTile(
               icon: Icons.lock_clock_outlined,
-              title: '保存课表和成绩',
+              title: savedDataTitle,
               subtitle: kIsWeb ? '网页版没有可用的本地加密保险箱' : '仅保存于当前 App 账号隔离的本地加密保险箱',
               trailing: Switch(
                 value: saveData,
@@ -382,7 +399,7 @@ class _AcademicDataSettingsScreenState
             SettingsTile(
               icon: Icons.delete_sweep_outlined,
               title: '清除本机教务资料',
-              subtitle: '清理课表、成绩、个人资料、小组件和课程提醒，保留教务绑定',
+              subtitle: clearDataSubtitle,
               danger: true,
               onTap: _saving ? null : _clearData,
             ),

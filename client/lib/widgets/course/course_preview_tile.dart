@@ -40,6 +40,14 @@ class CoursePreviewFields {
         startSection;
   }
 
+  static String? periodLabel(Map<String, dynamic> course) {
+    for (final key in const ['period_label', 'periodLabel']) {
+      final value = course[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
   static bool hasValidCoordinate(Map<String, dynamic> course) {
     final start = startSection(course);
     final end = endSection(course, start);
@@ -77,6 +85,7 @@ class CoursePreviewTile extends StatelessWidget {
     final startSection = CoursePreviewFields.startSection(course);
     final endSection = CoursePreviewFields.endSection(course, startSection);
     final hasValidSection = startSection > 0 && endSection >= startSection;
+    final providerPeriodLabel = CoursePreviewFields.periodLabel(course);
 
     String weekStr = '';
     final rawWeeks = course['weeks'];
@@ -112,7 +121,8 @@ class CoursePreviewTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              hasValidSection ? '第$startSection-$endSection节' : '节次未知',
+              providerPeriodLabel ??
+                  (hasValidSection ? '第$startSection-$endSection节' : '节次未知'),
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,

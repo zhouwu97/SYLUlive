@@ -12,7 +12,8 @@ import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
-import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
+import '../features/academic/domain/academic_repository.dart'
+    show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
@@ -828,6 +829,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       final c = todayCourses[index];
                       final startIndex = _sectionIndex(c.startSection);
                       final endIndex = _sectionIndex(c.endSection);
+                      final providerPeriodLabel = _providerPeriodLabel(c);
                       final color = getCourseColor(
                         c.name,
                         courseCode: c.courseCode,
@@ -857,7 +859,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    '${_starts[startIndex]} - ${_ends[endIndex]}',
+                                    providerPeriodLabel ??
+                                        '${_starts[startIndex]} - ${_ends[endIndex]}',
                                     style: TextStyle(
                                       color: color,
                                       fontWeight: FontWeight.bold,
@@ -866,14 +869,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   ),
                                 ),
                                 const Spacer(),
-                                Text(
-                                  '第${c.startSection}-${c.endSection}节',
-                                  style: TextStyle(
-                                    color: color.withOpacity(0.8),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                if (providerPeriodLabel == null)
+                                  Text(
+                                    '第${c.startSection}-${c.endSection}节',
+                                    style: TextStyle(
+                                      color: color.withOpacity(0.8),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
@@ -1669,6 +1673,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return;
     }
 
+    final controller = context.read<AcademicSessionController>();
+    final ready = await ensureAcademicSessionForRead(
+      context,
+      controller: controller,
+      coordinator: _coordinatorOrNull(),
+    );
+    if (!ready || !mounted) return;
+
     final result = await CourseImportSheet.show(
       context,
       eduProvider: edu,
@@ -1683,17 +1695,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       courses: result.courses,
       year: result.year,
       semester: result.semester,
+      termTitle: result.term.title,
       eduProvider: edu,
     );
 
     if (confirm != true || !mounted) return;
 
     final oldTerm = sc.currentTerm;
-    final sameTerm =
-        oldTerm.year == result.year && oldTerm.semester == result.semester;
-
-    final targetTerm =
-        sameTerm ? oldTerm : sc.buildTerm(result.year, result.semester);
+    final sameTerm = oldTerm.id == result.term.id;
+    final targetTerm = result.term;
 
     setState(() {
       _isFetchingCourses = true;
@@ -1841,7 +1851,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final startIndex = _sectionIndex(course.startSection);
       final endIndex = _sectionIndex(course.endSection);
       final parts = <String>[
-        '${_starts[startIndex]}-${_ends[endIndex]}',
+        _providerPeriodLabel(course) ??
+            '${_starts[startIndex]}-${_ends[endIndex]}',
         course.name.isEmpty ? '课程' : course.name,
       ];
       final teacher = course.teacher?.trim();
@@ -1861,6 +1872,39 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (section <= 1) return 0;
     if (section >= _starts.length) return _starts.length - 1;
     return section - 1;
+  }
+
+  String? _providerPeriodLabel(CourseBlock course) {
+    final label = course.periodLabel?.trim();
+    return label == null || label.isEmpty ? null : label;
+  }
+
+  String _courseSectionLabel(CourseBlock course) {
+    return _providerPeriodLabel(course) ??
+        '第${course.startSection}-${course.endSection}节';
+  }
+
+  String? _periodLabelForSlot(CourseScheduleProvider sc, int slot) {
+    final labels = sc.courses
+        .where((course) => course.periodOrder == slot)
+        .map((course) => _providerPeriodLabel(course))
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (labels.isEmpty) return null;
+    labels.sort();
+    return labels.join(' / ');
+  }
+
+  int _scheduleSlotCount(CourseScheduleProvider sc) {
+    return sc.periodSlotCount;
+  }
+
+  String _slotDisplayLabel(CourseScheduleProvider sc, int slot) {
+    final providerLabel = _periodLabelForSlot(sc, slot);
+    if (providerLabel != null) return providerLabel;
+    if (sc.usesProviderPeriodLayout) return '时段 ${slot + 1}';
+    return '${slot + 1}\n${_starts[slot]}\n${_ends[slot]}';
   }
 
   String _ymd(DateTime d) => '${d.year}/${d.month}/${d.day}';
@@ -3573,8 +3617,7 @@ $classFilterRule
         // 提取冲突的老课名称，防止名称太长截断
         String conflictNames = conflictingCourses
             .map(
-              (c) =>
-                  "《${c.name} (周${c.weekday} 第${c.startSection}-${c.endSection}节)》",
+              (c) => "《${c.name} (周${c.weekday} ${_courseSectionLabel(c)})》",
             )
             .join('、');
 
@@ -3752,7 +3795,8 @@ $classFilterRule
   Widget _buildCourseGrid(CourseScheduleProvider sc) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final totalH = 12 * _scheduleSlotHeight;
+        final slotCount = _scheduleSlotCount(sc);
+        final totalH = slotCount * _scheduleSlotHeight;
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
         final exactW = (screenW - timeColumnWidth) / 7;
@@ -3769,7 +3813,10 @@ $classFilterRule
               Column(
                 children: [
                   SizedBox(height: headerH),
-                  SizedBox(height: totalH, child: _buildTimeColumn()),
+                  SizedBox(
+                    height: totalH,
+                    child: _buildTimeColumn(sc, slotCount),
+                  ),
                 ],
               ),
               // 有限周次分页器：星期表头 + 网格（网格线 + 课程卡片）整页随动，
@@ -3801,7 +3848,7 @@ $classFilterRule
                               child: Stack(
                                 clipBehavior: Clip.none,
                                 children: [
-                                  _buildGridLines(exactW),
+                                  _buildGridLines(exactW, slotCount),
                                   Positioned.fill(
                                     child: _buildCourseCardsOnly(
                                       sc,
@@ -3826,7 +3873,7 @@ $classFilterRule
     );
   }
 
-  Widget _buildTimeColumn() {
+  Widget _buildTimeColumn(CourseScheduleProvider sc, int slotCount) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cleanLightMode =
         context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
@@ -3835,12 +3882,12 @@ $classFilterRule
 
     return Column(
       children: List.generate(
-        12,
+        slotCount,
         (i) => Container(
           height: _scheduleSlotHeight,
           alignment: Alignment.center,
           child: Text(
-            '${i + 1}\n${_starts[i]}\n${_ends[i]}',
+            _slotDisplayLabel(sc, i),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,
@@ -3853,7 +3900,7 @@ $classFilterRule
     );
   }
 
-  Widget _buildGridLines(double exactW) {
+  Widget _buildGridLines(double exactW, int slotCount) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cleanLightMode =
         context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
@@ -3867,7 +3914,7 @@ $classFilterRule
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // 网格线（7 天 × 12 节），随分页页一起移动
+        // 网格线（7 天 × 当前课表行数），随分页页一起移动。
         for (int d = 0; d < 7; d++)
           Positioned(
             left: d * exactW,
@@ -3876,7 +3923,7 @@ $classFilterRule
             width: exactW,
             child: Column(
               children: List.generate(
-                12,
+                slotCount,
                 (i) => Container(
                   height: _scheduleSlotHeight,
                   decoration: BoxDecoration(
@@ -4075,7 +4122,8 @@ $classFilterRule
       builder: (_) => Padding(
         // 键盘弹出时上移，保证评价表单输入框可见。
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(appNavigatorKey.currentContext!).viewInsets.bottom,
+          bottom:
+              MediaQuery.of(appNavigatorKey.currentContext!).viewInsets.bottom,
         ),
         child: SingleChildScrollView(
           child: SafeArea(
@@ -4086,119 +4134,123 @@ $classFilterRule
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    c.name,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _detailRow(Icons.person_outline, '教师', c.teacher ?? '未知'),
-            _detailRow(Icons.location_on_outlined, '教室', c.location ?? '未知'),
-            _detailRow(
-              Icons.access_time,
-              '时间',
-              '周$wdn 第${c.startSection}-${c.endSection}节',
-            ),
-            _detailRow(
-              Icons.date_range,
-              '周次',
-              c.weeks.isNotEmpty ? '第${c.weeks.first}-${c.weeks.last}周' : '未知',
-            ),
-            if (c.note != null && c.note!.isNotEmpty)
-              _detailRow(Icons.note_outlined, '备注', c.note!),
-            // 评价区放在周次/备注之后，不包裹原有课程信息为新卡片。
-            if (showEvaluation)
-              CourseEvaluationSection(
-                courseName: c.name,
-                teacherName: c.teacher ?? '',
-              ),
-            const SizedBox(height: 16),
-            if (c.id < 0) ...[
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton.icon(
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    label: const Text(
-                      '编辑',
-                      style: TextStyle(color: Colors.blue),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(appNavigatorKey.currentContext!);
-                      _showAddCourseDialog(context, editCourse: c);
-                    },
-                  ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    label: const Text(
-                      '删除',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('删除课程'),
-                          content: const Text('确定要删除这门自定义课程吗？'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text(
-                                '删除',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        width: 4,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                      );
-                      if (confirmed == true) {
-                        Navigator.pop(appNavigatorKey.currentContext!);
-                        await context
-                            .read<CourseScheduleProvider>()
-                            .removeCustomCourse(c.id);
-                        if (mounted) setState(() {});
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(const SnackBar(content: Text('课程已删除')));
-                      }
-                    },
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          c.name,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                  const SizedBox(height: 20),
+                  _detailRow(Icons.person_outline, '教师', c.teacher ?? '未知'),
+                  _detailRow(
+                      Icons.location_on_outlined, '教室', c.location ?? '未知'),
+                  _detailRow(
+                    Icons.access_time,
+                    '时间',
+                    '周$wdn ${_courseSectionLabel(c)}',
+                  ),
+                  _detailRow(
+                    Icons.date_range,
+                    '周次',
+                    c.weeks.isNotEmpty
+                        ? '第${c.weeks.first}-${c.weeks.last}周'
+                        : '未知',
+                  ),
+                  if (c.note != null && c.note!.isNotEmpty)
+                    _detailRow(Icons.note_outlined, '备注', c.note!),
+                  // 评价区放在周次/备注之后，不包裹原有课程信息为新卡片。
+                  if (showEvaluation)
+                    CourseEvaluationSection(
+                      courseName: c.name,
+                      teacherName: c.teacher ?? '',
+                    ),
+                  const SizedBox(height: 16),
+                  if (c.id < 0) ...[
+                    const Divider(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          label: const Text(
+                            '编辑',
+                            style: TextStyle(color: Colors.blue),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(appNavigatorKey.currentContext!);
+                            _showAddCourseDialog(context, editCourse: c);
+                          },
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          label: const Text(
+                            '删除',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('删除课程'),
+                                content: const Text('确定要删除这门自定义课程吗？'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('取消'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text(
+                                      '删除',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) {
+                              Navigator.pop(appNavigatorKey.currentContext!);
+                              await context
+                                  .read<CourseScheduleProvider>()
+                                  .removeCustomCourse(c.id);
+                              if (mounted) setState(() {});
+                              ScaffoldMessenger.of(
+                                context,
+                              ).showSnackBar(
+                                  const SnackBar(content: Text('课程已删除')));
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

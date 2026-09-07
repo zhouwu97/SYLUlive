@@ -71,6 +71,7 @@ abstract interface class AcademicRepository {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   });
 
   Future<GradeFetchResult> getGrades({

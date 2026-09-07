@@ -67,11 +67,16 @@ abstract interface class AccountScopedSnapshotStore {
 class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   AesGcmAccountScopedSnapshotStore({
     required String appUserId,
+    String? identityNamespace,
     PersonalSnapshotSecureStore secureStore =
         const PlatformPersonalSnapshotSecureStore(),
     PersonalSnapshotFileBackend? fileBackend,
     Uint8List Function(int length)? randomBytes,
   })  : _accountHash = _validateAccount(appUserId),
+        _storageHash = _validateStorageNamespace(
+          identityNamespace,
+          fallback: _validateAccount(appUserId),
+        ),
         _secureStore = secureStore,
         _fileBackend = fileBackend ?? createPersonalSnapshotFileBackend(),
         _randomBytes = randomBytes ?? _secureRandomBytes;
@@ -89,6 +94,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       <String, Future<Uint8List>>{};
 
   final String _accountHash;
+  final String _storageHash;
   final PersonalSnapshotSecureStore _secureStore;
   final PersonalSnapshotFileBackend _fileBackend;
   final Uint8List Function(int length) _randomBytes;
@@ -96,7 +102,10 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   @override
   String get accountFingerprint => _accountHash;
 
-  String get _accountKey => '$_keyPrefix$_accountHash/v1';
+  /// 同一 App 账号下的不同 Provider 使用独立物理目录和数据密钥。
+  String get storageNamespace => _storageHash;
+
+  String get _storageKey => '$_keyPrefix$_storageHash/v1';
 
   @override
   Future<void> write({
@@ -143,7 +152,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     });
 
     final key = await _loadOrCreateSecret(
-      keyName: _accountKey,
+      keyName: _storageKey,
       expectedLength: _keyLength,
     );
     final nonce = _randomBytes(_nonceLength);
@@ -161,13 +170,13 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     final envelope = jsonEncode(<String, dynamic>{
       'envelope_version': envelopeVersion,
       'encryption_version': encryptionVersion,
-      'account_hash': _accountHash,
+      'account_hash': _storageHash,
       'data_type': type.storageValue,
       'nonce': base64Encode(nonce),
       'ciphertext': base64Encode(ciphertext),
     });
     await _fileBackend.write(
-      accountHash: _accountHash,
+      accountHash: _storageHash,
       type: type,
       bytes: Uint8List.fromList(utf8.encode(envelope)),
     );
@@ -180,7 +189,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     required String sourceAccountId,
   }) async {
     final encrypted = await _fileBackend.read(
-      accountHash: _accountHash,
+      accountHash: _storageHash,
       type: type,
     );
     if (encrypted == null || encrypted.isEmpty) return null;
@@ -194,7 +203,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       _validateEnvelope(envelope, type);
 
       final key = await _readExistingSecret(
-        keyName: _accountKey,
+        keyName: _storageKey,
         expectedLength: _keyLength,
       );
       if (key == null) {
@@ -275,14 +284,14 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
 
   @override
   Future<void> deleteType(PersonalDataType type) {
-    return _fileBackend.deleteType(accountHash: _accountHash, type: type);
+    return _fileBackend.deleteType(accountHash: _storageHash, type: type);
   }
 
   @override
   Future<void> clearUser() async {
     // 先删除密钥；即使文件清理失败，残留密文也无法继续解密。
-    await _secureStore.delete(_accountKey);
-    await _fileBackend.deleteUser(_accountHash);
+    await _secureStore.delete(_storageKey);
+    await _fileBackend.deleteUser(_storageHash);
   }
 
   /// 仅用于“清除全部本地个人数据”设置项，不删除其他业务密钥。
@@ -400,7 +409,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   void _validateEnvelope(Map<String, dynamic> envelope, PersonalDataType type) {
     final valid = envelope['envelope_version'] == envelopeVersion &&
         envelope['encryption_version'] == encryptionVersion &&
-        envelope['account_hash'] == _accountHash &&
+        envelope['account_hash'] == _storageHash &&
         envelope['data_type'] == type.storageValue &&
         envelope['nonce'] is String &&
         envelope['ciphertext'] is String;
@@ -428,7 +437,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   Uint8List _aad(PersonalDataType type) {
     return Uint8List.fromList(
       utf8.encode(
-        '$_accountHash|${type.storageValue}|'
+        '$_storageHash|${type.storageValue}|'
         '$envelopeVersion|$encryptionVersion',
       ),
     );
@@ -455,6 +464,18 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       throw ArgumentError.value(appUserId, 'appUserId');
     }
     return fingerprint;
+  }
+
+  static String _validateStorageNamespace(
+    String? raw, {
+    required String fallback,
+  }) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return fallback;
+    // AcademicIdentityKey.storageId 已是 64 位十六进制；其他调用方按
+    // 完整字符串重新哈希，禁止把学号或 App 用户 ID直接作为文件名。
+    if (RegExp(r'^[a-f0-9]{64}$').hasMatch(value)) return value;
+    return AccountCacheNamespace.fingerprint(value);
   }
 
   static Uint8List _secureRandomBytes(int length) {

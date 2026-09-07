@@ -40,7 +40,13 @@ import 'features/academic/data/academic_repository_impl.dart';
 import 'features/academic/data/academic_server_access_guard.dart';
 import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
 import 'features/academic/data/datasource/legacy_server_data_source.dart';
+import 'features/academic/data/academic_provider_router_repository.dart';
+import 'features/academic/data/academic_provider_adapters.dart';
+import 'features/academic/data/graduate/tflite_academic_captcha_recognizer.dart';
+import 'features/academic/data/academic_identity_client.dart';
 import 'features/academic/domain/academic_repository.dart';
+import 'features/academic/domain/academic_provider.dart';
+import 'features/academic/storage/academic_session_artifact_vault.dart';
 import 'models/user.dart';
 import 'models/startup_destination.dart';
 import 'screens/chat_detail_screen.dart';
@@ -1345,14 +1351,41 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        // Registry 只保存工厂；Provider 实例在选定完整身份后创建并独占
+        // CookieJar、验证码挑战和 URL Session Prefix。
+        Provider<AcademicProviderRegistry>(
+          create: (_) => AcademicProviderRegistry([
+            UndergraduateAcademicProviderFactory(
+              sourceFactory: (_) => JiaowuLocalDataSource(),
+            ),
+            GraduateAcademicProviderFactory(
+              // 每个身份独立持有解释器，模型不可用时 Provider 自动回退人工输入。
+              captchaRecognizerFactory: () =>
+                  LazyTfliteAcademicCaptchaRecognizer(),
+            ),
+          ]),
+        ),
+        Provider<AcademicIdentityClient>(
+          create: (_) => AcademicIdentityClient(dio),
+        ),
         Provider<AcademicRepository>(
-          create: (_) => AcademicRepositoryImpl(
-            local: JiaowuLocalDataSource(),
-            // 教务授权由服务端持久化，客户端只保留按账号隔离的数据快照。
-            // 这样重装或重新登录后可以通过 App 账号恢复教务会话。
-            legacy: LegacyServerDataSource(dio, networkEnabled: true),
-            source: AcademicSourceKind.legacy,
-          ),
+          create: (context) {
+            final legacyDataSource =
+                LegacyServerDataSource(dio, networkEnabled: true);
+            final legacy = AcademicRepositoryImpl(
+              local: JiaowuLocalDataSource(),
+              // 未返回 provider_id 的历史绑定仍走兼容恢复；新绑定恢复后由
+              // Router 按服务端确认的 Provider 创建本机隔离实例。
+              legacy: legacyDataSource,
+              source: AcademicSourceKind.legacy,
+            );
+            return AcademicProviderRouterRepository(
+              legacy: legacy,
+              registry: context.read<AcademicProviderRegistry>(),
+              identityClient: context.read<AcademicIdentityClient>(),
+              providerIdLoader: () => legacyDataSource.providerId,
+            );
+          },
           dispose: (_, repository) => repository.close(),
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
@@ -1371,6 +1404,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(
           create: (context) => AcademicSessionController(
             repository: context.read<AcademicRepository>(),
+            sessionArtifactVaultFactory: (identity) =>
+                AcademicSessionArtifactVault(identity: identity),
           ),
           update: (_, auth, controller) =>
               controller!..syncAppUser(auth.user?.id.toString()),

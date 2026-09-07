@@ -133,7 +133,7 @@ void main() {
     testWidgets('绑定保留资料缓存选择 $saveData，明确授权后发送且禁止重复提交', (tester) async {
       await openDialog(tester, saveData: saveData);
       expect(find.text('绑定教务账号'), findsOneWidget);
-      expect(find.textContaining('服务器将加密保存'), findsOneWidget);
+      expect(find.textContaining('绑定只确认你在学校的教务身份'), findsOneWidget);
       expect(find.byType(Switch), findsNothing);
       final button = find.widgetWithText(FilledButton, '同意并绑定');
       expect(tester.widget<FilledButton>(button).onPressed, isNull);

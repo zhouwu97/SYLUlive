@@ -5,10 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
+import 'package:shenliyuan/models/course_term.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
@@ -113,6 +115,46 @@ void main() {
     expect(reloaded.isLoading, isFalse);
     expect(reloaded.courses, hasLength(1));
     expect(reloaded.courses.single.name, '高等数学');
+  });
+
+  test('研究生节次元数据写入并从课表缓存恢复', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-001');
+
+    await provider.applyFetchedCourses([
+      {
+        'name': '研究生专题课',
+        'teacher': '王老师',
+        'location': '研究生楼 A301',
+        'weekday': 1,
+        'start_section': 3,
+        'end_section': 3,
+        'period_order': 2,
+        'period_label': '上午3',
+        'weeks': [1, 2, 3],
+      },
+    ]);
+
+    expect(provider.courses.single.startSection, 3);
+    expect(provider.courses.single.endSection, 3);
+    expect(provider.courses.single.periodOrder, 2);
+    expect(provider.courses.single.periodLabel, '上午3');
+
+    final reloaded = createProvider()..syncSessionContext('1001', 'G-001');
+    expect(await reloaded.loadCachedCoursesIfAvailable(), isTrue);
+    expect(reloaded.courses.single.startSection, 3);
+    expect(reloaded.courses.single.periodOrder, 2);
+    expect(reloaded.courses.single.periodLabel, '上午3');
+
+    final snapshot = await ScheduleCacheStore(
+      appUserId: '1001',
+      sourceAccountId: 'G-001',
+      snapshotStore: createSnapshotStore('1001'),
+    ).readTerm(
+      year: provider.selectedYear,
+      semester: provider.selectedSemester,
+    );
+    expect(snapshot?.courses.single['period_order'], 2);
+    expect(snapshot?.courses.single['period_label'], '上午3');
   });
 
   test('来源学号变化后不读取旧课表缓存', () async {
@@ -232,6 +274,166 @@ void main() {
     provider.dispose();
     controller.dispose();
   });
+
+  test('研究生稀疏节次和超过本科范围的行数保留 Provider 行序', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2606610216');
+
+    await provider.applyFetchedCourses([
+      {
+        'name': '研究生专题课',
+        'teacher': '测试老师',
+        'location': 'A101',
+        'weekday': 1,
+        'start_section': 3,
+        'end_section': 3,
+        'period_order': 2,
+        'period_label': '上午3',
+        'weeks': [1],
+      },
+      {
+        'name': '研究生研讨课',
+        'teacher': '测试老师',
+        'location': 'A102',
+        'weekday': 2,
+        'start_section': 14,
+        'end_section': 14,
+        'period_order': 13,
+        'period_label': '下午8',
+        'weeks': [1],
+      },
+    ]);
+
+    expect(provider.usesProviderPeriodLayout, isTrue);
+    expect(provider.periodSlotCount, 14);
+    expect(provider.courses.first.periodOrder, 2);
+    expect(provider.courses.last.periodLabel, '下午8');
+  });
+
+  test('已知研究生 Provider 即使没有课程也不回退本科 12 节布局', () {
+    final controller = AcademicSessionController(
+      repository: _FakeCourseRepository(
+        courses: CourseFetchResult(
+          source: CourseSource.mobile,
+          courses: [],
+        ),
+      ),
+      identity: const AcademicIdentityKey(
+        appUserId: '1001',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: '2606610216',
+      ),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    final provider = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      null,
+      controller,
+    );
+
+    expect(provider.usesProviderPeriodLayout, isTrue);
+    expect(provider.periodSlotCount, 1);
+
+    provider.dispose();
+    controller.dispose();
+  });
+
+  test('研究生选中学校学期在新 Provider 冷启动后恢复并命中同一缓存', () async {
+    final repository = _FakeCourseRepository(
+      courses: CourseFetchResult(
+        source: CourseSource.mobile,
+        courses: const <RawCourse>[],
+      ),
+    );
+    final controller = AcademicSessionController(
+      repository: repository,
+      identity: const AcademicIdentityKey(
+        appUserId: '1001',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: '2606610216',
+      ),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    final term = const CourseTerm(
+      id: 'provider_graduate_term_2026_1',
+      year: 'provider_graduate_term_2026',
+      semester: 1,
+      title: '2026-2027 秋季学期',
+      providerTermId: 'graduate-term-2026-1',
+      maxWeek: 20,
+    );
+    final first = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      repository,
+      controller,
+    )..syncSessionContext('1001', '2606610216');
+
+    expect(
+      await first.applyFetchedCoursesForTerm(
+        term: term,
+        rawCourses: [
+          {
+            'name': '研究生专题课',
+            'teacher': '测试老师',
+            'location': 'A101',
+            'weekday': 1,
+            'start_section': 3,
+            'end_section': 3,
+            'period_order': 2,
+            'period_label': '上午3',
+            'weeks': [1],
+          },
+        ],
+      ),
+      1,
+    );
+
+    final second = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      repository,
+      controller,
+    )..syncSessionContext('1001', '2606610216');
+    for (var i = 0; i < 20 && !second.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(second.isSessionReady, isTrue);
+    expect(second.currentTerm.id, term.id);
+    expect(second.currentTerm.providerTermId, term.providerTermId);
+    expect(second.courses, hasLength(1));
+    expect(second.courses.single.periodOrder, 2);
+    expect(second.courses.single.periodLabel, '上午3');
+
+    final otherController = AcademicSessionController(
+      repository: repository,
+      identity: const AcademicIdentityKey(
+        appUserId: '2002',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: '2606610216',
+      ),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    final other = CourseScheduleProvider(
+      Dio(),
+      createSnapshotStore,
+      repository,
+      otherController,
+    )..syncSessionContext('2002', '2606610216');
+    for (var i = 0; i < 20 && !other.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(other.isSessionReady, isTrue);
+    expect(other.currentTerm.providerTermId, isNull);
+    expect(other.courses, isEmpty);
+
+    first.dispose();
+    second.dispose();
+    other.dispose();
+    controller.dispose();
+    otherController.dispose();
+  });
 }
 
 final class _FakeCourseRepository implements AcademicRepository {
@@ -300,6 +502,7 @@ final class _FakeCourseRepository implements AcademicRepository {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   }) async {
     courseStarted?.complete();
     if (courseGate != null) await courseGate!.future;

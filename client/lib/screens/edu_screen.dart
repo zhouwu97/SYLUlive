@@ -5,13 +5,15 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
-import '../features/academic/domain/academic_repository.dart' show AcademicSourceKind;
+import '../features/academic/domain/academic_repository.dart'
+    show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
+import '../features/academic/domain/academic_provider.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -43,7 +45,9 @@ class _EduScreenState extends State<EduScreen> {
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
     if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
-        !await coordinator.hasSavedCredential()) return;
+        !await coordinator.hasSavedCredential()) {
+      return;
+    }
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();
@@ -93,7 +97,7 @@ class _EduScreenState extends State<EduScreen> {
                 _buildEduActionGrid(context, eduProvider, isDark),
               ],
               const SizedBox(height: 24),
-              _buildEduHint(isDark),
+              _buildEduHint(isDark, eduProvider.isBound),
               if (eduProvider.isBound) ...[
                 const SizedBox(height: 32),
                 _buildDangerUnbindButton(context, eduProvider, isDark),
@@ -159,8 +163,8 @@ class _EduScreenState extends State<EduScreen> {
                       )
                     else
                       const Text(
-                        '绑定后可使用完整功能',
-                        style: const TextStyle(
+                        '绑定后按教务类型开放已接入功能',
+                        style: TextStyle(
                           fontSize: 13,
                           color: CampusTheme.subText,
                         ),
@@ -237,6 +241,46 @@ class _EduScreenState extends State<EduScreen> {
 
   Widget _buildEduActionGrid(
       BuildContext context, EduProvider eduProvider, bool isDark) {
+    final providerId = context.read<AcademicSessionController>().providerId;
+    final isGraduate = providerId == AcademicProviderId.syluGraduate;
+    final capabilities = eduProvider.academicCapabilities;
+    final cards = <Widget>[
+      if (capabilities.supportsCourses)
+        _buildActionCard(
+          context: context,
+          icon: Icons.schedule_rounded,
+          iconColor: CampusTheme.blue,
+          title: '课表',
+          onTap: () => _showCourseDialog(context, eduProvider),
+        ),
+      if (capabilities.supportsGrades)
+        _buildActionCard(
+          context: context,
+          icon: Icons.star_rounded,
+          iconColor: CampusTheme.orange,
+          title: '成绩',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EduGradeScreen()),
+            );
+          },
+        ),
+      // 研究生 Provider 当前只承诺课表；未探测的评价接口不能展示成可用。
+      if (!isGraduate)
+        _buildActionCard(
+          context: context,
+          icon: Icons.rate_review_rounded,
+          iconColor: CampusTheme.cyan,
+          title: '教学评价',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EvaluationScreen()),
+            );
+          },
+        ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -253,56 +297,23 @@ class _EduScreenState extends State<EduScreen> {
         ),
         Row(
           children: [
-            Expanded(
-              child: _buildActionCard(
-                context: context,
-                icon: Icons.schedule_rounded,
-                iconColor: CampusTheme.blue,
-                title: '课表',
-                onTap: () => _showCourseDialog(context, eduProvider),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionCard(
-                context: context,
-                icon: Icons.star_rounded,
-                iconColor: CampusTheme.orange,
-                title: '成绩',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const EduGradeScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionCard(
-                context: context,
-                icon: Icons.rate_review_rounded,
-                iconColor: CampusTheme.cyan,
-                title: '教学评价',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const EvaluationScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
+            for (var index = 0; index < cards.length; index++) ...[
+              if (index > 0) const SizedBox(width: 12),
+              Expanded(child: cards[index]),
+            ],
           ],
         ),
       ],
     );
   }
 
-  Widget _buildEduHint(bool isDark) {
+  Widget _buildEduHint(bool isDark, bool isBound) {
+    final providerId = context.read<AcademicSessionController>().providerId;
+    final hint = !isBound
+        ? '绑定后按教务类型开放已接入的功能'
+        : providerId == AcademicProviderId.syluGraduate
+            ? '研究生教务当前开放课表；成绩、考试和 GPA 暂未接入'
+            : '绑定教务账号后，可以查看课表、成绩和教学评价';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: CampusTheme.cardDecoration(isDark),
@@ -314,9 +325,9 @@ class _EduScreenState extends State<EduScreen> {
             color: CampusTheme.subText,
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
-              '绑定教务账号后，可以查看课表、成绩和教学评价',
+              hint,
               style: const TextStyle(
                 fontSize: 12.5,
                 color: CampusTheme.subText,
@@ -337,7 +348,7 @@ class _EduScreenState extends State<EduScreen> {
         icon: const Icon(Icons.link_off_rounded,
             size: 18, color: CampusTheme.red),
         label: const Text('解绑教务账号',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: CampusTheme.red,
@@ -437,7 +448,8 @@ class _EduScreenState extends State<EduScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('确认解绑'),
-        content: const Text('解绑将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学号和学生身份会保留。确定要解绑吗？'),
+        content:
+            const Text('解绑将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学号和学生身份会保留。确定要解绑吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -451,7 +463,9 @@ class _EduScreenState extends State<EduScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      result.success ? '教务授权已撤销' : (result.errorMessage ?? '解绑失败'),
+                      result.success
+                          ? '教务授权已撤销'
+                          : (result.errorMessage ?? '解绑失败'),
                     ),
                     backgroundColor: result.success ? Colors.green : Colors.red,
                   ),
@@ -468,6 +482,14 @@ class _EduScreenState extends State<EduScreen> {
 
   Future<void> _showCourseDialog(
       BuildContext context, EduProvider eduProvider) async {
+    final controller = context.read<AcademicSessionController>();
+    final ready = await ensureAcademicSessionForRead(
+      context,
+      controller: controller,
+      coordinator: _coordinatorOrNull(),
+    );
+    if (!ready || !context.mounted) return;
+
     final result = await CourseImportSheet.show(
       context,
       eduProvider: eduProvider,
@@ -479,13 +501,14 @@ class _EduScreenState extends State<EduScreen> {
       courses: result.courses,
       year: result.year,
       semester: result.semester,
+      termTitle: result.term.title,
       eduProvider: eduProvider,
     );
 
     if (confirm != true || !context.mounted) return;
 
     final sc = context.read<CourseScheduleProvider>();
-    await sc.selectTerm(result.year, result.semester, clearCurrent: true);
+    await sc.switchTerm(result.term, loadCache: true);
     await sc.applyFetchedCourses(result.courses);
 
     if (context.mounted) {

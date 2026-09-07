@@ -10,16 +10,25 @@ void main() {
   DioException error({
     required DioExceptionType type,
     Object? cause,
+    int? statusCode,
   }) {
+    final options = RequestOptions(
+      baseUrl: JiaowuEndpoints.defaultBaseUrl,
+      path: JiaowuEndpoints.loginPage,
+      headers: const {'Cookie': 'JSESSIONID=must-not-leak'},
+      data: const {'mm': 'encrypted-secret-must-not-leak'},
+    );
     return DioException(
-      requestOptions: RequestOptions(
-        baseUrl: JiaowuEndpoints.defaultBaseUrl,
-        path: JiaowuEndpoints.loginPage,
-        headers: const {'Cookie': 'JSESSIONID=must-not-leak'},
-        data: const {'mm': 'encrypted-secret-must-not-leak'},
-      ),
+      requestOptions: options,
       type: type,
       error: cause,
+      response: statusCode == null
+          ? null
+          : Response<void>(
+              requestOptions: options,
+              statusCode: statusCode,
+              data: null,
+            ),
     );
   }
 
@@ -128,6 +137,25 @@ void main() {
     expect(mapped, isA<RequestTimeoutException>());
     expect(mapped.code, 'REQUEST_TIMEOUT');
     expect(mapped.diagnostic?.dioType, 'receiveTimeout');
+  });
+
+  test('HTTP 5xx 映射为上游错误并只保留状态码', () {
+    for (final status in [500, 503]) {
+      final mapped = TransportErrorMapper.map(
+        error(
+          type: DioExceptionType.badResponse,
+          statusCode: status,
+        ),
+        '研究生登录',
+      );
+
+      expect(mapped, isA<NetworkException>());
+      expect(mapped.code, 'UPSTREAM_HTTP_$status');
+      expect(mapped.message, contains('上游服务暂时不可用'));
+      expect(mapped.diagnostic?.statusCode, status);
+      expect(mapped.diagnostic?.toDisplayString(), isNot(contains('Cookie')));
+      expect(mapped.diagnostic?.toDisplayString(), isNot(contains('secret')));
+    }
   });
 
   test('网络探针在无账号情况下完成 DNS、HTTPS 和 CSRF 检查', () async {

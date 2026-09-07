@@ -38,6 +38,10 @@ abstract final class TransportErrorMapper {
     DioException error, {
     required bool tlsFailure,
   }) {
+    final status = error.response?.statusCode;
+    if (status != null && status >= 500 && status <= 599) {
+      return 'UPSTREAM_HTTP_$status';
+    }
     if (isTimeout(error)) return 'REQUEST_TIMEOUT';
     if (tlsFailure) return 'TLS_HANDSHAKE_FAILED';
 
@@ -65,6 +69,9 @@ abstract final class TransportErrorMapper {
   }
 
   static String _messageFor(String code, String operation) {
+    if (code.startsWith('UPSTREAM_HTTP_')) {
+      return '$operation上游服务暂时不可用';
+    }
     return switch (code) {
       'TLS_HANDSHAKE_FAILED' => '$operation时 TLS 握手失败',
       'DNS_LOOKUP_FAILED' => '无法解析教务服务器地址',

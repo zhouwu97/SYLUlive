@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../../../platform/contracts/secure_store.dart';
+import '../domain/academic_provider.dart';
 
 /// 本机教务账号的可持久化凭据。
 ///
@@ -28,9 +29,22 @@ abstract interface class AcademicCredentialStore {
   Future<void> delete(String appUserId);
 }
 
+/// 新统一架构的身份隔离接口。与旧 App 用户接口并存，避免破坏旧实现。
+abstract interface class IdentityScopedAcademicCredentialStore {
+  Future<AcademicCredential?> readForIdentity(AcademicIdentityKey identity);
+
+  Future<void> writeForIdentity(
+    AcademicIdentityKey identity,
+    AcademicCredential credential,
+  );
+
+  Future<void> deleteForIdentity(AcademicIdentityKey identity);
+}
+
 /// Android/iOS 使用系统安全存储，OHOS 由 [AppSecretStore.current] 选择
 /// Asset Store，Web 使用 no-op 实现。
-final class PlatformAcademicCredentialStore implements AcademicCredentialStore {
+final class PlatformAcademicCredentialStore
+    implements AcademicCredentialStore, IdentityScopedAcademicCredentialStore {
   PlatformAcademicCredentialStore({AppSecretStore? secretStore})
       : _secretStore = secretStore ?? AppSecretStore.current();
 
@@ -92,10 +106,65 @@ final class PlatformAcademicCredentialStore implements AcademicCredentialStore {
     await _secretStore.delete(key);
   }
 
+  @override
+  Future<AcademicCredential?> readForIdentity(AcademicIdentityKey identity) =>
+      _readByKey(_identityKeyFor(identity));
+
+  @override
+  Future<void> writeForIdentity(
+    AcademicIdentityKey identity,
+    AcademicCredential credential,
+  ) => _writeByKey(_identityKeyFor(identity), credential);
+
+  @override
+  Future<void> deleteForIdentity(AcademicIdentityKey identity) =>
+      _secretStore.delete(_identityKeyFor(identity));
+
+  Future<AcademicCredential?> _readByKey(String key) async {
+    String? raw;
+    try {
+      raw = await _secretStore.read(key);
+    } catch (_) {
+      return null;
+    }
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) throw const FormatException('凭据格式错误');
+      final data = Map<String, dynamic>.from(decoded);
+      final studentId = data['student_id'];
+      final password = data['password'];
+      if (studentId is! String || password is! String) {
+        throw const FormatException('凭据字段错误');
+      }
+      final credential = AcademicCredential(studentId: studentId.trim(), password: password);
+      return credential.isValid ? credential : null;
+    } catch (_) {
+      try {
+        await _secretStore.delete(key);
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  Future<void> _writeByKey(String key, AcademicCredential credential) async {
+    if (!credential.isValid) throw const FormatException('教务凭据无效');
+    await _secretStore.write(
+      key,
+      jsonEncode(<String, String>{
+        'student_id': credential.studentId.trim(),
+        'password': credential.password,
+      }),
+    );
+  }
+
   static String? _keyFor(String appUserId) {
     final normalized = appUserId.trim();
     if (normalized.isEmpty) return null;
     final hash = sha256.convert(utf8.encode(normalized)).toString();
     return 'academic_credential_v1_$hash';
   }
+
+  static String _identityKeyFor(AcademicIdentityKey identity) =>
+      'academic_credential_v2_${identity.storageId}';
 }

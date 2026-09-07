@@ -82,8 +82,12 @@ final class AcademicRepositoryImpl implements AcademicRepository {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   }) {
-    return _guard(() => _active.getCourses(year: year, semester: semester));
+    return _guard(() => _active.getCourses(
+          year: year,
+          semester: semester,
+        ));
   }
 
   @override

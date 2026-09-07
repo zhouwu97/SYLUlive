@@ -12,6 +12,8 @@ final class RawCourse {
     required this.section,
     required this.weekDay,
     required this.weekExpression,
+    this.periodOrder,
+    this.periodLabel,
   });
 
   final String name;
@@ -21,10 +23,15 @@ final class RawCourse {
   final String weekDay;
   final String weekExpression;
 
+  /// Provider 的稳定排课序号。研究生课表的标签不是本科数字节次，
+  /// 因此兼容层必须同时保留学校返回的序号和原始标签。
+  final int? periodOrder;
+  final String? periodLabel;
+
   /// Python/Dart 差分使用的稳定字段命名。
   Map<String, Object> toCanonicalJson() {
     final parsedWeeks = WeekParser.parse(weekExpression);
-    return {
+    final canonical = <String, Object>{
       'name': name,
       'teacher': teacher,
       'location': location,
@@ -33,5 +40,9 @@ final class RawCourse {
       'weekExpression': parsedWeeks.raw,
       'weeks': parsedWeeks.weeks.toList()..sort(),
     };
+    if (periodOrder != null) canonical['periodOrder'] = periodOrder!;
+    final label = periodLabel?.trim();
+    if (label != null && label.isNotEmpty) canonical['periodLabel'] = label;
+    return canonical;
   }
 }

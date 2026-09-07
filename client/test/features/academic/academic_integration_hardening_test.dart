@@ -542,11 +542,13 @@ void main() {
     await expectLater(
       provider.getCourses('2026', 3),
       throwsA(
-        isA<ProtocolChangedException>().having(
-          (error) => error.message,
-          'message',
-          '本机课表记录缺少有效节次',
-        ),
+        isA<ParseException>()
+            .having((error) => error.code, 'code', 'COURSE_SECTION_INVALID')
+            .having(
+              (error) => error.message,
+              'message',
+              '本机课表记录的节次字段无法映射',
+            ),
       ),
     );
 
@@ -679,6 +681,7 @@ final class _FakeAcademicRepository implements AcademicRepository {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   }) async {
     courseCalls++;
     calls.add('courses');

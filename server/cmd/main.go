@@ -156,7 +156,7 @@ func main() {
 	var err error
 
 	if strings.TrimSpace(cfg.DSN) == "" {
-		log.Fatal("DATABASE_DSN 不能为空，后端仅支持 PostgreSQL")
+		log.Fatal("DSN 不能为空，后端仅支持 PostgreSQL")
 	}
 
 	db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
@@ -190,6 +190,8 @@ func main() {
 	if err := db.AutoMigrate(
 
 		&models.User{},
+		&models.AcademicIdentityBinding{},
+		&models.AcademicIdentityChallenge{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
@@ -794,6 +796,26 @@ func main() {
 	)
 
 	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
+	graduateProviderBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("GRADUATE_PROVIDER_BASE_URL")), "/")
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release") {
+		if strings.TrimSpace(os.Getenv("ACADEMIC_CHALLENGE_KEY")) == "" {
+			log.Fatal("release 模式必须设置 ACADEMIC_CHALLENGE_KEY")
+		}
+		if graduateProviderBaseURL != "" && graduateProviderBaseURL != "https://yjsgl.sylu.edu.cn" {
+			log.Fatal("release 模式的研究生教务 Provider origin 必须固定为 https://yjsgl.sylu.edu.cn")
+		}
+	}
+	academicIdentityHandler, err := handlers.NewAcademicIdentityHandler(db, os.Getenv("ACADEMIC_CHALLENGE_KEY"))
+	if err != nil {
+		log.Fatal("初始化教务身份 challenge 失败:", err)
+	}
+	graduateIdentityProvider, err := handlers.NewGraduateAcademicIdentityProvider(graduateProviderBaseURL)
+	if err != nil {
+		log.Fatal("初始化研究生教务 Provider 失败:", err)
+	}
+	if err := academicIdentityHandler.SetProvider(graduateIdentityProvider); err != nil {
+		log.Fatal("注册研究生教务 Provider 失败:", err)
+	}
 	deviceJobService := services.NewDeviceJobService(db)
 	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
 	aiUserPermissionService := services.NewAIUserPermissionService(db)
@@ -1931,6 +1953,12 @@ func main() {
 	r.POST("/api/upload_multiple", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.UploadMultiple)
 
 	// 教务系统路由
+	// Provider-aware 身份路由只保存最小学生身份；研究生学校会话与密码不进入 Go 服务端持久层。
+	studentIdentity := r.Group("/api/student-identity")
+	studentIdentity.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	studentIdentity.POST("/challenge", academicIdentityHandler.CreateChallenge)
+	studentIdentity.POST("/verify", academicIdentityHandler.Verify)
+	studentIdentity.GET("", academicIdentityHandler.List)
 
 	edu := r.Group("/api/edu")
 	if cfg.SchoolAuthorityRetired {

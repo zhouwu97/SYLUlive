@@ -739,6 +739,7 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   }) async {
     courseCalls++;
     calls.add('course');

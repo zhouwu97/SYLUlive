@@ -31,7 +31,12 @@ abstract final class AccountCacheNamespace {
     return 'physical/${fingerprint(appUserId)}/needs_resync/v2';
   }
 
-  static String scheduleNeedsResync(String appUserId) {
-    return 'schedule/${fingerprint(appUserId)}/needs_resync/v1';
+  static String scheduleNeedsResync(
+    String appUserId, {
+    String? identityNamespace,
+  }) {
+    final identity = identityNamespace?.trim() ?? '';
+    if (identity.isEmpty) return 'schedule/${fingerprint(appUserId)}/needs_resync/v1';
+    return 'schedule/${fingerprint(appUserId)}/${fingerprint(identity)}/needs_resync/v1';
   }
 }

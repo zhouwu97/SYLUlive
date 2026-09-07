@@ -38,6 +38,14 @@ class _AcademicRequirementOverviewState
         isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
     final subColor =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final modules = widget.requirements?.modules ?? const [];
+    final moduleIdCounts = <String, int>{};
+    for (final module in modules) {
+      final id = module.id.trim();
+      if (id.isNotEmpty) {
+        moduleIdCounts[id] = (moduleIdCounts[id] ?? 0) + 1;
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
@@ -74,12 +82,11 @@ class _AcademicRequirementOverviewState
           // 内容
           if (widget.isLoading && !widget.hasCache) ...[
             ...List.generate(3, (_) => _buildSkeletonCard(isDark)),
-          ] else if (widget.requirements != null &&
-              widget.requirements!.modules.isNotEmpty) ...[
-            for (final module in widget.requirements!.modules)
+          ] else if (modules.isNotEmpty) ...[
+            for (final entry in modules.asMap().entries)
               AcademicRequirementCard(
-                key: ValueKey(module.id),
-                module: module,
+                key: _moduleKey(entry.value, entry.key, moduleIdCounts),
+                module: entry.value,
               ),
           ] else if (widget.errorMessage != null && !widget.hasCache) ...[
             _buildErrorCard(
@@ -114,6 +121,22 @@ class _AcademicRequirementOverviewState
         ],
       ),
     );
+  }
+
+  Key _moduleKey(
+    EduCreditRequirementModule module,
+    int index,
+    Map<String, int> idCounts,
+  ) {
+    final id = module.id.trim();
+    if (id.isNotEmpty && idCounts[id] == 1) {
+      return ValueKey(id);
+    }
+
+    // 学校接口偶尔会缺失或复用模块 ID。索引只用于异常数据的消歧，正常
+    // 唯一 ID 仍保持原有 Key，避免刷新时丢失卡片展开状态。
+    final fallbackIdentity = id.isNotEmpty ? id : module.name.trim();
+    return ValueKey('academic-module:$fallbackIdentity:$index');
   }
 
   Widget _buildSkeletonCard(bool isDark) {

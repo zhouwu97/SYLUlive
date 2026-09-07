@@ -4,8 +4,8 @@ import 'package:dio/dio.dart';
 
 /// 可安全展示给用户或附加到排障报告的 transport 摘要。
 ///
-/// 这里只保存请求阶段、Dio 异常类型、底层异常类型、目标 host 和 errno，
-/// 明确不复制 headers、Cookie、请求体或响应体。
+/// 这里只保存请求阶段、Dio 异常类型、底层异常类型、目标 host、HTTP 状态码
+/// 和 errno，明确不复制 headers、Cookie、请求体或响应体。
 final class SafeTransportDiagnostic {
   const SafeTransportDiagnostic({
     required this.operation,
@@ -13,6 +13,7 @@ final class SafeTransportDiagnostic {
     required this.dioType,
     required this.innerType,
     required this.host,
+    this.statusCode,
     this.socketErrorCode,
     this.tlsReason,
     this.tlsDetail,
@@ -26,12 +27,15 @@ final class SafeTransportDiagnostic {
     String? tlsDetail,
   }) {
     final inner = error.error;
+    final status = error.response?.statusCode;
     return SafeTransportDiagnostic(
       operation: operation,
       code: code,
       dioType: error.type.name,
       innerType: inner?.runtimeType.toString() ?? 'none',
       host: error.requestOptions.uri.host,
+      statusCode:
+          status != null && status >= 100 && status <= 599 ? status : null,
       socketErrorCode:
           inner is SocketException ? inner.osError?.errorCode : null,
       tlsReason: tlsReason,
@@ -61,6 +65,7 @@ final class SafeTransportDiagnostic {
   final String dioType;
   final String innerType;
   final String host;
+  final int? statusCode;
   final int? socketErrorCode;
   final String? tlsReason;
   final String? tlsDetail;
@@ -76,6 +81,9 @@ final class SafeTransportDiagnostic {
     ];
     if (socketErrorCode != null) {
       lines.add('errno: $socketErrorCode');
+    }
+    if (statusCode != null) {
+      lines.add('http: $statusCode');
     }
     if (tlsReason != null) {
       lines.add('reason: $tlsReason');

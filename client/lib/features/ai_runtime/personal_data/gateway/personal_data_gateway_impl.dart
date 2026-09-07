@@ -39,6 +39,14 @@ class PersonalDataGatewayFactory {
   }) {
     final snapshotStore = _snapshotStoreBuilder?.call(context) ??
         AesGcmAccountScopedSnapshotStore(appUserId: context.appUserId);
+    // 教务数据与课表按完整身份建立独立物理保险箱；二课和体测继续使用
+    // App 账号保险箱，避免切换教务 Provider 时覆盖或串读课程数据。
+    final academicSnapshotStore = context.identityNamespace == null
+        ? snapshotStore
+        : AesGcmAccountScopedSnapshotStore(
+            appUserId: context.appUserId,
+            identityNamespace: context.identityNamespace,
+          );
     final erkeStore = ErkeCacheStore(
       appUserId: context.appUserId,
       sourceAccountId: context.sourceAccountId,
@@ -52,18 +60,20 @@ class PersonalDataGatewayFactory {
     final scheduleStore = ScheduleCacheStore(
       appUserId: context.appUserId,
       sourceAccountId: context.sourceAccountId,
-      snapshotStore: snapshotStore,
+      snapshotStore: academicSnapshotStore,
+      identityNamespace: context.identityNamespace,
       persistenceGate: RegistryAcademicPersistenceGate(context.appUserId),
     );
     final academicStore = AcademicCacheStore(
       appUserId: context.appUserId,
       sourceAccountId: context.sourceAccountId,
-      snapshotStore: snapshotStore,
+      snapshotStore: academicSnapshotStore,
+      identityNamespace: context.identityNamespace,
       persistenceGate: RegistryAcademicPersistenceGate(context.appUserId),
     );
     return PersonalDataGatewayImpl(
       context: context,
-      snapshotStore: snapshotStore,
+      snapshotStore: academicSnapshotStore,
       erkeAdapter: ErkeGatewayAdapter(
         snapshotStore: snapshotStore,
         context: context,

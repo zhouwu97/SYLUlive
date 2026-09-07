@@ -158,6 +158,7 @@ var (
 	errEduStudentAlreadyBound      = errors.New("该学号已绑定其他账号")
 	errEduStudentIdentityImmutable = errors.New("已认证学生不能绑定其他学号")
 	errEduBindingStudentMismatch   = errors.New("待提交教务绑定的学号不一致")
+	errEduStudentProfileMismatch   = errors.New("学校返回的学生身份与请求不一致")
 )
 
 type eduStatusResult struct {
@@ -257,6 +258,10 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 		return errors.New("教务授权代次无效")
 	}
 	studentID = strings.TrimSpace(studentID)
+	// 客户端声明的学号只能作为查询参数，最终身份必须来自学校 profile 的 xh/student_id。
+	if strings.TrimSpace(result.StudentID) == "" || strings.TrimSpace(result.StudentID) != studentID {
+		return errEduStudentProfileMismatch
+	}
 	now := time.Now()
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var user models.User
@@ -288,6 +293,9 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 		updates := map[string]interface{}{
 			"student_id":                     studentID,
 			"student_verified_at":            now,
+			"academic_provider_id":           models.AcademicProviderUndergraduate,
+			"student_verification_method":    "school_profile",
+			"student_verification_version":   "legacy-v1",
 			"edu_student_id":                 studentID,
 			"edu_authorized":                 true,
 			"edu_session_state":              "active",
@@ -311,6 +319,11 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 			updates["account_status"] = "active"
 		}
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+			return err
+		}
+		// 旧本科绑定已经由 Python 返回学校 profile；同步写入 provider-aware 身份表，
+		// 同时保留 User.StudentID / EduStudentID 供旧客户端读取。
+		if err := persistAcademicIdentityBinding(tx, userID, models.AcademicProviderUndergraduate, studentID, now, "school_profile", "legacy-v1"); err != nil {
 			return err
 		}
 		if err := tx.Model(&models.EduCredentialCleanupJob{}).
@@ -493,6 +506,8 @@ func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 
 // BindEduInput 绑定教务输入
 type BindEduInput struct {
+	// ProviderID 为空时保持旧本科客户端兼容；显式指定研究生必须走 /api/student-identity。
+	ProviderID             string `json:"provider_id"`
 	StudentID              string `json:"student_id" binding:"required,len=10"`
 	Password               string `json:"password" binding:"required"`
 	EduDataConsentAccepted bool   `json:"edu_data_consent_accepted"`
@@ -505,6 +520,10 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	var input BindEduInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+	if providerID := strings.TrimSpace(input.ProviderID); providerID != "" && providerID != models.AcademicProviderUndergraduate {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "研究生教务不能使用本科绑定接口", "code": "ACADEMIC_PROVIDER_ROUTE_UNSUPPORTED"})
 		return
 	}
 	if !input.EduDataConsentAccepted {
@@ -539,8 +558,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 	if err := updateUserEduBinding(h.db, userID, input.StudentID, result, generation, true); err != nil {
 		h.compensateFailedEduBinding(userID, generation)
-		if errors.Is(err, errEduStudentAlreadyBound) {
+		if errors.Is(err, errEduStudentAlreadyBound) || errors.Is(err, errAcademicIdentityAlreadyBound) {
 			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+			return
+		}
+		if errors.Is(err, errEduStudentProfileMismatch) {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回的学生身份与请求不一致", "code": "EDU_IDENTITY_MISMATCH"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
@@ -837,8 +860,10 @@ func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
 
 // PreVerifyInput 注册前验证教务输入
 type PreVerifyInput struct {
-	StudentID string `json:"student_id" binding:"required,len=10"`
-	Password  string `json:"password" binding:"required"`
+	// ProviderID 为空时保持旧本科注册流程兼容；研究生不允许进入旧 Python 预验证代理。
+	ProviderID string `json:"provider_id"`
+	StudentID  string `json:"student_id" binding:"required,len=10"`
+	Password   string `json:"password" binding:"required"`
 }
 
 // PreVerify 注册前验证教务账号（不依赖用户登录状态）
@@ -846,6 +871,10 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 	var input PreVerifyInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if providerID := strings.TrimSpace(input.ProviderID); providerID != "" && providerID != models.AcademicProviderUndergraduate {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "研究生教务不能使用本科预验证接口", "code": "ACADEMIC_PROVIDER_ROUTE_UNSUPPORTED"})
 		return
 	}
 

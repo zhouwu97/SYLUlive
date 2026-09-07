@@ -1,12 +1,21 @@
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
+import 'academic_provider.dart';
+
 /// UI 和业务层可处理的教务失败类别。
 enum AcademicFailureKind {
   invalidCredentials,
+  accountRejected,
+  accountRestricted,
   captchaRequired,
   captchaExpired,
+  challengeRejected,
+  authRejectedAmbiguous,
   sessionExpired,
   unauthenticated,
+  identityMismatch,
+  disconnected,
+  localCredentialRequired,
   network,
   protocolChanged,
   courseUnavailable,
@@ -28,6 +37,13 @@ final class AcademicFailure implements Exception {
 
   factory AcademicFailure.fromException(Object error) {
     if (error is AcademicFailure) return error;
+    if (error is AcademicAuthFailure) {
+      return AcademicFailure(
+        kind: _kindForAuthFailure(error.type),
+        message: error.message,
+        code: 'ACADEMIC_AUTH_${error.type.name.toUpperCase()}',
+      );
+    }
     if (error is JiaowuException) {
       return AcademicFailure(
         kind: _kindForException(error),
@@ -80,11 +96,18 @@ final class AcademicFailure implements Exception {
   final SafeTransportDiagnostic? diagnostic;
 
   bool get isRetryable => switch (kind) {
-        AcademicFailureKind.invalidCredentials => false,
+      AcademicFailureKind.invalidCredentials => false,
+        AcademicFailureKind.accountRejected => false,
+        AcademicFailureKind.accountRestricted => false,
         AcademicFailureKind.captchaRequired => true,
         AcademicFailureKind.captchaExpired => true,
+        AcademicFailureKind.challengeRejected => true,
+        AcademicFailureKind.authRejectedAmbiguous => true,
         AcademicFailureKind.sessionExpired => true,
         AcademicFailureKind.unauthenticated => true,
+        AcademicFailureKind.identityMismatch => false,
+        AcademicFailureKind.disconnected => false,
+        AcademicFailureKind.localCredentialRequired => false,
         AcademicFailureKind.network => true,
         AcademicFailureKind.protocolChanged => false,
         AcademicFailureKind.courseUnavailable => true,
@@ -124,6 +147,27 @@ final class AcademicFailure implements Exception {
     }
     if (error is NetworkException) return AcademicFailureKind.network;
     return AcademicFailureKind.unexpected;
+  }
+
+  static AcademicFailureKind _kindForAuthFailure(AcademicAuthFailureType type) {
+    return switch (type) {
+      AcademicAuthFailureType.credentialMissing =>
+        AcademicFailureKind.localCredentialRequired,
+      AcademicAuthFailureType.credentialRejected =>
+        AcademicFailureKind.invalidCredentials,
+      AcademicAuthFailureType.accountRejected =>
+        AcademicFailureKind.accountRejected,
+      AcademicAuthFailureType.accountRestricted =>
+        AcademicFailureKind.accountRestricted,
+      AcademicAuthFailureType.challengeRequired =>
+        AcademicFailureKind.captchaRequired,
+      AcademicAuthFailureType.challengeRejected =>
+        AcademicFailureKind.challengeRejected,
+      AcademicAuthFailureType.authRejectedAmbiguous =>
+        AcademicFailureKind.authRejectedAmbiguous,
+      AcademicAuthFailureType.sessionExpired => AcademicFailureKind.sessionExpired,
+      AcademicAuthFailureType.identityMismatch => AcademicFailureKind.identityMismatch,
+    };
   }
 
   static AcademicFailure _fromLoginNetwork(String message, Object? cause) {

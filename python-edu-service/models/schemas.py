@@ -72,6 +72,8 @@ class PreVerifyResponse(BaseModel):
     message: str
     code: Optional[str] = None
     student_id: Optional[str] = None
+    # 独立解析自学校 profile；旧 student_id 字段仍保留兼容调用方。
+    school_verified_student_id: Optional[str] = None
     name: Optional[str] = None
 
 

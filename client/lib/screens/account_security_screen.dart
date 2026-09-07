@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
+import '../features/academic/domain/academic_provider.dart';
+import '../features/academic/domain/academic_repository.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../widgets/campus/campus_theme.dart';
@@ -337,12 +339,19 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
 
     final localAcademic = context.watch<AcademicSessionController>();
     final profileError = localAcademic.hasProfileError;
+    final usesLocalAcademic =
+        localAcademic.sourceKind == AcademicSourceKind.local;
+    final isGraduateAcademic =
+        localAcademic.providerId == AcademicProviderId.syluGraduate;
+    final supportsGrades = localAcademic.capabilities.supportsGrades;
+    final eduProvider = context.watch<EduProvider>();
+    final academicBound = eduProvider.isBound;
     final effectiveStudentId = _studentId;
     // 学生身份属于 App 账号，不随教务会话过期或撤销授权而消失。
     final effectiveStudentVerified = _security?['student_verified'] == true ||
         context.watch<AuthProvider>().user?.studentVerified == true;
-    final eduAuthorized = context.watch<EduProvider>().isAuthorized ||
-        _security?['edu_authorized'] == true;
+    final eduAuthorized =
+        eduProvider.isAuthorized || _security?['edu_authorized'] == true;
     final loginMethods = (_security?['login_methods'] as List? ?? const [])
         .map((method) => method == 'student_id' ? '学号' : '邮箱')
         .join('、');
@@ -392,7 +401,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务系统状态',
-              subtitle: '服务器加密保存登录凭据，支持自动重新登录',
+              subtitle: usesLocalAcademic
+                  ? '本机直连教务，会话材料仅保存在设备安全存储或内存中'
+                  : '新身份路径只保存确认状态，旧兼容部署可能保存必要凭据',
               trailing: SettingsStatusBadge(
                 label: localAcademic.isAuthenticated ? '已连接' : '未连接',
                 type: localAcademic.isAuthenticated
@@ -460,21 +471,33 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               icon: localAcademic.isAuthenticated
                   ? Icons.phonelink_lock_outlined
                   : Icons.phonelink_outlined,
-              title: localAcademic.isAuthenticated ? '教务账号已连接' : '绑定教务账号',
+              title: localAcademic.isAuthenticated
+                  ? '教务账号已连接'
+                  : academicBound
+                      ? '教务账号已绑定'
+                      : '绑定教务账号',
               subtitle: localAcademic.isAuthenticated
-                  ? '学号 ${localAcademic.studentId ?? '--'}；服务器负责恢复登录'
-                  : '绑定后可读取课表、成绩，重新登录 App 后可恢复绑定',
+                  ? '学号 ${localAcademic.studentId ?? '--'}；${usesLocalAcademic ? '本机会话已连接' : '身份绑定可在登录后恢复'}'
+                  : academicBound
+                      ? isGraduateAcademic
+                          ? '身份已确认；本机会话未恢复，点击重新登录即可拉取研究生课表'
+                          : '身份已确认；本机会话未恢复，点击重新登录即可拉取教务资料'
+                      : isGraduateAcademic
+                          ? '绑定后可读取研究生教务课表，重新登录 App 后可恢复本机会话'
+                          : '绑定后可读取课表、成绩，重新登录 App 后可恢复教务连接',
               trailing: SettingsStatusBadge(
                 label: profileError
                     ? '资料失败'
                     : localAcademic.isAuthenticated
                         ? '在线'
-                        : localAcademic.isAwaitingCaptcha
-                            ? '待验证码'
-                            : localAcademic.status ==
-                                    AcademicSessionStatus.error
-                                ? '需重试'
-                                : '未连接',
+                        : academicBound
+                            ? '待恢复'
+                            : localAcademic.isAwaitingCaptcha
+                                ? '待验证码'
+                                : localAcademic.status ==
+                                        AcademicSessionStatus.error
+                                    ? '需重试'
+                                    : '未连接',
                 type: profileError
                     ? SettingsStatusBadgeType.warning
                     : localAcademic.isAuthenticated
@@ -495,10 +518,12 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 subtitle: '撤销服务器授权并清理登录凭据，保留已认证学号',
                 onTap: _revokeAcademicAuthorization,
               ),
-            const SettingsTile(
+            SettingsTile(
               icon: Icons.hub_outlined,
               title: '本机教务资料缓存',
-              subtitle: '课表、成绩按 App 账号隔离并加密缓存，用于离线查看',
+              subtitle: supportsGrades
+                  ? '课表、成绩按 App 账号隔离并加密缓存，用于离线查看'
+                  : '研究生课表按 App 账号和教务身份隔离并加密缓存，用于离线查看',
               showChevron: false,
             ),
           ],

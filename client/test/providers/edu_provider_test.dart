@@ -527,6 +527,7 @@ final class _FakeAcademicRepository implements AcademicRepository {
   Future<CourseFetchResult> getCourses({
     required String year,
     required int semester,
+    String? providerTermId,
   }) async {
     if (courseGate != null) await courseGate!.future;
     return courses;

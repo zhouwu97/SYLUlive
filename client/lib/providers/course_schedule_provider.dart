@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/domain/academic_failure.dart';
+import '../features/academic/domain/academic_provider.dart';
 import '../features/academic/domain/academic_repository.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/campus_data/storage/schedule_cache_store.dart';
@@ -29,6 +30,10 @@ class CourseBlock {
   final List<int> weeks;
   final String? note;
 
+  /// Provider 原始排课行序和标签；本科课程没有这组字段。
+  final int? periodOrder;
+  final String? periodLabel;
+
   const CourseBlock({
     required this.id,
     required this.courseCode,
@@ -41,25 +46,40 @@ class CourseBlock {
     required this.endSection,
     required this.weeks,
     this.note,
+    this.periodOrder,
+    this.periodLabel,
   });
 
   int get span => endSection - startSection + 1;
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'course_code': courseCode,
-        'name': name,
-        'teacher': teacher,
-        'location': location,
-        'color': color,
-        'weekday': weekday,
-        'start_section': startSection,
-        'end_section': endSection,
-        'weeks': weeks,
-        'note': note,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{
+      'id': id,
+      'course_code': courseCode,
+      'name': name,
+      'teacher': teacher,
+      'location': location,
+      'color': color,
+      'weekday': weekday,
+      'start_section': startSection,
+      'end_section': endSection,
+      'weeks': weeks,
+      'note': note,
+    };
+    if (periodOrder != null) json['period_order'] = periodOrder;
+    final label = periodLabel?.trim();
+    if (label != null && label.isNotEmpty) json['period_label'] = label;
+    return json;
+  }
 
   factory CourseBlock.fromJson(Map<String, dynamic> json) {
+    final rawPeriodOrder = json['period_order'] ?? json['periodOrder'];
+    final periodOrder = switch (rawPeriodOrder) {
+      num value => value.toInt(),
+      _ => int.tryParse(rawPeriodOrder?.toString().trim() ?? ''),
+    };
+    final rawPeriodLabel =
+        (json['period_label'] ?? json['periodLabel'])?.toString().trim();
     return CourseBlock(
       id: (json['id'] as num?)?.toInt() ?? 0,
       courseCode: json['course_code']?.toString() ?? '',
@@ -79,6 +99,10 @@ class CourseBlock {
               .toList() ??
           [],
       note: json['note']?.toString(),
+      periodOrder: periodOrder,
+      periodLabel: rawPeriodLabel == null || rawPeriodLabel.isEmpty
+          ? null
+          : rawPeriodLabel,
     );
   }
 }
@@ -127,6 +151,7 @@ class _ScheduleOperationContext {
     required this.storeReady,
     required this.year,
     required this.semester,
+    this.providerTermId,
   });
 
   final int generation;
@@ -136,6 +161,7 @@ class _ScheduleOperationContext {
   final Future<void> storeReady;
   final String year;
   final int semester;
+  final String? providerTermId;
 }
 
 /// 课表会话从认证身份到本地快照可用的阶段。
@@ -159,12 +185,14 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   String? _userId;
   String? _sourceAccountId;
+  String? _identityNamespace;
   ScheduleCacheStore? _scheduleStore;
   Future<void> _scheduleStoreReady = Future<void>.value();
   int _contextGeneration = 0;
   ScheduleSessionPhase _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _disposed = false;
 
   // 学期管理
   CourseTerm? _currentTerm;
@@ -196,6 +224,35 @@ class CourseScheduleProvider extends ChangeNotifier {
   bool get isSessionReady => _sessionPhase == ScheduleSessionPhase.ready;
   int get contextGeneration => _contextGeneration;
 
+  /// 研究生 Provider 的节次标签不是本科课表的数字时钟，布局必须保留
+  /// Provider 行序；即使当前学期没有课程，也不能回退到本科时间轴。
+  bool get usesProviderPeriodLayout =>
+      _academicSessionController?.providerId ==
+          AcademicProviderId.syluGraduate ||
+      _courses.any(
+        (course) =>
+            course.periodOrder != null ||
+            (course.periodLabel?.trim().isNotEmpty ?? false),
+      );
+
+  /// 返回课表网格需要的行数。本科保持历史 12 节；研究生按原始行序扩展，
+  /// 支持稀疏节次和超过 12 行的学校课表。
+  int get periodSlotCount {
+    if (!usesProviderPeriodLayout) return 12;
+    var maxOrder = -1;
+    var maxSection = 0;
+    for (final course in _courses) {
+      final order = course.periodOrder;
+      if (order != null && order >= 0 && order > maxOrder) {
+        maxOrder = order;
+      }
+      if (course.endSection > maxSection) maxSection = course.endSection;
+    }
+    final countFromOrder = maxOrder + 1;
+    final count = countFromOrder > maxSection ? countFromOrder : maxSection;
+    return count > 0 ? count : 1;
+  }
+
   /// 页面层用于绑定一次性加载状态的稳定会话标识。
   ///
   /// 空来源账号是有意保留的：它表示认证用户已知，但教务身份仍在恢复，
@@ -212,6 +269,12 @@ class CourseScheduleProvider extends ChangeNotifier {
         _academicRepository = academicRepository,
         _academicSessionController = academicSessionController {
     _initDefaults();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   void _initDefaults() {
@@ -239,12 +302,15 @@ class CourseScheduleProvider extends ChangeNotifier {
   void syncSessionContext(String? userId, String? sourceAccountId) {
     final normalizedUserId = userId?.trim() ?? '';
     final normalizedSourceAccountId = sourceAccountId?.trim() ?? '';
+    final normalizedIdentityNamespace =
+        _academicSessionController?.identity?.storageId;
     if (normalizedUserId.isEmpty) {
       clearAllUserState();
       return;
     }
     if (_userId == normalizedUserId &&
-        _sourceAccountId == normalizedSourceAccountId) {
+        _sourceAccountId == normalizedSourceAccountId &&
+        _identityNamespace == normalizedIdentityNamespace) {
       return;
     }
 
@@ -259,6 +325,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _lastFetchedAt = null;
     _userId = normalizedUserId;
     _sourceAccountId = normalizedSourceAccountId;
+    _identityNamespace = normalizedIdentityNamespace;
     _currentTerm = CourseTerm.inferCurrentTerm();
 
     _scheduleStore = normalizedSourceAccountId.isEmpty
@@ -266,6 +333,7 @@ class CourseScheduleProvider extends ChangeNotifier {
         : ScheduleCacheStore(
             appUserId: normalizedUserId,
             sourceAccountId: normalizedSourceAccountId,
+            identityNamespace: normalizedIdentityNamespace,
             snapshotStore: _snapshotStoreBuilder?.call(normalizedUserId),
             persistenceGate: RegistryAcademicPersistenceGate(normalizedUserId),
           );
@@ -290,7 +358,9 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   bool _isCurrentSession(int generation, ScheduleCacheStore store) {
-    return generation == _contextGeneration && identical(store, _scheduleStore);
+    return !_disposed &&
+        generation == _contextGeneration &&
+        identical(store, _scheduleStore);
   }
 
   /// 打开当前会话的保险箱并完成一次本地恢复。
@@ -309,6 +379,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       _sessionPhase = ScheduleSessionPhase.restoringCache;
       notifyListeners();
 
+      await _restoreSelectedTerm(generation, store);
+      if (!_isCurrentSession(generation, store)) return;
       await loadSemesterStart();
       await loadArchiveList();
       await loadCachedCoursesIfAvailable();
@@ -326,11 +398,32 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _restoreSelectedTerm(
+    int generation,
+    ScheduleCacheStore store,
+  ) async {
+    final selected = await store.readSelectedTerm();
+    if (!_isCurrentSession(generation, store) || selected == null) return;
+    try {
+      final term = CourseTerm.fromJson(selected);
+      if (term.id.trim().isEmpty ||
+          term.year.trim().isEmpty ||
+          term.semester <= 0 ||
+          term.title.trim().isEmpty) {
+        return;
+      }
+      _currentTerm = term;
+    } catch (error) {
+      debugPrint('恢复课表选中学期失败: ${error.runtimeType}');
+    }
+  }
+
   /// 彻底清空当前用户所有内存状态（用于登出场景）
   void clearAllUserState() {
     _contextGeneration++;
     _userId = null;
     _sourceAccountId = null;
+    _identityNamespace = null;
     _scheduleStore = null;
     _scheduleStoreReady = Future<void>.value();
     _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
@@ -365,16 +458,19 @@ class CourseScheduleProvider extends ChangeNotifier {
       storeReady: _scheduleStoreReady,
       year: selectedTerm.year,
       semester: selectedTerm.semester,
+      providerTermId: selectedTerm.providerTermId,
     );
   }
 
   bool _isCurrentOperation(_ScheduleOperationContext context) {
-    return context.generation == _contextGeneration &&
+    return !_disposed &&
+        context.generation == _contextGeneration &&
         context.appUserId == _userId &&
         context.sourceAccountId == (_sourceAccountId ?? '') &&
         identical(context.store, _scheduleStore) &&
         context.year == selectedYear &&
-        context.semester == selectedSemester;
+        context.semester == selectedSemester &&
+        context.providerTermId == currentTerm.providerTermId;
   }
 
   Future<ScheduleCacheStore?> _resolveOperationStore(
@@ -457,6 +553,21 @@ class CourseScheduleProvider extends ChangeNotifier {
       return _isCurrentOperation(context);
     } catch (error) {
       debugPrint('保存加密学期起始日期失败: ${error.runtimeType}');
+      return false;
+    }
+  }
+
+  Future<bool> _saveOperationSelectedTerm(
+    _ScheduleOperationContext context,
+    CourseTerm term,
+  ) async {
+    final store = await _resolveOperationStore(context);
+    if (store == null) return false;
+    try {
+      await store.writeSelectedTerm(term.toJson());
+      return _isCurrentOperation(context);
+    } catch (error) {
+      debugPrint('保存加密选中学期失败: ${error.runtimeType}');
       return false;
     }
   }
@@ -627,26 +738,51 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   static Map<String, dynamic> _rawCourseToFetchedMap(RawCourse course) {
-    final sections = _parseSectionRange(
-      course.section,
-      message: '本机课表记录缺少有效节次',
-    );
+    final hasProviderPeriod = course.periodOrder != null ||
+        (course.periodLabel?.trim().isNotEmpty ?? false);
+    late final int startSection;
+    late final int endSection;
+    if (hasProviderPeriod) {
+      final periodOrder = course.periodOrder;
+      final periodLabel = course.periodLabel?.trim();
+      if (periodOrder == null ||
+          periodOrder < 0 ||
+          periodLabel == null ||
+          periodLabel.isEmpty) {
+        throw const ProtocolChangedException(message: '本机课表记录缺少研究生节次元数据');
+      }
+      // 网格只需要稳定行序；研究生原标签不具备本科数字节次语义。
+      startSection = periodOrder + 1;
+      endSection = startSection;
+    } else {
+      final sections = _parseSectionRange(
+        course.section,
+        message: '本机课表记录缺少有效节次',
+      );
+      startSection = sections.start;
+      endSection = sections.end;
+    }
     final weekday = int.tryParse(course.weekDay.trim());
     if (weekday == null || weekday < 1 || weekday > 7) {
       throw const ProtocolChangedException(message: '本机课表记录缺少有效星期');
     }
     final canonical = course.toCanonicalJson();
-    return {
+    final mapped = <String, dynamic>{
       'course_code': canonical['courseCode'] ?? canonical['course_code'] ?? '',
       'name': course.name,
       'teacher': course.teacher,
       'location': course.location,
       'weekday': weekday,
-      'start_section': sections.start,
-      'end_section': sections.end,
+      'start_section': startSection,
+      'end_section': endSection,
       'weekExpression': canonical['weekExpression'] ?? course.weekExpression,
       'weeks': canonical['weeks'] ?? const <int>[],
     };
+    if (hasProviderPeriod) {
+      mapped['period_order'] = course.periodOrder;
+      mapped['period_label'] = course.periodLabel!.trim();
+    }
+    return mapped;
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
@@ -690,6 +826,20 @@ class CourseScheduleProvider extends ChangeNotifier {
       message: '课表记录缺少结束节次',
       fallback: time,
     );
+
+    final periodOrder = _optionalInt(map, [
+      'period_order',
+      'periodOrder',
+    ]);
+    final periodLabel = _firstString(map, [
+      'period_label',
+      'periodLabel',
+    ]);
+    final hasProviderPeriod = periodOrder != null || periodLabel.isNotEmpty;
+    if (hasProviderPeriod &&
+        (periodOrder == null || periodOrder < 0 || periodLabel.isEmpty)) {
+      throw const ProtocolChangedException(message: '课表记录的研究生节次元数据无效');
+    }
 
     final weekday = _requiredInt(
       map,
@@ -739,6 +889,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       startSection: time,
       endSection: endTime,
       weeks: weeks,
+      periodOrder: periodOrder,
+      periodLabel: periodLabel.isEmpty ? null : periodLabel,
     );
   }
 
@@ -799,6 +951,19 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     if (fallback != null) return fallback;
     throw ProtocolChangedException(message: message);
+  }
+
+  int? _optionalInt(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value.trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
   }
 
   static ({int start, int end}) _parseSectionRange(
@@ -945,6 +1110,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           final fetched = await localController.loadCourses(
             year: operation.year,
             semester: operation.semester,
+            providerTermId: operation.providerTermId,
           );
           if (fetched == null) {
             if (!_isCurrentOperation(operation)) return;
@@ -1196,6 +1362,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       weeks: weeks,
       color: oldCourse.color,
       note: oldCourse.note,
+      periodOrder: oldCourse.periodOrder,
+      periodLabel: oldCourse.periodLabel,
     );
 
     _courses[idx] = course;
@@ -1242,6 +1410,12 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_userId == null) return false;
 
     _currentTerm = term;
+    final operation = _captureOperationContext(term);
+    if (operation == null ||
+        operation.store == null ||
+        !await _saveOperationSelectedTerm(operation, term)) {
+      return false;
+    }
     _courses = [];
     _gridData = {};
     _hiddenCourseIds = {};
@@ -1290,7 +1464,11 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     _currentTerm = term;
     final operation = _captureOperationContext(term);
-    if (operation == null || operation.store == null) return 0;
+    if (operation == null ||
+        operation.store == null ||
+        !await _saveOperationSelectedTerm(operation, term)) {
+      return 0;
+    }
 
     final snapshot = await _loadOperationSnapshot(operation);
     if (!_isCurrentOperation(operation)) return 0;

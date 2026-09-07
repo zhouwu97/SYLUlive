@@ -8,6 +8,7 @@ class CoursePreviewSheet extends StatelessWidget {
   final List<Map<String, dynamic>> courses;
   final String year;
   final int semester;
+  final String? termTitle;
   final EduProvider eduProvider;
 
   const CoursePreviewSheet({
@@ -15,6 +16,7 @@ class CoursePreviewSheet extends StatelessWidget {
     required this.courses,
     required this.year,
     required this.semester,
+    this.termTitle,
     required this.eduProvider,
   });
 
@@ -23,6 +25,7 @@ class CoursePreviewSheet extends StatelessWidget {
     required List<Map<String, dynamic>> courses,
     required String year,
     required int semester,
+    String? termTitle,
     required EduProvider eduProvider,
   }) {
     return showModalBottomSheet<bool>(
@@ -33,6 +36,7 @@ class CoursePreviewSheet extends StatelessWidget {
         courses: courses,
         year: year,
         semester: semester,
+        termTitle: termTitle,
         eduProvider: eduProvider,
       ),
     );
@@ -92,7 +96,8 @@ class CoursePreviewSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$year-${int.parse(year) + 1} 第${semester == 3 ? "一" : "二"}学期课表',
+                        termTitle ??
+                            '$year-${int.parse(year) + 1} 第${semester == 3 ? "一" : "二"}学期课表',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,

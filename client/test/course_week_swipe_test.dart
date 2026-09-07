@@ -246,7 +246,8 @@ void main() {
 
   // 当前日期早于开学 → 锚定到第 1 周
   testWidgets('开学日在未来时 page0 就是第1周', (tester) async {
-    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday =
+        _mondayOf(DateTime.now()).add(const Duration(days: 21));
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     final controller =
@@ -259,7 +260,8 @@ void main() {
   });
 
   testWidgets('第1周向前(右滑)不能进入第0周', (tester) async {
-    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday =
+        _mondayOf(DateTime.now()).add(const Duration(days: 21));
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
     expect(find.text('第 1 周'), findsOneWidget);
     final before = _weekHeaderText(tester);
@@ -277,7 +279,8 @@ void main() {
   });
 
   testWidgets('第1周向后(左滑)进入第2周', (tester) async {
-    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday =
+        _mondayOf(DateTime.now()).add(const Duration(days: 21));
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     final controller =
@@ -296,7 +299,8 @@ void main() {
   });
 
   testWidgets('第2周向前(右滑)返回第1周', (tester) async {
-    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday =
+        _mondayOf(DateTime.now()).add(const Duration(days: 21));
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
@@ -317,8 +321,8 @@ void main() {
   testWidgets('最后一周不能再向后(左滑)', (tester) async {
     const maxWeek = 20; // CourseTerm 默认值
     final lastWeekMonday = _mondayOf(DateTime.now());
-    final semesterStart = lastWeekMonday
-        .subtract(Duration(days: (maxWeek - 1) * 7));
+    final semesterStart =
+        lastWeekMonday.subtract(Duration(days: (maxWeek - 1) * 7));
     final page = await _pumpCourse(tester, semesterStart: semesterStart);
 
     final controller =
@@ -376,8 +380,45 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(headerDuring - headerBefore,
-        closeTo(cardDuring - cardBefore, 0.5));
+    expect(headerDuring - headerBefore, closeTo(cardDuring - cardBefore, 0.5));
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('研究生稀疏及超过本科范围的行序使用中性时间轴', (tester) async {
+    final page = await _pumpCourse(
+      tester,
+      seededCourses: [
+        <String, dynamic>{
+          'id': 1,
+          'course_code': 'G-1',
+          'name': '研究生上午课',
+          'weekday': 1,
+          'start_section': 3,
+          'end_section': 3,
+          'period_order': 2,
+          'period_label': '上午3',
+          'weeks': <int>[1, 2, 3],
+        },
+        <String, dynamic>{
+          'id': 2,
+          'course_code': 'G-2',
+          'name': '研究生晚间课',
+          'weekday': 2,
+          'start_section': 15,
+          'end_section': 15,
+          'period_order': 14,
+          'period_label': '下午8',
+          'weeks': <int>[1, 2, 3],
+        },
+      ],
+    );
+
+    expect(find.text('上午3'), findsOneWidget);
+    expect(find.text('下午8'), findsOneWidget);
+    expect(find.text('时段 1'), findsOneWidget);
+    expect(find.text('时段 4'), findsOneWidget);
+    expect(find.text('08:00'), findsNothing);
 
     await _disposeCourse(tester, page);
   });
@@ -387,6 +428,7 @@ Future<_CourseTestPage> _pumpCourse(
   WidgetTester tester, {
   bool configureSemesterStart = true,
   DateTime? semesterStart,
+  List<Map<String, dynamic>>? seededCourses,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -438,22 +480,23 @@ Future<_CourseTestPage> _pumpCourse(
   await store.writeCourses(
     year: scheduleProvider.currentTerm.year,
     semester: scheduleProvider.currentTerm.semester,
-    courses: [
-      <String, dynamic>{
-        'id': 1,
-        'course_code': 'C1',
-        'name': '高等数学',
-        'teacher': '张老师',
-        'location': 'A101',
-        'color': '#6366F1',
-        'weekday': 1,
-        'start_section': 1,
-        'end_section': 2,
-        'weeks': <int>[
-          for (var w = 1; w <= 20; w++) w,
+    courses: seededCourses ??
+        [
+          <String, dynamic>{
+            'id': 1,
+            'course_code': 'C1',
+            'name': '高等数学',
+            'teacher': '张老师',
+            'location': 'A101',
+            'color': '#6366F1',
+            'weekday': 1,
+            'start_section': 1,
+            'end_section': 2,
+            'weeks': <int>[
+              for (var w = 1; w <= 20; w++) w,
+            ],
+          },
         ],
-      },
-    ],
   );
   if (configureSemesterStart) {
     await scheduleProvider.setSemesterStart(semesterStart ?? DateTime.now());

@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import '../campus/campus_theme.dart';
 import '../../models/course_term.dart';
 import '../../providers/edu_provider.dart';
+import '../../features/academic/domain/academic_provider.dart';
 
 class CourseImportResult {
   final List<Map<String, dynamic>> courses;
   final String year;
   final int semester;
+  final CourseTerm term;
 
   CourseImportResult({
     required this.courses,
     required this.year,
     required this.semester,
+    required this.term,
   });
 }
 
@@ -56,6 +60,9 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
   late String _selectedYear;
   late int _selectedSemester;
   bool _isFetching = false;
+  bool _loadingTerms = false;
+  bool _termLoadFailed = false;
+  String? _errorMessage;
   String _statusText = '正在连接教务系统…';
   Timer? _statusTimer;
 
@@ -70,13 +77,9 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
     _selectedYear = widget.initialYear ?? currentTerm.year;
     _selectedSemester = widget.initialSemester ?? currentTerm.semester;
 
-    // 如果生成的列表中不包含推断出的学期，则默认选中第一项
-    if (!_terms.any(
-        (t) => t.year == _selectedYear && t.semester == _selectedSemester)) {
-      if (_terms.isNotEmpty) {
-        _selectedYear = _terms.first.year;
-        _selectedSemester = _terms.first.semester;
-      }
+    _selectInitialTerm();
+    if (widget.eduProvider.isUsingLocalAcademicSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadProviderTerms());
     }
   }
 
@@ -112,65 +115,139 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
     });
   }
 
+  void _selectInitialTerm() {
+    CourseTerm? selected;
+    for (final term in _terms) {
+      if (term.year == _selectedYear && term.semester == _selectedSemester) {
+        selected = term;
+        break;
+      }
+    }
+    selected ??= _terms.cast<CourseTerm?>().firstWhere(
+          (term) => term?.isCurrent == true,
+          orElse: () => _terms.isEmpty ? null : _terms.first,
+        );
+    if (selected == null) return;
+    _selectedYear = selected.year;
+    _selectedSemester = selected.semester;
+  }
+
+  Future<void> _loadProviderTerms() async {
+    if (!mounted || _loadingTerms) return;
+    setState(() {
+      _loadingTerms = true;
+      _termLoadFailed = false;
+      _errorMessage = null;
+    });
+    final result = await widget.eduProvider.getAcademicTerms();
+    if (!mounted) return;
+    if (result == null ||
+        !result.success ||
+        result.data == null ||
+        result.data!.isEmpty) {
+      setState(() {
+        _loadingTerms = false;
+        _termLoadFailed = true;
+        _terms = const <CourseTerm>[];
+        _errorMessage = '无法获取学校学期列表，请重试';
+      });
+      return;
+    }
+    final mapped = result.data!
+        .where((term) => term.providerTermId.trim().isNotEmpty)
+        .map(_mapAcademicTerm)
+        .toList(growable: false);
+    if (mapped.isEmpty) {
+      setState(() {
+        _loadingTerms = false;
+        _termLoadFailed = true;
+        _terms = const <CourseTerm>[];
+        _errorMessage = '学校学期列表缺少有效标识，请重试';
+      });
+      return;
+    }
+    setState(() {
+      _terms = mapped;
+      _loadingTerms = false;
+      _termLoadFailed = false;
+      _errorMessage = null;
+      _selectInitialTerm();
+    });
+  }
+
+  CourseTerm _mapAcademicTerm(AcademicTerm term) {
+    final providerTermId = term.providerTermId.trim();
+    final digest = sha256.convert(utf8.encode(providerTermId)).toString();
+    final year = term.localYear?.trim().isNotEmpty == true
+        ? term.localYear!.trim()
+        : 'provider_${digest.substring(0, 12)}';
+    return CourseTerm(
+      id: 'provider_$digest',
+      year: year,
+      semester: term.localSemester ?? 1,
+      title: term.displayName.trim().isEmpty
+          ? providerTermId
+          : term.displayName.trim(),
+      providerTermId: providerTermId,
+      isCurrent: term.isCurrent,
+    );
+  }
+
   Future<void> _fetchCourses() async {
+    if (_loadingTerms || _terms.isEmpty) return;
     setState(() {
       _isFetching = true;
+      _termLoadFailed = false;
+      _errorMessage = null;
     });
     _startStatusTimer();
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navContext = context;
 
     try {
-      final result = await widget.eduProvider
-          .getCourses(_selectedYear, _selectedSemester);
-
-      _statusTimer?.cancel();
+      final selectedTerm = _terms.firstWhere(
+        (term) =>
+            term.year == _selectedYear && term.semester == _selectedSemester,
+      );
+      final result = await widget.eduProvider.getCourses(
+        _selectedYear,
+        _selectedSemester,
+        providerTermId: selectedTerm.providerTermId,
+      );
 
       if (mounted) {
         if (result != null && result.success && result.data != null) {
-          Navigator.pop(
-              navContext,
-              CourseImportResult(
-                courses: result.data!,
-                year: _selectedYear,
-                semester: _selectedSemester,
-              ));
+          Navigator.of(context).pop(CourseImportResult(
+            courses: result.data!,
+            year: _selectedYear,
+            semester: _selectedSemester,
+            term: selectedTerm,
+          ));
           return;
-        } else {
-          Navigator.pop(navContext); // 关闭当前Sheet
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                result?.errorMessage ?? '获取课表失败，请稍后重试或重新绑定教务账号',
-              ),
-              backgroundColor: CampusTheme.red,
-            ),
-          );
         }
+        _setError(result?.errorMessage);
       }
     } on TimeoutException {
+      _setError('教务响应超时，请稍后重试');
+    } catch (_) {
+      // 原始异常可能包含学校响应或会话材料，不能直接展示到 UI。
+      _setError('获取课表失败，请检查本机教务会话后重试');
+    } finally {
       _statusTimer?.cancel();
-      if (mounted) {
-        Navigator.pop(navContext);
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('教务响应超时，请稍后重试'),
-            backgroundColor: CampusTheme.red,
-          ),
-        );
-      }
-    } catch (e) {
-      _statusTimer?.cancel();
-      if (mounted) {
-        Navigator.pop(navContext);
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('获取课表异常：$e'),
-            backgroundColor: CampusTheme.red,
-          ),
-        );
+      if (mounted && _isFetching) {
+        setState(() => _isFetching = false);
       }
     }
+  }
+
+  void _setError(String? message) {
+    if (!mounted) return;
+    final normalized = message?.trim();
+    setState(() {
+      _isFetching = false;
+      _termLoadFailed = false;
+      _errorMessage = normalized == null || normalized.isEmpty
+          ? '获取课表失败，请检查本机教务会话后重试'
+          : normalized;
+    });
   }
 
   @override
@@ -251,7 +328,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                       ),
                     ),
                     child: ListTile(
-                      onTap: _isFetching
+                      onTap: _isFetching || _loadingTerms
                           ? null
                           : () {
                               setState(() {
@@ -280,14 +357,64 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                 },
               ),
             ),
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                  decoration: BoxDecoration(
+                    color: CampusTheme.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: CampusTheme.red.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.error_outline_rounded,
+                          size: 19,
+                          color: CampusTheme.red,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: CampusTheme.red,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _isFetching
+                            ? null
+                            : (_termLoadFailed
+                                ? _loadProviderTerms
+                                : _fetchCourses),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(24),
               child: ElevatedButton(
-                onPressed: _isFetching ? null : _fetchCourses,
+                onPressed: _isFetching || _loadingTerms || _terms.isEmpty
+                    ? null
+                    : _fetchCourses,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: CampusTheme.primary,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: CampusTheme.primary.withValues(alpha: 0.8),
+                  disabledBackgroundColor:
+                      CampusTheme.primary.withValues(alpha: 0.8),
                   disabledForegroundColor: Colors.white,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 50),
@@ -295,11 +422,11 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: _isFetching
-                    ? Row(
+                child: _loadingTerms
+                    ? const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(
+                          SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
@@ -307,24 +434,40 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                               color: Colors.white,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Text(
-                            _statusText,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
+                          SizedBox(width: 12),
+                          Text('正在获取学校学期…'),
                         ],
                       )
-                    : const Text(
-                        '拉取课表',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    : _isFetching
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                _statusText,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            _errorMessage == null ? '拉取课表' : '再次拉取课表',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
               ),
             ),
           ],

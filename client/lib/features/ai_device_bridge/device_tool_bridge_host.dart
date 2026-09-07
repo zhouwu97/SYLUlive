@@ -113,6 +113,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         PersonalAccountContext(
           appUserId: appUserId,
           sourceAccountId: sourceAccountId,
+          identityNamespace: _edu.academicIdentityNamespace,
         ),
       ),
       createAutomationGateway: () => _createAutomationGateway(
@@ -135,6 +136,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       PersonalAccountContext(
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
+        identityNamespace: _edu.academicIdentityNamespace,
       ),
     );
     final sync = EduProviderPersonalAcademicSyncGateway(_edu);
@@ -177,6 +179,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
     final store = AcademicCacheStore(
       appUserId: appUserId,
       sourceAccountId: sourceAccountId,
+      identityNamespace: _edu.academicIdentityNamespace,
     );
     try {
       final snapshot = await store.readSnapshot();
@@ -465,8 +468,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
         performed: false,
         message: result.message ?? '二课更新失败',
         errorCode: switch (result.failureReason) {
-          PersonalSyncFailureReason.networkUnavailable =>
-            'network_unavailable',
+          PersonalSyncFailureReason.networkUnavailable => 'network_unavailable',
           PersonalSyncFailureReason.refreshIncomplete => 'refresh_incomplete',
           _ => 'device_refresh_failed',
         },

@@ -7,10 +7,10 @@ import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -193,6 +193,86 @@ void main() {
         files.values.values.map((bytes) => utf8.decode(bytes)).join('\n');
     expect(storedText, isNot(contains('数据结构')));
     expect(storedText, isNot(contains('20240001')));
+  });
+
+  test('同一 App 用户的本科和研究生成绩使用独立物理身份分区', () async {
+    const undergraduate = AcademicIdentityKey(
+      appUserId: 'app-user-a',
+      providerId: AcademicProviderId.syluUndergraduate,
+      studentId: 'U-001',
+    );
+    const graduate = AcademicIdentityKey(
+      appUserId: 'app-user-a',
+      providerId: AcademicProviderId.syluGraduate,
+      studentId: 'G-001',
+    );
+    final undergraduateVault = AesGcmAccountScopedSnapshotStore(
+      appUserId: 'app-user-a',
+      identityNamespace: undergraduate.storageId,
+      secureStore: secureStore,
+      fileBackend: files,
+      randomBytes: random.call,
+    );
+    final graduateVault = AesGcmAccountScopedSnapshotStore(
+      appUserId: 'app-user-a',
+      identityNamespace: graduate.storageId,
+      secureStore: secureStore,
+      fileBackend: files,
+      randomBytes: random.call,
+    );
+    final undergraduateStore = AcademicCacheStore(
+      appUserId: undergraduate.appUserId,
+      sourceAccountId: undergraduate.studentId,
+      sourceSystem: undergraduate.providerId.value,
+      identityNamespace: undergraduate.storageId,
+      snapshotStore: undergraduateVault,
+    );
+    final graduateStore = AcademicCacheStore(
+      appUserId: graduate.appUserId,
+      sourceAccountId: graduate.studentId,
+      sourceSystem: graduate.providerId.value,
+      identityNamespace: graduate.storageId,
+      snapshotStore: graduateVault,
+    );
+
+    await undergraduateStore.writeGrades(
+      year: '2026',
+      semester: 3,
+      grades: <Map<String, dynamic>>[_gradePayload('本科课程', '90')],
+    );
+    await graduateStore.writeGrades(
+      year: '2026',
+      semester: 3,
+      grades: <Map<String, dynamic>>[_gradePayload('研究生课程', '88')],
+    );
+
+    expect(
+      (await undergraduateStore.readSnapshot())!
+          .terms['2026_3']!
+          .grades
+          .single['name'],
+      '本科课程',
+    );
+    expect(
+      (await graduateStore.readSnapshot())!
+          .terms['2026_3']!
+          .grades
+          .single['name'],
+      '研究生课程',
+    );
+    expect(undergraduateVault.storageNamespace,
+        isNot(graduateVault.storageNamespace));
+    expect(files.values.keys, hasLength(2));
+    expect(
+      secureStore.values.keys,
+      contains(
+        'ai_personal_vault_key/${undergraduateVault.storageNamespace}/v1',
+      ),
+    );
+    expect(
+      secureStore.values.keys,
+      contains('ai_personal_vault_key/${graduateVault.storageNamespace}/v1'),
+    );
   });
 
   test('成绩不同学期并发写入后全部保留', () async {

@@ -10,7 +10,10 @@ void main() {
     final adapter = QueuedHttpAdapter([
       const QueuedHttpResponse(
         statusCode: 200,
-        body: '<div id="col_xm"><p>李四</p></div>',
+        body: '<div id="col_xh"><p>2026000000</p></div>'
+            '<input id="xh_id" value="2026000000">'
+            '<input id="curXh_id" value="2026000000">'
+            '<div id="col_xm"><p>李四</p></div>',
       ),
     ]);
     final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))
@@ -94,7 +97,10 @@ void main() {
     final adapter = QueuedHttpAdapter([
       const QueuedHttpResponse(
         statusCode: 200,
-        body: '<div id="col_xm"><p>李四</p></div>',
+        body: '<div id="col_xh"><p>STUDENT_A</p></div>'
+            '<input id="xh_id" value="STUDENT_A">'
+            '<input id="curXh_id" value="STUDENT_A">'
+            '<div id="col_xm"><p>李四</p></div>',
       ),
     ]);
     final dio = Dio(BaseOptions(baseUrl: 'https://test.local'))

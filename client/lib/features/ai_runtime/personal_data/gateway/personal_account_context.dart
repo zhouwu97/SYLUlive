@@ -5,6 +5,7 @@ class PersonalAccountContext {
   PersonalAccountContext({
     required String appUserId,
     required String sourceAccountId,
+    this.identityNamespace,
   })  : appUserId = appUserId.trim(),
         sourceAccountId = sourceAccountId.trim() {
     if (this.appUserId.isEmpty || this.sourceAccountId.isEmpty) {
@@ -14,6 +15,9 @@ class PersonalAccountContext {
 
   final String appUserId;
   final String sourceAccountId;
+
+  /// 教务 Provider 的完整身份存储哈希；为空时使用历史 App 账号分区。
+  final String? identityNamespace;
 
   String get appUserFingerprint => AccountCacheNamespace.fingerprint(appUserId);
 }

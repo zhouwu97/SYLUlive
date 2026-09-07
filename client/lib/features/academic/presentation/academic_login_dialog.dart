@@ -8,6 +8,7 @@ import '../../../screens/legal_documents_screen.dart';
 import '../application/academic_session_controller.dart';
 import '../application/academic_login_coordinator.dart';
 import '../domain/academic_failure.dart';
+import '../domain/academic_provider.dart';
 import '../domain/academic_repository.dart';
 
 /// 教务登录入口，按实际数据源说明凭据保存方式并取得对应授权。
@@ -48,6 +49,62 @@ final class AcademicLoginDialog extends StatefulWidget {
   State<AcademicLoginDialog> createState() => _AcademicLoginDialogState();
 }
 
+/// 课表、成绩等本机读取入口共用的会话前置。
+///
+/// 先尝试 Artifact 或已保存凭据的无感恢复；只有确实需要用户输入时
+/// 才打开登录框，避免已绑定身份在读取数据时被误导成“重新绑定”。
+Future<bool> ensureAcademicSessionForRead(
+  BuildContext context, {
+  required AcademicSessionController controller,
+  AcademicLoginCoordinator? coordinator,
+}) async {
+  if (controller.isAuthenticated) return true;
+
+  final generation = controller.contextGeneration;
+  final appUserId = controller.appUserId;
+  // 用户已经点击了明确的教务读取入口，此时“已断开”可视为重新连接意图；
+  // 其他场景仍只走普通恢复，不由后台偷偷重连。
+  final restored = controller.connectionPreference ==
+          AcademicConnectionPreference.disconnected
+      ? await controller.reconnect()
+      : await controller.ensureAuthenticated();
+  if (!controller.isCurrentContext(
+    generation: generation,
+    appUserId: appUserId,
+  )) {
+    return false;
+  }
+  if (restored && controller.isAuthenticated) return true;
+
+  final loginCoordinator =
+      coordinator ?? AcademicLoginCoordinator(controller: controller);
+  final outcome = await loginCoordinator.ensureAuthenticated();
+  if (!controller.isCurrentContext(
+    generation: generation,
+    appUserId: appUserId,
+  )) {
+    return false;
+  }
+  if (controller.isAuthenticated) return true;
+  if (!context.mounted ||
+      outcome.kind == AcademicLoginOutcomeKind.contextChanged) {
+    return false;
+  }
+
+  final success = await AcademicLoginDialog.show(
+    context,
+    controller: controller,
+    coordinator: loginCoordinator,
+  );
+  if (!controller.isCurrentContext(
+    generation: generation,
+    appUserId: appUserId,
+  )) {
+    return false;
+  }
+  return success == true && controller.isAuthenticated;
+}
+
 class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   late final TextEditingController _studentIdController;
   late final TextEditingController _passwordController;
@@ -61,16 +118,34 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   bool _loadingPreferences = true;
   String? _savedCredentialStudentId;
   String? _coordinatorMessage;
+  String? _appliedCaptchaSuggestion;
+  late AcademicProviderId _selectedProviderId;
 
   AcademicSessionController get _controller => widget.controller;
+
+  /// 已由服务端确认的身份是登录目标的可信边界；本机会话过期时仍然
+  /// 复用它，避免把恢复操作误导成一次新的身份绑定。
+  AcademicIdentityKey? get _trustedIdentity {
+    final identity = _controller.identity;
+    return _controller.hasBoundIdentity && identity?.isValid == true
+        ? identity
+        : null;
+  }
+
+  bool get _identityLocked => _trustedIdentity != null;
 
   @override
   void initState() {
     super.initState();
-    _studentIdController =
-        TextEditingController(text: widget.initialStudentId ?? '');
+    final trustedIdentity = _trustedIdentity;
+    _studentIdController = TextEditingController(
+      text: trustedIdentity?.studentId ?? widget.initialStudentId ?? '',
+    );
     _passwordController = TextEditingController();
     _captchaController = TextEditingController();
+    _selectedProviderId = trustedIdentity?.providerId ??
+        widget.controller.providerId ??
+        AcademicProviderId.syluUndergraduate;
     _coordinator = widget.coordinator ??
         AcademicLoginCoordinator(controller: widget.controller);
     _studentIdController.addListener(_handleStudentIdChanged);
@@ -146,6 +221,9 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       saveCredentials: _saveCredentials,
       saveAcademicData: _saveAcademicData,
       useSavedCredential: _usingSavedCredential,
+      providerId: _controller.sourceKind == AcademicSourceKind.legacy
+          ? _selectedProviderId
+          : _controller.providerId,
     );
     if (!mounted) return;
     if (result.isSuccess && _controller.isProfileLoaded) {
@@ -189,6 +267,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         final isBusy = _controller.isBusy;
         final awaitingCaptcha = _controller.isAwaitingCaptcha;
         final challenge = _controller.captchaChallenge;
+        _applyCaptchaSuggestion(challenge);
         final profileError = _controller.hasProfileError;
         final failure = _controller.failure ??
             (profileError
@@ -200,6 +279,8 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                 : null);
         final serverBinding =
             _controller.sourceKind == AcademicSourceKind.legacy;
+        final selectingProvider =
+            serverBinding && _controller.providerId == null;
 
         return AlertDialog(
           title: Text(serverBinding ? '绑定教务账号' : '本机直连教务'),
@@ -216,21 +297,58 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   children: [
                     Text(
                       serverBinding
-                          ? '绑定后，沈理校园服务器将加密保存教务登录凭据，用于读取课表、成绩和自动重新登录。重新登录 App 后可恢复教务绑定。'
+                          ? '绑定只确认你在学校的教务身份。新身份路径不会保存学校密码或 Cookie，服务端按授权身份拉取可用教务数据；旧部署可能暂时使用兼容绑定。'
                           : '密码只用于本次学校登录，Cookie 仅保存在内存中。',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.lg),
+                    if (selectingProvider) ...[
+                      DropdownButtonFormField<AcademicProviderId>(
+                        initialValue: _selectedProviderId,
+                        decoration: const InputDecoration(
+                          labelText: '教务类型',
+                          prefixIcon: Icon(Icons.school_outlined),
+                        ),
+                        items: AcademicProviderId.values
+                            .map(
+                              (provider) => DropdownMenuItem(
+                                value: provider,
+                                child: Text(provider.displayName),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: isBusy || awaitingCaptcha
+                            ? null
+                            : (value) {
+                                if (value != null) {
+                                  setState(() => _selectedProviderId = value);
+                                }
+                              },
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    if (_identityLocked) ...[
+                      InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: '教务类型',
+                          prefixIcon: Icon(Icons.school_outlined),
+                          helperText: '身份已由学校教务确认，登录时不可切换类型',
+                        ),
+                        child: Text(_trustedIdentity!.providerId.displayName),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
                     TextFormField(
                       controller: _studentIdController,
-                      keyboardType: TextInputType.number,
+                      keyboardType: TextInputType.text,
                       textInputAction: TextInputAction.next,
                       autofillHints: const [AutofillHints.username],
-                      maxLength: 10,
                       enabled: !isBusy && !awaitingCaptcha,
-                      decoration: const InputDecoration(
+                      readOnly: _identityLocked,
+                      decoration: InputDecoration(
                         labelText: '教务学号',
-                        prefixIcon: Icon(Icons.badge_outlined),
+                        prefixIcon: const Icon(Icons.badge_outlined),
+                        helperText: _identityLocked ? '已绑定身份：学号由服务端确认' : null,
                       ),
                       validator: (value) =>
                           value == null || value.trim().isEmpty
@@ -280,7 +398,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         subtitle: const Text(
                           kIsWeb
                               ? '网页版不会保存教务密码或教务资料'
-                              : '课表、成绩等保存到当前 App 账号隔离的本地加密保险箱',
+                              : '教务资料保存到当前 App 账号隔离的本地加密保险箱',
                         ),
                         onChanged: kIsWeb ||
                                 isBusy ||
@@ -383,6 +501,29 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       },
     );
   }
+
+  /// 候选只在输入框为空时填入，用户手动修改后绝不覆盖；提交前仍要求
+  /// 对照验证码图片核对，模型概率不作为自动登录条件。
+  void _applyCaptchaSuggestion(CaptchaChallenge? challenge) {
+    final suggestion = challenge?.suggestedCode?.trim();
+    if (suggestion == null ||
+        suggestion.isEmpty ||
+        suggestion == _appliedCaptchaSuggestion) {
+      return;
+    }
+    _appliedCaptchaSuggestion = suggestion;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _controller.captchaChallenge?.suggestedCode != suggestion) {
+        return;
+      }
+      if (_captchaController.text.trim().isNotEmpty) return;
+      _captchaController.value = TextEditingValue(
+        text: suggestion,
+        selection: TextSelection.collapsed(offset: suggestion.length),
+      );
+    });
+  }
 }
 
 final class _CaptchaPanel extends StatelessWidget {
@@ -452,9 +593,12 @@ final class _CaptchaPanel extends StatelessWidget {
           controller: controller,
           enabled: enabled,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: '验证码',
-            prefixIcon: Icon(Icons.verified_outlined),
+            helperText: challenge?.suggestedCode == null
+                ? null
+                : '本机已填入候选：${challenge!.suggestedCode}，请核对图片后提交',
+            prefixIcon: const Icon(Icons.verified_outlined),
           ),
         ),
       ],

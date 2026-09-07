@@ -18,8 +18,12 @@ const (
 type User struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 	// 学号是经教务验证后的稳定学生身份。唯一性由显式 SQL 部分索引保证。
-	StudentID         string     `gorm:"size:20;default:''" json:"student_id"`
+	StudentID         string     `gorm:"size:64;default:''" json:"student_id"`
 	StudentVerifiedAt *time.Time `json:"-"`
+	// AcademicProviderID 与 StudentID 共同构成学生教务身份；空值表示历史账号尚未完成 Provider 迁移。
+	AcademicProviderID         AcademicProviderID `gorm:"column:academic_provider_id;size:64;default:'';index" json:"academic_provider_id,omitempty"`
+	StudentVerificationMethod  string             `gorm:"size:64;default:''" json:"-"`
+	StudentVerificationVersion string             `gorm:"size:32;default:''" json:"-"`
 	// AccountStatus 明确表示账号生命周期，注销后不再依赖伪造身份字段判断状态。
 	AccountStatus string     `gorm:"size:20;default:'active';index" json:"-"`
 	CancelledAt   *time.Time `json:"-"`

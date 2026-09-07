@@ -117,10 +117,15 @@ class AcademicCacheStore {
   AcademicCacheStore({
     required this.appUserId,
     required this.sourceAccountId,
+    this.sourceSystem = 'edu',
+    this.identityNamespace,
     AccountScopedSnapshotStore? snapshotStore,
     AcademicPersistenceGate? persistenceGate,
   })  : _snapshotStore = snapshotStore ??
-            AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
+            AesGcmAccountScopedSnapshotStore(
+              appUserId: appUserId,
+              identityNamespace: identityNamespace,
+            ),
         // 默认绑定账号策略；未知账号由 Registry 失败关闭，禁止意外落盘。
         persistenceGate =
             persistenceGate ?? RegistryAcademicPersistenceGate(appUserId);
@@ -133,6 +138,9 @@ class AcademicCacheStore {
 
   final String appUserId;
   final String sourceAccountId;
+  final String sourceSystem;
+  /// 完整 AcademicIdentityKey.storageId；为空时兼容旧 app 账号分区。
+  final String? identityNamespace;
   final AccountScopedSnapshotStore _snapshotStore;
   final AcademicPersistenceGate persistenceGate;
 
@@ -148,7 +156,7 @@ class AcademicCacheStore {
     }
     final encryptedSnapshot = await _snapshotStore.read(
       type: PersonalDataType.academic,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
     );
     if (encryptedSnapshot == null) return null;
@@ -371,7 +379,7 @@ class AcademicCacheStore {
     await AcademicPersistenceRegistry.waitUntilReady(appUserId);
     final snapshot = await _snapshotStore.read(
       type: PersonalDataType.academic,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
     );
     if (snapshot == null) return null;
@@ -396,7 +404,7 @@ class AcademicCacheStore {
     await _snapshotStore.write(
       type: PersonalDataType.academic,
       schemaVersion: schemaVersion,
-      sourceSystem: 'edu',
+      sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
       fetchedAt: now,
       expiresAt: now.add(_expiry),
@@ -406,7 +414,8 @@ class AcademicCacheStore {
 
   Future<T> _serializeMutation<T>(Future<T> Function() operation) {
     final queueKey =
-        '${_snapshotStore.accountFingerprint}/${PersonalDataType.academic.storageValue}';
+        '${_snapshotStore.accountFingerprint}/${identityNamespace ?? sourceSystem}|'
+        '${sourceAccountId.trim().toLowerCase()}/${PersonalDataType.academic.storageValue}';
     final previous = _mutationTails[queueKey] ?? Future<void>.value();
     final guarded = previous.then<T>((_) => operation());
     final tail = guarded.then<void>(

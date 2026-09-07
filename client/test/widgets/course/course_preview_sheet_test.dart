@@ -93,6 +93,26 @@ void main() {
     expect(find.text('第0-0节'), findsNothing);
   });
 
+  testWidgets('研究生预览显示学校原节次标签', (tester) async {
+    await pumpPreview(
+      tester,
+      courses: const [
+        {
+          'name': '研究生专题课',
+          'weekday': 1,
+          'start_section': 3,
+          'end_section': 3,
+          'period_order': 2,
+          'period_label': '上午3',
+          'weeks': [1, 2, 3],
+        },
+      ],
+    );
+
+    expect(find.text('上午3'), findsOneWidget);
+    expect(find.text('第3-3节'), findsNothing);
+  });
+
   testWidgets('深色和大字号下定位诊断文案可完整显示', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;

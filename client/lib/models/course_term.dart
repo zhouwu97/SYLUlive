@@ -3,6 +3,9 @@ class CourseTerm {
   final String year;
   final int semester;
   final String title;
+
+  /// 本机 Provider 对应的学校学期标识；旧本科学期为空。
+  final String? providerTermId;
   final DateTime? startDate;
   final DateTime? endDate;
   final int maxWeek;
@@ -13,6 +16,7 @@ class CourseTerm {
     required this.year,
     required this.semester,
     required this.title,
+    this.providerTermId,
     this.startDate,
     this.endDate,
     this.maxWeek = 20,
@@ -24,6 +28,7 @@ class CourseTerm {
     String? year,
     int? semester,
     String? title,
+    String? providerTermId,
     DateTime? startDate,
     DateTime? endDate,
     int? maxWeek,
@@ -34,6 +39,7 @@ class CourseTerm {
       year: year ?? this.year,
       semester: semester ?? this.semester,
       title: title ?? this.title,
+      providerTermId: providerTermId ?? this.providerTermId,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       maxWeek: maxWeek ?? this.maxWeek,
@@ -46,6 +52,7 @@ class CourseTerm {
         'year': year,
         'semester': semester,
         'title': title,
+        'provider_term_id': providerTermId,
         'start_date': startDate?.toIso8601String(),
         'end_date': endDate?.toIso8601String(),
         'max_week': maxWeek,
@@ -58,6 +65,7 @@ class CourseTerm {
       year: json['year'] as String,
       semester: json['semester'] as int,
       title: json['title'] as String,
+      providerTermId: json['provider_term_id'] as String?,
       startDate: json['start_date'] != null
           ? DateTime.parse(json['start_date'] as String)
           : null,

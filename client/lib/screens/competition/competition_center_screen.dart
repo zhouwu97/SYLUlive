@@ -66,6 +66,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   String? _eventsError;
   String? _stateError;
   int _deadlineSoonCount = 0;
+  int _registrationPendingCount = 0;
   int _eventTotal = 0;
   int _currentPage = 1;
   int _requestSerial = 0;
@@ -246,6 +247,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       setState(() {
         _deadlineSoonCount =
             (data['deadline_soon_count'] as num?)?.toInt() ?? 0;
+        _registrationPendingCount =
+            ((data['registration_pending_count'] ?? data['time_pending_count']) as num?)?.toInt() ?? 0;
         _overviewLoading = false;
       });
     } catch (error) {
@@ -555,6 +558,15 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return [
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
+      if (!_overviewLoading && _overviewError == null && _registrationPendingCount > 0)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            '$_registrationPendingCount 项报名时间待核实，截止提醒尚未覆盖。',
+            key: const Key('competition-registration-coverage'),
+            style: TextStyle(color: CompetitionUiTokens.subColor(isDark), fontSize: 12),
+          ),
+        ),
       CompetitionProfileCompactCard(
         isLoggedIn: context.watch<AuthProvider>().isLoggedIn,
         summary: _competitionDashboard,
@@ -824,7 +836,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         ('fit', '适合我'),
       ('deadline', '临近截止'),
       ('recognized', '学校认定'),
-      ('pending', '时间待公布'),
+      ('pending', '时间待核实'),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1055,7 +1067,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       case 'fit':
         return '适合我';
       case 'pending':
-        return '时间待公布';
+        return '时间待核实';
       case 'recommended':
         return '推荐关注';
       default:
@@ -1488,11 +1500,11 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           isDark: isDark,
                           children: [
                             _detailInfo(
-                              _competitionTimeLine(event)?.label ?? '报名安排',
-                              _competitionTimeLine(event)?.value ?? '时间待公布',
+                              '报名安排',
+                              competitionRegistrationText(event),
                               isDark,
                             ),
-                            _detailInfo('比赛时间', event.eventTimeText, isDark),
+                            _detailInfo('比赛时间', competitionEventTimeText(event), isDark),
                             _detailInfo(
                               '时间状态',
                               _competitionTimeStateLabel(event),
@@ -2596,9 +2608,12 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final now = DateTime.now();
     final planStatus = _calendarPlanStatus(item);
     final deadline = _parseCalendarDate(item['registration_end']);
+    final eventEnd = _parseCalendarDate(item['event_end']);
+    final isReference = const {'historical', 'estimated'}.contains(_calendarTimeStatus(item));
+    // 报名截止后仍可能正在备赛，只有比赛结束或用户主动完成才移入已结束。
     if (planStatus == 'finished' ||
         planStatus == 'archived' ||
-        (deadline != null && deadline.isBefore(now))) {
+        (!isReference && eventEnd != null && eventEnd.isBefore(now))) {
       return 'done';
     }
     final userDeadline = _parseCalendarDate(item['user_deadline']);
@@ -3344,75 +3359,13 @@ class _CompetitionShareImportScreenState
   }
 }
 
-class _CompetitionTimeLine {
-  final String label;
-  final String value;
-
-  const _CompetitionTimeLine({required this.label, required this.value});
-}
-
 /// 时间状态只用于展示文案，配色统一走 [CompetitionUiTokens]。
 String _competitionTimeStateLabel(CompetitionEvent event) {
-  final deadline = event.registrationEnd;
-  if (deadline != null) {
-    return deadline.isBefore(DateTime.now()) ? '已截止' : '已确认';
-  }
-
-  if (event.hasTimeStatus) {
-    switch (event.timeStatus) {
-      case 'confirmed':
-        return '已确认';
-      case 'estimated':
-        return '预计时间';
-      case 'historical':
-        return '往年参考';
-      default:
-        return '时间待公布';
-    }
-  }
-
-  final text = '${event.registrationTimeText} ${event.eventTimeText}';
-  if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
-    return '预计时间';
-  }
-  if (_containsAny(text, const ['往年', '历年', '通常', '一般', '参考'])) {
-    return '往年参考';
-  }
-  return '时间待公布';
-}
-
-_CompetitionTimeLine? _competitionTimeLine(CompetitionEvent event) {
-  if (event.registrationEnd != null) {
-    return _CompetitionTimeLine(label: '报名截止', value: _deadlineText(event));
-  }
-  if (event.registrationTimeText.trim().isNotEmpty) {
-    return _CompetitionTimeLine(
-      label: '报名窗口',
-      value: event.registrationTimeText.trim(),
-    );
-  }
-  if (event.eventTimeText.trim().isNotEmpty) {
-    return _CompetitionTimeLine(
-      label: '比赛时间',
-      value: event.eventTimeText.trim(),
-    );
-  }
-  if (event.sortMonth >= 1 && event.sortMonth <= 12) {
-    return _CompetitionTimeLine(label: '预计月份', value: '${event.sortMonth} 月左右');
-  }
-  return null;
+  return resolveCompetitionStatus(event, false).label;
 }
 
 bool _containsAny(String value, List<String> keywords) {
   return keywords.any(value.contains);
-}
-
-String _deadlineText(CompetitionEvent event) {
-  final dt = event.registrationEnd;
-  if (dt != null) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-  }
-  return event.registrationTimeText;
 }
 
 String _calendarItemTimeText(
@@ -3420,10 +3373,12 @@ String _calendarItemTimeText(
   String dateKey,
   String textKey,
 ) {
+  final text = '${item[textKey] ?? ''}'.trim();
+  if (text.isNotEmpty) return text;
   final rawDate = '${item[dateKey] ?? ''}'.trim();
   final parsed = DateTime.tryParse(rawDate);
   if (parsed != null) {
-    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+    return competitionDateText(parsed);
   }
   return '${item[textKey] ?? ''}'.trim();
 }
@@ -3437,9 +3392,9 @@ String _timeStatusLabel(String value) {
     case 'historical':
       return '往年参考';
     case 'pending':
-      return '时间待公布';
+      return '时间待核实';
     default:
-      return value.isEmpty ? '时间待公布' : value;
+      return value.isEmpty ? '时间待核实' : value;
   }
 }
 

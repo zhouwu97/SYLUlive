@@ -177,9 +177,9 @@ class _CompetitionCalendarItemDetailScreenState
       case 'historical':
         return '参考往届';
       case 'pending':
-        return '时间待公布';
+        return '时间待核实';
       default:
-        return '时间待公布';
+        return '时间待核实';
     }
   }
 
@@ -247,17 +247,18 @@ class _CompetitionCalendarItemDetailScreenState
     final description =
         cleanCompetitionDescription('${_item['description'] ?? ''}');
 
-    final regEnd = '${_item['registration_end'] ?? ''}';
-    final regText = '${_item['registration_time_text'] ?? ''}';
-    final regDisplay = regEnd.isNotEmpty
-        ? regEnd
-        : (regText.isNotEmpty ? regText : '原表未提供报名时间');
-
-    final evStart = '${_item['event_start'] ?? ''}';
-    final evText = '${_item['event_time_text'] ?? ''}';
-    final evDisplay = evStart.isNotEmpty
-        ? evStart
-        : (evText.isNotEmpty ? evText : '原表未提供比赛时间');
+    final schedule = CompetitionEvent(
+      id: 0, title: title,
+      registrationStart: DateTime.tryParse('${_item['registration_start'] ?? ''}'),
+      registrationEnd: DateTime.tryParse('${_item['registration_end'] ?? ''}'),
+      eventStart: DateTime.tryParse('${_item['event_start'] ?? ''}'),
+      eventEnd: DateTime.tryParse('${_item['event_end'] ?? ''}'),
+      registrationTimeText: '${_item['registration_time_text'] ?? ''}',
+      eventTimeText: '${_item['event_time_text'] ?? ''}',
+      timeStatus: _calendarTimeStatus(),
+    );
+    final regDisplay = competitionRegistrationText(schedule);
+    final evDisplay = competitionEventTimeText(schedule);
 
     final source = competitionSourceLabel('${_item['source_type'] ?? ''}');
     final planStatus = _planStatusLabel(_calendarPlanStatus());

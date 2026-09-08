@@ -443,7 +443,7 @@ class CompetitionEvent {
       case 'historical':
         return '往年参考';
       default:
-        return '时间待公布';
+        return '时间待核实';
     }
   }
 
@@ -480,7 +480,7 @@ class CompetitionEvent {
     if (sortMonth >= 1 && sortMonth <= 12) {
       return '$sortMonth 月左右';
     }
-    return '时间待公布';
+    return '时间待核实';
   }
 
   Map<String, dynamic> toJson() {

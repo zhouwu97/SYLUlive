@@ -129,7 +129,50 @@ FutureOr<ResponseBody> _catalogStub(RequestOptions options) {
 }
 
 void main() {
+  testWidgets('已报名计划不会因报名截止而进入已结束分组', (tester) async {
+    final now = DateTime.now();
+    final adapter = _CompetitionAdapter((options) {
+      if (options.path == '/user/competition-calendar') {
+        return _json({
+          'items': [
+            {
+              'id': 1,
+              'title': '仍在备赛',
+              'plan_status': 'registered',
+              'time_status': 'confirmed',
+              'registration_end':
+                  now.subtract(const Duration(days: 2)).toIso8601String(),
+              'event_end': now.add(const Duration(days: 7)).toIso8601String(),
+            }
+          ]
+        });
+      }
+      return _catalogStub(options);
+    });
+    await _pump(tester, _dio(adapter), const CompetitionCalendarScreen(),
+        loggedIn: true);
+    expect(find.text('现在该做'), findsOneWidget);
+    expect(find.text('已结束'), findsNothing);
+    expect(find.text('仍在备赛'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('CompetitionDetailScreen', () {
+    testWidgets('详情分别展示校内报名范围与比赛起止时刻', (tester) async {
+      final adapter = _CompetitionAdapter((options) => _json({
+            ..._event(7),
+            'registration_end': '2026-08-31T23:59:59+08:00',
+            'registration_time_text': '沈理报名截止8月31日；全国系统截止9月7日20:00',
+            'event_start': '2026-09-10T18:00:00+08:00',
+            'event_end': '2026-09-13T20:00:00+08:00',
+          }));
+      await _pump(
+          tester, _dio(adapter), const CompetitionDetailScreen(eventId: 7));
+      expect(find.text('沈理报名截止8月31日；全国系统截止9月7日20:00'), findsOneWidget);
+      expect(find.text('2026-09-10 18:00 至 2026-09-13 20:00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('详情加载失败时展示错误与重试入口，而不是一直转圈', (tester) async {
       var attempts = 0;
       final adapter = _CompetitionAdapter((options) {
@@ -175,6 +218,24 @@ void main() {
   });
 
   group('CompetitionCenterScreen 分页', () {
+    testWidgets('没有截止提醒时显示报名数据缺口', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        if (options.path == '/competitions/overview') {
+          return _json(
+              {'deadline_soon_count': 0, 'registration_pending_count': 310});
+        }
+        if (options.path == '/competitions/events') {
+          return _json({
+            'items': [_event(1)],
+            'total': 1
+          });
+        }
+        return _catalogStub(options);
+      });
+      await _pump(tester, _dio(adapter), const CompetitionCenterScreen());
+      expect(find.text('310 项报名时间待核实，截止提醒尚未覆盖。'), findsOneWidget);
+    });
+
     testWidgets('首页只保留一个竞赛档案组件并使用单行筛选', (tester) async {
       final adapter = _CompetitionAdapter((options) {
         if (options.path == '/competitions/events') {

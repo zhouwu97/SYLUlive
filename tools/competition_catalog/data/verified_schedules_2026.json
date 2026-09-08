@@ -1,0 +1,2727 @@
+{
+  "schema_version": "sylulive-competition-schedules/1",
+  "verified_on": "2026-09-08",
+  "sources": {
+    "cpipc_2026": {
+      "title": "中国研究生创新实践系列大赛2026年各主题赛事赛程安排",
+      "publisher": "中国学位与研究生教育学会",
+      "url": "https://cpipc.acge.org.cn/pw/preview/2c908017963932320196667af7071c51"
+    },
+    "gmcm_2026": {
+      "title": "“华为杯”第二十三届中国研究生数学建模竞赛参赛邀请函",
+      "publisher": "中国研究生数学建模竞赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/4/2c9080189dcfa24e019dddacc24a1314"
+    },
+    "innovation_2026": {
+      "title": "教育部关于举办中国国际大学生创新大赛（2026）的通知",
+      "publisher": "教育部",
+      "url": "https://www.moe.gov.cn/srcsite/A08/s5672/202607/t20260731_1445670.html"
+    },
+    "cumcm_2026": {
+      "title": "2026高教社杯全国大学生数学建模竞赛第一次通知",
+      "publisher": "中国工业与应用数学学会",
+      "url": "https://www.mcm.edu.cn/html_cn/node/d6fd7a0ee8f3a3d525e30af1c365fcec.html"
+    },
+    "dual_carbon_2026": {
+      "title": "第五届中国研究生“双碳”创新与创意大赛参赛邀请函",
+      "publisher": "中国学位与研究生教育学会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/list/2c90800c8093eef401809d348f8b0653/1"
+    },
+    "smart_city_2026": {
+      "title": "第十二届中国研究生智慧城市技术与创意设计大赛参赛通知",
+      "publisher": "中国研究生智慧城市技术与创意设计大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/list/1/1"
+    },
+    "sylu_3305": {
+      "title": "关于举办中国国际⼤学⽣创新⼤赛（2026）沈阳理⼯⼤学校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3305.htm"
+    },
+    "sylu_3301": {
+      "title": "关于组织参加2026年“高教社”杯全国大学生数学建模辽宁赛区竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3301.htm"
+    },
+    "sylu_3327": {
+      "title": "关于组织参加2026年第十一届“科云杯”财会职业能力大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3327.htm"
+    },
+    "sylu_3324": {
+      "title": "关于举办2026年全国高校俄语大赛校赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3324.htm"
+    },
+    "sylu_3325": {
+      "title": "关于组织参加2026年辽宁省大学生企业云服务开发者大赛（第五届）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3325.htm"
+    },
+    "sylu_3320": {
+      "title": "关于组织参加 2026 年第四届辽宁省大学生文化创意设计大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3320.htm"
+    },
+    "sylu_3317": {
+      "title": "关于组织参加2026年辽宁省大学生“体育+”创新创业大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3317.htm"
+    },
+    "sylu_3302": {
+      "title": "关于参加2026年辽宁省大学生智慧电力运行控制创新竞赛校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3302.htm"
+    },
+    "sylu_3304": {
+      "title": "关于组织参加第四届中国研究生企业管理创新大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3304.htm"
+    },
+    "sylu_3338": {
+      "title": "关于组织参加“华为杯”第二十三届中国研究生数学建模竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3338.htm"
+    },
+    "sylu_3299": {
+      "title": "关于举办2026年辽宁省大学生创新方法大赛校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3299.htm"
+    },
+    "sylu_3294": {
+      "title": "关于组织参加2026年辽宁省虚拟现实与新媒体创新设计大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3294.htm"
+    },
+    "sylu_3293": {
+      "title": "关于组织参加2026年辽宁省大学生交通科技大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm"
+    },
+    "sylu_3292": {
+      "title": "关于组织参加2026 辽宁省大学生第五届数字影像大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3292.htm"
+    },
+    "sylu_3291": {
+      "title": "关于举办第四届辽宁省大学生化学实验创新设计竞赛沈理工校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3291.htm"
+    },
+    "sylu_3284": {
+      "title": "关于组织参加2026年辽宁省普通高等学校大学生工业设计竞赛省级竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3284.htm"
+    },
+    "sylu_3258": {
+      "title": "关于组织参加2026年辽宁省高校中外大学生中华经典 诵写讲大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3258.htm"
+    },
+    "sylu_3242": {
+      "title": "关于组织参加第八届辽宁省大学生企业价值创造大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3242.htm"
+    },
+    "sylu_3240": {
+      "title": "关于组织参加2026年辽宁省大学生数学建模竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3240.htm"
+    },
+    "sylu_3224": {
+      "title": "关于组织参加 2026 年（第十三届)全国大学生物联网设计竞赛(东北区域赛)的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3224.htm"
+    },
+    "sylu_3212": {
+      "title": "2026年辽宁省移动应用开发大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3212.htm"
+    },
+    "sylu_3211": {
+      "title": "关于举办2026年辽宁省大学生“iTeach”数字化教育应用创新大赛校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3211.htm"
+    },
+    "sylu_3191": {
+      "title": "关于组织参加2026年辽宁省第六届三维数字化创新设计大的等通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3191.htm"
+    },
+    "sylu_3190": {
+      "title": "关于组织参加2026年辽宁省第七届产教融合创新创意项目大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3190.htm"
+    },
+    "sylu_3189": {
+      "title": "关于组织参加2026年第五届辽宁省大学生商业设计创意大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3189.htm"
+    },
+    "sylu_3177": {
+      "title": "关于组织辽宁省大学生智慧农业创新创业大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3177.htm"
+    },
+    "sylu_3175": {
+      "title": "关于组织参加第十二届CFCC智慧经济创新创业竞赛（辽宁区域赛）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3175.htm"
+    },
+    "sylu_3173": {
+      "title": "2026年辽宁省大学生工程实践与创新能力大赛的校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3173.htm"
+    },
+    "sylu_3169": {
+      "title": "关于组织参加第十五届“中国软件杯”大学生软件设计大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3169.htm"
+    },
+    "sylu_3168": {
+      "title": "关于组织参加2026年全国高等院校数智化企业经营沙盘大赛（辽宁赛区）总决赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3168.htm"
+    },
+    "sylu_3162": {
+      "title": "关于组织参加2026年辽宁省大学生管理决策模拟大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3162.htm"
+    },
+    "sylu_3157": {
+      "title": "关于组织参加2026年第七届辽宁省“中软国际—卓越杯”AI挑战赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3157.htm"
+    },
+    "sylu_3143": {
+      "title": "关于组织参加2026 年辽宁省睿抗机器人开发者大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3143.htm"
+    },
+    "sylu_3139": {
+      "title": "关于组织参加2026年辽宁省普通高等学校本科大学生无线电测定向大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3139.htm"
+    },
+    "sylu_3138": {
+      "title": "关于组织参加第三十八届韩素音国际翻译大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3138.htm"
+    },
+    "sylu_3107": {
+      "title": "关于组织参加第二十八届中国机器人及人工智能大赛  辽宁赛区选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3107.htm"
+    },
+    "sylu_3100": {
+      "title": "关于举办第二十一届全国大学生智能汽车竞赛校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3100.htm"
+    },
+    "sylu_3081": {
+      "title": "关于组织2026年第九届“外教社杯”全国高校学生跨文化能力大赛 沈阳理工大学校赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3081.htm"
+    },
+    "upln_2026_prov_133": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生社会工作实务技能大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match/details?comId=06bae1e11308fdfff2c2b30e92d23131",
+      "registration_window": {
+        "start": "2026-10-08T00:00:00+08:00",
+        "end": "2026-10-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_007": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "全国大学生广告艺术大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-30T00:00:00+08:00",
+        "end": "2026-10-11T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_151": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生智慧电力运行控制创新竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-16T00:00:00+08:00",
+        "end": "2026-10-07T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_120": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第五届辽宁省大学生高校舞蹈原创作品大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-10T00:00:00+08:00",
+        "end": "2026-09-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_001": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国国际大学生创新大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-08T00:00:00+08:00",
+        "end": "2026-09-14T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_155": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第五届辽宁省大学生“瑰宝传承”戏曲文化创新创意大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-08T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_147": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第七届辽宁省高校经济决策虚仿实验大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-07T10:00:00+08:00",
+        "end": "2026-10-17T18:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_107": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生食品与健康创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-04T00:00:00+08:00",
+        "end": "2026-10-23T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_106": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“辽宁故事”杯农特产品包装创新创意大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-01T00:08:08+08:00",
+        "end": "2026-10-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_109": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第七届辽宁省大学生农业经济建模大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-01T00:00:00+08:00",
+        "end": "2026-10-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_097": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省iCAN创新创业大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-09-01T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_033": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“科云杯”全国大学生财会职业能力大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-08-31T00:00:00+08:00",
+        "end": "2026-10-29T17:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_137": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生大数据应用与分析大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-08-26T00:00:00+08:00",
+        "end": "2026-09-30T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_009": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“西门子”杯中国智能制造挑战赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-08-25T00:00:00+08:00",
+        "end": "2026-09-17T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_126": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生动植物标本制作大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-08-25T00:00:00+08:00",
+        "end": "2026-09-18T14:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_114": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省创新方法大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-15T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_157": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生材料焊接与铸造工艺设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-15T00:00:00+08:00",
+        "end": "2026-10-20T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_139": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生数字影像大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-15T00:00:00+08:00",
+        "end": "2026-07-21T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_145": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第一届辽宁省大学生数智财经大数据分析与应用大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-15T00:00:00+08:00",
+        "end": "2026-09-30T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_012": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生市场调查与分析大赛暨全国大学生市场调查与分析大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-10T00:00:00+08:00",
+        "end": "2026-07-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_030": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生化学实验创新设计竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-10T00:00:00+08:00",
+        "end": "2026-09-12T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_129": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生“体育+”创新创业大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-10T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_028": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“外教社杯”全国高校学生跨文化能力大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-03T00:00:00+08:00",
+        "end": "2026-10-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_122": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生文化创意设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-01T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_152": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省高校师范生教学创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-07-01T00:00:00+08:00",
+        "end": "2026-07-23T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_088": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "全国大学生结构设计竞赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-22T00:00:00+08:00",
+        "end": "2026-07-10T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_142": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国大学生计算机博弈大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-18T23:00:00+08:00",
+        "end": "2026-06-18T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_111": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生BIM应用技能大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-18T00:00:00+08:00",
+        "end": "2026-08-31T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_158": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生旅游服务创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-17T00:00:00+08:00",
+        "end": "2026-09-15T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_138": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生交通科技大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-15T00:00:00+08:00",
+        "end": "2026-08-09T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_029": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生工业设计竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-05T00:00:00+08:00",
+        "end": "2026-07-05T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_118": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生虚拟现实与新媒体创新设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-05T00:00:00+08:00",
+        "end": "2026-09-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_119": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第九届辽宁省大学生主持人大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-05T00:00:00+08:00",
+        "end": "2026-09-08T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_135": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生管理决策模拟大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-01T00:00:00+08:00",
+        "end": "2026-08-20T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_022": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生物理实验竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-06-01T00:00:00+08:00",
+        "end": "2026-06-23T17:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_115": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生国潮文化设计应用比赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-26T00:00:00+08:00",
+        "end": "2026-09-13T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_143": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第五届辽宁省大学生企业云服务开发者大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-26T00:00:00+08:00",
+        "end": "2026-09-11T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_140": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生企业价值创造大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-21T00:00:00+08:00",
+        "end": "2026-06-01T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_149": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生数学建模竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-20T00:00:00+08:00",
+        "end": "2026-06-18T20:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_141": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国大学生材料热处理创新创业大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-15T00:01:01+08:00",
+        "end": "2026-06-16T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_015": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生工程实践与创新能力大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-15T00:00:00+08:00",
+        "end": "2026-10-13T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_099": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生化工设计创新创业竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-14T00:00:00+08:00",
+        "end": "2026-07-23T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_128": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“枫叶优体”杯辽宁省大学生中华优秀传统文化创新设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-14T00:00:00+08:00",
+        "end": "2026-06-21T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_105": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生“iTeach”数字化教育应用创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-14T00:00:00+08:00",
+        "end": "2026-09-18T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_148": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生建筑创新设计竞赛暨东北三省适老化建筑设计竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-12T00:00:00+08:00",
+        "end": "2026-11-30T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_025": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国高校智能机器人创意大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-11T00:00:00+08:00",
+        "end": "2026-06-20T17:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_127": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生智慧农业创新创业大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-11T00:00:00+08:00",
+        "end": "2026-05-26T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_117": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第十二届CFCC智慧经济创新创业竞赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-11T00:00:00+08:00",
+        "end": "2026-08-05T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_112": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“德泰·氢水杯”辽宁省大学生生态环保技术创新创业竞赛暨东北三省一区大学生生态环保作品竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-10T00:00:00+08:00",
+        "end": "2026-06-10T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_090": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "全国大学生测绘学科创新创业智能大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-10T00:00:00+08:00",
+        "end": "2026-05-22T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_010": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生三维数字化创新设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-05-08T00:00:00+08:00",
+        "end": "2026-07-20T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_113": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第七届辽宁省大学生产教融合创新创意项目大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-30T00:00:00+08:00",
+        "end": "2026-06-26T12:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_089": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生生命科学创新创业大赛暨全国大学生生命科学竞赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-28T00:00:00+08:00",
+        "end": "2026-06-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_027": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省高校大学生中华经典诵写讲大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-28T00:00:00+08:00",
+        "end": "2026-11-01T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_103": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生数字营销创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-28T00:00:00+08:00",
+        "end": "2026-06-14T13:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_136": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生无线电测定向大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-28T00:00:00+08:00",
+        "end": "2026-06-19T19:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_116": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第五届辽宁省大学生商业设计创意大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-27T00:00:00+08:00",
+        "end": "2026-10-10T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_104": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省“中软国际-卓越杯”AI挑战赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-27T00:00:00+08:00",
+        "end": "2026-05-22T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_035": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国大学生机械工程创新创意大赛-无损检测创新实践与应用赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-26T00:00:00+08:00",
+        "end": "2026-05-09T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_110": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生移动应用开发大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-25T00:00:00+08:00",
+        "end": "2026-05-30T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_014": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生机械创新设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-24T00:00:00+08:00",
+        "end": "2026-04-29T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_032": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "全国高等院校数智化企业经营沙盘大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-24T00:00:00+08:00",
+        "end": "2026-06-04T17:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_130": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第五届辽宁省大学生国际贸易经营实战沙盘竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-24T00:00:00+08:00",
+        "end": "2026-05-25T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_124": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生“创新杯”未来飞行器设计大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-23T00:00:00+08:00",
+        "end": "2026-06-10T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_018": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "未来设计师·全国高校数字艺术设计大赛（NCDA）(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-23T00:00:00+08:00",
+        "end": "2026-06-20T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_026": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "中国机器人及人工智能大赛(辽宁赛区)（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-23T00:00:00+08:00",
+        "end": "2026-06-11T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_019": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "全国睿抗机器人开发者大赛（RAICOM）（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match/details?comId=ebb6dbb7b26660cd0f8b709434fc0a5c",
+      "registration_window": {
+        "start": "2026-04-23T00:00:00+08:00",
+        "end": "2026-09-09T17:00:00+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_011": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生计算机设计竞赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-19T00:00:00+08:00",
+        "end": "2026-07-13T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_101": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生先进成图技术与产品信息建模创新大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-04-03T00:00:00+08:00",
+        "end": "2026-05-29T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_024": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "“学创杯”全国大学生创业综合模拟大赛（辽宁赛区）（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-03-25T00:00:00+08:00",
+        "end": "2026-07-10T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_017": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "辽宁省大学生金相技能大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-03-23T00:00:00+08:00",
+        "end": "2026-07-03T17:00:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_2026_prov_016": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "第八届辽宁省大学生集成电路创新创业大赛（2026年度平台报名起止日期）",
+      "url": "https://cxcy.upln.cn/match",
+      "registration_window": {
+        "start": "2026-03-01T00:00:00+08:00",
+        "end": "2026-09-30T23:59:59+08:00"
+      },
+      "query_context": "年度2026；全部；50条/页；共2页，72项"
+    },
+    "upln_raicom_notice_2026": {
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "title": "关于举办2026年辽宁省睿抗机器人开发者大赛的通知",
+      "url": "https://cxcy.upln.cn/competitionDetails?id=467e7d52f8f47857b6af041b6c6672d1"
+    }
+  },
+  "items": [
+    {
+      "competition_id": "NAT-001",
+      "expected_title": "中国国际大学生创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3305",
+        "innovation_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-10",
+        "registration_end": "2026-08-15",
+        "registration_time_text": "沈理校赛报名：2026-08-10 至 2026-08-15；全国系统截止为9月25日12:00",
+        "event_time_text": "校赛初赛8月16—18日，校赛决赛8月24—25日；全国总决赛11月",
+        "time_note": "提醒按校内报名截止计算；全国系统开放不代表还能参加本校选拔。"
+      }
+    },
+    {
+      "competition_id": "NAT-028",
+      "expected_title": "“外教社杯”全国高校学生跨文化能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3081"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理校赛：团队现场赛报名截止4月30日；短视频赛报名及作品提交截止9月6日",
+        "event_time_text": "现场赛暂定6月6日",
+        "time_note": "不同赛道分别截止，不生成整个赛事统一截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-033",
+      "expected_title": "“科云杯”全国大学生财会职业能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3327"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-31",
+        "registration_end": "2026-09-30",
+        "registration_time_text": "沈理报名：2026-08-31 至 2026-09-30；按校内通知组队报名",
+        "time_note": "原文校赛时间写为2025年，与2026届次矛盾，未录入该比赛日期。"
+      }
+    },
+    {
+      "competition_id": "NAT-036",
+      "expected_title": "全国大学生数学建模竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3301",
+        "cumcm_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_end": "2026-08-31",
+        "registration_time_text": "沈理报名截止：2026-08-31；向全国组委会报名截止9月7日20:00",
+        "event_start": "2026-09-10T18:00:00+08:00",
+        "event_end": "2026-09-13T20:00:00+08:00",
+        "event_time_text": "2026-09-10 18:00 至 2026-09-13 20:00",
+        "time_note": "以校内报名截止为提醒依据；报名前须联系并确认指导教师。"
+      }
+    },
+    {
+      "competition_id": "NAT-038",
+      "expected_title": "全国大学生智能汽车竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3100"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-05-15",
+        "registration_end": "2026-05-15",
+        "event_time_text": "校赛暂定2026年5月末"
+      }
+    },
+    {
+      "competition_id": "NAT-049",
+      "expected_title": "“中国软件杯”大学生软件设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "sylu_3169"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名：2026-03-24 至 2026-06-30；作品提交暂定6月30日15:00",
+        "registration_start": "2026-03-24",
+        "registration_end": "2026-06-30",
+        "event_time_text": "初赛评审拟7月；全国决赛拟8月",
+        "time_note": "作品提交时刻为暂定，不将它推断为统一报名截止时刻。"
+      }
+    },
+    {
+      "competition_id": "NAT-058",
+      "expected_title": "全国大学生物联网设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3224"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名：2026-04-01 至 2026-06-10；省平台报名截止6月15日",
+        "registration_start": "2026-04-01",
+        "registration_end": "2026-06-10",
+        "event_time_text": "校内选拔：6月11—14日",
+        "time_note": "提醒采用参加校内选拔前的报名截止，不能用后续省平台截止替代。"
+      }
+    },
+    {
+      "competition_id": "NAT-066",
+      "expected_title": "中国研究生数学建模竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3338",
+        "gmcm_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "校方通知沿用全国团队报名截止；培养单位审核与缴费须分别完成。",
+        "registration_start": "2026-06-01T08:00:00+08:00",
+        "registration_end": "2026-09-19T17:00:00+08:00",
+        "registration_time_text": "全国团队报名：2026-06-01 08:00 至 2026-09-19 17:00",
+        "event_start": "2026-09-23T08:00:00+08:00",
+        "event_end": "2026-09-27T12:00:00+08:00",
+        "event_time_text": "2026-09-23 08:00 至 2026-09-27 12:00；PDF论文上传截止9月28日24:00"
+      }
+    },
+    {
+      "competition_id": "NAT-067",
+      "expected_title": "中国研究生智能建造创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-05-18",
+        "registration_end": "2026-08-20",
+        "registration_time_text": "全国报名：2026-05-18 至 2026-08-20（具体截止时刻以报名系统为准）",
+        "event_time_text": "",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-068",
+      "expected_title": "中国研究生国际中文教育案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-06-01",
+        "registration_end": "2026-06-30",
+        "registration_time_text": "全国报名：2026-06-01 至 2026-06-30（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年10月，具体日期以单项通知为准",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-069",
+      "expected_title": "中国研究生“文化中国”两创大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-05-25",
+        "registration_end": "2026-09-14",
+        "registration_time_text": "全国报名：2026-05-25 至 2026-09-14（具体截止时刻以报名系统为准）",
+        "event_time_text": "",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-070",
+      "expected_title": "中国研究生操作系统开源创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-05-15",
+        "registration_end": "2026-07-28",
+        "registration_time_text": "全国报名：2026-05-15 至 2026-07-28（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年10月，具体日期以单项通知为准",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-071",
+      "expected_title": "中国研究生企业管理创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3304"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "商业分析、数字技术专项：8月10日08:00至9月12日19:00；工商管理案例作品9月9日前提交；企业决策校内选拔9月12日",
+        "time_note": "各赛道分别报名、评审；报名、作品提交和选拔日期不能合并成一个总截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-072",
+      "expected_title": "中国研究生工程管理案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "time_note": "依据主办方年度赛程表的停赛标记；不生成报名截止提醒。",
+        "registration_time_text": "主办方2026年赛程标注停赛，本年度不安排报名",
+        "event_time_text": "2026年度停赛"
+      }
+    },
+    {
+      "competition_id": "NAT-075",
+      "expected_title": "中国研究生金融科技创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-05-22",
+        "registration_end": "2026-08-17",
+        "registration_time_text": "全国报名：2026-05-22 至 2026-08-17（具体截止时刻以报名系统为准）",
+        "event_time_text": "",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-076",
+      "expected_title": "中国研究生“双碳”创新与创意大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "dual_carbon_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "按单项邀请函更新汇总表中的待定安排；通知仅明确日期，具体截止时刻以报名系统为准。校内截止另行核实。",
+        "registration_end": "2026-09-11",
+        "registration_time_text": "全国报名及资格审核截止：2026-09-11；作品提交截止：2026-09-13",
+        "event_time_text": "线上初赛评审：9月14日—10月13日；线下决赛拟于11月下旬举行"
+      }
+    },
+    {
+      "competition_id": "NAT-078",
+      "expected_title": "中国研究生乡村振兴科技强农+创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_time_text": "科技作品竞赛报名：2026-05-19 至 2026-08-24；卓越兽医挑战赛日程需单独核实",
+        "event_time_text": "科技作品竞赛决赛：2026年10月16日至17日",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "汇总赛事含不同赛道，不将科技作品竞赛的截止日期推广至整个赛事；校内截止另行核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-079",
+      "expected_title": "中国研究生公共管理案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-01-13",
+        "registration_end": "2026-03-13",
+        "registration_time_text": "全国报名：2026-01-13 至 2026-03-13（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年6月13日至14日",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-080",
+      "expected_title": "中国研究生能源装备创新设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-06-25",
+        "registration_end": "2026-08-15",
+        "registration_time_text": "全国报名：2026-06-25 至 2026-08-15（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年10月，具体日期以单项通知为准",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-081",
+      "expected_title": "中国研究生机器人创新设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-06-23",
+        "registration_end": "2026-08-24",
+        "registration_time_text": "全国报名：2026-06-23 至 2026-08-24（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年11月上旬，具体日期以单项通知为准",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-082",
+      "expected_title": "中国研究生人工智能创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-05-22",
+        "registration_end": "2026-08-25",
+        "registration_time_text": "全国报名：2026-05-22 至 2026-08-25（具体截止时刻以报名系统为准）",
+        "event_time_text": "",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-084",
+      "expected_title": "中国研究生创“芯”大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-03-20",
+        "registration_end": "2026-06-30",
+        "registration_time_text": "全国报名：2026-03-20 至 2026-06-30（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年8月13日至17日",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-085",
+      "expected_title": "中国研究生电子设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-04-03",
+        "registration_end": "2026-06-20",
+        "registration_time_text": "全国报名：2026-04-03 至 2026-06-20（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年8月11日至14日",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-086",
+      "expected_title": "中国研究生未来飞行器创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_2026"
+      ],
+      "fields": {
+        "registration_start": "2026-06-10",
+        "registration_end": "2026-08-30",
+        "registration_time_text": "全国报名：2026-06-10 至 2026-08-30（具体截止时刻以报名系统为准）",
+        "event_time_text": "决赛：2026年10月底，具体日期以单项通知为准",
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-087",
+      "expected_title": "中国研究生智慧城市技术与创意设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "smart_city_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "time_note": "全国报名安排；沈阳理工大学校内选拔及截止时间尚未核实。",
+        "registration_start": "2026-06-27",
+        "registration_end": "2026-10-23T12:00:00+08:00",
+        "registration_time_text": "全国报名及资格审核：2026-06-27 至 2026-10-23 12:00",
+        "event_time_text": "作品提交截止2026-10-25 12:00；决赛安排以当届通知为准"
+      }
+    },
+    {
+      "competition_id": "NAT-131",
+      "expected_title": "全国高校俄语大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3324"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-31",
+        "registration_end": "2026-09-07",
+        "registration_time_text": "沈理俄语大赛校赛报名：2026-08-31 至 2026-09-07",
+        "event_time_text": "比赛时间由校内竞赛群另行通知"
+      }
+    },
+    {
+      "competition_id": "NAT-133",
+      "expected_title": "韩素音国际翻译大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "sylu_3138"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名截止：2026-05-01 00:00，即4月30日24:00",
+        "registration_end": "2026-05-01T00:00:00+08:00"
+      }
+    },
+    {
+      "competition_id": "PROV-001",
+      "expected_title": "中国国际大学生创新大赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3305",
+        "innovation_2026",
+        "upln_2026_prov_001"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-10",
+        "registration_end": "2026-08-15",
+        "registration_time_text": "沈理校赛报名：2026-08-10 至 2026-08-15；全国系统截止为9月25日12:00；省平台窗口：2026-09-08 00:00:00 至 2026-09-14 23:59:59",
+        "event_time_text": "校赛初赛8月16—18日，校赛决赛8月24—25日；全国总决赛11月",
+        "time_note": "提醒按校内报名截止计算；全国系统开放不代表还能参加本校选拔。 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-007",
+      "expected_title": "全国大学生广告艺术大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_007"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-30T00:00:00+08:00",
+        "registration_end": "2026-10-11T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-30 00:00:00 至 2026-10-11 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-009",
+      "expected_title": "“西门子杯”中国智能制造挑战赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_009"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-25T00:00:00+08:00",
+        "registration_end": "2026-09-17T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-08-25 00:00:00 至 2026-09-17 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-010",
+      "expected_title": "辽宁省大学生三维数字化创新设计大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3191",
+        "upln_2026_prov_010"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁初赛报名：2026-05-13 至 2026-06-30；作品提交截止7月20日；省平台窗口：2026-05-08 00:00:00 至 2026-07-20 23:59:59",
+        "event_time_text": "省赛评审9月12—13日；全国总决赛11—12月",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-011",
+      "expected_title": "辽宁省大学生计算机设计竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_011"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-19T00:00:00+08:00",
+        "registration_end": "2026-07-13T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-19 00:00:00 至 2026-07-13 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-012",
+      "expected_title": "全国大学生市场调查与分析大赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_012"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-10T00:00:00+08:00",
+        "registration_end": "2026-07-25T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-07-10 00:00:00 至 2026-07-25 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-014",
+      "expected_title": "辽宁省大学生机械创新设计大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_014"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-24T00:00:00+08:00",
+        "registration_end": "2026-04-29T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-24 00:00:00 至 2026-04-29 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-015",
+      "expected_title": "辽宁省大学生工程实践与创新能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3173",
+        "upln_2026_prov_015"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名表提交截止：2026-07-05；省平台窗口：2026-05-15 00:00:00 至 2026-10-13 23:59:59",
+        "registration_end": "2026-07-05",
+        "event_time_text": "校内现场赛拟9月10日；省现场决赛拟10月17—18日",
+        "time_note": "飞行器设计仿真、智能网联汽车设计赛项同期报名，比赛时间由赛项另行通知。 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-016",
+      "expected_title": "全国大学生集成电路创新创业大赛（东北赛区）暨辽宁省大学生集成电路创新创业大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_016"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-03-01T00:00:00+08:00",
+        "registration_end": "2026-09-30T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-03-01 00:00:00 至 2026-09-30 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-017",
+      "expected_title": "辽宁省大学生金相技能大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_017"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-03-23T00:00:00+08:00",
+        "registration_end": "2026-07-03T17:00:59+08:00",
+        "registration_time_text": "省平台窗口：2026-03-23 00:00:00 至 2026-07-03 17:00:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-018",
+      "expected_title": "未来设计师·全国高校数字艺术设计大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_018"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-23T00:00:00+08:00",
+        "registration_end": "2026-06-20T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-23 00:00:00 至 2026-06-20 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-019",
+      "expected_title": "全国睿抗机器人开发者大赛（RAICOM）（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3143",
+        "upln_2026_prov_019",
+        "upln_raicom_notice_2026"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁赛区报名：2026-04-01 至 2026-05-10（通知要求以省赛最新安排为准）；省平台窗口：2026-04-23 00:00:00 至 2026-09-09 17:00:00",
+        "event_time_text": "网络初评5月15—20日；现场决赛5月30—31日，机器视觉系统创新赛项6月6日",
+        "time_note": "省平台原通知同样写4月1日至5月10日报名、5月15日前审核，但当前平台窗口截止9月9日17:00，详情已列8月31日获奖名单。阶段存在冲突，不能据平台按钮认定仍可新报名；暂不生成统一截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-022",
+      "expected_title": "辽宁省大学生物理实验竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_022"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-01T00:00:00+08:00",
+        "registration_end": "2026-06-23T17:00:00+08:00",
+        "registration_time_text": "省平台窗口：2026-06-01 00:00:00 至 2026-06-23 17:00:00；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-024",
+      "expected_title": "“学创杯”全国大学生创业综合模拟大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_024"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-03-25T00:00:00+08:00",
+        "registration_end": "2026-07-10T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-03-25 00:00:00 至 2026-07-10 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-025",
+      "expected_title": "中国高校智能机器人创意大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_025"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-11T00:00:00+08:00",
+        "registration_end": "2026-06-20T17:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-11 00:00:00 至 2026-06-20 17:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-026",
+      "expected_title": "中国机器人及人工智能大赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3107",
+        "upln_2026_prov_026"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁赛区报名：2026-03-01 至 2026-05-10 24:00；省平台窗口：2026-04-23 00:00:00 至 2026-06-11 23:59:59",
+        "event_time_text": "省赛：5月23日线下、5月24日线上",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-027",
+      "expected_title": "辽宁省高校大学生中华经典诵写讲大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3258",
+        "upln_2026_prov_027"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁赛区学生报名及作品提交截止：2026-07-10；省平台窗口：2026-04-28 00:00:00 至 2026-11-01 23:59:59",
+        "event_time_text": "复赛7月21日至9月10日；决赛9月11日至10月24日",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-028",
+      "expected_title": "“外教社杯”全国高校学生跨文化能力大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3081",
+        "upln_2026_prov_028"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理校赛：团队现场赛报名截止4月30日；短视频赛报名及作品提交截止9月6日；省平台窗口：2026-07-03 00:00:00 至 2026-10-25 23:59:59",
+        "event_time_text": "现场赛暂定6月6日",
+        "time_note": "不同赛道分别截止，不生成整个赛事统一截止。 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-029",
+      "expected_title": "辽宁省大学生工业设计竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3284",
+        "upln_2026_prov_029"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁赛区网上报名及学校统一报送：2026-06-15 至 2026-06-30；省平台窗口：2026-06-05 00:00:00 至 2026-07-05 23:59:59",
+        "event_time_text": "省赛初评7月10—15日；终评7月25—30日",
+        "time_note": "学校统一线下提交作品材料，不接受个人报送材料。 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-030",
+      "expected_title": "辽宁省大学生化学实验创新设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3291",
+        "upln_2026_prov_030"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名、作品提交及指导教师审核截止：2026-09-01；省平台窗口：2026-07-10 00:00:00 至 2026-09-12 23:59:59",
+        "registration_end": "2026-09-01",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-032",
+      "expected_title": "全国高等院校数智化企业经营沙盘大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3168",
+        "upln_2026_prov_032"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁赛区报名：2026-04-24 至 2026-05-17；学校推荐截止5月21日；省平台窗口：2026-04-24 00:00:00 至 2026-06-04 17:00:00",
+        "event_time_text": "省赛：6月7日",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-033",
+      "expected_title": "“科云杯”全国大学生财会职业能力大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_033"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-31T00:00:00+08:00",
+        "registration_end": "2026-10-29T17:00:00+08:00",
+        "registration_time_text": "省平台窗口：2026-08-31 00:00:00 至 2026-10-29 17:00:00；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-035",
+      "expected_title": "中国大学生机械工程创新创意大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_035"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "无损检测创新实践与应用赛：省平台窗口：2026-04-26 00:00:00 至 2026-05-09 23:59:59；其他赛道单独核实",
+        "time_note": "该平台页面仅对应无损检测赛道，不能将其截止推广到整个机械工程创新创意大赛。"
+      }
+    },
+    {
+      "competition_id": "PROV-036",
+      "expected_title": "全国大学生数学建模竞赛（东北赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3301",
+        "cumcm_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_end": "2026-08-31",
+        "registration_time_text": "沈理报名截止：2026-08-31；向全国组委会报名截止9月7日20:00",
+        "event_start": "2026-09-10T18:00:00+08:00",
+        "event_end": "2026-09-13T20:00:00+08:00",
+        "event_time_text": "2026-09-10 18:00 至 2026-09-13 20:00",
+        "time_note": "以校内报名截止为提醒依据；报名前须联系并确认指导教师。"
+      }
+    },
+    {
+      "competition_id": "PROV-038",
+      "expected_title": "全国大学生智能汽车竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3100"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-05-15",
+        "registration_end": "2026-05-15",
+        "event_time_text": "校赛暂定2026年5月末"
+      }
+    },
+    {
+      "competition_id": "PROV-058",
+      "expected_title": "全国大学生物联网设计竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3224"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名：2026-04-01 至 2026-06-10；省平台报名截止6月15日",
+        "registration_start": "2026-04-01",
+        "registration_end": "2026-06-10",
+        "event_time_text": "校内选拔：6月11—14日",
+        "time_note": "提醒采用参加校内选拔前的报名截止，不能用后续省平台截止替代。"
+      }
+    },
+    {
+      "competition_id": "PROV-088",
+      "expected_title": "全国大学生结构设计竞赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_088"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-22T00:00:00+08:00",
+        "registration_end": "2026-07-10T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-06-22 00:00:00 至 2026-07-10 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-089",
+      "expected_title": "全国大学生生命科学竞赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_089"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-28T00:00:00+08:00",
+        "registration_end": "2026-06-25T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-28 00:00:00 至 2026-06-25 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-090",
+      "expected_title": "全国大学生测绘学科创新创业智能大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_090"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-10T00:00:00+08:00",
+        "registration_end": "2026-05-22T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-10 00:00:00 至 2026-05-22 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-097",
+      "expected_title": "辽宁省iCAN创新创业大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_097"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-01T00:00:00+08:00",
+        "registration_end": "2026-09-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-01 00:00:00 至 2026-09-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-099",
+      "expected_title": "辽宁省大学生化工设计创新创业竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_099"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-14T00:00:00+08:00",
+        "registration_end": "2026-07-23T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-14 00:00:00 至 2026-07-23 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-101",
+      "expected_title": "辽宁省大学生先进成图技术与产品信息建模创新大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_101"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-03T00:00:00+08:00",
+        "registration_end": "2026-05-29T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-03 00:00:00 至 2026-05-29 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-103",
+      "expected_title": "辽宁省大学生数字营销创新大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_103"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-28T00:00:00+08:00",
+        "registration_end": "2026-06-14T13:00:00+08:00",
+        "registration_time_text": "省平台窗口：2026-04-28 00:00:00 至 2026-06-14 13:00:00；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-104",
+      "expected_title": "辽宁省“中软国际-卓越杯”AI挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3157",
+        "upln_2026_prov_104"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名及作品上传：2026-04-27 至 2026-05-16；报名附件同时发送校内负责人；省平台窗口：2026-04-27 00:00:00 至 2026-05-22 23:59:59",
+        "registration_start": "2026-04-27",
+        "registration_end": "2026-05-16",
+        "event_time_text": "预审5月16—18日；网络评审5月23—27日；现场决赛6月6—7日",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-105",
+      "expected_title": "辽宁省大学生“iTeach”数字化教育应用创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3211",
+        "upln_2026_prov_105"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校赛报名及作品提交：2026-05-18 至 2026-09-13；省平台窗口：2026-05-14 00:00:00 至 2026-09-18 23:59:59",
+        "registration_start": "2026-05-18",
+        "registration_end": "2026-09-13",
+        "event_time_text": "校选9月1—18日；省初赛9月23—30日；省决赛10月17—18日",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-106",
+      "expected_title": "“辽宁故事”杯农特产品包装创新创意大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_106"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-01T00:08:08+08:00",
+        "registration_end": "2026-10-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-01 00:08:08 至 2026-10-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-107",
+      "expected_title": "辽宁省大学生食品与健康创新大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_107"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-04T00:00:00+08:00",
+        "registration_end": "2026-10-23T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-04 00:00:00 至 2026-10-23 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-109",
+      "expected_title": "辽宁省大学生农业经济建模大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_109"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-01T00:00:00+08:00",
+        "registration_end": "2026-10-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-01 00:00:00 至 2026-10-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-110",
+      "expected_title": "辽宁省大学生移动应用开发大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3212",
+        "upln_2026_prov_110"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁平台报名及作品提交：2026-05-20 至 2026-05-28 12:00；省平台窗口：2026-04-25 00:00:00 至 2026-05-30 23:59:59",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-111",
+      "expected_title": "辽宁省大学生BIM应用技能大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_111"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-18T00:00:00+08:00",
+        "registration_end": "2026-08-31T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-06-18 00:00:00 至 2026-08-31 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-112",
+      "expected_title": "辽宁省大学生生态环保技术创新创业竞赛暨东北三省一区大学生生态环保作品竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_112"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-10T00:00:00+08:00",
+        "registration_end": "2026-06-10T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-10 00:00:00 至 2026-06-10 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-113",
+      "expected_title": "辽宁省大学生产教融合创新创意项目大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3190",
+        "upln_2026_prov_113"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "辽宁平台报名及作品提交截止：2026-06-26；省平台窗口：2026-04-30 00:00:00 至 2026-06-26 12:00:00",
+        "event_time_text": "网络评审截至7月15日；结果公示7月16—20日",
+        "time_note": "校方通知仅说明6月26日截止；省平台进一步明确截止时刻为12:00，按该时刻处理。",
+        "registration_start": "2026-04-30T00:00:00+08:00",
+        "registration_end": "2026-06-26T12:00:00+08:00"
+      }
+    },
+    {
+      "competition_id": "PROV-114",
+      "expected_title": "辽宁省创新方法大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3299",
+        "upln_2026_prov_114"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名及作品提交截止：2026-07-25；省平台窗口：2026-07-15 00:00:00 至 2026-09-15 23:59:59",
+        "registration_end": "2026-07-25",
+        "event_time_text": "校内选拔：7月15—30日",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-115",
+      "expected_title": "辽宁省大学生国潮文化设计应用比赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_115"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-26T00:00:00+08:00",
+        "registration_end": "2026-09-13T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-26 00:00:00 至 2026-09-13 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-116",
+      "expected_title": "辽宁省大学生商业设计创意大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3189",
+        "upln_2026_prov_116"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "辽宁平台报名及作品上传：2026-04-27 至 2026-10-10 24:00；学校审核推荐截止10月15日24:00；省平台窗口：2026-04-27 00:00:00 至 2026-10-10 23:59:59",
+        "registration_start": "2026-04-27T00:00:00+08:00",
+        "registration_end": "2026-10-10T23:59:59+08:00",
+        "time_note": "10月10日24:00按次日00:00存储，界面保留通知原文时刻。 省平台补充了截止时刻；报名及作品提交仍按当届通知办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-117",
+      "expected_title": "CFCC智慧经济创新创业竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3175",
+        "upln_2026_prov_117"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁区域赛报名：2026-05-11 至 2026-08-01；省平台窗口：2026-05-11 00:00:00 至 2026-08-05 23:59:59",
+        "event_time_text": "作品首轮评选：8月2—15日",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-118",
+      "expected_title": "辽宁省大学生虚拟现实与新媒体创新设计大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3294",
+        "upln_2026_prov_118"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校赛报名截止：2026-09-23 17:00；省平台窗口：2026-06-05 00:00:00 至 2026-09-25 23:59:59",
+        "registration_end": "2026-09-23T17:00:00+08:00",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-119",
+      "expected_title": "辽宁省大学生主持人大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_119"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-05T00:00:00+08:00",
+        "registration_end": "2026-09-08T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-06-05 00:00:00 至 2026-09-08 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-120",
+      "expected_title": "辽宁省大学生高校舞蹈原创作品大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_120"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-10T00:00:00+08:00",
+        "registration_end": "2026-09-25T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-10 00:00:00 至 2026-09-25 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-122",
+      "expected_title": "辽宁省大学生文化创意设计大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3320",
+        "upln_2026_prov_122"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_end": "2026-09-12T17:00:00+08:00",
+        "registration_time_text": "沈理校赛报名及作品上传截止：2026-09-12 17:00；省平台窗口：2026-07-01 00:00:00 至 2026-09-15 23:59:59",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-124",
+      "expected_title": "辽宁省大学生“创新杯”未来飞行器设计大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_124"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-23T00:00:00+08:00",
+        "registration_end": "2026-06-10T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-23 00:00:00 至 2026-06-10 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-126",
+      "expected_title": "辽宁省大学生动植物标本制作大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_126"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-25T00:00:00+08:00",
+        "registration_end": "2026-09-18T14:00:00+08:00",
+        "registration_time_text": "省平台窗口：2026-08-25 00:00:00 至 2026-09-18 14:00:00；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-127",
+      "expected_title": "辽宁省大学生智慧农业创新创业大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3177",
+        "upln_2026_prov_127"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁平台团队报名：2026-05-11 至 2026-05-24 18:00；省平台窗口：2026-05-11 00:00:00 至 2026-05-26 23:59:59",
+        "event_time_text": "校内选拔5月25日至6月3日；省初赛6月6—14日；决赛拟6月20日",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-128",
+      "expected_title": "辽宁省大学生中华优秀传统文化创新设计大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_128"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-14T00:00:00+08:00",
+        "registration_end": "2026-06-21T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-14 00:00:00 至 2026-06-21 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-129",
+      "expected_title": "辽宁省大学生“体育+”创新创业大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3317",
+        "upln_2026_prov_129"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-10T00:00:00+08:00",
+        "registration_end": "2026-09-15T23:59:59+08:00",
+        "registration_time_text": "辽宁平台报名：2026-07-10 至 2026-09-15；沈理推荐省赛截止9月30日；省平台窗口：2026-07-10 00:00:00 至 2026-09-15 23:59:59",
+        "event_time_text": "省赛：2026-10-10 至 2026-10-30",
+        "time_note": "9月30日是学校推荐截止，不是学生报名截止；具体报名截止时刻以平台为准。 省平台补充了截止时刻；报名及作品提交仍按当届通知办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-130",
+      "expected_title": "辽宁省大学生国际贸易经营实战沙盘竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_130"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-04-24T00:00:00+08:00",
+        "registration_end": "2026-05-25T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-04-24 00:00:00 至 2026-05-25 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-133",
+      "expected_title": "辽宁省大学生社会工作实务技能大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_133"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-10-08T00:00:00+08:00",
+        "registration_end": "2026-10-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-10-08 00:00:00 至 2026-10-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-135",
+      "expected_title": "辽宁省大学生管理决策模拟大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3162",
+        "upln_2026_prov_135"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁省赛报名截止：2026-05-25；须同时完成通知要求的两个平台报名；省平台窗口：2026-06-01 00:00:00 至 2026-08-20 23:59:59",
+        "event_time_text": "校赛视报名人数于5月26日举办；省初赛5月27日至6月2日；复赛6月3—9日；决赛6月13日",
+        "time_note": " 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-136",
+      "expected_title": "辽宁省大学生无线电测定向大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3139",
+        "upln_2026_prov_136"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名：2026-04-27 至 2026-05-08；省平台窗口：2026-04-28 00:00:00 至 2026-06-19 19:59:59",
+        "registration_start": "2026-04-27",
+        "registration_end": "2026-05-08",
+        "event_time_text": "校赛5月9—10日；省赛5月底",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-137",
+      "expected_title": "辽宁省大学生大数据应用与分析大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_137"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-08-26T00:00:00+08:00",
+        "registration_end": "2026-09-30T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-08-26 00:00:00 至 2026-09-30 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-138",
+      "expected_title": "辽宁省大学生交通科技大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3293",
+        "upln_2026_prov_138"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "辽宁赛区报名：2026-06-15 至 2026-08-09；省平台窗口：2026-06-15 00:00:00 至 2026-08-09 23:59:59",
+        "registration_start": "2026-06-15T00:00:00+08:00",
+        "registration_end": "2026-08-09T23:59:59+08:00",
+        "event_time_text": "预赛评审8月14—28日；决赛9月20日",
+        "time_note": " 省平台补充了截止时刻；报名及作品提交仍按当届通知办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-139",
+      "expected_title": "辽宁省大学生数字影像大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3292",
+        "upln_2026_prov_139"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "辽宁平台报名及作品上传：2026-07-01 至 2026-07-08；学校推荐截止7月13日12:00；省平台窗口：2026-07-15 00:00:00 至 2026-07-21 23:59:59",
+        "event_time_text": "评审：7月14日至8月中旬；表彰：9月",
+        "time_note": "学生提交截止与学校推荐截止分开记录。 校方转载的省赛截止与当前省平台窗口不一致，尚未确认是否延期、补录或推荐阶段；保留两份证据，暂停统一报名截止提醒。"
+      }
+    },
+    {
+      "competition_id": "PROV-140",
+      "expected_title": "辽宁省大学生企业价值创造大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3242",
+        "upln_2026_prov_140"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名：2026-05-25 至 2026-05-28；省平台窗口：2026-05-21 00:00:00 至 2026-06-01 23:59:59",
+        "registration_start": "2026-05-25",
+        "registration_end": "2026-05-28",
+        "event_time_text": "校内赛：5月28—29日",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-141",
+      "expected_title": "中国大学生材料热处理创新创业大赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_141"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-15T00:01:01+08:00",
+        "registration_end": "2026-06-16T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-15 00:01:01 至 2026-06-16 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-142",
+      "expected_title": "中国大学生计算机博弈大赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_142"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-18T23:00:00+08:00",
+        "registration_end": "2026-06-18T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-06-18 23:00:00 至 2026-06-18 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-143",
+      "expected_title": "辽宁省大学生企业云服务开发者大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "sylu_3325",
+        "upln_2026_prov_143"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-26T00:00:00+08:00",
+        "registration_end": "2026-09-11T23:59:59+08:00",
+        "registration_time_text": "辽宁平台报名：2026-05-26 至 2026-09-11；省平台窗口：2026-05-26 00:00:00 至 2026-09-11 23:59:59",
+        "event_time_text": "理论初赛9月16日；作品提交截止10月17日12:00；现场决赛10月26日",
+        "time_note": "报名截止与作品提交截止分开记录；仅公布日期时具体截止时刻以平台为准。 省平台补充了截止时刻；报名及作品提交仍按当届通知办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-145",
+      "expected_title": "辽宁省大学生数智财经大数据分析与应用大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_145"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-15T00:00:00+08:00",
+        "registration_end": "2026-09-30T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-07-15 00:00:00 至 2026-09-30 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-147",
+      "expected_title": "辽宁省大学生经济决策虚仿实验大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_147"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-07T10:00:00+08:00",
+        "registration_end": "2026-10-17T18:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-07 10:00:00 至 2026-10-17 18:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-148",
+      "expected_title": "辽宁省大学生建筑创新设计竞赛暨东北三省适老化建筑设计竞赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_148"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-05-12T00:00:00+08:00",
+        "registration_end": "2026-11-30T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-05-12 00:00:00 至 2026-11-30 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-149",
+      "expected_title": "辽宁省大学生数学建模竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3240",
+        "upln_2026_prov_149"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名截止：2026-06-18 08:00；同时提交报名表给校内负责人；省平台窗口：2026-05-20 00:00:00 至 2026-06-18 20:00:00",
+        "registration_end": "2026-06-18T08:00:00+08:00",
+        "event_time_text": "比赛：2026-06-20 08:00 至 2026-06-23 09:00",
+        "time_note": " 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-151",
+      "expected_title": "辽宁省大学生智慧电力运行控制创新竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_3302",
+        "upln_2026_prov_151"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "个人赛道校内报名：7月20—30日；团队赛道作品上传截止：9月10日23:59；省平台窗口：2026-09-16 00:00:00 至 2026-10-07 23:59:59",
+        "event_time_text": "团队赛道校内选拔暂定9月11日",
+        "time_note": "两赛道日程不同，团队作品上传截止不能当成整个赛事报名截止；各赛道按原通知办理。 省平台开放窗口不替代校内选拔截止；不同赛道仍分别办理。"
+      }
+    },
+    {
+      "competition_id": "PROV-152",
+      "expected_title": "辽宁省高校师范生教学创新大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_152"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-01T00:00:00+08:00",
+        "registration_end": "2026-07-23T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-07-01 00:00:00 至 2026-07-23 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-155",
+      "expected_title": "辽宁省大学生“瑰宝传承”戏曲文化创新创意大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_155"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-09-08T00:00:00+08:00",
+        "registration_end": "2026-09-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-09-08 00:00:00 至 2026-09-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-157",
+      "expected_title": "辽宁省大学生材料焊接与铸造工艺设计大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_157"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-15T00:00:00+08:00",
+        "registration_end": "2026-10-20T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-07-15 00:00:00 至 2026-10-20 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-158",
+      "expected_title": "辽宁省大学生旅游服务创新大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2026_prov_158"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-06-17T00:00:00+08:00",
+        "registration_end": "2026-09-15T23:59:59+08:00",
+        "registration_time_text": "省平台窗口：2026-06-17 00:00:00 至 2026-09-15 23:59:59；沈理校内截止待核实",
+        "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    }
+  ]
+}

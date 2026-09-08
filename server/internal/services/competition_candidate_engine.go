@@ -264,7 +264,7 @@ func buildCompetitionCandidate(
 	hasPendingInformation := false
 	if event.TimeStatus == "pending" || (event.RegistrationEnd == nil && event.EventStart == nil) {
 		hasPendingInformation = true
-		questions = append(questions, "当届报名或比赛时间尚未发布")
+		questions = append(questions, "当届报名或比赛时间尚未核实，请查看官方通知")
 	}
 	if context.WeeklyHours > 0 {
 		questions = append(questions, "每周训练投入仍需确认")

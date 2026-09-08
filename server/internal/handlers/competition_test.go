@@ -121,6 +121,7 @@ func TestCompetitionOverviewCountsNaturalDayWindow(t *testing.T) {
 		{Title: "第十五天", Status: "published", RegistrationEnd: &end},
 		{Title: "已截止", Status: "published", RegistrationEnd: timePointer(start.Add(-time.Minute))},
 		{Title: "待公布", Status: "published", TimeStatus: "pending"},
+		{Title: "已有通知但日期未核实", Status: "published", TimeStatus: "pending", RegistrationTimeText: "待校方通知确认"},
 		{Title: "草稿", Status: "draft", RegistrationEnd: &start},
 	}
 	for index := range events {
@@ -138,8 +139,9 @@ func TestCompetitionOverviewCountsNaturalDayWindow(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response["published_total"] != 5 || response["deadline_soon_count"] != 2 ||
-		response["time_pending_count"] != 1 || response["recognized_count"] != 1 {
+	if response["published_total"] != 6 || response["deadline_soon_count"] != 2 ||
+		response["time_pending_count"] != 2 || response["recognized_count"] != 1 ||
+		response["registration_pending_count"] != 2 {
 		t.Fatalf("unexpected overview: %v", response)
 	}
 }

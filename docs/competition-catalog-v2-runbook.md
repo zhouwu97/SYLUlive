@@ -36,6 +36,32 @@ python tools/competition_catalog/validate_catalog_v2.py catalog.json
 离线校验只用于提前发现问题。Go 服务仍会独立复算所有 `record_hash` 和
 `package_hash`，不得跳过服务端校验。
 
+## 补录已核验报名日程
+
+`tools/competition_catalog/data/verified_schedules_2026.json` 保存已核验的当届日程、
+校内/省赛/全国适用范围和官方通知。它是增量事实清单，不能直接作为目录包激活。
+第二来源为辽宁省大学生创新创业管理共享平台（`https://cxcy.upln.cn/match`），
+核对时选择当届年度和“全部”。来源中的 `registration_window` 保留平台原始时刻；
+更早的校内截止仍优先。同属省赛而截止不一致的记录保留双方说明、标记 `pending`，
+在确认延期或补录阶段前不生成统一截止提醒；单赛道日期不能推广为整个赛事日期。
+使用管理员保存或导出的完整活动目录 JSON 合并，不能使用缺少治理字段的公开赛事接口响应：
+
+```powershell
+python tools/competition_catalog/merge_schedules.py merge catalog.json tools/competition_catalog/data/verified_schedules_2026.json catalog-schedules.json --dataset-version 2026.09.08-schedules-1
+python tools/competition_catalog/validate_catalog_v2.py catalog-schedules.json
+```
+
+合并保留评级、推荐权限、阻断项和发布门禁；已有日期冲突时停止并要求复核。
+分赛道安排不强行合并为统一截止，未核实项目不填写推测日期。仅公布日期的通知，
+服务按北京时间截止日结束计算；有明确时刻的通知保留原时刻，界面优先展示原通知范围说明。
+合并后仍须按下文备份、导入、检查 diff 和激活，且先部署支持日期边界处理的服务端版本。
+
+完整公开快照（含 `total` 和去重后的全部 `items`）可用于统计覆盖率，但不能用于发布：
+
+```powershell
+python tools/competition_catalog/merge_schedules.py audit public-events.json tools/competition_catalog/data/verified_schedules_2026.json coverage.json
+```
+
 ## 数据库备份门禁
 
 1. 只读确认生产数据库类型、连接方式、库名和磁盘余量。

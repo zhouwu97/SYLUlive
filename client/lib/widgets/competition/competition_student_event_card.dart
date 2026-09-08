@@ -218,14 +218,13 @@ class CompetitionStudentEventCard extends StatelessWidget {
 
 Widget _infoLine(IconData icon, String text, bool isDark) {
   return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Icon(icon, size: 15, color: CompetitionUiTokens.subColor(isDark)),
       const SizedBox(width: 6),
       Expanded(
         child: Text(
           text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 12,
             height: 1.2,

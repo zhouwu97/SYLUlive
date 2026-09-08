@@ -11,21 +11,36 @@ class CompetitionStatusView {
 
 CompetitionStatusView resolveCompetitionStatus(
   CompetitionEvent event,
-  bool isDark,
-) {
-  final now = DateTime.now();
-
-  // 1. Check registration end
+  bool isDark, {
+  DateTime? now,
+}) {
+  final current = now ?? DateTime.now();
+  final pendingColor = CompetitionUiTokens.pendingColor(isDark);
+  // 参考日程不能作为当届报名状态，比赛开始也不等于比赛结束。
+  if (event.timeStatus == 'historical') {
+    return CompetitionStatusView('往年参考', pendingColor);
+  }
+  if (event.timeStatus == 'estimated') {
+    return CompetitionStatusView('预计时间', pendingColor);
+  }
+  if (event.eventEnd != null && current.isAfter(event.eventEnd!)) {
+    return CompetitionStatusView(
+        '比赛已结束', CompetitionUiTokens.archivedColor(isDark));
+  }
+  if (event.registrationStart != null &&
+      current.isBefore(event.registrationStart!)) {
+    return CompetitionStatusView('报名未开始', pendingColor);
+  }
   if (event.registrationEnd != null) {
     final regEnd = event.registrationEnd!;
-    if (now.isAfter(regEnd)) {
+    if (current.isAfter(regEnd)) {
       return CompetitionStatusView(
-        '已结束',
+        '报名已截止',
         CompetitionUiTokens.archivedColor(isDark),
       );
     }
 
-    final daysLeft = regEnd.difference(now).inDays;
+    final daysLeft = regEnd.difference(current).inDays;
     if (daysLeft <= 3 && daysLeft >= 0) {
       return CompetitionStatusView(
         '即将截止',
@@ -34,56 +49,88 @@ CompetitionStatusView resolveCompetitionStatus(
     }
 
     return CompetitionStatusView(
-      '报名中',
+      event.registrationStart == null ? '报名截止已确认' : '报名中',
       CompetitionUiTokens.warningColor(isDark),
     );
   }
 
-  // 2. Check event end (we only have eventStart in model, so we check if eventStart is passed)
   if (event.eventStart != null) {
     final evStart = event.eventStart!;
-    if (now.isAfter(evStart)) {
+    if (!current.isBefore(evStart)) {
       return CompetitionStatusView(
-        '已结束',
-        CompetitionUiTokens.archivedColor(isDark),
+        event.eventEnd == null ? '比赛已开始' : '比赛进行中',
+        CompetitionUiTokens.warningColor(isDark),
       );
     }
     return CompetitionStatusView(
-      '比赛中',
-      CompetitionUiTokens.warningColor(isDark),
+      '比赛未开始',
+      pendingColor,
     );
   }
 
-  // 3. Fallbacks
-  if (event.timeStatus == 'pending' || event.timeStatus == 'unknown') {
-    return CompetitionStatusView(
-      '时间待公布',
-      CompetitionUiTokens.pendingColor(isDark),
-    );
+  if (event.timeStatus == 'confirmed' &&
+      event.registrationTimeText.trim().isNotEmpty) {
+    return CompetitionStatusView('报名安排已核实', pendingColor);
   }
+  return CompetitionStatusView('报名时间待核实', pendingColor);
+}
 
-  return CompetitionStatusView(
-    '时间待确认',
-    CompetitionUiTokens.pendingColor(isDark),
-  );
+// 国内赛事统一显示北京时间，避免 UTC 响应在设备上显示成前一天。
+String competitionDateText(DateTime value) {
+  final date = value.isUtc ? value.add(const Duration(hours: 8)) : value;
+  String two(int value) => value.toString().padLeft(2, '0');
+  final day = '${date.year}-${two(date.month)}-${two(date.day)}';
+  return date.hour == 0 && date.minute == 0
+      ? day
+      : '$day ${two(date.hour)}:${two(date.minute)}';
+}
+
+String _qualifiedTime(CompetitionEvent event, String value) {
+  if (event.timeStatus == 'historical') return '往年参考：$value';
+  if (event.timeStatus == 'estimated') return '预计：$value';
+  return value;
+}
+
+String competitionRegistrationText(CompetitionEvent event) {
+  // 人工核验文本保留校内/全国、赛道等范围，不用单个日期覆盖这些限定。
+  final text = event.registrationTimeText.trim();
+  if (text.isNotEmpty) return _qualifiedTime(event, text);
+  final start = event.registrationStart;
+  final end = event.registrationEnd;
+  if (start != null && end != null) {
+    return _qualifiedTime(
+        event, '${competitionDateText(start)} 至 ${competitionDateText(end)}');
+  }
+  if (end != null) {
+    return _qualifiedTime(event, '截止 ${competitionDateText(end)}');
+  }
+  if (start != null) {
+    return _qualifiedTime(event, '${competitionDateText(start)} 开始，截止时间待核实');
+  }
+  return '报名时间待核实';
+}
+
+String competitionEventTimeText(CompetitionEvent event) {
+  final text = event.eventTimeText.trim();
+  if (text.isNotEmpty) return _qualifiedTime(event, text);
+  final start = event.eventStart;
+  final end = event.eventEnd;
+  if (start != null && end != null) {
+    return _qualifiedTime(
+        event, '${competitionDateText(start)} 至 ${competitionDateText(end)}');
+  }
+  if (start != null) {
+    return _qualifiedTime(event, '${competitionDateText(start)} 开始');
+  }
+  if (end != null) {
+    return _qualifiedTime(event, '${competitionDateText(end)} 结束');
+  }
+  return '比赛时间待核实';
 }
 
 String? getCompetitionCriticalTime(CompetitionEvent event) {
-  if (event.registrationEnd != null) {
-    final dt = event.registrationEnd!;
-    return '报名截止：${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-  }
-  if (event.registrationTimeText.isNotEmpty) {
-    return '报名安排：${event.registrationTimeText}';
-  }
-  if (event.eventStart != null) {
-    final dt = event.eventStart!;
-    return '比赛时间：${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-  }
-  if (event.eventTimeText.isNotEmpty) {
-    return '比赛安排：${event.eventTimeText}';
-  }
-  return null;
+  final registration = competitionRegistrationText(event);
+  return registration == '报名时间待核实' ? registration : '报名安排：$registration';
 }
 
 String competitionSourceLabel(String? source) {

@@ -100,6 +100,7 @@ final class AcademicLoginCoordinator {
     Future<AppPreferencesStore> Function()? preferencesLoader,
     this.persistencePolicy,
     this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
+    this.silentCaptcha = true,
     AcademicCaptchaRecognizer Function()? identityCaptchaRecognizerFactory,
   })  : _identityCaptchaRecognizerFactory = identityCaptchaRecognizerFactory ??
             LazyTfliteAcademicCaptchaRecognizer.new,
@@ -115,6 +116,7 @@ final class AcademicLoginCoordinator {
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
   final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;
+  final bool silentCaptcha;
   final AcademicCaptchaRecognizer Function() _identityCaptchaRecognizerFactory;
   Future<AcademicLoginOutcome>? _ensureInFlight;
   _PendingAcademicLogin? _pending;
@@ -175,6 +177,72 @@ final class AcademicLoginCoordinator {
       (await readEnabledCredential()) != null;
 
   Future<AcademicLoginOutcome> login({
+    required String studentId,
+    String password = '',
+    required bool saveCredentials,
+    required bool saveAcademicData,
+    bool useSavedCredential = false,
+    AcademicProviderId? providerId,
+    bool changeIdentity = false,
+  }) async {
+    final result = await _loginOnce(studentId: studentId, password: password,
+        saveCredentials: saveCredentials, saveAcademicData: saveAcademicData,
+        useSavedCredential: useSavedCredential, providerId: providerId,
+        changeIdentity: changeIdentity);
+    return _completeCaptchaSilently(result);
+  }
+
+  /// 每个认证阶段最多提交两次；刷新后的第三张图只留给人工。
+  Future<AcademicLoginOutcome> _completeCaptchaSilently(AcademicLoginOutcome outcome) async {
+    if (!silentCaptcha) return outcome;
+    var attempts = 0;
+    var identityStage = _pendingIdentity != null;
+    while (outcome.needsCaptcha && attempts < 2) {
+      final verification = _pendingIdentity;
+      final local = _pending;
+      if (verification == null && controller.providerId != AcademicProviderId.syluGraduate) break;
+      final code = controller.captchaSuggestion;
+      final confidence = controller.captchaSuggestionConfidence;
+      if (code == null || !RegExp(r'^\d{4}$').hasMatch(code) ||
+          confidence == null || !confidence.isFinite || confidence < .70) {
+        break;
+      }
+      attempts++;
+      outcome = await continueLoginWithCaptcha(code: code);
+      // 身份验证成功后还有本机学校会话，两阶段各自保留一次重试机会。
+      if (identityStage && verification != null && _pendingIdentity == null &&
+          _pending != null && outcome.needsCaptcha) {
+        identityStage = false;
+        attempts = 0;
+        continue;
+      }
+      final rejected = outcome.kind == AcademicLoginOutcomeKind.challengeRejected ||
+          controller.failure?.kind == AcademicFailureKind.challengeRejected ||
+          controller.failure?.kind == AcademicFailureKind.captchaExpired;
+      if (!rejected) break;
+      final user = verification?.appUserId ?? local?.appUserId;
+      final generation = verification?.generation ?? local?.generation;
+      if (user == null || generation == null ||
+          !controller.isCurrentContext(generation: generation, appUserId: user)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
+      if (verification != null) {
+        outcome = await _beginGraduateIdentityVerification(
+            currentIdentity: verification.challenge.isChange ? controller.identity : null,
+            appUserId: user, studentId: verification.credential.studentId,
+            password: verification.credential.password,
+            saveCredentials: verification.saveCredentials,
+            saveAcademicData: verification.saveAcademicData, useSavedCredential: false);
+      } else if (local != null) {
+        outcome = await _login(appUserId: user, studentId: local.credential.studentId,
+            password: local.credential.password, saveCredentials: local.saveCredentials,
+            saveAcademicData: local.saveAcademicData, useSavedCredential: false);
+      }
+    }
+    return outcome;
+  }
+
+  Future<AcademicLoginOutcome> _loginOnce({
     required String studentId,
     String password = '',
     required bool saveCredentials,
@@ -737,34 +805,7 @@ final class AcademicLoginCoordinator {
       saveAcademicData: prefs.saveAcademicData,
       useSavedCredential: false,
     );
-    // 仅保存密码的后台恢复走自动提交；首次绑定、换绑和人工登录保持显式挑战。
-    for (var attempts = 0; outcome.needsCaptcha &&
-        controller.providerId == AcademicProviderId.syluGraduate; attempts++) {
-      final challenge = controller.pendingAcademicChallenge;
-      if (challenge == null ||
-          !captchaSubmissionPolicy.allows(controller.captchaSuggestion,
-              controller.captchaSuggestionConfidence, attempts)) {
-        break;
-      }
-      if (!await controller.remoteAccessAllowed() ||
-          !controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
-      }
-      outcome = await continueLoginWithCaptcha(code: controller.captchaSuggestion!);
-      if (!outcome.isSuccess) {
-        final failure = controller.failure?.kind;
-        if ((failure == AcademicFailureKind.challengeRejected ||
-                failure == AcademicFailureKind.captchaExpired) &&
-            controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
-          // 失败的验证码已经消费；只准备一张新人工挑战，不再后台提交。
-          return _login(appUserId: requestUser!, studentId: saved.studentId,
-              password: saved.password, saveCredentials: true,
-              saveAcademicData: prefs.saveAcademicData, useSavedCredential: false);
-        }
-        break;
-      }
-    }
-    return outcome;
+    return _completeCaptchaSilently(outcome);
   }
 
   Future<AcademicLoginOutcome> _login({

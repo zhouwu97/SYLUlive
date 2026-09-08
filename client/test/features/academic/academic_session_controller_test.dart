@@ -24,6 +24,74 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
+  for (final code in ['ACADEMIC_CHALLENGE_REJECTED', 'ACADEMIC_PROVIDER_UNAVAILABLE']) {
+    test('身份验证静默提交按错误类型停止：$code', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final controller = AcademicSessionController(repository: AcademicRepositoryImpl(
+          local: _FakeAcademicDataSource(), legacy: _FakeAcademicDataSource(),
+          source: AcademicSourceKind.legacy), cleanupCoordinator: AccountSessionCleanupCoordinator());
+      await controller.syncAppUser('app-user-a');
+      var submissions = 0;
+      var challenges = 0;
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        if (options.path.endsWith('/verify')) {
+          submissions++;
+          handler.reject(DioException(requestOptions: options,
+              type: DioExceptionType.badResponse,
+              response: Response(requestOptions: options, statusCode: 401,
+                  data: {'code': code, 'error': 'fixture'})));
+          return;
+        }
+        challenges++;
+        handler.resolve(Response(requestOptions: options, statusCode: 200, data: {
+          'challenge_required': true, 'challenge_type': 'school_login',
+          'provider_id': 'sylu_graduate', 'student_id': 'G-001',
+          'challenge_token': 'fixture-$challenges', 'captcha': base64Encode([1,2,3]),
+          'school_public_key': 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3hzrH91c0OKgtaSB7GWGfDuUJsMrtiYThDXtJdrCr7exKt2fmIZngoFk71Dv/BPVQCHSuohNNvEV9VVDFSBhsP9xKEDAM4/2Lv+wlzN9CuZtLpV3Elo8VacjwMHcjTRmTchRBmijQzZRFrA2LM+qsH3U5tRM1uJFbfRMkBq24AwIDAQAB',
+          'school_public_key_fingerprint': 'sha256:fixture',
+          'expires_at': '2099-01-01T00:00:00Z',
+        }));
+      }));
+      final coordinator = AcademicLoginCoordinator(controller: controller,
+          identityClient: AcademicIdentityClient(dio),
+          identityCaptchaRecognizerFactory: _IdentityRecognizer.new);
+      final result = await coordinator.login(studentId: 'G-001', password: 'fixture',
+          providerId: AcademicProviderId.syluGraduate,
+          saveCredentials: true, saveAcademicData: false);
+      final captchaError = code == 'ACADEMIC_CHALLENGE_REJECTED';
+      expect(submissions, captchaError ? 2 : 1);
+      expect(challenges, captchaError ? 3 : 1);
+      expect(result.needsCaptcha, captchaError);
+      coordinator.cancelIdentityVerification();
+      controller.dispose();
+      dio.close();
+    });
+  }
+  for (final failures in [1, 2]) {
+    test('研究生静默验证码失败 $failures 次后有限重试', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final source = _FakeAcademicDataSource(loginResult: const CaptchaRequired(),
+          captcha: CaptchaChallenge(imageBytes: Uint8List.fromList([1]),
+              suggestedCode: '1234', suggestionConfidence: .99))
+        ..captchaFailures = failures;
+      final controller = AcademicSessionController(
+          repository: AcademicRepositoryImpl(local: source, legacy: source,
+              source: AcademicSourceKind.local),
+          identity: const AcademicIdentityKey(appUserId: 'app-user-a',
+              providerId: AcademicProviderId.syluGraduate, studentId: '2026000001'),
+          cleanupCoordinator: AccountSessionCleanupCoordinator());
+      await controller.syncAppUser('app-user-a');
+      final coordinator = _newCoordinator(controller, _MemoryAcademicCredentialStore(),
+          MemoryPreferencesStore());
+      final result = await coordinator.login(studentId: '2026000001', password: 'fixture',
+          saveCredentials: true, saveAcademicData: false);
+      expect(source.captchaSubmissions, 2);
+      expect(result.isSuccess, failures == 1);
+      expect(result.needsCaptcha, failures == 2);
+      controller.dispose();
+    });
+  }
   testWidgets('保留旧本科身份时换绑入口允许切换研究生类型和学号', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     final source = _FakeAcademicDataSource();
@@ -76,6 +144,7 @@ void main() {
     }));
     final recognizer = _IdentityRecognizer();
     final coordinator = AcademicLoginCoordinator(controller: controller,
+      silentCaptcha: false,
       identityClient: AcademicIdentityClient(dio),
       identityCaptchaRecognizerFactory: () => recognizer);
     final result = await coordinator.login(studentId: 'G-001', password: 'fixture',
@@ -774,6 +843,8 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   int gradeCalls = 0;
   int resetCalls = 0;
   int restoreCalls = 0;
+  int captchaFailures = 0;
+  int captchaSubmissions = 0;
   String? restoredStudentId;
   Object? restoreError;
   final List<String> calls = [];
@@ -817,6 +888,11 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
 
   @override
   Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
+    captchaSubmissions++;
+    if (captchaFailures-- > 0) {
+      throw const AcademicFailure(kind: AcademicFailureKind.challengeRejected,
+          message: '验证码错误', code: 'CAPTCHA_INVALID');
+    }
     _state = SessionState.authenticated;
     return const LoginSuccess(
       studentId: '2026000001',

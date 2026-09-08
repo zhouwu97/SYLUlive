@@ -434,7 +434,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                                 ),
                         child: const Text('查看教务数据专项授权'),
                       ),
-                    if (awaitingCaptcha) ...[
+                    if (awaitingCaptcha && !_submitting) ...[
                       const SizedBox(height: AppSpacing.sm),
                       _CaptchaPanel(
                         challenge: challenge,

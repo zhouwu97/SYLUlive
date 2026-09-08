@@ -31,6 +31,7 @@ class CourseWidgetService : RemoteViewsService() {
             variant,
             HomeWidgetThemeConfig.resolve(applicationContext, resolvedTheme),
             HomeWidgetTypography.resolve(variant.size, fontSize),
+            fontSize,
         )
     }
 }
@@ -40,6 +41,7 @@ class CourseRemoteViewsFactory(
     private val variant: NativeWidgetVariant,
     private val theme: HomeWidgetThemeConfig,
     private val typography: HomeWidgetTypography,
+    private val fontSize: NativeHomeWidgetFontSize,
 ) : RemoteViewsService.RemoteViewsFactory {
     private val courses = mutableListOf<WidgetCourseData.Course>()
 
@@ -48,7 +50,7 @@ class CourseRemoteViewsFactory(
     override fun onDataSetChanged() {
         courses.clear()
         val data = CourseDataReader.read(context)
-        courses.addAll(data.courses.take(variant.maxItems))
+        courses.addAll(data.courses.take(variant.maxItems(fontSize)))
     }
 
     override fun onDestroy() = courses.clear()
@@ -56,13 +58,25 @@ class CourseRemoteViewsFactory(
     override fun getCount(): Int = courses.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, variant.itemLayoutResource)
+        val views = RemoteViews(
+            context.packageName,
+            variant.itemLayoutResource(fontSize),
+        )
         if (position !in courses.indices) return views
         val course = courses[position]
         views.setTextViewText(R.id.tv_course_name, course.name.ifBlank { "未知课程" })
         views.setTextViewText(R.id.tv_course_time, course.time)
         views.setTextViewText(R.id.tv_course_location, course.location)
         views.setTextViewText(R.id.tv_course_teacher, course.teacher)
+        if (fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) {
+            views.setTextViewText(R.id.tv_item_context, if (position == 0) "最近" else "接下来")
+            views.setTextViewTextSize(
+                R.id.tv_item_context,
+                TypedValue.COMPLEX_UNIT_SP,
+                typography.badgeSp,
+            )
+            views.setTextColor(R.id.tv_item_context, theme.secondaryTextColor)
+        }
         views.setTextViewTextSize(
             R.id.tv_course_name,
             TypedValue.COMPLEX_UNIT_SP,
@@ -85,7 +99,10 @@ class CourseRemoteViewsFactory(
         )
         views.setViewVisibility(
             R.id.tv_course_location,
-            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && course.location.isNotBlank()) {
+            if ((variant.size == NativeHomeWidgetSize.SIZE_4X2 ||
+                    fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) &&
+                course.location.isNotBlank()
+            ) {
                 View.VISIBLE
             } else {
                 View.GONE
@@ -93,7 +110,10 @@ class CourseRemoteViewsFactory(
         )
         views.setViewVisibility(
             R.id.tv_course_teacher,
-            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && course.teacher.isNotBlank()) {
+            if ((variant.size == NativeHomeWidgetSize.SIZE_4X2 ||
+                    fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) &&
+                course.teacher.isNotBlank()
+            ) {
                 View.VISIBLE
             } else {
                 View.GONE

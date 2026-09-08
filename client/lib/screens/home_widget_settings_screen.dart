@@ -357,7 +357,9 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
             ),
             const SizedBox(height: 4),
             Text(
-              '仅调整文字大小，不改变小组件结构、信息顺序、色条位置和课程数量。',
+              appearance.fontSize == HomeWidgetFontSize.extraLarge
+                  ? '超大字号使用高可读布局：2×2 显示 1 条，4×2 并列显示最多 2 条。'
+                  : '小、标准、大仅调整文字大小，不改变小组件结构和信息顺序。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -372,18 +374,26 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
             const Divider(height: 1),
             _WidgetSizeRow(
               title: '2×2 紧凑版',
-              subtitle: kind == HomeWidgetKind.course
-                  ? '显示日期和最多 2 门课程'
-                  : '显示最近 1～2 场考试与倒计时',
+              subtitle: appearance.fontSize == HomeWidgetFontSize.extraLarge
+                  ? (kind == HomeWidgetKind.course
+                      ? '超大字号显示最近 1 门课程'
+                      : '超大字号显示最近 1 场考试')
+                  : (kind == HomeWidgetKind.course
+                      ? '显示日期和最多 2 门课程'
+                      : '显示最近 1～2 场考试与倒计时'),
               count: _counts.countFor(kind, HomeWidgetSize.size2x2),
               onAdd: () => _requestPin(kind, HomeWidgetSize.size2x2),
             ),
             const Divider(height: 1),
             _WidgetSizeRow(
               title: '4×2 列表版',
-              subtitle: kind == HomeWidgetKind.course
-                  ? '显示更多课程、教师与地点'
-                  : '显示更多考试的日期、时间与地点',
+              subtitle: appearance.fontSize == HomeWidgetFontSize.extraLarge
+                  ? (kind == HomeWidgetKind.course
+                      ? '超大字号并列显示最近 2 门课程'
+                      : '超大字号并列显示最近 2 场考试')
+                  : (kind == HomeWidgetKind.course
+                      ? '显示更多课程、教师与地点'
+                      : '显示更多考试的日期、时间与地点'),
               count: _counts.countFor(kind, HomeWidgetSize.size4x2),
               onAdd: () => _requestPin(kind, HomeWidgetSize.size4x2),
             ),
@@ -426,7 +436,13 @@ class _HomeWidgetPreview extends StatelessWidget {
     );
     final typography = HomeWidgetTypography.resolve(size, appearance.fontSize);
     final isWide = size == HomeWidgetSize.size4x2;
-    const maxItems = 2; // 无论是 2x2 还是 4x2，因为高度都是 2，最多只显示 2 条内容
+    final highReadability = HomeWidgetContentPolicy.usesHighReadabilityLayout(
+      appearance.fontSize,
+    );
+    final maxItems = HomeWidgetContentPolicy.previewItemCount(
+      size,
+      appearance.fontSize,
+    );
     final items = data.items.take(maxItems).toList();
 
     return Container(
@@ -479,7 +495,8 @@ class _HomeWidgetPreview extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (kind == HomeWidgetKind.course)
+                  if (kind == HomeWidgetKind.course &&
+                      !(highReadability && !isWide))
                     Flexible(
                       child: Text(
                         data.subtitle,
@@ -506,26 +523,76 @@ class _HomeWidgetPreview extends StatelessWidget {
                           ),
                         ),
                       )
-                    : ListView.separated(
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 5),
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          return _PreviewItem(
-                            item: item,
+                    : highReadability
+                        ? _HighReadabilityPreviewItems(
+                            items: items,
                             kind: kind,
-                            detailed: isWide,
+                            isWide: isWide,
                             palette: palette,
                             typography: typography,
-                          );
-                        },
-                      ),
+                          )
+                        : ListView.separated(
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 5),
+                            itemBuilder: (context, index) {
+                              final item = items[index];
+                              return _PreviewItem(
+                                item: item,
+                                kind: kind,
+                                detailed: isWide,
+                                palette: palette,
+                                typography: typography,
+                              );
+                            },
+                          ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _HighReadabilityPreviewItems extends StatelessWidget {
+  const _HighReadabilityPreviewItems({
+    required this.items,
+    required this.kind,
+    required this.isWide,
+    required this.palette,
+    required this.typography,
+  });
+
+  final List<HomeWidgetPreviewItem> items;
+  final HomeWidgetKind kind;
+  final bool isWide;
+  final HomeWidgetThemePalette palette;
+  final HomeWidgetTypography typography;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget itemAt(int index) => _PreviewItem(
+          item: items[index],
+          kind: kind,
+          detailed: true,
+          palette: palette,
+          typography: typography,
+          highReadability: true,
+          contextLabel: index == 0 ? '最近' : '接下来',
+        );
+
+    if (!isWide || items.length == 1) {
+      return Align(alignment: Alignment.centerLeft, child: itemAt(0));
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: itemAt(0)),
+        VerticalDivider(width: 18, thickness: 1, color: palette.border),
+        Expanded(child: itemAt(1)),
+      ],
     );
   }
 }
@@ -537,6 +604,8 @@ class _PreviewItem extends StatelessWidget {
     required this.detailed,
     required this.palette,
     required this.typography,
+    this.highReadability = false,
+    this.contextLabel = '',
   });
 
   final HomeWidgetPreviewItem item;
@@ -544,6 +613,8 @@ class _PreviewItem extends StatelessWidget {
   final bool detailed;
   final HomeWidgetThemePalette palette;
   final HomeWidgetTypography typography;
+  final bool highReadability;
+  final String contextLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -555,6 +626,83 @@ class _PreviewItem extends StatelessWidget {
     } catch (_) {
       barColor = palette.accent;
     }
+    if (highReadability) {
+      return Row(
+        children: [
+          Container(
+            width: 4,
+            margin: const EdgeInsets.symmetric(vertical: 5),
+            decoration: BoxDecoration(
+              color: kind == HomeWidgetKind.course ? barColor : palette.accent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  contextLabel,
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: typography.badge,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.primaryText,
+                    fontSize: typography.primary,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (item.secondaryDetail.isNotEmpty)
+                  Text(
+                    item.secondaryDetail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: typography.tertiary,
+                    ),
+                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.primaryDetail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: typography.secondary,
+                        ),
+                      ),
+                    ),
+                    if (item.badge.isNotEmpty)
+                      Text(
+                        item.badge,
+                        style: TextStyle(
+                          color: palette.accent,
+                          fontSize: typography.badge,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return SizedBox(
       height: detailed ? 48 : 42,
       child: Row(

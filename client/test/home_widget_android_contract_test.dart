@@ -34,6 +34,27 @@ void main() {
     expect(registry, contains('R.layout.widget_course_item_detailed'));
   });
 
+  test('超大字号为 2×2 限制一条并为 4×2 使用双列布局', () {
+    final registry = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRegistry.kt',
+    );
+    expect(registry, contains('NativeHomeWidgetFontSize.EXTRA_LARGE'));
+    expect(registry, contains('R.layout.widget_course_4x2_extra_large'));
+    expect(registry, contains('R.layout.widget_exam_4x2_extra_large'));
+    expect(registry, contains('R.layout.widget_course_item_extra_large'));
+    expect(registry, contains('R.layout.widget_exam_item_extra_large'));
+    expect(registry, contains('size == NativeHomeWidgetSize.SIZE_2X2'));
+
+    for (final path in const [
+      'android/app/src/main/res/layout/widget_course_4x2_extra_large.xml',
+      'android/app/src/main/res/layout/widget_exam_4x2_extra_large.xml',
+    ]) {
+      final layout = source(path);
+      expect(layout, contains('<GridView'));
+      expect(layout, contains('android:numColumns="2"'));
+    }
+  });
+
   test('课表标题和日期的 RelativeLayout 约束不能形成双向依赖', () {
     for (final path in const [
       'android/app/src/main/res/layout/widget_course_2x2.xml',

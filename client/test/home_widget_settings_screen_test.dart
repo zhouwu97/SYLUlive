@@ -10,7 +10,7 @@ import 'package:shenliyuan/services/home_widget_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('字号设置显示三档、默认标准并可立即保存大字号', (tester) async {
+  testWidgets('字号设置显示四档、默认标准并可立即保存超大字号', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -32,22 +32,24 @@ void main() {
     expect(find.widgetWithText(ChoiceChip, '小'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, '标准'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, '大'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, '超大'), findsOneWidget);
     expect(find.byType(Slider), findsNothing);
 
-    final courseLargeChip = find.widgetWithText(ChoiceChip, '大').first;
-    expect(tester.widget<ChoiceChip>(courseLargeChip).selected, isFalse);
+    final courseExtraLargeChip = find.widgetWithText(ChoiceChip, '超大').first;
+    expect(tester.widget<ChoiceChip>(courseExtraLargeChip).selected, isFalse);
 
-    await tester.tap(courseLargeChip);
+    await tester.tap(courseExtraLargeChip);
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(
       (await HomeWidgetService.getAppearance(HomeWidgetKind.course)).fontSize,
-      HomeWidgetFontSize.large,
+      HomeWidgetFontSize.extraLarge,
     );
     expect(
       (await HomeWidgetService.getAppearance(HomeWidgetKind.exam)).fontSize,
       HomeWidgetFontSize.standard,
     );
-    expect(tester.widget<ChoiceChip>(courseLargeChip).selected, isTrue);
+    expect(tester.widget<ChoiceChip>(courseExtraLargeChip).selected, isTrue);
+    expect(find.textContaining('2×2 显示 1 条'), findsOneWidget);
   });
 }

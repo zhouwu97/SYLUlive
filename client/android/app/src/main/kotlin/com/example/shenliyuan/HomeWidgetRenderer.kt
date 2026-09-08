@@ -14,8 +14,11 @@ object HomeWidgetRenderer {
         appWidgetId: Int,
         variant: NativeWidgetVariant,
     ): RemoteViews {
-        val views = RemoteViews(context.packageName, variant.layoutResource)
         val appearance = HomeWidgetAppearanceStore.read(context, variant.kind)
+        val views = RemoteViews(
+            context.packageName,
+            variant.rootLayoutResource(appearance.fontSize),
+        )
         val theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
         val typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
 
@@ -36,7 +39,11 @@ object HomeWidgetRenderer {
 
         if (variant.kind == NativeHomeWidgetKind.COURSE) {
             val data = CourseDataReader.read(context)
-            views.setTextViewText(R.id.tv_widget_date, data.date)
+            val hideCompactDate =
+                appearance.fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE &&
+                    variant.size == NativeHomeWidgetSize.SIZE_2X2
+            // 日期节点同时承担标题的右侧约束，清空文本可释放宽度且不会破坏标题布局。
+            views.setTextViewText(R.id.tv_widget_date, if (hideCompactDate) "" else data.date)
             views.setTextViewTextSize(
                 R.id.tv_widget_date,
                 TypedValue.COMPLEX_UNIT_SP,

@@ -27,7 +27,8 @@ enum class NativeHomeWidgetTheme(val storageName: String) {
 enum class NativeHomeWidgetFontSize(val storageName: String) {
     SMALL("small"),
     STANDARD("standard"),
-    LARGE("large");
+    LARGE("large"),
+    EXTRA_LARGE("extraLarge");
 
     companion object {
         fun fromStorage(value: String?): NativeHomeWidgetFontSize =

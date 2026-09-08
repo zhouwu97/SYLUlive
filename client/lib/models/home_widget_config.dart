@@ -44,11 +44,12 @@ enum HomeWidgetTheme {
   }
 }
 
-/// 桌面小组件字号只提供经过布局验证的三个安全档位。
+/// 桌面小组件字号只提供经过布局验证的安全档位。
 enum HomeWidgetFontSize {
   small,
   standard,
-  large;
+  large,
+  extraLarge;
 
   String get storageName => name;
 
@@ -56,6 +57,7 @@ enum HomeWidgetFontSize {
         HomeWidgetFontSize.small => '小',
         HomeWidgetFontSize.standard => '标准',
         HomeWidgetFontSize.large => '大',
+        HomeWidgetFontSize.extraLarge => '超大',
       };
 
   static HomeWidgetFontSize fromStorage(String? value) {
@@ -193,6 +195,15 @@ class HomeWidgetTypography {
           badge: 9,
           empty: 12,
         ),
+      (false, HomeWidgetFontSize.extraLarge) => const HomeWidgetTypography(
+          title: 15,
+          subtitle: 11,
+          primary: 16,
+          secondary: 13,
+          tertiary: 12,
+          badge: 11,
+          empty: 14,
+        ),
       (true, HomeWidgetFontSize.small) => const HomeWidgetTypography(
           title: 13,
           subtitle: 9,
@@ -220,7 +231,32 @@ class HomeWidgetTypography {
           badge: 9,
           empty: 13,
         ),
+      (true, HomeWidgetFontSize.extraLarge) => const HomeWidgetTypography(
+          title: 16,
+          subtitle: 11,
+          primary: 17,
+          secondary: 13,
+          tertiary: 12,
+          badge: 11,
+          empty: 14,
+        ),
     };
+  }
+}
+
+/// 超大字号通过减少内容密度换取可读性；其他字号保持现有展示数量。
+class HomeWidgetContentPolicy {
+  const HomeWidgetContentPolicy._();
+
+  static bool usesHighReadabilityLayout(HomeWidgetFontSize fontSize) =>
+      fontSize == HomeWidgetFontSize.extraLarge;
+
+  static int previewItemCount(
+    HomeWidgetSize size,
+    HomeWidgetFontSize fontSize,
+  ) {
+    if (!usesHighReadabilityLayout(fontSize)) return 2;
+    return size == HomeWidgetSize.size2x2 ? 1 : 2;
   }
 }
 

@@ -17,7 +17,7 @@ class HomeWidgetTypographyTest {
     }
 
     @Test
-    fun `2x2 和 4x2 的三档字号映射符合规格`() {
+    fun `2x2 和 4x2 的四档字号映射符合规格`() {
         val compactSmall = HomeWidgetTypography.resolve(
             NativeHomeWidgetSize.SIZE_2X2,
             NativeHomeWidgetFontSize.SMALL,
@@ -29,6 +29,10 @@ class HomeWidgetTypographyTest {
         val compactLarge = HomeWidgetTypography.resolve(
             NativeHomeWidgetSize.SIZE_2X2,
             NativeHomeWidgetFontSize.LARGE,
+        )
+        val compactExtraLarge = HomeWidgetTypography.resolve(
+            NativeHomeWidgetSize.SIZE_2X2,
+            NativeHomeWidgetFontSize.EXTRA_LARGE,
         )
         val detailedSmall = HomeWidgetTypography.resolve(
             NativeHomeWidgetSize.SIZE_4X2,
@@ -42,13 +46,19 @@ class HomeWidgetTypographyTest {
             NativeHomeWidgetSize.SIZE_4X2,
             NativeHomeWidgetFontSize.LARGE,
         )
+        val detailedExtraLarge = HomeWidgetTypography.resolve(
+            NativeHomeWidgetSize.SIZE_4X2,
+            NativeHomeWidgetFontSize.EXTRA_LARGE,
+        )
 
         assertEquals(12f, compactSmall.titleSp)
         assertEquals(13f, compactStandard.titleSp)
         assertEquals(14f, compactLarge.titleSp)
+        assertEquals(16f, compactExtraLarge.primarySp)
         assertEquals(13f, detailedSmall.titleSp)
         assertEquals(14f, detailedStandard.titleSp)
         assertEquals(15f, detailedLarge.titleSp)
+        assertEquals(17f, detailedExtraLarge.primarySp)
         assertEquals(11f, compactStandard.primarySp)
         assertEquals(12f, detailedStandard.primarySp)
         assertEquals(9f, detailedLarge.tertiarySp)

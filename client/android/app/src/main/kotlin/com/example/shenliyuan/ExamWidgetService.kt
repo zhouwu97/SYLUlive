@@ -30,6 +30,7 @@ class ExamWidgetService : RemoteViewsService() {
             variant,
             HomeWidgetThemeConfig.resolve(applicationContext, resolvedTheme),
             HomeWidgetTypography.resolve(variant.size, fontSize),
+            fontSize,
         )
     }
 }
@@ -39,6 +40,7 @@ class ExamRemoteViewsFactory(
     private val variant: NativeWidgetVariant,
     private val theme: HomeWidgetThemeConfig,
     private val typography: HomeWidgetTypography,
+    private val fontSize: NativeHomeWidgetFontSize,
 ) : RemoteViewsService.RemoteViewsFactory {
     private val exams = mutableListOf<WidgetExamData.Exam>()
 
@@ -46,7 +48,9 @@ class ExamRemoteViewsFactory(
 
     override fun onDataSetChanged() {
         exams.clear()
-        exams.addAll(ExamDataReader.read(context).exams.take(variant.maxItems))
+        exams.addAll(
+            ExamDataReader.read(context).exams.take(variant.maxItems(fontSize)),
+        )
     }
 
     override fun onDestroy() = exams.clear()
@@ -54,7 +58,10 @@ class ExamRemoteViewsFactory(
     override fun getCount(): Int = exams.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, variant.itemLayoutResource)
+        val views = RemoteViews(
+            context.packageName,
+            variant.itemLayoutResource(fontSize),
+        )
         if (position !in exams.indices) return views
         val exam = exams[position]
         views.setTextViewText(R.id.tv_exam_name, exam.name)
@@ -62,6 +69,15 @@ class ExamRemoteViewsFactory(
         views.setTextViewText(R.id.tv_exam_time, exam.time)
         views.setTextViewText(R.id.tv_exam_location, exam.location)
         views.setTextViewText(R.id.tv_exam_countdown, exam.countdown)
+        if (fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) {
+            views.setTextViewText(R.id.tv_item_context, if (position == 0) "最近" else "接下来")
+            views.setTextViewTextSize(
+                R.id.tv_item_context,
+                TypedValue.COMPLEX_UNIT_SP,
+                typography.badgeSp,
+            )
+            views.setTextColor(R.id.tv_item_context, theme.secondaryTextColor)
+        }
         views.setTextViewTextSize(
             R.id.tv_exam_name,
             TypedValue.COMPLEX_UNIT_SP,
@@ -93,7 +109,10 @@ class ExamRemoteViewsFactory(
         )
         views.setViewVisibility(
             R.id.tv_exam_location,
-            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && exam.location.isNotBlank()) {
+            if ((variant.size == NativeHomeWidgetSize.SIZE_4X2 ||
+                    fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) &&
+                exam.location.isNotBlank()
+            ) {
                 View.VISIBLE
             } else {
                 View.GONE

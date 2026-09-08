@@ -56,6 +56,33 @@ enum class NativeWidgetVariant(
         6,
     );
 
+    fun rootLayoutResource(fontSize: NativeHomeWidgetFontSize): Int {
+        if (fontSize != NativeHomeWidgetFontSize.EXTRA_LARGE) return layoutResource
+        return when (this) {
+            COURSE_4X2 -> R.layout.widget_course_4x2_extra_large
+            EXAM_4X2 -> R.layout.widget_exam_4x2_extra_large
+            else -> layoutResource
+        }
+    }
+
+    fun itemLayoutResource(fontSize: NativeHomeWidgetFontSize): Int =
+        if (fontSize != NativeHomeWidgetFontSize.EXTRA_LARGE) {
+            itemLayoutResource
+        } else if (kind == NativeHomeWidgetKind.COURSE) {
+            R.layout.widget_course_item_extra_large
+        } else {
+            R.layout.widget_exam_item_extra_large
+        }
+
+    fun maxItems(fontSize: NativeHomeWidgetFontSize): Int =
+        if (fontSize != NativeHomeWidgetFontSize.EXTRA_LARGE) {
+            maxItems
+        } else if (size == NativeHomeWidgetSize.SIZE_2X2) {
+            1
+        } else {
+            2
+        }
+
     companion object {
         fun fromName(
             value: String?,

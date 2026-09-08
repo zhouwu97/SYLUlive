@@ -20,7 +20,7 @@ void main() {
       );
     });
 
-    test('三档字号保存读取正确且课表与考试互不污染', () async {
+    test('四档字号保存读取正确且课表与考试互不污染', () async {
       AppPreferencesStore.setMockInitialValues({});
 
       await HomeWidgetService.updateAppearance(
@@ -28,7 +28,7 @@ void main() {
           kind: HomeWidgetKind.course,
           theme: HomeWidgetTheme.light,
           title: '今日课表',
-          fontSize: HomeWidgetFontSize.large,
+          fontSize: HomeWidgetFontSize.extraLarge,
         ),
       );
       await HomeWidgetService.updateAppearance(
@@ -42,7 +42,7 @@ void main() {
 
       expect(
         (await HomeWidgetService.getAppearance(HomeWidgetKind.course)).fontSize,
-        HomeWidgetFontSize.large,
+        HomeWidgetFontSize.extraLarge,
       );
       expect(
         (await HomeWidgetService.getAppearance(HomeWidgetKind.exam)).fontSize,
@@ -146,6 +146,31 @@ void main() {
       expect(detailed.title, 15);
       expect(detailed.primary, 13);
       expect(detailed.tertiary, 9);
+
+      final compactExtraLarge = HomeWidgetTypography.resolve(
+        HomeWidgetSize.size2x2,
+        HomeWidgetFontSize.extraLarge,
+      );
+      final detailedExtraLarge = HomeWidgetTypography.resolve(
+        HomeWidgetSize.size4x2,
+        HomeWidgetFontSize.extraLarge,
+      );
+      expect(compactExtraLarge.primary, 16);
+      expect(detailedExtraLarge.primary, 17);
+      expect(
+        HomeWidgetContentPolicy.previewItemCount(
+          HomeWidgetSize.size2x2,
+          HomeWidgetFontSize.extraLarge,
+        ),
+        1,
+      );
+      expect(
+        HomeWidgetContentPolicy.previewItemCount(
+          HomeWidgetSize.size4x2,
+          HomeWidgetFontSize.extraLarge,
+        ),
+        2,
+      );
     });
   });
 

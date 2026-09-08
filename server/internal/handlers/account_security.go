@@ -48,6 +48,7 @@ type emailPasswordResetInput struct {
 }
 
 type accountSecurityResponse struct {
+	LoginAccount     string   `json:"login_account"`
 	StudentID        string   `json:"student_id,omitempty"`
 	StudentVerified  bool     `json:"student_verified"`
 	Email            string   `json:"email"`
@@ -463,6 +464,7 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 		return
 	}
 	response.StudentID = profile.StudentID
+	response.LoginAccount = profile.LoginAccount
 	response.StudentVerified = profile.StudentVerified
 	response.LoginMethods = profile.LoginMethods
 	response.CanResetViaEdu = profile.CanResetViaEdu
@@ -551,6 +553,10 @@ func strconvUserID(id uint) string {
 
 // 邮箱解绑与资料展示使用相同的身份来源，不能依赖已经退役的 User 认证标记。
 func hasStudentLoginIdentity(db *gorm.DB, user models.User) (bool, error) {
+	if db.Migrator().HasTable(&models.AccountLoginAlias{}) {
+		aliases, err := services.AvailableAccountLoginAliases(db, user.ID)
+		return len(aliases) > 0, err
+	}
 	if !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
 		return user.IsStudentVerified() && strings.TrimSpace(user.StudentID) != "", nil
 	}

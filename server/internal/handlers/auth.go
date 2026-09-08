@@ -1607,7 +1607,19 @@ func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 		return user, activeUsers().Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error
 	default:
 		var err error
-		if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		if h.db.Migrator().HasTable(&models.AccountLoginAlias{}) {
+			var users []models.User
+			err = activeUsers().Where("id IN (?)", h.db.Model(&models.AccountLoginAlias{}).Select("user_id").Where("value = ?", account)).Limit(2).Find(&users).Error
+			if err == nil && len(users) == 1 {
+				return users[0], nil
+			}
+			if err == nil && len(users) > 1 {
+				return user, errors.New("学号对应多个账号，请使用邮箱登录")
+			}
+			if err == nil {
+				err = gorm.ErrRecordNotFound
+			}
+		} else if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
 			var users []models.User
 			// 未指定 Provider 的学号只在唯一对应 App 账号时可登录，避免同号跨校类误命中。
 			err = activeUsers().Where("id IN (?)", h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("student_id = ?", account)).Limit(2).Find(&users).Error

@@ -40,11 +40,6 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
   }
 
-  String get _studentId =>
-      _security?['student_id']?.toString() ??
-      context.read<AuthProvider>().user?.studentId ??
-      '';
-
   bool get _emailBound =>
       _security?['email_bound'] == true ||
       context.read<AuthProvider>().user?.emailBound == true;
@@ -286,15 +281,16 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final usesLocalAcademic =
         localAcademic.sourceKind == AcademicSourceKind.local;
     final supportsGrades = localAcademic.capabilities.supportsGrades;
-    final effectiveStudentId = _studentId;
-    // 学生身份属于 App 账号，不随教务会话过期或撤销授权而消失。
-    final effectiveStudentVerified =
-        (_security?['student_verified'] as bool?) ??
-            context.watch<AuthProvider>().user?.studentVerified ??
-            false;
-    final loginMethods = (_security?['login_methods'] as List? ?? const [])
-        .map((method) => method == 'student_id' ? '学号' : '邮箱')
-        .join('、');
+    final identity = localAcademic.identity;
+    final user = context.watch<AuthProvider>().user;
+    final loginAccount =
+        _security?['login_account']?.toString() ?? user?.loginAccount ?? '';
+    final accountLabel =
+        loginAccount.isNotEmpty ? loginAccount : 'App ID ${user?.id ?? ''}';
+    final loginMethods =
+        (_security?['login_methods'] as List? ?? user?.loginMethods ?? const [])
+            .map((method) => method == 'student_id' ? '原学号（兼容）' : '邮箱')
+            .join('、');
 
     return SettingsPageScaffold(
       title: '账号与安全',
@@ -306,12 +302,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.verified_user_outlined,
-              title: '学生身份认证',
-              subtitle:
-                  effectiveStudentVerified ? '学号 $effectiveStudentId' : '未完成认证',
+              title: '当前教务账号',
+              subtitle: identity == null
+                  ? '尚未配置教务账号'
+                  : '${identity.providerId.displayName} · ${identity.studentId}',
               trailing: SettingsStatusBadge(
-                label: effectiveStudentVerified ? '已认证' : '未认证',
-                type: effectiveStudentVerified
+                label: identity == null ? '未配置' : '已配置',
+                type: identity != null
                     ? SettingsStatusBadgeType.success
                     : SettingsStatusBadgeType.neutral,
               ),
@@ -320,7 +317,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.mark_email_read_outlined,
               title: '安全邮箱状态',
-              subtitle: _emailBound ? _emailLabel : '绑定后用于重置密码与通知',
+              subtitle: _emailBound ? _emailLabel : '请绑定邮箱，用于 App 登录与找回密码',
               trailing: SettingsStatusBadge(
                 label: _emailBound ? '已绑定' : '未绑定',
                 type: _emailBound
@@ -352,23 +349,21 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           children: [
             SettingsTile(
               icon: Icons.badge_outlined,
-              title: effectiveStudentVerified
-                  ? '主账号：$effectiveStudentId'
-                  : '尚未认证学生',
-              subtitle: effectiveStudentVerified ? '学生身份已认证' : '完成教务绑定后认证学生身份',
+              title: 'App 登录账号：$accountLabel',
+              subtitle: '更换或解绑教务不会改变 App 登录账号',
               showChevron: false,
             ),
             SettingsTile(
               icon: Icons.email_outlined,
               title: _emailBound ? '邮箱：$_emailLabel' : '邮箱未绑定',
-              subtitle: _emailBound ? '支持找回密码与安全通知' : '点击进行安全邮箱绑定',
+              subtitle: _emailBound ? '请使用邮箱和 App 密码登录' : '请完成邮箱验证，之后使用邮箱登录',
               onTap: _showEmailEditor,
             ),
             if (_emailBound)
               SettingsTile(
                 icon: Icons.link_off_outlined,
                 title: '解除邮箱',
-                subtitle: '学生认证账号可解除辅助邮箱',
+                subtitle: '解除前需保留可用的其他登录方式',
                 onTap: _removeEmail,
                 danger: true,
               ),
@@ -401,9 +396,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务身份与本机连接',
-              subtitle: effectiveStudentVerified
-                  ? '学生身份已验证；管理身份和本机连接'
-                  : '添加学生身份并连接本机教务',
+              subtitle: '管理本科、研究生教务账号和本机连接',
               onTap: () async {
                 await Navigator.of(context).push(MaterialPageRoute<void>(
                     builder: (_) => const AcademicDataSettingsScreen()));

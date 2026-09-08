@@ -2,6 +2,7 @@
 class User {
   final int id;
   final String studentId;
+  final String loginAccount;
   String nickname;
   String gender;
   String avatar;
@@ -45,6 +46,7 @@ class User {
   User({
     required this.id,
     required this.studentId,
+    this.loginAccount = '',
     required this.nickname,
     this.gender = '',
     this.avatar = '',
@@ -107,6 +109,7 @@ class User {
           (!json.containsKey('student_verified') && json['edu_bound'] == true),
       emailMasked: json['email_masked']?.toString() ?? '',
       emailBound: json['email_bound'] == true,
+      loginAccount: json['login_account']?.toString() ?? '',
       loginMethods: (json['login_methods'] as List? ?? const [])
           .map((value) => value.toString())
           .toList(growable: false),
@@ -151,6 +154,7 @@ class User {
       'student_verified': studentVerified,
       'email_masked': emailMasked,
       'email_bound': emailBound,
+      'login_account': loginAccount,
       'login_methods': loginMethods,
       'can_reset_via_email': canResetViaEmail,
       'can_reset_via_edu': canResetViaEdu,

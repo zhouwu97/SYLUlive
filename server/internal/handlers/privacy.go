@@ -455,6 +455,11 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
+		if tx.Migrator().HasTable(&models.AccountLoginAlias{}) {
+			if err := tx.Where("user_id = ?", userID).Delete(&models.AccountLoginAlias{}).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
 			return err
 		}

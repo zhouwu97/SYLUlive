@@ -389,6 +389,9 @@ func main() {
 	if err := services.SeedAcademicAccountConfigs(db); err != nil {
 		log.Fatal("教务账号配置回填失败:", err)
 	}
+	if err := services.MigrateAccountLoginAliases(db); err != nil {
+		log.Fatal("历史登录名迁移失败:", err)
+	}
 	if err := models.EnsureCanteenDishSchema(db); err != nil {
 		log.Fatal("食堂菜品索引迁移失败:", err)
 	}

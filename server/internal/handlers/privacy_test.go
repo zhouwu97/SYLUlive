@@ -200,6 +200,8 @@ func TestPrivacyExportExcludesCredentials(t *testing.T) {
 
 func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	handler, db, user := newPrivacyTestHandler(t)
+	if err := db.AutoMigrate(&models.AccountLoginAlias{}); err != nil { t.Fatal(err) }
+	if err := db.Create(&models.AccountLoginAlias{UserID:user.ID,Value:"ORIGINAL",Source:"test"}).Error; err != nil { t.Fatal(err) }
 	context, recorder := privacyContext(http.MethodDelete, "/api/user/account", `{"password":"password123","confirmed":true}`, user.ID)
 	handler.CancelAccount(context)
 	if recorder.Code != http.StatusOK {
@@ -215,6 +217,8 @@ func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
 	if cancelled.TokenVersion != user.TokenVersion+1 {
 		t.Fatalf("token version=%d want %d", cancelled.TokenVersion, user.TokenVersion+1)
 	}
+	var aliasCount int64
+	if err := db.Model(&models.AccountLoginAlias{}).Where("user_id = ?",user.ID).Count(&aliasCount).Error; err != nil || aliasCount != 0 { t.Fatalf("login aliases not removed: count=%d err=%v",aliasCount,err) }
 	var request models.PersonalDataRequest
 	if err := db.Where("user_id = ? AND request_type = ?", user.ID, models.PersonalDataRequestAccountCancelled).First(&request).Error; err != nil {
 		t.Fatalf("missing cancellation audit: %v", err)

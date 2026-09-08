@@ -1,3 +1,4 @@
+import '../features/academic/presentation/academic_unbind_dialog.dart';
 import '../features/academic/domain/academic_provider.dart';
 import '../features/academic/data/academic_identity_client.dart';
 import 'dart:async';
@@ -218,30 +219,12 @@ class _AcademicDataSettingsScreenState
   }
 
   Future<void> _unbindIdentity() async {
-    final identity = _session.identity;
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-              title: const Text('从账号中移除此教务配置？'),
-              content:
-                  const Text('立即移除此教务配置及本机资料，云端将在联网后同步。另一台离线设备的学校会话不会立即退出。'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('取消')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('移除配置')),
-              ],
-            ));
-    if (confirmed != true || !mounted || _session.identity != identity) return;
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      final result = await context.read<EduProvider>().unbind();
-      if (!result.success) throw StateError(result.errorMessage ?? '解除失败');
+      await confirmAcademicUnbind(context);
       if (mounted) await _load();
     } catch (_) {
       if (mounted) setState(() => _error = '移除配置未完成，请重试');
@@ -589,7 +572,7 @@ class _AcademicDataSettingsScreenState
             if (_session.hasBoundIdentity)
               SettingsTile(
                 icon: Icons.person_remove_outlined,
-                title: '从账号中移除此教务配置',
+                title: '解绑教务',
                 subtitle: '移除此教务配置和本机资料，其他教务类型保留',
                 danger: true,
                 onTap: _saving ? null : _unbindIdentity,

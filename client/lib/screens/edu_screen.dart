@@ -1,4 +1,5 @@
 import 'academic_data_settings_screen.dart';
+import '../features/academic/presentation/academic_unbind_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -24,6 +25,16 @@ class EduScreen extends StatefulWidget {
 class _EduScreenState extends State<EduScreen> {
   final _studentIdController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _unbinding = false;
+
+  Future<void> _unbindAcademic() async {
+    setState(() => _unbinding = true);
+    try {
+      await confirmAcademicUnbind(context);
+    } finally {
+      if (mounted) setState(() => _unbinding = false);
+    }
+  }
 
   @override
   void initState() {
@@ -94,6 +105,13 @@ class _EduScreenState extends State<EduScreen> {
                 icon: const Icon(Icons.manage_accounts_outlined),
                 label: const Text('教务身份与本机连接'),
               ),
+              if (context.watch<AcademicSessionController>().identity != null)
+                TextButton.icon(
+                  onPressed: _unbinding ? null : _unbindAcademic,
+                  icon: const Icon(Icons.link_off_outlined),
+                  label: Text(_unbinding ? '正在处理…' : '解绑教务'),
+                  style: TextButton.styleFrom(foregroundColor: CampusTheme.red),
+                ),
               if (context
                   .watch<AcademicSessionController>()
                   .hasBoundIdentity) ...[

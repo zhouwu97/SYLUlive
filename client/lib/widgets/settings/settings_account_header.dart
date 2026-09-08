@@ -23,30 +23,15 @@ class SettingsAccountHeader extends StatelessWidget {
     String title;
     String subtitle;
     String? avatarUrl;
-    bool isStudentVerified = false;
     bool isEmailBound = false;
 
     if (isLoggedIn && user != null) {
       title = user.nickname.trim().isNotEmpty ? user.nickname.trim() : '沈理用户';
-      isStudentVerified = user.studentVerified;
       isEmailBound = user.emailBound;
 
-      final List<String> details = [];
-      if (user.studentId.trim().isNotEmpty) {
-        details.add(user.studentId.trim());
-      } else {
-        details.add('学号已保密');
-      }
-
-      if (user.eduMajor.trim().isNotEmpty) {
-        details.add(user.eduMajor.trim());
-      } else if (user.eduCollege.trim().isNotEmpty) {
-        details.add(user.eduCollege.trim());
-      } else {
-        details.add('未绑定教务');
-      }
-
-      subtitle = details.join(' · ');
+      subtitle = user.loginAccount.isNotEmpty
+          ? 'App 账号：${user.loginAccount}'
+          : 'App ID ${user.id}';
       if (user.avatar.trim().isNotEmpty) {
         avatarUrl = ApiConstants.fullUrl(user.avatar.trim());
       }
@@ -140,11 +125,9 @@ class SettingsAccountHeader extends StatelessWidget {
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              SettingsStatusBadge(
-                                label: isStudentVerified ? '学生已认证' : '未学生认证',
-                                type: isStudentVerified
-                                    ? SettingsStatusBadgeType.success
-                                    : SettingsStatusBadgeType.neutral,
+                              const SettingsStatusBadge(
+                                label: 'App 账号',
+                                type: SettingsStatusBadgeType.neutral,
                               ),
                               const SizedBox(width: 6),
                               SettingsStatusBadge(

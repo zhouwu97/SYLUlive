@@ -43,6 +43,7 @@ func publicUserResponse(user models.User) PublicUserResponse {
 
 // SelfUserResponse 仅用于当前登录用户；学校个人字段由退役开关控制，默认只保留兼容形状。
 type SelfUserResponse struct {
+	LoginAccount          string                           `json:"login_account"`
 	ID                    uint                             `json:"id"`
 	StudentID             string                           `json:"student_id,omitempty"`
 	StudentVerified       bool                             `json:"student_verified"`
@@ -157,6 +158,20 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 				response.LoginMethods = append(response.LoginMethods, "student_id")
 			}
 		}
+	}
+	if db.Migrator().HasTable(&models.AccountLoginAlias{}) {
+		aliases, err := services.AvailableAccountLoginAliases(db, user.ID)
+		if err != nil {
+			return SelfUserResponse{}, err
+		}
+		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
+		if len(aliases) > 0 {
+			response.LoginAccount = aliases[0].Value
+			response.LoginMethods = append(response.LoginMethods, "student_id")
+		}
+	}
+	if user.EmailVerifiedAt != nil && user.Email != "" {
+		response.LoginAccount = maskEmail(user.Email)
 	}
 	return response, nil
 }

@@ -742,6 +742,25 @@ class EduProvider extends ChangeNotifier {
 
   /// 服务端绑定必须撤销远端授权，否则重登 App 后会再次恢复绑定。
   Future<OperationResult<void>> unbind() async {
+    final controller = _academicSessionController;
+    final identity = controller?.identity;
+    if (controller != null && identity != null && controller.providerRouter?.identityClient != null) {
+      try {
+        await controller.providerRouter!.identityClient!.unbind(identity);
+      } catch (_) {
+        return OperationResult.fail('解绑失败，请检查网络后重试');
+      }
+      controller.acceptIdentityUnbound(identity);
+      try {
+        await AcademicIdentityLifecycleCoordinator(controller: controller,
+            preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
+      } catch (_) {
+        // 服务端解绑已完成，残留清理由身份级 cleanupPending 重试。
+        _errorMessage = '已解绑，本机残留资料将在后续清理';
+      }
+      _applyAcademicSessionState();
+      return OperationResult.ok(null);
+    }
     if (_academicSessionController?.sourceKind == AcademicSourceKind.legacy) {
       return revokeAuthorization();
     }

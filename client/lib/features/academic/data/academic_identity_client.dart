@@ -96,6 +96,19 @@ final class AcademicIdentityClient {
 
   final Dio _dio;
 
+  Future<void> unbind(AcademicIdentityKey identity) async {
+    try {
+      final response = await _dio.delete('/student-identity', data: {
+        'provider_id': identity.providerId.value, 'student_id': identity.studentId,
+      });
+      if (_requireMap(response, '解除教务绑定')['unbound'] != true) {
+        throw const AcademicIdentityApiException('INVALID_RESPONSE', '服务器未确认解绑');
+      }
+    } on DioException catch (error) {
+      throw _networkError(error, '解除教务绑定失败');
+    }
+  }
+
   Future<List<AcademicIdentityBinding>> listIdentities() async {
     final cancellation = CancelToken();
     try {

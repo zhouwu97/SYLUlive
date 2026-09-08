@@ -91,7 +91,27 @@ func academicIdentityRouter(handler *AcademicIdentityHandler, userID uint) *gin.
 	router.POST("/challenge", func(c *gin.Context) { c.Set("user_id", userID) }, handler.CreateChallenge)
 	router.POST("/verify", func(c *gin.Context) { c.Set("user_id", userID) }, handler.Verify)
 	router.GET("/identities", func(c *gin.Context) { c.Set("user_id", userID) }, handler.List)
+	router.DELETE("/identities", func(c *gin.Context) { c.Set("user_id", userID) }, handler.Unbind)
 	return router
+}
+
+func TestAcademicIdentityUnbindRemovesLegacyProjectionAndIsIdempotent(t *testing.T) {
+	h, db, _, user := newAcademicIdentityTestHandler(t)
+	now := time.Now()
+	require.NoError(t, h.persistBinding(user.ID, models.AcademicProviderUndergraduate, "old-student", now, "school_profile", "v1"))
+	require.NoError(t, db.Model(&user).Updates(map[string]interface{}{"student_id": "old-student", "student_verified_at": now}).Error)
+	router := academicIdentityRouter(h, user.ID)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodDelete, "/identities", bytes.NewBufferString(`{"provider_id":"sylu_undergraduate","student_id":"old-student"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, 200, w.Code, w.Body.String())
+	}
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/identities", nil))
+	require.JSONEq(t, `{"identities":[]}`, w.Body.String())
+	require.NoError(t, h.persistBinding(user.ID, models.AcademicProviderGraduate, "new-student", now, "school_profile", "v1"))
 }
 
 func TestAcademicIdentityChallengeIsBoundAndConsumedOnFirstVerify(t *testing.T) {

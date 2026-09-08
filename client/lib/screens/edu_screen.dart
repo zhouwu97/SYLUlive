@@ -354,10 +354,8 @@ class _EduScreenState extends State<EduScreen> {
         onPressed: () => _showUnbindDialog(context, eduProvider),
         icon: const Icon(Icons.link_off_rounded,
             size: 18, color: CampusTheme.red),
-        label: Text(
-            context.read<AcademicSessionController>().sourceKind == AcademicSourceKind.local
-                ? '清除本机教务资料' : '撤销教务授权',
-            style: const TextStyle(
+        label: const Text('解绑教务账号',
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: CampusTheme.red,
@@ -455,15 +453,12 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showUnbindDialog(BuildContext context, EduProvider eduProvider) {
-    final local = context.read<AcademicSessionController>().sourceKind == AcademicSourceKind.local;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(local ? '清除本机教务资料' : '撤销教务授权'),
+        title: const Text('解绑教务账号'),
         content:
-            Text(local
-                ? '将删除本机保存的教务密码、会话和缓存，并停止自动登录。已认证的学生身份仍保留；如需切换本科或研究生，请使用“更换教务类型 / 学号”。'
-                : '将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学生身份仍保留；更换教务类型或学号请使用换绑入口。'),
+            const Text('将解除当前教务身份绑定，删除本机保存的教务密码、会话和缓存，并停止自动登录。解绑后显示未绑定，可重新选择本科或研究生教务。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -478,7 +473,7 @@ class _EduScreenState extends State<EduScreen> {
                   SnackBar(
                     content: Text(
                       result.success
-                          ? (local ? '本机教务资料已清除，学生身份仍保留' : '教务授权已撤销')
+                          ? '教务账号已解绑'
                           : (result.errorMessage ?? '解绑失败'),
                     ),
                     backgroundColor: result.success ? Colors.green : Colors.red,
@@ -487,7 +482,7 @@ class _EduScreenState extends State<EduScreen> {
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text(local ? '清除' : '撤销授权'),
+            child: const Text('解绑'),
           ),
         ],
       ),

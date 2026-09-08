@@ -106,7 +106,7 @@ final class AcademicSessionController extends ChangeNotifier {
 
   final AcademicRepository _repository;
   final AcademicProvider? _provider;
-  final AcademicIdentityKey? _identity;
+  AcademicIdentityKey? _identity;
   final AcademicSessionArtifactVault Function(AcademicIdentityKey identity)?
       _sessionArtifactVaultFactory;
   final AccountSessionCleanupCoordinator _cleanupCoordinator;
@@ -662,6 +662,18 @@ final class AcademicSessionController extends ChangeNotifier {
           AcademicSessionArtifactVault(identity: current)).delete();
     }
     if (identity == current && _sessionResetPending) throw StateError('学校会话清理失败，请重试');
+  }
+
+  /// 服务端确认解绑后卸载身份，清理失败也不允许旧会话重新挂载。
+  void acceptIdentityUnbound(AcademicIdentityKey oldIdentity) {
+    if (identity != oldIdentity || _appUserId != oldIdentity.appUserId) return;
+    _accountGeneration++;
+    _identity = null;
+    providerRouter?.invalidateContext();
+    _serverBindingStatusResolved = true;
+    _pendingAcademicChallenge = null;
+    _clearViewState(AcademicSessionStatus.idle);
+    _notifyListeners();
   }
 
   /// 只有显式重新连接后才恢复学校会话。

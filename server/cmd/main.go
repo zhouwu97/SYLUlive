@@ -1969,6 +1969,7 @@ func main() {
 	studentIdentity.POST("/change/challenge", academicIdentityHandler.CreateChangeChallenge)
 	studentIdentity.POST("/change", academicIdentityHandler.Change)
 	studentIdentity.GET("", academicIdentityHandler.List)
+	studentIdentity.DELETE("", academicIdentityHandler.Unbind)
 
 	edu := r.Group("/api/edu")
 	if cfg.SchoolAuthorityRetired {

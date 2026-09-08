@@ -40,6 +40,7 @@ class _AcademicDataSettingsScreenState
     extends State<AcademicDataSettingsScreen> {
   AcademicStoragePreferences? _preferences;
   AcademicCredential? _credential;
+  bool _credentialStorageUnavailable = false;
   AcademicPersistencePolicy? _policy;
   List<AcademicIdentityBinding> _identities = const [];
   bool _loading = true;
@@ -102,6 +103,7 @@ class _AcademicDataSettingsScreenState
       }
     }
     AcademicCredential? credential;
+    var credentialStorageUnavailable = false;
     try {
       if (_usesLocalCredentials) {
         credential = await (_session.identity == null
@@ -110,7 +112,7 @@ class _AcademicDataSettingsScreenState
                 .readForIdentity(_session.identity!));
       }
     } catch (_) {
-      if (mounted) setState(() => _error = '本机安全存储暂不可用，请稍后重试');
+      credentialStorageUnavailable = true;
     }
     final sourceAccountId =
         _session.studentId?.trim() ?? credential?.studentId ?? '';
@@ -153,6 +155,7 @@ class _AcademicDataSettingsScreenState
     setState(() {
       _preferences = preferences;
       _credential = credential;
+      _credentialStorageUnavailable = credentialStorageUnavailable;
       _policy = policy;
       _loading = false;
     });
@@ -249,7 +252,8 @@ class _AcademicDataSettingsScreenState
 
   Future<void> _toggleCredentials(bool enabled) async {
     final preferences = _preferences;
-    if (preferences == null) return;
+    if (preferences == null || enabled && _credentialStorageUnavailable) return;
+    final identity = _session.identity;
     setState(() {
       _saving = true;
       _error = null;
@@ -267,13 +271,17 @@ class _AcademicDataSettingsScreenState
       }
       await preferences.setSaveCredentials(enabled);
       if (!enabled) {
-        final identity = _session.identity;
         if (identity != null) {
           await PlatformAcademicCredentialStore().deleteForIdentity(identity);
         } else {
           await PlatformAcademicCredentialStore().delete(preferences.appUserId);
         }
-        if (mounted) setState(() => _credential = null);
+        if (mounted) {
+          setState(() {
+            _credential = null;
+            _credentialStorageUnavailable = false;
+          });
+        }
       }
       if (mounted) setState(() => _error = null);
     } catch (_) {
@@ -505,17 +513,25 @@ class _AcademicDataSettingsScreenState
                 title: '安全保存登录凭据',
                 subtitle: kIsWeb
                     ? '网页版不会保存教务密码'
-                    : _session.providerId != null &&
-                            _session.providerRouter?.accountStore
-                                    ?.rejected(_session.providerId!) ==
-                                true
-                        ? '学校已拒绝保存的密码，请更新密码'
-                        : _credential == null
-                            ? '此设备尚未保存密码'
-                            : '密码已安全保存在本设备',
+                    : _credentialStorageUnavailable
+                        ? '本机安全存储暂不可用，请稍后重试'
+                        : !saveCredentials
+                            ? '已关闭密码保存'
+                            : _session.providerId != null &&
+                                    _session.providerRouter?.accountStore
+                                            ?.rejected(_session.providerId!) ==
+                                        true
+                                ? '学校已拒绝保存的密码，请更新密码'
+                                : _credential == null
+                                    ? '此设备尚未保存密码'
+                                    : '密码已安全保存在本设备',
                 trailing: Switch(
                   value: kIsWeb ? false : saveCredentials,
-                  onChanged: kIsWeb || _saving ? null : _toggleCredentials,
+                  onChanged: kIsWeb ||
+                          _saving ||
+                          _credentialStorageUnavailable && !saveCredentials
+                      ? null
+                      : _toggleCredentials,
                 ),
                 showChevron: false,
               ),

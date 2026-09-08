@@ -29,12 +29,9 @@ func SchoolAuthorityRetirementGate(retired bool) gin.HandlerFunc {
 		path := strings.TrimRight(c.Request.URL.Path, "/")
 		// 旧认证入口永久停写，不受历史部署开关影响。
 		retiredAuth := path == "/api/register_with_edu" || path == "/api/login_edu" || path == "/api/password/edu/reset" || path == "/api/forgot_password"
-		// v4 教务运行时永久归本机；旧开关不能重新开启学校代登录或身份新增。
-		cleanup := c.Request.Method == http.MethodDelete && (path == "/api/edu/bind" || path == "/api/edu/authorization") ||
-			c.Request.Method == http.MethodPost && path == "/api/edu/session/logout"
-		localAcademic := !cleanup && (path == "/api/edu" || strings.HasPrefix(path, "/api/edu/")) ||
-			c.Request.Method != http.MethodGet && (path == "/api/student-identity" || strings.HasPrefix(path, "/api/student-identity/"))
-		if retiredAuth || localAcademic || retired && isSchoolAuthorityRetiredPath(c.Request.Method, c.Request.URL.Path) {
+		// 兼容开关关闭退役时，旧版仍可使用原教务链路；新版只调用独立配置接口。
+		identityMutation := c.Request.Method != http.MethodGet && (path == "/api/student-identity" || strings.HasPrefix(path, "/api/student-identity/"))
+		if retiredAuth || retired && (identityMutation || isSchoolAuthorityRetiredPath(c.Request.Method, c.Request.URL.Path)) {
 			SchoolAuthorityRetiredMiddleware(c)
 			return
 		}

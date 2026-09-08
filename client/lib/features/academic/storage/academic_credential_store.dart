@@ -60,7 +60,8 @@ final class PlatformAcademicCredentialStore
     } catch (_) {
       throw StateError('本机安全存储暂不可用');
     }
-    if (raw == null || raw.isEmpty) return null;
+    if (raw == null) return null;
+    if (raw.isEmpty) throw StateError('本机教务凭据无法读取');
 
     try {
       final decoded = jsonDecode(raw);
@@ -78,8 +79,8 @@ final class PlatformAcademicCredentialStore
       if (!credential.isValid) throw const FormatException('凭据为空');
       return credential;
     } catch (_) {
-      // 读取失败不具有删除授权；保留安全存储原文，供恢复或显式清除。
-      return null;
+      // 已有材料解析失败属于存储异常，不能误报缺少密码或隐式擦除。
+      throw StateError('本机教务凭据无法读取');
     }
   }
 
@@ -103,8 +104,14 @@ final class PlatformAcademicCredentialStore
   }
 
   @override
-  Future<AcademicCredential?> readForIdentity(AcademicIdentityKey identity) =>
-      _readByKey(_identityKeyFor(identity));
+  Future<AcademicCredential?> readForIdentity(
+      AcademicIdentityKey identity) async {
+    final credential = await _readByKey(_identityKeyFor(identity));
+    if (credential != null && credential.studentId != identity.studentId) {
+      throw StateError('本机教务凭据与账号不匹配');
+    }
+    return credential;
+  }
 
   @override
   Future<void> writeForIdentity(
@@ -133,7 +140,8 @@ final class PlatformAcademicCredentialStore
     } catch (_) {
       throw StateError('本机安全存储暂不可用');
     }
-    if (raw == null || raw.isEmpty) return null;
+    if (raw == null) return null;
+    if (raw.isEmpty) throw StateError('本机教务凭据无法读取');
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) throw const FormatException('凭据格式错误');
@@ -145,10 +153,11 @@ final class PlatformAcademicCredentialStore
       }
       final credential =
           AcademicCredential(studentId: studentId.trim(), password: password);
-      return credential.isValid ? credential : null;
+      if (!credential.isValid) throw const FormatException('凭据为空');
+      return credential;
     } catch (_) {
-      // 协议升级或异常数据不能触发密码擦除；此轮不使用即可。
-      return null;
+      // 保留原文供恢复；调用方展示存储异常，不能进入缺少密码的流程。
+      throw StateError('本机教务凭据无法读取');
     }
   }
 

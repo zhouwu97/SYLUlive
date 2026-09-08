@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -157,6 +158,53 @@ void main() {
     expect(h.router.accountStore!.identities, isEmpty);
   });
 
+  for (final provider in AcademicProviderId.values) {
+    test('${provider.displayName}损坏凭据只报告存储异常，不要求密码或提交学校登录', () async {
+      final h = await setup();
+      await h.router.accountStore!.mergeSnapshot({
+        'provider_id': provider.value,
+        'student_id': 'SAME',
+        'state': 'active',
+        'revision': 1,
+      });
+      final identity = h.router.accountStore!.identities.single;
+      final key = 'academic_credential_v2_${identity.storageId}';
+      await h.secret.write(key, '{broken');
+      final result = await h.coordinator.ensureAuthenticated();
+      expect(result.kind, AcademicLoginOutcomeKind.failure);
+      expect(result.message, contains('安全存储'));
+      expect(h.sources.fold(0, (n, s) => n + s.logins), 0);
+      expect(h.gateways.fold(0, (n, g) => n + g.logins), 0);
+      expect(await h.secret.read(key), '{broken');
+    });
+
+    test('${provider.displayName}旧账号有明确类型时离线迁移，不生成错误云端覆盖', () async {
+      AppPreferencesStore.setMockInitialValues({
+        'auth_user': jsonEncode({
+          'id': 1,
+          'academic_provider_id': provider.value,
+          'student_id': 'SAME',
+        })
+      });
+      final h = await setup();
+      final identity = h.router.accountStore!.identities.single;
+      expect(identity.providerId, provider);
+      expect(identity.studentId, 'SAME');
+      expect(h.router.accountStore!.entry(provider)['outbox'], isNull);
+    });
+  }
+
+  test('旧账号缺少教务类型时不依据学号猜测本科或研究生', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'auth_user': jsonEncode({
+        'id': 1,
+        'student_id': 'SAME',
+      })
+    });
+    final h = await setup();
+    expect(h.router.accountStore!.identities, isEmpty);
+  });
+
   test('新设备配置只补全目标学号，尚无凭据时不会向学校提交空密码', () async {
     final h = await setup();
     await h.router.accountStore!.mergeSnapshot({
@@ -217,7 +265,8 @@ class _Harness {
   final requests = <RequestOptions>[];
   final sources = <_Source>[];
   final gateways = <_Gateway>[];
-  final credentials = PlatformAcademicCredentialStore(secretStore: Secrets());
+  final secret = Secrets();
+  late final credentials = PlatformAcademicCredentialStore(secretStore: secret);
   late final AcademicProviderRouterRepository router;
   late final AcademicSessionController session;
   late final AcademicLoginCoordinator coordinator;

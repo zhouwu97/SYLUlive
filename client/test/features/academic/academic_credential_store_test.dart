@@ -31,25 +31,28 @@ void main() {
       // 读取错误不能隐式擦除用户已选择保留的密码材料。
       final rawKey = _credentialKey('app-a');
       await secret.write(rawKey, '{broken');
-      expect(await store.read('app-a'), isNull);
+      await expectLater(store.read('app-a'), throwsStateError);
       expect(await secret.read(rawKey), '{broken');
     });
 
     test('身份级异常凭据保留到用户显式清除', () async {
       final secret = MemorySecretStore();
       final store = PlatformAcademicCredentialStore(secretStore: secret);
-      const identity = AcademicIdentityKey(appUserId: 'app-a',
-          providerId: AcademicProviderId.syluGraduate, studentId: 'fixture');
+      const identity = AcademicIdentityKey(
+          appUserId: 'app-a',
+          providerId: AcademicProviderId.syluGraduate,
+          studentId: 'fixture');
       final key = 'academic_credential_v2_${identity.storageId}';
       await secret.write(key, '{broken');
-      expect(await store.readForIdentity(identity), isNull);
+      await expectLater(store.readForIdentity(identity), throwsStateError);
       expect(await secret.read(key), '{broken');
       await store.deleteForIdentity(identity);
       expect(await secret.read(key), isNull);
     });
 
     test('Web store 不产生持久化凭据', () async {
-      final store = PlatformAcademicCredentialStore(secretStore: WebSecretStore());
+      final store =
+          PlatformAcademicCredentialStore(secretStore: WebSecretStore());
       await store.write(
         'app-a',
         const AcademicCredential(studentId: '2403000001', password: 's3cr3t'),

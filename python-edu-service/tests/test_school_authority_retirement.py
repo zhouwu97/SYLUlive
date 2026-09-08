@@ -74,3 +74,15 @@ def test_retirement_does_not_block_public_service_routes() -> None:
 
     assert client.get("/health").status_code == 200
     assert client.get("/").status_code == 200
+
+
+def test_retired_lifespan_never_initializes_private_database(monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    async def forbidden_init():
+        raise AssertionError("退役服务不能初始化个人教务数据库")
+
+    monkeypatch.setitem(sys.modules, "models.database", SimpleNamespace(init_db=forbidden_init))
+    with TestClient(main.create_app(retired=True)) as client:
+        assert client.get("/health").status_code == 200

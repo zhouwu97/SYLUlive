@@ -41,7 +41,7 @@ func TestSchoolAuthorityRetiredMiddlewareStopsBeforeHandler(t *testing.T) {
 }
 
 func TestSchoolAuthRoutesStayRetiredWithLegacySwitchOff(t *testing.T) {
-	for _, path := range []string{"/api/register_with_edu", "/api/login_edu", "/api/password/edu/reset", "/api/forgot_password", "/api/edu/pre_verify", "/api/edu/bind", "/api/student-identity/challenge", "/api/student-identity/verify", "/api/student-identity/change"} {
+	for _, path := range []string{"/api/register_with_edu", "/api/login_edu", "/api/password/edu/reset", "/api/forgot_password"} {
 		router := gin.New()
 		router.Use(SchoolAuthorityRetirementGate(false))
 		router.POST(path, func(c *gin.Context) { t.Fatal("旧认证处理器不应执行") })
@@ -106,6 +106,25 @@ func TestSchoolAuthorityRetirementGateMatchesAllRetiredPersonalPaths(t *testing.
 	for _, path := range []string{"/api/login", "/api/posts", "/health"} {
 		if isSchoolAuthorityRetiredPath(http.MethodPost, path) {
 			t.Errorf("非教务路径错误命中早期闸门: %s", path)
+		}
+	}
+}
+
+func TestSchoolCompatibilityGatePreservesLegacyRoutesUntilRetirement(t *testing.T) {
+	for _, retired := range []bool{false, true} {
+		for _, path := range []string{"/api/edu/pre_verify", "/api/edu/bind", "/api/edu/grades", "/api/student-identity/challenge", "/api/student-identity/change"} {
+			router := gin.New()
+			router.Use(SchoolAuthorityRetirementGate(retired), SchoolLegacySecretsFreezeGate(false))
+			router.POST(path, func(c *gin.Context) { c.Status(http.StatusUnauthorized) })
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("invalid")))
+			want := http.StatusUnauthorized
+			if retired {
+				want = http.StatusGone
+			}
+			if response.Code != want {
+				t.Fatalf("retired=%v path=%s got=%d want=%d", retired, path, response.Code, want)
+			}
 		}
 	}
 }

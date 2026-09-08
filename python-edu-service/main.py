@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 from config import HOST, PORT
-from models.database import init_db
 
 # 公开校园资讯路由仍可独立运行；个人教务路由由应用工厂按实例加载。
 from routers import internal_jwc, internal_competition
@@ -46,9 +45,12 @@ def school_authority_retired() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时初始化数据库
-    await init_db()
-    print("数据库初始化完成")
+    # 退役实例只服务公开资讯，不初始化或改写历史个人教务数据库。
+    if not app.state.school_authority_retired:
+        from models.database import init_db
+
+        await init_db()
+        print("数据库初始化完成")
     yield
     # 关闭时清理资源
     print("服务关闭")
@@ -147,7 +149,7 @@ def create_app(retired: bool | None = None, frozen: bool | None = None) -> FastA
     async def freeze_legacy_secrets(request, call_next):
         path = request.url.path.rstrip("/")
         cleanup = (request.method == "DELETE" and path in {"/api/edu/bind", "/api/edu/authorization"}) or (request.method == "POST" and path == "/api/edu/session/logout")
-        if frozen and not retired and not cleanup and path != "/api/edu/pre_verify" and (path == "/api/edu" or path.startswith("/api/edu/") or path in _LEGACY_EDU_PATHS):
+        if frozen and not retired and not cleanup and (path == "/api/edu" or path.startswith("/api/edu/") or path in _LEGACY_EDU_PATHS):
             return JSONResponse(status_code=410, content={"code": "SCHOOL_LEGACY_SECRETS_FROZEN", "error": "旧教务会话写入已冻结"})
         return await call_next(request)
 

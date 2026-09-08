@@ -1972,10 +1972,17 @@ func main() {
 	// Provider-aware 身份路由只保存最小学生身份；研究生学校会话与密码不进入 Go 服务端持久层。
 	studentIdentity := r.Group("/api/student-identity")
 	studentIdentity.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	studentIdentity.POST("/challenge", handlers.FrozenAcademicIdentityMutation)
-	studentIdentity.POST("/verify", handlers.FrozenAcademicIdentityMutation)
-	studentIdentity.POST("/change/challenge", handlers.FrozenAcademicIdentityMutation)
-	studentIdentity.POST("/change", handlers.FrozenAcademicIdentityMutation)
+	// 过渡期仅由部署开关保留旧版流程，新版教务不再调用这些入口。
+	identityMutationHandler := func(handler gin.HandlerFunc) gin.HandlerFunc {
+		if cfg.SchoolAuthorityRetired || cfg.SchoolLegacySecretsFrozen {
+			return handlers.FrozenAcademicIdentityMutation
+		}
+		return handler
+	}
+	studentIdentity.POST("/challenge", identityMutationHandler(academicIdentityHandler.CreateChallenge))
+	studentIdentity.POST("/verify", identityMutationHandler(academicIdentityHandler.Verify))
+	studentIdentity.POST("/change/challenge", identityMutationHandler(academicIdentityHandler.CreateChangeChallenge))
+	studentIdentity.POST("/change", identityMutationHandler(academicIdentityHandler.Change))
 	studentIdentity.GET("", academicIdentityHandler.List)
 	academicConfigs := handlers.NewAcademicAccountConfigHandler(db)
 	configRoutes := r.Group("/api/academic-account-configs", middleware.AuthMiddleware(db, cfg.JWTSecret))
@@ -1983,7 +1990,7 @@ func main() {
 	configRoutes.PUT("/:provider", academicConfigs.Mutate)
 	configRoutes.DELETE("/:provider", academicConfigs.Mutate)
 
-	studentIdentity.DELETE("", handlers.FrozenAcademicIdentityMutation)
+	studentIdentity.DELETE("", identityMutationHandler(academicIdentityHandler.Unbind))
 
 	edu := r.Group("/api/edu")
 	if cfg.SchoolAuthorityRetired {

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -44,6 +45,32 @@ var graduatePubKeyValueFirstPattern = regexp.MustCompile(`(?is)<[^>]*\bvalue=["'
 type GraduateAcademicIdentityProvider struct {
 	baseURL   *url.URL
 	transport http.RoundTripper
+}
+
+// SetLoopbackTunnel 仅替换学校的 TCP 出口，HTTPS 域名、SNI 和证书校验仍由原请求决定。
+// 隧道只允许本机端口，且不能承载其他目标，避免配置意外变成通用代理。
+func (p *GraduateAcademicIdentityProvider) SetLoopbackTunnel(address string) error {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() || port == "0" {
+		return errors.New("研究生教务隧道必须使用本机 IP 和有效端口")
+	}
+	if _, err := net.LookupPort("tcp", port); err != nil {
+		return errors.New("研究生教务隧道端口无效")
+	}
+	if p.baseURL.String() != defaultGraduateProviderURL {
+		return errors.New("研究生教务隧道只允许固定学校域名")
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: graduateProviderTimeout, KeepAlive: 30 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+		if target != "yjsgl.sylu.edu.cn:443" {
+			return nil, errors.New("研究生教务隧道拒绝非学校目标")
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
+	p.transport = transport
+	return nil
 }
 
 // graduateProviderStageError 只携带固定阶段和 HTTP 状态，便于定位学校协议失败，

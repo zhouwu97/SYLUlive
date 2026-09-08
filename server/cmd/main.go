@@ -814,6 +814,11 @@ func main() {
 	if err != nil {
 		log.Fatal("初始化研究生教务 Provider 失败:", err)
 	}
+	if tunnel := strings.TrimSpace(os.Getenv("GRADUATE_PROVIDER_LOOPBACK_TUNNEL")); tunnel != "" {
+		if err := graduateIdentityProvider.SetLoopbackTunnel(tunnel); err != nil {
+			log.Fatal("初始化研究生教务隧道失败:", err)
+		}
+	}
 	if err := academicIdentityHandler.SetProvider(graduateIdentityProvider); err != nil {
 		log.Fatal("注册研究生教务 Provider 失败:", err)
 	}

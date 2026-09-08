@@ -157,6 +157,174 @@ void main() {
     expect(snapshot?.courses.single['period_label'], '上午3');
   });
 
+  test('研究生固定相邻节次归并并保留逐行标签', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-PAIR');
+
+    await provider.applyFetchedCourses([
+      for (var index = 0; index < 4; index++)
+        <String, dynamic>{
+          'course_code': 'G-101',
+          'name': '新时代中国特色社会主义理论与实践研究4班',
+          'teacher': '张慧雪',
+          'location': '综合楼 A224',
+          'weekday': 1,
+          'start_section': index + 1,
+          'end_section': index + 1,
+          'period_order': index,
+          'period_label': '上午${index + 1}',
+          'weeks': <int>[3, 4, 5, 6],
+        },
+    ]);
+
+    expect(provider.courses, hasLength(2));
+    expect(
+      provider.courses.map((course) => course.periodLabel),
+      <String>['上午1-2', '上午3-4'],
+    );
+    expect(
+      provider.courses.map((course) => course.startSection),
+      <int>[1, 3],
+    );
+    expect(
+      provider.courses.map((course) => course.endSection),
+      <int>[2, 4],
+    );
+    expect(
+      provider.courses.last.periodLabels,
+      <String>['上午3', '上午4'],
+    );
+
+    final reloaded = createProvider()..syncSessionContext('1001', 'G-PAIR');
+    expect(await reloaded.loadCachedCoursesIfAvailable(), isTrue);
+    expect(reloaded.courses, hasLength(2));
+    expect(
+      reloaded.courses.last.periodLabels,
+      <String>['上午3', '上午4'],
+    );
+
+    final snapshot = await ScheduleCacheStore(
+      appUserId: '1001',
+      sourceAccountId: 'G-PAIR',
+      snapshotStore: createSnapshotStore('1001'),
+    ).readTerm(
+      year: provider.selectedYear,
+      semester: provider.selectedSemester,
+    );
+    expect(
+      snapshot?.courses.last['period_labels'],
+      <String>['上午3', '上午4'],
+    );
+  });
+
+  test('研究生相邻记录仅在固定配对且周次完全相同时归并', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-STRICT');
+
+    await provider.applyFetchedCourses([
+      <String, dynamic>{
+        'name': '周次不同课程',
+        'teacher': '王老师',
+        'location': 'A101',
+        'weekday': 1,
+        'start_section': 1,
+        'end_section': 1,
+        'period_order': 0,
+        'period_label': '上午1',
+        'weeks': <int>[1, 2],
+      },
+      <String, dynamic>{
+        'name': '周次不同课程',
+        'teacher': '王老师',
+        'location': 'A101',
+        'weekday': 1,
+        'start_section': 2,
+        'end_section': 2,
+        'period_order': 1,
+        'period_label': '上午2',
+        'weeks': <int>[1, 2, 3],
+      },
+      <String, dynamic>{
+        'name': '跨配对课程',
+        'teacher': '李老师',
+        'location': 'A102',
+        'weekday': 2,
+        'start_section': 3,
+        'end_section': 3,
+        'period_order': 2,
+        'period_label': '上午2',
+        'weeks': <int>[1, 2],
+      },
+      <String, dynamic>{
+        'name': '跨配对课程',
+        'teacher': '李老师',
+        'location': 'A102',
+        'weekday': 2,
+        'start_section': 4,
+        'end_section': 4,
+        'period_order': 3,
+        'period_label': '上午3',
+        'weeks': <int>[1, 2],
+      },
+    ]);
+
+    expect(provider.courses, hasLength(4));
+    expect(provider.courses.every((course) => course.span == 1), isTrue);
+  });
+
+  test('旧缓存中的研究生单行课程在恢复时自动归并', () async {
+    final term = CourseTerm.inferCurrentTerm();
+    final store = ScheduleCacheStore(
+      appUserId: '1001',
+      sourceAccountId: 'G-LEGACY',
+      snapshotStore: createSnapshotStore('1001'),
+    );
+    await store.writeCourses(
+      year: term.year,
+      semester: term.semester,
+      courses: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 1,
+          'name': '研究生专题课',
+          'teacher': '王老师',
+          'location': 'A101',
+          'weekday': 1,
+          'start_section': 3,
+          'end_section': 3,
+          'period_order': 2,
+          'period_label': '上午3',
+          'weeks': <int>[1, 2],
+        },
+        <String, dynamic>{
+          'id': 2,
+          'name': '研究生专题课',
+          'teacher': '王老师',
+          'location': 'A101',
+          'weekday': 1,
+          'start_section': 4,
+          'end_section': 4,
+          'period_order': 3,
+          'period_label': '上午4',
+          'weeks': <int>[1, 2],
+        },
+      ],
+    );
+    final provider = createProvider()..syncSessionContext('1001', 'G-LEGACY');
+
+    expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.single.span, 2);
+    expect(provider.courses.single.periodLabels, <String>['上午3', '上午4']);
+
+    final migrated = await store.readTerm(
+      year: term.year,
+      semester: term.semester,
+    );
+    expect(migrated?.courses, hasLength(1));
+    expect(
+      migrated?.courses.single['period_labels'],
+      <String>['上午3', '上午4'],
+    );
+  });
+
   test('来源学号变化后不读取旧课表缓存', () async {
     final provider = createProvider()..syncSessionContext('1001', '2403130233');
     await provider.applyFetchedCourses(<Map<String, dynamic>>[

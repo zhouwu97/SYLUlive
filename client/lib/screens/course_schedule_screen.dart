@@ -40,6 +40,11 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
 
+/// 研究生课表按学校原始小节展示，双小节合并后使用更紧凑的手机密度。
+const double graduateDefaultSlotHeight = 48.0;
+const double graduateMinSlotHeight = 46.0;
+const double graduateMaxSlotHeight = 60.0;
+
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
 
@@ -175,6 +180,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<bool>? _cachePrimeFuture;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
+  double _graduateScheduleSlotHeight = graduateDefaultSlotHeight;
   bool _courseReminderEnabled = false;
   int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
@@ -1872,9 +1878,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   String? _periodLabelForSlot(CourseScheduleProvider sc, int slot) {
     final labels = sc.courses
-        .where((course) => course.periodOrder == slot)
-        .map((course) => _providerPeriodLabel(course))
+        .map((course) {
+          final order = course.periodOrder;
+          if (order == null) return null;
+          final offset = slot - order;
+          if (offset >= 0 && offset < course.periodLabels.length) {
+            return course.periodLabels[offset].trim();
+          }
+          return offset == 0 ? _providerPeriodLabel(course) : null;
+        })
         .whereType<String>()
+        .where((label) => label.isNotEmpty)
         .toSet()
         .toList();
     if (labels.isEmpty) return null;
@@ -1884,6 +1898,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   int _scheduleSlotCount(CourseScheduleProvider sc) {
     return sc.periodSlotCount;
+  }
+
+  double _effectiveSlotHeight(CourseScheduleProvider sc) {
+    if (!sc.usesProviderPeriodLayout) return _scheduleSlotHeight;
+    return _graduateScheduleSlotHeight
+        .clamp(graduateMinSlotHeight, graduateMaxSlotHeight)
+        .toDouble();
   }
 
   String _slotDisplayLabel(CourseScheduleProvider sc, int slot) {
@@ -1921,6 +1942,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== App 内课表显示设置 ======
   static const _scheduleOpacityKey = 'card_opacity';
   static const _scheduleSlotHeightKey = 'slot_height';
+  static const _graduateScheduleSlotHeightKey = 'graduate_slot_height';
 
   Future<void> _loadSettings() async {
     try {
@@ -1932,6 +1954,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
+        _graduateScheduleSlotHeight =
+            prefs.getDouble(_graduateScheduleSlotHeightKey) ??
+                graduateDefaultSlotHeight;
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
         _settingsLoaded = true; // 立即放行 UI 渲染
@@ -1980,9 +2005,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await prefs.setDouble(_scheduleOpacityKey, v);
   }
 
-  Future<void> _saveSlotHeight(double v) async {
+  Future<void> _saveSlotHeight(double v, {bool graduate = false}) async {
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setDouble(_scheduleSlotHeightKey, v);
+    await prefs.setDouble(
+      graduate ? _graduateScheduleSlotHeightKey : _scheduleSlotHeightKey,
+      v,
+    );
   }
 
   Future<void> _openCourseSettings(
@@ -2013,8 +2041,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 _requestBackgroundKeepAliveFromSettings(context),
             openHomeWidgets: () => _openHomeWidgetSettings(context, sc),
             updateScheduleOpacity: _updateScheduleOpacityFromSettings,
-            updateScheduleSlotHeight: _updateScheduleSlotHeightFromSettings,
-            resetScheduleDisplay: _resetScheduleDisplayFromSettings,
+            updateScheduleSlotHeight: (value) =>
+                _updateScheduleSlotHeightFromSettings(sc, value),
+            resetScheduleDisplay: () => _resetScheduleDisplayFromSettings(sc),
           ),
         ),
       ),
@@ -2050,8 +2079,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       backgroundKeepAliveSupported: _backgroundKeepAliveStatus.supported,
       backgroundKeepAliveBusy: _backgroundKeepAliveBusy,
       scheduleCardOpacity: _scheduleCardOpacity,
-      scheduleSlotHeight: _scheduleSlotHeight,
-      defaultSlotHeight: defaultSlotHeight,
+      scheduleSlotHeight: _effectiveSlotHeight(sc),
+      defaultSlotHeight: sc.usesProviderPeriodLayout
+          ? graduateDefaultSlotHeight
+          : defaultSlotHeight,
+      minimumSlotHeight:
+          sc.usesProviderPeriodLayout ? graduateMinSlotHeight : 55,
+      maximumSlotHeight:
+          sc.usesProviderPeriodLayout ? graduateMaxSlotHeight : 120,
     );
   }
 
@@ -2194,21 +2229,39 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Future<void> _updateScheduleSlotHeightFromSettings(
+    CourseScheduleProvider sc,
     double value,
   ) async {
-    if (mounted) setState(() => _scheduleSlotHeight = value);
-    await _saveSlotHeight(value);
+    if (mounted) {
+      setState(() {
+        if (sc.usesProviderPeriodLayout) {
+          _graduateScheduleSlotHeight = value;
+        } else {
+          _scheduleSlotHeight = value;
+        }
+      });
+    }
+    await _saveSlotHeight(value, graduate: sc.usesProviderPeriodLayout);
   }
 
-  Future<void> _resetScheduleDisplayFromSettings() async {
+  Future<void> _resetScheduleDisplayFromSettings(
+    CourseScheduleProvider sc,
+  ) async {
+    final slotHeight = sc.usesProviderPeriodLayout
+        ? graduateDefaultSlotHeight
+        : defaultSlotHeight;
     if (mounted) {
       setState(() {
         _scheduleCardOpacity = 0.55;
-        _scheduleSlotHeight = defaultSlotHeight;
+        if (sc.usesProviderPeriodLayout) {
+          _graduateScheduleSlotHeight = slotHeight;
+        } else {
+          _scheduleSlotHeight = slotHeight;
+        }
       });
     }
     await _saveOpacity(0.55);
-    await _saveSlotHeight(defaultSlotHeight);
+    await _saveSlotHeight(slotHeight, graduate: sc.usesProviderPeriodLayout);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -3782,7 +3835,8 @@ $classFilterRule
     return LayoutBuilder(
       builder: (context, constraints) {
         final slotCount = _scheduleSlotCount(sc);
-        final totalH = slotCount * _scheduleSlotHeight;
+        final slotHeight = _effectiveSlotHeight(sc);
+        final totalH = slotCount * slotHeight;
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
         final exactW = (screenW - timeColumnWidth) / 7;
@@ -3801,7 +3855,7 @@ $classFilterRule
                   SizedBox(height: headerH),
                   SizedBox(
                     height: totalH,
-                    child: _buildTimeColumn(sc, slotCount),
+                    child: _buildTimeColumn(sc, slotCount, slotHeight),
                   ),
                 ],
               ),
@@ -3834,12 +3888,17 @@ $classFilterRule
                               child: Stack(
                                 clipBehavior: Clip.none,
                                 children: [
-                                  _buildGridLines(exactW, slotCount),
+                                  _buildGridLines(
+                                    exactW,
+                                    slotCount,
+                                    slotHeight,
+                                  ),
                                   Positioned.fill(
                                     child: _buildCourseCardsOnly(
                                       sc,
                                       weekStart,
                                       exactW,
+                                      slotHeight,
                                     ),
                                   ),
                                 ],
@@ -3859,7 +3918,11 @@ $classFilterRule
     );
   }
 
-  Widget _buildTimeColumn(CourseScheduleProvider sc, int slotCount) {
+  Widget _buildTimeColumn(
+    CourseScheduleProvider sc,
+    int slotCount,
+    double slotHeight,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cleanLightMode =
         context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
@@ -3870,7 +3933,7 @@ $classFilterRule
       children: List.generate(
         slotCount,
         (i) => Container(
-          height: _scheduleSlotHeight,
+          height: slotHeight,
           alignment: Alignment.center,
           child: Text(
             _slotDisplayLabel(sc, i),
@@ -3886,7 +3949,11 @@ $classFilterRule
     );
   }
 
-  Widget _buildGridLines(double exactW, int slotCount) {
+  Widget _buildGridLines(
+    double exactW,
+    int slotCount,
+    double slotHeight,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cleanLightMode =
         context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
@@ -3911,7 +3978,7 @@ $classFilterRule
               children: List.generate(
                 slotCount,
                 (i) => Container(
-                  height: _scheduleSlotHeight,
+                  height: slotHeight,
                   decoration: BoxDecoration(
                     border: Border(
                       left: BorderSide(
@@ -3936,6 +4003,7 @@ $classFilterRule
     CourseScheduleProvider sc,
     DateTime weekStart,
     double exactW,
+    double slotHeight,
   ) {
     final wn = sc.getAcademicWeek(weekStart);
     if (wn == null) {
@@ -3951,12 +4019,12 @@ $classFilterRule
 
     for (final c in sc.courses) {
       if (c.weekday < 1 || c.weekday > 7) continue;
-      final key = '${c.weekday}_${c.startSection}';
+      final keys = _slotKeys(c);
       if (c.weeks.isEmpty || c.weeks.contains(wn)) {
         // 当前教学周课程优先占据时间槽。
-        if (!activeSlots.contains(key)) {
+        if (!keys.any(activeSlots.contains)) {
           allActive.add(c);
-          activeSlots.add(key);
+          activeSlots.addAll(keys);
         }
       }
     }
@@ -3965,13 +4033,14 @@ $classFilterRule
     // 已完全结课的课程（所有周数 < 当前周）不显示
     for (final c in sc.courses) {
       if (c.weekday < 1 || c.weekday > 7) continue;
-      final key = '${c.weekday}_${c.startSection}';
+      final keys = _slotKeys(c);
       if (c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
         // 跳过已完全结课的课程
         if (c.weeks.every((w) => w < wn)) continue;
-        if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
+        if (!keys.any(activeSlots.contains) &&
+            !keys.any(inactiveSeen.contains)) {
           allInactive.add(c);
-          inactiveSeen.add(key);
+          inactiveSeen.addAll(keys);
         }
       }
     }
@@ -3986,16 +4055,31 @@ $classFilterRule
       clipBehavior: Clip.none,
       children: [
         // 课程卡片（非本周在前，当前周在上层）
-        for (final c in allInactive) _buildCard(c, false, exactW, wn),
-        for (final c in allActive) _buildCard(c, true, exactW, wn),
+        for (final c in allInactive)
+          _buildCard(c, false, exactW, wn, slotHeight),
+        for (final c in allActive) _buildCard(c, true, exactW, wn, slotHeight),
       ],
     );
   }
 
+  Iterable<String> _slotKeys(CourseBlock course) sync* {
+    for (var section = course.startSection;
+        section <= course.endSection;
+        section++) {
+      yield '${course.weekday}_$section';
+    }
+  }
+
   // ====== 课程卡片 ======
-  Widget _buildCard(CourseBlock c, bool isActive, double exactW, int? wn) {
-    final top = (c.startSection - 1) * _scheduleSlotHeight;
-    final h = c.span * _scheduleSlotHeight - 2;
+  Widget _buildCard(
+    CourseBlock c,
+    bool isActive,
+    double exactW,
+    int? wn,
+    double slotHeight,
+  ) {
+    final top = (c.startSection - 1) * slotHeight;
+    final h = c.span * slotHeight - 2;
     String? inactiveLabel;
     if (!isActive && wn != null && c.weeks.isNotEmpty) {
       inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
@@ -4013,6 +4097,8 @@ $classFilterRule
 
     // 根据可用高度决定显示内容（优先课名+地点）
     final bool isCompact = h < 70;
+    final isGraduatePhone =
+        c.periodOrder != null && MediaQuery.sizeOf(context).shortestSide < 600;
 
     return Positioned(
       key: ValueKey('${c.id}_${c.weekday}_${c.startSection}'),
@@ -4075,7 +4161,10 @@ $classFilterRule
                   textAlign: TextAlign.left,
                 ),
               ],
-              if (!isCompact && c.teacher != null && c.teacher!.isNotEmpty) ...[
+              if (!isCompact &&
+                  !isGraduatePhone &&
+                  c.teacher != null &&
+                  c.teacher!.isNotEmpty) ...[
                 SizedBox(height: 1 * scale),
                 Text(
                   c.teacher!,

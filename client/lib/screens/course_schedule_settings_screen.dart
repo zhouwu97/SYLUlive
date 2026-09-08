@@ -20,6 +20,8 @@ class CourseScheduleSettingsSnapshot {
     required this.scheduleCardOpacity,
     required this.scheduleSlotHeight,
     required this.defaultSlotHeight,
+    this.minimumSlotHeight = 55,
+    this.maximumSlotHeight = 120,
   });
 
   final int courseCount;
@@ -36,6 +38,8 @@ class CourseScheduleSettingsSnapshot {
   final double scheduleCardOpacity;
   final double scheduleSlotHeight;
   final double defaultSlotHeight;
+  final double minimumSlotHeight;
+  final double maximumSlotHeight;
 }
 
 class CourseScheduleSettingsCallbacks {
@@ -299,9 +303,11 @@ class _CourseScheduleSettingsScreenState
                 _CourseDisplaySliderTile(
                   title: '每节课高度',
                   value: _snapshot.scheduleSlotHeight,
-                  min: 55,
-                  max: 120,
-                  divisions: 13,
+                  min: _snapshot.minimumSlotHeight,
+                  max: _snapshot.maximumSlotHeight,
+                  divisions: (_snapshot.maximumSlotHeight -
+                          _snapshot.minimumSlotHeight)
+                      .round(),
                   valueLabel: '${_snapshot.scheduleSlotHeight.round()} dp',
                   onChanged: (value) {
                     setState(() {
@@ -369,6 +375,8 @@ class _CourseScheduleSettingsScreenState
       scheduleCardOpacity: scheduleCardOpacity ?? _snapshot.scheduleCardOpacity,
       scheduleSlotHeight: scheduleSlotHeight ?? _snapshot.scheduleSlotHeight,
       defaultSlotHeight: _snapshot.defaultSlotHeight,
+      minimumSlotHeight: _snapshot.minimumSlotHeight,
+      maximumSlotHeight: _snapshot.maximumSlotHeight,
     );
   }
 }

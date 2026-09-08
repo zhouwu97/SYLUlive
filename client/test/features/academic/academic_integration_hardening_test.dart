@@ -477,6 +477,59 @@ void main() {
     schedule.dispose();
   });
 
+  test('本机研究生 RawCourse 在进入课表状态前归并固定相邻节次', () async {
+    final repository = _FakeAcademicRepository(
+      courses: CourseFetchResult(
+        courses: const <RawCourse>[
+          RawCourse(
+            name: '新时代中国特色社会主义理论与实践研究4班',
+            teacher: '张慧雪',
+            location: '综合楼 A224',
+            section: '上午3',
+            weekDay: '1',
+            weekExpression: '3-12周',
+            periodOrder: 2,
+            periodLabel: '上午3',
+          ),
+          RawCourse(
+            name: '新时代中国特色社会主义理论与实践研究4班',
+            teacher: '张慧雪',
+            location: '综合楼 A224',
+            section: '上午4',
+            weekDay: '1',
+            weekExpression: '3-12周',
+            periodOrder: 3,
+            periodLabel: '上午4',
+          ),
+        ],
+        source: CourseSource.mobile,
+      ),
+    );
+    final controller = AcademicSessionController(
+      repository: repository,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await controller.login(studentId: '2026000001', password: 'secret');
+    final schedule = CourseScheduleProvider(
+      Dio(),
+      (_) => _NoopSnapshotStore('app-user-a'),
+      repository,
+      controller,
+    )..syncSessionContext('app-user-a', '2026000001');
+
+    await schedule.loadCourses(forceRefresh: true);
+
+    expect(schedule.courses, hasLength(1));
+    expect(schedule.courses.single.startSection, 3);
+    expect(schedule.courses.single.endSection, 4);
+    expect(schedule.courses.single.periodLabel, '上午3-4');
+    expect(schedule.courses.single.periodLabels, <String>['上午3', '上午4']);
+
+    controller.dispose();
+    schedule.dispose();
+  });
+
   test('EduProvider legacy 兼容课表支持单节并保留真实星期', () async {
     final repository = _FakeAcademicRepository(
       courses: CourseFetchResult(

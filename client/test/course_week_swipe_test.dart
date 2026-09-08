@@ -422,6 +422,84 @@ void main() {
 
     await _disposeCourse(tester, page);
   });
+
+  testWidgets('研究生双小节课程跨两行展示并完整占用节次', (tester) async {
+    final page = await _pumpCourse(
+      tester,
+      initialPreferences: const <String, Object>{'slot_height': 120.0},
+      seededCourses: [
+        <String, dynamic>{
+          'id': 11,
+          'course_code': 'G-11',
+          'name': '新时代中国特色社会主义理论与实践研究4班',
+          'teacher': '张慧雪',
+          'location': '综合楼 A224',
+          'weekday': 1,
+          'start_section': 3,
+          'end_section': 4,
+          'period_order': 2,
+          'period_label': '上午3-4',
+          'period_labels': <String>['上午3', '上午4'],
+          'weeks': <int>[1, 2, 3],
+        },
+        <String, dynamic>{
+          'id': 12,
+          'course_code': 'G-12',
+          'name': '不应叠加的后续课程',
+          'weekday': 1,
+          'start_section': 4,
+          'end_section': 4,
+          'period_order': 3,
+          'period_label': '上午4',
+          'weeks': <int>[2, 3],
+        },
+      ],
+    );
+
+    expect(find.text('上午3'), findsOneWidget);
+    expect(find.text('上午4'), findsOneWidget);
+    expect(find.text('不应叠加的后续课程'), findsNothing);
+    expect(find.text('张慧雪'), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('11_1_3'))).height,
+      graduateDefaultSlotHeight * 2 - 2,
+    );
+    expect(tester.takeException(), isNull);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('研究生双小节课程在深色大字号手机视口无溢出', (tester) async {
+    final page = await _pumpCourse(
+      tester,
+      physicalSize: const Size(360, 800),
+      themeMode: ThemeMode.dark,
+      textScaleFactor: 1.3,
+      seededCourses: [
+        <String, dynamic>{
+          'id': 21,
+          'course_code': 'G-21',
+          'name': '新时代中国特色社会主义理论与实践研究4班',
+          'teacher': '张慧雪',
+          'location': '综合楼 A224',
+          'weekday': 1,
+          'start_section': 3,
+          'end_section': 4,
+          'period_order': 2,
+          'period_label': '上午3-4',
+          'period_labels': <String>['上午3', '上午4'],
+          'weeks': <int>[1, 2, 3],
+        },
+      ],
+    );
+
+    expect(find.text('上午3'), findsOneWidget);
+    expect(find.text('上午4'), findsOneWidget);
+    expect(find.byKey(const ValueKey('21_1_3')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _disposeCourse(tester, page);
+  });
 }
 
 Future<_CourseTestPage> _pumpCourse(
@@ -429,9 +507,13 @@ Future<_CourseTestPage> _pumpCourse(
   bool configureSemesterStart = true,
   DateTime? semesterStart,
   List<Map<String, dynamic>>? seededCourses,
+  Size physicalSize = const Size(400, 800),
+  ThemeMode themeMode = ThemeMode.light,
+  double textScaleFactor = 1,
+  Map<String, Object> initialPreferences = const <String, Object>{},
 }) async {
-  AppPreferencesStore.setMockInitialValues({});
-  tester.view.physicalSize = const Size(400, 800);
+  AppPreferencesStore.setMockInitialValues(initialPreferences);
+  tester.view.physicalSize = physicalSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -514,7 +596,18 @@ Future<_CourseTestPage> _pumpCourse(
           value: scheduleProvider),
       ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
     ],
-    child: const MaterialApp(home: CourseScheduleScreen()),
+    child: MaterialApp(
+      themeMode: themeMode,
+      theme: ThemeData.light(),
+      darkTheme: ThemeData.dark(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(textScaleFactor),
+        ),
+        child: child!,
+      ),
+      home: const CourseScheduleScreen(),
+    ),
   );
   await tester.pumpWidget(widget);
   await tester.pumpAndSettle();

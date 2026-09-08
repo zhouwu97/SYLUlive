@@ -34,6 +34,11 @@ class CourseBlock {
   final int? periodOrder;
   final String? periodLabel;
 
+  /// 课程块覆盖的 Provider 原始节次标签。
+  ///
+  /// 研究生相邻节次归并后仍需保留每一行的原标签，供左侧时间轴逐行展示。
+  final List<String> periodLabels;
+
   const CourseBlock({
     required this.id,
     required this.courseCode,
@@ -48,6 +53,7 @@ class CourseBlock {
     this.note,
     this.periodOrder,
     this.periodLabel,
+    this.periodLabels = const <String>[],
   });
 
   int get span => endSection - startSection + 1;
@@ -69,6 +75,9 @@ class CourseBlock {
     if (periodOrder != null) json['period_order'] = periodOrder;
     final label = periodLabel?.trim();
     if (label != null && label.isNotEmpty) json['period_label'] = label;
+    if (periodLabels.isNotEmpty) {
+      json['period_labels'] = periodLabels;
+    }
     return json;
   }
 
@@ -80,6 +89,19 @@ class CourseBlock {
     };
     final rawPeriodLabel =
         (json['period_label'] ?? json['periodLabel'])?.toString().trim();
+    final parsedPeriodLabels =
+        switch (json['period_labels'] ?? json['periodLabels']) {
+      final List<dynamic> values => values
+          .map((value) => value.toString().trim())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false),
+      _ => <String>[],
+    };
+    final periodLabels = parsedPeriodLabels.isNotEmpty
+        ? parsedPeriodLabels
+        : rawPeriodLabel != null && rawPeriodLabel.isNotEmpty
+            ? <String>[rawPeriodLabel]
+            : const <String>[];
     return CourseBlock(
       id: (json['id'] as num?)?.toInt() ?? 0,
       courseCode: json['course_code']?.toString() ?? '',
@@ -103,6 +125,7 @@ class CourseBlock {
       periodLabel: rawPeriodLabel == null || rawPeriodLabel.isEmpty
           ? null
           : rawPeriodLabel,
+      periodLabels: periodLabels,
     );
   }
 }
@@ -637,7 +660,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (cached == null || cached.isEmpty) {
       return false;
     }
-    _courses = cached;
+    _courses = _coalesceGraduateCourses(cached);
+    if (_courses.length != cached.length) {
+      await _saveToCache(_courses);
+    }
     _buildGrid();
     _isLoading = false;
     _errorMessage = null;
@@ -699,19 +725,22 @@ class CourseScheduleProvider extends ChangeNotifier {
     final hiddenCourseIdsBeforeMigration = Set<int>.of(_hiddenCourseIds);
 
     final customCourses = _courses.where((c) => c.id < 0).toList();
-    final parsedCourses = <CourseBlock>[...customCourses];
+    final fetchedCourses = <CourseBlock>[];
     int importedCount = 0;
 
     for (final rawCourse in rawCourses) {
       try {
         final parsed = _courseFromFetchedMap(rawCourse);
-        if (!_isCourseHidden(parsed)) {
-          parsedCourses.add(parsed);
-          importedCount++;
-        }
+        fetchedCourses.add(parsed);
       } catch (e) {
         debugPrint('解析课程失败: ${e.runtimeType}');
       }
+    }
+    final parsedCourses = <CourseBlock>[...customCourses];
+    for (final course in _coalesceGraduateCourses(fetchedCourses)) {
+      if (_isCourseHidden(course)) continue;
+      parsedCourses.add(course);
+      importedCount++;
     }
 
     if (!_sameCourseIdSet(
@@ -789,6 +818,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (hasProviderPeriod) {
       mapped['period_order'] = course.periodOrder;
       mapped['period_label'] = course.periodLabel!.trim();
+      mapped['period_labels'] = <String>[course.periodLabel!.trim()];
     }
     return mapped;
   }
@@ -843,6 +873,10 @@ class CourseScheduleProvider extends ChangeNotifier {
       'period_label',
       'periodLabel',
     ]);
+    final periodLabels = _stringList(
+      map['period_labels'] ?? map['periodLabels'],
+      fallback: periodLabel,
+    );
     final hasProviderPeriod = periodOrder != null || periodLabel.isNotEmpty;
     if (hasProviderPeriod &&
         (periodOrder == null || periodOrder < 0 || periodLabel.isEmpty)) {
@@ -899,7 +933,141 @@ class CourseScheduleProvider extends ChangeNotifier {
       weeks: weeks,
       periodOrder: periodOrder,
       periodLabel: periodLabel.isEmpty ? null : periodLabel,
+      periodLabels: periodLabels,
     );
+  }
+
+  /// 将研究生课表中同一次上课的相邻原始行归并为一个课程块。
+  ///
+  /// 学校按单个时段返回数据，但业务侧的课程提醒、冲突判断和各类展示都应
+  /// 共享同一个跨节课程语义，因此归并必须发生在进入 `_courses` 之前。
+  List<CourseBlock> _coalesceGraduateCourses(
+    Iterable<CourseBlock> courses,
+  ) {
+    final source = courses.toList(growable: false);
+    final pairs = <int, int>{};
+    final pairedSeconds = <int>{};
+
+    for (var firstIndex = 0; firstIndex < source.length; firstIndex++) {
+      final first = source[firstIndex];
+      if (first.periodOrder == null || first.periodLabels.length != 1) {
+        continue;
+      }
+
+      for (var secondIndex = 0; secondIndex < source.length; secondIndex++) {
+        if (secondIndex == firstIndex || pairedSeconds.contains(secondIndex)) {
+          continue;
+        }
+        final second = source[secondIndex];
+        if (_canMergeGraduatePair(first, second)) {
+          pairs[firstIndex] = secondIndex;
+          pairedSeconds.add(secondIndex);
+          break;
+        }
+      }
+    }
+
+    final result = <CourseBlock>[];
+    for (var index = 0; index < source.length; index++) {
+      if (pairedSeconds.contains(index)) continue;
+      final secondIndex = pairs[index];
+      if (secondIndex == null) {
+        result.add(source[index]);
+        continue;
+      }
+      result.add(_mergeGraduatePair(source[index], source[secondIndex]));
+    }
+    return result;
+  }
+
+  bool _canMergeGraduatePair(CourseBlock first, CourseBlock second) {
+    if (first.periodOrder == null ||
+        second.periodOrder == null ||
+        first.periodLabels.length != 1 ||
+        second.periodLabels.length != 1 ||
+        first.span != 1 ||
+        second.span != 1 ||
+        second.periodOrder != first.periodOrder! + 1 ||
+        second.startSection != first.startSection + 1) {
+      return false;
+    }
+    if (first.weekday != second.weekday ||
+        first.name.trim() != second.name.trim() ||
+        _normalized(first.teacher) != _normalized(second.teacher) ||
+        _normalized(first.location) != _normalized(second.location) ||
+        !listEquals(first.weeks, second.weeks)) {
+      return false;
+    }
+
+    final firstPeriod = _parseGraduatePeriodLabel(first.periodLabels.single);
+    final secondPeriod = _parseGraduatePeriodLabel(second.periodLabels.single);
+    if (firstPeriod == null || secondPeriod == null) return false;
+    return firstPeriod.group == secondPeriod.group &&
+        firstPeriod.number.isOdd &&
+        secondPeriod.number == firstPeriod.number + 1;
+  }
+
+  CourseBlock _mergeGraduatePair(CourseBlock first, CourseBlock second) {
+    final firstPeriod = _parseGraduatePeriodLabel(first.periodLabels.single)!;
+    final secondPeriod = _parseGraduatePeriodLabel(second.periodLabels.single)!;
+    final labels = <String>[
+      first.periodLabels.single.trim(),
+      second.periodLabels.single.trim(),
+    ];
+    final id = deterministicCourseId(
+      courseCode: first.courseCode,
+      name: first.name,
+      teacher: first.teacher ?? '',
+      location: first.location ?? '',
+      weekday: first.weekday,
+      startSection: first.startSection,
+      endSection: second.endSection,
+      weeks: first.weeks,
+    );
+
+    return CourseBlock(
+      id: id,
+      courseCode: first.courseCode,
+      name: first.name,
+      teacher: first.teacher,
+      location: first.location,
+      color: first.color,
+      weekday: first.weekday,
+      startSection: first.startSection,
+      endSection: second.endSection,
+      weeks: first.weeks,
+      note: first.note,
+      periodOrder: first.periodOrder,
+      periodLabel:
+          '${firstPeriod.group}${firstPeriod.number}-${secondPeriod.number}',
+      periodLabels: labels,
+    );
+  }
+
+  static ({String group, int number})? _parseGraduatePeriodLabel(
+    String label,
+  ) {
+    final match =
+        RegExp(r'^\s*(上午|下午|晚上)\s*(?:第\s*)?(\d+)\s*节?\s*$').firstMatch(label);
+    final number = int.tryParse(match?.group(2) ?? '');
+    if (match == null || number == null || number < 1) return null;
+    return (group: match.group(1)!, number: number);
+  }
+
+  static String _normalized(String? value) => value?.trim() ?? '';
+
+  List<String> _stringList(Object? raw, {String fallback = ''}) {
+    final values = raw is List
+        ? raw
+            .map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false)
+        : const <String>[];
+    return values.isNotEmpty
+        ? values
+        : fallback.isEmpty
+            ? const <String>[]
+            : <String>[fallback];
   }
 
   int _legacyCourseId(CourseBlock course) {
@@ -1052,10 +1220,16 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (!forceRefresh) {
       final snapshot = await _loadOperationSnapshot(operation);
       if (!_isCurrentOperation(operation)) return;
-      final cached =
+      final cachedRaw =
           snapshot?.courses.map(CourseBlock.fromJson).toList(growable: false);
+      final cached =
+          cachedRaw == null ? null : _coalesceGraduateCourses(cachedRaw);
       if (cached != null && cached.isNotEmpty) {
         _courses = cached;
+        if (cachedRaw != null && cached.length != cachedRaw.length) {
+          await _saveOperationCourses(operation, cached);
+          if (!_isCurrentOperation(operation)) return;
+        }
         _buildGrid();
         debugPrint('从手机缓存加载课程: count=${_courses.length}');
         _isLoading = false;
@@ -1135,9 +1309,12 @@ class CourseScheduleProvider extends ChangeNotifier {
               _courses = backupCourses;
               _buildGrid();
             } else {
-              final fetchedCourses = <CourseBlock>[];
+              final parsedCourses = <CourseBlock>[];
               for (final rawCourse in rawCourses) {
-                final course = _courseFromFetchedMap(rawCourse);
+                parsedCourses.add(_courseFromFetchedMap(rawCourse));
+              }
+              final fetchedCourses = <CourseBlock>[];
+              for (final course in _coalesceGraduateCourses(parsedCourses)) {
                 if (!_isCourseHidden(course)) fetchedCourses.add(course);
               }
               _courses = fetchedCourses;
@@ -1372,6 +1549,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       note: oldCourse.note,
       periodOrder: oldCourse.periodOrder,
       periodLabel: oldCourse.periodLabel,
+      periodLabels: oldCourse.periodLabels,
     );
 
     _courses[idx] = course;
@@ -1504,7 +1682,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     await _clearOperationActiveArchive(operation);
     if (!_isCurrentOperation(operation)) return 0;
 
-    _courses = snapshot?.courses.map(CourseBlock.fromJson).toList() ?? [];
+    _courses = _coalesceGraduateCourses(
+      snapshot?.courses.map(CourseBlock.fromJson) ?? const <CourseBlock>[],
+    );
     _buildGrid();
 
     return applyFetchedCourses(rawCourses, resetHidden: resetHidden);
@@ -1581,9 +1761,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     final List<dynamic> list = jsonDecode(jsonStr);
     // 简单验证格式
-    final courses = list
-        .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final courses = _coalesceGraduateCourses(
+      list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)),
+    );
     if (courses.isEmpty) throw Exception('课表数据为空或格式不正确');
 
     final id = 'archive_${DateTime.now().millisecondsSinceEpoch}';
@@ -1645,7 +1825,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
     if (!_isCurrentOperation(operation)) return;
 
-    _courses = archive.courses.map(CourseBlock.fromJson).toList();
+    _courses = _coalesceGraduateCourses(
+      archive.courses.map(CourseBlock.fromJson),
+    );
     _buildGrid();
     await _saveOperationCourses(operation, _courses);
     if (!_isCurrentOperation(operation)) return;

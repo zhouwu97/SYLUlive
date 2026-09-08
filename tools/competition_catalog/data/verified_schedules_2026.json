@@ -946,6 +946,441 @@
       "publisher": "辽宁省大学生创新创业管理共享平台",
       "title": "关于举办2026年辽宁省睿抗机器人开发者大赛的通知",
       "url": "https://cxcy.upln.cn/competitionDetails?id=467e7d52f8f47857b6af041b6c6672d1"
+    },
+    "upln_2025_prov_006": {
+      "title": "2025年第六届辽宁省普通高等学校本科大学生程序设计竞赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2026-03-10T17:00:00+08:00",
+        "end": "2026-03-11T12:00:00+08:00"
+      }
+    },
+    "upln_2025_prov_044": {
+      "title": "第十六届蓝桥杯全国软件和信息技术专业人才大赛省赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2026-02-03T00:00:00+08:00",
+        "end": "2026-03-01T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_034": {
+      "title": "2025年TI杯辽宁省普通高等学校本科大学生电子设计竞赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-12-31T00:00:00+08:00",
+        "end": "2026-01-01T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_013": {
+      "title": "2025年辽宁省两岸新锐设计竞赛“华灿奖”（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-11-05T00:00:00+08:00",
+        "end": "2025-11-12T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_040": {
+      "title": "2025“外研社•国才杯”“理解当代中国”辽宁省大学外语能力大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-10-31T00:14:30+08:00",
+        "end": "2025-11-04T16:55:00+08:00"
+      }
+    },
+    "upln_2025_prov_125": {
+      "title": "第九届“长风杯”全国大学生大数据分析与挖掘竞赛东北分赛区暨第六届辽宁省大学生大数据分析与挖掘竞赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-10-23T00:00:00+08:00",
+        "end": "2025-11-24T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_108": {
+      "title": "2025年辽宁省大学生智慧海洋科技创新大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-10-17T00:00:00+08:00",
+        "end": "2025-11-10T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_021": {
+      "title": "2025年辽宁省普通高等学校华为ICT大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-10-13T00:00:00+08:00",
+        "end": "2025-12-08T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_154": {
+      "title": "2025年辽宁省普通高等学校本科大学生数字贸易创新创业大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-29T00:00:00+08:00",
+        "end": "2025-11-10T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_121": {
+      "title": "2025年辽宁省普通高等学校大学生应急救援创新设计大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-10T00:00:00+08:00",
+        "end": "2025-10-10T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_102": {
+      "title": "2025年第四届辽宁省大学生智能技术应用大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-05T00:00:00+08:00",
+        "end": "2025-10-15T05:10:01+08:00"
+      }
+    },
+    "upln_2025_prov_123": {
+      "title": "2025年辽宁省大学生金蝶云管理创新杯大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-04T00:00:00+08:00",
+        "end": "2025-11-04T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_060": {
+      "title": "2025年全国大学生数字媒体科技作品及创意竞赛（辽宁省分赛区）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-04T00:00:00+08:00",
+        "end": "2026-02-09T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_144": {
+      "title": "2025年第四届辽宁省大学生商科综合能力大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-09-01T00:00:00+08:00",
+        "end": "2025-10-12T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_062": {
+      "title": "2025年第七届全球校园人工智能算法精英大赛辽宁省赛区选拔赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-08-26T00:00:00+08:00",
+        "end": "2025-12-02T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_100": {
+      "title": "第二十四届全国大学生机器人大赛RoboMaster 2025机甲大师高校联盟赛（辽宁站）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-06-13T00:00:00+08:00",
+        "end": "2025-06-30T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_023": {
+      "title": "2025年全国高校商业精英挑战赛辽宁省省赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-04-25T00:00:00+08:00",
+        "end": "2025-06-01T23:59:59+08:00"
+      }
+    },
+    "upln_2025_prov_050": {
+      "title": "2025年中国好创意暨全国数字艺术设计大赛（辽宁赛区）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2025；全部；50条/页；共3页，131项",
+      "registration_window": {
+        "start": "2025-04-24T00:00:00+08:00",
+        "end": "2025-09-07T23:59:59+08:00"
+      }
+    },
+    "upln_2024_prov_146": {
+      "title": "2024年辽宁省大学生动漫与媒体学院奖暨辽宁省大学生动漫与媒体创意设计大赛（2024届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2024；全部；50条/页；共3页，139项",
+      "registration_window": {
+        "start": "2024-12-16T00:00:00+08:00",
+        "end": "2025-01-05T23:59:59+08:00"
+      }
+    },
+    "upln_2024_prov_150": {
+      "title": "2024年中国电子数据取证大赛辽宁省赛区（2024届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match",
+      "query_context": "年度2024；全部；50条/页；共3页，139项",
+      "registration_window": {
+        "start": "2024-10-08T00:00:00+08:00",
+        "end": "2024-10-29T23:59:59+08:00"
+      }
+    },
+    "moe_career_2026": {
+      "title": "教育部关于举办第三届全国大学生职业规划大赛的通知",
+      "publisher": "教育部",
+      "url": "https://www.moe.gov.cn/srcsite/A15/s7063/202510/t20251021_1417550.html"
+    },
+    "sun_ada_2026": {
+      "title": "第18届全国大学生广告艺术大赛参赛指南",
+      "publisher": "全国大学生广告艺术大赛组委会",
+      "url": "https://www.sun-ada.net/home/about_intrs.html"
+    },
+    "sanchuang_2026": {
+      "title": "第十六届三创赛官网报名及赛程安排",
+      "publisher": "全国大学生电子商务三创赛组委会",
+      "url": "https://www.3chuang.net/"
+    },
+    "sylu_web_2984": {
+      "title": "2025-11-28 关于组织参加第十六届全国大学生电子商务“创新、创意及创业”挑战赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/2984.htm"
+    },
+    "cimc_2026": {
+      "title": "关于开展2026年第二十届CIMC“西门子杯”中国智能制造挑战赛的通知",
+      "publisher": "西门子杯中国智能制造挑战赛全国竞赛组委会",
+      "url": "https://www.siemenscup-cimc.org.cn/notice/NoticeDetail?id=2431"
+    },
+    "computer_design_2026": {
+      "title": "2026年中国大学生计算机设计大赛参赛要求",
+      "publisher": "中国大学生计算机设计大赛组织委员会",
+      "url": "https://jsjds.blcu.edu.cn/info/1078/1718.htm"
+    },
+    "fwwb_2026": {
+      "title": "关于第十七届中国大学生服务外包创新创业大赛报名情况的通告",
+      "publisher": "中国大学生服务外包创新创业大赛组委会",
+      "url": "https://www.fwwb.org.cn/attached/file/20260416/20260416115145_211.pdf"
+    },
+    "lanqiao_2026_notice": {
+      "title": "关于举办第十七届蓝桥杯全国大学生软件和信息技术大赛的通知",
+      "publisher": "蓝桥杯大赛组委会（北京科技大学公开通知附件）",
+      "url": "https://jwc.ustb.edu.cn/docs/2026-03/93bc9052694b411ba47ba6d6fd460ccf.pdf"
+    },
+    "sylu_web_2930": {
+      "title": "2025-10-22 关于2026年第十七届“蓝桥杯”全国软件和信息技术人才大赛报名的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/2930.htm"
+    },
+    "energy_saving_2026": {
+      "title": "大工能动杯第十九届全国大学生节能减排社会实践与科技竞赛第一轮通知",
+      "publisher": "全国大学生节能减排社会实践与科技竞赛委员会秘书处",
+      "url": "https://www.jienengjianpai.cn/nd.jsp?id=36"
+    },
+    "stat_model_2026": {
+      "title": "关于举办2026年（第十二届）全国大学生统计建模大赛的通知",
+      "publisher": "中国统计教育学会",
+      "url": "https://www.ai-learning.net/dstz/37119.jhtml"
+    },
+    "zpy_2025": {
+      "title": "关于举办第十五届全国周培源大学生力学竞赛的通知",
+      "publisher": "中国力学学会、周培源基金会（力学与实践）",
+      "url": "https://pubs.cstam.org.cn/data/article/mie/preview/pdf/67c67c0aca140b6c84708bdc.pdf"
+    },
+    "sylu_web_3007": {
+      "title": "2025-12-23 关于组织参加第十三届大学生新一代信息通信科技大赛省级选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3007.htm"
+    },
+    "sylu_web_3020": {
+      "title": "2026-03-02 关于组织参加2026年全国高校商业精英挑战赛会计与商业管理案例竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3020.htm"
+    },
+    "sylu_web_3080": {
+      "title": "2026-04-07 关于组织开展2026年度沈阳理工大学大学生金相技能大赛第一赛道（实验技能赛道）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3080.htm"
+    },
+    "sylu_web_3046": {
+      "title": "2026-03-16 关于组织开展2026年度沈阳理工大学大学生金相技能大赛第三赛道（创新应用赛道）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3046.htm"
+    },
+    "sylu_web_3048": {
+      "title": "2026-03-16 关于参加2026年第五届沈阳理工大学光电设计竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3048.htm"
+    },
+    "sylu_web_3025": {
+      "title": "2026-03-09 关于组织参加2026年第31届中国日报社“21世纪杯”英语演讲比赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3025.htm"
+    },
+    "sylu_web_3023": {
+      "title": "2026-03-09 2026年全国企业竞争模拟大赛 校内选拔赛通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3023.htm"
+    },
+    "sylu_web_3255": {
+      "title": "2026-06-02 关于组织参加2026年全国大学生化工设计竞赛校级选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3255.htm"
+    },
+    "sylu_web_3063": {
+      "title": "2026-03-25 2026年全国大学生商科大赛校内选拔赛通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3063.htm"
+    },
+    "sylu_web_3015": {
+      "title": "2026-01-05 关于组织参加第十九届全国大学生软件创新大赛（东北区域赛）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3015.htm"
+    },
+    "sylu_web_3002": {
+      "title": "2025-12-17 关于组织参加2026年全国大学生英语竞赛（NECCS）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3002.htm"
+    },
+    "sylu_web_3052": {
+      "title": "2026-03-20 关于举办第九届全国大学生创新体验竞赛东北赛区校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3052.htm"
+    },
+    "cicc_2026": {
+      "title": "第十届全国大学生集成电路创新创业大赛章程",
+      "publisher": "全国大学生集成电路创新创业大赛组委会",
+      "url": "https://www.ciciec.com/col.jsp?id=123"
+    },
+    "ncda_2026": {
+      "title": "关于举办2026第14届未来设计师全国高校数字艺术设计大赛的通知",
+      "publisher": "未来设计师全国高校数字艺术设计大赛组委会",
+      "url": "https://www.ncda.org.cn/news/2026/0330/714.html"
+    },
+    "ican_2026": {
+      "title": "2026年iCAN大学生创新创业大赛官网赛制安排",
+      "publisher": "iCAN大学生创新创业大赛组委会",
+      "url": "https://g-ican.com/competition/ican"
+    },
+    "soc_2026": {
+      "title": "第九届全国大学生嵌入式芯片与系统设计竞赛芯片应用赛道赛程",
+      "publisher": "全国大学生嵌入式芯片与系统设计竞赛组委会",
+      "url": "https://www.socchina.net/wx/home?tag=1"
+    },
+    "cdec_2026_2027": {
+      "title": "第21届中国好创意暨全国数字艺术设计大赛简章",
+      "publisher": "中国好创意暨全国数字艺术设计大赛组织委员会",
+      "url": "https://www.cdec.org.cn/articleDetail/2363"
+    },
+    "cpipc_eda_2026": {
+      "title": "2026中国研究生创“芯”大赛·EDA精英挑战赛参赛邀请函",
+      "publisher": "中国研究生创芯大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/2c9080158ee9c272018f229208b610a6/2c9080159fb07bd8019fcb75f6fd4446?page=0"
+    },
+    "cpipc_eda_schedule_2026": {
+      "title": "2026年EDA精英挑战赛官方赛程",
+      "publisher": "中国学位与研究生教育学会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080158ee9c272018f229208b610a6"
+    },
+    "cpipc_cyber_2026": {
+      "title": "华为杯第五届中国研究生网络安全创新大赛邀请函",
+      "publisher": "中国研究生网络安全创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/2c90800c8093eef401809d33b36f0652/2c9080199ed8b78d019ed96ceea21560?page=0"
+    },
+    "cpipc_beautiful_2026": {
+      "title": "第四届中国研究生美丽中国创新设计大赛开赛通知",
+      "publisher": "中国研究生美丽中国创新设计大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/2c908018876ef068018774a9501a03fe/2c9080199ed8b78d019ee84f68d23f67?page=0"
+    },
+    "cpipc_biodiversity_2025": {
+      "title": "2025年研究生生物多样性保护与利用创新大赛官方赛程",
+      "publisher": "中国学位与研究生教育学会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080189073beab0190b560702408d1"
+    },
+    "siac_2025_extension": {
+      "title": "关于2025年全国仿真创新应用大赛报名时间延期的通知",
+      "publisher": "全国仿真创新应用大赛组委会",
+      "url": "https://www.siac.net.cn/h-col-116.html"
+    },
+    "uiaec_2026_12th": {
+      "title": "关于举办第十二届国际大学生智能农业装备创新大赛的通知",
+      "publisher": "国际大学生智能农业装备创新大赛委员会",
+      "url": "https://uiaec.ujs.edu.cn/news_show.php?id=234"
+    },
+    "cmit_2025_notice": {
+      "title": "2025年全国大学生数字媒体科技作品及创意竞赛通知",
+      "publisher": "中国人工智能学会／竞赛组委会",
+      "url": "https://www.cmit.cn/uploadfile/2025/0830/2025年全国大学生数字媒体科技作品及创意竞赛通知.pdf"
+    },
+    "clpp_supplychain_2026_notice": {
+      "title": "关于举办第七届全国供应链大赛的通知（物联培字〔2026〕44号）",
+      "publisher": "中国物流与采购联合会、中国物流学会（高校保存的主办方原件）",
+      "url": "https://jwc.zjhzu.edu.cn/_upload/article/files/3f/5d/38e3c4e94f1b879d3dc93f0d4288/ce2b3a21-79f9-47c1-b298-e3d0b4dcf013.pdf"
+    },
+    "3dds_2026_open": {
+      "title": "关于2026第19届全国三维数字化创新设计大赛初赛选拔的说明",
+      "publisher": "全国三维数字化创新设计大赛组委会",
+      "url": "https://3dds.3ddl.net/index.php?ctl=Informationlist&id=709&met=details"
+    },
+    "3dds_2026_amd": {
+      "title": "2026第19届全国三维数字化创新设计大赛AMD杯AI+3D创新应用大赛通知",
+      "publisher": "全国三维数字化创新设计大赛组委会",
+      "url": "https://3dds.3ddl.net/index.php?ctl=Informationlist&id=704&met=details"
+    },
+    "fltrp_2026_rules": {
+      "title": "2026外研社·国才杯理解当代中国全国大学生外语能力大赛通知及比赛方案",
+      "publisher": "大赛组委会／外语教学与研究出版社",
+      "url": "https://ucc.fltrp.com/c/2026-04-15/517928.shtml"
+    },
+    "cmes_mechanical_2026_notice": {
+      "title": "2026年中国大学生机械工程创新创意大赛赛事公告及安排表",
+      "publisher": "中国机械工程学会",
+      "url": "https://www.cmes.org/cmes/upload/2026/03-18/09-51-2008271591192214.pdf"
+    },
+    "cssc_market_2026_notice": {
+      "title": "关于正大杯第十六届全国大学生市场调查与分析大赛的通知",
+      "publisher": "中国商业统计学会",
+      "url": "https://www.china-cssc.org/show-568-1912-1.html"
+    },
+    "eastmoney_2026_notice": {
+      "title": "第十二届东方财富杯全国大学生金融挑战赛通知",
+      "publisher": "东方财富网／东方财富信息股份有限公司",
+      "url": "https://finance.eastmoney.com/a/202604073696398690.html"
+    },
+    "astar_2026_official": {
+      "title": "2026年第22届百度之星程序设计大赛官网赛程",
+      "publisher": "百度公司／百度之星程序设计大赛组委会",
+      "url": "https://astar.baidu.com/#/program-design-match2026?tab=1"
+    },
+    "astar_2026_czu": {
+      "title": "关于组织参加2026年第二十二届百度之星程序设计大赛的通知",
+      "publisher": "常州工学院创新创业学院",
+      "url": "https://www.czu.cn/2026/0722/c6a176600/page.htm"
+    },
+    "astar_2026_jlu_teacher": {
+      "title": "百度之星程序设计大赛参赛日程",
+      "publisher": "吉林大学竞赛负责教师吕帅",
+      "url": "https://lus-jlu.github.io/astar.html"
     }
   },
   "items": [
@@ -966,6 +1401,193 @@
         "registration_time_text": "沈理校赛报名：2026-08-10 至 2026-08-15；全国系统截止为9月25日12:00",
         "event_time_text": "校赛初赛8月16—18日，校赛决赛8月24—25日；全国总决赛11月",
         "time_note": "提醒按校内报名截止计算；全国系统开放不代表还能参加本校选拔。"
+      }
+    },
+    {
+      "competition_id": "NAT-004",
+      "expected_title": "全国大学生职业规划大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "moe_career_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第三届：2025-10-20 开放报名；各地各校自定截止，最晚不超过 2026-01-31",
+        "time_note": "全国平台最晚截止仅为上限，沈理校内及辽宁赛区截止待核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-007",
+      "expected_title": "全国大学生广告艺术大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "sun_ada_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年常规线上提交：05-10 至 06-12 16:00；营销创客单元海选：03-10 至 04-10 22:00",
+        "time_note": "赛道时间不同；赛区报送全国评审截止 07-05 不作为学生报名截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-008",
+      "expected_title": "全国大学生电子商务“创新、创意及创业”挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "sanchuang_2026",
+        "sylu_web_2984"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十六届常规/实战赛官网报名截止：2026-01-20；沈理原通知截止为 2025-12-31，校内是否同步延期待核实",
+        "time_note": "官网顶部与流程图报名开始日分别为 2025-10-20 和 10-13；不写入存在差异的统一时间字段。"
+      }
+    },
+    {
+      "competition_id": "NAT-009",
+      "expected_title": "“西门子杯”中国智能制造挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cimc_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国官网注册组队：2026-03-01 至 2026-05-31",
+        "registration_start": "2026-03-01",
+        "registration_end": "2026-05-31"
+      }
+    },
+    {
+      "competition_id": "NAT-010",
+      "expected_title": "全国三维数字化创新设计大赛（大学生组）",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "3dds_2026_open",
+        "3dds_2026_amd"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年开放赛项报名截至6月30日24:00；AMD杯AI+3D赛项报名及初赛作品提交为4月20日—8月23日。",
+        "event_time_text": "开放赛项初赛作品提交截至2026年7月20日24:00；AMD杯省赛作品9月1日—10日提交，国赛11—12月。",
+        "time_note": "大学生组适用；不同赛项分别报名，以上期限不覆盖所有专项赛。学校已组织校内选拔的团队不得改走网络海选。"
+      }
+    },
+    {
+      "competition_id": "NAT-011",
+      "expected_title": "中国大学生计算机设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "computer_design_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年入围国赛队伍信息填报、核查截止：2026-05-30；须先取得省赛推荐资格",
+        "time_note": "国赛仅接收省赛推荐作品，此日期为晋级后的填报截止，初次报名按校赛及赛区通知。"
+      }
+    },
+    {
+      "competition_id": "NAT-012",
+      "expected_title": "全国大学生市场调查与分析大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cssc_market_2026_notice"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十六届（2025—2026）：参赛报名截至2025年10月31日；院校先报名取得代码，学生再在线报名。",
+        "event_time_text": "知识赛2025年11月1日—20日；2026年校赛3月25日前，专科/研究生省赛4月20日前，本科省赛4月30日前。",
+        "time_note": "采用第十六届官方赛程，报名在2025年、主要比赛在2026年。保留跨年文字，不将2025年截止日改为2026年；各组实践赛另按专项通知。"
+      }
+    },
+    {
+      "competition_id": "NAT-016",
+      "expected_title": "全国大学生集成电路创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cicc_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十届主赛项报名截止：2026-03-31；初赛作品提交截止：2026-05-07",
+        "time_note": "仅主赛项，职业技能赛项另行安排；不将作品截止作为报名截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-017",
+      "expected_title": "全国大学生金相技能大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3080",
+        "sylu_web_3046"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理 2026 年金相校赛：实验技能赛道截止 04-14 16:00；创新应用赛道截止 03-16 12:00",
+        "event_time_text": "实验技能校赛：2026-04-18 至 04-19；创新应用校赛：03-21 或 03-24（二选一）",
+        "time_note": "不同赛道分别展示，不能合并为单一报名时间。"
+      }
+    },
+    {
+      "competition_id": "NAT-018",
+      "expected_title": "未来设计师·全国高校数字艺术设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "ncda_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年非命题赛道投稿截止：2026-06-20；专项、产教融合及挑战赛按各赛项通知",
+        "time_note": "综合通知明确各赛项可另行安排；不把 06-20 作为所有专项赛道的统一截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-020",
+      "expected_title": "“大唐杯”全国大学生新一代信息通信技术大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3007"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "第十三届信科赛（原大唐杯）省级选拔报名截止：2026-03-10；由学校教师代表统一报名",
+        "registration_end": "2026-03-10"
+      }
+    },
+    {
+      "competition_id": "NAT-023",
+      "expected_title": "全国高校商业精英挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3020"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理会计与商业管理案例赛：2026-03-02 至 03-10；其余赛道时间另行通知",
+        "time_note": "仅覆盖此分赛道；不将其时间用于整项商业精英挑战赛的统一截止。"
       }
     },
     {
@@ -1002,6 +1624,22 @@
       }
     },
     {
+      "competition_id": "NAT-035",
+      "expected_title": "中国大学生机械工程创新创意大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cmes_mechanical_2026_notice"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年分赛项报名：机械产品数字化设计7月1日截止；过程装备4月30日；材料热处理、智能制造5月30日；物流技术创意7月15日。",
+        "event_time_text": "2026年3—11月分赛项举办，初赛和决赛日期见官网附件安排表。",
+        "time_note": "主办方年度公告共含19个赛项，所列为部分赛项计划期限，实际安排以各赛项最新通知为准。毕业设计赛报名截至2025年12月25日，属于2026赛季；不能套用其他赛项日期。"
+      }
+    },
+    {
       "competition_id": "NAT-036",
       "expected_title": "全国大学生数学建模竞赛",
       "season_year": 2026,
@@ -1022,6 +1660,22 @@
       }
     },
     {
+      "competition_id": "NAT-037",
+      "expected_title": "全国周培源大学生力学竞赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "zpy_2025"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025）：个人赛报名截止 2025-03-31，由学校或个人向所在省联系人报名",
+        "event_time_text": "往年个人赛：2025-05-18 08:30—12:00",
+        "time_note": "保留真实年份，不作为 2026 年报名提醒。"
+      }
+    },
+    {
       "competition_id": "NAT-038",
       "expected_title": "全国大学生智能汽车竞赛",
       "season_year": 2026,
@@ -1035,6 +1689,69 @@
         "registration_time_text": "沈理校内报名截止：2026-05-15",
         "registration_end": "2026-05-15",
         "event_time_text": "校赛暂定2026年5月末"
+      }
+    },
+    {
+      "competition_id": "NAT-040",
+      "expected_title": "“外研社杯”全国大学生外语能力大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "fltrp_2026_rules"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "2026年6月2日起官网开放报名；英语组及多语种组须在本校规定的截止时间前注册，具体截止日期按校赛通知。",
+        "registration_start": "2026-06-02",
+        "event_time_text": "2026年校赛4—9月、省赛9—11月、国赛11—12月；各语种及赛项按具体方案。",
+        "time_note": "官网确认开放日，未公布全国统一的校赛个人报名截止日。2026年英语口译赛项停办一届，下次为2027年；省赛晋级名单填报期限不是学生报名期限。"
+      }
+    },
+    {
+      "competition_id": "NAT-042",
+      "expected_title": "中国大学生服务外包创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "fwwb_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国官网报名截止：2026-03-31（第十七届，组委会报名结束通告确认）",
+        "registration_end": "2026-03-31"
+      }
+    },
+    {
+      "competition_id": "NAT-044",
+      "expected_title": "蓝桥杯全国软件和信息技术专业人才大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "lanqiao_2026_notice",
+        "sylu_web_2930"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十七届：软件/电子/人工智能赛截止 2026-03-11 14:00；视觉艺术/数字科技赛报名及作品截止 2026-04-27 14:00",
+        "time_note": "全国通知更新了软件等赛项截止；沈理 2025-10-22 旧通知列 2025-12-15，校内办理安排仍需确认。不同赛道不合并提醒。"
+      }
+    },
+    {
+      "competition_id": "NAT-046",
+      "expected_title": "全国大学生光电设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3048"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理创意赛道报名及作品提交截止：2026-05-01",
+        "time_note": "仅创意赛道；东北赛区报名 05-08、决赛 05-30 均为初定，国赛日期另行通知。"
       }
     },
     {
@@ -1056,6 +1773,70 @@
       }
     },
     {
+      "competition_id": "NAT-050",
+      "expected_title": "中国好创意暨全国数字艺术设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cdec_2026_2027"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "新一届常规赛（第21届）：2026-10-20 至 2027-05-31 17:00 报名及投稿；专项赛另行安排",
+        "time_note": "此为官网已发布的 2026—2027 跨年赛季；2027-06-30 为省赛名单上传等后续节点，不是常规赛投稿截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-051",
+      "expected_title": "全国大学生节能减排社会实践与科技竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "energy_saving_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年高校报名表截止 04-12 18:00；学校统一上传作品 05-10 00:00 至 05-20 24:00",
+        "time_note": "仅为高校报名及作品申报阶段；邮件确认截止 05-23 18:00，学生须参加校内选拔。"
+      }
+    },
+    {
+      "competition_id": "NAT-052",
+      "expected_title": "“21世纪杯”全国英语演讲比赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3025"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校赛视频建议 2026-04-03 前上传；审核未通过者最晚 2026-04-10 17:00 补交",
+        "registration_end": "2026-04-10T17:00:00+08:00",
+        "event_time_text": "沈理现场选拔：2026-04-19"
+      }
+    },
+    {
+      "competition_id": "NAT-054",
+      "expected_title": "百度之星·程序设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "astar_2026_official",
+        "astar_2026_czu",
+        "astar_2026_jlu_teacher"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年各场报名截止待核实：校方转述存在“开赛前1小时”和“开赛前2小时”差异，请以官方报名平台为准。",
+        "event_time_text": "官网确认：2026年初赛两场为8月23日、9月19日；总决赛10月17日14:00—19:00。",
+        "time_note": "官网已核实比赛日期；报名通知下载及平台未取得可核实的截止时间。保留两处校方转述差异，不写入推算的报名截止时间。"
+      }
+    },
+    {
       "competition_id": "NAT-058",
       "expected_title": "全国大学生物联网设计竞赛",
       "season_year": 2026,
@@ -1071,6 +1852,69 @@
         "registration_end": "2026-06-10",
         "event_time_text": "校内选拔：6月11—14日",
         "time_note": "提醒采用参加校内选拔前的报名截止，不能用后续省平台截止替代。"
+      }
+    },
+    {
+      "competition_id": "NAT-060",
+      "expected_title": "全国大学生数字媒体科技作品及创意竞赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "cmit_2025_notice"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考：2025年报名及作品提交截至9月21日24:00；国际专项赛道另行通知。",
+        "event_time_text": "2025年通知安排：校赛9月22日—26日，赛区赛9月27日—10月10日，总决赛拟10月24日—26日。",
+        "time_note": "采用官网2025年8月正式通知；以上是2025年参考安排，不代表2026年报名时间。"
+      }
+    },
+    {
+      "competition_id": "NAT-061",
+      "expected_title": "全国企业竞争模拟大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3023"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-03-20 16:30",
+        "registration_end": "2026-03-20T16:30:00+08:00"
+      }
+    },
+    {
+      "competition_id": "NAT-063",
+      "expected_title": "国际大学生智能农业装备创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "uiaec_2026_12th"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十二届（2026—2027）：未设省赛地区由学校于2026年9月10日—11月30日报名；设省赛地区按本省通知报名。",
+        "event_time_text": "未设省赛地区作品申报2026年12月1日—20日；省赛推荐截至2027年3月5日；决赛预计2027年5月。",
+        "time_note": "官网2026年9月7日通知。报名表每校限填一份，非学生个人直报；不得绕过省赛。作品汇总表须11月30日前报送，申报书12月20日前上传。"
+      }
+    },
+    {
+      "competition_id": "NAT-065",
+      "expected_title": "全国大学生化工设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3255"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理校赛入群报名：2026-06-09 之前",
+        "event_time_text": "沈理校级选拔赛：2026-06-15 至 06-18",
+        "time_note": "原通知只写 06-09 之前，未明确日内时刻，保留原始表述。"
       }
     },
     {
@@ -1198,6 +2042,37 @@
       }
     },
     {
+      "competition_id": "NAT-073",
+      "expected_title": "中国研究生“美丽中国”创新设计大赛——生物多样性保护与利用创新大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_biodiversity_2025"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025）：报名 2025-06-28 至 08-20；作品提交 07-20 至 08-20",
+        "time_note": "生物多样性独立赛程页面仍为 2025 届，不继承美丽中国主赛的 2026 年窗口。"
+      }
+    },
+    {
+      "competition_id": "NAT-074",
+      "expected_title": "中国研究生“美丽中国”创新设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_beautiful_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名及作品提交：2026-06-20 至 2026-08-20",
+        "registration_start": "2026-06-20",
+        "registration_end": "2026-08-20"
+      }
+    },
+    {
       "competition_id": "NAT-075",
       "expected_title": "中国研究生金融科技创新大赛",
       "season_year": 2026,
@@ -1230,6 +2105,23 @@
         "registration_end": "2026-09-11",
         "registration_time_text": "全国报名及资格审核截止：2026-09-11；作品提交截止：2026-09-13",
         "event_time_text": "线上初赛评审：9月14日—10月13日；线下决赛拟于11月下旬举行"
+      }
+    },
+    {
+      "competition_id": "NAT-077",
+      "expected_title": "中国研究生网络安全创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_cyber_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名：2026-06-18 至 2026-10-18 23:59",
+        "registration_start": "2026-06-18",
+        "registration_end": "2026-10-18T23:59:00+08:00",
+        "event_time_text": "揭榜/创意作品提交截止：2026-10-22；实网对抗初赛：2026-10-24"
       }
     },
     {
@@ -1321,6 +2213,24 @@
       }
     },
     {
+      "competition_id": "NAT-083",
+      "expected_title": "中国研究生创“芯”大赛-EDA精英挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "cpipc_eda_schedule_2026",
+        "cpipc_eda_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名：2026-08-04 至 2026-10-16；作品提交截止：2026-11-07",
+        "registration_start": "2026-08-04",
+        "registration_end": "2026-10-16",
+        "time_note": "官网赛程按日公布；资格审查截止 10-18 不作为报名截止。"
+      }
+    },
+    {
       "competition_id": "NAT-084",
       "expected_title": "中国研究生创“芯”大赛",
       "season_year": 2026,
@@ -1393,6 +2303,162 @@
       }
     },
     {
+      "competition_id": "NAT-092",
+      "expected_title": "全国大学生嵌入式芯片与系统设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "soc_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年芯片应用赛道报名截止：04-20；作品提交截止：07-09 18:00",
+        "time_note": "仅芯片应用赛道，芯片设计及其他专项时间另行核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-093",
+      "expected_title": "全国大学生统计建模大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "stat_model_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026-05-17 前各校选拔推荐省赛队伍，推荐队伍在官网填报并提交材料；校内报名截止按本校通知",
+        "event_time_text": "2026 年省赛为 6 月中旬；国赛通讯及会议评审为 7—8 月，答辩另行通知",
+        "time_note": "全国通知给出学校推荐节点，不能视为学生自由报名窗口。"
+      }
+    },
+    {
+      "competition_id": "NAT-104",
+      "expected_title": "全国仿真创新应用大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "siac_2025_extension"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025）：报名延长至 2025-10-29 18:00",
+        "time_note": "采用官网延期通知，未使用此前 10-15 的旧截止；2026 年窗口尚待核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-108",
+      "expected_title": "iCAN大学生创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "ican_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026 年创新赛、创业赛报名及作品材料提交：04-01 至 08-31；其他赛道以专项通知为准",
+        "event_time_text": "创新赛校内赛：09-01 至 09-15；区域赛：09-19 至 10-25；总决赛：11 月中下旬"
+      }
+    },
+    {
+      "competition_id": "NAT-112",
+      "expected_title": "全国大学生商科综合能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3063"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-04-30 24:00",
+        "registration_end": "2026-04-30"
+      }
+    },
+    {
+      "competition_id": "NAT-115",
+      "expected_title": "“东方财富杯”全国金融精英挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "eastmoney_2026_notice"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "2026年第十二届报名截至6月5日；学校领队组织学生在官方平台注册报名。",
+        "registration_end": "2026-06-05",
+        "event_time_text": "2026年校赛4月27日—6月5日；省赛6月15日—7月10日；国赛7月13日—8月7日。",
+        "time_note": "目录沿用金融精英挑战赛旧称；按主办方第十二届金融挑战赛通知补录。"
+      }
+    },
+    {
+      "competition_id": "NAT-118",
+      "expected_title": "全国大学生软件创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3015"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-01-26 18:00；东北赛区平台截止：2026-02-02 18:00",
+        "registration_end": "2026-01-26T18:00:00+08:00",
+        "event_time_text": "沈理校内选拔：2026-01-27 至 01-31"
+      }
+    },
+    {
+      "competition_id": "NAT-121",
+      "expected_title": "全国供应链大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "clpp_supplychain_2026_notice"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年供应链实战、商贸供应链运营赛项报名截至4月15日17:00；创客训练营及国际赛项按专项通知。",
+        "event_time_text": "上述两赛项省赛2026年4月26日前，全国初赛5月9日；总决赛具体安排另行通知。",
+        "time_note": "按主办方2026年3月20日盖章通知补录；领队或队长经中物联竞赛平台报名，学校可先行选拔。未将两个赛项截止时间作为全部赛项的统一截止时间。"
+      }
+    },
+    {
+      "competition_id": "NAT-124",
+      "expected_title": "全国大学生英语竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3002"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理报名：2025-12-17 00:00 至 2026-03-13 23:59",
+        "registration_end": "2026-03-13T23:59:00+08:00",
+        "event_time_text": "2026 年初赛：04-12 09:00—11:00；决赛：05-10 09:00—11:00"
+      }
+    },
+    {
+      "competition_id": "NAT-127",
+      "expected_title": "全国大学生创新体验竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3052"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第九届东北赛区沈理校赛：2026-03-24 前提交作品；晋级作品于 03-26 至 03-28 注册提交至东北赛区",
+        "event_time_text": "沈理校赛：2026-03-18 至 03-28"
+      }
+    },
+    {
       "competition_id": "NAT-131",
       "expected_title": "全国高校俄语大赛",
       "season_year": 2026,
@@ -1445,6 +2511,21 @@
       }
     },
     {
+      "competition_id": "PROV-006",
+      "expected_title": "辽宁省大学生程序设计竞赛暨ICPC国际大学生程序设计竞赛（辽宁省赛）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_006"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2026-03-10 17:00:00 至 2026-03-11 12:00:00；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 该记录属于2025届但平台时段跨年，不代表2026届赛程。"
+      }
+    },
+    {
       "competition_id": "PROV-007",
       "expected_title": "全国大学生广告艺术大赛（辽宁赛区）",
       "season_year": 2026,
@@ -1459,6 +2540,22 @@
         "registration_end": "2026-10-11T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-09-30 00:00:00 至 2026-10-11 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-008",
+      "expected_title": "辽宁省大学生电子商务 “创新、创意及创业”挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_2984",
+        "sanchuang_2026"
+      ],
+      "fields": {
+        "time_status": "pending",
+        "time_precision": "unknown",
+        "registration_time_text": "第十六届沈理原通知报名截止：2025-12-31；官网已列 2026-01-20，辽宁赛区及校内延期安排待核实",
+        "time_note": "保留原校内截止和官网后续时间，避免直接将全国延期用作省赛截止。"
       }
     },
     {
@@ -1527,6 +2624,21 @@
         "registration_end": "2026-07-25T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-07-10 00:00:00 至 2026-07-25 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-013",
+      "expected_title": "辽宁省两岸新锐设计竞赛“华灿奖”",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_013"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-11-05 00:00:00 至 2025-11-12 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -1634,6 +2746,36 @@
       }
     },
     {
+      "competition_id": "PROV-020",
+      "expected_title": "“大唐杯”全国大学生新一代信息通信技术大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3007"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "第十三届信科赛（原大唐杯）省级选拔报名截止：2026-03-10；由学校教师代表统一报名",
+        "registration_end": "2026-03-10"
+      }
+    },
+    {
+      "competition_id": "PROV-021",
+      "expected_title": "辽宁省大学生华为ICT大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_021"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-10-13 00:00:00 至 2025-12-08 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
       "competition_id": "PROV-022",
       "expected_title": "辽宁省大学生物理实验竞赛",
       "season_year": 2026,
@@ -1648,6 +2790,21 @@
         "registration_end": "2026-06-23T17:00:00+08:00",
         "registration_time_text": "省平台窗口：2026-06-01 00:00:00 至 2026-06-23 17:00:00；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-023",
+      "expected_title": "辽宁高校商业精英挑战赛（品牌策划竞赛、文旅与会展创新创业实践竞赛、国际贸易竞赛等）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_023"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-04-25 00:00:00 至 2025-06-01 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -1804,6 +2961,22 @@
       }
     },
     {
+      "competition_id": "PROV-034",
+      "expected_title": "全国大学生电子设计竞赛(辽宁赛区)",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_034"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-12-31 00:00:00 至 2026-01-01 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 该记录属于2025届但平台时段跨年，不代表2026届赛程。",
+        "event_time_text": "2025年7月30日08:00至8月2日20:00（平台竞赛简介所列比赛时间）"
+      }
+    },
+    {
       "competition_id": "PROV-035",
       "expected_title": "中国大学生机械工程创新创意大赛（辽宁赛区）",
       "season_year": 2026,
@@ -1855,6 +3028,82 @@
       }
     },
     {
+      "competition_id": "PROV-040",
+      "expected_title": "“外研社杯”全国大学生外语能力大赛（省级）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_040"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-10-31 00:14:30 至 2025-11-04 16:55:00；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
+      "competition_id": "PROV-044",
+      "expected_title": "蓝桥杯全国软件和信息技术专业人才大赛（省级）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_044"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2026-02-03 00:00:00 至 2026-03-01 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 该记录属于2025届但平台时段跨年，不代表2026届赛程。"
+      }
+    },
+    {
+      "competition_id": "PROV-046",
+      "expected_title": "全国大学生光电设计竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3048"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理创意赛道报名及作品提交截止：2026-05-01",
+        "time_note": "仅创意赛道；东北赛区报名 05-08、决赛 05-30 均为初定，国赛日期另行通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-050",
+      "expected_title": "中国好创意暨全国数字艺术设计大赛（省级）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_050"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-04-24 00:00:00 至 2025-09-07 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
+      "competition_id": "PROV-052",
+      "expected_title": "“21世纪杯”全国英语演讲比赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3025"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校赛视频建议 2026-04-03 前上传；审核未通过者最晚 2026-04-10 17:00 补交",
+        "registration_end": "2026-04-10T17:00:00+08:00",
+        "event_time_text": "沈理现场选拔：2026-04-19"
+      }
+    },
+    {
       "competition_id": "PROV-058",
       "expected_title": "全国大学生物联网设计竞赛（省级）",
       "season_year": 2026,
@@ -1870,6 +3119,67 @@
         "registration_end": "2026-06-10",
         "event_time_text": "校内选拔：6月11—14日",
         "time_note": "提醒采用参加校内选拔前的报名截止，不能用后续省平台截止替代。"
+      }
+    },
+    {
+      "competition_id": "PROV-060",
+      "expected_title": "全国大学生数字媒体科技作品及创意竞赛（省级）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_060"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-04 00:00:00 至 2026-02-09 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 该记录属于2025届但平台时段跨年，不代表2026届赛程。"
+      }
+    },
+    {
+      "competition_id": "PROV-061",
+      "expected_title": "全国企业竞争模拟大赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3023"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-03-20 16:30",
+        "registration_end": "2026-03-20T16:30:00+08:00"
+      }
+    },
+    {
+      "competition_id": "PROV-062",
+      "expected_title": "全球校园人工智能算法精英大赛（省级）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_062"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-08-26 00:00:00 至 2025-12-02 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
+      "competition_id": "PROV-065",
+      "expected_title": "全国大学生化工设计竞赛（省赛）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3255"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "沈理校赛入群报名：2026-06-09 之前",
+        "event_time_text": "沈理校级选拔赛：2026-06-15 至 06-18",
+        "time_note": "原通知只写 06-09 之前，未明确日内时刻，保留原始表述。"
       }
     },
     {
@@ -1958,6 +3268,21 @@
       }
     },
     {
+      "competition_id": "PROV-100",
+      "expected_title": "RoboMaster 机甲大师高校联盟赛（东北站）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_100"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-06-13 00:00:00 至 2025-06-30 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 仅对应辽宁站，不推广到东北其他分站。"
+      }
+    },
+    {
       "competition_id": "PROV-101",
       "expected_title": "辽宁省大学生先进成图技术与产品信息建模创新大赛",
       "season_year": 2026,
@@ -1972,6 +3297,21 @@
         "registration_end": "2026-05-29T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-04-03 00:00:00 至 2026-05-29 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-102",
+      "expected_title": "辽宁省大学生智能技术应用大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_102"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-05 00:00:00 至 2025-10-15 05:10:01；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -2061,6 +3401,21 @@
         "registration_end": "2026-10-23T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-09-04 00:00:00 至 2026-10-23 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-108",
+      "expected_title": "辽宁省大学生智慧海洋科技创新大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_108"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-10-17 00:00:00 至 2025-11-10 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -2271,6 +3626,21 @@
       }
     },
     {
+      "competition_id": "PROV-121",
+      "expected_title": "辽宁省大学生应急救援创新设计大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_121"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-10 00:00:00 至 2025-10-10 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
       "competition_id": "PROV-122",
       "expected_title": "辽宁省大学生文化创意设计大赛",
       "season_year": 2026,
@@ -2288,6 +3658,21 @@
       }
     },
     {
+      "competition_id": "PROV-123",
+      "expected_title": "辽宁省大学生金蝶云管理创新杯大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_123"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-04 00:00:00 至 2025-11-04 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
       "competition_id": "PROV-124",
       "expected_title": "辽宁省大学生“创新杯”未来飞行器设计大赛",
       "season_year": 2026,
@@ -2302,6 +3687,21 @@
         "registration_end": "2026-06-10T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-04-23 00:00:00 至 2026-06-10 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-125",
+      "expected_title": "全国大学生大数据分析与挖掘竞赛东北分赛区暨辽宁省大学生大数据分析与挖掘竞赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_125"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-10-23 00:00:00 至 2025-11-24 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -2570,6 +3970,21 @@
       }
     },
     {
+      "competition_id": "PROV-144",
+      "expected_title": "辽宁省大学生商科综合能力大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_144"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-01 00:00:00 至 2025-10-12 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
+      }
+    },
+    {
       "competition_id": "PROV-145",
       "expected_title": "辽宁省大学生数智财经大数据分析与应用大赛",
       "season_year": 2026,
@@ -2584,6 +3999,21 @@
         "registration_end": "2026-09-30T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-07-15 00:00:00 至 2026-09-30 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-146",
+      "expected_title": "辽宁省大学生动漫与媒体创意设计大赛",
+      "season_year": 2024,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2024_prov_146"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2024届省平台记录：2024-12-16 00:00:00 至 2025-01-05 23:59:59；当届时间待核实",
+        "time_note": "2025届未核实到同一赛事记录，暂用2024届平台窗口参考；保留原年份，不推算当届日期、不触发截止提醒。"
       }
     },
     {
@@ -2639,6 +4069,21 @@
       }
     },
     {
+      "competition_id": "PROV-150",
+      "expected_title": "中国电子数据取证大赛(辽宁赛区)",
+      "season_year": 2024,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2024_prov_150"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2024届省平台记录：2024-10-08 00:00:00 至 2024-10-29 23:59:59；当届时间待核实",
+        "time_note": "2025届未核实到同一赛事记录，暂用2024届平台窗口参考；保留原年份，不推算当届日期、不触发截止提醒。"
+      }
+    },
+    {
       "competition_id": "PROV-151",
       "expected_title": "辽宁省大学生智慧电力运行控制创新竞赛",
       "season_year": 2026,
@@ -2670,6 +4115,21 @@
         "registration_end": "2026-07-23T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-07-01 00:00:00 至 2026-07-23 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-154",
+      "expected_title": "辽宁省大学生数字贸易创新创业大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "source_ids": [
+        "upln_2025_prov_154"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2025届省平台记录：2025-09-29 00:00:00 至 2025-11-10 23:59:59；当届时间待核实",
+        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。"
       }
     },
     {
@@ -2721,6 +4181,22 @@
         "registration_end": "2026-09-15T23:59:59+08:00",
         "registration_time_text": "省平台窗口：2026-06-17 00:00:00 至 2026-09-15 23:59:59；沈理校内截止待核实",
         "time_note": "仅确认省平台公开报名窗口，不推定为校内或全国截止；部分阶段可能用于推荐、补录，应核对当届通知。"
+      }
+    },
+    {
+      "competition_id": "PROV-163",
+      "expected_title": "全国大学生软件创新大赛（东北赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "source_ids": [
+        "sylu_web_3015"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "沈理校内报名截止：2026-01-26 18:00；东北赛区平台截止：2026-02-02 18:00",
+        "registration_end": "2026-01-26T18:00:00+08:00",
+        "event_time_text": "沈理校内选拔：2026-01-27 至 01-31"
       }
     }
   ]

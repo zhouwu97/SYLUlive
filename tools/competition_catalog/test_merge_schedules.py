@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _catalog_v2 import build_document, validate_document
-from merge_schedules import merge_schedules, validate_schedules, audit_coverage, TIME_FIELDS
+from merge_schedules import add_historical_fallbacks, merge_schedules, validate_schedules, audit_coverage, TIME_FIELDS
 
 
 def fixture():
@@ -27,6 +27,65 @@ def fixture():
 
 
 class ScheduleMergeTest(unittest.TestCase):
+    def test_historical_fallback_preserves_current_and_prefers_recent_season(self):
+        schedules = json.loads((Path(__file__).parent / 'data/verified_schedules_2026.json').read_text(encoding='utf-8'))
+        historical = deepcopy(schedules)
+        historical['items'] = [next(x for x in historical['items'] if x['competition_id'] == 'PROV-108')]
+        current = deepcopy(schedules)
+        current['items'] = [x for x in current['items'] if x['competition_id'] != 'PROV-108']
+        updated = add_historical_fallbacks(current, historical)
+        self.assertEqual(len(updated['items']), len(current['items']) + 1)
+        self.assertEqual(add_historical_fallbacks(updated, historical), updated)
+        # 当届只有文字或尚有冲突时，也不能被旧届日程覆盖。
+        for status in ('confirmed', 'pending'):
+            newer = deepcopy(historical)
+            item = newer['items'][0]
+            item['season_year'] = 2026
+            item['source_ids'] = ['current_notice']
+            newer['sources']['current_notice'] = {'title': '当届通知', 'publisher': '赛事组委会', 'url': 'https://example.com/2026'}
+            item['fields'] = {'time_status': status, 'registration_time_text': '2026届分阶段安排需核实'}
+            self.assertEqual(add_historical_fallbacks(newer, historical), newer)
+        older = deepcopy(historical)
+        older['items'][0]['season_year'] = 2024
+        older['items'][0]['source_ids'] = ['older_notice']
+        older['sources']['older_notice'] = {'title': '2024届通知', 'publisher': '赛事组委会', 'url': 'https://example.com/2024'}
+        older['items'][0]['fields']['registration_time_text'] = '2024届平台窗口参考'
+        self.assertEqual(add_historical_fallbacks(historical, older), historical)
+
+    def test_catalog_merge_rejects_history_over_current_text_only_schedule(self):
+        catalog, schedules = fixture()
+        item = schedules['items'][0]
+        item.update(season_year=2025, source_ids=['history'])
+        item['fields'] = {'time_status': 'historical', 'registration_time_text': '2025届报名参考'}
+        schedules['sources']['history'] = {'title': '2025届通知', 'publisher': '赛事组委会', 'url': 'https://example.com/2025'}
+        for status in ('confirmed', 'pending'):
+            record = {**catalog['items'][0], 'time_status': status, 'registration_time_text': '2026届安排已有说明'}
+            current = build_document([record], dataset_version='base', publish_status='draft',
+                                     production_load_allowed=False, source_filename='test.json')
+            with self.assertRaises(ValueError):
+                merge_schedules(current, schedules, 'new')
+
+    def test_shipped_history_preserves_year_and_has_no_reminder_timestamps(self):
+        schedules = json.loads((Path(__file__).parent / 'data/verified_schedules_2026.json').read_text(encoding='utf-8'))
+        history = [x for x in schedules['items'] if x['fields']['time_status'] == 'historical']
+        self.assertTrue(history)
+        for item in history:
+            self.assertLess(item['season_year'], 2026)
+            self.assertIn(str(item['season_year']), item['fields']['registration_time_text'])
+            for field in ('registration_start', 'registration_end', 'event_start', 'event_end'):
+                self.assertFalse(item['fields'].get(field), item['competition_id'])
+
+    def test_confirmed_current_schedule_replaces_historical_placeholder(self):
+        catalog, schedules = fixture()
+        record = {**catalog['items'][0], 'time_status': 'historical',
+                  'registration_time_text': '2025届往年参考', 'time_note': '旧届说明'}
+        previous = build_document([record], dataset_version='old-reference', publish_status='draft',
+                                  production_load_allowed=False, source_filename='test.json')
+        updated = merge_schedules(previous, schedules, 'current-season')
+        self.assertEqual(updated['items'][0]['time_status'], 'confirmed')
+        self.assertEqual(updated['items'][0]['registration_end'], '2026-09-19T09:00:00Z')
+        self.assertNotIn('旧届说明', updated['items'][0]['time_note'])
+
     def test_only_schedule_and_notice_change_and_gates_are_preserved(self):
         catalog, schedules = fixture()
         original = deepcopy(catalog)

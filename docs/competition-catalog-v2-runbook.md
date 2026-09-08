@@ -44,6 +44,15 @@ python tools/competition_catalog/validate_catalog_v2.py catalog.json
 核对时选择当届年度和“全部”。来源中的 `registration_window` 保留平台原始时刻；
 更早的校内截止仍优先。同属省赛而截止不一致的记录保留双方说明、标记 `pending`，
 在确认延期或补录阶段前不生成统一截止提醒；单赛道日期不能推广为整个赛事日期。
+当届日程缺失时，辽宁省赛允许使用最近可核验的往年记录：保留原始 `season_year`，
+`time_status=historical`，日期仅写入展示文字和来源证据，不写入报名/比赛时间戳。
+优先采用2025届，缺失时采用2024届，并明确标注参考年份。`fallback` 只补缺口，
+不会覆盖已有当届安排或冲突说明；后续当届日程核实后通过正常目录合并替换参考。
+
+```powershell
+python tools/competition_catalog/merge_schedules.py fallback current-schedules.json historical-schedules.json combined-schedules.json
+```
+
 使用管理员保存或导出的完整活动目录 JSON 合并，不能使用缺少治理字段的公开赛事接口响应：
 
 ```powershell

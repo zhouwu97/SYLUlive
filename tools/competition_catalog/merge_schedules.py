@@ -62,6 +62,8 @@ def validate_schedules(schedules: dict, *, today: date | None = None) -> None:
             raise ValueError(f'{key}: 日程补录不能修改评级、权限或其他治理字段')
         if fields.get('time_status') not in {'confirmed', 'historical', 'estimated', 'pending'}:
             raise ValueError(f'{key}: 时间状态无效')
+        if fields['time_status'] == 'historical' and item['season_year'] >= checked.year:
+            raise ValueError(f'{key}: 往年参考必须注明早于核验年份的真实届次')
         if not fields.get('registration_time_text', '').strip():
             raise ValueError(f'{key}: 必须说明报名安排或未确认原因')
         parsed = {}
@@ -90,6 +92,39 @@ def validate_schedules(schedules: dict, *, today: date | None = None) -> None:
             raise ValueError(f'{key}: 旧届日程应标为 historical，不能当成当届')
 
 
+def add_historical_fallbacks(current: dict, historical: dict) -> dict:
+    """仅补辽宁省赛缺口；当届安排和当届冲突证据优先于任何往年参考。"""
+    validate_schedules(current)
+    validate_schedules(historical)
+    result = deepcopy(current)
+    by_id = {item['competition_id']: item for item in result['items']}
+    for item in historical['items']:
+        key = item['competition_id']
+        if (not key.startswith('PROV-') or item['scope'] != 'liaoning'
+                or item['fields']['time_status'] != 'historical'):
+            raise ValueError(f'{key}: 此补缺操作只接受辽宁省赛往年参考')
+        existing = by_id.get(key)
+        if existing:
+            if existing['expected_title'] != item['expected_title']:
+                raise ValueError(f'{key}: 赛事标题不一致')
+            if (existing['fields']['time_status'] != 'historical'
+                    or existing['season_year'] >= item['season_year']):
+                continue
+            result['items'].remove(existing)
+        for source_id in item['source_ids']:
+            source = historical['sources'][source_id]
+            if source_id in result['sources'] and result['sources'][source_id] != source:
+                raise ValueError(f'{source_id}: 同名证据冲突')
+            result['sources'][source_id] = deepcopy(source)
+        copied = deepcopy(item)
+        result['items'].append(copied)
+        by_id[key] = copied
+    result['verified_on'] = max(current['verified_on'], historical['verified_on'])
+    result['items'].sort(key=lambda item: item['competition_id'])
+    validate_schedules(result)
+    return result
+
+
 def merge_schedules(catalog: dict, schedules: dict, dataset_version: str) -> dict:
     errors = validate_document(catalog)
     if errors:
@@ -105,6 +140,11 @@ def merge_schedules(catalog: dict, schedules: dict, dataset_version: str) -> dic
             raise ValueError(f'{key}: 目录主键或标题不匹配，需人工复核')
         record = by_id[key]
         fields = item['fields']
+        if fields['time_status'] == 'historical' and record.get('time_status') != 'historical':
+            if (record.get('time_status') == 'confirmed'
+                    or any(str(record.get(field) or '').strip()
+                           for field in ('registration_time_text', 'event_time_text'))):
+                raise ValueError(f'{key}: 往年参考不能覆盖已有当届安排或冲突说明')
         normalized_fields = normalize_record(fields)
         # 不覆盖后来核实的截止时间；来源变更必须先人工解决冲突。
         for field in DATE_FIELDS:
@@ -152,14 +192,16 @@ def audit_coverage(snapshot: dict, schedules: dict) -> dict:
          'official_url': x.get('official_url', ''), 'reason': '尚未完成当届官方日程核验'}
         for x in items if x['competition_id'] not in patched
     ]
-    return {'total': expected, 'reviewed': len(patched), 'remaining': remaining,
+    historical_count = sum(x['fields']['time_status'] == 'historical' for x in schedules['items'])
+    return {'total': expected, 'reviewed': len(patched), 'historical_reference_count': historical_count,
+            'remaining': remaining,
             'verified_on': schedules['verified_on'],
             'note': 'reviewed 表示有来源记录，不等于均可报名；省赛、校赛未继承全国截止时间。'}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['merge', 'audit'])
+    parser.add_argument('mode', choices=['merge', 'audit', 'fallback'])
     parser.add_argument('catalog', type=Path)
     parser.add_argument('schedules', type=Path)
     parser.add_argument('output', type=Path)
@@ -174,6 +216,8 @@ def main() -> int:
             if not args.dataset_version:
                 parser.error('merge 需要 --dataset-version')
             output = merge_schedules(catalog, schedules, args.dataset_version)
+        elif args.mode == 'fallback':
+            output = add_historical_fallbacks(catalog, schedules)
         else:
             output = audit_coverage(catalog, schedules)
         args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

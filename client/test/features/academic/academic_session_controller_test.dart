@@ -1,7 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:shenliyuan/features/academic/data/academic_identity_client.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/domain/academic_captcha_recognizer.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
@@ -19,6 +24,60 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
+  test('服务端研究生挑战接入本机识别且释放识别器', () async {
+    AppPreferencesStore.setMockInitialValues({});
+    final controller = AcademicSessionController(repository: AcademicRepositoryImpl(
+      local: _FakeAcademicDataSource(), legacy: _FakeAcademicDataSource(),
+      source: AcademicSourceKind.legacy),
+      cleanupCoordinator: AccountSessionCleanupCoordinator());
+    await controller.syncAppUser('app-user-a');
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      handler.resolve(Response(requestOptions: options, statusCode: 200, data: {
+        'challenge_required': true, 'challenge_type': 'school_login',
+        'provider_id': 'sylu_graduate', 'student_id': 'G-001',
+        'challenge_token': 'fixture', 'captcha': base64Encode([1,2,3]),
+        'school_public_key': 'fixture-key',
+        'school_public_key_fingerprint': 'sha256:fixture',
+        'expires_at': '2099-01-01T00:00:00Z',
+      }));
+    }));
+    final recognizer = _IdentityRecognizer();
+    final coordinator = AcademicLoginCoordinator(controller: controller,
+      identityClient: AcademicIdentityClient(dio),
+      identityCaptchaRecognizerFactory: () => recognizer);
+    final result = await coordinator.login(studentId: 'G-001', password: 'fixture',
+      providerId: AcademicProviderId.syluGraduate,
+      saveCredentials: true, saveAcademicData: true);
+    expect(result.needsCaptcha, isTrue);
+    expect(controller.captchaChallenge?.suggestedCode, '1234');
+    expect(recognizer.closed, isTrue);
+    coordinator.cancelIdentityVerification();
+    controller.dispose();
+    dio.close();
+  });
+
+  testWidgets('点击登录后保留遮蔽密码并自动填入验证码候选', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=');
+    final source = _FakeAcademicDataSource(loginResult: const CaptchaRequired(),
+      captcha: CaptchaChallenge(imageBytes: png, suggestedCode: '1234', suggestionConfidence: .99));
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AcademicLoginDialog(
+      controller: controller, coordinator: _newCoordinator(controller,
+        _MemoryAcademicCredentialStore(), MemoryPreferencesStore())))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
+    await tester.enterText(find.byType(TextFormField).at(1), 'fixture');
+    await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
+    await tester.pumpAndSettle();
+    final password = tester.widget<TextFormField>(find.byType(TextFormField).at(1));
+    expect(password.controller?.text, 'fixture');
+    expect(find.text('1234'), findsOneWidget);
+    expect(find.text('密码已在本次登录中保留，无需重新输入'), findsOneWidget);
+    controller.dispose();
+  });
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
   });
@@ -567,6 +626,17 @@ void main() {
 
     controller.dispose();
   });
+}
+
+final class _IdentityRecognizer implements AcademicCaptchaRecognizer {
+  bool closed = false;
+  @override
+  bool get isAvailable => true;
+  @override
+  Future<AcademicCaptchaRecognition> recognize(Uint8List bytes) async =>
+    const AcademicCaptchaRecognition(text: '1234', confidence: .99);
+  @override
+  void close() { closed = true; }
 }
 
 AcademicLoginCoordinator _newCoordinator(

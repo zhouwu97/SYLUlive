@@ -112,7 +112,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   bool _submitting = false;
   String? _savedCredentialStudentId;
   String? _coordinatorMessage;
-  String? _appliedCaptchaSuggestion;
+  CaptchaChallenge? _appliedCaptchaChallenge;
   late AcademicProviderId _selectedProviderId;
 
   AcademicSessionController get _controller => widget.controller;
@@ -206,9 +206,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       return;
     }
     final password = _passwordController.text;
-    // 提交前清除 UI 控制器中的密码；验证码续登所需的密码只由 POC
-    // 客户端在内存 pending 会话中短暂保留。
-    _passwordController.clear();
+    // 验证码和临时故障仍属于本次登录，保留遮蔽输入以支持继续和重试。
     setState(() => _submitting = true);
     final result = await _coordinator.login(
       studentId: _studentIdController.text.trim(),
@@ -224,6 +222,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       if (mounted) setState(() => _submitting = false);
     });
     if (!mounted) return;
+    if (result.isSuccess) _passwordController.clear();
     if (result.isSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
     } else if (result.message != null) {
@@ -370,6 +369,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         labelText: '教务密码',
                         prefixIcon: const Icon(Icons.lock_outline),
                         hintText: _usingSavedCredential ? '已安全保存' : null,
+                        helperText: awaitingCaptcha ? '密码已在本次登录中保留，无需重新输入' : null,
                       ),
                       validator: (value) =>
                           value == null || value.isEmpty ? '请输入教务密码' : null,
@@ -506,22 +506,21 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     );
   }
 
-  /// 候选只在输入框为空时填入，用户手动修改后绝不覆盖；提交前仍要求
-  /// 对照验证码图片核对，模型概率不作为自动登录条件。
+  /// 每张新图片填入对应候选，同一图片内保留用户修改；模型概率不作为自动登录条件。
   void _applyCaptchaSuggestion(CaptchaChallenge? challenge) {
-    final suggestion = challenge?.suggestedCode?.trim();
-    if (suggestion == null ||
-        suggestion.isEmpty ||
-        suggestion == _appliedCaptchaSuggestion) {
-      return;
-    }
-    _appliedCaptchaSuggestion = suggestion;
+    if (challenge == null || identical(challenge, _appliedCaptchaChallenge)) return;
+    final previous = _appliedCaptchaChallenge;
+    final oldText = _captchaController.text;
+    final suggestion = challenge.suggestedCode?.trim() ?? '';
+    _appliedCaptchaChallenge = challenge;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
-          _controller.captchaChallenge?.suggestedCode != suggestion) {
+          !identical(_controller.captchaChallenge, challenge)) {
         return;
       }
-      if (_captchaController.text.trim().isNotEmpty) return;
+      if (_captchaController.text != oldText) return;
+      if (previous == null && oldText.trim().isNotEmpty) return;
+      // 新图片必须替换旧验证码；同一图片内用户的手动修改不覆盖。
       _captchaController.value = TextEditingValue(
         text: suggestion,
         selection: TextSelection.collapsed(offset: suggestion.length),

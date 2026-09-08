@@ -682,10 +682,13 @@ final class AcademicSessionController extends ChangeNotifier {
 
   /// 让首次绑定流程把服务端 challenge 图片交给现有验证码 UI。密码和
   /// challenge token 仍由协调器在内存中管理，控制器只保存图片展示模型。
-  void presentCaptchaChallenge(Uint8List imageBytes) {
+  void presentCaptchaChallenge(Uint8List imageBytes,
+      {String? suggestedCode, double? suggestionConfidence}) {
     if (_disposed) return;
     _captchaChallenge = CaptchaChallenge(
       imageBytes: Uint8List.fromList(imageBytes),
+      suggestedCode: suggestedCode,
+      suggestionConfidence: suggestionConfidence,
     );
     _pendingAcademicChallenge = null;
     _status = AcademicSessionStatus.awaitingCaptcha;

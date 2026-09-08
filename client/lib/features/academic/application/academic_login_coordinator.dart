@@ -13,6 +13,8 @@ import '../domain/academic_repository.dart';
 import '../domain/academic_failure.dart';
 import '../domain/academic_provider.dart';
 import '../domain/academic_captcha_submission_policy.dart';
+import '../domain/academic_captcha_recognizer.dart';
+import '../data/graduate/tflite_academic_captcha_recognizer.dart';
 import '../data/academic_identity_client.dart';
 import '../data/graduate/graduate_protocol_client.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
@@ -98,7 +100,10 @@ final class AcademicLoginCoordinator {
     Future<AppPreferencesStore> Function()? preferencesLoader,
     this.persistencePolicy,
     this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
-  })  : credentialStore = credentialStore ?? PlatformAcademicCredentialStore(),
+    AcademicCaptchaRecognizer Function()? identityCaptchaRecognizerFactory,
+  })  : _identityCaptchaRecognizerFactory = identityCaptchaRecognizerFactory ??
+            LazyTfliteAcademicCaptchaRecognizer.new,
+        credentialStore = credentialStore ?? PlatformAcademicCredentialStore(),
         _identityClient =
             identityClient ?? controller.providerRouter?.identityClient,
         _preferencesLoader =
@@ -110,6 +115,7 @@ final class AcademicLoginCoordinator {
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
   final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;
+  final AcademicCaptchaRecognizer Function() _identityCaptchaRecognizerFactory;
   Future<AcademicLoginOutcome>? _ensureInFlight;
   _PendingAcademicLogin? _pending;
   _PendingIdentityVerification? _pendingIdentity;
@@ -479,7 +485,24 @@ final class AcademicLoginCoordinator {
         saveAcademicData: saveAcademicData,
         challenge: challenge,
       );
-      controller.presentCaptchaChallenge(captchaBytes);
+      final pending = _pendingIdentity;
+      AcademicCaptchaRecognition? suggestion;
+      final recognizer = _identityCaptchaRecognizerFactory();
+      try {
+        final result = await recognizer.recognize(captchaBytes);
+        if (recognizer.isAvailable && result.isManualSuggestion) suggestion = result;
+      } catch (_) {
+        // 模型不可用时继续人工挑战，不能丢弃已经保留的密码。
+      } finally {
+        recognizer.close();
+      }
+      if (!identical(_pendingIdentity, pending) || !controller.isCurrentContext(
+          generation: generation, appUserId: appUserId)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
+      controller.presentCaptchaChallenge(captchaBytes,
+          suggestedCode: suggestion?.text,
+          suggestionConfidence: suggestion?.confidence);
       return const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.captchaRequired,
         message: '请完成研究生教务身份验证',

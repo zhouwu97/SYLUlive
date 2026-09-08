@@ -40,11 +40,6 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
 
-/// 研究生课表按学校原始小节展示，双小节合并后使用更紧凑的手机密度。
-const double graduateDefaultSlotHeight = 48.0;
-const double graduateMinSlotHeight = 46.0;
-const double graduateMaxSlotHeight = 60.0;
-
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
 
@@ -180,7 +175,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<bool>? _cachePrimeFuture;
   double _scheduleCardOpacity = 0.4;
   double _scheduleSlotHeight = defaultSlotHeight;
-  double _graduateScheduleSlotHeight = graduateDefaultSlotHeight;
   bool _courseReminderEnabled = false;
   int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
@@ -1877,42 +1871,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         '第${course.startSection}-${course.endSection}节';
   }
 
-  String? _periodLabelForSlot(CourseScheduleProvider sc, int slot) {
-    final labels = sc.courses
-        .map((course) {
-          final order = course.periodOrder;
-          if (order == null) return null;
-          final offset = slot - order;
-          if (offset >= 0 && offset < course.periodLabels.length) {
-            return course.periodLabels[offset].trim();
-          }
-          return offset == 0 ? _providerPeriodLabel(course) : null;
-        })
-        .whereType<String>()
-        .where((label) => label.isNotEmpty)
-        .toSet()
-        .toList();
-    if (labels.isEmpty) return null;
-    labels.sort();
-    return labels.join(' / ');
-  }
-
   int _scheduleSlotCount(CourseScheduleProvider sc) {
     return sc.periodSlotCount;
   }
 
-  double _effectiveSlotHeight(CourseScheduleProvider sc) {
-    if (!sc.usesProviderPeriodLayout) return _scheduleSlotHeight;
-    return _graduateScheduleSlotHeight
-        .clamp(graduateMinSlotHeight, graduateMaxSlotHeight)
-        .toDouble();
-  }
+  double _effectiveSlotHeight() => _scheduleSlotHeight;
 
-  String _slotDisplayLabel(CourseScheduleProvider sc, int slot) {
-    final providerLabel = _periodLabelForSlot(sc, slot);
-    if (providerLabel != null) return providerLabel;
-    if (sc.usesProviderPeriodLayout) return '时段 ${slot + 1}';
-    return '${slot + 1}\n${_starts[slot]}\n${_ends[slot]}';
+  String _slotDisplayLabel(int slot) {
+    final section = slot + 1;
+    // 研究生课表也沿用本科时间轴，避免空行显示“时段”、有课行显示
+    // “上午/下午”的混合语义。超出已知作息范围时仅展示稳定的节次编号。
+    if (slot >= _starts.length || slot >= _ends.length) return '$section';
+    return '$section\n${_starts[slot]}\n${_ends[slot]}';
   }
 
   String _ymd(DateTime d) => '${d.year}/${d.month}/${d.day}';
@@ -1943,7 +1913,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== App 内课表显示设置 ======
   static const _scheduleOpacityKey = 'card_opacity';
   static const _scheduleSlotHeightKey = 'slot_height';
-  static const _graduateScheduleSlotHeightKey = 'graduate_slot_height';
 
   Future<void> _loadSettings() async {
     try {
@@ -1955,9 +1924,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
         _scheduleSlotHeight =
             prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
-        _graduateScheduleSlotHeight =
-            prefs.getDouble(_graduateScheduleSlotHeightKey) ??
-                graduateDefaultSlotHeight;
         _reminderAdvanceMinutes =
             prefs.getInt('course_reminder_advance_minutes') ?? 5;
         _settingsLoaded = true; // 立即放行 UI 渲染
@@ -2006,12 +1972,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await prefs.setDouble(_scheduleOpacityKey, v);
   }
 
-  Future<void> _saveSlotHeight(double v, {bool graduate = false}) async {
+  Future<void> _saveSlotHeight(double v) async {
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setDouble(
-      graduate ? _graduateScheduleSlotHeightKey : _scheduleSlotHeightKey,
-      v,
-    );
+    await prefs.setDouble(_scheduleSlotHeightKey, v);
   }
 
   Future<void> _openCourseSettings(
@@ -2042,9 +2005,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 _requestBackgroundKeepAliveFromSettings(context),
             openHomeWidgets: () => _openHomeWidgetSettings(context, sc),
             updateScheduleOpacity: _updateScheduleOpacityFromSettings,
-            updateScheduleSlotHeight: (value) =>
-                _updateScheduleSlotHeightFromSettings(sc, value),
-            resetScheduleDisplay: () => _resetScheduleDisplayFromSettings(sc),
+            updateScheduleSlotHeight: _updateScheduleSlotHeightFromSettings,
+            resetScheduleDisplay: _resetScheduleDisplayFromSettings,
           ),
         ),
       ),
@@ -2080,14 +2042,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       backgroundKeepAliveSupported: _backgroundKeepAliveStatus.supported,
       backgroundKeepAliveBusy: _backgroundKeepAliveBusy,
       scheduleCardOpacity: _scheduleCardOpacity,
-      scheduleSlotHeight: _effectiveSlotHeight(sc),
-      defaultSlotHeight: sc.usesProviderPeriodLayout
-          ? graduateDefaultSlotHeight
-          : defaultSlotHeight,
-      minimumSlotHeight:
-          sc.usesProviderPeriodLayout ? graduateMinSlotHeight : 55,
-      maximumSlotHeight:
-          sc.usesProviderPeriodLayout ? graduateMaxSlotHeight : 120,
+      scheduleSlotHeight: _effectiveSlotHeight(),
+      defaultSlotHeight: defaultSlotHeight,
+      minimumSlotHeight: 55,
+      maximumSlotHeight: 120,
     );
   }
 
@@ -2231,40 +2189,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await _saveOpacity(value);
   }
 
-  Future<void> _updateScheduleSlotHeightFromSettings(
-    CourseScheduleProvider sc,
-    double value,
-  ) async {
-    if (mounted) {
-      setState(() {
-        if (sc.usesProviderPeriodLayout) {
-          _graduateScheduleSlotHeight = value;
-        } else {
-          _scheduleSlotHeight = value;
-        }
-      });
-    }
-    await _saveSlotHeight(value, graduate: sc.usesProviderPeriodLayout);
+  Future<void> _updateScheduleSlotHeightFromSettings(double value) async {
+    if (mounted) setState(() => _scheduleSlotHeight = value);
+    await _saveSlotHeight(value);
   }
 
-  Future<void> _resetScheduleDisplayFromSettings(
-    CourseScheduleProvider sc,
-  ) async {
-    final slotHeight = sc.usesProviderPeriodLayout
-        ? graduateDefaultSlotHeight
-        : defaultSlotHeight;
+  Future<void> _resetScheduleDisplayFromSettings() async {
     if (mounted) {
       setState(() {
         _scheduleCardOpacity = 0.55;
-        if (sc.usesProviderPeriodLayout) {
-          _graduateScheduleSlotHeight = slotHeight;
-        } else {
-          _scheduleSlotHeight = slotHeight;
-        }
+        _scheduleSlotHeight = defaultSlotHeight;
       });
     }
     await _saveOpacity(0.55);
-    await _saveSlotHeight(slotHeight, graduate: sc.usesProviderPeriodLayout);
+    await _saveSlotHeight(defaultSlotHeight);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -3838,7 +3776,7 @@ $classFilterRule
     return LayoutBuilder(
       builder: (context, constraints) {
         final slotCount = _scheduleSlotCount(sc);
-        final slotHeight = _effectiveSlotHeight(sc);
+        final slotHeight = _effectiveSlotHeight();
         final totalH = slotCount * slotHeight;
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
@@ -3939,7 +3877,7 @@ $classFilterRule
           height: slotHeight,
           alignment: Alignment.center,
           child: Text(
-            _slotDisplayLabel(sc, i),
+            _slotDisplayLabel(i),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

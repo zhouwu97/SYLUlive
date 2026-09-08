@@ -385,7 +385,7 @@ void main() {
     await _disposeCourse(tester, page);
   });
 
-  testWidgets('研究生稀疏及超过本科范围的行序使用中性时间轴', (tester) async {
+  testWidgets('研究生稀疏及超过本科范围的行序沿用本科节次时间轴', (tester) async {
     final page = await _pumpCourse(
       tester,
       seededCourses: [
@@ -414,11 +414,12 @@ void main() {
       ],
     );
 
-    expect(find.text('上午3'), findsOneWidget);
-    expect(find.text('下午8'), findsOneWidget);
-    expect(find.text('时段 1'), findsOneWidget);
-    expect(find.text('时段 4'), findsOneWidget);
-    expect(find.text('08:00'), findsNothing);
+    expect(find.text('1\n08:00\n08:45'), findsOneWidget);
+    expect(find.text('3\n10:00\n10:45'), findsOneWidget);
+    expect(find.text('15'), findsOneWidget);
+    expect(find.text('上午3'), findsNothing);
+    expect(find.text('下午8'), findsNothing);
+    expect(find.textContaining('时段'), findsNothing);
 
     await _disposeCourse(tester, page);
   });
@@ -456,13 +457,13 @@ void main() {
       ],
     );
 
-    expect(find.text('上午3'), findsOneWidget);
-    expect(find.text('上午4'), findsOneWidget);
+    expect(find.text('3\n10:00\n10:45'), findsOneWidget);
+    expect(find.text('4\n10:55\n11:40'), findsOneWidget);
     expect(find.text('不应叠加的后续课程'), findsNothing);
     expect(find.text('张慧雪'), findsNothing);
     expect(
       tester.getSize(find.byKey(const ValueKey('11_1_3'))).height,
-      graduateDefaultSlotHeight * 2 - 2,
+      120 * 2 - 2,
     );
     expect(tester.takeException(), isNull);
 
@@ -493,8 +494,8 @@ void main() {
       ],
     );
 
-    expect(find.text('上午3'), findsOneWidget);
-    expect(find.text('上午4'), findsOneWidget);
+    expect(find.text('3\n10:00\n10:45'), findsOneWidget);
+    expect(find.text('4\n10:55\n11:40'), findsOneWidget);
     expect(find.byKey(const ValueKey('21_1_3')), findsOneWidget);
     expect(tester.takeException(), isNull);
 

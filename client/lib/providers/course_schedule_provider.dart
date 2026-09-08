@@ -36,7 +36,7 @@ class CourseBlock {
 
   /// 课程块覆盖的 Provider 原始节次标签。
   ///
-  /// 研究生相邻节次归并后仍需保留每一行的原标签，供左侧时间轴逐行展示。
+  /// 研究生相邻节次归并后仍保留每一行的原标签，供详情展示与数据回溯使用。
   final List<String> periodLabels;
 
   const CourseBlock({

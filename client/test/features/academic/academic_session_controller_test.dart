@@ -24,6 +24,38 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
+  testWidgets('保留旧本科身份时换绑入口允许切换研究生类型和学号', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final source = _FakeAcademicDataSource();
+    final controller = AcademicSessionController(
+      repository: AcademicRepositoryImpl(local: source, legacy: source,
+          source: AcademicSourceKind.local),
+      identity: const AcademicIdentityKey(appUserId: 'app-user-a',
+          providerId: AcademicProviderId.syluUndergraduate, studentId: 'old-student'),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    await tester.pumpWidget(MaterialApp(theme: ThemeData.dark(), home: Scaffold(
+      body: MediaQuery(data: const MediaQueryData(size: Size(800, 600),
+          textScaler: TextScaler.linear(1.3)),
+        child: AcademicLoginDialog(controller: controller, changeIdentity: true,
+          coordinator: _newCoordinator(controller, _MemoryAcademicCredentialStore(),
+              MemoryPreferencesStore()))))));
+    await tester.pumpAndSettle();
+    expect(find.text('身份已由学校教务确认，登录时不可切换类型'), findsNothing);
+    await tester.tap(find.byType(DropdownButtonFormField<AcademicProviderId>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('研究生教务').last);
+    await tester.pumpAndSettle();
+    expect(find.text('研究生教务'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, 'new-student');
+    expect(tester.widget<TextFormField>(find.byType(TextFormField).first).controller?.text,
+        'new-student');
+    expect(controller.identity?.studentId, 'old-student');
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
+
   test('服务端研究生挑战接入本机识别且释放识别器', () async {
     AppPreferencesStore.setMockInitialValues({});
     final controller = AcademicSessionController(repository: AcademicRepositoryImpl(

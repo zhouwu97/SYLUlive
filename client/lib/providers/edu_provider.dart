@@ -653,7 +653,11 @@ class EduProvider extends ChangeNotifier {
     if (controller != null && identity != null) {
       await AcademicIdentityLifecycleCoordinator(controller: controller,
           preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
+      if (controller.identity != identity || controller.appUserId != identity.appUserId) return;
       clearMemoryForAccountTransition();
+      // 本机清除不撤销服务端身份，恢复绑定投影，避免页面误报未绑定。
+      _userId = controller.appUserId;
+      _applyAcademicSessionState();
       return;
     }
     // 先捕获命名空间：重置本机会话后 studentId 会被清空，不能再依赖当前

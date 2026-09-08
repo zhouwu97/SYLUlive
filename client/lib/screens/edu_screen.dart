@@ -92,6 +92,13 @@ class _EduScreenState extends State<EduScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             children: [
               _buildEduStatusCard(context, eduProvider, isDark),
+              if (context.watch<AcademicSessionController>().hasBoundIdentity)
+                TextButton.icon(
+                  onPressed: () => _showBindDialog(context, eduProvider,
+                      changeIdentity: true),
+                  icon: const Icon(Icons.swap_horiz),
+                  label: const Text('更换教务类型 / 学号'),
+                ),
               if (eduProvider.isBound) ...[
                 const SizedBox(height: 24),
                 _buildEduActionGrid(context, eduProvider, isDark),
@@ -347,8 +354,10 @@ class _EduScreenState extends State<EduScreen> {
         onPressed: () => _showUnbindDialog(context, eduProvider),
         icon: const Icon(Icons.link_off_rounded,
             size: 18, color: CampusTheme.red),
-        label: const Text('解绑教务账号',
-            style: TextStyle(
+        label: Text(
+            context.read<AcademicSessionController>().sourceKind == AcademicSourceKind.local
+                ? '清除本机教务资料' : '撤销教务授权',
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: CampusTheme.red,
@@ -418,13 +427,15 @@ class _EduScreenState extends State<EduScreen> {
 
   Future<void> _showBindDialog(
     BuildContext context,
-    EduProvider eduProvider,
-  ) async {
+    EduProvider eduProvider, {
+    bool changeIdentity = false,
+  }) async {
     final controller = context.read<AcademicSessionController>();
     final success = await AcademicLoginDialog.show(
       context,
       controller: controller,
       coordinator: _coordinatorOrNull(),
+      changeIdentity: changeIdentity,
     );
     if (!context.mounted || success != true) return;
     await eduProvider.refreshStatus();
@@ -444,12 +455,15 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showUnbindDialog(BuildContext context, EduProvider eduProvider) {
+    final local = context.read<AcademicSessionController>().sourceKind == AcademicSourceKind.local;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('确认解绑'),
+        title: Text(local ? '清除本机教务资料' : '撤销教务授权'),
         content:
-            const Text('解绑将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学号和学生身份会保留。确定要解绑吗？'),
+            Text(local
+                ? '将删除本机保存的教务密码、会话和缓存，并停止自动登录。已认证的学生身份仍保留；如需切换本科或研究生，请使用“更换教务类型 / 学号”。'
+                : '将撤销服务器教务授权并清理登录凭据，停止自动重新登录。已认证的学生身份仍保留；更换教务类型或学号请使用换绑入口。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -464,7 +478,7 @@ class _EduScreenState extends State<EduScreen> {
                   SnackBar(
                     content: Text(
                       result.success
-                          ? '教务授权已撤销'
+                          ? (local ? '本机教务资料已清除，学生身份仍保留' : '教务授权已撤销')
                           : (result.errorMessage ?? '解绑失败'),
                     ),
                     backgroundColor: result.success ? Colors.green : Colors.red,
@@ -473,7 +487,7 @@ class _EduScreenState extends State<EduScreen> {
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('解绑'),
+            child: Text(local ? '清除' : '撤销授权'),
           ),
         ],
       ),

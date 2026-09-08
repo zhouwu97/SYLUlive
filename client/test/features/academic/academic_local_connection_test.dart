@@ -31,6 +31,49 @@ void main() {
     return h;
   }
 
+  for (final provider in AcademicProviderId.values) {
+    test('清除本机数据后等待云端配置，恢复类型学号且只需补密码：${provider.value}', () async {
+      final h = await setup();
+      h.dio.interceptors.clear();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      h.dio.interceptors
+          .add(InterceptorsWrapper(onRequest: (request, handler) async {
+        if (!started.isCompleted) started.complete();
+        await release.future;
+        handler.resolve(Response(requestOptions: request, data: {
+          'configs': [
+            {
+              'provider_id': provider.value,
+              'student_id': 'CLOUD',
+              'state': 'active',
+              'revision': 3
+            }
+          ]
+        }));
+      }));
+      final restoring = h.coordinator.ensureAuthenticated();
+      await started.future;
+      expect(h.session.identity, isNull);
+      release.complete();
+      final result = await restoring;
+      expect(h.session.identity?.providerId, provider);
+      expect(h.session.identity?.studentId, 'CLOUD');
+      expect(result.kind, AcademicLoginOutcomeKind.credentialsRequired);
+      expect(h.secret.values, isEmpty);
+      expect(h.sources.every((source) => source.logins == 0), isTrue);
+      expect(h.gateways.every((gateway) => gateway.logins == 0), isTrue);
+    });
+  }
+
+  test('云端配置读取失败不能当成未绑定并要求添加账号', () async {
+    final h = await setup();
+    final result = await h.coordinator.ensureAuthenticated();
+    expect(h.session.identity, isNull);
+    expect(result.kind, isNot(AcademicLoginOutcomeKind.credentialsRequired));
+    expect(h.session.failure, isNotNull);
+  });
+
   test('本科直接本机登录，HK 断网仍成功，密码不出现在 HK 请求中', () async {
     final h = await setup();
     final result = await h.login('A', AcademicProviderId.syluUndergraduate);

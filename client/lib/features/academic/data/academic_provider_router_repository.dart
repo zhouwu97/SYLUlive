@@ -112,8 +112,9 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     return _identityBindings;
   }
 
-  Future<void> syncConfiguration() async {
+  Future<void> syncConfiguration({bool requireSuccess = false}) async {
     final user = _appUserId;
+    final generation = _contextGeneration;
     final store = accountStore;
     if (user == null || store == null || configClient == null || _closed) {
       return;
@@ -128,10 +129,31 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
                   appUserId: user, identity: identity, store: store.preferences)
               .migrateLegacyPreferences();
         }
-        if (current()) onConfigChanged?.call();
+        if (current()) {
+          _identityBindings = store.identities
+              .map((identity) => AcademicIdentityBinding(
+                  providerId: identity.providerId,
+                  studentId: identity.studentId,
+                  verified: false))
+              .toList();
+          // 新设备恢复配置后挂载对应 Provider，但不恢复密码或替用户登录学校。
+          if (_selected == null &&
+              !_provisional &&
+              generation == _contextGeneration &&
+              store.identities.isNotEmpty) {
+            final identities = store.identities;
+            final identity = identities.firstWhere(
+                (identity) => identity.providerId == store.activeProvider,
+                orElse: () => identities.first);
+            await selectProvider(identity,
+                expectedContextGeneration: generation);
+          }
+          if (current()) onConfigChanged?.call();
+        }
       }
     } catch (_) {
       // Outbox 已落盘；云端故障只影响同步状态，不中断学校请求。
+      if (requireSuccess) rethrow;
     }
   }
 
@@ -166,7 +188,12 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     final appUserId = _appUserId;
     final contextGeneration = _contextGeneration;
     if (appUserId == null || appUserId.isEmpty) return false;
-    final bindings = await loadIdentityBindings();
+    var bindings = await loadIdentityBindings();
+    // 没有本机配置时，必须等待云端查询结束，不能把异步查询尚未返回当成未绑定。
+    if (bindings.isEmpty && configClient != null) {
+      await syncConfiguration(requireSuccess: true);
+      bindings = _identityBindings;
+    }
     if (_closed ||
         _appUserId != appUserId ||
         _contextGeneration != contextGeneration ||

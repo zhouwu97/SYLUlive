@@ -6,15 +6,15 @@ import '../storage/local_academic_account_store.dart';
 final class AcademicAccountConfigClient {
   AcademicAccountConfigClient(this.dio);
   final Dio dio;
-  Future<void>? _running;
+  final Map<LocalAcademicAccountStore, Future<void>> _running = {};
 
   Future<void> sync(LocalAcademicAccountStore store, bool Function() current) {
-    final running = _running;
+    final running = _running[store];
     if (running != null) return running;
     final operation = _sync(store, current);
-    _running = operation;
+    _running[store] = operation;
     return operation.whenComplete(() {
-      if (identical(_running, operation)) _running = null;
+      if (identical(_running[store], operation)) _running.remove(store);
     });
   }
 

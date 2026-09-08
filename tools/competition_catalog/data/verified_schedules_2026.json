@@ -1381,6 +1381,31 @@
       "title": "百度之星程序设计大赛参赛日程",
       "publisher": "吉林大学竞赛负责教师吕帅",
       "url": "https://lus-jlu.github.io/astar.html"
+    },
+    "browser_tzb_2025_main": {
+      "title": "第十九届挑战杯中国移动全国大学生课外学术科技作品竞赛通知",
+      "publisher": "挑战杯全国组委会",
+      "url": "https://2025.tiaozhanbei.net/d49/article/676/"
+    },
+    "browser_tzb_2026_main": {
+      "title": "第十五届挑战杯建设银行中国大学生创业计划竞赛通知",
+      "publisher": "挑战杯全国组委会",
+      "url": "https://2026.tiaozhanbei.net/d51/article/727/"
+    },
+    "browser_innovation_2025": {
+      "title": "关于举办第十八届全国大学生创新年会的通知",
+      "publisher": "第十八届国创年会组委会／国家级大学生创新训练计划平台",
+      "url": "http://gjcxcy.bjtu.edu.cn/NoticeBulletin.aspx?0EB816D0E1EB2C79DCE3F86E2EFC9F47"
+    },
+    "browser_icpc_2026": {
+      "title": "2026 ICPC Asia EC网络预选赛报名通知",
+      "publisher": "ICPC Asia EC网络预选赛组委会／北京大学计算机学院",
+      "url": "https://icpc.pku.edu.cn/tzgg/12450f30353743ccaa302be16a7a1d85.htm"
+    },
+    "aggregate_saikr_raicom_2026": {
+      "title": "关于举办2026睿抗机器人开发者大赛的通知（赛氪转载）",
+      "publisher": "赛氪（转载工业和信息化部人才交流中心通知）",
+      "url": "https://new.saikr.com/vse/58020"
     }
   },
   "items": [
@@ -1404,6 +1429,38 @@
       }
     },
     {
+      "competition_id": "NAT-002",
+      "expected_title": "“挑战杯”大学生课外学术科技作品竞赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "browser_tzb_2025_main"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025）：各省级团委须在6月30日前完成全国决赛作品推报；学生个人报名按校赛、省赛通知。",
+        "event_time_text": "2025年校级初赛、省级复赛后参加全国决赛；当届通知拟定下半年在南京大学举办。",
+        "time_note": "浏览器逐项核实官网主体赛通知。6月30日是省级团委推报期限，不是学生个人报名截止日；不套用专项赛时间。"
+      }
+    },
+    {
+      "competition_id": "NAT-003",
+      "expected_title": "“挑战杯”中国大学生创业计划竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "browser_tzb_2026_main"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年主体赛：学校于5月底前完成校赛选拔，省级组委会于6月底前完成复赛及全国决赛推报；个人报名按校、省通知。",
+        "event_time_text": "2026年全国决赛安排在11月前，由大连理工大学承办。",
+        "time_note": "官网2026年5月23日通知，仅给出分级选拔及推报节点，未给出全国统一个人报名期限；不将学生身份认定日6月1日当成报名时间。"
+      }
+    },
+    {
       "competition_id": "NAT-004",
       "expected_title": "全国大学生职业规划大赛",
       "season_year": 2026,
@@ -1416,6 +1473,38 @@
         "time_precision": "unknown",
         "registration_time_text": "第三届：2025-10-20 开放报名；各地各校自定截止，最晚不超过 2026-01-31",
         "time_note": "全国平台最晚截止仅为上限，沈理校内及辽宁赛区截止待核实。"
+      }
+    },
+    {
+      "competition_id": "NAT-005",
+      "expected_title": "全国大学生创新创业训练计划年会展示",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "browser_innovation_2025"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025）：入选项目参会人员由高校管理员于11月16日前完成注册；项目遴选申报另按准备工作通知。",
+        "event_time_text": "2025年11月21日—23日，南京大学苏州校区。",
+        "time_note": "这是已入选项目的参会注册截止时间，不是面向所有学生的项目征集截止日。官网当前可核实通知为第十八届，不推算2026年日期。"
+      }
+    },
+    {
+      "competition_id": "NAT-006",
+      "expected_title": "ACM-ICPC国际大学生程序设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "browser_icpc_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年Asia EC网络预选赛：第一场报名缴费截至8月26日23:59:59；第二场截至9月1日23:59:59。",
+        "event_time_text": "2026年第一场9月6日13:00—18:00，第二场9月12日13:00—18:00。",
+        "time_note": "官网2026年8月10日通知，报名平台为icpc.pintia.cn；仅适用于两场网络预选赛，后续区域赛及全球总决赛须按对应赛站通知。"
       }
     },
     {
@@ -1558,6 +1647,22 @@
         "time_precision": "unknown",
         "registration_time_text": "2026 年非命题赛道投稿截止：2026-06-20；专项、产教融合及挑战赛按各赛项通知",
         "time_note": "综合通知明确各赛项可另行安排；不把 06-20 作为所有专项赛道的统一截止。"
+      }
+    },
+    {
+      "competition_id": "NAT-019",
+      "expected_title": "睿抗机器人开发者大赛（RAICOM）",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "aggregate_saikr_raicom_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "2026年4—7月；各赛道及省级/区域选拔具体截止以分项通知为准",
+        "event_time_text": "省级/区域选拔：2026年4—9月；总决赛：2026年7—10月",
+        "time_note": "依据赛氪转载的2026年4月2日主办方通知正文。正文仅明确报名月份，第三方日历显示的7月31日及具体时刻不作为统一截止依据；校内选拔须在省级选拔前完成。"
       }
     },
     {

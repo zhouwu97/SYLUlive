@@ -70,7 +70,7 @@ void main() {
       expect(find.text('断开本次会话'), findsNothing);
       expect(find.text('删除本机教务账号'), findsNothing);
       expect(find.text('服务器管理教务绑定'), findsNothing);
-      expect(find.text('添加学生身份'), findsOneWidget);
+      expect(find.text('添加教务账号'), findsOneWidget);
       expect(find.byType(Switch), findsOneWidget);
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
       expect(tester.takeException(), isNull);

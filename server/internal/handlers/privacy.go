@@ -245,6 +245,14 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
+		// 注销时清除账号配置及包含旧学号的幂等回执，不能在重启回填后恢复。
+		for _, model := range []interface{}{&models.AcademicAccountConfig{}, &models.AcademicConfigReceipt{}} {
+			if tx.Migrator().HasTable(model) {
+				if err := tx.Where("user_id = ?", userID).Delete(model).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
 			return err
 		}

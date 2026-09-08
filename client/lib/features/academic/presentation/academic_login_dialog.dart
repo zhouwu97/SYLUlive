@@ -1,3 +1,4 @@
+import '../storage/academic_credential_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
@@ -17,7 +18,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     required this.controller,
     this.coordinator,
     this.initialStudentId,
-    this.initialSaveCredentials = false,
+    this.initialSaveCredentials,
     this.changeIdentity = false,
     this.addIdentity = false,
     super.key,
@@ -26,7 +27,7 @@ final class AcademicLoginDialog extends StatefulWidget {
   final AcademicSessionController controller;
   final AcademicLoginCoordinator? coordinator;
   final String? initialStudentId;
-  final bool initialSaveCredentials;
+  final bool? initialSaveCredentials;
   final bool changeIdentity;
   final bool addIdentity;
 
@@ -35,7 +36,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     required AcademicSessionController controller,
     AcademicLoginCoordinator? coordinator,
     String? initialStudentId,
-    bool initialSaveCredentials = false,
+    bool? initialSaveCredentials,
     bool changeIdentity = false,
     bool addIdentity = false,
   }) {
@@ -122,7 +123,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   AcademicSessionController get _controller => widget.controller;
 
-  /// 已由服务端确认的身份是登录目标的可信边界；本机会话过期时仍然
+  /// 已配置的本机账号是本次密码恢复的固定目标；本机会话过期时仍然
   /// 复用它，避免把恢复操作误导成一次新的身份绑定。
   AcademicIdentityKey? get _trustedIdentity {
     final identity = _controller.identity;
@@ -172,17 +173,29 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         widget.changeIdentity ||
         widget.addIdentity) {
       // 绑定授权不代表同意开启本机缓存，沿用当前 App 账号的独立选择。
-      final preferences = await _coordinator.loadPreferences();
+      final preferences =
+          await _coordinator.loadPreferences(providerId: _selectedProviderId);
       if (!mounted) return;
       setState(() {
         _loadingPreferences = false;
-        _saveCredentials = !kIsWeb;
+        _saveCredentials = !kIsWeb &&
+            (widget.initialSaveCredentials ?? preferences.saveCredentials);
         _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
       });
       return;
     }
-    final saved = await _coordinator.readSavedCredential();
-    final preferences = await _coordinator.loadPreferences();
+    final AcademicCredential? saved;
+    try { saved = await _coordinator.readEnabledCredential(); } catch (_) {
+      if (mounted) {
+        setState(() {
+        _loadingPreferences = false;
+        _coordinatorMessage = '本机安全存储暂不可用，请稍后重试';
+      });
+      }
+      return;
+    }
+    final preferences =
+        await _coordinator.loadPreferences(providerId: _selectedProviderId);
     if (!mounted) return;
     final initial = _studentIdController.text.trim();
     final canUseSaved = preferences.saveCredentials &&
@@ -190,12 +203,12 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         (initial.isEmpty || initial == saved.studentId.trim());
     setState(() {
       _loadingPreferences = false;
-      _saveCredentials = widget.initialSaveCredentials ||
-          (preferences.saveCredentials && saved != null);
+      _saveCredentials = !kIsWeb &&
+          (widget.initialSaveCredentials ?? preferences.saveCredentials);
       _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
       _savedCredentialStudentId = saved?.studentId.trim();
       _usingSavedCredential = canUseSaved;
-      if (canUseSaved) _studentIdController.text = saved.studentId;
+      if (canUseSaved) _studentIdController.text = saved!.studentId;
     });
   }
 
@@ -307,13 +320,14 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   )
                 : null);
         final serverBinding = _serverBindingFlow;
-        final selectingProvider = serverBinding && !_identityLocked;
+        final selectingProvider =
+            serverBinding && !_identityLocked && !widget.changeIdentity;
 
         return PopScope(
           canPop: false,
           child: AlertDialog(
             title: Text(widget.changeIdentity
-                ? '更换学生身份'
+                ? '更换教务学号'
                 : (serverBinding ? '绑定教务账号' : '本机直连教务')),
             content: ConstrainedBox(
               constraints: BoxConstraints(
@@ -328,9 +342,9 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                     children: [
                       Text(
                         widget.changeIdentity
-                            ? '验证新身份成功后才会更换绑定，并清除旧身份的本机教务资料。验证失败会保留原身份。'
+                            ? '在本机登录新学号成功后更换，并清除旧学号的本机资料。登录失败保留原账号。'
                             : serverBinding
-                                ? '服务器仅进行一次性学生身份验证；手机独立登录学校。身份验证成功后，即使本机连接尚未完成，身份仍会保留，可稍后继续设置。'
+                                ? '本设备直接登录所选教务系统，密码和学校会话仅在本机使用。云端只同步教务类型和学号，同步失败不影响本机使用。'
                                 : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -354,7 +368,22 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                               ? null
                               : (value) {
                                   if (value != null) {
-                                    setState(() => _selectedProviderId = value);
+                                    setState(() {
+                                      _selectedProviderId = value;
+                                      _loadingPreferences = true;
+                                    });
+                                    _coordinator
+                                        .loadPreferences(providerId: value)
+                                        .then((preferences) {
+                                      if (mounted &&
+                                          _selectedProviderId == value) {
+                                        setState(() {
+                                          _saveCredentials = !kIsWeb &&
+                                              preferences.saveCredentials;
+                                          _loadingPreferences = false;
+                                        });
+                                      }
+                                    });
                                   }
                                 },
                         ),
@@ -365,7 +394,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           decoration: const InputDecoration(
                             labelText: '教务类型',
                             prefixIcon: Icon(Icons.school_outlined),
-                            helperText: '身份已由学校教务确认，登录时不可切换类型',
+                            helperText: '恢复当前账号时学号固定，更换学号请到教务设置',
                           ),
                           child: Text(_trustedIdentity!.providerId.displayName),
                         ),
@@ -416,7 +445,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           subtitle: Text(
                             _usingSavedCredential
                                 ? '学号和密码仅保存在设备系统安全存储中'
-                                : '用于会话过期后自动重连；服务器仅作一次性身份验证',
+                                : '用于会话过期后自动重连；云端仅同步教务类型和学号',
                           ),
                           onChanged:
                               isBusy || awaitingCaptcha || _loadingPreferences
@@ -481,7 +510,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                       if (_controller.hasBoundIdentity &&
                           !_controller.isAuthenticated) ...[
                         const SizedBox(height: AppSpacing.sm),
-                        const Text('身份已验证，本机教务尚未连接；可继续登录或稍后设置。'),
+                        const Text('本机教务尚未连接，可继续登录或稍后设置。'),
                       ],
                       if (_coordinatorMessage != null) ...[
                         const SizedBox(height: AppSpacing.sm),

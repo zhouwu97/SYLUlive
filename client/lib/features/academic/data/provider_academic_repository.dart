@@ -71,11 +71,15 @@ final class ProviderAcademicRepository implements AcademicRepository {
   Future<LoginResult> login(
       {required String studentId, required String password}) async {
     _ensureOpen();
+    _lastSessionState = SessionState.unauthenticated;
     _pendingLogin =
         AcademicLoginRequest(studentId: studentId.trim(), password: password);
     final result = await provider.login(_pendingLogin!);
     final mapped = await _mapLoginResult(result);
-    if (mapped is LoginSuccess) _lastSessionState = SessionState.authenticated;
+    if (mapped is LoginSuccess) {
+      _lastSessionState = SessionState.authenticated;
+      _pendingLogin = null;
+    }
     return mapped;
   }
 

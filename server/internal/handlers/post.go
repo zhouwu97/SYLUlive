@@ -190,10 +190,10 @@ var allowedMarketTags = map[string]struct{}{
 	"长期求": {},
 	"急需":  {},
 	// lost 失物 / found 招领 共用
-	"急寻":  {},
-	"有酬谢": {},
-	"可面交": {},
-	"待认领": {},
+	"急寻":   {},
+	"有酬谢":  {},
+	"可面交":  {},
+	"待认领":  {},
 	"已交宿管": {},
 	// proxy 办事
 	"可跑腿":  {},
@@ -1497,13 +1497,20 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
 		return
 	}
-	if models.BoardID(input.BoardID) == models.BoardMarket && !user.IsStudentVerified() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户仅可发布普通帖子，不能在集市发帖"})
-		return
+	if models.BoardID(input.BoardID) == models.BoardMarket {
+		allowed, err := (services.MarketPublishPolicy{DB: h.db}).CanPublish(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "集市资格查询失败"})
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "当前账号暂无集市发布资格"})
+			return
+		}
 	}
 
 	normalizedType, err := normalizeWaterPostType(models.BoardID(input.BoardID), input.PostType)
@@ -1803,11 +1810,17 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 
 		var user models.User
-		if err := tx.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
+		if err := tx.Select("id").First(&user, userID).Error; err != nil {
 			return fmt.Errorf("user_not_found")
 		}
-		if post.BoardID == models.BoardMarket && !user.IsStudentVerified() {
-			return fmt.Errorf("market_graduated")
+		if post.BoardID == models.BoardMarket {
+			allowed, err := (services.MarketPublishPolicy{DB: tx}).CanPublish(user.ID)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return fmt.Errorf("market_graduated")
+			}
 		}
 
 		normalizedType, err := normalizeWaterPostType(post.BoardID, input.PostType)

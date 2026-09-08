@@ -1,3 +1,4 @@
+import 'features/academic/data/academic_account_config_client.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
@@ -1382,7 +1383,7 @@ class MyApp extends StatelessWidget {
             return AcademicProviderRouterRepository(
               legacy: legacy,
               registry: context.read<AcademicProviderRegistry>(),
-              identityClient: context.read<AcademicIdentityClient>(),
+              configClient: AcademicAccountConfigClient(dio),
             );
           },
           dispose: (_, repository) => repository.close(),

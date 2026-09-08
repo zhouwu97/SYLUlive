@@ -193,6 +193,7 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.AcademicIdentityBinding{},
 		&models.ExpLog{},
 		&models.Like{},
 		&models.File{},

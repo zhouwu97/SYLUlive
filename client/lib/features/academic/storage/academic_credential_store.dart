@@ -58,8 +58,7 @@ final class PlatformAcademicCredentialStore
     try {
       raw = await _secretStore.read(key);
     } catch (_) {
-      // 安全存储暂时不可用不应阻断教务登录；调用方会按“无已保存凭据”处理。
-      return null;
+      throw StateError('本机安全存储暂不可用');
     }
     if (raw == null || raw.isEmpty) return null;
 
@@ -111,7 +110,8 @@ final class PlatformAcademicCredentialStore
   Future<void> writeForIdentity(
     AcademicIdentityKey identity,
     AcademicCredential credential,
-  ) => _writeByKey(_identityKeyFor(identity), credential);
+  ) =>
+      _writeByKey(_identityKeyFor(identity), credential);
 
   @override
   Future<void> deleteForIdentity(AcademicIdentityKey identity) =>
@@ -131,7 +131,7 @@ final class PlatformAcademicCredentialStore
     try {
       raw = await _secretStore.read(key);
     } catch (_) {
-      return null;
+      throw StateError('本机安全存储暂不可用');
     }
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -143,7 +143,8 @@ final class PlatformAcademicCredentialStore
       if (studentId is! String || password is! String) {
         throw const FormatException('凭据字段错误');
       }
-      final credential = AcademicCredential(studentId: studentId.trim(), password: password);
+      final credential =
+          AcademicCredential(studentId: studentId.trim(), password: password);
       return credential.isValid ? credential : null;
     } catch (_) {
       // 协议升级或异常数据不能触发密码擦除；此轮不使用即可。

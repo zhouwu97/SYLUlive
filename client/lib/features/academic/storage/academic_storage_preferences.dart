@@ -25,8 +25,11 @@ final class AcademicStoragePreferences {
     return sha256.convert(utf8.encode(value)).toString();
   }
 
-  String? get saveCredentialsKey =>
-      _hash == null ? null : 'academic_save_credentials_$_hash';
+  String? get saveCredentialsKey => appUserId.trim().isEmpty
+      ? null
+      : identity == null
+          ? 'academic_save_credentials_$_hash'
+          : 'academic_save_credentials_provider_${sha256.convert(utf8.encode('$appUserId|${identity!.providerId.value}'))}';
 
   String? get saveDataKey => _hash == null ? null : 'academic_save_data_$_hash';
 
@@ -37,7 +40,11 @@ final class AcademicStoragePreferences {
       _hash == null ? null : 'academic_cache_cleanup_pending_$_hash';
 
   bool get saveCredentials =>
-      saveCredentialsKey != null && store.getBool(saveCredentialsKey!) == true;
+      !kIsWeb &&
+      saveCredentialsKey != null &&
+      (store.getBool(saveCredentialsKey!) ??
+          store.getBool('academic_save_credentials_$_hash') ??
+          true);
 
   // 沿用当前分支自动保存课表、成绩和自定义课表的行为；显式关闭仍优先。
   bool get saveAcademicData =>
@@ -50,11 +57,18 @@ final class AcademicStoragePreferences {
   Future<void> migrateLegacyPreferences() async {
     final current = identity;
     if (current == null) return;
-    final marker = 'academic_identity_preferences_migrated_${current.storageId}';
+    final marker =
+        'academic_identity_preferences_migrated_v4_${current.storageId}';
     if (store.getBool(marker) == true) return;
-    final legacy = AcademicStoragePreferences(appUserId: appUserId, store: store);
+    final legacy =
+        AcademicStoragePreferences(appUserId: appUserId, store: store);
     if (!store.containsKey(saveCredentialsKey!)) {
-      await setSaveCredentials(legacy.saveCredentials);
+      final previous =
+          store.getBool('academic_save_credentials_${current.storageId}');
+      final explicitChoice =
+          previous ?? store.getBool(legacy.saveCredentialsKey!);
+      // 默认值不落成用户选择，避免预填界面先写 true 后遮蔽旧身份的显式关闭。
+      if (explicitChoice != null) await setSaveCredentials(explicitChoice);
     }
     if (!store.containsKey(saveDataKey!)) {
       await setSaveAcademicData(legacy.saveAcademicData);
@@ -100,7 +114,6 @@ final class AcademicStoragePreferences {
 
   Future<void> clear() async {
     final keys = <String?>[
-      saveCredentialsKey,
       saveDataKey,
       migrationKey,
       cleanupPendingKey,

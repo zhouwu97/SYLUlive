@@ -744,20 +744,18 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<void>> unbind() async {
     final controller = _academicSessionController;
     final identity = controller?.identity;
-    if (controller != null && identity != null && controller.providerRouter?.identityClient != null) {
+    if (controller != null && identity != null && controller.providerRouter != null) {
+      final router = controller.providerRouter!;
       try {
-        await controller.providerRouter!.identityClient!.unbind(identity);
-      } catch (_) {
-        return OperationResult.fail('解绑失败，请检查网络后重试');
-      }
-      await controller.acceptIdentityUnbound(identity);
+        await router.accountStore!.remove(identity.providerId, fromCloud:true);
+        await controller.acceptIdentityUnbound(identity);
+      } catch (_) { return OperationResult.fail('本机移除未完成，请重试'); }
       try {
-        await AcademicIdentityLifecycleCoordinator(controller: controller,
-            preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
-      } catch (_) {
-        // 服务端解绑已完成，残留清理由身份级 cleanupPending 重试。
-        _errorMessage = '已解绑，本机残留资料将在后续清理';
-      }
+        await AcademicIdentityLifecycleCoordinator(controller:controller,
+            preferences:await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
+        await router.accountStore!.acknowledgeCleanup(identity);
+      } catch (_) { _errorMessage = '账号已移除，本机残留资料待清理'; }
+      unawaited(router.syncConfiguration());
       _applyAcademicSessionState();
       return OperationResult.ok(null);
     }

@@ -1,3 +1,9 @@
+import '../storage/academic_storage_preferences.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'academic_account_config_client.dart';
+import '../storage/local_academic_account_store.dart';
+import '../storage/academic_connection_store.dart';
 import '../../../platform/contracts/preferences_store.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
@@ -7,25 +13,32 @@ import '../domain/academic_failure.dart';
 import 'academic_identity_client.dart';
 import 'provider_academic_repository.dart';
 
-/// 运行时 Provider 路由。默认保留服务端绑定查询，身份验证确认后可切换
-/// 到指定本机 Provider；切换时销毁旧 Provider，避免跨身份复用 Cookie。
+/// 本机账号决定运行时 Provider；云端只在后台同步账号配置。
 final class AcademicProviderRouterRepository implements AcademicRepository {
   AcademicProviderRouterRepository({
     required this.legacy,
     required this.registry,
     this.identityClient,
+    this.configClient,
     this.providerIdLoader,
   });
 
   final AcademicRepository legacy;
   final AcademicProviderRegistry registry;
   final AcademicIdentityClient? identityClient;
+  final AcademicAccountConfigClient? configClient;
+  LocalAcademicAccountStore? accountStore;
+  Timer? _syncTimer;
+  void Function()? onConfigChanged;
+  ProviderAcademicRepository? _rollback;
+  bool _provisional = false;
+  bool get isProvisional => _provisional;
   final AcademicProviderId? Function()? providerIdLoader;
   String? _appUserId;
   int _contextGeneration = 0;
   ProviderAcademicRepository? _selected;
   List<AcademicIdentityBinding> _identityBindings = const [];
-  bool _identityListLoaded = false;
+
   bool _closed = false;
 
   AcademicRepository get _active => _selected ?? legacy;
@@ -52,33 +65,102 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     return selected.fetchTerms();
   }
 
-  /// 读取服务端已经确认的身份；列表本身只保留 provider 和学号，不保留
-  /// challenge、密码或学校会话材料。
+  /// 兼容现有列表类型；内容来自本机账号，不具有服务端学生认证含义。
   Future<List<AcademicIdentityBinding>> loadIdentityBindings({
     bool force = false,
   }) async {
-    final client = identityClient;
-    final appUserId = _appUserId;
-    final contextGeneration = _contextGeneration;
-    if (client == null || appUserId == null || appUserId.isEmpty) {
-      return const <AcademicIdentityBinding>[];
+    final user = _appUserId;
+    if (user == null) return const [];
+    final preferences = await AppPreferencesStore.getInstance();
+    if (_appUserId != user || _closed) return const [];
+    final store = accountStore ??= LocalAcademicAccountStore(user, preferences);
+    if (!preferences.containsKey(store.key)) {
+      // 只迁移明确标注 Provider 的本机投影，不依据学号格式猜本科或研究生。
+      final raw = preferences.getString('auth_user');
+      if (raw != null) {
+        final profile = jsonDecode(raw) as Map;
+        final explicitProvider = AcademicProviderId.tryParse(
+            profile['academic_provider_id']?.toString() ?? '');
+        final student = profile['student_id']?.toString() ?? '';
+        if (profile['id'].toString() == user && student.isNotEmpty) {
+          for (final provider in AcademicProviderId.values) {
+            final identity = AcademicIdentityKey(
+                appUserId: user, providerId: provider, studentId: student);
+            final connection = AcademicConnectionStore(identity, preferences);
+            // 旧版本未序列化 Provider 时，只认完整身份对应的既有本机记录。
+            if (explicitProvider == provider || connection.initialized) {
+              final enabled = connection.connected;
+              await store.importLegacy(identity, enabled: enabled);
+            }
+          }
+        }
+      }
     }
-    if (_identityListLoaded && !force) return _identityBindings;
-    final bindings = await client.listIdentities();
-    // 身份列表请求可能跨越 App 账号切换；旧账号的响应不能写入新账号
-    // 的缓存，也不能继续参与 Provider 选择。
-    if (_appUserId != appUserId ||
-        _contextGeneration != contextGeneration ||
-        _closed) {
-      return const <AcademicIdentityBinding>[];
+    for (final identity in store.identities) {
+      await AcademicStoragePreferences(
+              appUserId: user, identity: identity, store: preferences)
+          .migrateLegacyPreferences();
     }
-    _identityBindings = List<AcademicIdentityBinding>.unmodifiable(bindings);
-    _identityListLoaded = true;
+    if (_appUserId != user || _closed) return const [];
+    _identityBindings = store.identities
+        .map((identity) => AcademicIdentityBinding(
+            providerId: identity.providerId,
+            studentId: identity.studentId,
+            verified: false))
+        .toList();
+    unawaited(syncConfiguration());
     return _identityBindings;
   }
 
-  /// 启动恢复先用服务端身份列表选定 Provider，再由控制器尝试对应身份的
-  /// 本地会话保险箱。旧接口没有 provider_id 时继续保留兼容路径。
+  Future<void> syncConfiguration() async {
+    final user = _appUserId;
+    final store = accountStore;
+    if (user == null || store == null || configClient == null || _closed) {
+      return;
+    }
+    bool current() =>
+        !_closed && _appUserId == user && identical(accountStore, store);
+    try {
+      await configClient!.sync(store, current);
+      if (current()) {
+        for (final identity in store.identities) {
+          await AcademicStoragePreferences(
+                  appUserId: user, identity: identity, store: store.preferences)
+              .migrateLegacyPreferences();
+        }
+        if (current()) onConfigChanged?.call();
+      }
+    } catch (_) {
+      // Outbox 已落盘；云端故障只影响同步状态，不中断学校请求。
+    }
+  }
+
+  void markSessionAuthenticated() => _selected?.markSessionAuthenticated();
+
+  Future<void> beginProvisional(AcademicIdentityKey identity) async {
+    if (_provisional) await cancelProvisional();
+    _rollback = _selected;
+    _selected = null;
+    _provisional = true;
+    await selectProvider(identity);
+  }
+
+  void commitProvisional() {
+    _rollback?.close();
+    _rollback = null;
+    _provisional = false;
+  }
+
+  Future<void> cancelProvisional() async {
+    if (!_provisional) return;
+    final candidate = _selected;
+    _selected = _rollback;
+    _rollback = null;
+    _provisional = false;
+    candidate?.close();
+  }
+
+  /// 启动只读本机账号与选择，学校会话由对应 Provider 的保险箱恢复。
   Future<bool> ensureIdentitySelection() async {
     if (_selected != null) return true;
     final appUserId = _appUserId;
@@ -97,7 +179,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
         _contextGeneration != contextGeneration) {
       return false;
     }
-    final preferredProvider = AcademicProviderId.tryParse(
+    final preferredProvider = accountStore?.activeProvider ??
+        AcademicProviderId.tryParse(
             preferences.getString('academic_active_provider_$appUserId') ??
                 '') ??
         providerIdLoader?.call();
@@ -150,9 +233,18 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     final old = _selected;
     _selected = null;
     old?.close();
+    _rollback?.close();
+    _rollback = null;
+    _provisional = false;
+    _syncTimer?.cancel();
+    accountStore = null;
     _appUserId = next;
+    if (next != null && configClient != null) {
+      _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        unawaited(syncConfiguration());
+      });
+    }
     _identityBindings = const [];
-    _identityListLoaded = false;
   }
 
   /// 断开本机会话时也要使同一 App 账号的在途恢复失效；仅比较学号或
@@ -163,7 +255,6 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     _selected = null;
     old?.close();
     _identityBindings = const [];
-    _identityListLoaded = false;
   }
 
   Future<void> clearSelectedProvider() async {
@@ -250,7 +341,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   Future<void> resetSession() => _active.resetSession();
   @override
   Future<void> restoreSession() async {
-    if (_selected == null && _appUserId != null && identityClient != null) {
+    if (_selected == null && _appUserId != null) {
       // 身份列表为空或读取失败都不能回退服务器代登录。
       await ensureIdentitySelection();
       return;
@@ -269,6 +360,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   void close() {
     if (_closed) return;
     _closed = true;
+    _syncTimer?.cancel();
+    _rollback?.close();
     _selected?.close();
     legacy.close();
   }

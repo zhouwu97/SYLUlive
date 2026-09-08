@@ -55,3 +55,21 @@ func MigrateAcademicIdentities(db *gorm.DB) error {
 		return nil
 	})
 }
+
+// SeedAcademicAccountConfigs 仅为历史身份补首次云端配置；已有配置和删除墓碑始终优先。
+func SeedAcademicAccountConfigs(db *gorm.DB) error {
+	var bindings []models.AcademicIdentityBinding
+	if err := db.Where("user_id IN (?)", db.Model(&models.User{}).Select("id").Where("account_status = ? OR account_status = ?", "active", "")).Find(&bindings).Error; err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, binding := range bindings {
+			config := models.AcademicAccountConfig{UserID: binding.UserID, ProviderID: binding.ProviderID,
+				StudentID: binding.StudentID, State: "active", Revision: 1}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&config).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

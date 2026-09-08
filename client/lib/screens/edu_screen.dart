@@ -155,9 +155,9 @@ class _EduScreenState extends State<EduScreen> {
                           ? (context
                                   .watch<AcademicSessionController>()
                                   .isAuthenticated
-                              ? '学生身份已验证 · 本机已连接'
-                              : '身份已验证 · 本机待连接')
-                          : '未添加学生身份',
+                              ? '教务已配置 · 本机已连接'
+                              : '教务已配置 · 本机待连接')
+                          : '未配置教务账号',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,

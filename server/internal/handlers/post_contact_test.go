@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"shenliyuan/internal/services"
 	"strconv"
 	"strings"
 	"testing"
@@ -62,6 +63,17 @@ func TestNormalizeMarketContact(t *testing.T) {
 func TestCreateAndUpdateMarketPostContact(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260718")
+	if err := services.MigrateAcademicIdentities(db); err != nil {
+		t.Fatal(err)
+	}
+	var migrated models.User
+	if err := db.First(&migrated, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if migrated.StudentVerifiedAt != nil {
+		t.Fatal("旧认证字段必须已被迁移消费")
+	}
+
 	image := createMarketTagsTestImage(t, db, user.ID)
 	handler := NewPostHandler(db, "", "")
 

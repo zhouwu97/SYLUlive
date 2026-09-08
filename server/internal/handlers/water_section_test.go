@@ -32,6 +32,7 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.AcademicIdentityBinding{},
 		&models.File{},
 		&models.FileUploadGrant{},
 		&models.ImageVariant{},

@@ -1,3 +1,4 @@
+import 'local_academic_account_store.dart';
 import 'dart:convert';
 import '../../../platform/contracts/preferences_store.dart';
 import '../domain/academic_provider.dart';
@@ -10,12 +11,28 @@ final class AcademicConnectionStore {
   final AppPreferencesStore preferences;
   String get _prefix => 'academic_lifecycle_${identity.storageId}';
   bool get cleanupPending => preferences.getBool('${_prefix}_cleanup') == true;
-  bool get connected =>
-      !cleanupPending && preferences.getBool('${_prefix}_connected') == true;
+  Map<String, dynamic> get _local =>
+      LocalAcademicAccountStore(identity.appUserId, preferences)
+          .entry(identity.providerId);
+  bool get connected {
+    if (cleanupPending) return false;
+    final local = _local;
+    if (local['student_id'] == identity.studentId) {
+      return local['enabled'] == true;
+    }
+    return preferences.getBool('${_prefix}_connected') == true;
+  }
 
-  bool get initialized => preferences.getBool('${_prefix}_connected') != null;
+  bool get initialized =>
+      _local['student_id'] == identity.studentId ||
+      preferences.getBool('${_prefix}_connected') != null;
 
   Future<void> setConnected(bool value) async {
+    if (_local['student_id'] == identity.studentId) {
+      await LocalAcademicAccountStore(identity.appUserId, preferences)
+          .setEnabled(identity.providerId, value);
+      return;
+    }
     if (!identity.isValid ||
         !await preferences.setBool('${_prefix}_connected', value)) {
       throw StateError('保存本机教务连接状态失败');

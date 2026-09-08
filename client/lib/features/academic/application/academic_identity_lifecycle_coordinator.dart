@@ -81,7 +81,6 @@ final class AcademicIdentityLifecycleCoordinator {
       store: preferences,
     );
     await attempt(settings.migrateLegacyPreferences);
-    await attempt(() => settings.setSaveCredentials(false));
     await attempt(() async {
       if (clearVault != null) {
         await clearVault!(identity);

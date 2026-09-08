@@ -15,7 +15,12 @@ void main() {
       appUserId: 'u',
       providerId: AcademicProviderId.syluGraduate,
       studentId: 'b');
-  setUp(() => AppPreferencesStore.setMockInitialValues({}));
+  setUp(() async {
+    AppPreferencesStore.setMockInitialValues({});
+    final prefs = await AppPreferencesStore.getInstance();
+    await AcademicConnectionStore(a,prefs).setConnected(true);
+    await AcademicConnectionStore(b,prefs).setConnected(true);
+  });
 
   test('旧身份清理不删除新身份投影，即使允许清理历史无主数据', () async {
     var data = '';

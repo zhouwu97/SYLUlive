@@ -41,7 +41,7 @@ func TestSchoolAuthorityRetiredMiddlewareStopsBeforeHandler(t *testing.T) {
 }
 
 func TestSchoolAuthRoutesStayRetiredWithLegacySwitchOff(t *testing.T) {
-	for _, path := range []string{"/api/register_with_edu", "/api/login_edu", "/api/password/edu/reset", "/api/forgot_password"} {
+	for _, path := range []string{"/api/register_with_edu", "/api/login_edu", "/api/password/edu/reset", "/api/forgot_password", "/api/edu/pre_verify", "/api/edu/bind", "/api/student-identity/challenge", "/api/student-identity/verify", "/api/student-identity/change"} {
 		router := gin.New()
 		router.Use(SchoolAuthorityRetirementGate(false))
 		router.POST(path, func(c *gin.Context) { t.Fatal("旧认证处理器不应执行") })

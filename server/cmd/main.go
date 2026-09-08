@@ -191,6 +191,8 @@ func main() {
 
 		&models.User{},
 		&models.AcademicIdentityBinding{},
+		&models.AcademicAccountConfig{},
+		&models.AcademicConfigReceipt{},
 		&models.AcademicIdentityChallenge{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
@@ -383,6 +385,9 @@ func main() {
 	}
 	if err := services.MigrateAcademicIdentities(db); err != nil {
 		log.Fatal("学生身份回填失败:", err)
+	}
+	if err := services.SeedAcademicAccountConfigs(db); err != nil {
+		log.Fatal("教务账号配置回填失败:", err)
 	}
 	if err := models.EnsureCanteenDishSchema(db); err != nil {
 		log.Fatal("食堂菜品索引迁移失败:", err)
@@ -580,7 +585,7 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID, X-Auth-Transport, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Expected-App-User, X-Request-ID, X-Auth-Transport, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
@@ -1967,12 +1972,18 @@ func main() {
 	// Provider-aware 身份路由只保存最小学生身份；研究生学校会话与密码不进入 Go 服务端持久层。
 	studentIdentity := r.Group("/api/student-identity")
 	studentIdentity.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	studentIdentity.POST("/challenge", academicIdentityHandler.CreateChallenge)
-	studentIdentity.POST("/verify", academicIdentityHandler.Verify)
-	studentIdentity.POST("/change/challenge", academicIdentityHandler.CreateChangeChallenge)
-	studentIdentity.POST("/change", academicIdentityHandler.Change)
+	studentIdentity.POST("/challenge", handlers.FrozenAcademicIdentityMutation)
+	studentIdentity.POST("/verify", handlers.FrozenAcademicIdentityMutation)
+	studentIdentity.POST("/change/challenge", handlers.FrozenAcademicIdentityMutation)
+	studentIdentity.POST("/change", handlers.FrozenAcademicIdentityMutation)
 	studentIdentity.GET("", academicIdentityHandler.List)
-	studentIdentity.DELETE("", academicIdentityHandler.Unbind)
+	academicConfigs := handlers.NewAcademicAccountConfigHandler(db)
+	configRoutes := r.Group("/api/academic-account-configs", middleware.AuthMiddleware(db, cfg.JWTSecret))
+	configRoutes.GET("", academicConfigs.List)
+	configRoutes.PUT("/:provider", academicConfigs.Mutate)
+	configRoutes.DELETE("/:provider", academicConfigs.Mutate)
+
+	studentIdentity.DELETE("", handlers.FrozenAcademicIdentityMutation)
 
 	edu := r.Group("/api/edu")
 	if cfg.SchoolAuthorityRetired {

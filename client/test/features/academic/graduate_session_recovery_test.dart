@@ -1,3 +1,4 @@
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +86,7 @@ void main() {
           provider: provider,
           identity: identity,
           sessionArtifactVaultFactory: (_) => vault);
+      await AcademicConnectionStore(identity, await AppPreferencesStore.getInstance()).setConnected(true);
       await controller.syncAppUser(identity.appUserId);
       expect(await controller.ensureAuthenticated(), scenario == 'success');
       final artifact = await vault.read();

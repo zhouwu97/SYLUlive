@@ -165,6 +165,7 @@ void main() {
     });
 
     await controller.syncAppUser('app-user');
+    await controller.allowDeviceConnection();
     final login = await controller.login(
       studentId: provider.identity.studentId,
       password: 'fixture-password',
@@ -209,6 +210,7 @@ void main() {
     });
 
     await controller.syncAppUser('app-user');
+    await controller.allowDeviceConnection();
     await controller.login(
       studentId: provider.identity.studentId,
       password: 'fixture-password',

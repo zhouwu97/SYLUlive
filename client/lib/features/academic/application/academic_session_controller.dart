@@ -83,6 +83,7 @@ final class AcademicSessionController extends ChangeNotifier {
         _cleanupCoordinator =
             cleanupCoordinator ?? AccountSessionCleanupCoordinator.instance {
     _cleanupCoordinator.register(this, resetSession);
+    providerRouter?.onConfigChanged = _notifyListeners;
   }
 
   AcademicSessionController.forProvider({
@@ -211,7 +212,8 @@ final class AcademicSessionController extends ChangeNotifier {
   StudentProfile? get profile => _profile;
   CaptchaChallenge? get captchaChallenge => _captchaChallenge;
   String? get captchaSuggestion => _captchaChallenge?.suggestedCode;
-  double? get captchaSuggestionConfidence => _captchaChallenge?.suggestionConfidence;
+  double? get captchaSuggestionConfidence =>
+      _captchaChallenge?.suggestionConfidence;
   CourseFetchResult? get lastCourses => _lastCourses;
   GradeFetchResult? get lastGrades => _lastGrades;
   AcademicFailure? get failure => _failure;
@@ -378,7 +380,10 @@ final class AcademicSessionController extends ChangeNotifier {
       if (identity != null &&
           (_pendingAcademicChallenge == null ||
               _pendingAcademicChallenge!.generation != generation ||
-              DateTime.now().toUtc().difference(_pendingAcademicChallenge!.createdAt) > const Duration(seconds: 90))) {
+              DateTime.now()
+                      .toUtc()
+                      .difference(_pendingAcademicChallenge!.createdAt) >
+                  const Duration(seconds: 90))) {
         return const CaptchaExpired(message: '验证码登录会话已失效，请重新获取验证码');
       }
       // 验证码挑战是单次消费材料；重试必须由 Provider 生成新的挑战。
@@ -405,7 +410,8 @@ final class AcademicSessionController extends ChangeNotifier {
     final generation = ++_accountGeneration;
     _pendingAcademicChallenge = null;
     return _enqueue(() async {
-      if (_disposed || generation != _accountGeneration ||
+      if (_disposed ||
+          generation != _accountGeneration ||
           !await remoteAccessAllowed()) {
         return;
       }
@@ -414,8 +420,10 @@ final class AcademicSessionController extends ChangeNotifier {
       _notifyListeners();
       try {
         final challenge = await switch (_repository) {
-          ProviderAcademicRepository repository => repository.refreshCaptchaChallenge(),
-          AcademicProviderRouterRepository router => router.refreshCaptchaChallenge(),
+          ProviderAcademicRepository repository =>
+            repository.refreshCaptchaChallenge(),
+          AcademicProviderRouterRepository router =>
+            router.refreshCaptchaChallenge(),
           _ => _repository.getCaptchaChallenge(),
         };
         if (generation != _accountGeneration || _disposed) return;
@@ -630,13 +638,15 @@ final class AcademicSessionController extends ChangeNotifier {
       return false;
     }
     if (current == null) return !_disposed;
+    if (providerRouter?.isProvisional == true) return !_disposed;
     try {
       final store = AcademicConnectionStore(
-        current, await AppPreferencesStore.getInstance());
+          current, await AppPreferencesStore.getInstance());
       if (!isCurrentContext(generation: generation) || identity != current) {
         return false;
       }
-      if (!store.connected) {
+      final enabled = store.connected;
+      if (!enabled) {
         _connectionPreference = store.initialized
             ? AcademicConnectionPreference.disconnected
             : AcademicConnectionPreference.uninitialized;
@@ -661,15 +671,20 @@ final class AcademicSessionController extends ChangeNotifier {
     _notifyListeners();
     if (current != null) {
       final store = AcademicConnectionStore(
-        current, await AppPreferencesStore.getInstance());
+          current, await AppPreferencesStore.getInstance());
       await store.setConnected(false);
     }
-    if (isCurrentContext(generation: invalidatedGeneration)) await resetSession();
+    if (isCurrentContext(generation: invalidatedGeneration)) {
+      await resetSession();
+    }
     if (current != null) {
       await (_sessionArtifactVaultFactory?.call(current) ??
-          AcademicSessionArtifactVault(identity: current)).delete();
+              AcademicSessionArtifactVault(identity: current))
+          .delete();
     }
-    if (identity == current && _sessionResetPending) throw StateError('学校会话清理失败，请重试');
+    if (identity == current && _sessionResetPending) {
+      throw StateError('学校会话清理失败，请重试');
+    }
   }
 
   /// 服务端确认解绑后卸载身份，清理失败也不允许旧会话重新挂载。
@@ -696,7 +711,7 @@ final class AcademicSessionController extends ChangeNotifier {
     final generation = _accountGeneration;
     if (current != null) {
       final store = AcademicConnectionStore(
-        current, await AppPreferencesStore.getInstance());
+          current, await AppPreferencesStore.getInstance());
       if (store.cleanupPending) throw StateError('请先完成本机教务资料清理');
       await store.setConnected(true);
     }
@@ -733,6 +748,35 @@ final class AcademicSessionController extends ChangeNotifier {
 
   /// 将已由服务端确认的身份切换到对应本机 Provider。切换会销毁旧
   /// Provider，避免本科和研究生 Cookie、验证码状态互相复用。
+  Future<void> beginLocalConnection(AcademicIdentityKey identity) async {
+    final router = providerRouter;
+    if (router == null) throw StateError('本机教务路由未初始化');
+    ++_accountGeneration;
+    _pendingAcademicChallenge = null;
+    _clearViewState(AcademicSessionStatus.idle);
+    await router.beginProvisional(identity);
+    _connectionPreference = AcademicConnectionPreference.connected;
+    _studentId = identity.studentId;
+    _notifyListeners();
+  }
+
+  Future<void> cancelLocalConnection() async {
+    final router = providerRouter;
+    if (router?.isProvisional != true) return;
+    ++_accountGeneration;
+    await router!.cancelProvisional();
+    _pendingAcademicChallenge = null;
+    _clearViewState(_repository.sessionState == SessionState.authenticated
+        ? AcademicSessionStatus.authenticated
+        : AcademicSessionStatus.idle);
+    _studentId = identity?.studentId;
+    _connectionPreference = AcademicConnectionPreference.connected;
+    _notifyListeners();
+  }
+
+  Future<void> persistCurrentSession() =>
+      _persistSessionArtifact(_accountGeneration);
+
   Future<void> selectProviderIdentity(AcademicIdentityKey identity) async {
     if (this.identity == identity) return;
     final router = providerRouter;
@@ -750,7 +794,10 @@ final class AcademicSessionController extends ChangeNotifier {
     if (!isCurrentContext(generation: generation)) return;
     final preferences = await AppPreferencesStore.getInstance();
     if (!isCurrentContext(generation: generation)) return;
-    if (!await preferences.setString('academic_active_provider_${identity.appUserId}', identity.providerId.value)) {
+    await router.accountStore?.setActive(identity.providerId);
+    if (!await preferences.setString(
+        'academic_active_provider_${identity.appUserId}',
+        identity.providerId.value)) {
       throw StateError('保存当前教务身份失败');
     }
     _connectionPreference = AcademicConnectionPreference.connected;
@@ -827,15 +874,19 @@ final class AcademicSessionController extends ChangeNotifier {
               // 兼容仓储状态，避免冷启动重复请求学校资料接口。
               (_repository as ProviderAcademicRepository)
                   .markSessionAuthenticated();
+            } else if (providerRouter != null) {
+              providerRouter!.markSessionAuthenticated();
             } else {
               await _repository.restoreSession();
               if (!isCurrentContext(generation: generation)) return false;
             }
             restoredFromArtifact = true;
           } catch (error) {
-            final expired = error is AcademicAuthFailure && error.type == AcademicAuthFailureType.sessionExpired ||
+            final expired = error is AcademicAuthFailure &&
+                    error.type == AcademicAuthFailureType.sessionExpired ||
                 error is SessionExpiredException ||
-                error is GraduatePortalException && error.code == 'SESSION_EXPIRED';
+                error is GraduatePortalException &&
+                    error.code == 'SESSION_EXPIRED';
             if (!expired) rethrow;
             if (!isCurrentContext(generation: generation)) return false;
             await vaultFactory(currentIdentity).delete();
@@ -879,7 +930,9 @@ final class AcademicSessionController extends ChangeNotifier {
     _notifyListeners();
     return _enqueue(() async {
       if (restoring != null) {
-        try { await restoring; } catch (_) { /* 恢复失败仍必须清理运行时。 */ }
+        try {
+          await restoring;
+        } catch (_) {/* 恢复失败仍必须清理运行时。 */}
       }
       if (_disposed || generation != _accountGeneration) return;
       try {
@@ -963,7 +1016,10 @@ final class AcademicSessionController extends ChangeNotifier {
           final failure = AcademicFailure.fromException(error);
           _profileStatus = AcademicProfileStatus.error;
           _failure = failure;
-          if (failure.kind == AcademicFailureKind.sessionExpired) {
+          if (failure.kind == AcademicFailureKind.sessionExpired ||
+              error is AcademicAuthFailure &&
+                  error.type == AcademicAuthFailureType.identityMismatch) {
+            await _repository.resetSession();
             _status = AcademicSessionStatus.error;
             _notifyListeners();
             return LoginPageChanged(message: failure.message);
@@ -1069,7 +1125,9 @@ final class AcademicSessionController extends ChangeNotifier {
         CaptchaRequired(message: failure.message),
       AcademicFailureKind.captchaExpired =>
         CaptchaExpired(message: failure.message),
-      AcademicFailureKind.network || AcademicFailureKind.schoolUnavailable => NetworkUnavailable(
+      AcademicFailureKind.network ||
+      AcademicFailureKind.schoolUnavailable =>
+        NetworkUnavailable(
           message: failure.message,
           cause: NetworkException(
             message: failure.message,
@@ -1173,6 +1231,7 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   Future<void> _persistSessionArtifact(int generation) async {
+    if (providerRouter?.isProvisional == true) return;
     if (!isCurrentContext(generation: generation)) return;
     final activeProvider = provider;
     final currentIdentity = identity;
@@ -1202,7 +1261,8 @@ final class AcademicSessionController extends ChangeNotifier {
     final identity = this.identity;
     if (identity == null || _captchaChallenge == null) return null;
     return PendingAcademicChallenge(
-      challengeId: '${identity.storageId}:$_accountGeneration:${DateTime.now().microsecondsSinceEpoch}',
+      challengeId:
+          '${identity.storageId}:$_accountGeneration:${DateTime.now().microsecondsSinceEpoch}',
       identity: identity,
       generation: _accountGeneration,
       createdAt: DateTime.now().toUtc(),
@@ -1239,6 +1299,7 @@ final class AcademicSessionController extends ChangeNotifier {
 
   @override
   void dispose() {
+    providerRouter?.onConfigChanged = null;
     _disposed = true;
     _cleanupCoordinator.unregister(this);
     super.dispose();

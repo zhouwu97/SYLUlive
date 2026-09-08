@@ -54,6 +54,7 @@ class _FakeEduProvider extends EduProvider {
   final _LoadMode academicMode;
   final String academicErrorMessage;
   final bool bound;
+  final GradeCacheEntry? initialCache;
   final List<EduGrade> grades;
   final EduAcademicSituation academicSituation;
   final List<Completer<OperationResult<List<EduGrade>>>> _pendingGrades = [];
@@ -67,6 +68,7 @@ class _FakeEduProvider extends EduProvider {
     this.academicMode = _LoadMode.data,
     this.academicErrorMessage = '测试学业情况错误',
     this.bound = true,
+    this.initialCache,
     List<EduGrade>? grades,
     EduAcademicSituation? academicSituation,
   })  : grades = grades ?? _sampleGrades(),
@@ -89,6 +91,7 @@ class _FakeEduProvider extends EduProvider {
 
   @override
   GradeCacheEntry? getCachedGrades(String year, int semester) {
+    if (initialCache != null) return initialCache;
     if (gradeMode != _LoadMode.data) return null;
     return GradeCacheEntry(grades: grades, updatedAt: DateTime(2026, 7, 21));
   }
@@ -260,6 +263,7 @@ void main() {
     expect(find.text('成绩获取失败'), findsNothing);
     expect(find.text('当前学期暂无成绩'), findsNothing);
 
+    expect(find.textContaining('-- 门课程'), findsOneWidget);
     edu.finishPendingGrades();
     await tester.pumpAndSettle();
   });
@@ -272,8 +276,24 @@ void main() {
 
     expect(find.text('成绩获取失败'), findsOneWidget);
     expect(find.text('测试成绩错误'), findsOneWidget);
+    expect(find.textContaining('-- 门课程'), findsOneWidget);
+    expect(find.textContaining('0 门课程'), findsNothing);
     expect(find.text('当前学期暂无成绩'), findsNothing);
   });
+
+  for (final cachedGrades in [<EduGrade>[], _sampleGrades()]) {
+    testWidgets('刷新失败仍展示有效缓存，课程数 ${cachedGrades.length}', (tester) async {
+      await _pumpGradeScreen(tester,
+          edu: _FakeEduProvider(
+            gradeMode: _LoadMode.error,
+            initialCache: GradeCacheEntry(
+                grades: cachedGrades, updatedAt: DateTime(2026, 9, 8, 22, 30)),
+          ));
+      expect(find.text('成绩获取失败'), findsNothing);
+      expect(find.textContaining('${cachedGrades.length} 门课程'), findsOneWidget);
+      expect(find.textContaining('上次更新'), findsOneWidget);
+    });
+  }
 
   testWidgets('成绩空数据和学业空数据均显示明确空状态', (tester) async {
     await _pumpGradeScreen(

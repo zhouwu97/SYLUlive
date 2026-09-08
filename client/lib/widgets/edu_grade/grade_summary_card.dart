@@ -6,18 +6,24 @@ class GradeSummaryCard extends StatelessWidget {
   final String selectedYear;
   final int selectedSemester;
   final List<EduGrade> grades;
+  final bool hasValidData;
+  final DateTime? updatedAt;
+  final bool isRefreshing;
 
   const GradeSummaryCard({
     super.key,
     required this.selectedYear,
     required this.selectedSemester,
     required this.grades,
+    this.hasValidData = true,
+    this.updatedAt,
+    this.isRefreshing = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final courseCount = grades.length;
+    final courseCount = hasValidData ? grades.length.toString() : '--';
     final termGpa = EduGrade.computeWeightedGpa(grades);
     final gpaText = termGpa?.toStringAsFixed(2) ?? '--';
 
@@ -92,7 +98,9 @@ class GradeSummaryCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '$courseCount 门课程',
+                    '$courseCount 门课程'
+                    '${updatedAt == null ? '' : '\n上次更新 ${updatedAt!.toLocal().month}月${updatedAt!.toLocal().day}日 ${updatedAt!.toLocal().hour.toString().padLeft(2, '0')}:${updatedAt!.toLocal().minute.toString().padLeft(2, '0')}'}'
+                    '${isRefreshing ? '\n正在连接教务…' : ''}',
                     style: TextStyle(
                       fontSize: 13,
                       color: subColor,

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:html/parser.dart' as html_parser;
+import '../parser/credit_requirement_json_parser.dart';
 import 'package:dio/dio.dart';
 
 import '../auth/login_page_detector.dart';
@@ -31,33 +34,36 @@ final class CreditRequirementApi {
       final entryResponse = await _dio.get<String>(
         '/xjyj/xjyj_cxXjyjIndex.html',
         queryParameters: {
-          'gnmkdm': 'N105515',
+          'gnmkdm': 'N105505',
           'layout': 'default',
         },
         options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: false,
           headers: {
             'Accept':
                 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Referer': 'https://jxw.sylu.edu.cn/xtgl/index_initMenu.html',
           },
-          validateStatus: (status) => status != null && status < 500,
+          validateStatus: (status) =>
+              status != null && (status < 500 || status == 901),
         ),
       );
 
       final entryBody = entryResponse.data;
+      // 检查会话过期
+      if (entryResponse.statusCode == 302 ||
+          entryResponse.statusCode == 901 ||
+          LoginPageDetector.isLoginPage(entryBody ?? '')) {
+        _session.markExpired();
+        throw const SessionExpiredException();
+      }
+
       if (entryBody == null || entryBody.isEmpty) {
         throw const ParseException(
           message: '学分要求响应为空',
           code: 'EMPTY_RESPONSE',
         );
-      }
-
-      // 检查会话过期
-      if (entryResponse.statusCode == 302 ||
-          entryResponse.statusCode == 901 ||
-          LoginPageDetector.isLoginPage(entryBody)) {
-        _session.markExpired();
-        throw const SessionExpiredException();
       }
 
       if (entryResponse.statusCode != 200) {
@@ -71,12 +77,12 @@ final class CreditRequirementApi {
       final queryParams = _extractQueryParams(entryBody);
 
       // 如果没有查询参数或入口页已包含完整数据，直接解析
-      if (queryParams.isEmpty || _looksComplete(entryBody)) {
+      if (queryParams.length != 3) {
         final requirement = CreditRequirementParser.parse(entryBody);
         if (!requirement.success) {
           throw ParseException(
-            message: requirement.message ?? '学分要求解析失败',
-            code: 'CREDIT_REQUIREMENT_PARSE_ERROR',
+            message: '学分要求查询选项不完整，学校协议可能发生变化',
+            code: 'CREDIT_REQUIREMENT_QUERY_PROTOCOL_CHANGED',
           );
         }
         return requirement;
@@ -86,34 +92,37 @@ final class CreditRequirementApi {
       final detailResponse = await _dio.post<String>(
         '/xjyj/xjyj_cxXjyjjdlb.html',
         queryParameters: {
-          'gnmkdm': 'N105515',
+          'gnmkdm': 'N105505',
         },
         data: queryParams,
         options: Options(
+          responseType: ResponseType.plain,
+          followRedirects: false,
           headers: {
-            'Accept':
-                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': 'https://jxw.sylu.edu.cn/xjyj/xjyj_cxXjyjIndex.html',
           },
-          validateStatus: (status) => status != null && status < 500,
+          validateStatus: (status) =>
+              status != null && (status < 500 || status == 901),
         ),
       );
 
       final detailBody = detailResponse.data;
+      // 检查会话过期
+      if (detailResponse.statusCode == 302 ||
+          detailResponse.statusCode == 901 ||
+          LoginPageDetector.isLoginPage(detailBody ?? '')) {
+        _session.markExpired();
+        throw const SessionExpiredException();
+      }
+
       if (detailBody == null || detailBody.isEmpty) {
         throw const ParseException(
           message: '学分要求详细响应为空',
           code: 'EMPTY_RESPONSE',
         );
-      }
-
-      // 检查会话过期
-      if (detailResponse.statusCode == 302 ||
-          detailResponse.statusCode == 901 ||
-          LoginPageDetector.isLoginPage(detailBody)) {
-        _session.markExpired();
-        throw const SessionExpiredException();
       }
 
       if (detailResponse.statusCode != 200) {
@@ -123,7 +132,13 @@ final class CreditRequirementApi {
         );
       }
 
-      final requirement = CreditRequirementParser.parse(detailBody);
+      CreditRequirement requirement;
+      try {
+        requirement = CreditRequirementJsonParser.parse(jsonDecode(detailBody));
+      } on FormatException {
+        // 仅兼容学校确实返回完整静态 HTML 的情况。
+        requirement = CreditRequirementParser.parse(detailBody);
+      }
       if (!requirement.success) {
         throw ParseException(
           message: requirement.message ?? '学分要求解析失败',
@@ -140,45 +155,16 @@ final class CreditRequirementApi {
     }
   }
 
-  /// 从入口页 HTML 提取查询参数。
+  /// 只取三个当前选项，不把其他隐藏字段带入学校查询。
   Map<String, String> _extractQueryParams(String html) {
+    final document = html_parser.parse(html);
     final params = <String, String>{};
-
-    // 提取隐藏字段
-    final inputPattern = RegExp(
-      r'<input[^>]*type=["' "'" r']hidden["' "'" r'][^>]*name=["' "'" r']([^"' "'" r']+)["' "'" r'][^>]*value=["' "'" r']([^"' "'" r']*)["' "'" r']',
-      caseSensitive: false,
-    );
-
-    for (final match in inputPattern.allMatches(html)) {
-      final name = match.group(1);
-      final value = match.group(2);
-      if (name != null && value != null) {
-        params[name] = value;
-      }
+    for (final key in ['jg_id', 'njdm_id', 'zyh_id']) {
+      final select = document.querySelector('select#$key, select[name="$key"]');
+      final option = select?.querySelector('option[selected]');
+      final value = option?.attributes['value']?.trim();
+      if (value != null && value.isNotEmpty) params[key] = value;
     }
-
-    // 也尝试另一种顺序：value 在前
-    final inputPattern2 = RegExp(
-      r'<input[^>]*type=["' "'" r']hidden["' "'" r'][^>]*value=["' "'" r']([^"' "'" r']*)["' "'" r'][^>]*name=["' "'" r']([^"' "'" r']+)["' "'" r']',
-      caseSensitive: false,
-    );
-
-    for (final match in inputPattern2.allMatches(html)) {
-      final value = match.group(1);
-      final name = match.group(2);
-      if (name != null && value != null && !params.containsKey(name)) {
-        params[name] = value;
-      }
-    }
-
     return params;
-  }
-
-  /// 检查页面是否已包含完整数据。
-  bool _looksComplete(String html) {
-    // 如果页面包含模块标题和课程表格，认为是完整的
-    return html.contains('模块') &&
-        (html.contains('课程名称') || html.contains('课程号'));
   }
 }

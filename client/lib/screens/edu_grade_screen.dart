@@ -41,8 +41,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   int _selectedSemester = EduSemester.first;
   List<EduGrade> _grades = [];
   GradePageState _pageState = GradePageState.loading;
-  // Cache timestamp — currently not rendered in UI, retained for future use
-  // ignore: unused_field
   DateTime? _lastUpdatedAt;
   bool _isInitialLoading = false;
   bool _isRefreshing = false;
@@ -359,8 +357,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Future<void> _loadGrades() async {
     if (_eduProvider == null) return;
 
-    final cache =
-        _eduProvider!.getCachedGrades(_selectedYear, _selectedSemester);
+    final gen = ++_requestGeneration;
+    final cache = await _eduProvider!
+        .restoreCachedGrades(_selectedYear, _selectedSemester);
+    if (!mounted || _requestGeneration != gen) return;
     if (cache != null) {
       // Cache hit: show immediately, refresh in background
       setState(() {
@@ -371,7 +371,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isInitialLoading = false;
         _isRefreshing = true;
       });
-      _prefetchGradeDetails(cache.grades);
     } else {
       // Cache miss: full loading state
       setState(() {
@@ -382,7 +381,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    final gen = ++_requestGeneration;
     final result =
         await _eduProvider!.fetchGrades(_selectedYear, _selectedSemester);
 
@@ -404,13 +402,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _prefetchGradeDetails(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
-      if (_grades.isNotEmpty) {
-        // Has previous data — keep it
+      if (cache != null) {
+        // 有效空缓存也属于已知数据，刷新失败时保留。
         setState(() {
           _isInitialLoading = false;
           _isRefreshing = false;
         });
-        if (mounted) _showSnackBar('刷新失败，请稍后重试');
+        if (mounted) _showSnackBar('暂时无法刷新，当前展示上次同步结果');
       } else {
         setState(() {
           _pageState = GradePageState.error;
@@ -811,6 +809,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           selectedYear: _selectedYear,
           selectedSemester: _selectedSemester,
           grades: _grades,
+          hasValidData: _pageState == GradePageState.content ||
+              _pageState == GradePageState.empty,
+          updatedAt: _lastUpdatedAt,
+          isRefreshing: _isRefreshing,
         ),
       ),
       if (_pageState == GradePageState.loading && _grades.isEmpty)

@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+import 'package:shenliyuan/providers/edu_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -81,7 +83,8 @@ void main() {
                         MemoryPreferencesStore()))))));
     await tester.pumpAndSettle();
     expect(find.text('身份已由学校教务确认，登录时不可切换类型'), findsNothing);
-    expect(find.byType(DropdownButtonFormField<AcademicProviderId>), findsNothing);
+    expect(
+        find.byType(DropdownButtonFormField<AcademicProviderId>), findsNothing);
     await tester.enterText(find.byType(TextFormField).first, 'new-student');
     expect(
         tester
@@ -653,6 +656,44 @@ void main() {
     expect(network.kind, AcademicLoginOutcomeKind.networkFailure);
     expect(networkStore.value, isNotNull);
     networkController.dispose();
+  });
+
+  test('冷启动未等待账号重置，直接读取成绩仍通过已保存凭据恢复', () async {
+    AppPreferencesStore.setMockInitialValues({});
+    final source = _FakeAcademicDataSource();
+    final controller = AcademicSessionController(
+        repository: AcademicRepositoryImpl(
+            local: source, legacy: _FakeAcademicDataSource()),
+        identity: const AcademicIdentityKey(
+            appUserId: 'app-user-a',
+            providerId: AcademicProviderId.syluUndergraduate,
+            studentId: '2026000001'),
+        cleanupCoordinator: AccountSessionCleanupCoordinator());
+    final preferences = MemoryPreferencesStore();
+    final credentials = _MemoryAcademicCredentialStore()
+      ..value =
+          const AcademicCredential(studentId: '2026000001', password: 'secret');
+    await AcademicStoragePreferences(
+            appUserId: 'app-user-a', store: preferences)
+        .setSaveCredentials(true);
+    _newCoordinator(controller, credentials, preferences);
+    await AcademicStoragePreferences(
+            appUserId: 'app-user-a',
+            store: await AppPreferencesStore.getInstance())
+        .setSaveAcademicData(false);
+    await controller.allowDeviceConnection();
+    final reset = controller.syncAppUser('app-user-a');
+    final edu = EduProvider(Dio())
+      ..setAcademicSessionController(controller)
+      ..setUserId('app-user-a');
+    final result = await edu.fetchGrades('2025', 3);
+    await reset;
+    expect(result.success, true, reason: result.errorMessage);
+    edu.dispose();
+    expect(source.loginCalls, 1);
+    expect(controller.isAuthenticated, true);
+    expect(source.gradeCalls, 1);
+    controller.dispose();
   });
 
   test('并发自动登录共享同一个学校登录请求', () async {

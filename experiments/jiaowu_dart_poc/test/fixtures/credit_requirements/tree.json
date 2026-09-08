@@ -1,0 +1,46 @@
+[
+  {
+    "xfyqjd_id": "module-1",
+    "xfyqjdmc": "美育模块（限选）",
+    "yqzdxf": "2",
+    "kczdms": "1",
+    "jdkcsx": "1",
+    "kcList": [
+      {
+        "kch": "001",
+        "kcmc": "音乐鉴赏",
+        "xf": "1.5",
+        "jyxdxnmc": "2024-2025",
+        "jyxdxqmc": "1",
+        "xnmc": "2024-2025",
+        "xqmc": "2",
+        "xbx": "通识教育理论选修",
+        "cj": "优秀",
+        "bfzcj": "90",
+        "tdbj": "0",
+        "yxxf": "1.5"
+      }
+    ]
+  },
+  {
+    "xfyqjd_id": "improvement",
+    "xfyqjdmc": "提高课程",
+    "yqzdxf": "0",
+    "kczdms": "0",
+    "jdkcsx": "1",
+    "kcList": [
+      {
+        "kch": "002",
+        "kcmc": "大学外语提高",
+        "xf": "2",
+        "xnmc": "2025-2026",
+        "xqmc": "2",
+        "xbx": "通识教育理论选修",
+        "cj": "86.9",
+        "bfzcj": "86.9",
+        "tdbj": "0",
+        "yxxf": "2"
+      }
+    ]
+  }
+]

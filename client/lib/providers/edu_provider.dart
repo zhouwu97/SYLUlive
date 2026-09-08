@@ -99,6 +99,7 @@ class EduProvider extends ChangeNotifier {
   final Map<String, CreditRequirementCacheEntry> _creditRequirementCache = {};
   int _statusGeneration = 0;
   bool _eduRequestBusy = false;
+  int _foregroundRequests = 0;
   AcademicSessionController? _academicSessionController;
   bool _usingLocalAcademicSession = false;
   Future<void> _persistenceReady = Future<void>.value();
@@ -264,8 +265,10 @@ class EduProvider extends ChangeNotifier {
         '${_studentId.trim()}|$year|$semester|$stableId';
   }
 
-  Future<T> _runEduRequest<T>(Future<T> Function() task) async {
-    while (_eduRequestBusy) {
+  Future<T> _runEduRequest<T>(Future<T> Function() task,
+      {bool background = false}) async {
+    if (!background) _foregroundRequests++;
+    while (_eduRequestBusy || background && _foregroundRequests > 0) {
       await Future.delayed(const Duration(milliseconds: 120));
     }
     _eduRequestBusy = true;
@@ -273,6 +276,7 @@ class EduProvider extends ChangeNotifier {
       return await task();
     } finally {
       _eduRequestBusy = false;
+      if (!background) _foregroundRequests--;
     }
   }
 
@@ -327,7 +331,8 @@ class EduProvider extends ChangeNotifier {
         appUserId: userId, sourceAccountId: sourceAccountId);
     try {
       await _persistenceReady;
-      if (_userId != userId || _studentId.trim() != sourceAccountId ||
+      if (_userId != userId ||
+          _studentId.trim() != sourceAccountId ||
           identity != _academicSessionController?.identity ||
           generation != _academicSessionController?.contextGeneration) {
         return;
@@ -339,7 +344,8 @@ class EduProvider extends ChangeNotifier {
   }
 
   void _setPersistenceReadiness(String userId, String sourceAccountId) {
-    final contextKey = '$userId|$sourceAccountId|${_academicSessionController?.identity?.storageId ?? ''}';
+    final contextKey =
+        '$userId|$sourceAccountId|${_academicSessionController?.identity?.storageId ?? ''}';
     if (contextKey == _persistenceContextKey) return;
     _persistenceContextKey = contextKey;
     final readiness = _loadPersistencePolicy(userId, sourceAccountId);
@@ -367,11 +373,15 @@ class EduProvider extends ChangeNotifier {
       await prefs.markMigrated();
     }
     if (prefs.cleanupPending) enabled = false;
-    if (_userId != userId || contextKey != _persistenceContextKey ||
+    if (_userId != userId ||
+        contextKey != _persistenceContextKey ||
         identity != _academicSessionController?.identity) {
       return;
     }
-    if (identity != null && AcademicConnectionStore(identity, storage).cleanupPending) enabled = false;
+    if (identity != null &&
+        AcademicConnectionStore(identity, storage).cleanupPending) {
+      enabled = false;
+    }
     AcademicPersistenceRegistry.set(userId, enabled: enabled);
   }
 
@@ -590,6 +600,7 @@ class EduProvider extends ChangeNotifier {
 
   Future<void> ensureStatusLoaded() async {
     final controller = _academicSessionController;
+    await controller?.prepareAccountContext();
     if (controller != null &&
         controller.sourceKind == AcademicSourceKind.legacy &&
         !controller.isAuthenticated) {
@@ -651,9 +662,14 @@ class EduProvider extends ChangeNotifier {
     final controller = _academicSessionController;
     final identity = controller?.identity;
     if (controller != null && identity != null) {
-      await AcademicIdentityLifecycleCoordinator(controller: controller,
-          preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
-      if (controller.identity != identity || controller.appUserId != identity.appUserId) return;
+      await AcademicIdentityLifecycleCoordinator(
+              controller: controller,
+              preferences: await AppPreferencesStore.getInstance())
+          .clearLocalIdentity(identity);
+      if (controller.identity != identity ||
+          controller.appUserId != identity.appUserId) {
+        return;
+      }
       clearMemoryForAccountTransition();
       // 本机清除不撤销服务端身份，恢复绑定投影，避免页面误报未绑定。
       _userId = controller.appUserId;
@@ -927,6 +943,40 @@ class EduProvider extends ChangeNotifier {
     });
   }
 
+  /// 从身份隔离的加密快照恢复成绩，不访问学校网络。
+  Future<GradeCacheEntry?> restoreCachedGrades(
+      String year, int semester) async {
+    final memory = getCachedGrades(year, semester);
+    if (memory != null) return memory;
+    final user = _userId;
+    final account = _studentId.trim();
+    final source = _activeAcademicSourceKind;
+    final generation = _academicSessionController?.contextGeneration;
+    if (user == null || account.isEmpty) return null;
+    await _persistenceReady;
+    try {
+      final snapshot = await _academicCacheStoreFor(
+        appUserId: user,
+        sourceAccountId: account,
+      )?.readSnapshot();
+      if (!_isSameAcademicContext(user, account, source) ||
+          generation != _academicSessionController?.contextGeneration) {
+        return null;
+      }
+      for (final term in snapshot?.terms.values ?? <AcademicTermSnapshot>[]) {
+        _gradeCache.putIfAbsent(
+            _cacheKeyFor(user, account, source, term.year, term.semester),
+            () => GradeCacheEntry(
+                grades: term.grades.map(EduGrade.fromJson).toList(),
+                updatedAt: term.fetchedAt));
+      }
+      return getCachedGrades(year, semester);
+    } catch (error) {
+      debugPrint('读取加密成绩失败: ${error.runtimeType}');
+      return null;
+    }
+  }
+
   /// 获取成绩 — 通过当前教务会话按需读取。
   /// 成功时自动写入内存缓存并记录更新时间。
   Future<OperationResult<List<EduGrade>>> fetchGrades(
@@ -954,33 +1004,6 @@ class EduProvider extends ChangeNotifier {
 
     if (raw != null && raw.success && raw.data != null) {
       final grades = raw.data!.map((m) => EduGrade.fromJson(m)).toList();
-      final store = _academicCacheStoreFor(
-        appUserId: requestUserId,
-        sourceAccountId: requestSourceAccountId,
-      );
-      if (store != null) {
-        try {
-          await store.writeGrades(
-            year: year,
-            semester: semester,
-            grades: raw.data!,
-          );
-        } catch (error) {
-          // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
-          debugPrint('保存加密成绩失败: ${error.runtimeType}');
-          return OperationResult.fail(
-            '成绩已获取，但保存加密成绩失败',
-            errorCode: 'local_storage_failed',
-          );
-        }
-      }
-      if (!_isSameAcademicContext(
-        requestUserId,
-        requestSourceAccountId,
-        requestSourceKind,
-      )) {
-        return OperationResult.fail('用户已切换');
-      }
       // 使用捕获的 requestUserId 生成缓存键，防止写入错误用户的缓存
       if (requestSourceAccountId.isNotEmpty) {
         _gradeCache[_cacheKeyFor(
@@ -994,7 +1017,36 @@ class EduProvider extends ChangeNotifier {
           updatedAt: DateTime.now(),
         );
       }
-      return OperationResult.ok(grades);
+      final store = _academicCacheStoreFor(
+        appUserId: requestUserId,
+        sourceAccountId: requestSourceAccountId,
+      );
+      String? storageWarning;
+      if (store != null) {
+        try {
+          await store.writeGrades(
+            year: year,
+            semester: semester,
+            grades: raw.data!,
+          );
+        } catch (error) {
+          // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
+          debugPrint('保存加密成绩失败: ${error.runtimeType}');
+          storageWarning = '成绩已获取，但保存加密成绩失败';
+        }
+      }
+      if (!_isSameAcademicContext(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+      )) {
+        return OperationResult.fail('用户已切换');
+      }
+      return OperationResult(
+          success: true,
+          data: grades,
+          errorMessage: storageWarning,
+          errorCode: storageWarning == null ? null : 'local_storage_failed');
     }
     return OperationResult.fail(
       raw?.errorMessage ?? '获取成绩失败',
@@ -1068,6 +1120,15 @@ class EduProvider extends ChangeNotifier {
     String year,
     int semester, {
     bool forceRefresh = false,
+  }) =>
+      _fetchGradeDetail(grade, year, semester, forceRefresh: forceRefresh);
+
+  Future<OperationResult<EduGradeDetail>> _fetchGradeDetail(
+    EduGrade grade,
+    String year,
+    int semester, {
+    bool forceRefresh = false,
+    bool background = false,
   }) async {
     final requestUserId = _userId;
     final sourceAccountId = _studentId.trim();
@@ -1133,7 +1194,7 @@ class EduProvider extends ChangeNotifier {
         );
       }
       return OperationResult.ok(value);
-    });
+    }, background: background);
   }
 
   /// 在成绩列表稳定后按展示顺序预取构成明细，避免进入详情页时逐门等待。
@@ -1157,10 +1218,17 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null || _studentId.trim().isEmpty) return;
     final controller = _academicSessionController;
     if (controller == null) return;
+    final user = _userId!;
+    final account = _studentId.trim();
+    final source = _activeAcademicSourceKind;
+    final generation = controller.contextGeneration;
     if (initialDelay > Duration.zero) await Future<void>.delayed(initialDelay);
     for (final grade in grades) {
-      if (_userId == null) return;
-      await fetchGradeDetail(grade, year, semester);
+      if (!_isSameAcademicContext(user, account, source) ||
+          controller.contextGeneration != generation) {
+        return;
+      }
+      await _fetchGradeDetail(grade, year, semester, background: true);
       await Future<void>.delayed(const Duration(milliseconds: 80));
     }
   }

@@ -242,6 +242,50 @@ final class AcademicSessionController extends ChangeNotifier {
       ? SessionState.unauthenticated
       : _repository.sessionState;
 
+  /// 完整恢复由协调器注入，必须在数据请求入队前执行，避免登录入队死锁。
+  Future<bool> Function()? readSessionGate;
+
+  Future<void> waitForAccountContextReady() async {
+    while (_sessionResetPending && !_disposed) {
+      final pending = _operationTail;
+      await pending;
+      if (identical(pending, _operationTail)) break;
+    }
+  }
+
+  /// 仅恢复本机身份投影，离线缓存不等待学校 Session 探活。
+  Future<void> prepareAccountContext() async {
+    await waitForAccountContextReady();
+    if (_disposed || _sessionResetPending || _appUserId == null) return;
+    final generation = _accountGeneration;
+    try {
+      if (identity == null) await providerRouter?.ensureIdentitySelection();
+      if (isCurrentContext(generation: generation)) _notifyListeners();
+    } catch (error) {
+      _handleDataFailure(error, generation);
+    }
+  }
+
+  void recordReadSessionFailure(AcademicFailure failure) {
+    _failure = failure;
+    _status = isAuthenticated
+        ? AcademicSessionStatus.authenticated
+        : AcademicSessionStatus.error;
+    _notifyListeners();
+  }
+
+  Future<bool> _enterReadSession() async {
+    final generation = _accountGeneration;
+    await waitForAccountContextReady();
+    if (!isCurrentContext(generation: generation)) return false;
+    await _operationTail;
+    if (!isCurrentContext(generation: generation)) return false;
+    if (isAuthenticated) return true;
+    final gate = readSessionGate;
+    final ready = gate != null ? await gate() : await ensureAuthenticated();
+    return ready && isCurrentContext(generation: generation);
+  }
+
   /// 同步 App JWT 的账号上下文。
   ///
   /// App 账号和学校 Session 是两套身份。这里仅在账号发生变化时清理学校
@@ -249,8 +293,8 @@ final class AcademicSessionController extends ChangeNotifier {
   Future<void> syncAppUser(String? userId) {
     final normalized = userId?.trim();
     final next = normalized == null || normalized.isEmpty ? null : normalized;
-    if (_appUserId == next && !_sessionResetPending) {
-      return Future<void>.value();
+    if (_appUserId == next) {
+      return waitForAccountContextReady();
     }
 
     _connectionPreference = AcademicConnectionPreference.connected;
@@ -443,7 +487,8 @@ final class AcademicSessionController extends ChangeNotifier {
     });
   }
 
-  Future<StudentProfile?> loadProfile() {
+  Future<StudentProfile?> loadProfile() async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -478,7 +523,8 @@ final class AcademicSessionController extends ChangeNotifier {
     required String year,
     required int semester,
     String? providerTermId,
-  }) {
+  }) async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -505,7 +551,8 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   /// 读取当前 Provider 的真实学期列表，供 UI 选择后携带学校 termcode。
-  Future<List<AcademicTerm>?> loadTerms() {
+  Future<List<AcademicTerm>?> loadTerms() async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -533,7 +580,8 @@ final class AcademicSessionController extends ChangeNotifier {
   Future<GradeFetchResult?> loadGrades({
     required String year,
     required int semester,
-  }) {
+  }) async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -565,7 +613,8 @@ final class AcademicSessionController extends ChangeNotifier {
     required String courseName,
     String? courseId,
     String? studentGradeId,
-  }) {
+  }) async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -593,7 +642,8 @@ final class AcademicSessionController extends ChangeNotifier {
     });
   }
 
-  Future<AcademicSituation?> loadAcademicSituation() {
+  Future<AcademicSituation?> loadAcademicSituation() async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
@@ -614,7 +664,8 @@ final class AcademicSessionController extends ChangeNotifier {
     });
   }
 
-  Future<CreditRequirement?> loadCreditRequirements() {
+  Future<CreditRequirement?> loadCreditRequirements() async {
+    if (!await _enterReadSession()) return null;
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;

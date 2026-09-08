@@ -5,7 +5,7 @@ import '../model/credit_requirement.dart';
 
 /// 学分要求解析器。
 ///
-/// 严格迁移 Python 端的 parse_credit_requirement_html 逻辑。
+/// 兼容完整静态 HTML；正常查询使用 AJAX JSON 解析器。
 abstract final class CreditRequirementParser {
   /// 解析学分要求 HTML。
   static CreditRequirement parse(String html) {
@@ -209,8 +209,35 @@ abstract final class CreditRequirementParser {
 
   static ({List<CreditModule> modules, List<ImprovementCourse> improvementCourses})
       _parseFromTables(dom.Document document) {
-    // 表格解析回退策略（简化版）
-    return (modules: const [], improvementCourses: const []);
+    final modules = <CreditModule>[];
+    final improvements = <ImprovementCourse>[];
+    for (final table in document.querySelectorAll('table')) {
+      final headers = _detectCourseTableHeaders(table);
+      if (!headers.containsValue('course_name')) continue;
+      final caption = table.querySelector('caption')?.text;
+      final heading = table.previousElementSibling;
+      final title = _normalizeText(caption ??
+          (heading != null && RegExp(r'^h[1-6]$').hasMatch(heading.localName ?? '') ? heading.text : ''));
+      // 没有可靠的模块归属时失败关闭，不把任意课程表当培养要求。
+      if (title.isEmpty) continue;
+      final raw = _parseCourseRows(table, headers);
+      if (raw.isEmpty) continue;
+      if (title.contains('提高课程')) {
+        improvements.addAll(raw.map((c) => ImprovementCourse(courseId: c.courseCode,
+          courseName: c.courseName, credits: c.credits, grade: c.grade, status: c.rawStatus)));
+        continue;
+      }
+      final courses = raw.map(_rawCourseToModuleCourse).toList();
+      final completed = courses.where((c) => c.completed == true).toList();
+      final earned = completed.fold<double>(0, (sum, c) => sum + c.credits);
+      final required = _extractRequiredCredits(title);
+      final count = _extractRequiredCourseCount(title);
+      modules.add(CreditModule(name: title, requiredCredits: required,
+        earnedCredits: earned, requiredCourseCount: count, courses: courses,
+        status: _computeModuleStatus(requiredCredits: required, earnedCredits: earned,
+          requiredCourseCount: count, completedCourseCount: completed.length)));
+    }
+    return (modules: modules, improvementCourses: improvements);
   }
 
   static List<_RawCourse> _extractAllCoursesFromTables(dom.Document document) {
@@ -276,7 +303,7 @@ abstract final class CreditRequirementParser {
     var foundHeader = false;
 
     for (final tr in rows) {
-      final cells = tr.querySelectorAll('td');
+      final cells = tr.querySelectorAll('th, td');
 
       if (cells.isEmpty) continue;
 

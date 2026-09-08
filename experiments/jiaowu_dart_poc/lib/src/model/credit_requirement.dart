@@ -55,6 +55,11 @@ final class CreditModule {
   final int? requiredCourseCount;
 
   Map<String, Object?> toJson() => {
+        'id': name,
+        'module_type': name.contains('选') ? 'elective' : 'required',
+        'is_optional': name.contains('选'),
+        'completed_course_count':
+            courses.where((c) => c.completed == true).length,
         'name': name,
         'required_credits': requiredCredits,
         'earned_credits': earnedCredits,
@@ -88,8 +93,15 @@ final class ModuleCourse {
   final String? actualYear;
   final String? actualSemester;
 
+  bool? get completed => status == '已选'
+      ? null
+      : status == '通过' || status == '课程替代' || status == '已修读';
+
   Map<String, Object?> toJson() => {
         'course_id': courseId,
+        'course_code': courseId,
+        'raw_status': status,
+        'completed': completed,
         'course_name': courseName,
         'credits': credits,
         'grade': grade,
@@ -117,8 +129,15 @@ final class ImprovementCourse {
   final String grade;
   final String status;
 
+  bool? get completed => status == '已选'
+      ? null
+      : status == '通过' || status == '课程替代' || status == '已修读';
+
   Map<String, Object?> toJson() => {
         'course_id': courseId,
+        'course_code': courseId,
+        'raw_status': status,
+        'completed': completed,
         'course_name': courseName,
         'credits': credits,
         'grade': grade,

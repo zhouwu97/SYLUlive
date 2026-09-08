@@ -1411,10 +1411,12 @@ class MyApp extends StatelessWidget {
               controller!..syncAppUser(auth.user?.id.toString()),
         ),
         ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
+          lazy: false,
           update: (_, controller, previous) {
             final coordinator = previous ?? AcademicLoginCoordinator(controller: controller,
                 captchaSubmissionPolicy: AcademicCaptchaSubmissionPolicy.fromBuildCalibration());
             unawaited(coordinator.resumePendingCleanup().catchError((Object _) {}));
+            unawaited(coordinator.warmUp().catchError((Object _) {}));
             return coordinator;
           },
         ),

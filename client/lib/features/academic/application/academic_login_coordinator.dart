@@ -86,7 +86,32 @@ final class AcademicLoginCoordinator {
     AcademicCaptchaRecognizer Function()? identityCaptchaRecognizerFactory,
   })  : credentialStore = credentialStore ?? PlatformAcademicCredentialStore(),
         _preferencesLoader =
-            preferencesLoader ?? AppPreferencesStore.getInstance;
+            preferencesLoader ?? AppPreferencesStore.getInstance {
+    controller.readSessionGate = () async {
+      final generation = controller.contextGeneration;
+      final result = await ensureAuthenticated();
+      if (!result.isSuccess &&
+          controller.isCurrentContext(generation: generation)) {
+        controller.recordReadSessionFailure(AcademicFailure(
+          kind: switch (result.kind) {
+            AcademicLoginOutcomeKind.credentialsRequired =>
+              AcademicFailureKind.localCredentialRequired,
+            AcademicLoginOutcomeKind.invalidCredentials =>
+              AcademicFailureKind.invalidCredentials,
+            AcademicLoginOutcomeKind.networkFailure =>
+              AcademicFailureKind.network,
+            _ => controller.failure?.kind ?? AcademicFailureKind.unexpected,
+          },
+          message:
+              result.message ?? controller.failure?.message ?? '教务恢复暂未完成，请稍后重试',
+          code: result.kind == AcademicLoginOutcomeKind.credentialsRequired
+              ? 'credentials_required'
+              : controller.failure?.code ?? 'ACADEMIC_SESSION_NOT_READY',
+        ));
+      }
+      return result.isSuccess;
+    };
+  }
 
   final AcademicSessionController controller;
   final AcademicCredentialStore credentialStore;
@@ -407,9 +432,20 @@ final class AcademicLoginCoordinator {
         useSavedCredential: false);
   }
 
+  int? _warmUpGeneration;
+
+  Future<void> warmUp() async {
+    await controller.waitForAccountContextReady();
+    final generation = controller.contextGeneration;
+    if (controller.appUserId == null || _warmUpGeneration == generation) return;
+    _warmUpGeneration = generation;
+    await ensureAuthenticated();
+  }
+
   Future<AcademicLoginOutcome> ensureAuthenticated({
     bool allowSavedCredential = true,
-  }) {
+  }) async {
+    await controller.waitForAccountContextReady();
     if (controller.isAuthenticated) {
       return Future.value(const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.success,

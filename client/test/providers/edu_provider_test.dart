@@ -1,3 +1,6 @@
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -102,6 +105,13 @@ void main() {
     if (saveAcademicData != null) {
       await preferences.setSaveAcademicData(saveAcademicData);
     }
+    await AcademicConnectionStore(
+            const AcademicIdentityKey(
+                appUserId: 'app-user-a',
+                providerId: AcademicProviderId.syluUndergraduate,
+                studentId: '2403130233'),
+            await AppPreferencesStore.getInstance())
+        .setConnected(true);
     provider.setUserId('app-user-a');
     await provider.ensureStatusLoaded();
     return _EduFixture(provider, controller, repository);
@@ -186,6 +196,42 @@ void main() {
       expect(fixture.provider.getCachedGrades('2025', 12), isNotNull);
 
       fixture.dispose();
+    });
+
+    test('新 Provider 从真实 AES-GCM 快照恢复成绩并隔离账号', () async {
+      final fixture = await createFixture(saveAcademicData: true);
+      addTearDown(fixture.dispose);
+      await AcademicPersistenceRegistry.waitUntilReady('app-user-a');
+      AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+      final fetched = await fixture.provider.fetchGrades('2025', 3);
+      expect(fetched.success, true);
+      final fresh = EduProvider(Dio(), createSnapshotStore)
+        ..setAcademicSessionController(fixture.controller)
+        ..setUserId('app-user-a');
+      addTearDown(fresh.dispose);
+      await fresh.ensureStatusLoaded();
+      await AcademicPersistenceRegistry.waitUntilReady('app-user-a');
+      AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+      expect(fresh.getCachedGrades('2025', 3), isNull);
+      final restored = await fresh.restoreCachedGrades('2025', 3);
+      expect(restored, isNotNull);
+      expect(restored!.grades.length, fetched.data!.length);
+      expect(await fresh.restoreCachedGrades('2024', 3), isNull);
+      fresh.setUserId('other-user');
+      expect(await fresh.restoreCachedGrades('2025', 3), isNull);
+    });
+
+    test('加密落盘失败仍返回成功成绩和存储警告', () async {
+      final fixture = await createFixture(saveAcademicData: true);
+      addTearDown(fixture.dispose);
+      await AcademicPersistenceRegistry.waitUntilReady('app-user-a');
+      AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+      vaultFiles.failWrites = true;
+      final result = await fixture.provider.fetchGrades('2025', 3);
+      expect(result.success, true);
+      expect(result.data, isNotNull);
+      expect(result.errorCode, 'local_storage_failed');
+      expect(fixture.provider.getCachedGrades('2025', 3), isNotNull);
     });
 
     test('本机空成绩仍是成功响应', () async {

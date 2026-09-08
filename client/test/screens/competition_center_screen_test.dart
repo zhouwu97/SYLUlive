@@ -9,6 +9,10 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/screens/competition/competition_center_screen.dart';
 import 'package:shenliyuan/widgets/competition/competition_ui_tokens.dart';
 
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
+
 class _CompetitionAdapter implements HttpClientAdapter {
   _CompetitionAdapter(this.handler);
 
@@ -158,6 +162,52 @@ void main() {
   });
 
   group('CompetitionDetailScreen', () {
+    setUpAll(loadTestFonts);
+
+    for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+      testWidgets('$mode 大字号详情展示参赛参考、人数与来源且不溢出', (tester) async {
+        await setGoldenViewport(tester, GoldenViewports.phone360x800);
+        final adapter = _CompetitionAdapter((options) => _json({
+              ..._event(7),
+              'competition_level': 'national',
+              'eligible_entry_years': ['2024', '2025'],
+              'eligible_colleges': ['信息科学与工程学院', '自动化与电气工程学院'],
+              'eligible_majors': ['计算机科学与技术', '自动化'],
+              'participation_type': 'team',
+              'team_size_min': 3,
+              'team_size_max': 5,
+              'source_note': '学校创新创业学院当届公开通知',
+              'evidence_summary_public': '报名范围仍需核对当届赛道',
+              'updated_at': '2026-09-08T10:00:00+08:00',
+            }));
+        await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>(
+          create: (_) => _TestAuthProvider(_dio(adapter)),
+          child: GoldenTestApp(
+            themeMode: mode,
+            textScaler: GoldenTextProfile.large.scaler,
+            home: const CompetitionDetailScreen(eventId: 7),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        for (final text in [
+          '报名通知与资料',
+          '2024、2025',
+          '计算机科学与技术、自动化',
+          '3–5 人',
+          '国家级',
+          '学校创新创业学院当届公开通知',
+          '2026-09-08 10:00',
+          '加入我的计划',
+        ]) {
+          await tester.scrollUntilVisible(find.text(text), 150,
+              scrollable: find.byType(Scrollable).first);
+          expect(find.text(text), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+        expect(find.text('not_recorded'), findsNothing);
+      });
+    }
+
     testWidgets('详情分别展示校内报名范围与比赛起止时刻', (tester) async {
       final adapter = _CompetitionAdapter((options) => _json({
             ..._event(7),

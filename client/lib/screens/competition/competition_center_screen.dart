@@ -6,7 +6,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../platform/contracts/external_navigator.dart';
 
 import '../../config/beta_release_policy.dart';
 import '../../models/agent_context.dart';
@@ -21,6 +20,7 @@ import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_match_reason_sheet.dart';
 import '../../widgets/competition/competition_module_theme.dart';
 import '../../widgets/competition/competition_profile_compact_card.dart';
+import '../../widgets/competition/competition_registration_resources.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_student_event_card.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
@@ -1516,6 +1516,13 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           ],
                         ),
                         _detailCard(
+                          title: '报名通知与资料',
+                          isDark: isDark,
+                          children: [
+                            CompetitionRegistrationResources(event: event),
+                          ],
+                        ),
+                        _detailCard(
                           title: '参赛信息',
                           isDark: isDark,
                           children: [
@@ -1536,28 +1543,56 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                                   '推荐理由', event.recommendationReason, isDark),
                             ],
                             _detailInfo(
-                                '适合对象', _rawValue('target_audience'), isDark),
-                            _detailInfo(
-                              '参赛形式',
-                              _rawValue('participation_type'),
+                              '适合对象',
+                              event.targetAudience.trim().isEmpty
+                                  ? '适用对象待确认'
+                                  : event.targetAudience,
                               isDark,
                             ),
+                            _detailInfo('年级参考',
+                                event.eligibleEntryYears.join('、'), isDark),
+                            _detailInfo('学院参考',
+                                event.eligibleColleges.join('、'), isDark),
+                            _detailInfo('专业参考',
+                                event.eligibleMajors.join('、'), isDark),
+                            _detailInfo(
+                              '资格说明',
+                              '以上为目录适配参考，具体报名资格以当届通知为准；未录入不代表不限。',
+                              isDark,
+                            ),
+                            _detailInfo(
+                              '参赛形式',
+                              competitionParticipationLabel(
+                                  event.participationType),
+                              isDark,
+                            ),
+                            _detailInfo(
+                                '参赛人数', competitionTeamSizeText(event), isDark),
                           ],
                         ),
                         _detailCard(
                           title: '基本信息',
                           isDark: isDark,
                           children: [
-                            _detailInfo('主办方', event.organizer, isDark),
-                            _detailInfo('比赛级别', event.competitionLevel, isDark),
                             _detailInfo(
-                              '地点',
-                              event.isOnline ? '线上' : event.location,
+                              '主办方',
+                              event.organizer.trim().isEmpty
+                                  ? '主办信息待补充'
+                                  : event.organizer,
                               isDark,
                             ),
+                            _detailInfo('主办单位', event.hostUnit, isDark),
                             _detailInfo(
-                              '来源',
-                              _sourceLabel(event.sourceChannel),
+                                '承办单位', _rawValue('undertake_unit'), isDark),
+                            _detailInfo('比赛级别',
+                                competitionLevelLabel(event.competitionLevel), isDark),
+                            _detailInfo(
+                              '地点',
+                              event.isOnline
+                                  ? '线上'
+                                  : event.location.trim().isEmpty
+                                      ? '比赛地点待确认'
+                                      : event.location,
                               isDark,
                             ),
                           ],
@@ -1567,12 +1602,33 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           isDark: isDark,
                           children: [
                             Text(
-                              (event.description.isNotEmpty
-                                      ? event.description
-                                      : event.summary)
-                                  .trim(),
+                              event.description.trim().isNotEmpty
+                                  ? event.description.trim()
+                                  : event.summary.trim().isNotEmpty
+                                      ? event.summary.trim()
+                                      : '比赛内容、作品要求与评审规则待补充，请以当届通知及附件为准。',
                               style: TextStyle(height: 1.6, color: titleColor),
                             ),
+                          ],
+                        ),
+                        _detailCard(
+                          title: '信息来源',
+                          isDark: isDark,
+                          children: [
+                            _detailInfo('来源类型',
+                                competitionSourceLabel(event.sourceChannel), isDark),
+                            _detailInfo('来源说明', event.sourceNote, isDark),
+                            _detailInfo('核验说明',
+                                _rawValue('evidence_summary_public'), isDark),
+                            _detailInfo(
+                              '最近更新',
+                              event.updatedAt == null
+                                  ? '更新时间未提供'
+                                  : competitionDateText(event.updatedAt!),
+                              isDark,
+                            ),
+                            _detailInfo('更新说明',
+                                '更新时间仅表示目录更新，不代表当届信息已核验。', isDark),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -1605,34 +1661,6 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           label:
                               Text(_askingAgent ? '正在打开 Agent…' : '问问 Agent'),
                         ),
-                        if (event.officialUrl.isNotEmpty)
-                          OutlinedButton.icon(
-                            onPressed: () => ExternalNavigator.current().open(
-                              Uri.parse(event.officialUrl),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: titleColor,
-                              side: BorderSide(
-                                color: CompetitionUiTokens.borderColor(isDark),
-                              ),
-                            ),
-                            icon: const Icon(Icons.open_in_new),
-                            label: const Text('打开官网'),
-                          ),
-                        if (event.noticeUrl.isNotEmpty)
-                          OutlinedButton.icon(
-                            onPressed: () => ExternalNavigator.current().open(
-                              Uri.parse(event.noticeUrl),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: titleColor,
-                              side: BorderSide(
-                                color: CompetitionUiTokens.borderColor(isDark),
-                              ),
-                            ),
-                            icon: const Icon(Icons.article_outlined),
-                            label: const Text('查看通知'),
-                          ),
                       ],
                     ),
     );

@@ -148,10 +148,43 @@ String competitionSourceLabel(String? source) {
       return '分享导入';
     case 'ai_import':
       return 'AI导入';
+    case 'pending':
+      return '来源待核实';
     default:
       if (source == null || source.isEmpty) return '来源未知';
       return '其他来源';
   }
+}
+
+String competitionLevelLabel(String value) => switch (value.trim()) {
+      'international' => '国际级',
+      'national' => '国家级',
+      'provincial' => '省级',
+      'school' => '校级',
+      'college' => '院级',
+      '' || 'unknown' || 'not_recorded' => '级别待确认',
+      final label => label,
+    };
+
+String competitionParticipationLabel(String value) => switch (value.trim()) {
+      'individual' || 'personal' => '个人赛',
+      'team' => '团队赛',
+      'both' || 'individual_or_team' || 'mixed' => '个人或团队',
+      '' || 'unknown' || 'not_recorded' || 'pending' => '参赛形式待确认',
+      final label => label,
+    };
+
+String competitionTeamSizeText(CompetitionEvent event) {
+  final min = event.teamSizeMin ?? 0;
+  final max = event.teamSizeMax ?? 0;
+  // 目录用 0 表示未录入，不能将它展示为人数限制或自行推定单人参赛。
+  if (min > 0 && max > 0) {
+    if (min > max) return '人数要求待核实';
+    return min == max ? '$min 人' : '$min–$max 人';
+  }
+  if (min > 0) return '至少 $min 人，上限待确认';
+  if (max > 0) return '最多 $max 人，下限待确认';
+  return '人数要求待确认';
 }
 
 String competitionRecognitionLabel(String value) {

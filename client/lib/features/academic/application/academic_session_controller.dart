@@ -447,26 +447,31 @@ final class AcademicSessionController extends ChangeNotifier {
     final generation = _accountGeneration;
     return _enqueue(() async {
       if (!await _prepareRead(generation)) return null;
-      _status = AcademicSessionStatus.loading;
-      _profile = null;
-      _profileStatus = AcademicProfileStatus.loading;
+      return _loadProfileForGeneration(generation);
+    });
+  }
+
+  // 会话恢复也必须加载资料；队列内直接复用实现，避免再次入队造成互相等待。
+  Future<StudentProfile?> _loadProfileForGeneration(int generation) async {
+    _status = AcademicSessionStatus.loading;
+    _profile = null;
+    _profileStatus = AcademicProfileStatus.loading;
+    _failure = null;
+    _notifyListeners();
+    try {
+      final profile = await _repository.getProfile();
+      if (generation != _accountGeneration || _disposed) return null;
+      _profile = profile;
+      _profileStatus = AcademicProfileStatus.loaded;
+      _studentId ??= _repository.studentId;
+      _status = AcademicSessionStatus.authenticated;
       _failure = null;
       _notifyListeners();
-      try {
-        final profile = await _repository.getProfile();
-        if (generation != _accountGeneration || _disposed) return null;
-        _profile = profile;
-        _profileStatus = AcademicProfileStatus.loaded;
-        _studentId ??= _repository.studentId;
-        _status = AcademicSessionStatus.authenticated;
-        _failure = null;
-        _notifyListeners();
-        return profile;
-      } catch (error) {
-        _handleProfileFailure(error, generation);
-        return null;
-      }
-    });
+      return profile;
+    } catch (error) {
+      _handleProfileFailure(error, generation);
+      return null;
+    }
   }
 
   Future<CourseFetchResult?> loadCourses({
@@ -909,7 +914,10 @@ final class AcademicSessionController extends ChangeNotifier {
           : AcademicSessionStatus.idle;
       _failure = null;
       _notifyListeners();
-      return authenticated;
+      if (authenticated && _profile == null) {
+        await _loadProfileForGeneration(generation);
+      }
+      return isCurrentContext(generation: generation) && isAuthenticated;
     } catch (error) {
       if (!isCurrentContext(generation: generation)) return false;
       _failure = AcademicFailure.fromException(error);
@@ -972,6 +980,9 @@ final class AcademicSessionController extends ChangeNotifier {
         _status = _repository.sessionState == SessionState.authenticated
             ? AcademicSessionStatus.authenticated
             : AcademicSessionStatus.idle;
+        if (isAuthenticated && _profile == null) {
+          await _loadProfileForGeneration(generation);
+        }
       } catch (error) {
         if (_disposed || generation != _accountGeneration) return;
         // 会话恢复失败不等于撤销绑定；保留服务端确认过的学号供页面重试。

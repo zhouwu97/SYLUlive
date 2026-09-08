@@ -56,6 +56,11 @@ class _EduScreenState extends State<EduScreen> {
     if (coordinator == null) return;
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
+    final session = context.read<AcademicSessionController>();
+    if (session.profileStatus == AcademicProfileStatus.idle) {
+      await session.loadProfile();
+    }
+    if (!mounted) return;
     await context.read<EduProvider>().refreshStatus();
   }
 
@@ -130,6 +135,11 @@ class _EduScreenState extends State<EduScreen> {
 
   Widget _buildEduStatusCard(
       BuildContext context, EduProvider eduProvider, bool isDark) {
+    final session = context.watch<AcademicSessionController>();
+    final educationSummary = [
+      if (eduProvider.grade.isNotEmpty) '${eduProvider.grade}级',
+      if (eduProvider.college.isNotEmpty) eduProvider.college,
+    ].join(' · ');
     return Container(
       decoration: CampusTheme.cardDecoration(isDark),
       padding: const EdgeInsets.all(20),
@@ -207,7 +217,8 @@ class _EduScreenState extends State<EduScreen> {
               ),
             ],
           ),
-          if (context.watch<AcademicSessionController>().hasBoundIdentity) ...[
+          if (session.hasBoundIdentity &&
+              session.providerId != AcademicProviderId.syluGraduate) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -223,33 +234,50 @@ class _EduScreenState extends State<EduScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${eduProvider.grade.isNotEmpty ? eduProvider.grade : "未知"}级 · ${eduProvider.college.isNotEmpty ? eduProvider.college : "未知"}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white70
-                                : CampusTheme.text.withValues(alpha: 0.85),
+                        if (session.profileStatus !=
+                            AcademicProfileStatus.loaded) ...[
+                          Text(session.hasProfileError
+                              ? '个人资料读取失败，请重试'
+                              : '个人资料尚未加载完成'),
+                          TextButton(
+                            onPressed: session.profileStatus ==
+                                    AcademicProfileStatus.loading
+                                ? null
+                                : () => context
+                                    .read<AcademicSessionController>()
+                                    .loadProfile(),
+                            child: Text(session.profileStatus ==
+                                    AcademicProfileStatus.loading
+                                ? '正在读取…'
+                                : '重新读取资料'),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          eduProvider.major.isNotEmpty
-                              ? eduProvider.major
-                              : "未知",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: CampusTheme.subText,
-                          ),
-                        ),
+                        ] else ...[
+                          Text(
+                              educationSummary.isNotEmpty
+                                  ? educationSummary
+                                  : '当前教务接口未提供年级和学院',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : CampusTheme.text
+                                          .withValues(alpha: 0.85))),
+                          const SizedBox(height: 4),
+                          Text(
+                              eduProvider.major.isNotEmpty
+                                  ? eduProvider.major
+                                  : '当前教务接口未提供专业',
+                              style: const TextStyle(
+                                  fontSize: 12, color: CampusTheme.subText)),
+                        ],
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-          ] else ...[
+          ] else if (!session.hasBoundIdentity) ...[
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () => _showBindDialog(context, eduProvider),

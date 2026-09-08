@@ -423,10 +423,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 8),
 
                         // 第二行：学院专业标签 (如果有)
-                        if (user?.eduCollege != null &&
-                            user!.eduCollege!.isNotEmpty) ...[
+                        if (context.watch<EduProvider>().college.isNotEmpty ||
+                            context.watch<EduProvider>().major.isNotEmpty) ...[
                           Text(
-                            '${user.eduCollege} ${user.eduMajor}'.trim(),
+                            '${context.watch<EduProvider>().college} ${context.watch<EduProvider>().major}'
+                                .trim(),
                             style: TextStyle(
                               fontSize: 12,
                               color: isDark ? Colors.white54 : Colors.black45,
@@ -999,7 +1000,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
           title: '教务',
           subtitle: eduProvider.isBound
-              ? '${eduProvider.studentId} | ${eduProvider.college}'
+              ? [eduProvider.studentId, eduProvider.college]
+                  .where((value) => value.isNotEmpty)
+                  .join(' | ')
               : '绑定后可查询课表、成绩',
           isDark: isDark,
           onTap: () {

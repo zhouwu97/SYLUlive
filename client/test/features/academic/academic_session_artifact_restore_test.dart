@@ -62,14 +62,17 @@ void main() {
           provider: provider,
           identity: identity,
           sessionArtifactVaultFactory: (_) => vault);
-      await AcademicConnectionStore(identity, await AppPreferencesStore.getInstance()).setConnected(true);
+      await AcademicConnectionStore(
+              identity, await AppPreferencesStore.getInstance())
+          .setConnected(true);
       await controller.syncAppUser('u');
       final result = await AcademicLoginCoordinator(controller: controller)
           .ensureAuthenticated(allowSavedCredential: false);
       final artifact = await vault.read();
       expect(result.isSuccess, scenario == 'authenticated');
       if (scenario == '500' || scenario == 'unknown') {
-        expect(result.kind, isNot(AcademicLoginOutcomeKind.credentialsRequired));
+        expect(
+            result.kind, isNot(AcademicLoginOutcomeKind.credentialsRequired));
       }
       if (scenario == 'expired') {
         expect(artifact, isNull);
@@ -80,7 +83,13 @@ void main() {
         expect(artifact.validatedAt!.isAfter(created),
             scenario == 'authenticated');
       }
-      if (scenario == 'authenticated') expect(receivedCookie, true);
+      if (scenario == 'authenticated') {
+        expect(receivedCookie, true);
+        expect(controller.profileStatus, AcademicProfileStatus.loaded);
+        expect(controller.profile?.college, isNotEmpty);
+        expect(controller.profile?.major, isNotEmpty);
+        expect(controller.profile?.grade, isNotEmpty);
+      }
       controller.dispose();
       provider.close();
     });

@@ -234,7 +234,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '纯合子、掉分员',
+                                    '纯合子、掉分员、Now',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.bold,

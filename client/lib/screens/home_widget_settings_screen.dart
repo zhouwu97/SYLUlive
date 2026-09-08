@@ -358,7 +358,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
             const SizedBox(height: 4),
             Text(
               appearance.fontSize == HomeWidgetFontSize.extraLarge
-                  ? '超大字号使用高可读布局：2×2 显示 1 条，4×2 并列显示最多 2 条。'
+                  ? '超大字号使用高可读布局：2×2 紧凑显示 2 条，4×2 并列显示 2 条。'
                   : '小、标准、大仅调整文字大小，不改变小组件结构和信息顺序。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -376,8 +376,8 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               title: '2×2 紧凑版',
               subtitle: appearance.fontSize == HomeWidgetFontSize.extraLarge
                   ? (kind == HomeWidgetKind.course
-                      ? '超大字号显示最近 1 门课程'
-                      : '超大字号显示最近 1 场考试')
+                      ? '超大字号显示最近 2 门课程'
+                      : '超大字号显示最近 2 场考试')
                   : (kind == HomeWidgetKind.course
                       ? '显示日期和最多 2 门课程'
                       : '显示最近 1～2 场考试与倒计时'),
@@ -580,11 +580,19 @@ class _HighReadabilityPreviewItems extends StatelessWidget {
           palette: palette,
           typography: typography,
           highReadability: true,
-          contextLabel: index == 0 ? '最近' : '接下来',
+          contextLabel: isWide ? (index == 0 ? '最近' : '接下来') : '',
         );
 
-    if (!isWide || items.length == 1) {
+    if (items.length == 1) {
       return Align(alignment: Alignment.centerLeft, child: itemAt(0));
+    }
+    if (!isWide) {
+      return Column(
+        children: [
+          for (var index = 0; index < items.length; index++)
+            Expanded(child: itemAt(index)),
+        ],
+      );
     }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -643,14 +651,15 @@ class _PreviewItem extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  contextLabel,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: typography.badge,
-                    fontWeight: FontWeight.w700,
+                if (contextLabel.isNotEmpty)
+                  Text(
+                    contextLabel,
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: typography.badge,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
                 Text(
                   item.title,
                   maxLines: 1,

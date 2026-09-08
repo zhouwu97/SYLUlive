@@ -244,7 +244,7 @@ class HomeWidgetTypography {
   }
 }
 
-/// 超大字号通过减少内容密度换取可读性；其他字号保持现有展示数量。
+/// 超大字号使用专用高可读布局；其他字号保持现有布局。
 class HomeWidgetContentPolicy {
   const HomeWidgetContentPolicy._();
 
@@ -256,7 +256,7 @@ class HomeWidgetContentPolicy {
     HomeWidgetFontSize fontSize,
   ) {
     if (!usesHighReadabilityLayout(fontSize)) return 2;
-    return size == HomeWidgetSize.size2x2 ? 1 : 2;
+    return 2;
   }
 }
 

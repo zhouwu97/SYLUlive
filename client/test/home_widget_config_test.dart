@@ -162,7 +162,7 @@ void main() {
           HomeWidgetSize.size2x2,
           HomeWidgetFontSize.extraLarge,
         ),
-        1,
+        2,
       );
       expect(
         HomeWidgetContentPolicy.previewItemCount(

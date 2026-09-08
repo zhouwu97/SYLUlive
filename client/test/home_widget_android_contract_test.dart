@@ -34,7 +34,7 @@ void main() {
     expect(registry, contains('R.layout.widget_course_item_detailed'));
   });
 
-  test('超大字号为 2×2 限制一条并为 4×2 使用双列布局', () {
+  test('超大字号为 2×2 使用双条紧凑布局并让 4×2 双列内容居中', () {
     final registry = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRegistry.kt',
     );
@@ -43,7 +43,22 @@ void main() {
     expect(registry, contains('R.layout.widget_exam_4x2_extra_large'));
     expect(registry, contains('R.layout.widget_course_item_extra_large'));
     expect(registry, contains('R.layout.widget_exam_item_extra_large'));
-    expect(registry, contains('size == NativeHomeWidgetSize.SIZE_2X2'));
+    expect(
+      registry,
+      contains('R.layout.widget_course_item_extra_large_compact'),
+    );
+    expect(
+      registry,
+      contains('R.layout.widget_exam_item_extra_large_compact'),
+    );
+
+    for (final path in const [
+      'android/app/src/main/res/layout/widget_course_item_extra_large_compact.xml',
+      'android/app/src/main/res/layout/widget_exam_item_extra_large_compact.xml',
+    ]) {
+      final layout = source(path);
+      expect(layout, contains('android:layout_height="68dp"'));
+    }
 
     for (final path in const [
       'android/app/src/main/res/layout/widget_course_4x2_extra_large.xml',
@@ -52,6 +67,7 @@ void main() {
       final layout = source(path);
       expect(layout, contains('<GridView'));
       expect(layout, contains('android:numColumns="2"'));
+      expect(layout, contains('android:paddingTop="28dp"'));
     }
   });
 

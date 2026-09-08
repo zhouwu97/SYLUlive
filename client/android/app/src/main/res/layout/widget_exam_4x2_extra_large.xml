@@ -28,6 +28,7 @@
         android:horizontalSpacing="12dp"
         android:numColumns="2"
         android:overScrollMode="never"
+        android:paddingTop="28dp"
         android:stretchMode="columnWidth"
         android:verticalSpacing="0dp" />
 

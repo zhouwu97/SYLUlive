@@ -50,6 +50,6 @@ void main() {
       HomeWidgetFontSize.standard,
     );
     expect(tester.widget<ChoiceChip>(courseExtraLargeChip).selected, isTrue);
-    expect(find.textContaining('2×2 显示 1 条'), findsOneWidget);
+    expect(find.textContaining('2×2 紧凑显示 2 条'), findsOneWidget);
   });
 }

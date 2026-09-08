@@ -68,6 +68,12 @@ enum class NativeWidgetVariant(
     fun itemLayoutResource(fontSize: NativeHomeWidgetFontSize): Int =
         if (fontSize != NativeHomeWidgetFontSize.EXTRA_LARGE) {
             itemLayoutResource
+        } else if (size == NativeHomeWidgetSize.SIZE_2X2 &&
+            kind == NativeHomeWidgetKind.COURSE
+        ) {
+            R.layout.widget_course_item_extra_large_compact
+        } else if (size == NativeHomeWidgetSize.SIZE_2X2) {
+            R.layout.widget_exam_item_extra_large_compact
         } else if (kind == NativeHomeWidgetKind.COURSE) {
             R.layout.widget_course_item_extra_large
         } else {
@@ -77,8 +83,6 @@ enum class NativeWidgetVariant(
     fun maxItems(fontSize: NativeHomeWidgetFontSize): Int =
         if (fontSize != NativeHomeWidgetFontSize.EXTRA_LARGE) {
             maxItems
-        } else if (size == NativeHomeWidgetSize.SIZE_2X2) {
-            1
         } else {
             2
         }

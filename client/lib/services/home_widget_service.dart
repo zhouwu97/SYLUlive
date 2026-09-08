@@ -109,6 +109,7 @@ class HomeWidgetService {
 
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
+  static Future<void> _appearanceUpdateQueue = Future<void>.value();
 
   static Future<void> migrateLegacyAppearance() async {
     final prefs = await AppPreferencesStore.getInstance();
@@ -161,7 +162,21 @@ class HomeWidgetService {
     );
   }
 
-  static Future<void> updateAppearance(HomeWidgetAppearance appearance) async {
+  static Future<void> updateAppearance(HomeWidgetAppearance appearance) {
+    final operation = _appearanceUpdateQueue.then(
+      (_) => _persistAppearance(appearance),
+    );
+    // 外观写入和原生刷新必须保持调用顺序，避免快速切换时旧请求后完成并覆盖新主题。
+    _appearanceUpdateQueue = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
+  }
+
+  static Future<void> _persistAppearance(
+    HomeWidgetAppearance appearance,
+  ) async {
     await migrateLegacyAppearance();
     final prefs = await AppPreferencesStore.getInstance();
     final results = await Future.wait([
@@ -382,7 +397,7 @@ class HomeWidgetService {
           }
           final weekName = ['', '一', '二', '三', '四', '五', '六', '日'][weekday];
           final weekText = academicWeek == null ? '' : '第$academicWeek周 ';
-          final date = '${now.month}.${now.day} ${weekText}周$weekName';
+          final date = '${now.month}.${now.day} $weekText周$weekName';
 
           const starts = [
             '08:00',
@@ -516,6 +531,14 @@ class HomeWidgetService {
       await _channel.invokeMethod<void>('updateWidget', {
         'course_data': prefs.getString(_courseDataKey),
         'exam_data': prefs.getString(_examDataKey),
+        for (final kind in HomeWidgetKind.values) ...{
+          '${kind.storageName}_theme':
+              prefs.getString(HomeWidgetPreferenceKeys.theme(kind)),
+          '${kind.storageName}_title':
+              prefs.getString(HomeWidgetPreferenceKeys.title(kind)),
+          '${kind.storageName}_font_size':
+              prefs.getString(HomeWidgetPreferenceKeys.fontSize(kind)),
+        },
       });
     } on MissingPluginException {
       // 桌面端和单元测试没有 Android 通道，数据仍会正常写入。

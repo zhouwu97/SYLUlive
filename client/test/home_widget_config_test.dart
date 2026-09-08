@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shenliyuan/models/home_widget_config.dart';
@@ -46,6 +47,65 @@ void main() {
       expect(
         (await HomeWidgetService.getAppearance(HomeWidgetKind.exam)).fontSize,
         HomeWidgetFontSize.small,
+      );
+    });
+
+    test('连续外观更新按调用顺序保存，最后一次选择稳定生效', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final firstRefreshStarted = Completer<void>();
+      final releaseFirstRefresh = Completer<void>();
+      var refreshCount = 0;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('shenliyuan/widget'),
+        (call) async {
+          if (call.method != 'updateWidget') return null;
+          refreshCount += 1;
+          if (refreshCount == 1) {
+            firstRefreshStarted.complete();
+            await releaseFirstRefresh.future;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          const MethodChannel('shenliyuan/widget'),
+          null,
+        ),
+      );
+
+      final first = HomeWidgetService.updateAppearance(
+        const HomeWidgetAppearance(
+          kind: HomeWidgetKind.course,
+          theme: HomeWidgetTheme.light,
+          title: '今日课表',
+        ),
+      );
+      await firstRefreshStarted.future;
+      final second = HomeWidgetService.updateAppearance(
+        const HomeWidgetAppearance(
+          kind: HomeWidgetKind.course,
+          theme: HomeWidgetTheme.dark,
+          title: '今日课表',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(refreshCount, 1);
+      expect(
+        (await HomeWidgetService.getAppearance(HomeWidgetKind.course)).theme,
+        HomeWidgetTheme.light,
+      );
+
+      releaseFirstRefresh.complete();
+      await Future.wait([first, second]);
+
+      expect(refreshCount, 2);
+      expect(
+        (await HomeWidgetService.getAppearance(HomeWidgetKind.course)).theme,
+        HomeWidgetTheme.dark,
       );
     });
 
@@ -214,7 +274,8 @@ void main() {
   test('小组件课表 schema v2 全量数据动态计算当天课表', () async {
     final now = DateTime.now();
     final weekday = now.weekday;
-    final semesterStart = DateTime(now.year, now.month, now.day).subtract(Duration(days: (weekday - 1)));
+    final semesterStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: (weekday - 1)));
     final semesterStartStr =
         '${semesterStart.year}-${semesterStart.month.toString().padLeft(2, '0')}-${semesterStart.day.toString().padLeft(2, '0')}';
 
@@ -249,7 +310,8 @@ void main() {
       }),
     });
 
-    final preview = await HomeWidgetService.getPreviewData(HomeWidgetKind.course);
+    final preview =
+        await HomeWidgetService.getPreviewData(HomeWidgetKind.course);
     expect(preview.items, hasLength(1));
     expect(preview.items.single.title, '今日课程');
     expect(preview.items.single.primaryDetail, '08:00-09:40');

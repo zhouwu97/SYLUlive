@@ -43,6 +43,7 @@ data class NativeHomeWidgetAppearance(
 )
 
 data class HomeWidgetThemeConfig(
+    val resolvedTheme: NativeHomeWidgetTheme,
     val backgroundResource: Int,
     val primaryTextColor: Int,
     val secondaryTextColor: Int,
@@ -65,6 +66,7 @@ data class HomeWidgetThemeConfig(
 
             return when (resolved) {
                 NativeHomeWidgetTheme.DARK -> HomeWidgetThemeConfig(
+                    resolvedTheme = NativeHomeWidgetTheme.DARK,
                     backgroundResource = R.drawable.widget_bg_dark,
                     primaryTextColor = Color.parseColor("#F9FAFB"),
                     secondaryTextColor = Color.parseColor("#D1D5DB"),
@@ -72,6 +74,7 @@ data class HomeWidgetThemeConfig(
                     accentColor = Color.parseColor("#60A5FA"),
                 )
                 NativeHomeWidgetTheme.CAMPUS_BLUE -> HomeWidgetThemeConfig(
+                    resolvedTheme = NativeHomeWidgetTheme.CAMPUS_BLUE,
                     backgroundResource = R.drawable.widget_bg_campus_blue,
                     primaryTextColor = Color.parseColor("#1E3A8A"),
                     secondaryTextColor = Color.parseColor("#475569"),
@@ -80,6 +83,7 @@ data class HomeWidgetThemeConfig(
                 )
                 NativeHomeWidgetTheme.LIGHT,
                 NativeHomeWidgetTheme.SYSTEM -> HomeWidgetThemeConfig(
+                    resolvedTheme = NativeHomeWidgetTheme.LIGHT,
                     backgroundResource = R.drawable.widget_bg_light,
                     primaryTextColor = Color.parseColor("#111827"),
                     secondaryTextColor = Color.parseColor("#4B5563"),
@@ -119,6 +123,48 @@ object HomeWidgetAppearanceStore {
                 prefs.getString(fontSizeKey, null),
             ),
         )
+    }
+
+    /**
+     * Flutter 偏好缓存与原生 SharedPreferences 可能短暂不同步；刷新前在原生侧一次提交完整快照，
+     * 保证背景、标题和列表服务读取的是同一版本。
+     */
+    fun synchronize(
+        context: Context,
+        courseTheme: String?,
+        courseTitle: String?,
+        courseFontSize: String?,
+        examTheme: String?,
+        examTitle: String?,
+        examFontSize: String?,
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        courseTheme?.let {
+            editor.putString(COURSE_THEME, NativeHomeWidgetTheme.fromStorage(it).storageName)
+        }
+        courseFontSize?.let {
+            editor.putString(COURSE_FONT_SIZE, NativeHomeWidgetFontSize.fromStorage(it).storageName)
+        }
+        examTheme?.let {
+            editor.putString(EXAM_THEME, NativeHomeWidgetTheme.fromStorage(it).storageName)
+        }
+        examFontSize?.let {
+            editor.putString(EXAM_FONT_SIZE, NativeHomeWidgetFontSize.fromStorage(it).storageName)
+        }
+        if (courseTitle != null) {
+            editor.putString(
+                COURSE_TITLE,
+                courseTitle.trim().ifBlank { NativeHomeWidgetKind.COURSE.defaultTitle },
+            )
+        }
+        if (examTitle != null) {
+            editor.putString(
+                EXAM_TITLE,
+                examTitle.trim().ifBlank { NativeHomeWidgetKind.EXAM.defaultTitle },
+            )
+        }
+        if (!editor.commit()) throw IllegalStateException("桌面小组件原生外观同步失败")
     }
 
     /** 暴露纯字符串映射，便于在不启动 Android/Launcher 环境时做契约测试。 */

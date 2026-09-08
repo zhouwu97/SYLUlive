@@ -10,12 +10,27 @@ import android.widget.RemoteViewsService
 
 class CourseWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
+        val variant = NativeWidgetVariant.fromName(
+            intent.getStringExtra(HomeWidgetRegistry.EXTRA_VARIANT),
+            NativeWidgetVariant.COURSE_2X2,
+        )
+        val fallbackAppearance = HomeWidgetAppearanceStore.read(
+            applicationContext,
+            NativeHomeWidgetKind.COURSE,
+        )
+        val resolvedTheme = intent
+            .getStringExtra(HomeWidgetRegistry.EXTRA_RESOLVED_THEME)
+            ?.let { NativeHomeWidgetTheme.fromStorage(it) }
+            ?: fallbackAppearance.theme
+        val fontSize = intent
+            .getStringExtra(HomeWidgetRegistry.EXTRA_FONT_SIZE)
+            ?.let { NativeHomeWidgetFontSize.fromStorage(it) }
+            ?: fallbackAppearance.fontSize
         return CourseRemoteViewsFactory(
             applicationContext,
-            NativeWidgetVariant.fromName(
-                intent.getStringExtra(HomeWidgetRegistry.EXTRA_VARIANT),
-                NativeWidgetVariant.COURSE_2X2,
-            ),
+            variant,
+            HomeWidgetThemeConfig.resolve(applicationContext, resolvedTheme),
+            HomeWidgetTypography.resolve(variant.size, fontSize),
         )
     }
 }
@@ -23,10 +38,10 @@ class CourseWidgetService : RemoteViewsService() {
 class CourseRemoteViewsFactory(
     private val context: Context,
     private val variant: NativeWidgetVariant,
+    private val theme: HomeWidgetThemeConfig,
+    private val typography: HomeWidgetTypography,
 ) : RemoteViewsService.RemoteViewsFactory {
     private val courses = mutableListOf<WidgetCourseData.Course>()
-    private lateinit var theme: HomeWidgetThemeConfig
-    private lateinit var typography: HomeWidgetTypography
 
     override fun onCreate() = Unit
 
@@ -34,9 +49,6 @@ class CourseRemoteViewsFactory(
         courses.clear()
         val data = CourseDataReader.read(context)
         courses.addAll(data.courses.take(variant.maxItems))
-        val appearance = HomeWidgetAppearanceStore.read(context, NativeHomeWidgetKind.COURSE)
-        theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
-        typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
     }
 
     override fun onDestroy() = courses.clear()

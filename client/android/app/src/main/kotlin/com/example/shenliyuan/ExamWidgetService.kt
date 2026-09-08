@@ -9,12 +9,27 @@ import android.widget.RemoteViewsService
 
 class ExamWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
+        val variant = NativeWidgetVariant.fromName(
+            intent.getStringExtra(HomeWidgetRegistry.EXTRA_VARIANT),
+            NativeWidgetVariant.EXAM_2X2,
+        )
+        val fallbackAppearance = HomeWidgetAppearanceStore.read(
+            applicationContext,
+            NativeHomeWidgetKind.EXAM,
+        )
+        val resolvedTheme = intent
+            .getStringExtra(HomeWidgetRegistry.EXTRA_RESOLVED_THEME)
+            ?.let { NativeHomeWidgetTheme.fromStorage(it) }
+            ?: fallbackAppearance.theme
+        val fontSize = intent
+            .getStringExtra(HomeWidgetRegistry.EXTRA_FONT_SIZE)
+            ?.let { NativeHomeWidgetFontSize.fromStorage(it) }
+            ?: fallbackAppearance.fontSize
         return ExamRemoteViewsFactory(
             applicationContext,
-            NativeWidgetVariant.fromName(
-                intent.getStringExtra(HomeWidgetRegistry.EXTRA_VARIANT),
-                NativeWidgetVariant.EXAM_2X2,
-            ),
+            variant,
+            HomeWidgetThemeConfig.resolve(applicationContext, resolvedTheme),
+            HomeWidgetTypography.resolve(variant.size, fontSize),
         )
     }
 }
@@ -22,19 +37,16 @@ class ExamWidgetService : RemoteViewsService() {
 class ExamRemoteViewsFactory(
     private val context: Context,
     private val variant: NativeWidgetVariant,
+    private val theme: HomeWidgetThemeConfig,
+    private val typography: HomeWidgetTypography,
 ) : RemoteViewsService.RemoteViewsFactory {
     private val exams = mutableListOf<WidgetExamData.Exam>()
-    private lateinit var theme: HomeWidgetThemeConfig
-    private lateinit var typography: HomeWidgetTypography
 
     override fun onCreate() = Unit
 
     override fun onDataSetChanged() {
         exams.clear()
         exams.addAll(ExamDataReader.read(context).exams.take(variant.maxItems))
-        val appearance = HomeWidgetAppearanceStore.read(context, NativeHomeWidgetKind.EXAM)
-        theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
-        typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
     }
 
     override fun onDestroy() = exams.clear()

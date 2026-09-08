@@ -72,9 +72,22 @@ object HomeWidgetRenderer {
         val serviceIntent = Intent(context, serviceClass).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             putExtra(HomeWidgetRegistry.EXTRA_VARIANT, variant.name)
-            data = Uri.parse(
-                "shenliyuan-widget://${variant.name.lowercase()}/$appWidgetId",
+            putExtra(
+                HomeWidgetRegistry.EXTRA_RESOLVED_THEME,
+                theme.resolvedTheme.storageName,
             )
+            putExtra(HomeWidgetRegistry.EXTRA_FONT_SIZE, appearance.fontSize.storageName)
+            // RemoteViewsService 会按 Intent.filterEquals 缓存工厂；主题写进 data 才能让
+            // 启动器在外观变化时放弃旧列表，避免新背景继续复用旧文字颜色。
+            data = Uri.Builder()
+                .scheme("shenliyuan-widget")
+                .authority(variant.name.lowercase())
+                .appendPath(appWidgetId.toString())
+                .appendQueryParameter(
+                    "appearance",
+                    "${theme.resolvedTheme.storageName}-${appearance.fontSize.storageName}",
+                )
+                .build()
         }
         views.setRemoteAdapter(variant.listViewId, serviceIntent)
         views.setEmptyView(variant.listViewId, R.id.empty_view)

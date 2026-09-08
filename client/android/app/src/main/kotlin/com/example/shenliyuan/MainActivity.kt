@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -24,6 +25,8 @@ import java.io.File
 import java.util.Locale
 
 class MainActivity : FlutterActivity() {
+
+    private var lastWidgetNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED
 
     companion object {
         private const val WIDGET_CHANNEL = "shenliyuan/widget"
@@ -134,6 +137,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lastWidgetNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         // 清理旧版本成绩提醒任务、状态和通知；新版本不再启用该能力。
         GradeReminderScheduler.disableLegacyFeature(this)
 
@@ -150,6 +154,18 @@ class MainActivity : FlutterActivity() {
         
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val nightMode = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (nightMode == lastWidgetNightMode) return
+        lastWidgetNightMode = nightMode
+        // MainActivity 声明处理 uiMode，系统不会重建 Activity，需要主动刷新“跟随系统”小组件。
+        try {
+            HomeWidgetRegistry.refreshAll(this)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onResume() {
@@ -527,6 +543,15 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "updateWidget" -> {
                     try {
+                        HomeWidgetAppearanceStore.synchronize(
+                            context = this,
+                            courseTheme = call.argument("course_theme"),
+                            courseTitle = call.argument("course_title"),
+                            courseFontSize = call.argument("course_font_size"),
+                            examTheme = call.argument("exam_theme"),
+                            examTitle = call.argument("exam_title"),
+                            examFontSize = call.argument("exam_font_size"),
+                        )
                         refreshWidgets()
                         result.success(true)
                     } catch (e: Exception) {

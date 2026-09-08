@@ -41,7 +41,8 @@ void main() {
     ]) {
       final layout = source(path);
       expect(layout, contains('android:layout_toStartOf="@id/tv_widget_date"'));
-      expect(layout, isNot(contains('android:layout_toEndOf="@id/tv_widget_title"')));
+      expect(layout,
+          isNot(contains('android:layout_toEndOf="@id/tv_widget_title"')));
     }
   });
 
@@ -114,6 +115,58 @@ void main() {
     final mainActivity = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/MainActivity.kt',
     );
+    expect(mainActivity, contains('HomeWidgetRegistry.refreshAll(this)'));
+  });
+
+  test('列表适配器使用与背景相同的主题快照并通过 URI 失效旧缓存', () {
+    final renderer = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRenderer.kt',
+    );
+    expect(renderer, contains('EXTRA_RESOLVED_THEME'));
+    expect(renderer, contains('EXTRA_FONT_SIZE'));
+    expect(renderer, contains('appendQueryParameter'));
+    expect(renderer, contains('theme.resolvedTheme.storageName'));
+
+    for (final path in const [
+      'android/app/src/main/kotlin/com/example/shenliyuan/CourseWidgetService.kt',
+      'android/app/src/main/kotlin/com/example/shenliyuan/ExamWidgetService.kt',
+    ]) {
+      final service = source(path);
+      expect(service, contains('EXTRA_RESOLVED_THEME'));
+      expect(service, contains('EXTRA_FONT_SIZE'));
+      final dataSetChanged =
+          service.split('override fun onDataSetChanged()')[1];
+      expect(dataSetChanged, isNot(contains('HomeWidgetAppearanceStore.read')));
+    }
+  });
+
+  test('Flutter 刷新参数先在原生侧原子同步外观，再渲染桌面组件', () {
+    final service = source('lib/services/home_widget_service.dart');
+    final mainActivity = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/MainActivity.kt',
+    );
+    final appearanceStore = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetThemeConfig.kt',
+    );
+    for (final key in const ['theme', 'title', 'font_size']) {
+      expect(service, contains("'\${kind.storageName}_$key'"));
+      expect(mainActivity, contains('course_$key'));
+      expect(mainActivity, contains('exam_$key'));
+    }
+    final updateHandler = mainActivity
+        .split('"updateWidget" ->')[1]
+        .split('"startPeriodicUpdate" ->')[0];
+    expect(updateHandler.indexOf('HomeWidgetAppearanceStore.synchronize'),
+        lessThan(updateHandler.indexOf('refreshWidgets()')));
+    expect(appearanceStore, contains('editor.commit()'));
+  });
+
+  test('系统深浅色变化时 MainActivity 主动刷新跟随系统的小组件', () {
+    final mainActivity = source(
+      'android/app/src/main/kotlin/com/example/shenliyuan/MainActivity.kt',
+    );
+    expect(mainActivity, contains('override fun onConfigurationChanged'));
+    expect(mainActivity, contains('Configuration.UI_MODE_NIGHT_MASK'));
     expect(mainActivity, contains('HomeWidgetRegistry.refreshAll(this)'));
   });
 }

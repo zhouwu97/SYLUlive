@@ -66,6 +66,8 @@ enum class NativeWidgetVariant(
 
 object HomeWidgetRegistry {
     const val EXTRA_VARIANT = "home_widget_variant"
+    const val EXTRA_RESOLVED_THEME = "home_widget_resolved_theme"
+    const val EXTRA_FONT_SIZE = "home_widget_font_size"
 
     val variants: List<NativeWidgetVariant> = NativeWidgetVariant.entries
 

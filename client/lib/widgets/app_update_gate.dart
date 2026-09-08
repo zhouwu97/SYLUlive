@@ -76,6 +76,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     }
     if (info != null &&
         coordinator.downloadState == AppUpdateDownloadState.failed &&
+        coordinator.downloadStatus.userInitiated &&
         _presentedFailedVersion != info.latestVersionCode) {
       _presentedFailedVersion = info.latestVersionCode;
       WidgetsBinding.instance.addPostFrameCallback((_) => _showFailedDialog());
@@ -171,7 +172,8 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     final coordinator = context.read<AppUpdateCoordinator>();
     final info = coordinator.info;
     if (info == null ||
-        coordinator.downloadState != AppUpdateDownloadState.failed) {
+        coordinator.downloadState != AppUpdateDownloadState.failed ||
+        !coordinator.downloadStatus.userInitiated) {
       return;
     }
     final dialogContext = _dialogContext;
@@ -189,9 +191,13 @@ class _AppUpdateGateState extends State<AppUpdateGate>
             },
             child: const Text('GitHub 下载'),
           ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('稍后'),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('稍后重试'),
+            child: const Text('立即重试'),
           ),
         ],
       ),

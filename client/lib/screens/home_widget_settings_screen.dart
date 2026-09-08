@@ -22,6 +22,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     HomeWidgetKind.exam: HomeWidgetSize.size2x2,
   };
   HomeWidgetInstalledCounts _counts = const HomeWidgetInstalledCounts();
+  final Map<HomeWidgetKind, int> _appearanceUpdateVersions = {};
   bool _loading = true;
   bool _syncingAll = false;
 
@@ -78,11 +79,14 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
 
   Future<void> _updateAppearance(HomeWidgetAppearance next) async {
     final previous = _appearances[next.kind];
+    final version = (_appearanceUpdateVersions[next.kind] ?? 0) + 1;
+    _appearanceUpdateVersions[next.kind] = version;
     setState(() => _appearances[next.kind] = next);
     try {
       await HomeWidgetService.updateAppearance(next);
     } catch (_) {
-      if (!mounted) return;
+      // 较早请求的失败不能回滚用户随后已经选择的新主题。
+      if (!mounted || _appearanceUpdateVersions[next.kind] != version) return;
       if (previous != null) {
         setState(() => _appearances[next.kind] = previous);
       }

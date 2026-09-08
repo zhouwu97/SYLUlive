@@ -665,7 +665,7 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   /// 服务端确认解绑后卸载身份，清理失败也不允许旧会话重新挂载。
-  void acceptIdentityUnbound(AcademicIdentityKey oldIdentity) {
+  Future<void> acceptIdentityUnbound(AcademicIdentityKey oldIdentity) async {
     if (identity != oldIdentity || _appUserId != oldIdentity.appUserId) return;
     _accountGeneration++;
     _identity = null;
@@ -673,7 +673,7 @@ final class AcademicSessionController extends ChangeNotifier {
     _serverBindingStatusResolved = true;
     _pendingAcademicChallenge = null;
     _clearViewState(AcademicSessionStatus.idle);
-    _notifyListeners();
+    await resetSession();
   }
 
   /// 只有显式重新连接后才恢复学校会话。

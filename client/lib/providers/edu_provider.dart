@@ -750,7 +750,7 @@ class EduProvider extends ChangeNotifier {
       } catch (_) {
         return OperationResult.fail('解绑失败，请检查网络后重试');
       }
-      controller.acceptIdentityUnbound(identity);
+      await controller.acceptIdentityUnbound(identity);
       try {
         await AcademicIdentityLifecycleCoordinator(controller: controller,
             preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);

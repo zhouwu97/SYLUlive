@@ -1,3 +1,5 @@
+import '../storage/academic_connection_store.dart';
+import 'academic_identity_lifecycle_coordinator.dart';
 import 'dart:async';
 
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
@@ -112,6 +114,34 @@ final class AcademicLoginCoordinator {
   AcademicIdentityChallenge? get pendingIdentityChallenge =>
       _pendingIdentity?.challenge;
 
+  Future<void>? _cleanupInFlight;
+
+  Future<void> resumePendingCleanup() {
+    final running = _cleanupInFlight;
+    if (running != null) return running;
+    final user = controller.appUserId;
+    final operation = () async {
+      if (user == null) return;
+      final preferences = await _preferencesLoader();
+      for (final identity in AcademicConnectionStore.pendingIdentities(preferences, user)) {
+        if (controller.appUserId != user) return;
+        try {
+          await AcademicIdentityLifecycleCoordinator(controller: controller,
+            preferences: preferences).retryPending(identity);
+        } catch (_) {
+          // 保留 pending；启动不因磁盘或安全存储暂不可用而中断。
+        }
+      }
+    }();
+    _cleanupInFlight = operation;
+    return operation.whenComplete(() { if (identical(_cleanupInFlight, operation)) _cleanupInFlight = null; });
+  }
+
+  void cancelIdentityVerification() {
+    _pendingIdentity = null;
+    controller.dismissCaptchaChallenge();
+  }
+
   Future<AcademicCredential?> readSavedCredential() async {
     final appUserId = controller.appUserId;
     if (appUserId == null) return null;
@@ -142,6 +172,7 @@ final class AcademicLoginCoordinator {
     required bool saveAcademicData,
     bool useSavedCredential = false,
     AcademicProviderId? providerId,
+    bool changeIdentity = false,
   }) {
     final appUserId = controller.appUserId;
     if (appUserId == null || appUserId.isEmpty) {
@@ -150,9 +181,10 @@ final class AcademicLoginCoordinator {
         message: '请先登录 APP',
       ));
     }
-    if (controller.sourceKind == AcademicSourceKind.legacy &&
+    if ((controller.sourceKind == AcademicSourceKind.legacy || changeIdentity) &&
         providerId == AcademicProviderId.syluGraduate) {
       return _beginGraduateIdentityVerification(
+        currentIdentity: changeIdentity ? controller.identity : null,
         appUserId: appUserId,
         studentId: studentId,
         password: password,
@@ -161,10 +193,11 @@ final class AcademicLoginCoordinator {
         useSavedCredential: useSavedCredential,
       );
     }
-    if (controller.sourceKind == AcademicSourceKind.legacy &&
+    if ((controller.sourceKind == AcademicSourceKind.legacy || changeIdentity) &&
         providerId == AcademicProviderId.syluUndergraduate &&
         _identityClient != null) {
       return _beginUndergraduateLogin(
+        currentIdentity: changeIdentity ? controller.identity : null,
         appUserId: appUserId,
         studentId: studentId,
         password: password,
@@ -181,6 +214,35 @@ final class AcademicLoginCoordinator {
       saveAcademicData: saveAcademicData,
       useSavedCredential: useSavedCredential,
     );
+  }
+
+  Future<void> refreshCaptcha() async {
+    final verification = _pendingIdentity;
+    if (verification != null) {
+      if (!controller.isCurrentContext(generation: verification.generation, appUserId: verification.appUserId)) {
+        cancelIdentityVerification();
+        return;
+      }
+      _pendingIdentity = null;
+      final outcome = await _beginGraduateIdentityVerification(
+        currentIdentity: verification.challenge.isChange ? controller.identity : null,
+        appUserId: verification.appUserId,
+        studentId: verification.credential.studentId,
+        password: verification.credential.password,
+        saveCredentials: verification.saveCredentials,
+        saveAcademicData: verification.saveAcademicData,
+        useSavedCredential: false);
+      if (!outcome.needsCaptcha) controller.dismissCaptchaChallenge();
+      return;
+    }
+    final pending = _pending;
+    final operation = controller.refreshCaptcha();
+    final generation = controller.contextGeneration;
+    await operation;
+    if (pending == null || !controller.isCurrentContext(generation: generation, appUserId: pending.appUserId)) return;
+    _pending = _PendingAcademicLogin(appUserId: pending.appUserId,
+      generation: generation, credential: pending.credential,
+      saveCredentials: pending.saveCredentials, saveAcademicData: pending.saveAcademicData);
   }
 
   Future<AcademicLoginOutcome> continueLoginWithCaptcha({
@@ -217,6 +279,7 @@ final class AcademicLoginCoordinator {
   }
 
   Future<AcademicLoginOutcome> _beginUndergraduateLogin({
+    AcademicIdentityKey? currentIdentity,
     required String appUserId,
     required String studentId,
     required String password,
@@ -253,13 +316,14 @@ final class AcademicLoginCoordinator {
     AcademicIdentityChallenge? challenge;
     try {
       challenge = await client.requestChallenge(
+        currentIdentity: currentIdentity,
         providerId: AcademicProviderId.syluUndergraduate,
         studentId: actualStudentId,
       );
     } on AcademicIdentityApiException catch (error) {
       // 旧部署尚未提供身份路由时仍可使用 /edu/bind；新路由的业务错误
       // 必须显示给用户，不能悄悄变成密码错误。
-      if (error.statusCode != 404 && error.code != 'ROUTE_UNSUPPORTED') {
+      if (currentIdentity != null || (error.statusCode != 404 && error.code != 'ROUTE_UNSUPPORTED')) {
         return _identityFailureOutcome(error);
       }
       // 只有 challenge 路由本身明确不存在时才走旧兼容接口。
@@ -301,7 +365,10 @@ final class AcademicLoginCoordinator {
           message: '教务账号上下文已切换，请重新登录',
         );
       }
-      await controller.selectProviderIdentity(binding.toIdentity(appUserId));
+      final mountedGeneration = await _mountVerifiedBinding(binding.toIdentity(appUserId), changing: challenge.isChange);
+      if (!controller.isCurrentContext(generation: mountedGeneration, appUserId: appUserId)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
       // 身份核验不会把学校 Cookie 转移到手机；成功后仍由本机
       // Undergraduate Provider 独立登录并取得自己的会话。
       final result = await controller.login(
@@ -311,7 +378,7 @@ final class AcademicLoginCoordinator {
       return _handleLoginResult(
         result,
         appUserId: appUserId,
-        generation: generation,
+        generation: mountedGeneration,
         credential: AcademicCredential(
           studentId: actualStudentId,
           password: actualPassword,
@@ -331,6 +398,7 @@ final class AcademicLoginCoordinator {
   }
 
   Future<AcademicLoginOutcome> _beginGraduateIdentityVerification({
+    AcademicIdentityKey? currentIdentity,
     required String appUserId,
     required String studentId,
     required String password,
@@ -366,6 +434,7 @@ final class AcademicLoginCoordinator {
     final generation = controller.contextGeneration;
     try {
       final challenge = await client.requestChallenge(
+        currentIdentity: currentIdentity,
         providerId: AcademicProviderId.syluGraduate,
         studentId: actualStudentId,
       );
@@ -454,9 +523,13 @@ final class AcademicLoginCoordinator {
         captcha: captcha,
         encryptedPassword: encryptedPassword,
       );
-      await controller.selectProviderIdentity(
-        binding.toIdentity(consumed.appUserId),
-      );
+      if (!controller.isCurrentContext(generation: consumed.generation, appUserId: consumed.appUserId)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
+      final mountedGeneration = await _mountVerifiedBinding(binding.toIdentity(consumed.appUserId), changing: consumed.challenge.isChange);
+      if (!controller.isCurrentContext(generation: mountedGeneration, appUserId: consumed.appUserId)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
       controller.dismissCaptchaChallenge();
       // 服务端验证只确认身份，不把学校 Cookie 转移到手机；随后由本机
       // Graduate Provider 重新登录并取得独立会话，通常会产生第二张验证码。
@@ -467,7 +540,7 @@ final class AcademicLoginCoordinator {
       return _handleLoginResult(
         result,
         appUserId: consumed.appUserId,
-        generation: consumed.generation,
+        generation: mountedGeneration,
         credential: consumed.credential,
         saveCredentials: consumed.saveCredentials,
         saveAcademicData: consumed.saveAcademicData,
@@ -482,6 +555,20 @@ final class AcademicLoginCoordinator {
         message: '研究生教务密码加密失败，请重新获取挑战',
       );
     }
+  }
+
+  Future<int> _mountVerifiedBinding(AcademicIdentityKey next, {required bool changing}) async {
+    final old = changing ? controller.identity : null;
+    await controller.selectProviderIdentity(next);
+    final generation = controller.contextGeneration;
+    if (old == null || old == next) return generation;
+    try {
+      await AcademicIdentityLifecycleCoordinator(controller: controller,
+        preferences: await _preferencesLoader()).clearLocalIdentity(old);
+    } catch (_) {
+      // 服务端已成功换绑，旧身份已从运行时卸载；删除失败由 pending 重试，不回滚绑定。
+    }
+    return generation;
   }
 
   AcademicLoginOutcome _identityFailureOutcome(
@@ -541,6 +628,17 @@ final class AcademicLoginCoordinator {
   Future<AcademicLoginOutcome> _ensureAuthenticated({
     required bool allowSavedCredential,
   }) async {
+    final requestGeneration = controller.contextGeneration;
+    final requestUser = controller.appUserId;
+    if (!await controller.remoteAccessAllowed()) {
+      return const AcademicLoginOutcome(
+        kind: AcademicLoginOutcomeKind.failure,
+        message: '本机教务已断开，请先重新连接',
+      );
+    }
+    if (controller.pendingAcademicChallenge != null) {
+      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.captchaRequired);
+    }
     if (controller.sourceKind == AcademicSourceKind.legacy) {
       final generation = controller.contextGeneration;
       final appUserId = controller.appUserId;
@@ -568,6 +666,26 @@ final class AcademicLoginCoordinator {
         );
       }
     }
+    // 先恢复学校会话；网络与协议故障不能被解释成需要再次提交密码。
+    if (await controller.ensureAuthenticated()) {
+      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.success);
+    }
+    if (!controller.isCurrentContext(
+        generation: requestGeneration, appUserId: requestUser)) {
+      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+    }
+    final restoreFailure = controller.failure;
+    if (restoreFailure != null &&
+        restoreFailure.kind != AcademicFailureKind.sessionExpired &&
+        restoreFailure.kind != AcademicFailureKind.unauthenticated &&
+        restoreFailure.kind != AcademicFailureKind.localCredentialRequired) {
+      return AcademicLoginOutcome(
+        kind: restoreFailure.kind == AcademicFailureKind.network
+            ? AcademicLoginOutcomeKind.networkFailure
+            : AcademicLoginOutcomeKind.failure,
+        message: restoreFailure.message,
+      );
+    }
     if (!allowSavedCredential) {
       return const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.credentialsRequired,
@@ -582,6 +700,9 @@ final class AcademicLoginCoordinator {
       );
     }
     final prefs = await _loadPreferences();
+    if (!controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
+      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+    }
     return _login(
       appUserId: controller.appUserId!,
       studentId: saved.studentId,
@@ -684,12 +805,13 @@ final class AcademicLoginCoordinator {
         );
       case LoginSuccess():
         _pending = null;
-        return _finalizeSuccess(
+        return controller.commit(() => _finalizeSuccess(
+          generation: generation,
           appUserId: appUserId,
           credential: credential,
           saveCredentials: saveCredentials,
           saveAcademicData: saveAcademicData,
-        );
+        ));
       case CaptchaExpired(:final message):
       case LoginPageChanged(:final message):
         _pending = null;
@@ -701,11 +823,16 @@ final class AcademicLoginCoordinator {
   }
 
   Future<AcademicLoginOutcome> _finalizeSuccess({
+    required int generation,
     required String appUserId,
     required AcademicCredential credential,
     required bool saveCredentials,
     required bool saveAcademicData,
   }) async {
+    bool current() => controller.isCurrentContext(
+      generation: generation, appUserId: appUserId);
+    const changed = AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+    if (!current()) return changed;
     var saveWarning = false;
     // 服务端模式不读取或修改本机密码，资料缓存仍按独立策略处理。
     if (controller.sourceKind == AcademicSourceKind.local) {
@@ -713,6 +840,7 @@ final class AcademicLoginCoordinator {
       try {
         preferences =
             persistencePolicy?.preferences ?? await _loadPreferences();
+        if (!current()) return changed;
         if (saveCredentials) {
           await _writeCredentialForCurrentIdentity(appUserId, credential);
           await preferences.setSaveCredentials(true);
@@ -721,6 +849,7 @@ final class AcademicLoginCoordinator {
           await preferences.setSaveCredentials(false);
         }
       } catch (_) {
+        if (!current()) return changed;
         saveWarning = true;
         // Secure Store 写入成功但偏好写入失败时回滚凭据，避免出现用户以为
         // 未保存、设备却仍残留学校密码的半成功状态。
@@ -736,12 +865,14 @@ final class AcademicLoginCoordinator {
       }
     }
 
+    if (!current()) return changed;
     try {
       final policy = persistencePolicy ??
           await _createPersistencePolicy(
             appUserId: appUserId,
             sourceAccountId: controller.studentId ?? credential.studentId,
           );
+      if (!current()) return changed;
       if (saveAcademicData) {
         await policy.enable();
       } else {
@@ -762,14 +893,18 @@ final class AcademicLoginCoordinator {
   Future<AcademicStoragePreferences> _loadPreferences() async {
     final appUserId = controller.appUserId ?? '';
     try {
-      return AcademicStoragePreferences(
+      final preferences = AcademicStoragePreferences(
         appUserId: appUserId,
+        identity: controller.identity,
         store: await _preferencesLoader(),
       );
+      await preferences.migrateLegacyPreferences();
+      return preferences;
     } catch (_) {
       // 偏好服务暂时不可用时仍允许手动登录；保存策略会在真正写入时给出警告。
       return AcademicStoragePreferences(
         appUserId: appUserId,
+        identity: controller.identity,
         store: MemoryPreferencesStore(),
       );
     }
@@ -798,6 +933,7 @@ final class AcademicLoginCoordinator {
     );
     return AcademicPersistencePolicy(
       appUserId: appUserId,
+      identity: identity,
       preferences: prefs,
       academicStore: AcademicCacheStore(
         appUserId: appUserId,

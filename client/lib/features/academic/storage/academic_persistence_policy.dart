@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../domain/academic_provider.dart';
 
 import '../../../platform/contracts/preferences_store.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
@@ -18,6 +19,7 @@ final class AcademicPersistencePolicy extends ChangeNotifier
     implements AcademicPersistenceGate {
   AcademicPersistencePolicy({
     required String appUserId,
+    AcademicIdentityKey? identity,
     required AppPreferencesStore preferences,
     required this.academicStore,
     required this.scheduleStore,
@@ -25,6 +27,7 @@ final class AcademicPersistencePolicy extends ChangeNotifier
     bool supported = true,
   })  : preferences = AcademicStoragePreferences(
           appUserId: appUserId,
+          identity: identity,
           store: preferences,
         ),
         _supported = supported;

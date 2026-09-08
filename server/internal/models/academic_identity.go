@@ -82,6 +82,7 @@ func (k AcademicIdentityKey) Matches(other AcademicIdentityKey) bool {
 // AcademicIdentityBinding 是服务端确认过的学生身份。
 // 该表只保存最小身份事实，不保存学校密码、Cookie 或学校会话。
 type AcademicIdentityBinding struct {
+	BindingVersion      uint       `gorm:"not null;default:1" json:"binding_version"`
 	ID                  uint       `gorm:"primaryKey" json:"id"`
 	UserID              uint       `gorm:"not null;index:idx_academic_identity_user,priority:1;uniqueIndex:ux_academic_identity_user_provider,priority:1" json:"-"`
 	ProviderID          string     `gorm:"size:64;not null;index:idx_academic_identity_user,priority:2;uniqueIndex:ux_academic_identity_user_provider,priority:2;uniqueIndex:ux_academic_identity_provider_student,priority:1" json:"provider_id"`

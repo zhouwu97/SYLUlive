@@ -592,6 +592,13 @@ class ScheduleCacheStore {
       'terms': terms,
     };
     if (selectedTerm != null) payload['selected_term'] = selectedTerm;
+    final namespace = identityNamespace;
+    final preferences = AppPreferencesStore.maybeInstance;
+    if (namespace != null && preferences != null &&
+        (preferences.getBool('academic_lifecycle_${namespace}_connected') == false ||
+         preferences.getBool('academic_lifecycle_${namespace}_cleanup') == true)) {
+      return;
+    }
     await _snapshotStore.write(
       type: PersonalDataType.schedule,
       schemaVersion: schemaVersion,

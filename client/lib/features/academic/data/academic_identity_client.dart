@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -25,6 +26,8 @@ final class AcademicIdentityBinding {
     required this.studentId,
     required this.verified,
     this.verifiedAt,
+    this.bindingVersion = 1,
+    this.changedAt,
     this.verificationMethod,
     this.verificationVersion,
   });
@@ -32,6 +35,8 @@ final class AcademicIdentityBinding {
   final AcademicProviderId providerId;
   final String studentId;
   final bool verified;
+  final int bindingVersion;
+  final DateTime? changedAt;
   final DateTime? verifiedAt;
   final String? verificationMethod;
   final String? verificationVersion;
@@ -61,6 +66,7 @@ final class AcademicIdentityChallenge {
     this.expiresAt,
     this.verifyEndpoint,
     this.legacyEndpoint,
+    this.isChange = false,
   });
 
   final AcademicProviderId providerId;
@@ -74,6 +80,7 @@ final class AcademicIdentityChallenge {
   final DateTime? expiresAt;
   final String? verifyEndpoint;
   final String? legacyEndpoint;
+  final bool isChange;
 
   bool get isUndergraduatePreverify =>
       verificationMode.trim().toLowerCase() == 'undergraduate_preverify';
@@ -90,8 +97,14 @@ final class AcademicIdentityClient {
   final Dio _dio;
 
   Future<List<AcademicIdentityBinding>> listIdentities() async {
+    final cancellation = CancelToken();
     try {
-      final response = await _dio.get('/student-identity');
+      final response = await _dio.get('/student-identity', cancelToken: cancellation)
+          .timeout(const Duration(seconds: 12), onTimeout: () {
+        cancellation.cancel('identity_restore_timeout');
+        throw const AcademicIdentityApiException('IDENTITY_TIMEOUT',
+            '确认教务身份超时，请检查网络后重试');
+      });
       final data = _requireMap(response, '读取教务身份');
       final raw = data['identities'];
       if (raw is! List) {
@@ -118,6 +131,8 @@ final class AcademicIdentityClient {
             )?.toUtc(),
             verificationMethod: item['verification_method']?.toString(),
             verificationVersion: item['verification_version']?.toString(),
+            bindingVersion: (item['binding_version'] as num?)?.toInt() ?? 1,
+            changedAt: DateTime.tryParse(item['changed_at']?.toString() ?? ''),
           ),
         );
       }
@@ -135,6 +150,7 @@ final class AcademicIdentityClient {
     required AcademicProviderId providerId,
     required String studentId,
     String? redirectUri,
+    AcademicIdentityKey? currentIdentity,
   }) async {
     final normalizedStudentId = studentId.trim();
     if (normalizedStudentId.isEmpty) {
@@ -145,8 +161,12 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        '/student-identity/challenge',
+        currentIdentity == null ? '/student-identity/challenge' : '/student-identity/change/challenge',
         data: <String, Object?>{
+          if (currentIdentity != null) ...{
+            'current_provider_id': currentIdentity.providerId.value,
+            'current_student_id': currentIdentity.studentId,
+          },
           'provider_id': providerId.value,
           'student_id': normalizedStudentId,
           if (redirectUri != null && redirectUri.trim().isNotEmpty)
@@ -154,6 +174,12 @@ final class AcademicIdentityClient {
         },
       );
       final data = _requireMap(response, '获取教务挑战');
+      if (currentIdentity != null &&
+          (data['operation'] != 'change' ||
+           (data['challenge_token']?.toString().isEmpty ?? true) ||
+           DateTime.tryParse(data['expires_at']?.toString() ?? '') == null)) {
+        throw const AcademicIdentityApiException('INVALID_RESPONSE', '服务端未返回有效换绑挑战');
+      }
       final required = data['challenge_required'] == true;
       final challengeProvider = AcademicProviderId.tryParse(
         data['provider_id']?.toString() ?? '',
@@ -170,6 +196,10 @@ final class AcademicIdentityClient {
           providerId: challengeProvider!,
           studentId: challengeStudent,
           challengeType: verificationMode,
+          isChange: currentIdentity != null,
+          challengeToken: data['challenge_token']?.toString(),
+          schoolPublicKeyFingerprint: data['school_public_key_fingerprint']?.toString(),
+          expiresAt: DateTime.tryParse(data['expires_at']?.toString() ?? ''),
           verificationMode: verificationMode,
           verifyEndpoint: _normalizeApiPath(
             data['verify_endpoint'],
@@ -212,6 +242,7 @@ final class AcademicIdentityClient {
       }
       return AcademicIdentityChallenge(
         providerId: resolvedProvider,
+        isChange: currentIdentity != null,
         studentId: challengeStudent,
         // 研究生服务端当前以 school_login 表示“学校登录前置验证”，
         // 即使旧服务端漏传类型也按该协议处理。
@@ -261,7 +292,7 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        '/student-identity/verify',
+        challenge.isChange ? '/student-identity/change' : '/student-identity/verify',
         data: <String, Object?>{
           'provider_id': challenge.providerId.value,
           'student_id': challenge.studentId,
@@ -293,6 +324,8 @@ final class AcademicIdentityClient {
         )?.toUtc(),
         verificationMethod: data['verification_method']?.toString(),
         verificationVersion: data['verification_version']?.toString(),
+        bindingVersion: (data['binding_version'] as num?)?.toInt() ?? 1,
+        changedAt: DateTime.tryParse(data['changed_at']?.toString() ?? ''),
       );
     } on AcademicIdentityApiException {
       rethrow;
@@ -323,7 +356,7 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        _normalizeApiPath(
+        challenge.isChange ? '/student-identity/change' : _normalizeApiPath(
           challenge.verifyEndpoint,
           fallback: '/student-identity/verify',
         ),
@@ -331,6 +364,10 @@ final class AcademicIdentityClient {
           'provider_id': challenge.providerId.value,
           'student_id': challenge.studentId,
           'password': normalizedPassword,
+          if (challenge.isChange) ...{
+            'challenge_token': challenge.challengeToken,
+            'school_public_key_fingerprint': challenge.schoolPublicKeyFingerprint ?? '',
+          },
         },
       );
       final data = _requireMap(response, '验证本科教务身份');
@@ -390,6 +427,8 @@ final class AcademicIdentityClient {
           DateTime.tryParse(data['verified_at']?.toString() ?? '')?.toUtc(),
       verificationMethod: data['verification_method']?.toString(),
       verificationVersion: data['verification_version']?.toString(),
+      bindingVersion: (data['binding_version'] as num?)?.toInt() ?? 1,
+      changedAt: DateTime.tryParse(data['changed_at']?.toString() ?? ''),
     );
   }
 

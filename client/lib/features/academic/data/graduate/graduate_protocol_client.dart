@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import '../../domain/academic_failure.dart';
 
 import 'package:asn1lib/asn1lib.dart';
 import 'package:cookie_jar/cookie_jar.dart';
@@ -176,6 +177,8 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
   String _sessionPathPrefix = '';
   String? _publicKeyPem;
   bool _authenticated = false;
+  DateTime? _sessionCreatedAt;
+  DateTime? _validatedAt;
   bool _closed = false;
 
   static Dio _newDio() => Dio(
@@ -275,6 +278,8 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
       );
     }
     _authenticated = true;
+    _sessionCreatedAt = DateTime.now().toUtc();
+    _validatedAt = _sessionCreatedAt;
   }
 
   @override
@@ -326,12 +331,16 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
       // 只有学校返回的已认证个人资料才可通过身份门；本地保存的学号不构成证明。
       final profile = await fetchProfile();
       final confirmedId = profile.studentId?.trim();
+      if (confirmedId == null || confirmedId.isEmpty) {
+        throw const GraduatePortalException('PROFILE_RESPONSE_INVALID', '学校探活缺少身份信息');
+      }
+      _validatedAt = DateTime.now().toUtc();
       return GraduateSessionState(
-        authenticated: confirmedId != null && confirmedId.isNotEmpty,
+        authenticated: true,
         studentId: confirmedId,
       );
     } on GraduatePortalException catch (error) {
-      if (error.code.startsWith('LOGIN_') || error.code == 'SESSION_EXPIRED') {
+      if (error.code == 'SESSION_EXPIRED') {
         _authenticated = false;
         return const GraduateSessionState(authenticated: false);
       }
@@ -347,7 +356,8 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
     return GraduateSessionArtifactState(
       cookies: cookies.map((cookie) => cookie.toString()).toList(growable: false),
       sessionPathPrefix: _sessionPathPrefix,
-      createdAt: DateTime.now().toUtc(),
+      createdAt: _sessionCreatedAt ?? DateTime.now().toUtc(),
+      validatedAt: _validatedAt,
     );
   }
 
@@ -364,6 +374,8 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
       }
     }
     await _cookieJar.saveFromResponse(_baseUri, cookies);
+    _sessionCreatedAt = artifact.createdAt;
+    _validatedAt = artifact.validatedAt;
     _sessionPathPrefix = _validateSessionPrefix(artifact.sessionPathPrefix);
     _loginPageUrl = '$_baseUri$_sessionPathPrefix/home/stulogin';
     // 临时允许 probe 发起学校请求；只有 profile 返回的真实学号通过后才保留认证状态。
@@ -378,7 +390,8 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
 
   @override
   Future<void> reset() async {
-    _publicKeyPem = null;
+    _sessionCreatedAt = null;
+    _validatedAt = null;    _publicKeyPem = null;
     _sessionPathPrefix = '';
     _loginPageUrl = '$graduatePortalBaseUrl/home/stulogin';
     _authenticated = false;
@@ -448,6 +461,10 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
 
   void _requireSuccess(Response<dynamic> response, String operation) {
     final status = response.statusCode;
+    if (status != null && status >= 500) {
+      throw const AcademicFailure(kind: AcademicFailureKind.schoolUnavailable,
+          message: '学校服务暂时不可用，请稍后重试', code: 'SCHOOL_UNAVAILABLE');
+    }
     if (status == null || status < 200 || status >= 300) throw GraduatePortalException('REMOTE_HTTP_$status', '$operation失败，请稍后重试');
   }
 

@@ -364,6 +364,14 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   /// 打开当前会话的保险箱并完成一次本地恢复。
+  Future<void> retryLocalRestore() async {
+    final store = _scheduleStore;
+    if (store == null || _disposed) return;
+    final generation = ++_contextGeneration;
+    await _restoreSession(generation: generation, store: store);
+  }
+
+  /// 本地恢复独立于学校会话，不触发学校请求。
   ///
   /// 这条链由 Provider 独占，页面不再通过 `setUserId` 或缓存 Future 参与
   /// session 绑定。即使 EduProvider 的来源账号晚于 App 用户 ID 到达，也会

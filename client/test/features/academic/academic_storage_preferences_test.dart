@@ -1,3 +1,4 @@
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -43,4 +44,19 @@ void main() {
     await preferences.setCleanupPending(false);
     expect(preferences.cleanupPending, isFalse);
   });
+  test('身份偏好迁移保留旧许可，清除后不会再次导入', () async {
+    final store = MemoryPreferencesStore();
+    final legacy = AcademicStoragePreferences(appUserId: 'u', store: store);
+    await legacy.setSaveCredentials(true);
+    await legacy.setSaveAcademicData(false);
+    final scoped = AcademicStoragePreferences(appUserId: 'u', store: store,
+      identity: const AcademicIdentityKey(appUserId: 'u', providerId: AcademicProviderId.syluUndergraduate, studentId: 'a'));
+    await scoped.migrateLegacyPreferences();
+    expect(scoped.saveCredentials, true);
+    expect(scoped.saveAcademicData, false);
+    await scoped.clear();
+    await scoped.migrateLegacyPreferences();
+    expect(scoped.saveCredentials, false);
+  });
+
 }

@@ -1,3 +1,4 @@
+import 'datasource/jiaowu_local_data_source.dart';
 import 'package:dio/dio.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
@@ -126,7 +127,9 @@ final class GraduateAcademicProvider implements AcademicProvider {
       throw const AcademicAuthFailure(
           AcademicAuthFailureType.identityMismatch, '教务会话身份不匹配');
     }
-    if (!artifact.isRestoreAgeValid) {
+    if (artifact.artifactVersion != graduateProtocolVersion ||
+        DateTime.now().toUtc().difference(artifact.createdAt).isNegative ||
+        DateTime.now().toUtc().difference(artifact.createdAt) > const Duration(hours: 12)) {
       throw const AcademicAuthFailure(
           AcademicAuthFailureType.sessionExpired, '教务会话材料已超过恢复期限');
     }
@@ -134,7 +137,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
     final cookies = state['cookies'];
     final prefix = state['session_path_prefix'];
     final createdAt = DateTime.tryParse(state['created_at']?.toString() ?? '');
-    if (cookies is! List || prefix is! String || createdAt == null) {
+    if (cookies is! List || cookies.any((item) => item is! String) || prefix is! String || createdAt == null) {
       throw const AcademicAuthFailure(
           AcademicAuthFailureType.sessionExpired, '教务会话材料格式无效');
     }
@@ -146,6 +149,13 @@ final class GraduateAcademicProvider implements AcademicProvider {
         validatedAt: DateTime.tryParse(state['validated_at']?.toString() ?? ''),
       ),
     );
+    final confirmed = await _gateway.probe();
+    if (!confirmed.authenticated) {
+      throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '研究生会话已失效');
+    }
+    if (confirmed.studentId?.trim() != _identity.studentId.trim()) {
+      throw const AcademicAuthFailure(AcademicAuthFailureType.identityMismatch, '研究生会话身份不匹配');
+    }
   }
 
   @override
@@ -231,6 +241,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
       artifactVersion: graduateProtocolVersion,
       createdAt: state.createdAt,
       validatedAt: state.validatedAt,
+      maxRestoreAge: const Duration(hours: 12),
       opaqueProviderState: <String, Object?>{
         'cookies': state.cookies,
         'session_path_prefix': state.sessionPathPrefix,
@@ -313,6 +324,8 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
 
   final AcademicIdentityKey _identity;
   final AcademicDataSource _source;
+  DateTime? _sessionCreatedAt;
+  DateTime? _validatedAt;
   bool _closed = false;
 
   @override
@@ -390,20 +403,40 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
       throw const AcademicAuthFailure(
           AcademicAuthFailureType.identityMismatch, '教务会话身份不匹配');
     }
-    await _source.restoreSession();
+    if (artifact.artifactVersion != 1 ||
+        DateTime.now().toUtc().difference(artifact.createdAt).isNegative ||
+        DateTime.now().toUtc().difference(artifact.createdAt) > const Duration(hours: 8)) {
+      throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '本科会话材料已超龄');
+    }
+    final source = _source;
+    final cookies = artifact.opaqueProviderState['cookies'];
+    if (source is! JiaowuLocalDataSource || cookies is! List || cookies.any((item) => item is! String)) {
+      throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '本科会话材料无效');
+    }
+    try {
+      await source.importCookies(cookies.cast<String>(), _identity.studentId);
+    } on FormatException {
+      throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '本科会话材料损坏');
+    }
+    _sessionCreatedAt = artifact.createdAt;
     final state = await probeSession();
     if (!state.authenticated) {
-      throw const AcademicAuthFailure(
-          AcademicAuthFailureType.sessionExpired, '本科教务会话已失效');
+      throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '本科教务会话已失效');
     }
   }
 
   @override
-  Future<AcademicSessionProbeResult> probeSession() async =>
-      AcademicSessionProbeResult(
-        authenticated: _source.sessionState == SessionState.authenticated,
-        confirmedStudentId: _source.studentId,
-      );
+  Future<AcademicSessionProbeResult> probeSession() async {
+    final source = _source;
+    if (source is JiaowuLocalDataSource) {
+      final profile = await source.probeSession();
+      _validatedAt = DateTime.now().toUtc();
+      return AcademicSessionProbeResult(authenticated: true, confirmedStudentId: profile.studentId);
+    }
+    return AcademicSessionProbeResult(
+      authenticated: source.sessionState == SessionState.authenticated,
+      confirmedStudentId: source.studentId);
+  }
 
   Future<StudentProfile> fetchProfile() async {
     _ensureOpen();
@@ -416,6 +449,7 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
         '学校资料页未确认当前本科教务学号',
       );
     }
+    _validatedAt = DateTime.now().toUtc();
     return profile;
   }
 
@@ -499,10 +533,22 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
   }
 
   @override
-  Future<ProviderSessionArtifact?> exportSession() async => null;
+  Future<ProviderSessionArtifact?> exportSession() async {
+    final source = _source;
+    if (source is! JiaowuLocalDataSource || source.sessionState != SessionState.authenticated) return null;
+    _sessionCreatedAt ??= DateTime.now().toUtc();
+    return ProviderSessionArtifact(providerId: id, studentId: _identity.studentId,
+      artifactVersion: 1, createdAt: _sessionCreatedAt!, validatedAt: _validatedAt,
+      maxRestoreAge: const Duration(hours: 8),
+      opaqueProviderState: {'cookies': await source.exportCookies()});
+  }
 
   @override
-  Future<void> clearSession() => _source.resetSession();
+  Future<void> clearSession() async {
+    _sessionCreatedAt = null;
+    _validatedAt = null;
+    await _source.resetSession();
+  }
 
   @override
   void close() {

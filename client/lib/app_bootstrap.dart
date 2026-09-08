@@ -1411,8 +1411,11 @@ class MyApp extends StatelessWidget {
               controller!..syncAppUser(auth.user?.id.toString()),
         ),
         ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
-          update: (_, controller, previous) =>
-              previous ?? AcademicLoginCoordinator(controller: controller),
+          update: (_, controller, previous) {
+            final coordinator = previous ?? AcademicLoginCoordinator(controller: controller);
+            unawaited(coordinator.resumePendingCleanup().catchError((Object _) {}));
+            return coordinator;
+          },
         ),
         ChangeNotifierProxyProvider<AuthProvider, EmojiFavoriteService>(
           create: (_) {

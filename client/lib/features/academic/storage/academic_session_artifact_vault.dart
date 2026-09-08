@@ -92,7 +92,22 @@ final class AcademicSessionArtifactVault {
 
   String get _keyName => 'academic_session_dek_${identity.storageId}';
 
-  Future<void> write(ProviderSessionArtifact artifact) async {
+  static final Map<String, Future<void>> _tails = {};
+
+  Future<void> _serialize(Future<void> Function() operation) {
+    final key = identity.storageId;
+    final previous = _tails[key] ?? Future<void>.value();
+    final future = previous.then((_) => operation());
+    final tail = future.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _tails[key] = tail;
+    return future.whenComplete(() {
+      if (identical(_tails[key], tail)) _tails.remove(key);
+    });
+  }
+
+  Future<void> write(ProviderSessionArtifact artifact) => _serialize(() => _write(artifact));
+
+  Future<void> _write(ProviderSessionArtifact artifact) async {
     _validateIdentity(artifact);
     final payload = jsonEncode(<String, Object?>{
       'provider_id': artifact.providerId.value,
@@ -176,17 +191,22 @@ final class AcademicSessionArtifactVault {
         opaqueProviderState:
             Map<String, Object?>.from(record['opaque_provider_state'] as Map),
       );
-    } catch (_) {
+    } catch (error) {
+      if (error is! FormatException && error is! InvalidCipherTextException && error is! TypeError) rethrow;
       // 损坏或跨身份密文不能继续尝试恢复，清除后由密码重新建立会话。
       await delete();
       return null;
     }
   }
 
-  Future<void> delete() async {
-    await _fileBackend.delete(identity.storageId);
-    await _secretStore.delete(_keyName);
-  }
+  Future<void> delete() => _serialize(() async {
+    try {
+      await _fileBackend.delete(identity.storageId);
+    } finally {
+      // 文件删除失败时仍销毁专属密钥，并向上层报告失败以保留重试日志。
+      await _secretStore.delete(_keyName);
+    }
+  });
 
   Future<Uint8List> _loadOrCreateKey() async {
     final existing = await _readKeyOrNull();

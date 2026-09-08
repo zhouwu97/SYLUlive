@@ -18,6 +18,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     this.coordinator,
     this.initialStudentId,
     this.initialSaveCredentials = false,
+    this.changeIdentity = false,
     super.key,
   });
 
@@ -25,6 +26,7 @@ final class AcademicLoginDialog extends StatefulWidget {
   final AcademicLoginCoordinator? coordinator;
   final String? initialStudentId;
   final bool initialSaveCredentials;
+  final bool changeIdentity;
 
   static Future<bool?> show(
     BuildContext context, {
@@ -32,6 +34,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     AcademicLoginCoordinator? coordinator,
     String? initialStudentId,
     bool initialSaveCredentials = false,
+    bool changeIdentity = false,
   }) {
     return showDialog<bool>(
       context: context,
@@ -41,6 +44,7 @@ final class AcademicLoginDialog extends StatefulWidget {
         coordinator: coordinator,
         initialStudentId: initialStudentId,
         initialSaveCredentials: initialSaveCredentials,
+        changeIdentity: changeIdentity,
       ),
     );
   }
@@ -58,24 +62,11 @@ Future<bool> ensureAcademicSessionForRead(
   required AcademicSessionController controller,
   AcademicLoginCoordinator? coordinator,
 }) async {
+  if (!await controller.remoteAccessAllowed()) return false;
   if (controller.isAuthenticated) return true;
 
   final generation = controller.contextGeneration;
   final appUserId = controller.appUserId;
-  // 用户已经点击了明确的教务读取入口，此时“已断开”可视为重新连接意图；
-  // 其他场景仍只走普通恢复，不由后台偷偷重连。
-  final restored = controller.connectionPreference ==
-          AcademicConnectionPreference.disconnected
-      ? await controller.reconnect()
-      : await controller.ensureAuthenticated();
-  if (!controller.isCurrentContext(
-    generation: generation,
-    appUserId: appUserId,
-  )) {
-    return false;
-  }
-  if (restored && controller.isAuthenticated) return true;
-
   final loginCoordinator =
       coordinator ?? AcademicLoginCoordinator(controller: controller);
   final outcome = await loginCoordinator.ensureAuthenticated();
@@ -87,7 +78,9 @@ Future<bool> ensureAcademicSessionForRead(
   }
   if (controller.isAuthenticated) return true;
   if (!context.mounted ||
-      outcome.kind == AcademicLoginOutcomeKind.contextChanged) {
+      outcome.kind == AcademicLoginOutcomeKind.contextChanged ||
+      outcome.kind == AcademicLoginOutcomeKind.networkFailure ||
+      outcome.kind == AcademicLoginOutcomeKind.failure) {
     return false;
   }
 
@@ -116,6 +109,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   bool _saveAcademicData = false;
   bool _usingSavedCredential = false;
   bool _loadingPreferences = true;
+  bool _submitting = false;
   String? _savedCredentialStudentId;
   String? _coordinatorMessage;
   String? _appliedCaptchaSuggestion;
@@ -132,7 +126,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         : null;
   }
 
-  bool get _identityLocked => _trustedIdentity != null;
+  bool get _identityLocked => !widget.changeIdentity && _trustedIdentity != null;
 
   @override
   void initState() {
@@ -161,7 +155,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _loadSavedState() async {
-    if (_controller.sourceKind == AcademicSourceKind.legacy) {
+    if (_controller.sourceKind == AcademicSourceKind.legacy || widget.changeIdentity) {
       // 绑定授权不代表同意开启本机缓存，沿用当前 App 账号的独立选择。
       final preferences = await _coordinator.loadPreferences();
       if (!mounted) return;
@@ -202,7 +196,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _submitLogin() async {
-    if (_loadingPreferences) return;
+    if (_loadingPreferences || _submitting) return;
     if (_controller.sourceKind == AcademicSourceKind.legacy &&
         !_consentAccepted) {
       return;
@@ -215,16 +209,20 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     // 提交前清除 UI 控制器中的密码；验证码续登所需的密码只由 POC
     // 客户端在内存 pending 会话中短暂保留。
     _passwordController.clear();
+    setState(() => _submitting = true);
     final result = await _coordinator.login(
       studentId: _studentIdController.text.trim(),
       password: password,
       saveCredentials: _saveCredentials,
       saveAcademicData: _saveAcademicData,
       useSavedCredential: _usingSavedCredential,
-      providerId: _controller.sourceKind == AcademicSourceKind.legacy
+      changeIdentity: widget.changeIdentity,
+      providerId: (_controller.sourceKind == AcademicSourceKind.legacy || widget.changeIdentity)
           ? _selectedProviderId
           : _controller.providerId,
-    );
+    ).whenComplete(() {
+      if (mounted) setState(() => _submitting = false);
+    });
     if (!mounted) return;
     if (result.isSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
@@ -255,7 +253,11 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _cancel() async {
-    await _controller.resetSession();
+    if (widget.changeIdentity) {
+      _coordinator.cancelIdentityVerification();
+    } else {
+      await _controller.resetSession();
+    }
     if (mounted) Navigator.of(context).pop(false);
   }
 
@@ -264,7 +266,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
-        final isBusy = _controller.isBusy;
+        final isBusy = _controller.isBusy || _submitting;
         final awaitingCaptcha = _controller.isAwaitingCaptcha;
         final challenge = _controller.captchaChallenge;
         _applyCaptchaSuggestion(challenge);
@@ -280,10 +282,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         final serverBinding =
             _controller.sourceKind == AcademicSourceKind.legacy;
         final selectingProvider =
-            serverBinding && _controller.providerId == null;
+            widget.changeIdentity || (serverBinding && _controller.providerId == null);
 
         return AlertDialog(
-          title: Text(serverBinding ? '绑定教务账号' : '本机直连教务'),
+          title: Text(widget.changeIdentity ? '更换学生身份' : (serverBinding ? '绑定教务账号' : '本机直连教务')),
           content: ConstrainedBox(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.sizeOf(context).height * 0.68,
@@ -296,9 +298,11 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      serverBinding
+                      widget.changeIdentity
+                          ? '验证新身份成功后才会更换绑定，并清除旧身份的本机教务资料。验证失败会保留原身份。'
+                          : serverBinding
                           ? '绑定只确认你在学校的教务身份。新身份路径不会保存学校密码或 Cookie，服务端按授权身份拉取可用教务数据；旧部署可能暂时使用兼容绑定。'
-                          : '密码只用于本次学校登录，Cookie 仅保存在内存中。',
+                          : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -436,7 +440,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         challenge: challenge,
                         controller: _captchaController,
                         enabled: !isBusy,
-                        onRefresh: _controller.refreshCaptcha,
+                        onRefresh: _coordinator.refreshCaptcha,
                       ),
                     ],
                     if (failure != null) ...[
@@ -494,7 +498,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(serverBinding ? '同意并绑定' : '登录教务'),
+                    : Text(widget.changeIdentity ? '确认更换并验证' : (serverBinding ? '同意并绑定' : '登录教务')),
               ),
           ],
         );

@@ -169,7 +169,7 @@ void main() {
           attempt++) {
         await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 20)));
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 20));
       }
       await tester.pumpAndSettle();
       expect(find.byType(AcademicLoginDialog), findsNothing);

@@ -120,6 +120,15 @@ final class PlatformAcademicCredentialStore
   Future<void> deleteForIdentity(AcademicIdentityKey identity) =>
       _secretStore.delete(_identityKeyFor(identity));
 
+  /// 旧版本只有本科账号级凭据；仅匹配已确认本科身份时才清理迁移残留。
+  Future<void> deleteLegacyForIdentity(AcademicIdentityKey identity) async {
+    if (identity.providerId != AcademicProviderId.syluUndergraduate) return;
+    final legacy = await read(identity.appUserId);
+    if (legacy?.studentId.trim() == identity.studentId.trim()) {
+      await delete(identity.appUserId);
+    }
+  }
+
   Future<AcademicCredential?> _readByKey(String key) async {
     String? raw;
     try {

@@ -94,6 +94,11 @@ final class ProviderAcademicRepository implements AcademicRepository {
     );
   }
 
+  Future<CaptchaChallenge> refreshCaptchaChallenge() {
+    _pendingChallenge = null;
+    return getCaptchaChallenge();
+  }
+
   @override
   Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
     _ensureOpen();
@@ -103,13 +108,14 @@ final class ProviderAcademicRepository implements AcademicRepository {
     }
     // 兼容仓储只允许当前 challenge 使用一次；Provider 抛出异常时也不
     // 留下旧图片，下一次显式登录必须重新准备验证码。
+    final challengeId = _pendingChallenge?.challengeId;
     _pendingChallenge = null;
     final result = await provider.login(
       AcademicLoginRequest(
         studentId: pending.studentId,
         password: pending.password,
         captchaCode: code,
-        challengeId: _pendingChallenge?.challengeId,
+        challengeId: challengeId,
       ),
     );
     final mapped = await _mapLoginResult(result);

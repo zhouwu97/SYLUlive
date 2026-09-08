@@ -1,4 +1,5 @@
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:dio/dio.dart';
 
 import 'academic_provider.dart';
 
@@ -17,6 +18,7 @@ enum AcademicFailureKind {
   disconnected,
   localCredentialRequired,
   network,
+  schoolUnavailable,
   protocolChanged,
   courseUnavailable,
   gradeUnavailable,
@@ -37,6 +39,14 @@ final class AcademicFailure implements Exception {
 
   factory AcademicFailure.fromException(Object error) {
     if (error is AcademicFailure) return error;
+    if (error is DioException) {
+      final unavailable = (error.response?.statusCode ?? 0) >= 500;
+      return AcademicFailure(
+        kind: unavailable ? AcademicFailureKind.schoolUnavailable : AcademicFailureKind.network,
+        message: unavailable ? '学校服务暂时不可用，请稍后重试' : '教务网络连接失败，请稍后重试',
+        code: unavailable ? 'SCHOOL_UNAVAILABLE' : 'NETWORK_ERROR',
+      );
+    }
     if (error is AcademicAuthFailure) {
       return AcademicFailure(
         kind: _kindForAuthFailure(error.type),
@@ -109,6 +119,7 @@ final class AcademicFailure implements Exception {
         AcademicFailureKind.disconnected => false,
         AcademicFailureKind.localCredentialRequired => false,
         AcademicFailureKind.network => true,
+        AcademicFailureKind.schoolUnavailable => true,
         AcademicFailureKind.protocolChanged => false,
         AcademicFailureKind.courseUnavailable => true,
         AcademicFailureKind.gradeUnavailable => true,
@@ -145,7 +156,10 @@ final class AcademicFailure implements Exception {
         error is LoginPageChangedException) {
       return AcademicFailureKind.protocolChanged;
     }
-    if (error is NetworkException) return AcademicFailureKind.network;
+    if (error is NetworkException) {
+      return error.code == 'SCHOOL_UNAVAILABLE'
+          ? AcademicFailureKind.schoolUnavailable : AcademicFailureKind.network;
+    }
     return AcademicFailureKind.unexpected;
   }
 

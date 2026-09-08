@@ -233,6 +233,9 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   @override
   Future<CreditRequirement> getCreditRequirements() =>
       _active.getCreditRequirements();
+  Future<CaptchaChallenge> refreshCaptchaChallenge() =>
+      _selected?.refreshCaptchaChallenge() ?? legacy.getCaptchaChallenge();
+
   @override
   Future<void> resetSession() => _active.resetSession();
   @override

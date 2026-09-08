@@ -346,8 +346,10 @@ class EduProvider extends ChangeNotifier {
     AcademicPersistenceRegistry.set(userId, enabled: false);
     final prefs = AcademicStoragePreferences(
       appUserId: userId,
+      identity: _academicSessionController?.identity,
       store: await AppPreferencesStore.getInstance(),
     );
+    await prefs.migrateLegacyPreferences();
     var enabled = prefs.saveAcademicData;
     if (!prefs.hasMigrated && sourceAccountId.isNotEmpty) {
       // 是否存在旧快照不能覆盖用户选择，也不能关闭新账号的课表保存能力。
@@ -584,9 +586,8 @@ class EduProvider extends ChangeNotifier {
       // 服务端状态不可达时保留未解析状态，调用方可呈现恢复失败而非未绑定。
       return;
     }
-    while (!_statusLoaded) {
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
+    // 状态由控制器通知驱动，失败保持未解析；不得无期限轮询等待。
+    _applyAcademicSessionState();
   }
 
   /// 重新读取当前账号的教务状态，供 Agent 恢复原请求前确认会话确实可用。
@@ -611,7 +612,7 @@ class EduProvider extends ChangeNotifier {
       if (_userId != expectedUserId || generation != _statusGeneration) return;
     }
     _applyAcademicSessionState();
-    if (!_statusLoaded) {
+    if (!_statusLoaded && controller == null) {
       _statusLoaded = true;
       notifyListeners();
     }

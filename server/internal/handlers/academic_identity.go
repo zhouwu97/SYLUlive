@@ -240,14 +240,19 @@ func (h *AcademicIdentityHandler) provider(id string) (AcademicIdentityProvider,
 }
 
 type academicChallengeClaims struct {
-	Version     int    `json:"v"`
-	UserID      uint   `json:"uid"`
-	ProviderID  string `json:"pid"`
-	StudentID   string `json:"sid"`
-	Nonce       string `json:"nonce"`
-	ExpiresAt   int64  `json:"exp"`
-	Fingerprint string `json:"fp"`
-	State       string `json:"state,omitempty"`
+	Operation             string `json:"op,omitempty"`
+	CurrentBindingID      uint   `json:"bid,omitempty"`
+	CurrentBindingVersion uint   `json:"bv,omitempty"`
+	CurrentProviderID     string `json:"cpid,omitempty"`
+	CurrentStudentID      string `json:"csid,omitempty"`
+	Version               int    `json:"v"`
+	UserID                uint   `json:"uid"`
+	ProviderID            string `json:"pid"`
+	StudentID             string `json:"sid"`
+	Nonce                 string `json:"nonce"`
+	ExpiresAt             int64  `json:"exp"`
+	Fingerprint           string `json:"fp"`
+	State                 string `json:"state,omitempty"`
 }
 
 func (h *AcademicIdentityHandler) sealChallenge(claims academicChallengeClaims) (string, error) {
@@ -286,9 +291,11 @@ func (h *AcademicIdentityHandler) unsealChallenge(token string) (academicChallen
 }
 
 type createAcademicChallengeInput struct {
-	ProviderID  string `json:"provider_id" binding:"required"`
-	StudentID   string `json:"student_id" binding:"required"`
-	RedirectURI string `json:"redirect_uri"`
+	CurrentProviderID string `json:"current_provider_id"`
+	CurrentStudentID  string `json:"current_student_id"`
+	ProviderID        string `json:"provider_id" binding:"required"`
+	StudentID         string `json:"student_id" binding:"required"`
+	RedirectURI       string `json:"redirect_uri"`
 }
 
 type verifyAcademicIdentityInput struct {
@@ -329,6 +336,14 @@ func (h *AcademicIdentityHandler) CreateChallenge(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "ACADEMIC_PROVIDER_UNSUPPORTED", "error": "不支持的教务 Provider"})
 		return
 	}
+	var current models.AcademicIdentityBinding
+	changing := c.GetBool("academic_change")
+	if changing {
+		if err := h.db.Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.CurrentProviderID, input.CurrentStudentID).First(&current).Error; err != nil {
+			c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_BINDING_CHANGED", "error": "原学生身份已变化，请刷新后重试"})
+			return
+		}
+	}
 	now := h.now()
 	ipHash := h.hashRequestIP(c.ClientIP())
 	limited, err := h.challengeRateLimited(userID, ipHash, now)
@@ -343,7 +358,7 @@ func (h *AcademicIdentityHandler) CreateChallenge(c *gin.Context) {
 	}
 
 	// 本科 Provider 不需要研究生 challenge；客户端应继续使用旧 /api/edu/bind 完成学校 profile 验证。
-	if providerID == models.AcademicProviderUndergraduate {
+	if providerID == models.AcademicProviderUndergraduate && !changing {
 		c.JSON(http.StatusOK, gin.H{
 			"challenge_required": false,
 			"provider_id":        providerID,
@@ -376,7 +391,7 @@ func (h *AcademicIdentityHandler) CreateChallenge(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"code": "ACADEMIC_CHALLENGE_FAILED", "error": "获取教务挑战失败"})
 		return
 	}
-	if !challenge.Required || strings.TrimSpace(challenge.SchoolPublicKey) == "" || strings.TrimSpace(challenge.SchoolPublicKeyFingerprint) == "" || len(strings.TrimSpace(challenge.SchoolPublicKeyFingerprint)) > 128 || len(challenge.SchoolPublicKey) > 16*1024 || len(challenge.Captcha) > 2*1024*1024 || len(challenge.ChallengeState) > 32*1024 {
+	if providerID == models.AcademicProviderGraduate && (!challenge.Required || strings.TrimSpace(challenge.SchoolPublicKey) == "" || strings.TrimSpace(challenge.SchoolPublicKeyFingerprint) == "" || len(strings.TrimSpace(challenge.SchoolPublicKeyFingerprint)) > 128 || len(challenge.SchoolPublicKey) > 16*1024 || len(challenge.Captcha) > 2*1024*1024 || len(challenge.ChallengeState) > 32*1024) {
 		c.JSON(http.StatusBadGateway, gin.H{"code": "ACADEMIC_CHALLENGE_INVALID", "error": "Provider 未返回可验证的公钥指纹"})
 		return
 	}
@@ -389,6 +404,13 @@ func (h *AcademicIdentityHandler) CreateChallenge(c *gin.Context) {
 		ExpiresAt:   expiresAt.Unix(),
 		Fingerprint: strings.TrimSpace(challenge.SchoolPublicKeyFingerprint),
 		State:       base64.RawStdEncoding.EncodeToString(challenge.ChallengeState),
+	}
+	if changing {
+		claims.Operation = "change"
+		claims.CurrentBindingID = current.ID
+		claims.CurrentBindingVersion = current.BindingVersion
+		claims.CurrentProviderID = current.ProviderID
+		claims.CurrentStudentID = current.StudentID
 	}
 	token, err := h.sealChallenge(claims)
 	if err != nil {
@@ -403,7 +425,10 @@ func (h *AcademicIdentityHandler) CreateChallenge(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"challenge_required":            true,
+		"challenge_required":            challenge.Required,
+		"operation":                     claims.Operation,
+		"verification_mode":             map[bool]string{true: "undergraduate_preverify", false: "school_login"}[providerID == models.AcademicProviderUndergraduate],
+		"verify_endpoint":               map[bool]string{true: "/api/student-identity/change", false: "/api/student-identity/verify"}[changing],
 		"challenge_type":                valueOrDefault(challenge.Type, "image_captcha"),
 		"provider_id":                   providerID,
 		"student_id":                    studentID,
@@ -432,12 +457,12 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "ACADEMIC_VERIFY_INVALID", "error": "教务验证参数过大"})
 		return
 	}
-	if strings.TrimSpace(input.ProviderID) == models.AcademicProviderUndergraduate {
+	if strings.TrimSpace(input.ProviderID) == models.AcademicProviderUndergraduate && !c.GetBool("academic_change") {
 		h.verifyUndergraduate(c, userID, input)
 		return
 	}
 	claims, err := h.unsealChallenge(input.ChallengeToken)
-	if err != nil {
+	if err != nil || (claims.Operation == "change") != c.GetBool("academic_change") {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": "ACADEMIC_CHALLENGE_INVALID", "error": "教务挑战无效或身份不匹配"})
 		return
 	}
@@ -463,13 +488,17 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": "ACADEMIC_CHALLENGE_INVALID", "error": "教务挑战无效或身份不匹配"})
 		return
 	}
-	if strings.TrimSpace(input.EncryptedPassword) == "" || strings.TrimSpace(input.SchoolPublicKeyFingerprint) == "" {
+	if claims.ProviderID == models.AcademicProviderGraduate && (strings.TrimSpace(input.EncryptedPassword) == "" || strings.TrimSpace(input.SchoolPublicKeyFingerprint) == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "ACADEMIC_VERIFY_INVALID", "error": "参数错误"})
 		return
 	}
 	if strings.Contains(strings.ToLower(input.EncryptedPassword), "password=") {
 		// 这是常见的把明文表单误塞进密文字段的错误，直接拒绝以避免误存或转发明文。
 		c.JSON(http.StatusBadRequest, gin.H{"code": "ACADEMIC_PLAINTEXT_PASSWORD_REJECTED", "error": "必须使用学校公钥加密教务密码"})
+		return
+	}
+	if claims.ProviderID == models.AcademicProviderUndergraduate && (input.Password == "" || len(input.Password) > 32*1024) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "ACADEMIC_VERIFY_INVALID", "error": "请输入教务密码"})
 		return
 	}
 	provider, ok := h.provider(claims.ProviderID)
@@ -484,7 +513,7 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 	}
 	profile, err := provider.Verify(c.Request.Context(), AcademicProviderVerifyRequest{
 		UserID: userID, ProviderID: claims.ProviderID, StudentID: claims.StudentID,
-		Captcha: input.Captcha, EncryptedPassword: input.EncryptedPassword,
+		Password: input.Password, Captcha: input.Captcha, EncryptedPassword: input.EncryptedPassword,
 		SchoolPublicKeyFingerprint: claims.Fingerprint, ChallengeState: state,
 	})
 	if err != nil {
@@ -496,7 +525,17 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 		return
 	}
 	verifiedAt := h.now()
-	if err := h.persistBinding(userID, claims.ProviderID, claims.StudentID, verifiedAt, academicChallengeMethod, academicChallengeVersion); err != nil {
+	persistErr := error(nil)
+	if claims.Operation == "change" {
+		persistErr = h.changeBinding(claims, verifiedAt)
+	} else {
+		persistErr = h.persistBinding(userID, claims.ProviderID, claims.StudentID, verifiedAt, academicChallengeMethod, academicChallengeVersion)
+	}
+	if err := persistErr; err != nil {
+		if errors.Is(err, errAcademicBindingChanged) {
+			c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_BINDING_CHANGED", "error": "原学生身份已变化，请重新验证"})
+			return
+		}
 		if errors.Is(err, errAcademicIdentityAlreadyBound) {
 			c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_IDENTITY_ALREADY_BOUND", "error": "该学号已绑定其他账号"})
 			return
@@ -510,6 +549,8 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"verified":             true,
+		"binding_version":      claims.CurrentBindingVersion + 1,
+		"changed_at":           verifiedAt.UTC().Format(time.RFC3339),
 		"provider_id":          claims.ProviderID,
 		"student_id":           claims.StudentID,
 		"verified_at":          verifiedAt.UTC().Format(time.RFC3339),
@@ -670,6 +711,8 @@ func academicBindingPayload(binding models.AcademicIdentityBinding) gin.H {
 		"verified_at":          binding.VerifiedAt.UTC().Format(time.RFC3339),
 		"verification_method":  binding.VerificationMethod,
 		"verification_version": binding.VerificationVersion,
+		"binding_version":      binding.BindingVersion,
+		"changed_at":           binding.ChangedAt,
 	}
 }
 

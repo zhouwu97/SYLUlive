@@ -260,4 +260,27 @@ void main() {
       ),
     );
   });
+  for (final graduate in [false, true]) {
+    test('换绑挑战和提交使用独立端点：$graduate', () async {
+      final data = graduate ? challengeResponse() : undergraduatePreverifyResponse();
+      data.addAll({'operation': 'change', 'challenge_token': 'sealed-change', 'expires_at': '2099-01-01T00:00:00Z'});
+      final provider = graduate ? AcademicProviderId.syluGraduate : AcademicProviderId.syluUndergraduate;
+      final student = graduate ? 'G-001' : 'U-001';
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 200, body: data))
+        ..responses.add((status: 200, body: {'verified': true, 'provider_id': provider.value, 'student_id': student, 'binding_version': 4, 'changed_at': '2026-09-08T00:00:00Z'}));
+      final client = createClient(adapter);
+      final challenge = await client.requestChallenge(providerId: provider, studentId: student,
+        currentIdentity: const AcademicIdentityKey(appUserId: 'u', providerId: AcademicProviderId.syluUndergraduate, studentId: 'OLD'));
+      final binding = graduate
+          ? await client.verify(challenge: challenge!, captcha: '1234', encryptedPassword: 'ciphertext')
+          : await client.verifyUndergraduatePreverify(challenge: challenge!, password: 'fixture');
+      expect(adapter.requests.first.path, '/student-identity/change/challenge');
+      expect(adapter.requests.last.path, '/student-identity/change');
+      expect(adapter.requests.last.data['challenge_token'], 'sealed-change');
+      expect(binding.bindingVersion, 4);
+      expect(binding.changedAt, isNotNull);
+    });
+  }
+
 }

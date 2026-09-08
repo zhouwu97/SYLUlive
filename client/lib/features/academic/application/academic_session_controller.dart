@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import '../../../platform/contracts/preferences_store.dart';
+import '../storage/academic_connection_store.dart';
+import '../data/graduate/graduate_protocol_client.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
@@ -216,6 +220,7 @@ final class AcademicSessionController extends ChangeNotifier {
   bool get isAwaitingCaptcha =>
       _status == AcademicSessionStatus.awaitingCaptcha;
   bool get isAuthenticated =>
+      _connectionPreference == AcademicConnectionPreference.connected &&
       !_sessionResetPending &&
       _repository.sessionState == SessionState.authenticated;
 
@@ -240,6 +245,7 @@ final class AcademicSessionController extends ChangeNotifier {
       return Future<void>.value();
     }
 
+    _connectionPreference = AcademicConnectionPreference.connected;
     _appUserId = next;
     if (_repository is AcademicProviderRouterRepository) {
       (_repository as AcademicProviderRouterRepository).syncAppUser(next);
@@ -283,6 +289,7 @@ final class AcademicSessionController extends ChangeNotifier {
         try {
           await _repository.restoreSession();
           if (_disposed || generation != _accountGeneration) return;
+          if (!await remoteAccessAllowed()) return;
           _studentId = _repository.studentId;
           _serverBindingStatusResolved = true;
           _status = _repository.sessionState == SessionState.authenticated
@@ -318,6 +325,9 @@ final class AcademicSessionController extends ChangeNotifier {
     return _enqueue(() async {
       if (_disposed) {
         return const LoginPageChanged(message: '教务会话控制器已关闭');
+      }
+      if (generation != _accountGeneration || !await remoteAccessAllowed()) {
+        return const LoginPageChanged(message: '本机教务已断开，请先重新连接');
       }
       if (_appUserId == null) {
         return const LoginPageChanged(message: '请先登录 APP');
@@ -355,9 +365,13 @@ final class AcademicSessionController extends ChangeNotifier {
       if (_disposed) {
         return const CaptchaExpired(message: '教务会话控制器已关闭');
       }
+      if (generation != _accountGeneration || !await remoteAccessAllowed()) {
+        return const CaptchaExpired(message: '本机教务已断开');
+      }
       if (identity != null &&
           (_pendingAcademicChallenge == null ||
-              _pendingAcademicChallenge!.generation != generation)) {
+              _pendingAcademicChallenge!.generation != generation ||
+              DateTime.now().toUtc().difference(_pendingAcademicChallenge!.createdAt) > const Duration(seconds: 90))) {
         return const CaptchaExpired(message: '验证码登录会话已失效，请重新获取验证码');
       }
       // 验证码挑战是单次消费材料；重试必须由 Provider 生成新的挑战。
@@ -381,14 +395,22 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   Future<void> refreshCaptcha() {
-    final generation = _accountGeneration;
+    final generation = ++_accountGeneration;
+    _pendingAcademicChallenge = null;
     return _enqueue(() async {
-      if (_disposed) return;
+      if (_disposed || generation != _accountGeneration ||
+          !await remoteAccessAllowed()) {
+        return;
+      }
       _status = AcademicSessionStatus.awaitingCaptcha;
       _failure = null;
       _notifyListeners();
       try {
-        final challenge = await _repository.getCaptchaChallenge();
+        final challenge = await switch (_repository) {
+          ProviderAcademicRepository repository => repository.refreshCaptchaChallenge(),
+          AcademicProviderRouterRepository router => router.refreshCaptchaChallenge(),
+          _ => _repository.getCaptchaChallenge(),
+        };
         if (generation != _accountGeneration || _disposed) return;
         _captchaChallenge = challenge;
         _pendingAcademicChallenge = _newPendingChallenge();
@@ -594,18 +616,64 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   /// 用户主动断开本机教务时保留凭据/缓存策略，但禁止后台恢复或创建验证码。
+  Future<bool> remoteAccessAllowed() async {
+    final generation = _accountGeneration;
+    final current = identity;
+    if (_connectionPreference == AcademicConnectionPreference.disconnected) {
+      return false;
+    }
+    if (current == null) return !_disposed;
+    try {
+      final store = AcademicConnectionStore(
+        current, await AppPreferencesStore.getInstance());
+      if (!isCurrentContext(generation: generation) || identity != current) {
+        return false;
+      }
+      if (!store.connected) {
+        _connectionPreference = AcademicConnectionPreference.disconnected;
+        _notifyListeners();
+        return false;
+      }
+      return true;
+    } catch (_) {
+      // 无法确认持久连接许可时，不能用默认值启动学校请求。
+      return false;
+    }
+  }
+
   Future<void> disconnect() async {
+    final current = identity;
+    // 先阻断新操作，并使已经排队或在途的结果失效。
     _connectionPreference = AcademicConnectionPreference.disconnected;
     _pendingAcademicChallenge = null;
-    ++_accountGeneration;
-    providerRouter?.invalidateContext();
+    final invalidatedGeneration = ++_accountGeneration;
+    _sessionResetPending = true;
     _clearViewState(AcademicSessionStatus.idle);
     _notifyListeners();
-    await _repository.resetSession();
+    if (current != null) {
+      final store = AcademicConnectionStore(
+        current, await AppPreferencesStore.getInstance());
+      await store.setConnected(false);
+    }
+    if (isCurrentContext(generation: invalidatedGeneration)) await resetSession();
+    if (current != null) {
+      await (_sessionArtifactVaultFactory?.call(current) ??
+          AcademicSessionArtifactVault(identity: current)).delete();
+    }
+    if (identity == current && _sessionResetPending) throw StateError('学校会话清理失败，请重试');
   }
 
   /// 只有显式重新连接后才恢复学校会话。
   Future<bool> reconnect() async {
+    final current = identity;
+    final generation = _accountGeneration;
+    if (current != null) {
+      final store = AcademicConnectionStore(
+        current, await AppPreferencesStore.getInstance());
+      if (store.cleanupPending) throw StateError('请先完成本机教务资料清理');
+      await store.setConnected(true);
+    }
+    if (!isCurrentContext(generation: generation)) return false;
     _connectionPreference = AcademicConnectionPreference.connected;
     _notifyListeners();
     return ensureAuthenticated(force: true);
@@ -639,8 +707,20 @@ final class AcademicSessionController extends ChangeNotifier {
   Future<void> selectProviderIdentity(AcademicIdentityKey identity) async {
     final router = providerRouter;
     if (router == null) throw StateError('当前教务仓储未启用 Provider 路由');
+    final changing = this.identity != null && this.identity != identity;
+    if (changing) {
+      ++_accountGeneration;
+      _pendingAcademicChallenge = null;
+      _reloginFuture = null;
+      _clearViewState(AcademicSessionStatus.idle);
+      _notifyListeners();
+    }
+    final generation = _accountGeneration;
     await router.selectProvider(identity);
-    if (_disposed) return;
+    if (!isCurrentContext(generation: generation)) return;
+    _connectionPreference = AcademicConnectionPreference.connected;
+    await remoteAccessAllowed();
+    if (!isCurrentContext(generation: generation)) return;
     _studentId = identity.studentId;
     _serverBindingStatusResolved = true;
     _clearViewState(AcademicSessionStatus.idle);
@@ -689,6 +769,7 @@ final class AcademicSessionController extends ChangeNotifier {
         return false;
       }
       if (!isCurrentContext(generation: generation)) return false;
+      if (!await remoteAccessAllowed()) return false;
       _status = AcademicSessionStatus.loading;
       _notifyListeners();
       final activeProvider = provider;
@@ -716,8 +797,14 @@ final class AcademicSessionController extends ChangeNotifier {
               if (!isCurrentContext(generation: generation)) return false;
             }
             restoredFromArtifact = true;
-          } on AcademicAuthFailure {
-            // 密文超龄或探活失败时回退到 Provider 自身的恢复协议。
+          } catch (error) {
+            final expired = error is AcademicAuthFailure && error.type == AcademicAuthFailureType.sessionExpired ||
+                error is SessionExpiredException ||
+                error is GraduatePortalException && error.code == 'SESSION_EXPIRED';
+            if (!expired) rethrow;
+            if (!isCurrentContext(generation: generation)) return false;
+            await vaultFactory(currentIdentity).delete();
+            await _repository.resetSession();
           }
         }
       }
@@ -729,6 +816,8 @@ final class AcademicSessionController extends ChangeNotifier {
       if (!isCurrentContext(generation: generation)) return false;
       _studentId = _repository.studentId;
       final authenticated = isAuthenticated;
+      if (authenticated) await _persistSessionArtifact(generation);
+      if (!isCurrentContext(generation: generation)) return false;
       _status = authenticated
           ? AcademicSessionStatus.authenticated
           : AcademicSessionStatus.idle;
@@ -746,12 +835,18 @@ final class AcademicSessionController extends ChangeNotifier {
 
   /// 清理学校会话，但保留当前 App 用户上下文。
   Future<void> resetSession() {
+    final restoring = _reloginFuture;
     final generation = ++_accountGeneration;
     _sessionResetPending = true;
+    _pendingAcademicChallenge = null;
+    _reloginFuture = null;
     _clearViewState(AcademicSessionStatus.idle);
     _notifyListeners();
     return _enqueue(() async {
-      if (_disposed) return;
+      if (restoring != null) {
+        try { await restoring; } catch (_) { /* 恢复失败仍必须清理运行时。 */ }
+      }
+      if (_disposed || generation != _accountGeneration) return;
       try {
         await _repository.resetSession();
       } catch (error) {
@@ -774,6 +869,7 @@ final class AcademicSessionController extends ChangeNotifier {
       if (_disposed || _appUserId == null || generation != _accountGeneration) {
         return;
       }
+      if (!await remoteAccessAllowed()) return;
       if (_sessionResetPending) throw StateError('教务账号上下文尚未清理完成');
       // 与启动恢复共用队列，等待中的页面不重复发起同一次恢复请求。
       if (!force && isAuthenticated) return;
@@ -938,7 +1034,7 @@ final class AcademicSessionController extends ChangeNotifier {
         CaptchaRequired(message: failure.message),
       AcademicFailureKind.captchaExpired =>
         CaptchaExpired(message: failure.message),
-      AcademicFailureKind.network => NetworkUnavailable(
+      AcademicFailureKind.network || AcademicFailureKind.schoolUnavailable => NetworkUnavailable(
           message: failure.message,
           cause: NetworkException(
             message: failure.message,
@@ -968,6 +1064,7 @@ final class AcademicSessionController extends ChangeNotifier {
       AcademicFailureKind.invalidCredentials ||
       AcademicFailureKind.captchaRequired ||
       AcademicFailureKind.network ||
+      AcademicFailureKind.schoolUnavailable ||
       AcademicFailureKind.courseUnavailable ||
       AcademicFailureKind.gradeUnavailable =>
         false,
@@ -999,6 +1096,7 @@ final class AcademicSessionController extends ChangeNotifier {
   }
 
   Future<bool> _prepareRead(int generation) async {
+    if (!await remoteAccessAllowed()) return false;
     if (_connectionPreference == AcademicConnectionPreference.disconnected) {
       _failure = const AcademicFailure(
         kind: AcademicFailureKind.disconnected,
@@ -1069,12 +1167,15 @@ final class AcademicSessionController extends ChangeNotifier {
     final identity = this.identity;
     if (identity == null || _captchaChallenge == null) return null;
     return PendingAcademicChallenge(
-      challengeId: identity.storageId,
+      challengeId: '${identity.storageId}:$_accountGeneration:${DateTime.now().microsecondsSinceEpoch}',
       identity: identity,
       generation: _accountGeneration,
       createdAt: DateTime.now().toUtc(),
     );
   }
+
+  /// 凭据等最终写入与 Session 清理共用队列，清理完成后不会有旧写入复活。
+  Future<T> commit<T>(Future<T> Function() operation) => _enqueue(operation);
 
   Future<T> _enqueue<T>(Future<T> Function() operation) {
     final completer = Completer<T>();

@@ -15,6 +15,7 @@ import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/domain/academic_repository.dart'
     show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
+import '../features/academic/presentation/academic_restore_status.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
 import '../theme/app_colors.dart';
@@ -146,7 +147,7 @@ ScheduleViewState resolveScheduleViewState({
   if (!eduStatusLoaded) return ScheduleViewState.restoring;
   if (!eduBound) return ScheduleViewState.unbound;
   if (sessionPhase != ScheduleSessionPhase.ready ||
-      isLoading ||
+      (isLoading && !hasCourses) ||
       isInitializing) {
     return ScheduleViewState.restoring;
   }
@@ -297,7 +298,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           onTimeout: () => false,
         );
 
-    await _syncCourseReminders(sc);
+    // 提醒同步失败或平台通道缓慢不能阻塞已恢复的课表。
+    unawaited(_syncCourseReminders(sc).catchError((Object _) {}));
     if (sessionKey != sc.sessionKey || generation != sc.contextGeneration) {
       return;
     }
@@ -671,36 +673,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _buildWeekdayHeader(_weekStart, withTimeGutter: true),
         Expanded(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.sync_rounded,
-                    size: 32,
-                    color: isDark ? Colors.white54 : CampusTheme.subText,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    '正在恢复本机课表状态',
-                    style: TextStyle(
-                      color: isDark ? Colors.white : CampusTheme.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '正在确认当前教务账号并读取本机课表',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: isDark ? Colors.white60 : CampusTheme.subText,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
+            child: AcademicRestoreStatus(
+              key: ValueKey(sc.sessionKey),
+              error: context.watch<EduProvider>().errorMessage,
+              onRetry: () async {
+                final edu = context.read<EduProvider>();
+                if (!edu.isStatusLoaded) await edu.refreshStatus();
+                if (!mounted) return;
+                await sc.retryLocalRestore();
+                if (!mounted) return;
+                setState(() {
+                  _didLoad = false;
+                  _initializing = false;
+                });
+              },
             ),
           ),
         ),

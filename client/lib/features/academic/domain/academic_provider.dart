@@ -230,7 +230,7 @@ final class AcademicSessionProbeResult {
   final String? confirmedStudentId;
 }
 
-/// Provider 透明持有的会话材料。字段只允许脱敏后的 opaque state。
+/// Provider 持有的敏感会话材料，仅允许进入本机加密保险箱，不得写日志或上传 AI。
 final class ProviderSessionArtifact {
   const ProviderSessionArtifact({
     required this.providerId,

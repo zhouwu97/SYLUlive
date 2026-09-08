@@ -28,6 +28,8 @@ import 'package:shenliyuan/screens/edu_screen.dart';
 import 'package:shenliyuan/widgets/course/course_import_sheet.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => AppPreferencesStore.setMockInitialValues({}));
   test('账号切换时丢弃旧身份列表响应，不选择旧 Provider', () async {
     final adapter = _BlockingIdentityAdapter();
     final identityDio = Dio(BaseOptions(baseUrl: 'https://example.invalid/api'))

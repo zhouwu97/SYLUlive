@@ -1958,6 +1958,8 @@ func main() {
 	studentIdentity.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	studentIdentity.POST("/challenge", academicIdentityHandler.CreateChallenge)
 	studentIdentity.POST("/verify", academicIdentityHandler.Verify)
+ studentIdentity.POST("/change/challenge", academicIdentityHandler.CreateChangeChallenge)
+ studentIdentity.POST("/change", academicIdentityHandler.Change)
 	studentIdentity.GET("", academicIdentityHandler.List)
 
 	edu := r.Group("/api/edu")

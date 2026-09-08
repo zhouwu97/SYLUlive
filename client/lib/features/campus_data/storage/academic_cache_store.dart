@@ -1,3 +1,4 @@
+import '../../../platform/contracts/preferences_store.dart';
 import 'dart:async';
 
 import 'account_scoped_snapshot_store.dart';
@@ -401,6 +402,13 @@ class AcademicCacheStore {
 
   Future<void> _writePayload(Map<String, dynamic> payload) async {
     final now = DateTime.now().toUtc();
+    final namespace = identityNamespace;
+    final preferences = AppPreferencesStore.maybeInstance;
+    if (namespace != null && preferences != null &&
+        (preferences.getBool('academic_lifecycle_${namespace}_connected') == false ||
+         preferences.getBool('academic_lifecycle_${namespace}_cleanup') == true)) {
+      return;
+    }
     await _snapshotStore.write(
       type: PersonalDataType.academic,
       schemaVersion: schemaVersion,

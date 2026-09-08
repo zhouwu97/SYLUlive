@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../domain/academic_provider.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -10,12 +11,15 @@ final class AcademicStoragePreferences {
   AcademicStoragePreferences({
     required this.appUserId,
     required this.store,
+    this.identity,
   });
 
+  final AcademicIdentityKey? identity;
   final String appUserId;
   final AppPreferencesStore store;
 
   String? get _hash {
+    if (identity != null) return identity!.storageId;
     final value = appUserId.trim();
     if (value.isEmpty) return null;
     return sha256.convert(utf8.encode(value)).toString();
@@ -41,6 +45,22 @@ final class AcademicStoragePreferences {
 
   bool get cleanupPending =>
       cleanupPendingKey != null && store.getBool(cleanupPendingKey!) == true;
+
+  /// 将旧账号级选择复制到当前已确认身份；标记保留，完整清理后不得再次导入旧许可。
+  Future<void> migrateLegacyPreferences() async {
+    final current = identity;
+    if (current == null) return;
+    final marker = 'academic_identity_preferences_migrated_${current.storageId}';
+    if (store.getBool(marker) == true) return;
+    final legacy = AcademicStoragePreferences(appUserId: appUserId, store: store);
+    if (!store.containsKey(saveCredentialsKey!)) {
+      await setSaveCredentials(legacy.saveCredentials);
+    }
+    if (!store.containsKey(saveDataKey!)) {
+      await setSaveAcademicData(legacy.saveAcademicData);
+    }
+    if (!await store.setBool(marker, true)) throw StateError('迁移教务身份偏好失败');
+  }
 
   Future<void> setSaveCredentials(bool enabled) async {
     final key = saveCredentialsKey;

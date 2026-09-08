@@ -200,7 +200,7 @@ class HomeWidgetTypography {
           subtitle: 11,
           primary: 16,
           secondary: 13,
-          tertiary: 12,
+          tertiary: 13,
           badge: 11,
           empty: 14,
         ),
@@ -234,10 +234,10 @@ class HomeWidgetTypography {
       (true, HomeWidgetFontSize.extraLarge) => const HomeWidgetTypography(
           title: 16,
           subtitle: 11,
-          primary: 17,
-          secondary: 13,
-          tertiary: 12,
-          badge: 11,
+          primary: 18,
+          secondary: 14,
+          tertiary: 13,
+          badge: 12,
           empty: 14,
         ),
     };

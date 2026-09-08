@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.TypedValue
+import android.view.View
 import android.widget.RemoteViews
 
 object HomeWidgetRenderer {
@@ -21,6 +22,11 @@ object HomeWidgetRenderer {
         )
         val theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
         val typography = HomeWidgetTypography.resolve(variant.size, appearance.fontSize)
+        val courseData = if (variant.kind == NativeHomeWidgetKind.COURSE) {
+            CourseDataReader.read(context)
+        } else {
+            null
+        }
 
         views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource)
         views.setTextViewText(R.id.tv_widget_title, appearance.title)
@@ -37,8 +43,24 @@ object HomeWidgetRenderer {
         )
         views.setTextColor(R.id.empty_view, theme.mutedTextColor)
 
+        if (appearance.fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE &&
+            variant.size == NativeHomeWidgetSize.SIZE_4X2
+        ) {
+            val itemCount = courseData?.courses?.size
+                ?: ExamDataReader.read(context).exams.size
+            views.setViewVisibility(
+                R.id.widget_center_divider,
+                if (itemCount > 1) View.VISIBLE else View.GONE,
+            )
+            views.setInt(
+                R.id.widget_center_divider,
+                "setBackgroundColor",
+                theme.dividerColor,
+            )
+        }
+
         if (variant.kind == NativeHomeWidgetKind.COURSE) {
-            val data = CourseDataReader.read(context)
+            val data = checkNotNull(courseData)
             val hideCompactDate =
                 appearance.fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE &&
                     variant.size == NativeHomeWidgetSize.SIZE_2X2

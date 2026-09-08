@@ -4,7 +4,7 @@ package com.example.shenliyuan
  * RemoteViews 使用的语义字号角色。
  *
  * standard 与现有 XML 基线一致，确保旧用户升级后视觉尺寸基本不变；
- * EXTRA_LARGE 会配合高可读布局减少条目数量，字号仍统一从这里解析。
+ * EXTRA_LARGE 会配合高可读布局调整信息密度，字号仍统一从这里解析。
  */
 data class HomeWidgetTypography(
     val titleSp: Float,
@@ -54,7 +54,7 @@ data class HomeWidgetTypography(
                         subtitleSp = 11f,
                         primarySp = 16f,
                         secondarySp = 13f,
-                        tertiarySp = 12f,
+                        tertiarySp = 13f,
                         badgeSp = 11f,
                         emptySp = 14f,
                     )
@@ -90,10 +90,10 @@ data class HomeWidgetTypography(
                     NativeHomeWidgetFontSize.EXTRA_LARGE -> HomeWidgetTypography(
                         titleSp = 16f,
                         subtitleSp = 11f,
-                        primarySp = 17f,
-                        secondarySp = 13f,
-                        tertiarySp = 12f,
-                        badgeSp = 11f,
+                        primarySp = 18f,
+                        secondarySp = 14f,
+                        tertiarySp = 13f,
+                        badgeSp = 12f,
                         emptySp = 14f,
                     )
                 }

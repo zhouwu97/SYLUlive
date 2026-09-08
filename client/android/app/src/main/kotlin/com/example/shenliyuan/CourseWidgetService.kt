@@ -65,11 +65,16 @@ class CourseRemoteViewsFactory(
         if (position !in courses.indices) return views
         val course = courses[position]
         views.setTextViewText(R.id.tv_course_name, course.name.ifBlank { "未知课程" })
-        views.setTextViewText(R.id.tv_course_time, course.time)
+        val displayTime = if (fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) {
+            course.time.replaceFirst("-", " - ")
+        } else {
+            course.time
+        }
+        views.setTextViewText(R.id.tv_course_time, displayTime)
         views.setTextViewText(R.id.tv_course_location, course.location)
         views.setTextViewText(R.id.tv_course_teacher, course.teacher)
         if (fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) {
-            views.setTextViewText(R.id.tv_item_context, if (position == 0) "最近" else "接下来")
+            views.setTextViewText(R.id.tv_item_context, if (position == 0) "当前" else "接下来")
             views.setTextViewTextSize(
                 R.id.tv_item_context,
                 TypedValue.COMPLEX_UNIT_SP,

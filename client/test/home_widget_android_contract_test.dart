@@ -67,7 +67,10 @@ void main() {
       final layout = source(path);
       expect(layout, contains('<GridView'));
       expect(layout, contains('android:numColumns="2"'));
-      expect(layout, contains('android:paddingTop="28dp"'));
+      expect(layout, contains('android:paddingTop="24dp"'));
+      expect(layout, contains('android:paddingStart="8dp"'));
+      expect(layout, contains('android:paddingEnd="8dp"'));
+      expect(layout, contains('android:id="@+id/widget_center_divider"'));
     }
   });
 

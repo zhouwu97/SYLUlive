@@ -70,7 +70,7 @@ class ExamRemoteViewsFactory(
         views.setTextViewText(R.id.tv_exam_location, exam.location)
         views.setTextViewText(R.id.tv_exam_countdown, exam.countdown)
         if (fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE) {
-            views.setTextViewText(R.id.tv_item_context, if (position == 0) "最近" else "接下来")
+            views.setTextViewText(R.id.tv_item_context, if (position == 0) "当前" else "接下来")
             views.setTextViewTextSize(
                 R.id.tv_item_context,
                 TypedValue.COMPLEX_UNIT_SP,

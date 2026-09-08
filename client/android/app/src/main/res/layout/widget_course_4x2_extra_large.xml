@@ -40,18 +40,34 @@
             android:textSize="11sp" />
     </RelativeLayout>
 
-    <GridView
-        android:id="@+id/course_list_view"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center_vertical"
-        android:horizontalSpacing="12dp"
-        android:numColumns="2"
-        android:overScrollMode="never"
-        android:paddingTop="28dp"
-        android:stretchMode="columnWidth"
-        android:verticalSpacing="0dp" />
+        android:layout_weight="1">
+
+        <GridView
+            android:id="@+id/course_list_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:gravity="center_vertical"
+            android:horizontalSpacing="24dp"
+            android:numColumns="2"
+            android:overScrollMode="never"
+            android:paddingStart="8dp"
+            android:paddingTop="24dp"
+            android:paddingEnd="8dp"
+            android:stretchMode="columnWidth"
+            android:verticalSpacing="0dp" />
+
+        <TextView
+            android:id="@+id/widget_center_divider"
+            android:layout_width="1dp"
+            android:layout_height="96dp"
+            android:layout_gravity="center"
+            android:background="#E5E7EB"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/empty_view"

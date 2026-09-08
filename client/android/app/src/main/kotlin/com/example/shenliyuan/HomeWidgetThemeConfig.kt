@@ -50,6 +50,7 @@ data class HomeWidgetThemeConfig(
     val secondaryTextColor: Int,
     val mutedTextColor: Int,
     val accentColor: Int,
+    val dividerColor: Int,
 ) {
     companion object {
         fun resolve(context: Context, theme: NativeHomeWidgetTheme): HomeWidgetThemeConfig {
@@ -73,6 +74,7 @@ data class HomeWidgetThemeConfig(
                     secondaryTextColor = Color.parseColor("#D1D5DB"),
                     mutedTextColor = Color.parseColor("#9CA3AF"),
                     accentColor = Color.parseColor("#60A5FA"),
+                    dividerColor = Color.parseColor("#4B5563"),
                 )
                 NativeHomeWidgetTheme.CAMPUS_BLUE -> HomeWidgetThemeConfig(
                     resolvedTheme = NativeHomeWidgetTheme.CAMPUS_BLUE,
@@ -81,6 +83,7 @@ data class HomeWidgetThemeConfig(
                     secondaryTextColor = Color.parseColor("#475569"),
                     mutedTextColor = Color.parseColor("#94A3B8"),
                     accentColor = Color.parseColor("#3B82F6"),
+                    dividerColor = Color.parseColor("#BFDBFE"),
                 )
                 NativeHomeWidgetTheme.LIGHT,
                 NativeHomeWidgetTheme.SYSTEM -> HomeWidgetThemeConfig(
@@ -90,6 +93,7 @@ data class HomeWidgetThemeConfig(
                     secondaryTextColor = Color.parseColor("#4B5563"),
                     mutedTextColor = Color.parseColor("#9CA3AF"),
                     accentColor = Color.parseColor("#3B82F6"),
+                    dividerColor = Color.parseColor("#E5E7EB"),
                 )
             }
         }

@@ -156,7 +156,9 @@ void main() {
         HomeWidgetFontSize.extraLarge,
       );
       expect(compactExtraLarge.primary, 16);
-      expect(detailedExtraLarge.primary, 17);
+      expect(compactExtraLarge.tertiary, 13);
+      expect(detailedExtraLarge.primary, 18);
+      expect(detailedExtraLarge.secondary, 14);
       expect(
         HomeWidgetContentPolicy.previewItemCount(
           HomeWidgetSize.size2x2,

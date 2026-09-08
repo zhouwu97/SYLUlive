@@ -580,7 +580,7 @@ class _HighReadabilityPreviewItems extends StatelessWidget {
           palette: palette,
           typography: typography,
           highReadability: true,
-          contextLabel: isWide ? (index == 0 ? '最近' : '接下来') : '',
+          contextLabel: isWide ? (index == 0 ? '当前' : '接下来') : '',
         );
 
     if (items.length == 1) {
@@ -672,38 +672,46 @@ class _PreviewItem extends StatelessWidget {
                   ),
                 ),
                 if (item.secondaryDetail.isNotEmpty)
-                  Text(
-                    item.secondaryDetail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: typography.tertiary,
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      item.secondaryDetail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.secondaryText,
+                        fontSize: typography.tertiary,
+                      ),
                     ),
                   ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.primaryDetail,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: typography.secondary,
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          kind == HomeWidgetKind.course
+                              ? item.primaryDetail.replaceFirst('-', ' - ')
+                              : item.primaryDetail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.secondaryText,
+                            fontSize: typography.secondary,
+                          ),
                         ),
                       ),
-                    ),
-                    if (item.badge.isNotEmpty)
-                      Text(
-                        item.badge,
-                        style: TextStyle(
-                          color: palette.accent,
-                          fontSize: typography.badge,
-                          fontWeight: FontWeight.w800,
+                      if (item.badge.isNotEmpty)
+                        Text(
+                          item.badge,
+                          style: TextStyle(
+                            color: palette.accent,
+                            fontSize: typography.badge,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),

@@ -7,7 +7,7 @@ import '../domain/academic_provider.dart';
 
 /// 本机教务账号的可持久化凭据。
 ///
-/// Cookie、Session、验证码和请求参数不属于凭据模型，始终只留在内存中。
+/// Cookie 和 Session 由独立加密 Artifact 管理，不混入密码的保留周期。
 final class AcademicCredential {
   const AcademicCredential({
     required this.studentId,
@@ -79,10 +79,7 @@ final class PlatformAcademicCredentialStore
       if (!credential.isValid) throw const FormatException('凭据为空');
       return credential;
     } catch (_) {
-      // 损坏凭据不可继续使用；删除失败也不能把底层异常带入 UI。
-      try {
-        await _secretStore.delete(key);
-      } catch (_) {}
+      // 读取失败不具有删除授权；保留安全存储原文，供恢复或显式清除。
       return null;
     }
   }
@@ -149,9 +146,7 @@ final class PlatformAcademicCredentialStore
       final credential = AcademicCredential(studentId: studentId.trim(), password: password);
       return credential.isValid ? credential : null;
     } catch (_) {
-      try {
-        await _secretStore.delete(key);
-      } catch (_) {}
+      // 协议升级或异常数据不能触发密码擦除；此轮不使用即可。
       return null;
     }
   }

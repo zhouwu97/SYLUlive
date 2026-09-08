@@ -882,17 +882,15 @@ final class AcademicLoginCoordinator {
       } catch (_) {
         if (!current()) return changed;
         saveWarning = true;
-        // Secure Store 写入成功但偏好写入失败时回滚凭据，避免出现用户以为
-        // 未保存、设备却仍残留学校密码的半成功状态。
-        try {
-          await _deleteCredentialForCurrentIdentity(appUserId);
-        } catch (_) {}
-        // 任一凭据持久化步骤失败时关闭有效开关，避免残留凭据被自动使用。
-        try {
-          preferences ??=
-              persistencePolicy?.preferences ?? await _loadPreferences();
-          await preferences.setSaveCredentials(false);
-        } catch (_) {}
+        // 用户已明确选择加密保存，偏好写入失败不能连带擦除新旧密码。
+        // 只有显式取消保存时关闭自动使用；密码删除由上面的显式分支执行。
+        if (!saveCredentials) {
+          try {
+            preferences ??=
+                persistencePolicy?.preferences ?? await _loadPreferences();
+            await preferences.setSaveCredentials(false);
+          } catch (_) {}
+        }
       }
     }
 

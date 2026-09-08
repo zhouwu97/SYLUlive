@@ -506,7 +506,7 @@ void main() {
     controller.dispose();
   });
 
-  test('凭据写入成功但偏好失败时会回滚 Secure Store', () async {
+  test('用户选择保存后偏好失败仍保留 Secure Store 密码', () async {
     final source = _FakeAcademicDataSource();
     final controller = _newController(source);
     await controller.syncAppUser('app-user-a');
@@ -527,7 +527,7 @@ void main() {
 
     expect(result.isSuccess, isTrue);
     expect(result.saveCredentialWarning, isTrue);
-    expect(credentialStore.value, isNull);
+    expect(credentialStore.value?.password, 'secret');
     expect(
       AcademicStoragePreferences(appUserId: 'app-user-a', store: preferences)
           .saveCredentials,

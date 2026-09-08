@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 
 void main() {
   group('PlatformAcademicCredentialStore', () {
@@ -24,14 +25,27 @@ void main() {
       expect(await store.read('app-a'), isNull);
     });
 
-    test('损坏 JSON 会被删除并按空凭据处理', () async {
+    test('损坏 JSON 不参与认证但保留安全存储原文', () async {
       final secret = MemorySecretStore();
       final store = PlatformAcademicCredentialStore(secretStore: secret);
-      // 通过一个已知键测试坏数据；实现会对错误内容执行安全删除。
+      // 读取错误不能隐式擦除用户已选择保留的密码材料。
       final rawKey = _credentialKey('app-a');
       await secret.write(rawKey, '{broken');
       expect(await store.read('app-a'), isNull);
-      expect(await secret.read(rawKey), isNull);
+      expect(await secret.read(rawKey), '{broken');
+    });
+
+    test('身份级异常凭据保留到用户显式清除', () async {
+      final secret = MemorySecretStore();
+      final store = PlatformAcademicCredentialStore(secretStore: secret);
+      const identity = AcademicIdentityKey(appUserId: 'app-a',
+          providerId: AcademicProviderId.syluGraduate, studentId: 'fixture');
+      final key = 'academic_credential_v2_${identity.storageId}';
+      await secret.write(key, '{broken');
+      expect(await store.readForIdentity(identity), isNull);
+      expect(await secret.read(key), '{broken');
+      await store.deleteForIdentity(identity);
+      expect(await secret.read(key), isNull);
     });
 
     test('Web store 不产生持久化凭据', () async {

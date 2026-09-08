@@ -1,3 +1,11 @@
+import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
+import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/domain/academic_captcha_recognizer.dart';
+import 'package:shenliyuan/features/academic/domain/academic_captcha_submission_policy.dart';
+import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
+import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'academic_identity_lifecycle_test.dart' show Secrets;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,6 +18,38 @@ import 'package:shenliyuan/features/academic/data/provider_academic_repository.d
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  for (final failure in [false, true]) {
+    test('后台验证码只提交一次且失败保留密码：$failure', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      const identity = AcademicIdentityKey(appUserId: 'captcha-fixture',
+          providerId: AcademicProviderId.syluGraduate, studentId: 'G-FIXTURE-001');
+      final gateway = _FakeGraduateGateway(const GraduateProfile(studentId: 'G-FIXTURE-001'),
+          requireLoginForProbe: true,
+          loginError: failure ? const GraduatePortalException('CHALLENGE_REJECTED', '验证码错误') : null);
+      final provider = GraduateAcademicProvider(identity: identity, gateway: gateway,
+          captchaRecognizer: _ConfidentRecognizer());
+      final controller = AcademicSessionController.forProvider(provider: provider, identity: identity);
+      await controller.syncAppUser(identity.appUserId);
+      final credentials = PlatformAcademicCredentialStore(secretStore: Secrets());
+      await credentials.writeForIdentity(identity, const AcademicCredential(studentId: 'G-FIXTURE-001', password: 'fixture'));
+      final prefs = await AppPreferencesStore.getInstance();
+      final settings = AcademicStoragePreferences(appUserId: identity.appUserId, identity: identity, store: prefs);
+      await settings.setSaveCredentials(true);
+      await settings.setSaveAcademicData(false);
+      final coordinator = AcademicLoginCoordinator(controller: controller,
+          credentialStore: credentials,
+          captchaSubmissionPolicy: const AcademicCaptchaSubmissionPolicy(calibrated: true, backgroundSubmitThreshold: .99));
+      final results = await Future.wait([coordinator.ensureAuthenticated(), coordinator.ensureAuthenticated()]);
+      expect(gateway.loginCalls, 1);
+      expect(results.first.isSuccess, !failure);
+      if (failure) expect(results.first.needsCaptcha, true);
+      expect(await credentials.readForIdentity(identity), isNotNull);
+      controller.dispose();
+      provider.close();
+    });
+  }
+
   test('研究生资料脱敏 fixture 按数组响应解析 xh/xm', () {
     final decoded = GraduateResponseCodec.decode(
       jsonEncode([
@@ -276,7 +316,10 @@ void main() {
 }
 
 final class _FakeGraduateGateway implements GraduateProtocolGateway {
-  _FakeGraduateGateway(this.profile, {this.loginError});
+  _FakeGraduateGateway(this.profile, {this.loginError, this.requireLoginForProbe = false});
+  final bool requireLoginForProbe;
+  bool authenticated = false;
+  int loginCalls = 0;
 
   final GraduateProfile profile;
   final Object? loginError;
@@ -298,8 +341,10 @@ final class _FakeGraduateGateway implements GraduateProtocolGateway {
     required String password,
     required String captchaCode,
   }) async {
+    loginCalls++;
     final error = loginError;
     if (error != null) throw error;
+    authenticated = true;
   }
 
   @override
@@ -314,7 +359,7 @@ final class _FakeGraduateGateway implements GraduateProtocolGateway {
 
   @override
   Future<GraduateSessionState> probe() async => GraduateSessionState(
-      authenticated: profile.studentId != null, studentId: profile.studentId);
+      authenticated: (!requireLoginForProbe || authenticated) && profile.studentId != null, studentId: profile.studentId);
 
   @override
   Future<GraduateSessionArtifactState?> exportSession() async => null;
@@ -325,6 +370,16 @@ final class _FakeGraduateGateway implements GraduateProtocolGateway {
   @override
   Future<void> reset() async {}
 
+  @override
+  void close() {}
+}
+
+final class _ConfidentRecognizer implements AcademicCaptchaRecognizer {
+  @override
+  bool get isAvailable => true;
+  @override
+  Future<AcademicCaptchaRecognition> recognize(Uint8List imageBytes) async =>
+      const AcademicCaptchaRecognition(text: '1234', confidence: .999);
   @override
   void close() {}
 }

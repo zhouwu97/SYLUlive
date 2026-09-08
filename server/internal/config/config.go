@@ -113,6 +113,7 @@ type Config struct {
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 控制旧教务个人路由；教务绑定恢复依赖这些路由。
 	SchoolAuthorityRetired      bool
+	SchoolLegacySecretsFrozen   bool
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
 
@@ -591,6 +592,7 @@ func Load() *Config {
 		AccountIdentityReadMode:             accountIdentityReadMode,
 		TrustedProxyCIDRs:                   trustedProxyCIDRs,
 		SchoolAuthorityRetired:              schoolAuthorityRetired,
+		SchoolLegacySecretsFrozen:           envBool("SCHOOL_LEGACY_SECRETS_FROZEN", false),
 		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
 		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
 		AndroidPackageName:                  androidPackageName,

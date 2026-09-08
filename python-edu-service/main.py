@@ -126,7 +126,7 @@ def _register_retired_routes(app: FastAPI) -> None:
     )
 
 
-def create_app(retired: bool | None = None) -> FastAPI:
+def create_app(retired: bool | None = None, frozen: bool | None = None) -> FastAPI:
     """按创建时的退役状态构造应用，避免导入时环境变量污染测试与部署。"""
 
     retired = school_authority_retired() if retired is None else retired
@@ -137,6 +137,19 @@ def create_app(retired: bool | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.school_authority_retired = retired
+    if frozen is None:
+        raw = os.getenv("SCHOOL_LEGACY_SECRETS_FROZEN", "false").strip().lower()
+        if raw not in {"true", "false", "1", "0"}:
+            raise RuntimeError("SCHOOL_LEGACY_SECRETS_FROZEN 必须为 true 或 false")
+        frozen = raw in {"true", "1"}
+
+    @app.middleware("http")
+    async def freeze_legacy_secrets(request, call_next):
+        path = request.url.path.rstrip("/")
+        cleanup = (request.method == "DELETE" and path in {"/api/edu/bind", "/api/edu/authorization"}) or (request.method == "POST" and path == "/api/edu/session/logout")
+        if frozen and not cleanup and path != "/api/edu/pre_verify" and (path == "/api/edu" or path.startswith("/api/edu/") or path in _LEGACY_EDU_PATHS):
+            return JSONResponse(status_code=410, content={"code": "SCHOOL_LEGACY_SECRETS_FROZEN", "error": "旧教务会话写入已冻结"})
+        return await call_next(request)
 
     cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "")
     if cors_origins_env and cors_origins_env != "*":

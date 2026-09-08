@@ -42,7 +42,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
         localCaptchaRecognition: _captchaRecognizer.isAvailable,
       );
 
-  /// 仅供 UI 显示为人工可核对建议，永远不会自动提交验证码。
+  /// 默认供人工核对；Coordinator 仅在独立校准通过的后台恢复中有限提交。
   AcademicCaptchaRecognition? get captchaSuggestion => _captchaSuggestion;
 
   @override

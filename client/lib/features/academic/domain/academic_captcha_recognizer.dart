@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
-/// 本机验证码识别的候选结果。候选只允许作为人工输入建议，不能绕过学校
-/// 验证或自动提交；整串低于安全阈值时由 UI 保留人工输入。
+/// 本机验证码识别候选。默认供人工核对；后台提交另由完整四位校准策略授权。
 final class AcademicCaptchaRecognition {
   const AcademicCaptchaRecognition({
     required this.text,
@@ -15,8 +14,7 @@ final class AcademicCaptchaRecognition {
 
   bool get hasFourDigitText => RegExp(r'^\d{4}$').hasMatch(text);
 
-  /// 仅作为本机候选填入，必须由用户核对后提交；阈值来自离线覆盖率审计，
-  /// 不代表验证码已被校准为可自动提交。
+  /// 候选展示阈值不代表可自动提交；后台策略必须有独立的校准证据。
   bool get isManualSuggestion =>
       hasFourDigitText && confidence.isFinite && confidence >= 0.70;
 }

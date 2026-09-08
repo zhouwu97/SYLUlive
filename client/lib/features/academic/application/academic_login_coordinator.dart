@@ -12,6 +12,7 @@ import '../storage/academic_storage_preferences.dart';
 import '../domain/academic_repository.dart';
 import '../domain/academic_failure.dart';
 import '../domain/academic_provider.dart';
+import '../domain/academic_captcha_submission_policy.dart';
 import '../data/academic_identity_client.dart';
 import '../data/graduate/graduate_protocol_client.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
@@ -96,6 +97,7 @@ final class AcademicLoginCoordinator {
     AcademicIdentityClient? identityClient,
     Future<AppPreferencesStore> Function()? preferencesLoader,
     this.persistencePolicy,
+    this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
   })  : credentialStore = credentialStore ?? PlatformAcademicCredentialStore(),
         _identityClient =
             identityClient ?? controller.providerRouter?.identityClient,
@@ -107,6 +109,7 @@ final class AcademicLoginCoordinator {
   final AcademicIdentityClient? _identityClient;
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
+  final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;
   Future<AcademicLoginOutcome>? _ensureInFlight;
   _PendingAcademicLogin? _pending;
   _PendingIdentityVerification? _pendingIdentity;
@@ -703,7 +706,7 @@ final class AcademicLoginCoordinator {
     if (!controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
       return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
     }
-    return _login(
+    var outcome = await _login(
       appUserId: controller.appUserId!,
       studentId: saved.studentId,
       password: saved.password,
@@ -711,6 +714,34 @@ final class AcademicLoginCoordinator {
       saveAcademicData: prefs.saveAcademicData,
       useSavedCredential: false,
     );
+    // 仅保存密码的后台恢复走自动提交；首次绑定、换绑和人工登录保持显式挑战。
+    for (var attempts = 0; outcome.needsCaptcha &&
+        controller.providerId == AcademicProviderId.syluGraduate; attempts++) {
+      final challenge = controller.pendingAcademicChallenge;
+      if (challenge == null ||
+          !captchaSubmissionPolicy.allows(controller.captchaSuggestion,
+              controller.captchaSuggestionConfidence, attempts)) {
+        break;
+      }
+      if (!await controller.remoteAccessAllowed() ||
+          !controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
+        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      }
+      outcome = await continueLoginWithCaptcha(code: controller.captchaSuggestion!);
+      if (!outcome.isSuccess) {
+        final failure = controller.failure?.kind;
+        if ((failure == AcademicFailureKind.challengeRejected ||
+                failure == AcademicFailureKind.captchaExpired) &&
+            controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
+          // 失败的验证码已经消费；只准备一张新人工挑战，不再后台提交。
+          return _login(appUserId: requestUser!, studentId: saved.studentId,
+              password: saved.password, saveCredentials: true,
+              saveAcademicData: prefs.saveAcademicData, useSavedCredential: false);
+        }
+        break;
+      }
+    }
+    return outcome;
   }
 
   Future<AcademicLoginOutcome> _login({

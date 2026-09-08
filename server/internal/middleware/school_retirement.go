@@ -7,6 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 冻结期阻断会重新生成学校会话的旧入口，保留清理通道与无持久化身份验证。
+func SchoolLegacySecretsFreezeGate(frozen bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := strings.TrimRight(c.Request.URL.Path, "/")
+		cleanup := c.Request.Method == http.MethodDelete && (path == "/api/edu/bind" || path == "/api/edu/authorization") ||
+			c.Request.Method == http.MethodPost && path == "/api/edu/session/logout"
+		if frozen && !cleanup && path != "/api/edu/pre_verify" &&
+			(path == "/api/edu" || strings.HasPrefix(path, "/api/edu/") || path == "/api/login_edu" || path == "/api/register_with_edu" || path == "/api/password/edu/reset") {
+			c.AbortWithStatusJSON(http.StatusGone, gin.H{"code": "SCHOOL_LEGACY_SECRETS_FROZEN", "error": "请升级客户端，在本机连接教务"})
+			return
+		}
+		c.Next()
+	}
+}
+
 // SchoolAuthorityRetirementGate 在全局幂等、认证和请求体处理中间件之前拦截已退役的学校个人接口。
 // 这里只读取开关、HTTP 方法和 URL 路径，不查询数据库，也不读取请求体。
 func SchoolAuthorityRetirementGate(retired bool) gin.HandlerFunc {

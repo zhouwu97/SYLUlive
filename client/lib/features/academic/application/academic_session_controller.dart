@@ -206,6 +206,7 @@ final class AcademicSessionController extends ChangeNotifier {
   StudentProfile? get profile => _profile;
   CaptchaChallenge? get captchaChallenge => _captchaChallenge;
   String? get captchaSuggestion => _captchaChallenge?.suggestedCode;
+  double? get captchaSuggestionConfidence => _captchaChallenge?.suggestionConfidence;
   CourseFetchResult? get lastCourses => _lastCourses;
   GradeFetchResult? get lastGrades => _lastGrades;
   AcademicFailure? get failure => _failure;

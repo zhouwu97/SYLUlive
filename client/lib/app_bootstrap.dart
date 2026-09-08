@@ -46,6 +46,7 @@ import 'features/academic/data/graduate/tflite_academic_captcha_recognizer.dart'
 import 'features/academic/data/academic_identity_client.dart';
 import 'features/academic/domain/academic_repository.dart';
 import 'features/academic/domain/academic_provider.dart';
+import 'features/academic/domain/academic_captcha_submission_policy.dart';
 import 'features/academic/storage/academic_session_artifact_vault.dart';
 import 'models/user.dart';
 import 'models/startup_destination.dart';
@@ -1412,7 +1413,8 @@ class MyApp extends StatelessWidget {
         ),
         ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
           update: (_, controller, previous) {
-            final coordinator = previous ?? AcademicLoginCoordinator(controller: controller);
+            final coordinator = previous ?? AcademicLoginCoordinator(controller: controller,
+                captchaSubmissionPolicy: AcademicCaptchaSubmissionPolicy.fromBuildCalibration());
             unawaited(coordinator.resumePendingCleanup().catchError((Object _) {}));
             return coordinator;
           },

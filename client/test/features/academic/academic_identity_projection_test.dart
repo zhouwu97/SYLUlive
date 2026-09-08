@@ -1,10 +1,11 @@
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import 'package:provider/provider.dart';
 
 import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
@@ -15,6 +16,7 @@ import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart'
 import 'package:shenliyuan/features/academic/data/datasource/jiaowu_local_data_source.dart';
 import 'package:shenliyuan/features/academic/data/datasource/legacy_server_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/domain/academic_captcha_recognizer.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
 import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
@@ -30,6 +32,81 @@ import 'package:shenliyuan/widgets/course/course_import_sheet.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  test('已登录但服务端身份列表为空时为未绑定，且不请求旧教务接口', () async {
+    final paths = <String>[];
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        paths.add(o.path);
+        h.resolve(Response(
+            requestOptions: o, statusCode: 200, data: {'identities': []}));
+      }));
+    final router = AcademicProviderRouterRepository(
+        legacy: AcademicRepositoryImpl(
+            local: JiaowuLocalDataSource(),
+            legacy: LegacyServerDataSource(dio),
+            source: AcademicSourceKind.legacy),
+        registry: AcademicProviderRegistry([_ProjectionProviderFactory()]),
+        identityClient: AcademicIdentityClient(dio));
+    final session = AcademicSessionController(repository: router);
+    addTearDown(() {
+      session.dispose();
+      dio.close();
+    });
+    await session.syncAppUser('3');
+    expect(session.academicState, AcademicState.identityUnbound);
+    expect(paths, ['/student-identity']);
+  });
+
+  test('双身份切换只选择本机 Provider，冷启动恢复选择且不恢复连接许可', () async {
+    final paths = <String>[];
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        paths.add(o.path);
+        h.resolve(Response(requestOptions: o, statusCode: 200, data: {
+          'identities': [
+            {
+              'provider_id': 'sylu_undergraduate',
+              'student_id': 'U1',
+              'verified': true
+            },
+            {
+              'provider_id': 'sylu_graduate',
+              'student_id': 'G1',
+              'verified': true
+            },
+          ]
+        }));
+      }));
+    AcademicProviderRouterRepository makeRouter() =>
+        AcademicProviderRouterRepository(
+            legacy: AcademicRepositoryImpl(
+                local: JiaowuLocalDataSource(),
+                legacy: LegacyServerDataSource(dio),
+                source: AcademicSourceKind.legacy),
+            registry: AcademicProviderRegistry([
+              _ProjectionProviderFactory(),
+              _ProjectionProviderFactory(AcademicProviderId.syluUndergraduate)
+            ]),
+            identityClient: AcademicIdentityClient(dio));
+    final session = AcademicSessionController(repository: makeRouter());
+    await session.syncAppUser('3');
+    final bindings = await session.providerRouter!.loadIdentityBindings();
+    await session.selectProviderIdentity(bindings.last.toIdentity('3'));
+    expect(session.providerId, AcademicProviderId.syluGraduate);
+    expect(session.academicState, AcademicState.deviceSetupRequired);
+    expect(await session.remoteAccessAllowed(), isFalse);
+    session.dispose();
+    final restarted = AcademicSessionController(repository: makeRouter());
+    addTearDown(() {
+      restarted.dispose();
+      dio.close();
+    });
+    await restarted.syncAppUser('3');
+    expect(restarted.providerId, AcademicProviderId.syluGraduate);
+    expect(restarted.isBusy, isFalse);
+    expect(paths.every((path) => path == '/student-identity'), isTrue);
+  });
   test('账号切换时丢弃旧身份列表响应，不选择旧 Provider', () async {
     final adapter = _BlockingIdentityAdapter();
     final identityDio = Dio(BaseOptions(baseUrl: 'https://example.invalid/api'))
@@ -92,6 +169,135 @@ void main() {
     expect(router.identityBindings, isEmpty);
   });
 
+  test('首次绑定本机未完成时取消保留已验证身份', () async {
+    var unbindCalls = 0;
+    final identityDio = Dio();
+    identityDio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (options.path == '/student-identity/challenge') {
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'challenge_required': true,
+              'challenge_type': 'school_login',
+              'provider_id': 'sylu_graduate',
+              'student_id': 'G-CANCEL-001',
+              'challenge_token': 'fixture-token',
+              'captcha': base64Encode([1, 2, 3]),
+              'school_public_key':
+                  'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3hzrH91c0OKgtaSB7GWGfDuUJsMrtiYThDXtJdrCr7exKt2fmIZngoFk71Dv/BPVQCHSuohNNvEV9VVDFSBhsP9xKEDAM4/2Lv+wlzN9CuZtLpV3Elo8VacjwMHcjTRmTchRBmijQzZRFrA2LM+qsH3U5tRM1uJFbfRMkBq24AwIDAQAB',
+              'school_public_key_fingerprint': 'sha256:fixture',
+              'expires_at': '2099-01-01T00:00:00Z',
+            },
+          ));
+          return;
+        }
+        if (options.path == '/student-identity/verify') {
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'verified': true,
+              'provider_id': 'sylu_graduate',
+              'student_id': 'G-CANCEL-001',
+            },
+          ));
+          return;
+        }
+        if (options.path == '/student-identity' && options.method == 'DELETE') {
+          unbindCalls++;
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'unbound': true},
+          ));
+          return;
+        }
+        handler.reject(DioException(
+          requestOptions: options,
+          type: DioExceptionType.badResponse,
+          response: Response(requestOptions: options, statusCode: 404),
+        ));
+      },
+    ));
+    final legacyDio = Dio();
+    final identityClient = AcademicIdentityClient(identityDio);
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(legacyDio, networkEnabled: false),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry([_ProjectionProviderFactory()]),
+      identityClient: identityClient,
+    );
+    final session = AcademicSessionController(repository: router);
+    final coordinator = AcademicLoginCoordinator(
+      controller: session,
+      identityClient: identityClient,
+      preferencesLoader: () async => MemoryPreferencesStore(),
+      identityCaptchaRecognizerFactory: _ProjectionRecognizer.new,
+    );
+    addTearDown(() {
+      session.dispose();
+      router.close();
+      identityDio.close();
+      legacyDio.close();
+    });
+    await session.syncAppUser('app-user-a');
+
+    final outcome = await coordinator.login(
+      studentId: 'G-CANCEL-001',
+      password: 'fixture-password',
+      saveCredentials: false,
+      saveAcademicData: false,
+      providerId: AcademicProviderId.syluGraduate,
+    );
+    expect(outcome.isSuccess, isFalse);
+    expect(session.hasBoundIdentity, isTrue);
+    expect((await coordinator.cancelLogin()).isSuccess, isTrue);
+    expect(unbindCalls, 0);
+    expect(session.identity?.studentId, 'G-CANCEL-001');
+    expect(session.academicState, AcademicState.deviceSetupRequired);
+  });
+
+  testWidgets('首次绑定过程中切到本机 Provider 时弹窗不变成直连登录', (tester) async {
+    final legacyDio = Dio();
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(legacyDio, networkEnabled: false),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry([_ProjectionProviderFactory()]),
+    );
+    final session = AcademicSessionController(repository: router);
+    addTearDown(() {
+      session.dispose();
+      router.close();
+      legacyDio.close();
+    });
+    await session.syncAppUser('app-user-a');
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AcademicLoginDialog(controller: session)),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('绑定教务账号'), findsOneWidget);
+
+    await session.selectProviderIdentity(const AcademicIdentityKey(
+      appUserId: 'app-user-a',
+      providerId: AcademicProviderId.syluGraduate,
+      studentId: 'G-CANCEL-001',
+    ));
+    await tester.pump();
+
+    expect(find.text('绑定教务账号'), findsOneWidget);
+    expect(find.text('本机直连教务'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('账号切换发生在 Artifact 读取期间时不恢复旧 Provider', () async {
     const identity = AcademicIdentityKey(
       appUserId: 'old-user',
@@ -112,6 +318,9 @@ void main() {
     );
     addTearDown(session.dispose);
 
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('old-user');
     final restore = session.ensureAuthenticated();
     await artifactBackend.started.future;
@@ -144,6 +353,9 @@ void main() {
     );
     addTearDown(session.dispose);
 
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('old-user');
     final restore = session.ensureAuthenticated();
     await artifactBackend.started.future;
@@ -176,6 +388,9 @@ void main() {
       session.dispose();
     });
 
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('3');
     final restored = await session.ensureAuthenticated();
     edu.setUserId('3');
@@ -205,7 +420,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('已绑定教务账号'), findsOneWidget);
+    expect(find.text('身份已验证 · 本机待连接'), findsOneWidget);
     expect(find.text('未绑定教务账号'), findsNothing);
     expect(
       find.text('研究生教务当前开放课表；成绩、考试和 GPA 暂未接入'),
@@ -229,6 +444,9 @@ void main() {
       auth.dispose();
       session.dispose();
     });
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('3');
 
     await tester.pumpWidget(
@@ -277,11 +495,14 @@ void main() {
       preferencesLoader: () async => MemoryPreferencesStore(),
     );
     addTearDown(session.dispose);
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('3');
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: const Scaffold(body: SizedBox()),
+      const MaterialApp(
+        home: Scaffold(body: SizedBox()),
       ),
     );
     final pageContext = tester.element(find.byType(Scaffold));
@@ -338,6 +559,9 @@ void main() {
       preferencesLoader: () async => MemoryPreferencesStore(),
     );
     addTearDown(session.dispose);
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('3');
 
     await tester.pumpWidget(
@@ -380,6 +604,9 @@ void main() {
       preferencesLoader: () async => MemoryPreferencesStore(),
     );
     addTearDown(session.dispose);
+    await AcademicConnectionStore(
+            identity, await AppPreferencesStore.getInstance())
+        .setConnected(true);
     await session.syncAppUser('old-user');
 
     await tester.pumpWidget(
@@ -476,6 +703,18 @@ final class _EmptyCredentialStore implements AcademicCredentialStore {
   Future<void> delete(String appUserId) async {}
 }
 
+final class _ProjectionRecognizer implements AcademicCaptchaRecognizer {
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<AcademicCaptchaRecognition> recognize(Uint8List imageBytes) async =>
+      const AcademicCaptchaRecognition(text: '1234', confidence: .99);
+
+  @override
+  void close() {}
+}
+
 final class _FailingCourseEduProvider extends EduProvider {
   _FailingCourseEduProvider() : super(Dio());
 
@@ -538,8 +777,9 @@ final class _ProjectionAuth extends AuthProvider {
 }
 
 final class _ProjectionProviderFactory implements AcademicProviderFactory {
+  _ProjectionProviderFactory([this.id = AcademicProviderId.syluGraduate]);
   @override
-  AcademicProviderId get id => AcademicProviderId.syluGraduate;
+  final AcademicProviderId id;
 
   @override
   AcademicProvider create(AcademicIdentityKey identity) =>

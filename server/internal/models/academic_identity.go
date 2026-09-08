@@ -86,7 +86,7 @@ type AcademicIdentityBinding struct {
 	ID                  uint       `gorm:"primaryKey" json:"id"`
 	UserID              uint       `gorm:"not null;index:idx_academic_identity_user,priority:1;uniqueIndex:ux_academic_identity_user_provider,priority:1" json:"-"`
 	ProviderID          string     `gorm:"size:64;not null;index:idx_academic_identity_user,priority:2;uniqueIndex:ux_academic_identity_user_provider,priority:2;uniqueIndex:ux_academic_identity_provider_student,priority:1" json:"provider_id"`
-	StudentID           string     `gorm:"size:128;not null;index:idx_academic_identity_user,priority:3;uniqueIndex:ux_academic_identity_provider_student,priority:2" json:"student_id"`
+	StudentID           string     `gorm:"size:128;not null;index:idx_academic_identity_student;index:idx_academic_identity_user,priority:3;uniqueIndex:ux_academic_identity_provider_student,priority:2" json:"student_id"`
 	VerifiedAt          time.Time  `gorm:"not null" json:"verified_at"`
 	VerificationMethod  string     `gorm:"size:64;not null" json:"verification_method"`
 	VerificationVersion string     `gorm:"size:32;not null" json:"verification_version"`

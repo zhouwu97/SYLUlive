@@ -1,3 +1,4 @@
+import '../features/academic/data/academic_identity_client.dart';
 import 'dart:async';
 import '../features/academic/application/academic_identity_lifecycle_coordinator.dart';
 
@@ -39,6 +40,7 @@ class _AcademicDataSettingsScreenState
   AcademicStoragePreferences? _preferences;
   AcademicCredential? _credential;
   AcademicPersistencePolicy? _policy;
+  List<AcademicIdentityBinding> _identities = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -64,6 +66,23 @@ class _AcademicDataSettingsScreenState
       if (mounted) setState(() => _loading = false);
       return;
     }
+    try {
+      final identities =
+          await _session.providerRouter?.loadIdentityBindings(force: true) ??
+              const <AcademicIdentityBinding>[];
+      if (!mounted ||
+          loadGeneration != _loadGeneration ||
+          _session.appUserId != userId) {
+        return;
+      }
+      _identities = identities;
+      if (!_session.hasBoundIdentity && identities.isNotEmpty) {
+        await _session
+            .selectProviderIdentity(identities.first.toIdentity(userId));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '读取已验证身份失败，请重试');
+    }
     final prefs = await AppPreferencesStore.getInstance();
     final preferences = AcademicStoragePreferences(
       appUserId: userId,
@@ -75,7 +94,8 @@ class _AcademicDataSettingsScreenState
     if (identity != null) {
       try {
         await AcademicIdentityLifecycleCoordinator(
-          controller: _session, preferences: prefs).retryPending(identity);
+                controller: _session, preferences: prefs)
+            .retryPending(identity);
       } catch (_) {
         if (mounted) setState(() => _error = '上次教务资料清理尚未完成，请重试清除');
       }
@@ -83,7 +103,8 @@ class _AcademicDataSettingsScreenState
     final credential = _usesLocalCredentials
         ? await (_session.identity == null
             ? PlatformAcademicCredentialStore().read(userId)
-            : PlatformAcademicCredentialStore().readForIdentity(_session.identity!))
+            : PlatformAcademicCredentialStore()
+                .readForIdentity(_session.identity!))
         : null;
     final sourceAccountId =
         _session.studentId?.trim() ?? credential?.studentId ?? '';
@@ -129,6 +150,61 @@ class _AcademicDataSettingsScreenState
       _policy = policy;
       _loading = false;
     });
+  }
+
+  String _maskIdentity(String value) => value.length < 5
+      ? '****'
+      : '${value.substring(0, 2)}****${value.substring(value.length - 2)}';
+
+  Future<void> _selectIdentity(AcademicIdentityBinding binding) async {
+    final user = _session.appUserId;
+    if (user == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      // 已有身份切换只修改本机选择，不请求身份验证或换绑。
+      await _session.selectProviderIdentity(binding.toIdentity(user));
+      await _coordinatorOrNull()?.ensureAuthenticated();
+      if (mounted) await _load();
+    } catch (_) {
+      if (mounted) setState(() => _error = '切换身份未完成，请重试');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _unbindIdentity() async {
+    final identity = _session.identity;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('解除当前学生身份？'),
+              content: const Text('删除此身份的服务端绑定和本机密码、会话与资料。其他学生身份保留。'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('取消')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('解除身份')),
+              ],
+            ));
+    if (confirmed != true || !mounted || _session.identity != identity) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final result = await context.read<EduProvider>().unbind();
+      if (!result.success) throw StateError(result.errorMessage ?? '解除失败');
+      if (mounted) await _load();
+    } catch (_) {
+      if (mounted) setState(() => _error = '解除身份未完成，请重试');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _toggleCredentials(bool enabled) async {
@@ -195,8 +271,7 @@ class _AcademicDataSettingsScreenState
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('关闭本机教务资料保存？'),
-        content: Text(
-            '关闭后会删除本机$retainedData。此后课表修改不会在重启后保留；教务绑定和登录凭据不受影响。'),
+        content: Text('关闭后会删除本机$retainedData。此后课表修改不会在重启后保留；教务绑定和登录凭据不受影响。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -215,9 +290,14 @@ class _AcademicDataSettingsScreenState
   Future<void> _clearData() => _deleteAcademicAccount();
 
   Future<void> _disconnectSession() async {
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
-      if (_session.connectionPreference == AcademicConnectionPreference.disconnected) {
+      if (_session.connectionPreference !=
+              AcademicConnectionPreference.connected ||
+          !_session.isAuthenticated) {
         await _session.reconnect();
         if (!mounted) return;
         final coordinator = _coordinatorOrNull();
@@ -225,7 +305,7 @@ class _AcademicDataSettingsScreenState
         if (!mounted) return;
         if (outcome != null && !outcome.isSuccess) {
           await AcademicLoginDialog.show(context,
-            controller: _session, coordinator: coordinator);
+              controller: _session, coordinator: coordinator);
         }
       } else {
         await _session.disconnect();
@@ -319,7 +399,7 @@ class _AcademicDataSettingsScreenState
   Widget build(BuildContext context) {
     if (_loading) {
       return const SettingsPageScaffold(
-        title: '教务资料',
+        title: '教务身份与本机连接',
         children: [
           Center(
               child: Padding(
@@ -329,7 +409,8 @@ class _AcademicDataSettingsScreenState
       );
     }
     context.watch<AcademicSessionController>();
-    final disconnected = _session.connectionPreference == AcademicConnectionPreference.disconnected;
+    final disconnected = _session.connectionPreference ==
+        AcademicConnectionPreference.disconnected;
     final preferences = _preferences;
     final policy = _policy;
     final saveCredentials =
@@ -339,11 +420,10 @@ class _AcademicDataSettingsScreenState
         policy?.cleanupPending != true;
     final supportsGrades = _session.capabilities.supportsGrades;
     final savedDataTitle = supportsGrades ? '保存课表和成绩' : '保存课表';
-    final clearDataSubtitle = supportsGrades
-        ? '删除密码、会话、课表、成绩及教务密钥，保留学生身份'
-        : '删除密码、会话、课表及教务密钥，保留学生身份';
+    final clearDataSubtitle =
+        supportsGrades ? '删除密码、会话、课表、成绩及教务密钥，保留学生身份' : '删除密码、会话、课表及教务密钥，保留学生身份';
     return SettingsPageScaffold(
-      title: '教务资料',
+      title: '教务身份与本机连接',
       onRefresh: _load,
       children: [
         if (_error != null)
@@ -359,14 +439,16 @@ class _AcademicDataSettingsScreenState
             ],
           ),
         SettingsSection(
-          title: '教务资料',
+          title: '教务身份与本机连接',
           children: [
             SettingsTile(
               icon: Icons.school_outlined,
               title: '教务账号',
               subtitle: _maskedStudentId(),
               trailing: SettingsStatusBadge(
-                label: disconnected ? '已断开' : (_session.isAuthenticated ? '已连接' : '未连接'),
+                label: disconnected
+                    ? '已断开'
+                    : (_session.isAuthenticated ? '已连接' : '未连接'),
                 type: _session.isAuthenticated
                     ? SettingsStatusBadgeType.success
                     : SettingsStatusBadgeType.neutral,
@@ -384,13 +466,6 @@ class _AcademicDataSettingsScreenState
                 ),
                 showChevron: false,
               ),
-            if (!_usesLocalCredentials)
-              const SettingsTile(
-                icon: Icons.cloud_done_outlined,
-                title: '服务器管理教务绑定',
-                subtitle: '教务凭据由服务器加密保存；如需解绑，请前往账号与安全撤销教务授权。',
-                showChevron: false,
-              ),
             SettingsTile(
               icon: Icons.lock_clock_outlined,
               title: savedDataTitle,
@@ -406,6 +481,46 @@ class _AcademicDataSettingsScreenState
           ],
         ),
         SettingsSection(
+          title: '已验证的学生身份',
+          children: [
+            for (final binding in _identities)
+              SettingsTile(
+                icon: Icons.school_outlined,
+                title: binding.providerId.displayName,
+                subtitle: _maskIdentity(binding.studentId),
+                trailing:
+                    _session.identity == binding.toIdentity(_session.appUserId!)
+                        ? const SettingsStatusBadge(
+                            label: '当前使用',
+                            type: SettingsStatusBadgeType.success)
+                        : null,
+                onTap: _saving ? null : () => _selectIdentity(binding),
+              ),
+            SettingsTile(
+              icon: Icons.add,
+              title: '添加学生身份',
+              subtitle: '验证并添加另一种教务身份，保留已有身份',
+              onTap: _saving
+                  ? null
+                  : () async {
+                      await AcademicLoginDialog.show(context,
+                          controller: _session,
+                          coordinator: _coordinatorOrNull(),
+                          addIdentity: true);
+                      if (mounted) await _load();
+                    },
+            ),
+            if (_session.hasBoundIdentity)
+              SettingsTile(
+                icon: Icons.person_remove_outlined,
+                title: '解除当前学生身份',
+                subtitle: '删除此身份绑定及其本机资料，其他身份保留',
+                danger: true,
+                onTap: _saving ? null : _unbindIdentity,
+              ),
+          ],
+        ),
+        SettingsSection(
           title: '会话与资料',
           children: [
             if (_session.hasBoundIdentity)
@@ -413,17 +528,24 @@ class _AcademicDataSettingsScreenState
                 icon: Icons.manage_accounts_outlined,
                 title: '更换学生身份',
                 subtitle: '验证成功后更换绑定，并清除旧身份本机资料',
-                onTap: _saving ? null : () async {
-                  await AcademicLoginDialog.show(context, controller: _session,
-                    coordinator: _coordinatorOrNull(), changeIdentity: true);
-                  if (mounted) await _load();
-                },
+                onTap: _saving
+                    ? null
+                    : () async {
+                        await AcademicLoginDialog.show(context,
+                            controller: _session,
+                            coordinator: _coordinatorOrNull(),
+                            changeIdentity: true);
+                        if (mounted) await _load();
+                      },
               ),
             if (_usesLocalCredentials)
               SettingsTile(
                 icon: Icons.link_off_outlined,
-                title: disconnected ? '重新连接' : '断开本机教务',
-                subtitle: disconnected ? '仍可查看已保存的本机数据' : '删除学校会话，保留凭据和资料，停止自动重连',
+                title: disconnected || !_session.isAuthenticated
+                    ? '连接本机教务'
+                    : '断开本机教务',
+                subtitle:
+                    disconnected ? '仍可查看已保存的本机数据' : '删除学校会话，保留凭据和资料，停止自动重连',
                 onTap: _saving ? null : _disconnectSession,
               ),
             SettingsTile(

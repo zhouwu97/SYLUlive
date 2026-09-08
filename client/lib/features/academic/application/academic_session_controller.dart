@@ -16,10 +16,11 @@ import '../domain/academic_failure.dart';
 import '../domain/academic_provider.dart';
 import '../domain/academic_repository.dart';
 
-enum AcademicConnectionPreference { connected, disconnected }
+enum AcademicConnectionPreference { uninitialized, connected, disconnected }
 
 enum AcademicState {
   identityUnbound,
+  deviceSetupRequired,
   disconnected,
   localCredentialRequired,
   authChallengeRequired,
@@ -165,17 +166,21 @@ final class AcademicSessionController extends ChangeNotifier {
 
   AcademicState get academicState {
     final currentIdentity = identity;
-    if (currentIdentity == null && _appUserId == null) {
+    if (currentIdentity == null) {
+      if (_failure != null) return AcademicState.unavailable;
       return AcademicState.identityUnbound;
     }
-    if (currentIdentity != null &&
-        _appUserId != null &&
+    if (_appUserId != null &&
         currentIdentity.appUserId.trim() != _appUserId!.trim()) {
       return AcademicState.identityMismatch;
     }
     if (_connectionPreference == AcademicConnectionPreference.disconnected) {
       return AcademicState.disconnected;
     }
+    if (_connectionPreference == AcademicConnectionPreference.uninitialized) {
+      return AcademicState.deviceSetupRequired;
+    }
+    if (isAwaitingCaptcha) return AcademicState.authChallengeRequired;
     if (_failure != null) {
       return switch (_failure!.kind) {
         AcademicFailureKind.captchaRequired ||
@@ -189,7 +194,7 @@ final class AcademicSessionController extends ChangeNotifier {
       };
     }
     if (isAuthenticated) return AcademicState.ready;
-    return AcademicState.localCredentialRequired;
+    return AcademicState.deviceSetupRequired;
   }
 
   /// 异步登录完成后供协调器确认仍属于原 App 账号。
@@ -290,9 +295,10 @@ final class AcademicSessionController extends ChangeNotifier {
         try {
           await _repository.restoreSession();
           if (_disposed || generation != _accountGeneration) return;
-          if (!await remoteAccessAllowed()) return;
-          _studentId = _repository.studentId;
+          _studentId = identity?.studentId ?? _repository.studentId;
           _serverBindingStatusResolved = true;
+          _status = AcademicSessionStatus.idle;
+          if (!await remoteAccessAllowed()) return;
           _status = _repository.sessionState == SessionState.authenticated
               ? AcademicSessionStatus.authenticated
               : AcademicSessionStatus.idle;
@@ -631,7 +637,9 @@ final class AcademicSessionController extends ChangeNotifier {
         return false;
       }
       if (!store.connected) {
-        _connectionPreference = AcademicConnectionPreference.disconnected;
+        _connectionPreference = store.initialized
+            ? AcademicConnectionPreference.disconnected
+            : AcademicConnectionPreference.uninitialized;
         _notifyListeners();
         return false;
       }
@@ -678,6 +686,12 @@ final class AcademicSessionController extends ChangeNotifier {
 
   /// 只有显式重新连接后才恢复学校会话。
   Future<bool> reconnect() async {
+    await allowDeviceConnection();
+    return ensureAuthenticated(force: true);
+  }
+
+  /// 仅显式连接或验证后继续本机设置可授予联网许可；恢复与切换只读取许可。
+  Future<void> allowDeviceConnection() async {
     final current = identity;
     final generation = _accountGeneration;
     if (current != null) {
@@ -686,10 +700,9 @@ final class AcademicSessionController extends ChangeNotifier {
       if (store.cleanupPending) throw StateError('请先完成本机教务资料清理');
       await store.setConnected(true);
     }
-    if (!isCurrentContext(generation: generation)) return false;
+    if (!isCurrentContext(generation: generation)) return;
     _connectionPreference = AcademicConnectionPreference.connected;
     _notifyListeners();
-    return ensureAuthenticated(force: true);
   }
 
   /// 让首次绑定流程把服务端 challenge 图片交给现有验证码 UI。密码和
@@ -721,6 +734,7 @@ final class AcademicSessionController extends ChangeNotifier {
   /// 将已由服务端确认的身份切换到对应本机 Provider。切换会销毁旧
   /// Provider，避免本科和研究生 Cookie、验证码状态互相复用。
   Future<void> selectProviderIdentity(AcademicIdentityKey identity) async {
+    if (this.identity == identity) return;
     final router = providerRouter;
     if (router == null) throw StateError('当前教务仓储未启用 Provider 路由');
     final changing = this.identity != null && this.identity != identity;
@@ -734,6 +748,11 @@ final class AcademicSessionController extends ChangeNotifier {
     final generation = _accountGeneration;
     await router.selectProvider(identity);
     if (!isCurrentContext(generation: generation)) return;
+    final preferences = await AppPreferencesStore.getInstance();
+    if (!isCurrentContext(generation: generation)) return;
+    if (!await preferences.setString('academic_active_provider_${identity.appUserId}', identity.providerId.value)) {
+      throw StateError('保存当前教务身份失败');
+    }
     _connectionPreference = AcademicConnectionPreference.connected;
     await remoteAccessAllowed();
     if (!isCurrentContext(generation: generation)) return;

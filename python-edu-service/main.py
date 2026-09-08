@@ -138,7 +138,7 @@ def create_app(retired: bool | None = None, frozen: bool | None = None) -> FastA
     )
     app.state.school_authority_retired = retired
     if frozen is None:
-        raw = os.getenv("SCHOOL_LEGACY_SECRETS_FROZEN", "false").strip().lower()
+        raw = os.getenv("SCHOOL_LEGACY_SECRETS_FROZEN", "true").strip().lower()
         if raw not in {"true", "false", "1", "0"}:
             raise RuntimeError("SCHOOL_LEGACY_SECRETS_FROZEN 必须为 true 或 false")
         frozen = raw in {"true", "1"}
@@ -147,7 +147,7 @@ def create_app(retired: bool | None = None, frozen: bool | None = None) -> FastA
     async def freeze_legacy_secrets(request, call_next):
         path = request.url.path.rstrip("/")
         cleanup = (request.method == "DELETE" and path in {"/api/edu/bind", "/api/edu/authorization"}) or (request.method == "POST" and path == "/api/edu/session/logout")
-        if frozen and not cleanup and path != "/api/edu/pre_verify" and (path == "/api/edu" or path.startswith("/api/edu/") or path in _LEGACY_EDU_PATHS):
+        if frozen and not retired and not cleanup and path != "/api/edu/pre_verify" and (path == "/api/edu" or path.startswith("/api/edu/") or path in _LEGACY_EDU_PATHS):
             return JSONResponse(status_code=410, content={"code": "SCHOOL_LEGACY_SECRETS_FROZEN", "error": "旧教务会话写入已冻结"})
         return await call_next(request)
 

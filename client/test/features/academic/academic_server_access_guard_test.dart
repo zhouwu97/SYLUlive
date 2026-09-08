@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/data/academic_server_access_guard.dart';
 
 void main() {
-  test('共享 Dio 允许服务端教务绑定、课表和会话恢复请求', () async {
+  test('共享 Dio 在网络前阻断旧教务绑定、课表和会话恢复请求', () async {
     final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid'))
       ..interceptors.add(const AcademicServerAccessGuard())
@@ -13,11 +13,17 @@ void main() {
         handler.resolve(Response(requestOptions: options, statusCode: 200));
       }));
     addTearDown(dio.close);
-    await dio.get('/edu/status');
-    await dio.post('/api/edu/courses');
-    await dio.post('/edu/session/resume');
-    expect(requestedPaths,
-        ['/edu/status', '/api/edu/courses', '/edu/session/resume']);
+    for (final path in [
+      '/edu/status',
+      '/api/edu/courses',
+      '/edu/session/resume',
+      '/register_with_edu'
+    ]) {
+      await expectLater(dio.post(path), throwsA(isA<DioException>()));
+    }
+    expect(requestedPaths, isEmpty);
+    await dio.post('/student-identity/verify');
+    expect(requestedPaths, ['/student-identity/verify']);
   });
 
   test('普通 App 接口不受教务服务器闸门影响', () async {

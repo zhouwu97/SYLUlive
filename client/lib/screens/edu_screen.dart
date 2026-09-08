@@ -1,3 +1,4 @@
+import 'academic_data_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -5,8 +6,6 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
-import '../features/academic/domain/academic_repository.dart'
-    show AcademicSourceKind;
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
@@ -44,10 +43,6 @@ class _EduScreenState extends State<EduScreen> {
     if (!auth.isLoggedIn || auth.user == null) return;
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
-    if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
-        !await coordinator.hasSavedCredential()) {
-      return;
-    }
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();
@@ -92,23 +87,22 @@ class _EduScreenState extends State<EduScreen> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             children: [
               _buildEduStatusCard(context, eduProvider, isDark),
-              if (context.watch<AcademicSessionController>().hasBoundIdentity)
-                TextButton.icon(
-                  onPressed: () => _showBindDialog(context, eduProvider,
-                      changeIdentity: true),
-                  icon: const Icon(Icons.swap_horiz),
-                  label: const Text('更换教务类型 / 学号'),
-                ),
-              if (eduProvider.isBound) ...[
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const AcademicDataSettingsScreen())),
+                icon: const Icon(Icons.manage_accounts_outlined),
+                label: const Text('教务身份与本机连接'),
+              ),
+              if (context
+                  .watch<AcademicSessionController>()
+                  .hasBoundIdentity) ...[
                 const SizedBox(height: 24),
                 _buildEduActionGrid(context, eduProvider, isDark),
               ],
               const SizedBox(height: 24),
-              _buildEduHint(isDark, eduProvider.isBound),
-              if (eduProvider.isBound) ...[
-                const SizedBox(height: 32),
-                _buildDangerUnbindButton(context, eduProvider, isDark),
-              ],
+              _buildEduHint(isDark,
+                  context.watch<AcademicSessionController>().hasBoundIdentity),
             ],
           );
         },
@@ -130,16 +124,20 @@ class _EduScreenState extends State<EduScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: eduProvider.isBound
+                  color: context
+                          .watch<AcademicSessionController>()
+                          .hasBoundIdentity
                       ? CampusTheme.green.withValues(alpha: 0.12)
                       : CampusTheme.orange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  eduProvider.isBound
+                  context.watch<AcademicSessionController>().hasBoundIdentity
                       ? Icons.check_circle_rounded
                       : Icons.warning_rounded,
-                  color: eduProvider.isBound
+                  color: context
+                          .watch<AcademicSessionController>()
+                          .hasBoundIdentity
                       ? CampusTheme.green
                       : CampusTheme.orange,
                   size: 24,
@@ -151,7 +149,15 @@ class _EduScreenState extends State<EduScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      eduProvider.isBound ? '已绑定教务账号' : '未绑定教务账号',
+                      context
+                              .watch<AcademicSessionController>()
+                              .hasBoundIdentity
+                          ? (context
+                                  .watch<AcademicSessionController>()
+                                  .isAuthenticated
+                              ? '学生身份已验证 · 本机已连接'
+                              : '身份已验证 · 本机待连接')
+                          : '未添加学生身份',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -159,9 +165,11 @@ class _EduScreenState extends State<EduScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    if (eduProvider.isBound)
+                    if (context
+                        .watch<AcademicSessionController>()
+                        .hasBoundIdentity)
                       Text(
-                        '学号: ${eduProvider.studentId}',
+                        '${context.watch<AcademicSessionController>().providerId?.displayName ?? ''} · 学号: ${eduProvider.studentId}',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -181,7 +189,7 @@ class _EduScreenState extends State<EduScreen> {
               ),
             ],
           ),
-          if (eduProvider.isBound) ...[
+          if (context.watch<AcademicSessionController>().hasBoundIdentity) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -347,30 +355,6 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  Widget _buildDangerUnbindButton(
-      BuildContext context, EduProvider eduProvider, bool isDark) {
-    return Center(
-      child: TextButton.icon(
-        onPressed: () => _showUnbindDialog(context, eduProvider),
-        icon: const Icon(Icons.link_off_rounded,
-            size: 18, color: CampusTheme.red),
-        label: const Text('解绑教务账号',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: CampusTheme.red,
-            )),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
-          ),
-          backgroundColor: CampusTheme.red.withValues(alpha: 0.1),
-        ),
-      ),
-    );
-  }
-
   Widget _buildActionCard({
     required BuildContext context,
     required IconData icon,
@@ -450,43 +434,6 @@ class _EduScreenState extends State<EduScreen> {
     } on ProviderNotFoundException {
       return null;
     }
-  }
-
-  void _showUnbindDialog(BuildContext context, EduProvider eduProvider) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('解绑教务账号'),
-        content:
-            const Text('将解除当前教务身份绑定，删除本机保存的教务密码、会话和缓存，并停止自动登录。解绑后显示未绑定，可重新选择本科或研究生教务。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final result = await eduProvider.unbind();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      result.success
-                          ? '教务账号已解绑'
-                          : (result.errorMessage ?? '解绑失败'),
-                    ),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('解绑'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _showCourseDialog(

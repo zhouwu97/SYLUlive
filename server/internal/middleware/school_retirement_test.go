@@ -40,6 +40,21 @@ func TestSchoolAuthorityRetiredMiddlewareStopsBeforeHandler(t *testing.T) {
 	}
 }
 
+func TestSchoolAuthRoutesStayRetiredWithLegacySwitchOff(t *testing.T) {
+	for _, path := range []string{"/api/register_with_edu", "/api/login_edu", "/api/password/edu/reset", "/api/forgot_password"} {
+		router := gin.New()
+		router.Use(SchoolAuthorityRetirementGate(false))
+		router.POST(path, func(c *gin.Context) { t.Fatal("旧认证处理器不应执行") })
+		body := &countingRequestBody{reader: strings.NewReader("invalid")}
+		req := httptest.NewRequest(http.MethodPost, path, body)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != http.StatusGone || body.reads.Load() != 0 {
+			t.Fatalf("%s 未在读取请求体前退役: status=%d reads=%d", path, response.Code, body.reads.Load())
+		}
+	}
+}
+
 func TestSchoolAuthorityRetirementGateStopsBeforeIdempotencyBodyRead(t *testing.T) {
 	db := openIdempotencyTestDB(t)
 	gin.SetMode(gin.TestMode)

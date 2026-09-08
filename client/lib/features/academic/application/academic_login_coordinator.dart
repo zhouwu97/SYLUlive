@@ -121,6 +121,7 @@ final class AcademicLoginCoordinator {
   Future<AcademicLoginOutcome>? _ensureInFlight;
   _PendingAcademicLogin? _pending;
   _PendingIdentityVerification? _pendingIdentity;
+  AcademicIdentityKey? _deviceSetupIdentity;
 
   AcademicIdentityChallenge? get pendingIdentityChallenge =>
       _pendingIdentity?.challenge;
@@ -134,23 +135,44 @@ final class AcademicLoginCoordinator {
     final operation = () async {
       if (user == null) return;
       final preferences = await _preferencesLoader();
-      for (final identity in AcademicConnectionStore.pendingIdentities(preferences, user)) {
+      for (final identity
+          in AcademicConnectionStore.pendingIdentities(preferences, user)) {
         if (controller.appUserId != user) return;
         try {
-          await AcademicIdentityLifecycleCoordinator(controller: controller,
-            preferences: preferences).retryPending(identity);
+          await AcademicIdentityLifecycleCoordinator(
+                  controller: controller, preferences: preferences)
+              .retryPending(identity);
         } catch (_) {
           // 保留 pending；启动不因磁盘或安全存储暂不可用而中断。
         }
       }
     }();
     _cleanupInFlight = operation;
-    return operation.whenComplete(() { if (identical(_cleanupInFlight, operation)) _cleanupInFlight = null; });
+    return operation.whenComplete(() {
+      if (identical(_cleanupInFlight, operation)) _cleanupInFlight = null;
+    });
   }
 
   void cancelIdentityVerification() {
     _pendingIdentity = null;
     controller.dismissCaptchaChallenge();
+  }
+
+  /// 取消只结束本机认证；服务端已经验证的身份保留，之后可继续设置。
+  Future<AcademicLoginOutcome> cancelLogin() async {
+    _pending = null;
+    _pendingIdentity = null;
+    _deviceSetupIdentity = null;
+    controller.dismissCaptchaChallenge();
+    try {
+      await controller.resetSession();
+      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.success);
+    } catch (_) {
+      return const AcademicLoginOutcome(
+        kind: AcademicLoginOutcomeKind.failure,
+        message: '身份已保留，本机会话清理未完成，请重试',
+      );
+    }
   }
 
   Future<AcademicCredential?> readSavedCredential() async {
@@ -184,59 +206,97 @@ final class AcademicLoginCoordinator {
     bool useSavedCredential = false,
     AcademicProviderId? providerId,
     bool changeIdentity = false,
+    bool addIdentity = false,
   }) async {
-    final result = await _loginOnce(studentId: studentId, password: password,
-        saveCredentials: saveCredentials, saveAcademicData: saveAcademicData,
-        useSavedCredential: useSavedCredential, providerId: providerId,
-        changeIdentity: changeIdentity);
-    return _completeCaptchaSilently(result);
+    try {
+      if (controller.hasBoundIdentity && !addIdentity && !changeIdentity) {
+        await controller.allowDeviceConnection();
+      }
+      final result = await _loginOnce(
+          studentId: studentId,
+          password: password,
+          saveCredentials: saveCredentials,
+          saveAcademicData: saveAcademicData,
+          useSavedCredential: useSavedCredential,
+          providerId: providerId,
+          changeIdentity: changeIdentity,
+          addIdentity: addIdentity);
+      return await _completeCaptchaSilently(result);
+    } catch (_) {
+      return AcademicLoginOutcome(
+          kind: AcademicLoginOutcomeKind.failure,
+          message: controller.hasBoundIdentity
+              ? '身份已验证，本机设置未完成，请重试连接'
+              : '教务身份操作未完成，请重试');
+    }
   }
 
   /// 每个认证阶段最多提交两次；刷新后的第三张图只留给人工。
-  Future<AcademicLoginOutcome> _completeCaptchaSilently(AcademicLoginOutcome outcome) async {
+  Future<AcademicLoginOutcome> _completeCaptchaSilently(
+      AcademicLoginOutcome outcome) async {
     if (!silentCaptcha) return outcome;
     var attempts = 0;
     var identityStage = _pendingIdentity != null;
     while (outcome.needsCaptcha && attempts < 2) {
       final verification = _pendingIdentity;
       final local = _pending;
-      if (verification == null && controller.providerId != AcademicProviderId.syluGraduate) break;
+      if (verification == null &&
+          controller.providerId != AcademicProviderId.syluGraduate) {
+        break;
+      }
       final code = controller.captchaSuggestion;
       final confidence = controller.captchaSuggestionConfidence;
-      if (code == null || !RegExp(r'^\d{4}$').hasMatch(code) ||
-          confidence == null || !confidence.isFinite || confidence < .70) {
+      if (code == null ||
+          !RegExp(r'^\d{4}$').hasMatch(code) ||
+          confidence == null ||
+          !confidence.isFinite ||
+          confidence < .70) {
         break;
       }
       attempts++;
       outcome = await continueLoginWithCaptcha(code: code);
       // 身份验证成功后还有本机学校会话，两阶段各自保留一次重试机会。
-      if (identityStage && verification != null && _pendingIdentity == null &&
-          _pending != null && outcome.needsCaptcha) {
+      if (identityStage &&
+          verification != null &&
+          _pendingIdentity == null &&
+          _pending != null &&
+          outcome.needsCaptcha) {
         identityStage = false;
         attempts = 0;
         continue;
       }
-      final rejected = outcome.kind == AcademicLoginOutcomeKind.challengeRejected ||
+      final rejected = outcome.kind ==
+              AcademicLoginOutcomeKind.challengeRejected ||
           controller.failure?.kind == AcademicFailureKind.challengeRejected ||
           controller.failure?.kind == AcademicFailureKind.captchaExpired;
       if (!rejected) break;
       final user = verification?.appUserId ?? local?.appUserId;
       final generation = verification?.generation ?? local?.generation;
-      if (user == null || generation == null ||
-          !controller.isCurrentContext(generation: generation, appUserId: user)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      if (user == null ||
+          generation == null ||
+          !controller.isCurrentContext(
+              generation: generation, appUserId: user)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
       }
       if (verification != null) {
         outcome = await _beginGraduateIdentityVerification(
-            currentIdentity: verification.challenge.isChange ? controller.identity : null,
-            appUserId: user, studentId: verification.credential.studentId,
+            currentIdentity:
+                verification.challenge.isChange ? controller.identity : null,
+            appUserId: user,
+            studentId: verification.credential.studentId,
             password: verification.credential.password,
             saveCredentials: verification.saveCredentials,
-            saveAcademicData: verification.saveAcademicData, useSavedCredential: false);
+            saveAcademicData: verification.saveAcademicData,
+            useSavedCredential: false);
       } else if (local != null) {
-        outcome = await _login(appUserId: user, studentId: local.credential.studentId,
-            password: local.credential.password, saveCredentials: local.saveCredentials,
-            saveAcademicData: local.saveAcademicData, useSavedCredential: false);
+        outcome = await _login(
+            appUserId: user,
+            studentId: local.credential.studentId,
+            password: local.credential.password,
+            saveCredentials: local.saveCredentials,
+            saveAcademicData: local.saveAcademicData,
+            useSavedCredential: false);
       }
     }
     return outcome;
@@ -250,6 +310,7 @@ final class AcademicLoginCoordinator {
     bool useSavedCredential = false,
     AcademicProviderId? providerId,
     bool changeIdentity = false,
+    bool addIdentity = false,
   }) {
     final appUserId = controller.appUserId;
     if (appUserId == null || appUserId.isEmpty) {
@@ -258,7 +319,20 @@ final class AcademicLoginCoordinator {
         message: '请先登录 APP',
       ));
     }
-    if ((controller.sourceKind == AcademicSourceKind.legacy || changeIdentity) &&
+    if (_deviceSetupIdentity != null &&
+        _deviceSetupIdentity == controller.identity &&
+        _deviceSetupIdentity!.studentId == studentId.trim() &&
+        (providerId == null ||
+            _deviceSetupIdentity!.providerId == providerId)) {
+      return _login(
+          appUserId: appUserId,
+          studentId: studentId,
+          password: password,
+          saveCredentials: saveCredentials,
+          saveAcademicData: saveAcademicData,
+          useSavedCredential: useSavedCredential);
+    }
+    if ((!controller.hasBoundIdentity || addIdentity || changeIdentity) &&
         providerId == AcademicProviderId.syluGraduate) {
       return _beginGraduateIdentityVerification(
         currentIdentity: changeIdentity ? controller.identity : null,
@@ -270,7 +344,7 @@ final class AcademicLoginCoordinator {
         useSavedCredential: useSavedCredential,
       );
     }
-    if ((controller.sourceKind == AcademicSourceKind.legacy || changeIdentity) &&
+    if ((!controller.hasBoundIdentity || addIdentity || changeIdentity) &&
         providerId == AcademicProviderId.syluUndergraduate &&
         _identityClient != null) {
       return _beginUndergraduateLogin(
@@ -296,19 +370,22 @@ final class AcademicLoginCoordinator {
   Future<void> refreshCaptcha() async {
     final verification = _pendingIdentity;
     if (verification != null) {
-      if (!controller.isCurrentContext(generation: verification.generation, appUserId: verification.appUserId)) {
+      if (!controller.isCurrentContext(
+          generation: verification.generation,
+          appUserId: verification.appUserId)) {
         cancelIdentityVerification();
         return;
       }
       _pendingIdentity = null;
       final outcome = await _beginGraduateIdentityVerification(
-        currentIdentity: verification.challenge.isChange ? controller.identity : null,
-        appUserId: verification.appUserId,
-        studentId: verification.credential.studentId,
-        password: verification.credential.password,
-        saveCredentials: verification.saveCredentials,
-        saveAcademicData: verification.saveAcademicData,
-        useSavedCredential: false);
+          currentIdentity:
+              verification.challenge.isChange ? controller.identity : null,
+          appUserId: verification.appUserId,
+          studentId: verification.credential.studentId,
+          password: verification.credential.password,
+          saveCredentials: verification.saveCredentials,
+          saveAcademicData: verification.saveAcademicData,
+          useSavedCredential: false);
       if (!outcome.needsCaptcha) controller.dismissCaptchaChallenge();
       return;
     }
@@ -316,13 +393,33 @@ final class AcademicLoginCoordinator {
     final operation = controller.refreshCaptcha();
     final generation = controller.contextGeneration;
     await operation;
-    if (pending == null || !controller.isCurrentContext(generation: generation, appUserId: pending.appUserId)) return;
-    _pending = _PendingAcademicLogin(appUserId: pending.appUserId,
-      generation: generation, credential: pending.credential,
-      saveCredentials: pending.saveCredentials, saveAcademicData: pending.saveAcademicData);
+    if (pending == null ||
+        !controller.isCurrentContext(
+            generation: generation, appUserId: pending.appUserId)) {
+      return;
+    }
+    _pending = _PendingAcademicLogin(
+        appUserId: pending.appUserId,
+        generation: generation,
+        credential: pending.credential,
+        saveCredentials: pending.saveCredentials,
+        saveAcademicData: pending.saveAcademicData);
   }
 
-  Future<AcademicLoginOutcome> continueLoginWithCaptcha({
+  Future<AcademicLoginOutcome> continueLoginWithCaptcha(
+      {required String code}) async {
+    try {
+      return await _continueLoginWithCaptcha(code: code);
+    } catch (_) {
+      return AcademicLoginOutcome(
+          kind: AcademicLoginOutcomeKind.failure,
+          message: controller.hasBoundIdentity
+              ? '身份已验证，本机设置未完成，请重试连接'
+              : '验证码操作未完成，请重试');
+    }
+  }
+
+  Future<AcademicLoginOutcome> _continueLoginWithCaptcha({
     required String code,
   }) async {
     final pendingIdentity = _pendingIdentity;
@@ -398,13 +495,7 @@ final class AcademicLoginCoordinator {
         studentId: actualStudentId,
       );
     } on AcademicIdentityApiException catch (error) {
-      // 旧部署尚未提供身份路由时仍可使用 /edu/bind；新路由的业务错误
-      // 必须显示给用户，不能悄悄变成密码错误。
-      if (currentIdentity != null || (error.statusCode != 404 && error.code != 'ROUTE_UNSUPPORTED')) {
-        return _identityFailureOutcome(error);
-      }
-      // 只有 challenge 路由本身明确不存在时才走旧兼容接口。
-      challenge = null;
+      return _identityFailureOutcome(error);
     }
     if (challenge != null) {
       if (!challenge.isUndergraduatePreverify) {
@@ -442,10 +533,17 @@ final class AcademicLoginCoordinator {
           message: '教务账号上下文已切换，请重新登录',
         );
       }
-      final mountedGeneration = await _mountVerifiedBinding(binding.toIdentity(appUserId), changing: challenge.isChange);
-      if (!controller.isCurrentContext(generation: mountedGeneration, appUserId: appUserId)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      final verifiedIdentity = binding.toIdentity(appUserId);
+      final mountedGeneration = await _mountVerifiedBinding(
+        verifiedIdentity,
+        changing: challenge.isChange,
+      );
+      if (!controller.isCurrentContext(
+          generation: mountedGeneration, appUserId: appUserId)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
       }
+      _deviceSetupIdentity = verifiedIdentity;
       // 身份核验不会把学校 Cookie 转移到手机；成功后仍由本机
       // Undergraduate Provider 独立登录并取得自己的会话。
       final result = await controller.login(
@@ -558,15 +656,19 @@ final class AcademicLoginCoordinator {
       final recognizer = _identityCaptchaRecognizerFactory();
       try {
         final result = await recognizer.recognize(captchaBytes);
-        if (recognizer.isAvailable && result.isManualSuggestion) suggestion = result;
+        if (recognizer.isAvailable && result.isManualSuggestion) {
+          suggestion = result;
+        }
       } catch (_) {
         // 模型不可用时继续人工挑战，不能丢弃已经保留的密码。
       } finally {
         recognizer.close();
       }
-      if (!identical(_pendingIdentity, pending) || !controller.isCurrentContext(
-          generation: generation, appUserId: appUserId)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      if (!identical(_pendingIdentity, pending) ||
+          !controller.isCurrentContext(
+              generation: generation, appUserId: appUserId)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
       }
       controller.presentCaptchaChallenge(captchaBytes,
           suggestedCode: suggestion?.text,
@@ -617,13 +719,22 @@ final class AcademicLoginCoordinator {
         captcha: captcha,
         encryptedPassword: encryptedPassword,
       );
-      if (!controller.isCurrentContext(generation: consumed.generation, appUserId: consumed.appUserId)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      if (!controller.isCurrentContext(
+          generation: consumed.generation, appUserId: consumed.appUserId)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
       }
-      final mountedGeneration = await _mountVerifiedBinding(binding.toIdentity(consumed.appUserId), changing: consumed.challenge.isChange);
-      if (!controller.isCurrentContext(generation: mountedGeneration, appUserId: consumed.appUserId)) {
-        return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      final verifiedIdentity = binding.toIdentity(consumed.appUserId);
+      final mountedGeneration = await _mountVerifiedBinding(
+        verifiedIdentity,
+        changing: consumed.challenge.isChange,
+      );
+      if (!controller.isCurrentContext(
+          generation: mountedGeneration, appUserId: consumed.appUserId)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
       }
+      _deviceSetupIdentity = verifiedIdentity;
       controller.dismissCaptchaChallenge();
       // 服务端验证只确认身份，不把学校 Cookie 转移到手机；随后由本机
       // Graduate Provider 重新登录并取得独立会话，通常会产生第二张验证码。
@@ -651,14 +762,19 @@ final class AcademicLoginCoordinator {
     }
   }
 
-  Future<int> _mountVerifiedBinding(AcademicIdentityKey next, {required bool changing}) async {
+  Future<int> _mountVerifiedBinding(AcademicIdentityKey next,
+      {required bool changing}) async {
     final old = changing ? controller.identity : null;
     await controller.selectProviderIdentity(next);
+    await controller.allowDeviceConnection();
     final generation = controller.contextGeneration;
     if (old == null || old == next) return generation;
     try {
-      await AcademicIdentityLifecycleCoordinator(controller: controller,
-        preferences: await _preferencesLoader(), includeLegacyAuxiliary: true).clearLocalIdentity(old);
+      await AcademicIdentityLifecycleCoordinator(
+              controller: controller,
+              preferences: await _preferencesLoader(),
+              includeLegacyAuxiliary: true)
+          .clearLocalIdentity(old);
     } catch (_) {
       // 服务端已成功换绑，旧身份已从运行时卸载；删除失败由 pending 重试，不回滚绑定。
     }
@@ -724,6 +840,22 @@ final class AcademicLoginCoordinator {
   }) async {
     final requestGeneration = controller.contextGeneration;
     final requestUser = controller.appUserId;
+    if (controller.providerRouter != null && !controller.hasBoundIdentity) {
+      await controller.ensureAuthenticated();
+      if (!controller.isCurrentContext(
+          generation: requestGeneration, appUserId: requestUser)) {
+        return const AcademicLoginOutcome(
+            kind: AcademicLoginOutcomeKind.contextChanged);
+      }
+      if (!controller.hasBoundIdentity) {
+        return AcademicLoginOutcome(
+            kind: controller.failure == null
+                ? AcademicLoginOutcomeKind.credentialsRequired
+                : AcademicLoginOutcomeKind.failure,
+            message: controller.failure?.message ?? '请先添加学生身份');
+      }
+    }
+
     if (!await controller.remoteAccessAllowed()) {
       return const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.failure,
@@ -731,7 +863,14 @@ final class AcademicLoginCoordinator {
       );
     }
     if (controller.pendingAcademicChallenge != null) {
-      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.captchaRequired);
+      // 课表等读取入口可能接手到上一个界面已经准备好的
+      // Provider challenge。它仍属于同一次登录，应先继续静默识别
+      // 与有限重试，不能绕过协调器直接弹出人工验证码。
+      return _completeCaptchaSilently(
+        const AcademicLoginOutcome(
+          kind: AcademicLoginOutcomeKind.captchaRequired,
+        ),
+      );
     }
     if (controller.sourceKind == AcademicSourceKind.legacy) {
       final generation = controller.contextGeneration;
@@ -766,7 +905,8 @@ final class AcademicLoginCoordinator {
     }
     if (!controller.isCurrentContext(
         generation: requestGeneration, appUserId: requestUser)) {
-      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+      return const AcademicLoginOutcome(
+          kind: AcademicLoginOutcomeKind.contextChanged);
     }
     final restoreFailure = controller.failure;
     if (restoreFailure != null &&
@@ -794,8 +934,10 @@ final class AcademicLoginCoordinator {
       );
     }
     final prefs = await _loadPreferences();
-    if (!controller.isCurrentContext(generation: requestGeneration, appUserId: requestUser)) {
-      return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+    if (!controller.isCurrentContext(
+        generation: requestGeneration, appUserId: requestUser)) {
+      return const AcademicLoginOutcome(
+          kind: AcademicLoginOutcomeKind.contextChanged);
     }
     var outcome = await _login(
       appUserId: controller.appUserId!,
@@ -900,13 +1042,17 @@ final class AcademicLoginCoordinator {
         );
       case LoginSuccess():
         _pending = null;
-        return controller.commit(() => _finalizeSuccess(
-          generation: generation,
-          appUserId: appUserId,
-          credential: credential,
-          saveCredentials: saveCredentials,
-          saveAcademicData: saveAcademicData,
-        ));
+        final outcome = await controller.commit(() => _finalizeSuccess(
+              generation: generation,
+              appUserId: appUserId,
+              credential: credential,
+              saveCredentials: saveCredentials,
+              saveAcademicData: saveAcademicData,
+            ));
+        if (outcome.isSuccess && _deviceSetupIdentity == controller.identity) {
+          _deviceSetupIdentity = null;
+        }
+        return outcome;
       case CaptchaExpired(:final message):
       case LoginPageChanged(:final message):
         _pending = null;
@@ -925,8 +1071,9 @@ final class AcademicLoginCoordinator {
     required bool saveAcademicData,
   }) async {
     bool current() => controller.isCurrentContext(
-      generation: generation, appUserId: appUserId);
-    const changed = AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
+        generation: generation, appUserId: appUserId);
+    const changed =
+        AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.contextChanged);
     if (!current()) return changed;
     var saveWarning = false;
     // 服务端模式不读取或修改本机密码，资料缓存仍按独立策略处理。

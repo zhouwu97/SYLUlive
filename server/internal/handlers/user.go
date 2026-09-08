@@ -43,40 +43,41 @@ func publicUserResponse(user models.User) PublicUserResponse {
 
 // SelfUserResponse 仅用于当前登录用户；学校个人字段由退役开关控制，默认只保留兼容形状。
 type SelfUserResponse struct {
-	ID                    uint        `json:"id"`
-	StudentID             string      `json:"student_id,omitempty"`
-	StudentVerified       bool        `json:"student_verified,omitempty"`
-	EmailMasked           string      `json:"email_masked"`
-	EmailBound            bool        `json:"email_bound"`
-	LoginMethods          []string    `json:"login_methods"`
-	CanResetViaEmail      bool        `json:"can_reset_via_email"`
-	CanResetViaEdu        bool        `json:"can_reset_via_edu,omitempty"`
-	Nickname              string      `json:"nickname"`
-	Gender                string      `json:"gender"`
-	Avatar                string      `json:"avatar"`
-	Background            string      `json:"background"`
-	NightMode             bool        `json:"night_mode"`
-	CreditScore           int         `json:"credit_score"`
-	Role                  models.Role `json:"role"`
-	AdminExp              int         `json:"admin_exp"`
-	Exp                   int         `json:"exp"`
-	ReportCount           int         `json:"report_count"`
-	CreatedAt             time.Time   `json:"created_at"`
-	EduStudentID          string      `json:"edu_student_id,omitempty"`
-	EduBound              bool        `json:"edu_bound,omitempty"`
-	EduAuthorized         bool        `json:"edu_authorized,omitempty"`
-	EduSessionState       string      `json:"edu_session_state,omitempty"`
-	EduGrade              string      `json:"edu_grade,omitempty"`
-	EduCollege            string      `json:"edu_college,omitempty"`
-	EduMajor              string      `json:"edu_major,omitempty"`
-	IsCheckedInToday      bool        `json:"is_checked_in_today"`
-	FollowersCount        int         `json:"followers_count"`
-	FollowingCount        int         `json:"following_count"`
-	TotalLikesReceived    int         `json:"total_likes_received"`
-	IsFollowing           bool        `json:"is_following"`
-	LegalConsentsActive   bool        `json:"legal_consents_active"`
-	LegalConsentsRequired bool        `json:"legal_consents_required"`
-	PushEnabled           bool        `json:"push_enabled"`
+	ID                    uint                             `json:"id"`
+	StudentID             string                           `json:"student_id,omitempty"`
+	StudentVerified       bool                             `json:"student_verified"`
+	AcademicIdentities    []models.AcademicIdentityBinding `json:"academic_identities"`
+	EmailMasked           string                           `json:"email_masked"`
+	EmailBound            bool                             `json:"email_bound"`
+	LoginMethods          []string                         `json:"login_methods"`
+	CanResetViaEmail      bool                             `json:"can_reset_via_email"`
+	CanResetViaEdu        bool                             `json:"can_reset_via_edu,omitempty"`
+	Nickname              string                           `json:"nickname"`
+	Gender                string                           `json:"gender"`
+	Avatar                string                           `json:"avatar"`
+	Background            string                           `json:"background"`
+	NightMode             bool                             `json:"night_mode"`
+	CreditScore           int                              `json:"credit_score"`
+	Role                  models.Role                      `json:"role"`
+	AdminExp              int                              `json:"admin_exp"`
+	Exp                   int                              `json:"exp"`
+	ReportCount           int                              `json:"report_count"`
+	CreatedAt             time.Time                        `json:"created_at"`
+	EduStudentID          string                           `json:"edu_student_id,omitempty"`
+	EduBound              bool                             `json:"edu_bound,omitempty"`
+	EduAuthorized         bool                             `json:"edu_authorized,omitempty"`
+	EduSessionState       string                           `json:"edu_session_state,omitempty"`
+	EduGrade              string                           `json:"edu_grade,omitempty"`
+	EduCollege            string                           `json:"edu_college,omitempty"`
+	EduMajor              string                           `json:"edu_major,omitempty"`
+	IsCheckedInToday      bool                             `json:"is_checked_in_today"`
+	FollowersCount        int                              `json:"followers_count"`
+	FollowingCount        int                              `json:"following_count"`
+	TotalLikesReceived    int                              `json:"total_likes_received"`
+	IsFollowing           bool                             `json:"is_following"`
+	LegalConsentsActive   bool                             `json:"legal_consents_active"`
+	LegalConsentsRequired bool                             `json:"legal_consents_required"`
+	PushEnabled           bool                             `json:"push_enabled"`
 }
 
 func selfUserResponse(user models.User, consentState models.LegalConsentState) SelfUserResponse {
@@ -135,7 +136,29 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 	if err != nil {
 		return SelfUserResponse{}, err
 	}
-	return selfUserResponse(user, consentState), nil
+	response := selfUserResponse(user, consentState)
+	if db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		bindings, err := services.VerifiedAcademicIdentities(db, user.ID)
+		if err != nil {
+			return SelfUserResponse{}, err
+		}
+		response.AcademicIdentities = bindings
+		response.StudentID = ""
+		response.StudentVerified = len(bindings) > 0
+		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
+		response.CanResetViaEdu = false
+		if len(bindings) > 0 {
+			response.StudentID = bindings[0].StudentID
+			available, err := services.AcademicLoginAvailable(db, bindings)
+			if err != nil {
+				return SelfUserResponse{}, err
+			}
+			if available {
+				response.LoginMethods = append(response.LoginMethods, "student_id")
+			}
+		}
+	}
+	return response, nil
 }
 
 func (h *UserHandler) selfUserResponse(user models.User) (SelfUserResponse, error) {

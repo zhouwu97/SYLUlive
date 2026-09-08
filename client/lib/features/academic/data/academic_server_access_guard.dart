@@ -2,8 +2,7 @@ import 'package:dio/dio.dart';
 
 /// 主 App 的教务服务器访问闸门。
 ///
-/// 服务端保存教务授权并负责会话恢复，客户端通过共享 Dio 访问教务 API。
-/// 教务凭据不会进入客户端持久化存储。
+/// 身份验证使用 student-identity；阻断旧代理接口，避免凭据再次进入服务器长期存储。
 final class AcademicServerAccessGuard extends Interceptor {
   const AcademicServerAccessGuard();
 
@@ -12,6 +11,13 @@ final class AcademicServerAccessGuard extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) {
+    if (isAcademicServerPath(options)) {
+      handler.reject(DioException(
+          requestOptions: options,
+          type: DioExceptionType.cancel,
+          message: '旧教务服务器接口已退役，请通过学生身份验证后在本机连接教务'));
+      return;
+    }
     handler.next(options);
   }
 

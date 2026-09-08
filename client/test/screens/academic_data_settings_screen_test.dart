@@ -36,11 +36,11 @@ void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
   for (final theme in [ThemeMode.light, ThemeMode.dark]) {
-    testWidgets('服务端模式只管理资料，默认保存且关闭可取消：${theme.name}', (tester) async {
+    testWidgets('身份管理移除旧服务器授权说明，资料保存关闭可取消：${theme.name}', (tester) async {
       final dio = Dio();
       final repository = AcademicRepositoryImpl(
         local: JiaowuLocalDataSource(),
-        legacy: LegacyServerDataSource(dio, networkEnabled: true),
+        legacy: LegacyServerDataSource(dio, networkEnabled: false),
         source: AcademicSourceKind.legacy,
       );
       final session = AcademicSessionController(repository: repository);
@@ -51,6 +51,7 @@ void main() {
         repository.close();
         dio.close();
       });
+      await session.syncAppUser('7');
       await setGoldenViewport(tester, GoldenViewports.phone360x800);
       await tester.pumpWidget(MultiProvider(
         providers: [
@@ -68,7 +69,8 @@ void main() {
       expect(find.text('安全保存登录凭据'), findsNothing);
       expect(find.text('断开本次会话'), findsNothing);
       expect(find.text('删除本机教务账号'), findsNothing);
-      expect(find.text('服务器管理教务绑定'), findsOneWidget);
+      expect(find.text('服务器管理教务绑定'), findsNothing);
+      expect(find.text('添加学生身份'), findsOneWidget);
       expect(find.byType(Switch), findsOneWidget);
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
       expect(tester.takeException(), isNull);

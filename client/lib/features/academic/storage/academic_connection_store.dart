@@ -11,7 +11,9 @@ final class AcademicConnectionStore {
   String get _prefix => 'academic_lifecycle_${identity.storageId}';
   bool get cleanupPending => preferences.getBool('${_prefix}_cleanup') == true;
   bool get connected =>
-      !cleanupPending && preferences.getBool('${_prefix}_connected') != false;
+      !cleanupPending && preferences.getBool('${_prefix}_connected') == true;
+
+  bool get initialized => preferences.getBool('${_prefix}_connected') != null;
 
   Future<void> setConnected(bool value) async {
     if (!identity.isValid ||

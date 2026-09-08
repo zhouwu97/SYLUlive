@@ -26,7 +26,10 @@ func SchoolLegacySecretsFreezeGate(frozen bool) gin.HandlerFunc {
 // 这里只读取开关、HTTP 方法和 URL 路径，不查询数据库，也不读取请求体。
 func SchoolAuthorityRetirementGate(retired bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if retired && isSchoolAuthorityRetiredPath(c.Request.Method, c.Request.URL.Path) {
+		path := strings.TrimRight(c.Request.URL.Path, "/")
+		// 旧认证入口永久停写，不受历史部署开关影响。
+		retiredAuth := path == "/api/register_with_edu" || path == "/api/login_edu" || path == "/api/password/edu/reset" || path == "/api/forgot_password"
+		if retiredAuth || retired && isSchoolAuthorityRetiredPath(c.Request.Method, c.Request.URL.Path) {
 			SchoolAuthorityRetiredMiddleware(c)
 			return
 		}

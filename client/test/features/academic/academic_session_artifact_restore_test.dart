@@ -1,3 +1,4 @@
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,6 +62,7 @@ void main() {
           provider: provider,
           identity: identity,
           sessionArtifactVaultFactory: (_) => vault);
+      await AcademicConnectionStore(identity, await AppPreferencesStore.getInstance()).setConnected(true);
       await controller.syncAppUser('u');
       final result = await AcademicLoginCoordinator(controller: controller)
           .ensureAuthenticated(allowSavedCredential: false);

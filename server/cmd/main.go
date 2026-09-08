@@ -381,6 +381,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := services.MigrateAcademicIdentities(db); err != nil {
+		log.Fatal("学生身份回填失败:", err)
+	}
 	if err := models.EnsureCanteenDishSchema(db); err != nil {
 		log.Fatal("食堂菜品索引迁移失败:", err)
 	}

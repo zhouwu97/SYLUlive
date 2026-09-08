@@ -1,3 +1,4 @@
+import '../../../platform/contracts/preferences_store.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 
 import '../domain/academic_provider.dart';
@@ -90,7 +91,16 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
         bindings.isEmpty) {
       return false;
     }
-    final preferredProvider = providerIdLoader?.call();
+    final preferences = await AppPreferencesStore.getInstance();
+    if (_closed ||
+        _appUserId != appUserId ||
+        _contextGeneration != contextGeneration) {
+      return false;
+    }
+    final preferredProvider = AcademicProviderId.tryParse(
+            preferences.getString('academic_active_provider_$appUserId') ??
+                '') ??
+        providerIdLoader?.call();
     final selected = bindings.firstWhere(
       (binding) => binding.providerId == preferredProvider,
       orElse: () => bindings.first,
@@ -240,26 +250,10 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   Future<void> resetSession() => _active.resetSession();
   @override
   Future<void> restoreSession() async {
-    if (_selected == null && _appUserId != null) {
-      try {
-        if (await ensureIdentitySelection()) {
-          // 身份列表只证明服务端已绑定。学校 Cookie 由控制器先尝试本地
-          // Artifact；没有本地会话时保持未登录，交给登录协调器重新认证。
-          if (_selected!.sessionState == SessionState.authenticated ||
-              _selected!.sessionState == SessionState.expired) {
-            await _selected!.restoreSession();
-          }
-          return;
-        }
-      } on AcademicIdentityApiException catch (error) {
-        // 老服务端或身份路由暂不可用时保留旧 /edu/status 兼容恢复；
-        // 新路由返回的认证/网络失败不能把已有绑定误判成未绑定。
-        if (error.statusCode != 404 &&
-            error.code != 'ROUTE_UNSUPPORTED' &&
-            error.code != 'AUTHENTICATION_REQUIRED') {
-          rethrow;
-        }
-      }
+    if (_selected == null && _appUserId != null && identityClient != null) {
+      // 身份列表为空或读取失败都不能回退服务器代登录。
+      await ensureIdentitySelection();
+      return;
     }
     if (_selected != null) {
       if (_selected!.sessionState == SessionState.authenticated ||

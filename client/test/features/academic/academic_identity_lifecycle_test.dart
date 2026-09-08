@@ -71,6 +71,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
+  test('未初始化连接不授予联网许可，清理期间不能重新连接', () async {
+    final prefs = await AppPreferencesStore.getInstance();
+    final store = AcademicConnectionStore(a, prefs);
+    expect(store.initialized, false);
+    expect(store.connected, false);
+    await store.setConnected(true);
+    expect(store.connected, true);
+    await store.setCleanupPending(true);
+    expect(store.connected, false);
+  });
+
   test('断开跨冷启动阻断密码登录、验证码和读取，显式重连恢复许可', () async {
     final secrets = Secrets();
     final files = MemoryAcademicSessionArtifactFileBackend();

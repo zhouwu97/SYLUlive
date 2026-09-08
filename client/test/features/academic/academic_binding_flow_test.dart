@@ -133,8 +133,9 @@ void main() {
     testWidgets('绑定保留资料缓存选择 $saveData，明确授权后发送且禁止重复提交', (tester) async {
       await openDialog(tester, saveData: saveData);
       expect(find.text('绑定教务账号'), findsOneWidget);
-      expect(find.textContaining('绑定只确认你在学校的教务身份'), findsOneWidget);
-      expect(find.byType(Switch), findsNothing);
+      expect(find.textContaining('服务器仅进行一次性学生身份验证'), findsOneWidget);
+      expect(find.byType(Switch), findsNWidgets(2));
+      expect(tester.widget<Switch>(find.byType(Switch).first).value, isTrue);
       final button = find.widgetWithText(FilledButton, '同意并绑定');
       expect(tester.widget<FilledButton>(button).onPressed, isNull);
       await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
@@ -160,7 +161,12 @@ void main() {
               .widget<TextFormField>(find.byType(TextFormField).at(1))
               .controller!
               .text,
-          isEmpty);
+          'test-password');
+      expect(
+          tester
+              .widget<EditableText>(find.byType(EditableText).at(1))
+              .obscureText,
+          isTrue);
       loginGate!.complete();
       // 凭据及缓存清理包含真实异步调用，等待弹窗完成整个登录流程。
       for (var attempt = 0;

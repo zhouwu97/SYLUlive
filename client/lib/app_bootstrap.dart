@@ -1372,11 +1372,10 @@ class MyApp extends StatelessWidget {
         Provider<AcademicRepository>(
           create: (context) {
             final legacyDataSource =
-                LegacyServerDataSource(dio, networkEnabled: true);
+                LegacyServerDataSource(dio, networkEnabled: false);
             final legacy = AcademicRepositoryImpl(
               local: JiaowuLocalDataSource(),
-              // 未返回 provider_id 的历史绑定仍走兼容恢复；新绑定恢复后由
-              // Router 按服务端确认的 Provider 创建本机隔离实例。
+              // 未选择身份时只保留空仓储形状；学校访问始终由已验证身份的本机 Provider 承担。
               legacy: legacyDataSource,
               source: AcademicSourceKind.legacy,
             );
@@ -1384,7 +1383,6 @@ class MyApp extends StatelessWidget {
               legacy: legacy,
               registry: context.read<AcademicProviderRegistry>(),
               identityClient: context.read<AcademicIdentityClient>(),
-              providerIdLoader: () => legacyDataSource.providerId,
             );
           },
           dispose: (_, repository) => repository.close(),

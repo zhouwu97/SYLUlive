@@ -411,7 +411,12 @@ func normalizeQQ(input string) string {
 
 func normalizeLoginAccount(input string) string {
 
-	return strings.ToLower(strings.TrimSpace(input))
+	account := strings.TrimSpace(input)
+	if strings.Contains(account, "@") {
+		return strings.ToLower(account)
+	}
+	// 学号由 Provider 定义，保留大小写，不能套用邮箱归一化规则。
+	return account
 
 }
 
@@ -1600,8 +1605,24 @@ func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 			return user, err
 		}
 		return user, activeUsers().Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error
-	case regexp.MustCompile(`^[0-9]{8,20}$`).MatchString(account):
-		err := activeUsers().Where("student_id = ? AND student_verified_at IS NOT NULL", account).First(&user).Error
+	default:
+		var err error
+		if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+			var users []models.User
+			// 未指定 Provider 的学号只在唯一对应 App 账号时可登录，避免同号跨校类误命中。
+			err = activeUsers().Where("id IN (?)", h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("student_id = ?", account)).Limit(2).Find(&users).Error
+			if err == nil && len(users) == 1 {
+				return users[0], nil
+			}
+			if err == nil && len(users) > 1 {
+				return user, errors.New("学号对应多个账号，请使用邮箱登录")
+			}
+			if err == nil {
+				err = gorm.ErrRecordNotFound
+			}
+		} else {
+			err = activeUsers().Where("student_id = ? AND student_verified_at IS NOT NULL", account).First(&user).Error
+		}
 		if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
 			return user, err
 		}
@@ -1609,10 +1630,6 @@ func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 		if validateQQ(account) {
 			return user, activeUsers().Where("qq = ?", account).First(&user).Error
 		}
-		return user, gorm.ErrRecordNotFound
-	case validateQQ(account):
-		return user, activeUsers().Where("qq = ?", account).First(&user).Error
-	default:
 		return user, gorm.ErrRecordNotFound
 	}
 }

@@ -19,6 +19,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     this.initialStudentId,
     this.initialSaveCredentials = false,
     this.changeIdentity = false,
+    this.addIdentity = false,
     super.key,
   });
 
@@ -27,6 +28,7 @@ final class AcademicLoginDialog extends StatefulWidget {
   final String? initialStudentId;
   final bool initialSaveCredentials;
   final bool changeIdentity;
+  final bool addIdentity;
 
   static Future<bool?> show(
     BuildContext context, {
@@ -35,6 +37,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     String? initialStudentId,
     bool initialSaveCredentials = false,
     bool changeIdentity = false,
+    bool addIdentity = false,
   }) {
     return showDialog<bool>(
       context: context,
@@ -45,6 +48,7 @@ final class AcademicLoginDialog extends StatefulWidget {
         initialStudentId: initialStudentId,
         initialSaveCredentials: initialSaveCredentials,
         changeIdentity: changeIdentity,
+        addIdentity: addIdentity,
       ),
     );
   }
@@ -110,6 +114,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   bool _usingSavedCredential = false;
   bool _loadingPreferences = true;
   bool _submitting = false;
+  late final bool _serverBindingFlow;
   String? _savedCredentialStudentId;
   String? _coordinatorMessage;
   CaptchaChallenge? _appliedCaptchaChallenge;
@@ -126,17 +131,25 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
         : null;
   }
 
-  bool get _identityLocked => !widget.changeIdentity && _trustedIdentity != null;
+  bool get _identityLocked =>
+      !widget.changeIdentity && !widget.addIdentity && _trustedIdentity != null;
 
   @override
   void initState() {
     super.initState();
-    final trustedIdentity = _trustedIdentity;
+    final trustedIdentity = widget.addIdentity ? null : _trustedIdentity;
     _studentIdController = TextEditingController(
       text: trustedIdentity?.studentId ?? widget.initialStudentId ?? '',
     );
     _passwordController = TextEditingController();
     _captchaController = TextEditingController();
+    // 身份验证成功后仓储会切到本机 Provider；弹窗仍属于同一次绑定操作，
+    // 不能在处理中途换成另一套“本机直连”界面。
+    _serverBindingFlow = (widget.controller.providerRouter != null &&
+            !widget.controller.hasBoundIdentity) ||
+        widget.controller.sourceKind == AcademicSourceKind.legacy ||
+        widget.addIdentity ||
+        widget.changeIdentity;
     _selectedProviderId = trustedIdentity?.providerId ??
         widget.controller.providerId ??
         AcademicProviderId.syluUndergraduate;
@@ -155,13 +168,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _loadSavedState() async {
-    if (_controller.sourceKind == AcademicSourceKind.legacy || widget.changeIdentity) {
+    if (_controller.sourceKind == AcademicSourceKind.legacy ||
+        widget.changeIdentity ||
+        widget.addIdentity) {
       // 绑定授权不代表同意开启本机缓存，沿用当前 App 账号的独立选择。
       final preferences = await _coordinator.loadPreferences();
       if (!mounted) return;
       setState(() {
         _loadingPreferences = false;
-        _saveCredentials = false;
+        _saveCredentials = !kIsWeb;
         _saveAcademicData = !kIsWeb && preferences.saveAcademicData;
       });
       return;
@@ -197,8 +212,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   Future<void> _submitLogin() async {
     if (_loadingPreferences || _submitting) return;
-    if (_controller.sourceKind == AcademicSourceKind.legacy &&
-        !_consentAccepted) {
+    if (_serverBindingFlow && !_consentAccepted) {
       return;
     }
     if (!_usingSavedCredential &&
@@ -208,17 +222,19 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     final password = _passwordController.text;
     // 验证码和临时故障仍属于本次登录，保留遮蔽输入以支持继续和重试。
     setState(() => _submitting = true);
-    final result = await _coordinator.login(
+    final result = await _coordinator
+        .login(
       studentId: _studentIdController.text.trim(),
       password: password,
       saveCredentials: _saveCredentials,
       saveAcademicData: _saveAcademicData,
       useSavedCredential: _usingSavedCredential,
       changeIdentity: widget.changeIdentity,
-      providerId: (_controller.sourceKind == AcademicSourceKind.legacy || widget.changeIdentity)
-          ? _selectedProviderId
-          : _controller.providerId,
-    ).whenComplete(() {
+      addIdentity: widget.addIdentity,
+      providerId:
+          (_serverBindingFlow) ? _selectedProviderId : _controller.providerId,
+    )
+        .whenComplete(() {
       if (mounted) setState(() => _submitting = false);
     });
     if (!mounted) return;
@@ -252,12 +268,24 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _cancel() async {
-    if (widget.changeIdentity) {
+    if (_submitting) return;
+    if (widget.changeIdentity &&
+        _coordinator.pendingIdentityChallenge != null) {
       _coordinator.cancelIdentityVerification();
-    } else {
-      await _controller.resetSession();
+      if (mounted) Navigator.of(context).pop(false);
+      return;
     }
-    if (mounted) Navigator.of(context).pop(false);
+    setState(() => _submitting = true);
+    final result = await _coordinator.cancelLogin();
+    if (!mounted) return;
+    if (result.isSuccess) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+    setState(() {
+      _submitting = false;
+      _coordinatorMessage = result.message;
+    });
   }
 
   @override
@@ -278,229 +306,240 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                     code: 'ACADEMIC_PROFILE_FAILED',
                   )
                 : null);
-        final serverBinding =
-            _controller.sourceKind == AcademicSourceKind.legacy;
-        final selectingProvider =
-            widget.changeIdentity || (serverBinding && _controller.providerId == null);
+        final serverBinding = _serverBindingFlow;
+        final selectingProvider = serverBinding && !_identityLocked;
 
-        return AlertDialog(
-          title: Text(widget.changeIdentity ? '更换学生身份' : (serverBinding ? '绑定教务账号' : '本机直连教务')),
-          content: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.68,
-            ),
-            child: SingleChildScrollView(
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.changeIdentity
-                          ? '验证新身份成功后才会更换绑定，并清除旧身份的本机教务资料。验证失败会保留原身份。'
-                          : serverBinding
-                          ? '绑定只确认你在学校的教务身份。新身份路径不会保存学校密码或 Cookie，服务端按授权身份拉取可用教务数据；旧部署可能暂时使用兼容绑定。'
-                          : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    if (selectingProvider) ...[
-                      DropdownButtonFormField<AcademicProviderId>(
-                        initialValue: _selectedProviderId,
-                        decoration: const InputDecoration(
-                          labelText: '教务类型',
-                          prefixIcon: Icon(Icons.school_outlined),
-                        ),
-                        items: AcademicProviderId.values
-                            .map(
-                              (provider) => DropdownMenuItem(
-                                value: provider,
-                                child: Text(provider.displayName),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: isBusy || awaitingCaptcha
-                            ? null
-                            : (value) {
-                                if (value != null) {
-                                  setState(() => _selectedProviderId = value);
-                                }
-                              },
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: Text(widget.changeIdentity
+                ? '更换学生身份'
+                : (serverBinding ? '绑定教务账号' : '本机直连教务')),
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.68,
+              ),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.changeIdentity
+                            ? '验证新身份成功后才会更换绑定，并清除旧身份的本机教务资料。验证失败会保留原身份。'
+                            : serverBinding
+                                ? '服务器仅进行一次性学生身份验证；手机独立登录学校。身份验证成功后，即使本机连接尚未完成，身份仍会保留，可稍后继续设置。'
+                                : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                    ],
-                    if (_identityLocked) ...[
-                      InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: '教务类型',
-                          prefixIcon: Icon(Icons.school_outlined),
-                          helperText: '身份已由学校教务确认，登录时不可切换类型',
-                        ),
-                        child: Text(_trustedIdentity!.providerId.displayName),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                    ],
-                    TextFormField(
-                      controller: _studentIdController,
-                      keyboardType: TextInputType.text,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.username],
-                      enabled: !isBusy && !awaitingCaptcha,
-                      readOnly: _identityLocked,
-                      decoration: InputDecoration(
-                        labelText: '教务学号',
-                        prefixIcon: const Icon(Icons.badge_outlined),
-                        helperText: _identityLocked ? '已绑定身份：学号由服务端确认' : null,
-                      ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                              ? '请输入教务学号'
-                              : null,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      autofillHints: const [AutofillHints.password],
-                      enabled: !isBusy && !awaitingCaptcha,
-                      decoration: InputDecoration(
-                        labelText: '教务密码',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        hintText: _usingSavedCredential ? '已安全保存' : null,
-                        helperText: awaitingCaptcha ? '密码已在本次登录中保留，无需重新输入' : null,
-                      ),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? '请输入教务密码' : null,
-                      onFieldSubmitted: (_) {
-                        if (!isBusy && !awaitingCaptcha) _submitLogin();
-                      },
-                    ),
-                    if (!serverBinding)
-                      SwitchListTile(
-                        value: _saveCredentials,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('在本机安全保存登录凭据'),
-                        subtitle: Text(
-                          _usingSavedCredential
-                              ? '学号和密码仅保存在设备系统安全存储中'
-                              : '用于下次自动重新登录，不上传沈理校园服务器',
-                        ),
-                        onChanged:
-                            isBusy || awaitingCaptcha || _loadingPreferences
-                                ? null
-                                : (value) => setState(
-                                      () => _saveCredentials = value,
-                                    ),
-                      ),
-                    if (!serverBinding)
-                      SwitchListTile(
-                        value: _saveAcademicData,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('在本机保存教务资料'),
-                        subtitle: const Text(
-                          kIsWeb
-                              ? '网页版不会保存教务密码或教务资料'
-                              : '教务资料保存到当前 App 账号隔离的本地加密保险箱',
-                        ),
-                        onChanged: kIsWeb ||
-                                isBusy ||
-                                awaitingCaptcha ||
-                                _loadingPreferences
-                            ? null
-                            : (value) => setState(
-                                  () => _saveAcademicData = value,
+                      const SizedBox(height: AppSpacing.lg),
+                      if (selectingProvider) ...[
+                        DropdownButtonFormField<AcademicProviderId>(
+                          initialValue: _selectedProviderId,
+                          decoration: const InputDecoration(
+                            labelText: '教务类型',
+                            prefixIcon: Icon(Icons.school_outlined),
+                          ),
+                          items: AcademicProviderId.values
+                              .map(
+                                (provider) => DropdownMenuItem(
+                                  value: provider,
+                                  child: Text(provider.displayName),
                                 ),
+                              )
+                              .toList(growable: false),
+                          onChanged: isBusy || awaitingCaptcha
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setState(() => _selectedProviderId = value);
+                                  }
+                                },
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      if (_identityLocked) ...[
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: '教务类型',
+                            prefixIcon: Icon(Icons.school_outlined),
+                            helperText: '身份已由学校教务确认，登录时不可切换类型',
+                          ),
+                          child: Text(_trustedIdentity!.providerId.displayName),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                      TextFormField(
+                        controller: _studentIdController,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.username],
+                        enabled: !isBusy && !awaitingCaptcha,
+                        readOnly: _identityLocked,
+                        decoration: InputDecoration(
+                          labelText: '教务学号',
+                          prefixIcon: const Icon(Icons.badge_outlined),
+                          helperText: _identityLocked ? '已绑定身份：学号由服务端确认' : null,
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                                ? '请输入教务学号'
+                                : null,
                       ),
-                    if (serverBinding)
-                      CheckboxListTile(
-                        value: _consentAccepted,
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        title: const Text('我已阅读并同意教务数据专项授权'),
-                        onChanged: isBusy || awaitingCaptcha
-                            ? null
-                            : (value) => setState(
-                                () => _consentAccepted = value ?? false),
-                      ),
-                    if (serverBinding)
-                      TextButton(
-                        onPressed: isBusy
-                            ? null
-                            : () => LegalDocumentsScreen.open(
-                                  context,
-                                  documentId: 'edu_data_consent',
-                                ),
-                        child: const Text('查看教务数据专项授权'),
-                      ),
-                    if (awaitingCaptcha && !_submitting) ...[
                       const SizedBox(height: AppSpacing.sm),
-                      _CaptchaPanel(
-                        challenge: challenge,
-                        controller: _captchaController,
-                        enabled: !isBusy,
-                        onRefresh: _coordinator.refreshCaptcha,
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.password],
+                        enabled: !isBusy && !awaitingCaptcha,
+                        decoration: InputDecoration(
+                          labelText: '教务密码',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          hintText: _usingSavedCredential ? '已安全保存' : null,
+                          helperText:
+                              awaitingCaptcha ? '密码已在本次登录中保留，无需重新输入' : null,
+                        ),
+                        validator: (value) =>
+                            value == null || value.isEmpty ? '请输入教务密码' : null,
+                        onFieldSubmitted: (_) {
+                          if (!isBusy && !awaitingCaptcha) _submitLogin();
+                        },
                       ),
+                      if (!kIsWeb)
+                        SwitchListTile(
+                          value: _saveCredentials,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('在本机安全保存登录凭据'),
+                          subtitle: Text(
+                            _usingSavedCredential
+                                ? '学号和密码仅保存在设备系统安全存储中'
+                                : '用于会话过期后自动重连；服务器仅作一次性身份验证',
+                          ),
+                          onChanged:
+                              isBusy || awaitingCaptcha || _loadingPreferences
+                                  ? null
+                                  : (value) => setState(
+                                        () => _saveCredentials = value,
+                                      ),
+                        ),
+                      if (!kIsWeb)
+                        SwitchListTile(
+                          value: _saveAcademicData,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('在本机保存教务资料'),
+                          subtitle: const Text(
+                            kIsWeb
+                                ? '网页版不会保存教务密码或教务资料'
+                                : '教务资料保存到当前 App 账号隔离的本地加密保险箱',
+                          ),
+                          onChanged: kIsWeb ||
+                                  isBusy ||
+                                  awaitingCaptcha ||
+                                  _loadingPreferences
+                              ? null
+                              : (value) => setState(
+                                    () => _saveAcademicData = value,
+                                  ),
+                        ),
+                      if (serverBinding)
+                        CheckboxListTile(
+                          value: _consentAccepted,
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: const Text('我已阅读并同意教务数据专项授权'),
+                          onChanged: isBusy || awaitingCaptcha
+                              ? null
+                              : (value) => setState(
+                                  () => _consentAccepted = value ?? false),
+                        ),
+                      if (serverBinding)
+                        TextButton(
+                          onPressed: isBusy
+                              ? null
+                              : () => LegalDocumentsScreen.open(
+                                    context,
+                                    documentId: 'edu_data_consent',
+                                  ),
+                          child: const Text('查看教务数据专项授权'),
+                        ),
+                      if (awaitingCaptcha && !_submitting) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        _CaptchaPanel(
+                          challenge: challenge,
+                          controller: _captchaController,
+                          enabled: !isBusy,
+                          onRefresh: _coordinator.refreshCaptcha,
+                        ),
+                      ],
+                      if (failure != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        _FailureMessage(failure: failure),
+                      ],
+                      if (_controller.hasBoundIdentity &&
+                          !_controller.isAuthenticated) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        const Text('身份已验证，本机教务尚未连接；可继续登录或稍后设置。'),
+                      ],
+                      if (_coordinatorMessage != null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(_coordinatorMessage!),
+                      ],
                     ],
-                    if (failure != null) ...[
-                      const SizedBox(height: AppSpacing.md),
-                      _FailureMessage(failure: failure),
-                    ],
-                    if (_coordinatorMessage != null) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(_coordinatorMessage!),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isBusy ? null : _cancel,
-              child: const Text('取消'),
-            ),
-            if (profileError)
+            actions: [
               TextButton(
-                onPressed: isBusy ? null : _retryProfile,
-                child: const Text('重试资料'),
+                onPressed: isBusy ? null : _cancel,
+                child: const Text('取消'),
               ),
-            if (awaitingCaptcha)
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  textStyle: Theme.of(context).textTheme.labelLarge,
-                  minimumSize: const Size(64, 44),
+              if (profileError)
+                TextButton(
+                  onPressed: isBusy ? null : _retryProfile,
+                  child: const Text('重试资料'),
                 ),
-                onPressed: isBusy ? null : _submitCaptcha,
-                child: isBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('继续登录'),
-              )
-            else
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  textStyle: Theme.of(context).textTheme.labelLarge,
-                  minimumSize: const Size(64, 44),
+              if (awaitingCaptcha)
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    textStyle: Theme.of(context).textTheme.labelLarge,
+                    minimumSize: const Size(64, 44),
+                  ),
+                  onPressed: isBusy ? null : _submitCaptcha,
+                  child: isBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('继续登录'),
+                )
+              else
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    textStyle: Theme.of(context).textTheme.labelLarge,
+                    minimumSize: const Size(64, 44),
+                  ),
+                  onPressed: isBusy ||
+                          _loadingPreferences ||
+                          (serverBinding && !_consentAccepted)
+                      ? null
+                      : _submitLogin,
+                  child: isBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(widget.changeIdentity
+                          ? '确认更换并验证'
+                          : (serverBinding ? '同意并绑定' : '登录教务')),
                 ),
-                onPressed: isBusy ||
-                        _loadingPreferences ||
-                        (serverBinding && !_consentAccepted)
-                    ? null
-                    : _submitLogin,
-                child: isBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(widget.changeIdentity ? '确认更换并验证' : (serverBinding ? '同意并绑定' : '登录教务')),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -508,14 +547,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
   /// 每张新图片填入对应候选，同一图片内保留用户修改；模型概率不作为自动登录条件。
   void _applyCaptchaSuggestion(CaptchaChallenge? challenge) {
-    if (challenge == null || identical(challenge, _appliedCaptchaChallenge)) return;
+    if (challenge == null || identical(challenge, _appliedCaptchaChallenge)) {
+      return;
+    }
     final previous = _appliedCaptchaChallenge;
     final oldText = _captchaController.text;
     final suggestion = challenge.suggestedCode?.trim() ?? '';
     _appliedCaptchaChallenge = challenge;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          !identical(_controller.captchaChallenge, challenge)) {
+      if (!mounted || !identical(_controller.captchaChallenge, challenge)) {
         return;
       }
       if (_captchaController.text != oldText) return;

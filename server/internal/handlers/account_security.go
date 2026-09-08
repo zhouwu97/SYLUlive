@@ -49,7 +49,7 @@ type emailPasswordResetInput struct {
 
 type accountSecurityResponse struct {
 	StudentID        string   `json:"student_id,omitempty"`
-	StudentVerified  bool     `json:"student_verified,omitempty"`
+	StudentVerified  bool     `json:"student_verified"`
 	Email            string   `json:"email"`
 	EmailMasked      string   `json:"email_masked"`
 	EmailBound       bool     `json:"email_bound"`
@@ -280,7 +280,12 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误", "code": "INVALID_PASSWORD"})
 		return
 	}
-	if !user.IsStudentVerified() || strings.TrimSpace(user.StudentID) == "" {
+	studentLogin, identityErr := hasStudentLoginIdentity(h.db, user)
+	if identityErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
+		return
+	}
+	if !studentLogin {
 		c.JSON(http.StatusConflict, gin.H{"error": "邮箱是当前账号唯一有效登录身份，只允许更换邮箱"})
 		return
 	}
@@ -291,7 +296,11 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, user.ID).Error; err != nil {
 			return err
 		}
-		if lockedUser.Email == "" || lockedUser.EmailVerifiedAt == nil || !lockedUser.IsStudentVerified() || strings.TrimSpace(lockedUser.StudentID) == "" {
+		studentLogin, err := hasStudentLoginIdentity(tx, lockedUser)
+		if err != nil {
+			return err
+		}
+		if lockedUser.Email == "" || lockedUser.EmailVerifiedAt == nil || !studentLogin {
 			return errors.New("邮箱是当前账号唯一有效登录身份，只允许更换邮箱")
 		}
 		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
@@ -448,6 +457,15 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 		response.EduSessionState = ""
 		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
 	}
+	profile, err := selfUserResponseForDB(h.db, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
+		return
+	}
+	response.StudentID = profile.StudentID
+	response.StudentVerified = profile.StudentVerified
+	response.LoginMethods = profile.LoginMethods
+	response.CanResetViaEdu = profile.CanResetViaEdu
 	c.JSON(http.StatusOK, response)
 }
 
@@ -529,4 +547,16 @@ func maskEmail(email string) string {
 
 func strconvUserID(id uint) string {
 	return strconv.FormatUint(uint64(id), 10)
+}
+
+// 邮箱解绑与资料展示使用相同的身份来源，不能依赖已经退役的 User 认证标记。
+func hasStudentLoginIdentity(db *gorm.DB, user models.User) (bool, error) {
+	if !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		return user.IsStudentVerified() && strings.TrimSpace(user.StudentID) != "", nil
+	}
+	bindings, err := services.VerifiedAcademicIdentities(db, user.ID)
+	if err != nil {
+		return false, err
+	}
+	return services.AcademicLoginAvailable(db, bindings)
 }

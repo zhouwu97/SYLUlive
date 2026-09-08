@@ -592,7 +592,7 @@ func Load() *Config {
 		AccountIdentityReadMode:             accountIdentityReadMode,
 		TrustedProxyCIDRs:                   trustedProxyCIDRs,
 		SchoolAuthorityRetired:              schoolAuthorityRetired,
-		SchoolLegacySecretsFrozen:           envBool("SCHOOL_LEGACY_SECRETS_FROZEN", false),
+		SchoolLegacySecretsFrozen:           envBool("SCHOOL_LEGACY_SECRETS_FROZEN", true),
 		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,
 		SchoolAcademicRoutesRetired:         schoolAcademicRoutesRetired,
 		AndroidPackageName:                  androidPackageName,

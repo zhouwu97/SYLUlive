@@ -24,12 +24,18 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 void main() {
-  for (final code in ['ACADEMIC_CHALLENGE_REJECTED', 'ACADEMIC_PROVIDER_UNAVAILABLE']) {
+  for (final code in [
+    'ACADEMIC_CHALLENGE_REJECTED',
+    'ACADEMIC_PROVIDER_UNAVAILABLE'
+  ]) {
     test('身份验证静默提交按错误类型停止：$code', () async {
       AppPreferencesStore.setMockInitialValues({});
-      final controller = AcademicSessionController(repository: AcademicRepositoryImpl(
-          local: _FakeAcademicDataSource(), legacy: _FakeAcademicDataSource(),
-          source: AcademicSourceKind.legacy), cleanupCoordinator: AccountSessionCleanupCoordinator());
+      final controller = AcademicSessionController(
+          repository: AcademicRepositoryImpl(
+              local: _FakeAcademicDataSource(),
+              legacy: _FakeAcademicDataSource(),
+              source: AcademicSourceKind.legacy),
+          cleanupCoordinator: AccountSessionCleanupCoordinator());
       await controller.syncAppUser('app-user-a');
       var submissions = 0;
       var challenges = 0;
@@ -37,28 +43,40 @@ void main() {
       dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
         if (options.path.endsWith('/verify')) {
           submissions++;
-          handler.reject(DioException(requestOptions: options,
+          handler.reject(DioException(
+              requestOptions: options,
               type: DioExceptionType.badResponse,
-              response: Response(requestOptions: options, statusCode: 401,
+              response: Response(
+                  requestOptions: options,
+                  statusCode: 401,
                   data: {'code': code, 'error': 'fixture'})));
           return;
         }
         challenges++;
-        handler.resolve(Response(requestOptions: options, statusCode: 200, data: {
-          'challenge_required': true, 'challenge_type': 'school_login',
-          'provider_id': 'sylu_graduate', 'student_id': 'G-001',
-          'challenge_token': 'fixture-$challenges', 'captcha': base64Encode([1,2,3]),
-          'school_public_key': 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3hzrH91c0OKgtaSB7GWGfDuUJsMrtiYThDXtJdrCr7exKt2fmIZngoFk71Dv/BPVQCHSuohNNvEV9VVDFSBhsP9xKEDAM4/2Lv+wlzN9CuZtLpV3Elo8VacjwMHcjTRmTchRBmijQzZRFrA2LM+qsH3U5tRM1uJFbfRMkBq24AwIDAQAB',
+        handler
+            .resolve(Response(requestOptions: options, statusCode: 200, data: {
+          'challenge_required': true,
+          'challenge_type': 'school_login',
+          'provider_id': 'sylu_graduate',
+          'student_id': 'G-001',
+          'challenge_token': 'fixture-$challenges',
+          'captcha': base64Encode([1, 2, 3]),
+          'school_public_key':
+              'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3hzrH91c0OKgtaSB7GWGfDuUJsMrtiYThDXtJdrCr7exKt2fmIZngoFk71Dv/BPVQCHSuohNNvEV9VVDFSBhsP9xKEDAM4/2Lv+wlzN9CuZtLpV3Elo8VacjwMHcjTRmTchRBmijQzZRFrA2LM+qsH3U5tRM1uJFbfRMkBq24AwIDAQAB',
           'school_public_key_fingerprint': 'sha256:fixture',
           'expires_at': '2099-01-01T00:00:00Z',
         }));
       }));
-      final coordinator = AcademicLoginCoordinator(controller: controller,
+      final coordinator = AcademicLoginCoordinator(
+          controller: controller,
           identityClient: AcademicIdentityClient(dio),
           identityCaptchaRecognizerFactory: _IdentityRecognizer.new);
-      final result = await coordinator.login(studentId: 'G-001', password: 'fixture',
+      final result = await coordinator.login(
+          studentId: 'G-001',
+          password: 'fixture',
           providerId: AcademicProviderId.syluGraduate,
-          saveCredentials: true, saveAcademicData: false);
+          saveCredentials: true,
+          saveAcademicData: false);
       final captchaError = code == 'ACADEMIC_CHALLENGE_REJECTED';
       expect(submissions, captchaError ? 2 : 1);
       expect(challenges, captchaError ? 3 : 1);
@@ -71,21 +89,29 @@ void main() {
   for (final failures in [1, 2]) {
     test('研究生静默验证码失败 $failures 次后有限重试', () async {
       AppPreferencesStore.setMockInitialValues({});
-      final source = _FakeAcademicDataSource(loginResult: const CaptchaRequired(),
-          captcha: CaptchaChallenge(imageBytes: Uint8List.fromList([1]),
-              suggestedCode: '1234', suggestionConfidence: .99))
+      final source = _FakeAcademicDataSource(
+          loginResult: const CaptchaRequired(),
+          captcha: CaptchaChallenge(
+              imageBytes: Uint8List.fromList([1]),
+              suggestedCode: '1234',
+              suggestionConfidence: .99))
         ..captchaFailures = failures;
       final controller = AcademicSessionController(
-          repository: AcademicRepositoryImpl(local: source, legacy: source,
-              source: AcademicSourceKind.local),
-          identity: const AcademicIdentityKey(appUserId: 'app-user-a',
-              providerId: AcademicProviderId.syluGraduate, studentId: '2026000001'),
+          repository: AcademicRepositoryImpl(
+              local: source, legacy: source, source: AcademicSourceKind.local),
+          identity: const AcademicIdentityKey(
+              appUserId: 'app-user-a',
+              providerId: AcademicProviderId.syluGraduate,
+              studentId: '2026000001'),
           cleanupCoordinator: AccountSessionCleanupCoordinator());
       await controller.syncAppUser('app-user-a');
-      final coordinator = _newCoordinator(controller, _MemoryAcademicCredentialStore(),
-          MemoryPreferencesStore());
-      final result = await coordinator.login(studentId: '2026000001', password: 'fixture',
-          saveCredentials: true, saveAcademicData: false);
+      final coordinator = _newCoordinator(controller,
+          _MemoryAcademicCredentialStore(), MemoryPreferencesStore());
+      final result = await coordinator.login(
+          studentId: '2026000001',
+          password: 'fixture',
+          saveCredentials: true,
+          saveAcademicData: false);
       expect(source.captchaSubmissions, 2);
       expect(result.isSuccess, failures == 1);
       expect(result.needsCaptcha, failures == 2);
@@ -96,19 +122,28 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
     final source = _FakeAcademicDataSource();
     final controller = AcademicSessionController(
-      repository: AcademicRepositoryImpl(local: source, legacy: source,
-          source: AcademicSourceKind.local),
-      identity: const AcademicIdentityKey(appUserId: 'app-user-a',
-          providerId: AcademicProviderId.syluUndergraduate, studentId: 'old-student'),
+      repository: AcademicRepositoryImpl(
+          local: source, legacy: source, source: AcademicSourceKind.local),
+      identity: const AcademicIdentityKey(
+          appUserId: 'app-user-a',
+          providerId: AcademicProviderId.syluUndergraduate,
+          studentId: 'old-student'),
       cleanupCoordinator: AccountSessionCleanupCoordinator(),
     );
     await controller.syncAppUser('app-user-a');
-    await tester.pumpWidget(MaterialApp(theme: ThemeData.dark(), home: Scaffold(
-      body: MediaQuery(data: const MediaQueryData(size: Size(800, 600),
-          textScaler: TextScaler.linear(1.3)),
-        child: AcademicLoginDialog(controller: controller, changeIdentity: true,
-          coordinator: _newCoordinator(controller, _MemoryAcademicCredentialStore(),
-              MemoryPreferencesStore()))))));
+    await tester.pumpWidget(MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+            body: MediaQuery(
+                data: const MediaQueryData(
+                    size: Size(800, 600), textScaler: TextScaler.linear(1.3)),
+                child: AcademicLoginDialog(
+                    controller: controller,
+                    changeIdentity: true,
+                    coordinator: _newCoordinator(
+                        controller,
+                        _MemoryAcademicCredentialStore(),
+                        MemoryPreferencesStore()))))));
     await tester.pumpAndSettle();
     expect(find.text('身份已由学校教务确认，登录时不可切换类型'), findsNothing);
     await tester.tap(find.byType(DropdownButtonFormField<AcademicProviderId>));
@@ -117,7 +152,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('研究生教务'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField).first, 'new-student');
-    expect(tester.widget<TextFormField>(find.byType(TextFormField).first).controller?.text,
+    expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField).first)
+            .controller
+            ?.text,
         'new-student');
     expect(controller.identity?.studentId, 'old-student');
     expect(tester.takeException(), isNull);
@@ -126,30 +165,39 @@ void main() {
 
   test('服务端研究生挑战接入本机识别且释放识别器', () async {
     AppPreferencesStore.setMockInitialValues({});
-    final controller = AcademicSessionController(repository: AcademicRepositoryImpl(
-      local: _FakeAcademicDataSource(), legacy: _FakeAcademicDataSource(),
-      source: AcademicSourceKind.legacy),
-      cleanupCoordinator: AccountSessionCleanupCoordinator());
+    final controller = AcademicSessionController(
+        repository: AcademicRepositoryImpl(
+            local: _FakeAcademicDataSource(),
+            legacy: _FakeAcademicDataSource(),
+            source: AcademicSourceKind.legacy),
+        cleanupCoordinator: AccountSessionCleanupCoordinator());
     await controller.syncAppUser('app-user-a');
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       handler.resolve(Response(requestOptions: options, statusCode: 200, data: {
-        'challenge_required': true, 'challenge_type': 'school_login',
-        'provider_id': 'sylu_graduate', 'student_id': 'G-001',
-        'challenge_token': 'fixture', 'captcha': base64Encode([1,2,3]),
+        'challenge_required': true,
+        'challenge_type': 'school_login',
+        'provider_id': 'sylu_graduate',
+        'student_id': 'G-001',
+        'challenge_token': 'fixture',
+        'captcha': base64Encode([1, 2, 3]),
         'school_public_key': 'fixture-key',
         'school_public_key_fingerprint': 'sha256:fixture',
         'expires_at': '2099-01-01T00:00:00Z',
       }));
     }));
     final recognizer = _IdentityRecognizer();
-    final coordinator = AcademicLoginCoordinator(controller: controller,
-      silentCaptcha: false,
-      identityClient: AcademicIdentityClient(dio),
-      identityCaptchaRecognizerFactory: () => recognizer);
-    final result = await coordinator.login(studentId: 'G-001', password: 'fixture',
-      providerId: AcademicProviderId.syluGraduate,
-      saveCredentials: true, saveAcademicData: true);
+    final coordinator = AcademicLoginCoordinator(
+        controller: controller,
+        silentCaptcha: false,
+        identityClient: AcademicIdentityClient(dio),
+        identityCaptchaRecognizerFactory: () => recognizer);
+    final result = await coordinator.login(
+        studentId: 'G-001',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluGraduate,
+        saveCredentials: true,
+        saveAcademicData: true);
     expect(result.needsCaptcha, isTrue);
     expect(controller.captchaChallenge?.suggestedCode, '1234');
     expect(recognizer.closed, isTrue);
@@ -160,25 +208,140 @@ void main() {
 
   testWidgets('点击登录后保留遮蔽密码并自动填入验证码候选', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
-    final png = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=');
-    final source = _FakeAcademicDataSource(loginResult: const CaptchaRequired(),
-      captcha: CaptchaChallenge(imageBytes: png, suggestedCode: '1234', suggestionConfidence: .99));
+    final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=');
+    final source = _FakeAcademicDataSource(
+        loginResult: const CaptchaRequired(),
+        captcha: CaptchaChallenge(
+            imageBytes: png, suggestedCode: '1234', suggestionConfidence: .99));
     final controller = _newController(source);
     await controller.syncAppUser('app-user-a');
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AcademicLoginDialog(
-      controller: controller, coordinator: _newCoordinator(controller,
-        _MemoryAcademicCredentialStore(), MemoryPreferencesStore())))));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AcademicLoginDialog(
+                controller: controller,
+                coordinator: _newCoordinator(
+                    controller,
+                    _MemoryAcademicCredentialStore(),
+                    MemoryPreferencesStore())))));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
     await tester.enterText(find.byType(TextFormField).at(1), 'fixture');
     await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
     await tester.pumpAndSettle();
-    final password = tester.widget<TextFormField>(find.byType(TextFormField).at(1));
+    final password =
+        tester.widget<TextFormField>(find.byType(TextFormField).at(1));
     expect(password.controller?.text, 'fixture');
     expect(find.text('1234'), findsOneWidget);
     expect(find.text('密码已在本次登录中保留，无需重新输入'), findsOneWidget);
     controller.dispose();
   });
+  testWidgets('研究生验证码连续两次自动失败后才显示人工输入', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=',
+    );
+    final source = _FakeAcademicDataSource(
+      loginResult: const CaptchaRequired(),
+      captcha: CaptchaChallenge(
+        imageBytes: png,
+        suggestedCode: '1234',
+        suggestionConfidence: .99,
+      ),
+    )..captchaFailures = 2;
+    final controller = AcademicSessionController(
+      repository: AcademicRepositoryImpl(
+        local: source,
+        legacy: _FakeAcademicDataSource(),
+        source: AcademicSourceKind.local,
+      ),
+      identity: const AcademicIdentityKey(
+        appUserId: 'app-user-a',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: '2026000001',
+      ),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AcademicLoginDialog(
+            controller: controller,
+            coordinator: _newCoordinator(
+              controller,
+              _MemoryAcademicCredentialStore(),
+              MemoryPreferencesStore(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(1), 'fixture');
+    await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
+    await tester.pumpAndSettle();
+
+    expect(source.captchaSubmissions, 2);
+    expect(find.text('请输入验证码'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '继续登录'), findsOneWidget);
+    expect(find.text('密码已在本次登录中保留，无需重新输入'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
+
+  test('服务端展示挑战不会误用本机验证码会话', () async {
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=',
+    );
+    final source = _FakeAcademicDataSource(
+      loginResult: const CaptchaRequired(),
+      captcha: CaptchaChallenge(imageBytes: png),
+    );
+    final controller = AcademicSessionController(
+      repository: AcademicRepositoryImpl(
+        local: source,
+        legacy: _FakeAcademicDataSource(),
+        source: AcademicSourceKind.local,
+      ),
+      identity: const AcademicIdentityKey(
+        appUserId: 'app-user-a',
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: '2026000001',
+      ),
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    await controller.syncAppUser('app-user-a');
+    final coordinator = _newCoordinator(
+      controller,
+      _MemoryAcademicCredentialStore(),
+      MemoryPreferencesStore(),
+    );
+
+    final login = await coordinator.login(
+      studentId: '2026000001',
+      password: 'fixture',
+      saveCredentials: false,
+      saveAcademicData: false,
+    );
+    expect(login.needsCaptcha, isTrue);
+    expect(source.captchaSubmissions, 0);
+
+    // 模拟课表入口接手时本机识别已完成。
+    controller.presentCaptchaChallenge(
+      png,
+      suggestedCode: '1234',
+      suggestionConfidence: .99,
+    );
+    final restored = await coordinator.ensureAuthenticated();
+
+    expect(restored.isSuccess, isFalse);
+    expect(source.captchaSubmissions, 0);
+    expect(controller.isAuthenticated, isFalse);
+    controller.dispose();
+  });
+
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
   });
@@ -735,9 +898,11 @@ final class _IdentityRecognizer implements AcademicCaptchaRecognizer {
   bool get isAvailable => true;
   @override
   Future<AcademicCaptchaRecognition> recognize(Uint8List bytes) async =>
-    const AcademicCaptchaRecognition(text: '1234', confidence: .99);
+      const AcademicCaptchaRecognition(text: '1234', confidence: .99);
   @override
-  void close() { closed = true; }
+  void close() {
+    closed = true;
+  }
 }
 
 AcademicLoginCoordinator _newCoordinator(
@@ -890,8 +1055,10 @@ final class _FakeAcademicDataSource implements AcademicDataSource {
   Future<LoginResult> continueLoginWithCaptcha({required String code}) async {
     captchaSubmissions++;
     if (captchaFailures-- > 0) {
-      throw const AcademicFailure(kind: AcademicFailureKind.challengeRejected,
-          message: '验证码错误', code: 'CAPTCHA_INVALID');
+      throw const AcademicFailure(
+          kind: AcademicFailureKind.challengeRejected,
+          message: '验证码错误',
+          code: 'CAPTCHA_INVALID');
     }
     _state = SessionState.authenticated;
     return const LoginSuccess(

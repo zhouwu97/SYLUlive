@@ -658,7 +658,7 @@ func writeAcademicVerificationError(c *gin.Context, err error) {
 	}
 }
 
-// List 返回当前账号的 provider-aware 身份列表，同时对迁移前本科身份提供兼容投影。
+// List 只返回身份表事实；旧认证由启动迁移回填，不在读取时重新生成。
 func (h *AcademicIdentityHandler) List(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -673,29 +673,6 @@ func (h *AcademicIdentityHandler) List(c *gin.Context) {
 	response := make([]gin.H, 0, len(bindings)+1)
 	for _, binding := range bindings {
 		response = append(response, academicBindingPayload(binding))
-	}
-	// 迁移前旧本科身份可能尚未回填 binding 表；即使用户已有研究生 binding，
-	// 也要把这条独立的旧本科身份投影出来，避免 GET 结果丢失旧客户端的可信身份。
-	var user models.User
-	if err := h.db.Select("id", "student_id", "student_verified_at", "academic_provider_id").First(&user, userID).Error; err == nil && user.StudentVerifiedAt != nil && strings.TrimSpace(user.StudentID) != "" {
-		providerID := strings.TrimSpace(string(user.AcademicProviderID))
-		if providerID == "" {
-			providerID = models.AcademicProviderUndergraduate
-		}
-		legacyPresent := false
-		for _, binding := range bindings {
-			if binding.ProviderID == providerID && binding.StudentID == user.StudentID {
-				legacyPresent = true
-				break
-			}
-		}
-		if !legacyPresent {
-			response = append(response, gin.H{
-				"provider_id": userAcademicProvider(providerID), "student_id": user.StudentID,
-				"verified": true, "verified_at": user.StudentVerifiedAt.UTC().Format(time.RFC3339),
-				"verification_method": "legacy_undergraduate", "verification_version": "legacy",
-			})
-		}
 	}
 	c.JSON(http.StatusOK, gin.H{"identities": response})
 }

@@ -260,6 +260,23 @@ void main() {
       ),
     );
   });
+
+  test('研究生挑战纯文本 404 明确提示服务未开放而非密码错误', () async {
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((status: 404, body: '404 page not found'));
+    final client = createClient(adapter);
+    await expectLater(
+      client.requestChallenge(
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: 'G-FIXTURE-001',
+      ),
+      throwsA(isA<AcademicIdentityApiException>()
+          .having((e) => e.code, 'code', 'ACADEMIC_IDENTITY_ROUTE_UNAVAILABLE')
+          .having((e) => e.message, 'message', contains('无需修改教务密码'))
+          .having((e) => e.statusCode, 'statusCode', 404)),
+    );
+    expect(adapter.requests, hasLength(1));
+  });
   for (final graduate in [false, true]) {
     test('换绑挑战和提交使用独立端点：$graduate', () async {
       final data = graduate ? challengeResponse() : undergraduatePreverifyResponse();

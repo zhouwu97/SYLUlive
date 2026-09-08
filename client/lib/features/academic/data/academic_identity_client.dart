@@ -436,6 +436,14 @@ final class AcademicIdentityClient {
       DioException error, String message) {
     final status = error.response?.statusCode;
     final data = error.response?.data;
+    // 未部署的新路由常返回纯文本 404，不能显示成网络或密码错误。
+    if (status == 404) {
+      return const AcademicIdentityApiException(
+        'ACADEMIC_IDENTITY_ROUTE_UNAVAILABLE',
+        '服务器暂未开放学生身份验证接口，请联系管理员更新服务后重试，无需修改教务密码',
+        statusCode: 404,
+      );
+    }
     final code = data is Map
         ? _errorCode(Map<String, dynamic>.from(data), status)
         : 'UNAVAILABLE';

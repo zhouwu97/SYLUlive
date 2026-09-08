@@ -381,6 +381,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final result = await CourseReminderService.instance.reschedule(
       courses: sc.courses,
       semesterStart: sc.semesterStart,
+      identity: sc.academicIdentity,
     );
     final persistedEnabled = await CourseReminderService.instance.isEnabled();
     if (mounted && requestId == _backgroundStatusRequestId) {
@@ -2120,6 +2121,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         enabled,
         courses: sc.courses,
         semesterStart: sc.semesterStart,
+      identity: sc.academicIdentity,
       );
       final persistedEnabled = await CourseReminderService.instance.isEnabled();
       if (!mounted) return;
@@ -2153,6 +2155,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       minutes,
       courses: sc.courses,
       semesterStart: sc.semesterStart,
+      identity: sc.academicIdentity,
     );
     final count =
         await CourseReminderService.instance.pendingCourseReminderCount();

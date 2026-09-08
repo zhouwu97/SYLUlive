@@ -1,3 +1,5 @@
+import '../features/academic/storage/academic_auxiliary_ownership.dart';
+import '../features/academic/domain/academic_provider.dart';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -112,7 +114,15 @@ class CourseReminderService {
     return prefs.getInt(_advanceMinutesKey) ?? 5;
   }
 
-  Future<void> setAdvanceMinutes(
+  Future<void> setAdvanceMinutes(int minutes, {
+    required List<CourseBlock> courses, required DateTime? semesterStart,
+    AcademicIdentityKey? identity,
+  }) async {
+    await AcademicAuxiliaryOwnership.write('reminders', identity,
+        () => _setAdvanceMinutes(minutes, courses: courses, semesterStart: semesterStart));
+  }
+
+  Future<void> _setAdvanceMinutes(
     int minutes, {
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
@@ -120,7 +130,7 @@ class CourseReminderService {
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setInt(_advanceMinutesKey, minutes);
     if (await isEnabled()) {
-      await reschedule(courses: courses, semesterStart: semesterStart);
+      await _reschedule(courses: courses, semesterStart: semesterStart);
     }
   }
 
@@ -129,7 +139,15 @@ class CourseReminderService {
     return prefs.getStringList(_notificationIdsKey)?.length ?? 0;
   }
 
-  Future<CourseReminderResult> setEnabled(
+  Future<CourseReminderResult> setEnabled(bool enabled, {
+    required List<CourseBlock> courses, required DateTime? semesterStart,
+    AcademicIdentityKey? identity,
+  }) async => await AcademicAuxiliaryOwnership.write('reminders', identity,
+      () => _setEnabled(enabled, courses: courses, semesterStart: semesterStart)) ??
+      const CourseReminderResult(enabled: false, permissionGranted: true,
+          scheduledCount: 0, message: '本机教务已断开');
+
+  Future<CourseReminderResult> _setEnabled(
     bool enabled, {
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
@@ -139,7 +157,7 @@ class CourseReminderService {
 
     if (!enabled) {
       await prefs.setBool(_enabledKey, false);
-      await cancelCourseReminders();
+      await _cancelCourseReminders();
       return const CourseReminderResult(
         enabled: false,
         permissionGranted: true,
@@ -160,10 +178,29 @@ class CourseReminderService {
     }
 
     await prefs.setBool(_enabledKey, true);
-    return reschedule(courses: courses, semesterStart: semesterStart);
+    return _reschedule(courses: courses, semesterStart: semesterStart);
   }
 
   Future<CourseReminderResult> reschedule({
+    required List<CourseBlock> courses,
+    required DateTime? semesterStart,
+    AcademicIdentityKey? identity,
+  }) async => await AcademicAuxiliaryOwnership.write('reminders', identity,
+      () => _reschedule(courses: courses, semesterStart: semesterStart)) ??
+      const CourseReminderResult(enabled: false, permissionGranted: true,
+          scheduledCount: 0, message: '本机教务已断开');
+
+  Future<void> clearForIdentity(AcademicIdentityKey identity,
+      {bool includeLegacy = false}) => AcademicAuxiliaryOwnership.clear(
+      'reminders', identity, () async {
+        await _cancelCourseReminders();
+        final prefs = await AppPreferencesStore.getInstance();
+        if (!await prefs.remove(_enabledKey) || !await prefs.remove(_advanceMinutesKey)) {
+          throw StateError('清理课程提醒偏好失败');
+        }
+      }, includeLegacy: includeLegacy);
+
+  Future<CourseReminderResult> _reschedule({
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
   }) async {
@@ -178,7 +215,7 @@ class CourseReminderService {
     }
 
     if (semesterStart == null) {
-      await cancelCourseReminders();
+      await _cancelCourseReminders();
       return const CourseReminderResult(
         enabled: true,
         permissionGranted: true,
@@ -188,7 +225,7 @@ class CourseReminderService {
     }
 
     if (courses.isEmpty) {
-      await cancelCourseReminders();
+      await _cancelCourseReminders();
       return const CourseReminderResult(
         enabled: true,
         permissionGranted: true,
@@ -197,7 +234,7 @@ class CourseReminderService {
       );
     }
 
-    await cancelCourseReminders();
+    await _cancelCourseReminders();
 
     final advanceMinutes = await getAdvanceMinutes();
     final now = DateTime.now();
@@ -303,6 +340,10 @@ class CourseReminderService {
   }
 
   Future<void> cancelCourseReminders() async {
+    await AcademicAuxiliaryOwnership.write('reminders', null, _cancelCourseReminders);
+  }
+
+  Future<void> _cancelCourseReminders() async {
     final prefs = await AppPreferencesStore.getInstance();
     final ids = prefs.getStringList(_notificationIdsKey) ?? const <String>[];
     final notificationIds = <int>[];

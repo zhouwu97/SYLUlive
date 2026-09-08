@@ -136,8 +136,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
     final state = artifact.opaqueProviderState;
     final cookies = state['cookies'];
     final prefix = state['session_path_prefix'];
-    final createdAt = DateTime.tryParse(state['created_at']?.toString() ?? '');
-    if (cookies is! List || cookies.any((item) => item is! String) || prefix is! String || createdAt == null) {
+    if (cookies is! List || cookies.any((item) => item is! String) || prefix is! String) {
       throw const AcademicAuthFailure(
           AcademicAuthFailureType.sessionExpired, '教务会话材料格式无效');
     }
@@ -145,8 +144,9 @@ final class GraduateAcademicProvider implements AcademicProvider {
       GraduateSessionArtifactState(
         cookies: cookies.whereType<String>().toList(growable: false),
         sessionPathPrefix: prefix,
-        createdAt: createdAt,
-        validatedAt: DateTime.tryParse(state['validated_at']?.toString() ?? ''),
+        // 恢复期限与探活时间以统一 Artifact 字段为准，避免两套时间戳漂移。
+        createdAt: artifact.createdAt,
+        validatedAt: artifact.validatedAt,
       ),
     );
     final confirmed = await _gateway.probe();
@@ -154,6 +154,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
       throw const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '研究生会话已失效');
     }
     if (confirmed.studentId?.trim() != _identity.studentId.trim()) {
+      await _gateway.reset();
       throw const AcademicAuthFailure(AcademicAuthFailureType.identityMismatch, '研究生会话身份不匹配');
     }
   }

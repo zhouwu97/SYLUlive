@@ -1,11 +1,13 @@
 import '../../../platform/contracts/preferences_store.dart';
+import '../../../services/home_widget_service.dart';
+import '../../../services/course_reminder_service.dart';
 import '../../campus_data/storage/account_scoped_snapshot_store.dart';
 import '../../campus_data/storage/academic_cache_store.dart';
 import '../../campus_data/storage/schedule_cache_store.dart';
+import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../domain/academic_provider.dart';
 import '../storage/academic_connection_store.dart';
 import '../storage/academic_credential_store.dart';
-import '../storage/academic_persistence_policy.dart';
 import '../storage/academic_persistence_gate.dart';
 import '../storage/academic_session_artifact_vault.dart';
 import '../storage/academic_storage_preferences.dart';
@@ -18,16 +20,20 @@ final class AcademicIdentityLifecycleCoordinator {
     required this.preferences,
     IdentityScopedAcademicCredentialStore? credentials,
     this.clearVault,
+    this.clearLegacyVault,
     this.clearSession,
     this.clearAuxiliary,
+    this.includeLegacyAuxiliary = false,
   }) : credentials = credentials ?? PlatformAcademicCredentialStore();
 
   final AcademicSessionController controller;
   final AppPreferencesStore preferences;
   final IdentityScopedAcademicCredentialStore credentials;
   final Future<void> Function(AcademicIdentityKey)? clearVault;
+  final Future<void> Function(AcademicIdentityKey)? clearLegacyVault;
   final Future<void> Function(AcademicIdentityKey)? clearSession;
   final Future<void> Function()? clearAuxiliary;
+  final bool includeLegacyAuxiliary;
 
   static final Map<AcademicIdentityKey, Future<void>> _inFlight = {};
 
@@ -103,12 +109,63 @@ final class AcademicIdentityLifecycleCoordinator {
       await vault.clearUser();
       await vault.close();
     });
-    if (isCurrent) {
-      await attempt(
-          clearAuxiliary ?? AcademicPersistencePolicy.clearAuxiliaryData);
+    await attempt(() async {
+      if (clearLegacyVault != null) {
+        await clearLegacyVault!(identity);
+        return;
+      }
+      // 旧 edu 来源只属于本科兼容存储；研究生不能据此认领同学号的数据。
+      if (identity.providerId != AcademicProviderId.syluUndergraduate) return;
+      final legacy =
+          AesGcmAccountScopedSnapshotStore(appUserId: identity.appUserId);
+      try {
+        for (final type in [
+          PersonalDataType.academic,
+          PersonalDataType.schedule
+        ]) {
+          await legacy.deleteMatchingSource(
+              type: type,
+              sourceSystem: 'edu',
+              sourceAccountId: identity.studentId);
+        }
+      } finally {
+        await legacy.close();
+      }
+    });
+    if (clearAuxiliary != null) {
+      await attempt(clearAuxiliary!);
+    } else {
+      await attempt(() => HomeWidgetService.clearCourseDataForIdentity(identity,
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
+      await attempt(() => CourseReminderService.instance.clearForIdentity(
+          identity,
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
     }
     await attempt(settings.clear);
     await attempt(() => settings.setSaveAcademicData(false));
+    await attempt(() async {
+      final user = identity.appUserId;
+      if (identity.providerId != AcademicProviderId.syluUndergraduate ||
+          preferences.getString('edu_student_id_$user') != identity.studentId) {
+        return;
+      }
+      // 旧账号级投影没有 provider 字段，只清除能由旧本科学号证明归属的记录。
+      // 学号最后删除，前面任何失败都保留重试时的归属凭证。
+      for (final prefix in [
+        'edu_bound',
+        'edu_authorized',
+        'edu_session_state',
+        'edu_grade',
+        'edu_college',
+        'edu_major',
+        'edu_last_semester',
+        'edu_student_id'
+      ]) {
+        if (!await preferences.remove('${prefix}_$user')) {
+          throw StateError('清理旧教务身份偏好失败');
+        }
+      }
+    });
     if (failure != null) throw failure!;
     await connection.setCleanupPending(false);
   }

@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
 import '../../../platform/contracts/secure_store.dart';
+import '../../../platform/contracts/preferences_store.dart';
+import '../../academic/domain/academic_provider.dart';
+import '../../academic/storage/academic_connection_store.dart';
 
 import 'account_cache_namespace.dart';
 import 'personal_snapshot_file_backend.dart';
@@ -72,7 +75,8 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
         const PlatformPersonalSnapshotSecureStore(),
     PersonalSnapshotFileBackend? fileBackend,
     Uint8List Function(int length)? randomBytes,
-  })  : _accountHash = _validateAccount(appUserId),
+  })  : _appUserId = appUserId,
+        _accountHash = _validateAccount(appUserId),
         _storageHash = _validateStorageNamespace(
           identityNamespace,
           fallback: _validateAccount(appUserId),
@@ -94,6 +98,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       <String, Future<Uint8List>>{};
 
   final String _accountHash;
+  final String _appUserId;
   final String _storageHash;
   final PersonalSnapshotSecureStore _secureStore;
   final PersonalSnapshotFileBackend _fileBackend;
@@ -107,8 +112,48 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
 
   String get _storageKey => '$_keyPrefix$_storageHash/v1';
 
+  static final Map<String, Future<void>> _mutationTails = {};
+
+  Future<T> _mutate<T>(Future<T> Function() action) {
+    final previous = _mutationTails[_storageHash] ?? Future<void>.value();
+    final operation = previous.then((_) => action());
+    final tail = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _mutationTails[_storageHash] = tail;
+    return operation.whenComplete(() {
+      if (identical(_mutationTails[_storageHash], tail)) {
+        _mutationTails.remove(_storageHash);
+      }
+    });
+  }
+
   @override
   Future<void> write({
+    required PersonalDataType type,
+    required int schemaVersion,
+    required String sourceSystem,
+    required String sourceAccountId,
+    required Map<String, dynamic> payload,
+    DateTime? fetchedAt,
+    DateTime? expiresAt,
+  }) => _mutate(() => _write(type: type, schemaVersion: schemaVersion,
+      sourceSystem: sourceSystem, sourceAccountId: sourceAccountId,
+      payload: payload, fetchedAt: fetchedAt, expiresAt: expiresAt));
+
+  /// 迁移旧共享保险箱时必须验证密文内的来源身份，不能直接删账号 DEK。
+  /// 与写入共用物理目录队列，防止校验后误删刚被另一个身份覆盖的快照。
+  Future<void> deleteMatchingSource({
+    required PersonalDataType type,
+    required String sourceSystem,
+    required String sourceAccountId,
+  }) => _mutate(() async {
+    final snapshot = await read(type: type, sourceSystem: sourceSystem,
+        sourceAccountId: sourceAccountId);
+    if (snapshot != null) {
+      await _fileBackend.deleteType(accountHash: _storageHash, type: type);
+    }
+  });
+
+  Future<void> _write({
     required PersonalDataType type,
     required int schemaVersion,
     required String sourceSystem,
@@ -122,6 +167,15 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     }
     final normalizedSystem = sourceSystem.trim().toLowerCase();
     final normalizedAccount = sourceAccountId.trim().toLowerCase();
+    final preferences = AppPreferencesStore.maybeInstance;
+    if (_storageHash == _accountHash && normalizedSystem == 'edu' &&
+        (type == PersonalDataType.academic || type == PersonalDataType.schedule) &&
+        preferences != null) {
+      final identity = AcademicIdentityKey(appUserId: _appUserId,
+          providerId: AcademicProviderId.syluUndergraduate, studentId: sourceAccountId);
+      // 旧兼容写入也要遵守身份清理墓碑，不能在新身份启用缓存后复活旧快照。
+      if (!AcademicConnectionStore(identity, preferences).connected) return;
+    }
     if (normalizedSystem.isEmpty || normalizedAccount.isEmpty) {
       throw const PersonalSnapshotStoreException('个人数据缺少可校验的来源账号');
     }
@@ -284,15 +338,15 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
 
   @override
   Future<void> deleteType(PersonalDataType type) {
-    return _fileBackend.deleteType(accountHash: _storageHash, type: type);
+    return _mutate(() => _fileBackend.deleteType(accountHash: _storageHash, type: type));
   }
 
   @override
-  Future<void> clearUser() async {
+  Future<void> clearUser() => _mutate(() async {
     // 先删除密钥；即使文件清理失败，残留密文也无法继续解密。
     await _secureStore.delete(_storageKey);
     await _fileBackend.deleteUser(_storageHash);
-  }
+  });
 
   /// 仅用于“清除全部本地个人数据”设置项，不删除其他业务密钥。
   static Future<void> clearAllVaultData({

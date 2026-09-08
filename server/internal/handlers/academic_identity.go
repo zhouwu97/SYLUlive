@@ -547,16 +547,7 @@ func (h *AcademicIdentityHandler) Verify(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存学生身份失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"verified":             true,
-		"binding_version":      claims.CurrentBindingVersion + 1,
-		"changed_at":           verifiedAt.UTC().Format(time.RFC3339),
-		"provider_id":          claims.ProviderID,
-		"student_id":           claims.StudentID,
-		"verified_at":          verifiedAt.UTC().Format(time.RFC3339),
-		"verification_method":  academicChallengeMethod,
-		"verification_version": academicChallengeVersion,
-	})
+	h.writeVerifiedBinding(c, userID, claims.ProviderID, claims.StudentID)
 }
 
 // verifyUndergraduate 是新客户端使用的本科 verify-only 路径。
@@ -622,11 +613,17 @@ func (h *AcademicIdentityHandler) verifyUndergraduate(c *gin.Context, userID uin
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "ACADEMIC_IDENTITY_STORE_FAILED", "error": "保存学生身份失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"verified": true, "provider_id": models.AcademicProviderUndergraduate, "student_id": studentID,
-		"verified_at":         verifiedAt.UTC().Format(time.RFC3339),
-		"verification_method": academicChallengeMethod, "verification_version": "undergraduate-preverify-v1",
-	})
+	h.writeVerifiedBinding(c, userID, models.AcademicProviderUndergraduate, studentID)
+}
+
+// 返回实际保存的版本和换绑时间，重复验证不能伪造一次新换绑。
+func (h *AcademicIdentityHandler) writeVerifiedBinding(c *gin.Context, userID uint, providerID, studentID string) {
+	var binding models.AcademicIdentityBinding
+	if err := h.db.Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, providerID, studentID).First(&binding).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"code": "ACADEMIC_BINDING_CHANGED", "error": "学生身份状态已变化，请刷新后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, academicBindingPayload(binding))
 }
 
 func writeAcademicVerificationError(c *gin.Context, err error) {
@@ -817,7 +814,7 @@ func persistAcademicIdentityBinding(db *gorm.DB, userID uint, providerID, studen
 				return errAcademicIdentityImmutable
 			}
 			return tx.Model(&current).Updates(map[string]interface{}{
-				"verified_at": verifiedAt, "verification_method": method, "verification_version": version, "changed_at": verifiedAt,
+				"verified_at": verifiedAt, "verification_method": method, "verification_version": version,
 			}).Error
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {

@@ -209,6 +209,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? _userId;
   String? _sourceAccountId;
   String? _identityNamespace;
+  AcademicIdentityKey? get academicIdentity => _academicSessionController?.identity;
   ScheduleCacheStore? _scheduleStore;
   Future<void> _scheduleStoreReady = Future<void>.value();
   int _contextGeneration = 0;

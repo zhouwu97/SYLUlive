@@ -13,6 +13,8 @@ import '../features/academic/data/mapper/raw_grade_mapper.dart';
 import '../features/academic/domain/academic_failure.dart';
 import '../features/academic/domain/academic_repository.dart';
 import '../features/academic/domain/academic_provider.dart';
+import '../features/academic/application/academic_identity_lifecycle_coordinator.dart';
+import '../features/academic/storage/academic_connection_store.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
@@ -319,19 +321,25 @@ class EduProvider extends ChangeNotifier {
     required String sourceAccountId,
     required Map<String, dynamic> profile,
   }) async {
+    final identity = _academicSessionController?.identity;
+    final generation = _academicSessionController?.contextGeneration;
+    final store = _academicCacheStoreFor(
+        appUserId: userId, sourceAccountId: sourceAccountId);
     try {
       await _persistenceReady;
-      await _academicCacheStoreFor(
-        appUserId: userId,
-        sourceAccountId: sourceAccountId,
-      )?.writeProfile(profile: profile);
+      if (_userId != userId || _studentId.trim() != sourceAccountId ||
+          identity != _academicSessionController?.identity ||
+          generation != _academicSessionController?.contextGeneration) {
+        return;
+      }
+      await store?.writeProfile(profile: profile);
     } catch (error) {
       debugPrint('保存教务 Profile 失败: ${error.runtimeType}');
     }
   }
 
   void _setPersistenceReadiness(String userId, String sourceAccountId) {
-    final contextKey = '$userId|$sourceAccountId';
+    final contextKey = '$userId|$sourceAccountId|${_academicSessionController?.identity?.storageId ?? ''}';
     if (contextKey == _persistenceContextKey) return;
     _persistenceContextKey = contextKey;
     final readiness = _loadPersistencePolicy(userId, sourceAccountId);
@@ -343,11 +351,14 @@ class EduProvider extends ChangeNotifier {
     String userId,
     String sourceAccountId,
   ) async {
+    final contextKey = _persistenceContextKey;
+    final identity = _academicSessionController?.identity;
     AcademicPersistenceRegistry.set(userId, enabled: false);
+    final storage = await AppPreferencesStore.getInstance();
     final prefs = AcademicStoragePreferences(
       appUserId: userId,
-      identity: _academicSessionController?.identity,
-      store: await AppPreferencesStore.getInstance(),
+      identity: identity,
+      store: storage,
     );
     await prefs.migrateLegacyPreferences();
     var enabled = prefs.saveAcademicData;
@@ -356,6 +367,11 @@ class EduProvider extends ChangeNotifier {
       await prefs.markMigrated();
     }
     if (prefs.cleanupPending) enabled = false;
+    if (_userId != userId || contextKey != _persistenceContextKey ||
+        identity != _academicSessionController?.identity) {
+      return;
+    }
+    if (identity != null && AcademicConnectionStore(identity, storage).cleanupPending) enabled = false;
     AcademicPersistenceRegistry.set(userId, enabled: enabled);
   }
 
@@ -632,6 +648,14 @@ class EduProvider extends ChangeNotifier {
 
   /// 清除本机教务登录态，不修改服务器绑定关系。
   Future<void> clearLocalSession() async {
+    final controller = _academicSessionController;
+    final identity = controller?.identity;
+    if (controller != null && identity != null) {
+      await AcademicIdentityLifecycleCoordinator(controller: controller,
+          preferences: await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
+      clearMemoryForAccountTransition();
+      return;
+    }
     // 先捕获命名空间：重置本机会话后 studentId 会被清空，不能再依赖当前
     // 字段定位成绩快照。退出本机教务必须同时撤销内存和加密缓存中的个人数据。
     final oldUserId = _userId;

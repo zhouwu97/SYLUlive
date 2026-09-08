@@ -1,3 +1,5 @@
+import '../features/academic/storage/academic_auxiliary_ownership.dart';
+import '../features/academic/domain/academic_provider.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -185,6 +187,17 @@ class HomeWidgetService {
   }
 
   static Future<void> syncCourseData(CourseScheduleProvider provider) async {
+    final generation = provider.contextGeneration;
+    await AcademicAuxiliaryOwnership.write('widget', provider.academicIdentity,
+        () => _syncCourseData(provider),
+        isCurrent: () => generation == provider.contextGeneration);
+  }
+
+  static Future<void> clearCourseDataForIdentity(AcademicIdentityKey identity,
+      {bool includeLegacy = false}) => AcademicAuxiliaryOwnership.clear(
+      'widget', identity, _clearCourseData, includeLegacy: includeLegacy);
+
+  static Future<void> _syncCourseData(CourseScheduleProvider provider) async {
     _lastCourseProvider = provider;
     try {
       final now = DateTime.now();
@@ -226,9 +239,13 @@ class HomeWidgetService {
 
   /// 清理教务资料时同步撤回课表小组件中的个人课程数据。
   static Future<void> clearCourseData() async {
+    await AcademicAuxiliaryOwnership.write('widget', null, _clearCourseData);
+  }
+
+  static Future<void> _clearCourseData() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.remove(_courseDataKey);
+      if (!await prefs.remove(_courseDataKey)) throw StateError('清理课表小组件失败');
       _lastCourseProvider = null;
       await _refreshNative();
     } catch (error) {

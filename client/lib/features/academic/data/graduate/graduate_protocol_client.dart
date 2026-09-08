@@ -380,10 +380,15 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
     _loginPageUrl = '$_baseUri$_sessionPathPrefix/home/stulogin';
     // 临时允许 probe 发起学校请求；只有 profile 返回的真实学号通过后才保留认证状态。
     _authenticated = true;
-    final state = await probe();
-    if (!state.authenticated) {
+    try {
+      final state = await probe();
+      if (!state.authenticated) {
+        throw const GraduatePortalException('SESSION_EXPIRED', '研究生教务会话已失效');
+      }
+    } catch (_) {
+      // 探活的临时许可不能在网络或解码异常后变成已认证会话。
       _authenticated = false;
-      throw const GraduatePortalException('SESSION_EXPIRED', '研究生教务会话已失效');
+      rethrow;
     }
     _authenticated = true;
   }
@@ -431,6 +436,7 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
       queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
       options: Options(responseType: ResponseType.plain, headers: {'Referer': _loginPageUrl}),
     );
+    _requireAuthenticatedResponse(response);
     _requireSuccess(response, operation);
     return GraduateResponseCodec.decode(response.data ?? '');
   }
@@ -446,8 +452,21 @@ final class GraduateProtocolClient implements GraduateProtocolGateway {
         contentType: Headers.formUrlEncodedContentType,
       ),
     );
+    _requireAuthenticatedResponse(response);
     _requireSuccess(response, operation);
     return GraduateResponseCodec.decode(response.data ?? '');
+  }
+
+  void _requireAuthenticatedResponse(Response<String> response) {
+    final location = response.headers.value('location');
+    if (!_isRedirect(response.statusCode) || location == null) return;
+    final target = response.realUri.resolve(location);
+    // 只有回到已知同源学生登录入口才证明失效；其他跳转仍按协议未知保留材料。
+    if (_sameOrigin(_baseUri, target) &&
+        RegExp(r'^(/\(S\([A-Za-z0-9_-]+\)\))?/home/stulogin/?$', caseSensitive: false).hasMatch(target.path)) {
+      _authenticated = false;
+      throw const GraduatePortalException('SESSION_EXPIRED', '研究生教务会话已失效');
+    }
   }
 
   void _ensureAuthenticated() {

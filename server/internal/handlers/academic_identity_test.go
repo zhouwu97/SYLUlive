@@ -127,6 +127,10 @@ func TestAcademicIdentityChallengeIsBoundAndConsumedOnFirstVerify(t *testing.T) 
 	require.NoError(t, db.Where("user_id = ?", user.ID).First(&binding).Error)
 	require.Equal(t, models.AcademicProviderGraduate, binding.ProviderID)
 	require.Equal(t, "G20260001", binding.StudentID)
+	var verified map[string]interface{}
+	require.NoError(t, json.Unmarshal(verifyResponse.Body.Bytes(), &verified))
+	require.Equal(t, float64(1), verified["binding_version"])
+	require.Nil(t, verified["changed_at"])
 
 	secondResponse := httptest.NewRecorder()
 	router.ServeHTTP(secondResponse, httptest.NewRequest(http.MethodPost, "/verify", bytes.NewReader(encoded)))
@@ -134,6 +138,36 @@ func TestAcademicIdentityChallengeIsBoundAndConsumedOnFirstVerify(t *testing.T) 
 	var count int64
 	require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	require.Equal(t, int64(1), count)
+}
+
+func TestAcademicIdentityReverifyPreservesBindingVersionAndChangeTime(t *testing.T) {
+	h, db, _, user := newAcademicIdentityTestHandler(t)
+	changed := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	binding := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderGraduate,
+		StudentID: "G20260001", BindingVersion: 4, ChangedAt: &changed, VerifiedAt: changed,
+		VerificationMethod: "fixture", VerificationVersion: "v1"}
+	require.NoError(t, db.Create(&binding).Error)
+	router := academicIdentityRouter(h, user.ID)
+	challenge := httptest.NewRecorder()
+	router.ServeHTTP(challenge, httptest.NewRequest(http.MethodPost, "/challenge",
+		bytes.NewBufferString(`{"provider_id":"sylu_graduate","student_id":"G20260001"}`)))
+	require.Equal(t, http.StatusOK, challenge.Code)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(challenge.Body.Bytes(), &payload))
+	body, err := json.Marshal(map[string]interface{}{"provider_id": binding.ProviderID,
+		"student_id": binding.StudentID, "challenge_token": payload["challenge_token"],
+		"captcha": "1234", "encrypted_password": "fixture", "school_public_key_fingerprint": "sha256:fixture-key"})
+	require.NoError(t, err)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/verify", bytes.NewReader(body)))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
+	require.Equal(t, float64(4), result["binding_version"])
+	require.Equal(t, changed.Format(time.RFC3339), result["changed_at"])
+	require.NoError(t, db.First(&binding, binding.ID).Error)
+	require.True(t, binding.VerifiedAt.After(changed))
+	require.Equal(t, changed, *binding.ChangedAt)
 }
 
 func TestAcademicIdentityWrongFingerprintConsumesChallenge(t *testing.T) {

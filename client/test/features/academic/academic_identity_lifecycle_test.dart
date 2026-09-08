@@ -147,6 +147,18 @@ void main() {
           sourceAccountId: 'a',
           payload: const {'value': 2});
     }
+    await vault(null).write(
+        type: PersonalDataType.academic,
+        schemaVersion: 1,
+        sourceSystem: 'edu',
+        sourceAccountId: a.studentId,
+        payload: const {'legacy': true});
+    await vault(null).write(
+        type: PersonalDataType.schedule,
+        schemaVersion: 1,
+        sourceSystem: 'edu',
+        sourceAccountId: b.studentId,
+        payload: const {'legacy': true});
     final controller = AcademicSessionController(
         repository: Repository(),
         identity: a,
@@ -158,10 +170,22 @@ void main() {
         preferences: prefs,
         credentials: credentials,
         clearSession: (id) => session(id).delete(),
+        clearLegacyVault: (id) async {
+          for (final type in [
+            PersonalDataType.academic,
+            PersonalDataType.schedule
+          ]) {
+            await vault(null).deleteMatchingSource(
+                type: type, sourceSystem: "edu", sourceAccountId: id.studentId);
+          }
+        },
         clearVault: (id) => vault(id).clearUser(),
         clearAuxiliary: () async {});
     await lifecycle.clearLocalIdentity(a);
     await lifecycle.clearLocalIdentity(a);
+    await vault(null).write(type: PersonalDataType.academic, schemaVersion: 1,
+        sourceSystem: 'edu', sourceAccountId: a.studentId,
+        payload: const {'late': true});
     expect(await credentials.readForIdentity(a), isNull);
     expect(await session(a).read(), isNull);
     expect(secrets.values.keys.any((key) => key.contains(a.storageId)), false);
@@ -184,6 +208,18 @@ void main() {
               .read(type: type, sourceSystem: 'other', sourceAccountId: 'a'),
           isNotNull);
     }
+    expect(
+        await vault(null).read(
+            type: PersonalDataType.academic,
+            sourceSystem: 'edu',
+            sourceAccountId: a.studentId),
+        isNull);
+    expect(
+        await vault(null).read(
+            type: PersonalDataType.schedule,
+            sourceSystem: 'edu',
+            sourceAccountId: b.studentId),
+        isNotNull);
     expect(controller.identity, a);
     expect(AcademicConnectionStore(a, prefs).cleanupPending, false);
     controller.dispose();
@@ -207,6 +243,7 @@ void main() {
         preferences: prefs,
         credentials: PlatformAcademicCredentialStore(secretStore: secrets),
         clearSession: (_) => session.delete(),
+        clearLegacyVault: (_) async {},
         clearVault: (_) async {
           if (fail) throw StateError('fixture');
         },

@@ -564,7 +564,7 @@ final class AcademicLoginCoordinator {
     if (old == null || old == next) return generation;
     try {
       await AcademicIdentityLifecycleCoordinator(controller: controller,
-        preferences: await _preferencesLoader()).clearLocalIdentity(old);
+        preferences: await _preferencesLoader(), includeLegacyAuxiliary: true).clearLocalIdentity(old);
     } catch (_) {
       // 服务端已成功换绑，旧身份已从运行时卸载；删除失败由 pending 重试，不回滚绑定。
     }

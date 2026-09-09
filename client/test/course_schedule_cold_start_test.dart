@@ -61,6 +61,8 @@ void main() {
       ScheduleViewState.restoring,
     );
     expect(resolve(isLoading: true), ScheduleViewState.restoring);
+    expect(resolve(phase: ScheduleSessionPhase.restoreFailed),
+        ScheduleViewState.restoring);
     expect(resolve(isInitializing: true), ScheduleViewState.restoring);
     expect(resolve(), ScheduleViewState.empty);
     expect(

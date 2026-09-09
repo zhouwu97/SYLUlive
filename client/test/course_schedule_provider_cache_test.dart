@@ -16,6 +16,21 @@ import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 import 'helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+class _TemporarilyUnavailableSecureStore extends MemoryPersonalSnapshotSecureStore {
+  bool unavailable = false;
+  int remainingFailures = 0;
+
+  @override
+  Future<String?> read(String key) async {
+    if (unavailable) throw StateError('测试：后台恢复期间密钥暂不可读');
+    if (remainingFailures > 0) {
+      remainingFailures--;
+      throw StateError('测试：首次密钥读取尚未就绪');
+    }
+    return super.read(key);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -23,8 +38,19 @@ void main() {
   late MemoryPersonalSnapshotFileBackend files;
   late IncrementingRandomBytes random;
 
-  setUp(() {
+  setUp(() async {
     AppPreferencesStore.setMockInitialValues({});
+    // 这些用例测试已连接账号的持久化，需满足新增的身份连接许可。
+    final preferences = await AppPreferencesStore.getInstance();
+    for (final userId in ['1001', '2002']) {
+      for (final studentId in ['2403130233', '2403130234', '2606610216',
+        'G-001', 'G-PAIR', 'G-STRICT', 'G-LEGACY']) {
+        final identity = AcademicIdentityKey(appUserId: userId,
+            providerId: AcademicProviderId.syluUndergraduate, studentId: studentId);
+        await preferences.setBool(
+            'academic_lifecycle_${identity.storageId}_connected', true);
+      }
+    }
     AcademicPersistenceRegistry.set('1001', enabled: true);
     AcademicPersistenceRegistry.set('2002', enabled: true);
     secureStore = MemoryPersonalSnapshotSecureStore();
@@ -49,6 +75,56 @@ void main() {
   CourseScheduleProvider createProvider([Dio? dio]) {
     return CourseScheduleProvider(dio, createSnapshotStore);
   }
+
+  test('后台重建时密钥暂不可读不应判为空课表，重试恢复原学期和课程', () async {
+    final flakySecureStore = _TemporarilyUnavailableSecureStore();
+    secureStore = flakySecureStore;
+    final seed = createProvider()..syncSessionContext('1001', '2403130233');
+    const term = CourseTerm(
+      id: '2025_12', year: '2025', semester: 12,
+      title: '2025-2026 第二学期', maxWeek: 20,
+    );
+    await seed.applyFetchedCoursesForTerm(term: term, rawCourses: [
+      {'name': '线性代数', 'time': 1, 'end_time': 2,
+       'week_day': 2, 'weeks': [1, 2, 3]},
+    ]);
+    seed.dispose();
+    final savedFiles = Map.of(files.values);
+    expect(savedFiles, isNotEmpty);
+    flakySecureStore.unavailable = true;
+    final restored = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(restored.dispose);
+    final failed = Completer<void>();
+    restored.addListener(() {
+      if (restored.sessionPhase == ScheduleSessionPhase.restoreFailed &&
+          !failed.isCompleted) {
+        failed.complete();
+      }
+    });
+    await failed.future.timeout(const Duration(seconds: 2));
+    expect(restored.isSessionReady, isFalse,
+        reason: '本地读取失败不能向页面宣告空课表已恢复完成');
+    expect(restored.errorMessage, isNotNull);
+    expect(files.values, savedFiles);
+    flakySecureStore.unavailable = false;
+    await restored.retryLocalRestore();
+    expect(restored.isSessionReady, isTrue);
+    expect(restored.currentTerm.id, term.id);
+    expect(restored.courses.single.name, '线性代数');
+    expect(restored.errorMessage, isNull);
+    // 第二次模拟进程重建：只有第一次读取失败时，应自行恢复，无需重新拉取。
+    flakySecureStore.remainingFailures = 1;
+    final retried = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(retried.dispose);
+    final ready = Completer<void>();
+    retried.addListener(() {
+      if (retried.isSessionReady && !ready.isCompleted) ready.complete();
+    });
+    await ready.future.timeout(const Duration(seconds: 2));
+    expect(retried.currentTerm.id, term.id);
+    expect(retried.courses.single.name, '线性代数');
+    expect(files.values, savedFiles);
+  });
 
   test('onlyCache load ends immediately when no course cache exists', () async {
     final provider = createProvider()..syncSessionContext('1001', '2403130233');

@@ -341,6 +341,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     // 恢复前台只做本地状态同步，不自动访问教务系统。教务课表是低频数据，
     // 用户需要新数据时仍通过“从教务刷新”主动拉取，避免短暂切后台造成重复请求。
+    if (schedule.sessionPhase == ScheduleSessionPhase.restoreFailed) {
+      await schedule.retryLocalRestore();
+      if (!mounted) return;
+    }
     if (mounted) {
       final anchor = _pageAnchorDate(schedule);
       if (!_weekStart.isAtSameMomentAs(anchor)) {
@@ -677,7 +681,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           child: Center(
             child: AcademicRestoreStatus(
               key: ValueKey(sc.sessionKey),
-              error: context.watch<EduProvider>().errorMessage,
+              error: sc.errorMessage ?? context.watch<EduProvider>().errorMessage,
               onRetry: () async {
                 final edu = context.read<EduProvider>();
                 if (!edu.isStatusLoaded) await edu.refreshStatus();

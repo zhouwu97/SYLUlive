@@ -195,6 +195,7 @@ enum ScheduleSessionPhase {
   resolvingIdentity,
   openingStore,
   restoringCache,
+  restoreFailed,
   ready,
 }
 
@@ -403,12 +404,14 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<void> _restoreSession({
     required int generation,
     required ScheduleCacheStore store,
+    bool retryTransientFailure = true,
   }) async {
     try {
       await _scheduleStoreReady;
       if (!_isCurrentSession(generation, store)) return;
 
       _sessionPhase = ScheduleSessionPhase.restoringCache;
+      _errorMessage = null;
       notifyListeners();
 
       await _restoreSelectedTerm(generation, store);
@@ -421,11 +424,21 @@ class CourseScheduleProvider extends ChangeNotifier {
       _sessionPhase = ScheduleSessionPhase.ready;
       notifyListeners();
     } catch (error) {
-      // 缓存损坏或本地读失败不能让页面永久停在初始化态；ready 表示身份和
-      // namespace 已确定，空课表仍由 UI 按正常 empty 状态处理，并允许用户重试。
+      // 读取失败不能当作缓存不存在。保留密文及现有课程，允许恢复前台或用户重试。
       debugPrint('恢复课表本地会话失败: ${error.runtimeType}');
       if (!_isCurrentSession(generation, store)) return;
-      _sessionPhase = ScheduleSessionPhase.ready;
+      // 进程恢复时平台密钥/文件通道可能尚未就绪，只补一次本地重读，不访问学校。
+      if (retryTransientFailure) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        if (!_isCurrentSession(generation, store)) return;
+        return _restoreSession(
+          generation: generation,
+          store: store,
+          retryTransientFailure: false,
+        );
+      }
+      _sessionPhase = ScheduleSessionPhase.restoreFailed;
+      _errorMessage = '本机课表暂时无法读取，已保存的数据未删除，请重试恢复';
       notifyListeners();
     }
   }
@@ -527,6 +540,10 @@ class CourseScheduleProvider extends ChangeNotifier {
       return _isCurrentOperation(context) ? snapshot : null;
     } catch (error) {
       debugPrint('读取加密课表失败: ${error.runtimeType}');
+      if (_isCurrentOperation(context) &&
+          _sessionPhase == ScheduleSessionPhase.restoringCache) {
+        rethrow;
+      }
       return null;
     }
   }
@@ -1400,6 +1417,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       return snapshot.courses.map(CourseBlock.fromJson).toList();
     } catch (error) {
       debugPrint('读取加密课程失败: ${error.runtimeType}');
+      if (_sessionPhase == ScheduleSessionPhase.restoringCache) rethrow;
       return null;
     }
   }

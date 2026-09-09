@@ -436,19 +436,10 @@ func (h *AuthHandler) GetAccountSecurity(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	loginMethods := make([]string, 0, 2)
-	if user.IsStudentVerified() && user.StudentID != "" {
-		loginMethods = append(loginMethods, "student_id")
-	}
-	if user.EmailVerifiedAt != nil && user.Email != "" {
-		loginMethods = append(loginMethods, "email")
-	}
 	response := accountSecurityResponse{
-		StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
 		Email: user.Email, EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
-		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
-		CanResetViaEdu: user.IsStudentVerified() && user.StudentID != "",
-		EduAuthorized:  user.IsEduAuthorized(), EduSessionState: user.EduSessionState,
+		CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
+		EduAuthorized:    user.IsEduAuthorized(), EduSessionState: user.EduSessionState,
 	}
 	if !h.schoolDataVisible {
 		response.StudentID = ""
@@ -558,7 +549,7 @@ func hasStudentLoginIdentity(db *gorm.DB, user models.User) (bool, error) {
 		return len(aliases) > 0, err
 	}
 	if !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
-		return user.IsStudentVerified() && strings.TrimSpace(user.StudentID) != "", nil
+		return false, nil
 	}
 	bindings, err := services.VerifiedAcademicIdentities(db, user.ID)
 	if err != nil {

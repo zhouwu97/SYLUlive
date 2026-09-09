@@ -72,7 +72,11 @@ func (b *Builder) BuildCompetitionUserContext(
 	result.EntryYear = competitionEntryYear(result.Grade, time.Now())
 	result.College = strings.TrimSpace(user.EduCollege)
 	result.Major = strings.TrimSpace(user.EduMajor)
-	result.ProfileReady = user.IsStudentVerified() &&
+	verified, identityErr := models.HasVerifiedAcademicIdentity(b.db.WithContext(ctx), userID)
+	if identityErr != nil {
+		return result, identityErr
+	}
+	result.ProfileReady = verified &&
 		result.EntryYear != "" && result.College != "" && result.Major != ""
 
 	var preference models.UserCompetitionPreference

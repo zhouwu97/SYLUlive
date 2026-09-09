@@ -83,17 +83,14 @@ type SelfUserResponse struct {
 
 func selfUserResponse(user models.User, consentState models.LegalConsentState) SelfUserResponse {
 	loginMethods := make([]string, 0, 2)
-	if user.IsStudentVerified() && user.StudentID != "" {
-		loginMethods = append(loginMethods, "student_id")
-	}
 	if user.EmailVerifiedAt != nil && user.Email != "" {
 		loginMethods = append(loginMethods, "email")
 	}
 	response := SelfUserResponse{
-		ID: user.ID, StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
+		ID:          user.ID,
 		EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
-		CanResetViaEdu: user.IsStudentVerified() && user.StudentID != "", Nickname: user.Nickname, Gender: user.Gender,
+		CanResetViaEdu: false, Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
 		CreditScore: user.CreditScore, Role: user.Role, AdminExp: user.AdminExp, Exp: user.Exp,
 		ReportCount: user.ReportCount, CreatedAt: user.CreatedAt, EduStudentID: user.EduStudentID,

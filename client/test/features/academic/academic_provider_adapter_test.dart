@@ -68,7 +68,7 @@ void main() {
     recognizer.close();
   });
 
-  test('本科 Provider 桥接真实委托成绩和 GPA，不返回未接入占位错误', () async {
+  test('本科 Provider 委托成绩、详情和 GPA，完整传递详情查询参数', () async {
     final source = _RecordingAcademicDataSource();
     final provider = UndergraduateAcademicProvider(
       identity: const AcademicIdentityKey(
@@ -82,6 +82,12 @@ void main() {
 
     final grades = await repository.getGrades(year: '2025', semester: 1);
     final situation = await repository.getAcademicSituation();
+    final detail = await repository.getGradeDetail(year: '2025', semester: 12,
+      classId: 'class-id', courseName: '电磁场与电磁波', courseId: 'course-id', studentGradeId: 'grade-id');
+    expect(repository.capabilities.supportsGradeDetail, true);
+    expect(detail.totalGrade, '60.1');
+    expect(detail.components.single.name, '总评');
+    expect(source.detailQuery, ['2025', 12, 'class-id', '电磁场与电磁波', 'course-id', 'grade-id']);
 
     expect(grades.pages, 1);
     expect(situation.allGpa, 3.8);
@@ -91,7 +97,7 @@ void main() {
     repository.close();
   });
 
-  test('本科资料页缺少或返回错误学号时拒绝通过 Match Gate', () async {
+  test('本科资料页返回其他学号时拒绝登录', () async {
     final source = _RecordingAcademicDataSource(profileStudentId: 'U-002');
     final provider = UndergraduateAcademicProvider(
       identity: const AcademicIdentityKey(
@@ -391,6 +397,7 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
   final String? profileStudentId;
   int gradesCalls = 0;
   int situationCalls = 0;
+  List<Object?>? detailQuery;
   String? lastCourseYear;
   int? lastCourseSemester;
 
@@ -457,8 +464,11 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
     required String courseName,
     String? courseId,
     String? studentGradeId,
-  }) async =>
-      throw UnimplementedError();
+  }) async {
+    detailQuery = [year, semester, classId, courseName, courseId, studentGradeId];
+    return GradeDetail(success: true, courseName: courseName, totalGrade: '60.1',
+      components: [GradeComponent(name: '总评', score: '60.1')]);
+  }
 
   @override
   Future<AcademicSituation> getAcademicSituation() async {

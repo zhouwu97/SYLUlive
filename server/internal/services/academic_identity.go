@@ -4,12 +4,13 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
+	"time"
 )
 
 // VerifiedAcademicIdentities 是身份列表和本人资料共用的事实来源，不拼接旧授权字段。
 func VerifiedAcademicIdentities(db *gorm.DB, userID uint) ([]models.AcademicIdentityBinding, error) {
 	bindings := make([]models.AcademicIdentityBinding, 0)
-	err := db.Where("user_id = ?", userID).Order("provider_id DESC, student_id ASC").Find(&bindings).Error
+	err := db.Where("user_id = ? AND verified_at > ?", userID, time.Time{}).Order("provider_id DESC, student_id ASC").Find(&bindings).Error
 	return bindings, err
 }
 

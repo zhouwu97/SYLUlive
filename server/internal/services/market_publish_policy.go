@@ -11,16 +11,11 @@ type MarketPublishPolicy struct{ DB *gorm.DB }
 
 func (p MarketPublishPolicy) CanPublish(userID uint) (bool, error) {
 	var user models.User
-	if err := p.DB.Select("id", "account_status", "student_verified_at").First(&user, userID).Error; err != nil {
+	if err := p.DB.Select("id", "account_status").First(&user, userID).Error; err != nil {
 		return false, err
 	}
 	if user.AccountStatus != "" && user.AccountStatus != "active" {
 		return false, nil
 	}
-	var count int64
-	if err := p.DB.Model(&models.AcademicIdentityBinding{}).Where("user_id = ? AND verified_at IS NOT NULL", userID).Count(&count).Error; err != nil {
-		return false, err
-	}
-	// 兼容迁移前的认证，启动消费旧字段后仍由历史身份表保持资格。
-	return count > 0 || user.StudentVerifiedAt != nil, nil
+	return models.HasVerifiedAcademicIdentity(p.DB, userID)
 }

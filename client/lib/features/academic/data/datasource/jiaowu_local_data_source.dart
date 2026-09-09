@@ -149,10 +149,8 @@ final class JiaowuLocalDataSource implements AcademicDataSource {
               code: (response.statusCode ?? 0) >= 500 ? 'SCHOOL_UNAVAILABLE' : 'NETWORK_ERROR');
       }
       final profile = ProfileParser.parse(body);
-      if (profile.studentId == null || profile.studentId!.trim().isEmpty) {
-        throw const ParseException(message: '本科教务探活缺少身份信息');
-      }
-      if (profile.studentId!.trim() != studentId?.trim()) {
+      if (profile.studentId?.trim().isNotEmpty == true &&
+          profile.studentId!.trim() != studentId?.trim()) {
         throw const ParseException(message: '本科教务会话身份不匹配');
       }
       client.session.markAuthenticated();

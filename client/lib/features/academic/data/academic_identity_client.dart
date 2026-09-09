@@ -96,6 +96,22 @@ final class AcademicIdentityClient {
 
   final Dio _dio;
 
+  /// 本机完成登录探活后上报。App 用户由共享 Dio 的 JWT 确定，禁止附带学校凭据。
+  Future<AcademicIdentityBinding> bindLocal(AcademicIdentityKey identity) async {
+    try {
+      final response = await _dio.post('/student-identity/bind', data: {
+        'provider_id': identity.providerId.value,
+        'student_id': identity.studentId,
+        'verification_method': 'local_academic_login',
+      }, options: Options(headers: {'X-Expected-App-User': identity.appUserId},
+          sendTimeout: const Duration(seconds: 12), receiveTimeout: const Duration(seconds: 12)));
+      return _parseVerifiedBinding(_requireMap(response, '同步学生身份'),
+        expectedProvider: identity.providerId, expectedStudentId: identity.studentId);
+    } on DioException catch (error) {
+      throw _networkError(error, '同步学生身份失败');
+    }
+  }
+
   Future<void> unbind(AcademicIdentityKey identity) async {
     try {
       final response = await _dio.delete('/student-identity', data: {

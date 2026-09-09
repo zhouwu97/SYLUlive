@@ -232,7 +232,16 @@ func (h *ExamPaperHandler) currentExamPaperUser(c *gin.Context) (models.User, bo
 		writeExamPaperError(c, http.StatusUnauthorized, "authentication_required", "登录用户不存在")
 		return models.User{}, false
 	}
-	if !isExamPaperAdmin(user) && !user.IsStudentVerified() {
+	verified := isExamPaperAdmin(user)
+	if !verified {
+		var identityErr error
+		verified, identityErr = models.HasVerifiedAcademicIdentity(h.db, userID)
+		if identityErr != nil {
+			writeExamPaperError(c, http.StatusInternalServerError, "identity_lookup_failed", "读取学生身份失败")
+			return models.User{}, false
+		}
+	}
+	if !verified {
 		writeExamPaperError(c, http.StatusForbidden, "edu_verification_required", "完成教务认证后才能使用试卷库")
 		return models.User{}, false
 	}

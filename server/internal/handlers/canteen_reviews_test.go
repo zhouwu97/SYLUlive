@@ -25,6 +25,7 @@ func prepareReviewV2DB(t *testing.T) (*CanteenHandler, models.Canteen, models.Us
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedVerifiedStudent(t, db, user)
 	canteen := models.Canteen{ID: 88, Name: "一食堂", Image: "/uploads/canteen.png", CreatedBy: user.ID, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)

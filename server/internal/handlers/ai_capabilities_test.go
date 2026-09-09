@@ -188,6 +188,7 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedVerifiedStudent(t, db, user)
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, capabilitiesEmptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
 		MaxMessageChars: 20, HourlyMessageLimit: 3,

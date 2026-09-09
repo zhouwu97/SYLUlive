@@ -1383,6 +1383,8 @@ class MyApp extends StatelessWidget {
             return AcademicProviderRouterRepository(
               legacy: legacy,
               registry: context.read<AcademicProviderRegistry>(),
+              identityClient: context.read<AcademicIdentityClient>(),
+              onIdentityVerified: () => context.read<AuthProvider>().refreshUser(),
               configClient: AcademicAccountConfigClient(dio),
             );
           },

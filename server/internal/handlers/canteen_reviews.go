@@ -1990,8 +1990,13 @@ func requireVerifiedStudent(c *gin.Context, db *gorm.DB, action string) (uint, b
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效，请重新登录", "code": "authentication_required"})
 		return 0, false
 	}
-	if !user.IsStudentVerified() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "请先绑定教务账号后" + action, "code": "edu_binding_required"})
+	verified, identityErr := models.HasVerifiedAcademicIdentity(db, userID)
+	if identityErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
+		return 0, false
+	}
+	if !verified {
+		c.JSON(http.StatusForbidden, gin.H{"error": "请先完成学生身份认证后" + action, "code": "edu_binding_required"})
 		return 0, false
 	}
 	return userID, true

@@ -19,6 +19,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     required this.legacy,
     required this.registry,
     this.identityClient,
+    this.onIdentityVerified,
     this.configClient,
     this.providerIdLoader,
   });
@@ -26,6 +27,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   final AcademicRepository legacy;
   final AcademicProviderRegistry registry;
   final AcademicIdentityClient? identityClient;
+  final Future<void> Function()? onIdentityVerified;
   final AcademicAccountConfigClient? configClient;
   LocalAcademicAccountStore? accountStore;
   Timer? _syncTimer;

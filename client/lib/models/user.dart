@@ -103,10 +103,8 @@ class User {
       legalConsentsRequired: json['legal_consents_required'] == true ||
           !json.containsKey('legal_consents_active'),
       pushEnabled: json['push_enabled'] == true,
-      // 兼容尚未升级的服务端：旧 edu_bound 仅作为展示退化值，
-      // 业务权限统一读取 studentVerified。
-      studentVerified: json['student_verified'] == true ||
-          (!json.containsKey('student_verified') && json['edu_bound'] == true),
+      // 学校连接与学生认证独立，缺少认证字段时不能由连接状态推断资格。
+      studentVerified: json['student_verified'] == true,
       emailMasked: json['email_masked']?.toString() ?? '',
       emailBound: json['email_bound'] == true,
       loginAccount: json['login_account']?.toString() ?? '',

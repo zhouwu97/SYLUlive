@@ -51,6 +51,7 @@ func TestCompetitionCandidatesGroupAndLegacyFitOmitScores(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedVerifiedStudent(t, db, user)
 	encoded := func(values ...string) datatypes.JSON {
 		value, _ := json.Marshal(values)
 		return datatypes.JSON(value)

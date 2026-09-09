@@ -93,6 +93,15 @@ final class GraduateAcademicProvider implements AcademicProvider {
         password: request.password,
         captchaCode: request.captchaCode!,
       );
+      // 登录响应后再访问受保护资源，避免仅凭 HTTP 200 或响应标志登记身份。
+      final state = await _gateway.probe();
+      if (!state.authenticated) {
+        throw const GraduatePortalException('SESSION_EXPIRED', '学校登录后会话不可用');
+      }
+      final confirmed = state.studentId?.trim() ?? '';
+      if (confirmed.isNotEmpty && confirmed != request.studentId.trim()) {
+        throw const GraduatePortalException('IDENTITY_MISMATCH', '学校返回其他学生会话');
+      }
       _pendingChallenge = null;
       _captchaSuggestion = null;
       return AcademicLoginSucceeded(studentId: request.studentId.trim());
@@ -179,7 +188,7 @@ final class GraduateAcademicProvider implements AcademicProvider {
     _ensureOpen();
     final profile = await _gateway.fetchProfile();
     final confirmed = profile.studentId?.trim() ?? '';
-    if (confirmed.isEmpty || confirmed != _identity.studentId.trim()) {
+    if (confirmed.isNotEmpty && confirmed != _identity.studentId.trim()) {
       throw const AcademicAuthFailure(
         AcademicAuthFailureType.identityMismatch,
         '学校返回的学生身份与当前绑定不一致',
@@ -461,7 +470,7 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
     _ensureOpen();
     final profile = await _source.getProfile();
     final confirmedStudentId = profile.studentId?.trim() ?? '';
-    if (confirmedStudentId.isEmpty ||
+    if (confirmedStudentId.isNotEmpty &&
         confirmedStudentId != _identity.studentId.trim()) {
       throw const AcademicAuthFailure(
         AcademicAuthFailureType.identityMismatch,
@@ -485,6 +494,26 @@ final class UndergraduateAcademicProvider implements AcademicProvider {
   Future<AcademicSituation> fetchAcademicSituation() async {
     _ensureOpen();
     return _source.getAcademicSituation();
+  }
+
+  /// 沿用本科数据源的候选接口与解析器，保留学校返回的课程标识。
+  Future<GradeDetail> fetchGradeDetail({
+    required String year,
+    required int semester,
+    required String classId,
+    required String courseName,
+    String? courseId,
+    String? studentGradeId,
+  }) async {
+    _ensureOpen();
+    return _source.getGradeDetail(
+      year: year,
+      semester: semester,
+      classId: classId,
+      courseName: courseName,
+      courseId: courseId,
+      studentGradeId: studentGradeId,
+    );
   }
 
   Future<CreditRequirement> fetchCreditRequirements() async {

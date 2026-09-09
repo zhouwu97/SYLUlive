@@ -629,7 +629,7 @@ func profileFromUser(user models.User, now time.Time) (competitionProfile, bool)
 		College:   normalizeAcademicName(user.EduCollege),
 		Major:     normalizeAcademicName(user.EduMajor),
 	}
-	return profile, user.IsStudentVerified() && profile.EntryYear != "" && profile.College != "" && profile.Major != ""
+	return profile, profile.EntryYear != "" && profile.College != "" && profile.Major != ""
 }
 
 func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
@@ -656,6 +656,12 @@ func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
 		return
 	}
 	_, profileReady := profileFromUser(user, time.Now())
+	verified, identityErr := models.HasVerifiedAcademicIdentity(h.db, userID)
+	if identityErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取学生身份失败"})
+		return
+	}
+	profileReady = profileReady && verified
 	c.JSON(http.StatusOK, gin.H{
 		"calendar_count": calendarCount, "joined_event_ids": joinedIDs, "profile_ready": profileReady,
 	})
@@ -668,7 +674,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
 	var users []models.User
 	if err := h.db.Select("edu_grade", "edu_college", "edu_major").
-		Where("student_verified_at IS NOT NULL OR edu_bound = ?", true).
+		Where("id IN (?)", h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("verified_at > ?", time.Time{})).
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取画像选项失败"})
 		return

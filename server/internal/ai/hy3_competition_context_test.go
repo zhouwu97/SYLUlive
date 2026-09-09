@@ -17,7 +17,7 @@ import (
 func TestBuildHy3CompetitionUserContextStopsBeforeProfileWhenAuthorizationOff(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:hy3-context-off?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.User{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}))
 	user := models.User{StudentID: "hy3-off", PasswordHash: "test", Nickname: "关闭授权"}
 	require.NoError(t, db.Create(&user).Error)
 
@@ -29,7 +29,7 @@ func TestBuildHy3CompetitionUserContextUsesUnifiedStructuredProfile(t *testing.T
 	db, err := gorm.Open(sqlite.Open("file:hy3-context-on?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{}, &models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
 	))
 	now := time.Now()
 	user := models.User{

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,6 +55,7 @@ class _FakeEduProvider extends EduProvider {
   final _LoadMode academicMode;
   final String academicErrorMessage;
   final bool bound;
+  final bool supportsGrades;
   final GradeCacheEntry? initialCache;
   final List<EduGrade> grades;
   final EduAcademicSituation academicSituation;
@@ -68,6 +70,7 @@ class _FakeEduProvider extends EduProvider {
     this.academicMode = _LoadMode.data,
     this.academicErrorMessage = '测试学业情况错误',
     this.bound = true,
+    this.supportsGrades = true,
     this.initialCache,
     List<EduGrade>? grades,
     EduAcademicSituation? academicSituation,
@@ -77,6 +80,13 @@ class _FakeEduProvider extends EduProvider {
 
   @override
   bool get isBound => bound;
+
+  @override
+  AcademicCapabilities get academicCapabilities => AcademicCapabilities(
+    supportsProfile: true, supportsCourses: true, supportsGrades: supportsGrades,
+    supportsGradeDetail: supportsGrades, supportsAcademicSituation: supportsGrades,
+    supportsCreditRequirements: supportsGrades);
+
 
   @override
   int get enrollmentYear => 2024;
@@ -158,6 +168,14 @@ class _FakeEduProvider extends EduProvider {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('研究生未开放成绩时明确说明版本范围且不请求成绩', (tester) async {
+    final edu = _FakeEduProvider(supportsGrades: false);
+    await _pumpGradeScreen(tester, edu: edu);
+    expect(find.textContaining('研究生本版支持登录和课表'), findsWidgets);
+    expect(edu.fetchGradesCallCount, 0);
+    expect(tester.takeException(), isNull);
+  });
 
   const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
 

@@ -28,6 +28,7 @@ func createAIActionTestUserAndEvent(t *testing.T, db *gorm.DB, suffix string) (m
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedVerifiedStudent(t, db, user)
 	event := models.CompetitionEvent{
 		Title: "程序设计赛-" + suffix, Status: "published", Version: 1,
 		EligibleMajors: jsonArray([]string{"计算机科学与技术"}), CompetitionRating: "A",

@@ -25,10 +25,10 @@ final class ProviderAcademicRepository implements AcademicRepository {
 
   @override
   AcademicCapabilities get capabilities => AcademicCapabilities(
-        supportsProfile: false,
+        supportsProfile: provider is UndergraduateAcademicProvider || provider is GraduateAcademicProvider,
         supportsCourses: provider.capabilities.timetable,
         supportsGrades: provider.capabilities.grades,
-        supportsGradeDetail: false,
+        supportsGradeDetail: provider is UndergraduateAcademicProvider,
         supportsAcademicSituation: provider.capabilities.gpa,
         supportsCreditRequirements: provider is UndergraduateAcademicProvider,
       );
@@ -214,7 +214,7 @@ final class ProviderAcademicRepository implements AcademicRepository {
       {required String year, required int semester}) async {
     _ensureOpen();
     if (!provider.capabilities.grades) {
-      throw const GradeNotOpenException(message: '研究生成绩尚未完成实际探针和解析，暂不开放');
+      throw const GradeNotOpenException(message: '研究生成绩暂未开放，本版支持教务登录和课表');
     }
     if (provider is UndergraduateAcademicProvider) {
       return (provider as UndergraduateAcademicProvider)
@@ -232,6 +232,17 @@ final class ProviderAcademicRepository implements AcademicRepository {
     String? courseId,
     String? studentGradeId,
   }) async {
+    _ensureOpen();
+    if (provider is UndergraduateAcademicProvider) {
+      return (provider as UndergraduateAcademicProvider).fetchGradeDetail(
+        year: year,
+        semester: semester,
+        classId: classId,
+        courseName: courseName,
+        courseId: courseId,
+        studentGradeId: studentGradeId,
+      );
+    }
     throw const GradeNotOpenException(message: '当前 Provider 尚未开放成绩详情');
   }
 

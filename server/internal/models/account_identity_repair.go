@@ -33,6 +33,9 @@ func RepairLegacyAccountIdentityState(db *gorm.DB) (LegacyAccountIdentityRepairR
 		}
 
 		now := time.Now()
+		if tx.Migrator().HasTable(&AcademicIdentityBinding{}) {
+			candidates = nil
+		}
 		for _, user := range candidates {
 			if !studentIdentityPattern.MatchString(user.StudentID) {
 				continue

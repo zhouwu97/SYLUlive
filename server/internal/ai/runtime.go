@@ -1568,24 +1568,13 @@ func (r *Runtime) isQuotaUnlimited(db *gorm.DB, userID uint) (bool, error) {
 	if len(r.unlimitedStudentIDs) == 0 {
 		return false, nil
 	}
-	var user struct {
-		StudentID         string
-		StudentVerifiedAt *time.Time
-		EduStudentID      string
-		EduAuthorized     bool
-	}
-	if err := db.Model(&models.User{}).
-		Select("student_id", "student_verified_at", "edu_student_id", "edu_authorized").
-		Where("id = ?", userID).First(&user).Error; err != nil {
+	var bindings []models.AcademicIdentityBinding
+	if err := db.Where("user_id = ? AND provider_id = ? AND verified_at > ?", userID,
+		models.AcademicProviderUndergraduate, time.Time{}).Find(&bindings).Error; err != nil {
 		return false, err
 	}
-	if user.StudentVerifiedAt != nil {
-		if _, allowed := r.unlimitedStudentIDs[strings.TrimSpace(user.StudentID)]; allowed {
-			return true, nil
-		}
-	}
-	if user.EduAuthorized {
-		if _, allowed := r.unlimitedStudentIDs[strings.TrimSpace(user.EduStudentID)]; allowed {
+	for _, binding := range bindings {
+		if _, allowed := r.unlimitedStudentIDs[strings.TrimSpace(binding.StudentID)]; allowed {
 			return true, nil
 		}
 	}

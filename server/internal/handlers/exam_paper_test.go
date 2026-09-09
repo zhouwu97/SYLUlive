@@ -40,7 +40,7 @@ func newExamPaperTestEnv(t *testing.T) examPaperTestEnv {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
 	if err := db.AutoMigrate(
-		&models.User{},
+		&models.User{}, &models.AcademicIdentityBinding{},
 		&models.ExamPaper{},
 		&models.ExamPaperUploadSession{},
 		&models.ExamPaperStorageJob{},
@@ -89,6 +89,9 @@ func createExamPaperTestUser(t *testing.T, db *gorm.DB, studentID string, role m
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建测试用户失败: %v", err)
+	}
+	if eduBound {
+		seedVerifiedStudent(t, db, user)
 	}
 	return user
 }

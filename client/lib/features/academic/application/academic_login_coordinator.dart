@@ -78,7 +78,7 @@ final class AcademicLoginCoordinator {
   AcademicLoginCoordinator({
     required this.controller,
     AcademicCredentialStore? credentialStore,
-    AcademicIdentityClient? identityClient,
+    this.identityClient,
     Future<AppPreferencesStore> Function()? preferencesLoader,
     this.persistencePolicy,
     this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
@@ -115,6 +115,12 @@ final class AcademicLoginCoordinator {
 
   final AcademicSessionController controller;
   final AcademicCredentialStore credentialStore;
+  final AcademicIdentityClient? identityClient;
+  AcademicIdentityClient? get _identityClient =>
+      identityClient ?? controller.providerRouter?.identityClient;
+  final Map<AcademicIdentityKey, Future<String?>> _bindingSyncs = {};
+  final Set<AcademicIdentityKey> _syncedIdentities = {};
+  final Map<AcademicIdentityKey, DateTime> _bindingAttempts = {};
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
   final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;
@@ -168,6 +174,7 @@ final class AcademicLoginCoordinator {
 
   /// 取消临时认证时恢复原本机账号，已配置账号仍可稍后重新连接。
   Future<AcademicLoginOutcome> cancelLogin() async {
+    cancelIdentityVerification();
     _pending = null;
     controller.dismissCaptchaChallenge();
     try {
@@ -254,7 +261,9 @@ final class AcademicLoginCoordinator {
     if (!silentCaptcha) return outcome;
     var attempts = 0;
     while (outcome.needsCaptcha && attempts < 2) {
-      if (controller.providerId != AcademicProviderId.syluGraduate) break;
+      if (controller.providerId != AcademicProviderId.syluGraduate) {
+        break;
+      }
       final code = controller.captchaSuggestion;
       final confidence = controller.captchaSuggestionConfidence;
       if (code == null ||
@@ -296,7 +305,7 @@ final class AcademicLoginCoordinator {
     AcademicProviderId? providerId,
     bool changeIdentity = false,
     bool addIdentity = false,
-  }) {
+  }) async {
     final appUserId = controller.appUserId;
     if (appUserId == null || appUserId.isEmpty) {
       return Future.value(const AcademicLoginOutcome(
@@ -387,6 +396,46 @@ final class AcademicLoginCoordinator {
     );
   }
 
+  // 学校会话已经在本机探活；HK 只登记最小绑定声明，不访问学校。
+  Future<String?> _syncLocalBinding({bool force = false}) async {
+    final identity = controller.identity;
+    final client = _identityClient;
+    if (!controller.isAuthenticated || identity == null || client == null) {
+      return null;
+    }
+    final generation = controller.contextGeneration;
+    final running = _bindingSyncs[identity];
+    if (running != null) return running;
+    if (!force && _syncedIdentities.contains(identity)) return null;
+    final last = _bindingAttempts[identity];
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < const Duration(seconds: 30)) {
+      return null;
+    }
+    _bindingAttempts[identity] = DateTime.now();
+    final operation = () async {
+      try {
+        await client.bindLocal(identity);
+        if (!controller.isCurrentContext(
+            generation: generation, appUserId: identity.appUserId)) {
+          return null;
+        }
+        _syncedIdentities.add(identity);
+        await controller.providerRouter?.onIdentityVerified?.call();
+        return null;
+      } catch (_) {
+        return '教务已在本机连接，学生身份尚未同步；联网后会重试';
+      }
+    }();
+    _bindingSyncs[identity] = operation;
+    try {
+      return await operation;
+    } finally {
+      _bindingSyncs.remove(identity);
+    }
+  }
+
   Future<AcademicLoginOutcome> _beginLocalLogin({
     required String appUserId,
     required AcademicProviderId providerId,
@@ -447,6 +496,7 @@ final class AcademicLoginCoordinator {
   }) async {
     await controller.waitForAccountContextReady();
     if (controller.isAuthenticated) {
+      unawaited(_syncLocalBinding());
       return Future.value(const AcademicLoginOutcome(
         kind: AcademicLoginOutcomeKind.success,
       ));
@@ -527,6 +577,7 @@ final class AcademicLoginCoordinator {
     }
     // 先恢复学校会话；网络与协议故障不能被解释成需要再次提交密码。
     if (await controller.ensureAuthenticated()) {
+      unawaited(_syncLocalBinding());
       return const AcademicLoginOutcome(kind: AcademicLoginOutcomeKind.success);
     }
     if (!controller.isCurrentContext(
@@ -828,9 +879,11 @@ final class AcademicLoginCoordinator {
       }
     }
     if (!current()) return changed;
+    final bindingWarning = await _syncLocalBinding(force: true);
+    if (!current()) return changed;
     return AcademicLoginOutcome(
       kind: AcademicLoginOutcomeKind.success,
-      message: saveWarning ? '已登录，但本机保存设置未完全生效' : null,
+      message: bindingWarning ?? (saveWarning ? '已登录，但本机保存设置未完全生效' : null),
       saveCredentialWarning: saveWarning,
     );
   }

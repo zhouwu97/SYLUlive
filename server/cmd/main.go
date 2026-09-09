@@ -1982,6 +1982,8 @@ func main() {
 		}
 		return handler
 	}
+	// 本机绑定不经过旧学校代理开关，服务器仅保存最小身份声明。
+	studentIdentity.POST("/bind", academicIdentityHandler.BindLocal)
 	studentIdentity.POST("/challenge", identityMutationHandler(academicIdentityHandler.CreateChallenge))
 	studentIdentity.POST("/verify", identityMutationHandler(academicIdentityHandler.Verify))
 	studentIdentity.POST("/change/challenge", identityMutationHandler(academicIdentityHandler.CreateChangeChallenge))

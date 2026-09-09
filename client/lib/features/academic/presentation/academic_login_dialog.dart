@@ -146,8 +146,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     _captchaController = TextEditingController();
     // 身份验证成功后仓储会切到本机 Provider；弹窗仍属于同一次绑定操作，
     // 不能在处理中途换成另一套“本机直连”界面。
-    _serverBindingFlow = (widget.controller.providerRouter != null &&
-            !widget.controller.hasBoundIdentity) ||
+    _serverBindingFlow = (widget.controller.providerRouter != null) ||
         widget.controller.sourceKind == AcademicSourceKind.legacy ||
         widget.addIdentity ||
         widget.changeIdentity;
@@ -268,10 +267,11 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   }
 
   Future<void> _submitCaptcha() async {
-    if (_captchaController.text.trim().isEmpty) return;
+    if (_submitting || _captchaController.text.trim().isEmpty) return;
+    setState(() => _submitting = true);
     final result = await _coordinator.continueLoginWithCaptcha(
       code: _captchaController.text.trim(),
-    );
+    ).whenComplete(() { if (mounted) setState(() => _submitting = false); });
     if (!mounted) return;
     if (result.isSuccess && _controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
@@ -410,7 +410,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         decoration: InputDecoration(
                           labelText: '教务学号',
                           prefixIcon: const Icon(Icons.badge_outlined),
-                          helperText: _identityLocked ? '已绑定身份：学号由服务端确认' : null,
+                          helperText: _identityLocked ? '当前本机教务账号：恢复时学号固定' : null,
                         ),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
@@ -479,6 +479,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           contentPadding: EdgeInsets.zero,
                           controlAffinity: ListTileControlAffinity.leading,
                           title: const Text('我已阅读并同意教务数据专项授权'),
+                          subtitle: const Text('手机登录教务成功后，仅将学号和教务类型同步到账户；密码与学校会话留在本机。'),
                           onChanged: isBusy || awaitingCaptcha
                               ? null
                               : (value) => setState(

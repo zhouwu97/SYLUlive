@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"strconv"
 	"strings"
 	"time"
@@ -79,7 +80,7 @@ func (k AcademicIdentityKey) Matches(other AcademicIdentityKey) bool {
 	return k.AppUserID == other.AppUserID && k.ProviderID == other.ProviderID && k.StudentID == other.StudentID
 }
 
-// AcademicIdentityBinding 是服务端确认过的学生身份。
+// AcademicIdentityBinding 是服务端登记的学生身份；local_academic_login 表示客户端本机登录成功声明。
 // 该表只保存最小身份事实，不保存学校密码、Cookie 或学校会话。
 type AcademicIdentityBinding struct {
 	BindingVersion      uint       `gorm:"not null;default:1" json:"binding_version"`
@@ -132,4 +133,11 @@ type AcademicIdentityChallenge struct {
 	ExpiresAt     time.Time  `gorm:"not null;index" json:"-"`
 	ConsumedAt    *time.Time `json:"-"`
 	CreatedAt     time.Time  `gorm:"index:idx_academic_challenge_user_created,priority:2;index:idx_academic_challenge_provider_created,priority:2;index:idx_academic_challenge_ip_created,priority:2" json:"-"`
+}
+
+// HasVerifiedAcademicIdentity 只读取服务器认证事实，账号配置和旧授权不能授予学生权限。
+func HasVerifiedAcademicIdentity(db *gorm.DB, userID uint) (bool, error) {
+	var count int64
+	err := db.Model(&AcademicIdentityBinding{}).Where("user_id = ? AND verified_at > ?", userID, time.Time{}).Count(&count).Error
+	return count > 0, err
 }

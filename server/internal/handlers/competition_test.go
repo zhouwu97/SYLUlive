@@ -30,7 +30,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
-		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
 		&models.CompetitionImportBatch{}, &models.UserCompetitionPreference{},
 		&models.CompetitionRecommendationSnapshot{},
@@ -301,6 +301,7 @@ func TestUserCompetitionStateUsesDatabaseProfile(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedVerifiedStudent(t, db, user)
 	handler := NewCompetitionHandler(db)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)

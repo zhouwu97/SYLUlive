@@ -140,6 +140,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             _showUnavailableState(eduProvider.errorMessage ?? '请先绑定教务账号');
             return;
           }
+          if (!eduProvider.academicCapabilities.supportsGrades) {
+            _showUnavailableState('当前教务暂未开放成绩与学业总览；研究生本版支持登录和课表');
+            return;
+          }
           await _initSemesterAndLoad(capturedUserId);
         }
 

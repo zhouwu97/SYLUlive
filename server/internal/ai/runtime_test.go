@@ -310,7 +310,7 @@ func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 
 func TestRuntimeUnlimitedQuotaUsesVerifiedServerIdentity(t *testing.T) {
 	db := newRuntimeTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.User{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}))
 	verifiedAt := time.Now()
 	unlimitedUser := models.User{
 		ID: 101, StudentID: "2403130233", StudentVerifiedAt: &verifiedAt,
@@ -326,6 +326,9 @@ func TestRuntimeUnlimitedQuotaUsesVerifiedServerIdentity(t *testing.T) {
 	require.NoError(t, db.Create(&unlimitedUser).Error)
 	require.NoError(t, db.Create(&normalUser).Error)
 	require.NoError(t, db.Create(&unverifiedUser).Error)
+	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: unlimitedUser.ID,
+		ProviderID: models.AcademicProviderUndergraduate, StudentID: unlimitedUser.StudentID,
+		VerifiedAt: verifiedAt, VerificationMethod: "test", VerificationVersion: "v1"}).Error)
 
 	for _, userID := range []uint{unlimitedUser.ID, normalUser.ID, unverifiedUser.ID} {
 		for index := 0; index < 3; index++ {

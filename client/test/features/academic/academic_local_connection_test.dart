@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:shenliyuan/features/academic/data/academic_identity_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide AcademicCapabilities;
 import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
@@ -29,6 +32,111 @@ void main() {
     addTearDown(h.close);
     await h.session.syncAppUser('1');
     return h;
+  }
+
+  AcademicLoginCoordinator withIdentity(_Harness h, Dio api) =>
+      AcademicLoginCoordinator(
+          controller: h.session,
+          identityClient: AcademicIdentityClient(api),
+          credentialStore: h.credentials,
+          silentCaptcha: false,
+          preferencesLoader: () async => h.preferences);
+
+  for (final provider in AcademicProviderId.values) {
+    test('本机登录成功后仅上报学号和类型，不访问服务器学校验证：${provider.value}', () async {
+      final h = await setup();
+      final calls = <RequestOptions>[];
+      final api = Dio();
+      api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        expect(h.session.isAuthenticated, true);
+        calls.add(r);
+        expect(r.path, '/student-identity/bind');
+        expect(r.data, {
+          'provider_id': provider.value,
+          'student_id': 'A',
+          'verification_method': 'local_academic_login'
+        });
+        handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+          'verified': true,
+          'provider_id': provider.value,
+          'student_id': 'A'
+        }));
+      }));
+      final coordinator = withIdentity(h, api);
+      var result = await coordinator.login(
+          studentId: 'A',
+          password: 'password-secret',
+          providerId: provider,
+          saveCredentials: true,
+          saveAcademicData: false);
+      if (provider == AcademicProviderId.syluGraduate) {
+        expect(result.needsCaptcha, true);
+        expect(calls, isEmpty);
+        result = await coordinator.continueLoginWithCaptcha(code: '1234');
+      }
+      expect(result.isSuccess, true);
+      expect(calls.length, 1);
+      expect((await coordinator.ensureAuthenticated()).isSuccess, true);
+      expect(calls.length, 1);
+    });
+  }
+
+  test('学校拒绝密码时不会向 HK 上报学生绑定', () async {
+    final h = await setup();
+    final api = Dio();
+    final calls = <RequestOptions>[];
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls.add(r);
+      handler.reject(DioException(requestOptions: r));
+    }));
+    final result = await withIdentity(h, api).login(
+        studentId: 'A',
+        password: 'reject',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    expect(result.kind, AcademicLoginOutcomeKind.invalidCredentials);
+    expect(calls, isEmpty);
+    expect(h.router.accountStore!.identities, isEmpty);
+  });
+
+  test('HK 断网不影响本机登录与凭据保存，返回身份同步提示', () async {
+    final h = await setup();
+    final api = Dio();
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      handler.reject(DioException(
+          requestOptions: r, type: DioExceptionType.connectionError));
+    }));
+    final result = await withIdentity(h, api).login(
+        studentId: 'A',
+        password: 'password-secret',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    expect(result.isSuccess, true);
+    expect(result.message, contains('学生身份尚未同步'));
+    expect(h.session.isAuthenticated, true);
+    expect((await h.credentials.readForIdentity(h.session.identity!))?.password,
+        'password-secret');
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('认证授权提示支持深浅色与大字：$brightness', (tester) async {
+      final h = (await tester.runAsync(setup))!;
+      await tester.pumpWidget(MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: const TextScaler.linear(1.3)),
+              child: child!),
+          home: AcademicLoginDialog(
+              controller: h.session, coordinator: h.coordinator)));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('手机登录教务成功后'), findsOneWidget);
+      expect(find.textContaining('学号由服务端确认'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
 
   for (final provider in AcademicProviderId.values) {

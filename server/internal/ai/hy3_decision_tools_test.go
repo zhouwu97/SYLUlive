@@ -274,7 +274,7 @@ func TestHy3AdapterRejectsUnexpectedPersonalPayloadBeforeAudit(t *testing.T) {
 func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing.T) {
 	db := newHy3DecisionTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{},
+		&models.User{}, &models.AcademicIdentityBinding{},
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionCategory{},
@@ -367,7 +367,7 @@ func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing
 func TestHy3CandidateExplanationUsesEngineOrderAndRealDimensions(t *testing.T) {
 	db := newHy3DecisionTestDB(t)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{},
+		&models.User{}, &models.AcademicIdentityBinding{},
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
 	))

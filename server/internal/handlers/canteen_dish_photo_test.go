@@ -116,6 +116,7 @@ func createVerifiedUser(t *testing.T, db *gorm.DB, id uint, nickname string) mod
 	if err := db.Create(&u).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedVerifiedStudent(t, db, u)
 	return u
 }
 
@@ -509,4 +510,3 @@ func TestAdminGetDishPhotoDetail(t *testing.T) {
 		t.Fatalf("uploader_id=%v want 2", data["uploader_id"])
 	}
 }
-

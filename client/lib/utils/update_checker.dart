@@ -29,8 +29,21 @@ class UpdateChecker {
 
     final info = coordinator.info;
     if (info == null || info.updateType == AppUpdateType.none) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('当前已经是最新版本')));
+      // 手动检查可能来自模态面板，根级弹窗才能显示在面板上方。
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('检查更新'),
+          content: const Text('当前已经是最新版本'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
       return;
     }
     final status = coordinator.downloadStatus;

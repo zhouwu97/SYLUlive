@@ -7,6 +7,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $clientRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $clientRoot '..')).Path
+
+function Get-CleanReleaseCommit {
+    $commit = & git -C $repoRoot rev-parse --verify HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve release source commit.' }
+    $changes = & git -C $repoRoot status --porcelain=v1 --untracked-files=all
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect release working tree.' }
+    if ($changes) { throw 'Release requires a clean working tree. Commit source changes before building.' }
+    return $commit.Trim()
+}
+
+# 源码提交先固定；产物元数据在全部校验通过后才写回工作区。
+$sourceCommit = Get-CleanReleaseCommit
 $androidRoot = Join-Path $clientRoot 'android'
 $androidAppRoot = Join-Path $androidRoot 'app'
 $propertiesPath = Join-Path $androidRoot 'key.properties'
@@ -45,12 +58,14 @@ if (-not (Test-Path -LiteralPath $storeFile -PathType Leaf)) { throw "Signing fi
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 Push-Location $clientRoot
 try {
+    $apk = Join-Path $clientRoot 'build\app\outputs\flutter-apk\app-release.apk'
+    if (Test-Path -LiteralPath $apk) { Remove-Item -LiteralPath $apk }
     flutter build apk --release --target-platform android-arm64 `
         --build-name="$versionName" `
         --build-number="$versionCode" `
         --dart-define="APP_API_URL=$ApiUrl" `
         --dart-define="JPUSH_APP_KEY=$JPushAppKey"
-    $apk = Join-Path $clientRoot 'build\app\outputs\flutter-apk\app-release.apk'
+    if ($LASTEXITCODE -ne 0) { throw 'Flutter release build failed; no artifact will be delivered.' }
     if (-not (Test-Path -LiteralPath $apk -PathType Leaf)) { throw 'Flutter build completed but release APK was not found.' }
 
     $aapt = Get-Command aapt -ErrorAction SilentlyContinue
@@ -91,6 +106,10 @@ try {
     & $apksignerPath verify --verbose $apk
     if ($LASTEXITCODE -ne 0) { throw 'apksigner verification failed.' }
 
+    if ((Get-CleanReleaseCommit) -ne $sourceCommit) {
+        throw 'Source commit changed during build; rebuild from the intended commit.'
+    }
+
     $target = Join-Path $OutputDirectory 'shenliyuan-release.apk'
     Copy-Item -LiteralPath $apk -Destination $target -Force
     $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -100,6 +119,7 @@ try {
         sha256 = $hash
         version = $version
         signed = $true
+        source_commit = $sourceCommit
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

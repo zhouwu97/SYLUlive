@@ -21,6 +21,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/screens/edu_grade_screen.dart';
+import 'package:shenliyuan/screens/edu_grade_detail_screen.dart';
 import 'package:shenliyuan/utils/edu_semester_utils.dart';
 import 'package:shenliyuan/utils/grade_screen_registry.dart';
 import 'package:shenliyuan/widgets/edu_grade/grade_empty_state.dart';
@@ -127,6 +128,17 @@ class _FakeEduProvider extends EduProvider {
 
   String? activeUserId;
   int fetchGradesCallCount = 0;
+  int fetchDetailCallCount = 0;
+  String? detailFailureCode;
+
+  @override
+  Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
+      EduGrade grade, String year, int semester,
+      {bool forceRefresh = false}) async {
+    fetchDetailCallCount++;
+    return OperationResult.fail('测试详情响应', errorCode: detailFailureCode);
+  }
+
   bool holdRefreshAfterInitial = false;
 
   _FakeEduProvider({
@@ -646,6 +658,142 @@ void main() {
     edu.finishPendingGrades();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('成绩详情先恢复会话，网络失败可重试', (tester) async {
+    final repository = _SchoolRepository()
+      ..state = school.SessionState.expired
+      ..restoreError = const school.NetworkException(message: '测试网络暂不可用');
+    final session = AcademicSessionController(repository: repository);
+    await session.syncAppUser('1');
+    repository.state = school.SessionState.expired;
+    repository.restoreError =
+        const school.NetworkException(message: '测试网络暂不可用');
+    final coordinator = AcademicLoginCoordinator(
+      controller: session,
+      credentialStore: _EmptySchoolCredentials(),
+      preferencesLoader: () async => MemoryPreferencesStore(),
+    );
+    final edu = _FakeEduProvider();
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<EduProvider>.value(value: edu),
+        ChangeNotifierProvider<AcademicSessionController>.value(value: session),
+        Provider<AcademicLoginCoordinator>.value(value: coordinator),
+      ],
+      child: const MaterialApp(
+          home: EduGradeDetailScreen(
+        grade: EduGrade(
+            name: '测试课程',
+            classId: 'class-1',
+            displayGrade: '80',
+            credits: 3,
+            gpa: 3,
+            isDegree: true),
+        year: '2025',
+        semester: 1,
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(edu.fetchDetailCallCount, 0);
+    expect(find.text('测试网络暂不可用'), findsOneWidget);
+    repository.restoreError = null;
+    await session.login(studentId: '20240001', password: 'fixture');
+    await tester.tap(find.byIcon(Icons.refresh_rounded));
+    await tester.pumpAndSettle();
+    expect(edu.fetchDetailCallCount, 1);
+    expect(find.text('测试详情响应'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
+  testWidgets('详情接口持续返回会话失效时最多重试一次', (tester) async {
+    final repository = _SchoolRepository()
+      ..state = school.SessionState.expired
+      ..restoreError = const school.NetworkException(message: '测试网络暂不可用');
+    final session = AcademicSessionController(repository: repository);
+    await session.syncAppUser('1');
+    repository.state = school.SessionState.expired;
+    repository.restoreError =
+        const school.NetworkException(message: '测试网络暂不可用');
+    final coordinator = AcademicLoginCoordinator(
+      controller: session,
+      credentialStore: _EmptySchoolCredentials(),
+      preferencesLoader: () async => MemoryPreferencesStore(),
+    );
+    final edu = _FakeEduProvider()..detailFailureCode = 'SESSION_EXPIRED';
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<EduProvider>.value(value: edu),
+        ChangeNotifierProvider<AcademicSessionController>.value(value: session),
+        Provider<AcademicLoginCoordinator>.value(value: coordinator),
+      ],
+      child: const MaterialApp(
+          home: EduGradeDetailScreen(
+        grade: EduGrade(
+            name: '测试课程',
+            classId: 'class-1',
+            displayGrade: '80',
+            credits: 3,
+            gpa: 3,
+            isDegree: true),
+        year: '2025',
+        semester: 1,
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(edu.fetchDetailCallCount, 0);
+    expect(find.text('测试网络暂不可用'), findsOneWidget);
+    repository.restoreError = null;
+    await session.login(studentId: '20240001', password: 'fixture');
+    await tester.tap(find.byIcon(Icons.refresh_rounded));
+    await tester.pumpAndSettle();
+    expect(edu.fetchDetailCallCount, 2);
+    expect(find.text('测试详情响应'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
+  for (final mode in [_LoadMode.error, _LoadMode.loading]) {
+    testWidgets('切换学期立即关闭抽屉，加载或失败在主页面展示：$mode', (tester) async {
+      final edu = _FakeEduProvider(gradeMode: mode);
+      await _pumpGradeScreen(tester,
+          edu: edu, settle: mode != _LoadMode.loading);
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.tap(find.byTooltip('成绩管理'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byIcon(Icons.calendar_month_outlined).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.widgetWithText(ListTile, '第一学期').at(1));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
+      expect(scaffold.isEndDrawerOpen, isFalse);
+      expect(edu.fetchGradesCallCount, 2);
+      expect(
+          find.textContaining('${int.parse(EduSemester.current().year) - 1}'),
+          findsWidgets);
+      if (mode == _LoadMode.error) {
+        expect(find.text('测试成绩错误'), findsOneWidget);
+      } else {
+        edu.completePendingGrade(
+            1, OperationResult.ok([_grade('所选学期课程', grade: '90')]));
+        await tester.pumpAndSettle();
+        edu.completePendingGrade(
+            0, OperationResult.ok([_grade('旧学期课程', grade: '80')]));
+        await tester.pumpAndSettle();
+        expect(find.text('所选学期课程'), findsOneWidget);
+        expect(find.text('旧学期课程'), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('初始历史学期参数能够切换并加载', (tester) async {
     final current = EduSemester.current();

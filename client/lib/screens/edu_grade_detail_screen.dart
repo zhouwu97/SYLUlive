@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/edu_grade.dart';
+import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/edu_provider.dart';
 
 enum _TagTone { neutral, danger }
@@ -131,18 +134,24 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
       widget.semester,
     );
 
-    if (cached != null) {
+    if (cached != null && cached.success && cached.components.isNotEmpty) {
       _detail = cached;
       _detailError = cached.success && cached.components.isNotEmpty
           ? null
           : cached.message;
       _isLoadingDetail = false;
     } else {
-      _loadDetail();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadDetail(forceRefresh: true);
+      });
     }
   }
 
-  Future<void> _loadDetail({bool forceRefresh = false}) async {
+  Future<void> _loadDetail({
+    bool forceRefresh = false,
+    bool allowSessionRetry = true,
+  }) async {
+    if (_isLoadingDetail) return;
     if (grade.classId.isEmpty) {
       setState(() => _detailError = '缺少教学班信息，暂未获取到成绩构成');
       return;
@@ -154,6 +163,33 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     });
 
     final provider = context.read<EduProvider>();
+    final session = context.read<AcademicSessionController?>();
+    final identity = session?.identity;
+    final appUserId = session?.appUserId;
+    if (session != null) {
+      final ready = await ensureAcademicSessionForRead(
+        context,
+        controller: session,
+        coordinator: context.read<AcademicLoginCoordinator?>(),
+      );
+      if (!mounted) return;
+      if (session.identity != identity || session.appUserId != appUserId) {
+        setState(() {
+          _isLoadingDetail = false;
+          _detail = null;
+          _detailError = '教务身份已切换，请返回成绩列表重新进入';
+        });
+        return;
+      }
+      if (!ready && !session.isAuthenticated) {
+        setState(() {
+          _isLoadingDetail = false;
+          _detailError = session.failure?.message ?? '请先完成教务登录后重试';
+        });
+        return;
+      }
+    }
+    final generation = session?.contextGeneration;
     final result = await provider.fetchGradeDetail(
       grade,
       widget.year,
@@ -162,6 +198,27 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     );
 
     if (!mounted) return;
+    if (session != null &&
+        (session.identity != identity ||
+            session.appUserId != appUserId ||
+            session.contextGeneration != generation)) {
+      setState(() {
+        _isLoadingDetail = false;
+        _detail = null;
+        _detailError = '教务身份已切换，请返回成绩列表重新进入';
+      });
+      return;
+    }
+    // 学校可能在实际请求时才拒绝旧 Cookie；只恢复重试一次，避免反复登录。
+    if (allowSessionRetry &&
+        session != null &&
+        !result.success &&
+        (result.errorCode == 'SESSION_EXPIRED' ||
+            result.errorCode == 'UNAUTHENTICATED')) {
+      _isLoadingDetail = false;
+      await _loadDetail(forceRefresh: true, allowSessionRetry: false);
+      return;
+    }
     setState(() {
       _isLoadingDetail = false;
       if (result.success && result.data != null) {

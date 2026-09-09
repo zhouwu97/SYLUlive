@@ -12,6 +12,79 @@ import (
 )
 
 const FileAccessScopeMigrationVersion = "20260909_01_file_access_scope_reconcile"
+const DishPhotoAccessMigrationVersion = "20260909_02_dish_photo_visibility"
+
+// MigrateDishPhotoAccessScopes 只补齐实拍所属业务状态规则，不重跑全库权限迁移。
+func MigrateDishPhotoAccessScopes(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", DishPhotoAccessMigrationVersion).Error; err != nil {
+				return err
+			}
+		}
+		var applied int64
+		if err := tx.Model(&models.AppSchemaMigration{}).Where("version = ?", DishPhotoAccessMigrationVersion).Count(&applied).Error; err != nil || applied > 0 {
+			return err
+		}
+		if tx.Migrator().HasTable(&models.CanteenDishPhoto{}) {
+			var cursor uint
+			for {
+				var ids []uint
+				if err := tx.Model(&models.CanteenDishPhoto{}).Where("file_id > ?", cursor).
+					Distinct("file_id").Order("file_id").Limit(200).Pluck("file_id", &ids).Error; err != nil {
+					return err
+				}
+				if len(ids) == 0 {
+					break
+				}
+				if err := ReconcileFilePublicAccess(tx, ids...); err != nil {
+					return err
+				}
+				cursor = ids[len(ids)-1]
+			}
+		}
+		return tx.Create(&models.AppSchemaMigration{Version: DishPhotoAccessMigrationVersion, AppliedAt: time.Now()}).Error
+	})
+}
+
+type InvalidCanteenImageReference struct {
+	Table string `json:"table"`
+	ID    uint   `json:"id"`
+}
+
+// CheckCanteenImageReferences 只检查历史 JSON 的字符串数组结构，不改写或忽略损坏记录。
+func CheckCanteenImageReferences(db *gorm.DB) ([]InvalidCanteenImageReference, error) {
+	invalid := []InvalidCanteenImageReference{}
+	for _, table := range []string{"canteen_ratings", "canteen_review_events"} {
+		if !db.Migrator().HasTable(table) {
+			continue
+		}
+		var cursor uint
+		for {
+			var rows []struct {
+				ID     uint
+				Images string
+			}
+			if err := db.Table(table).Select("id", "images").Where("id > ?", cursor).Order("id").Limit(500).Find(&rows).Error; err != nil {
+				return nil, err
+			}
+			if len(rows) == 0 {
+				break
+			}
+			for _, row := range rows {
+				if strings.TrimSpace(row.Images) == "" {
+					continue
+				}
+				var images []string
+				if err := json.Unmarshal([]byte(row.Images), &images); err != nil {
+					invalid = append(invalid, InvalidCanteenImageReference{Table: table, ID: row.ID})
+				}
+			}
+			cursor = rows[len(rows)-1].ID
+		}
+	}
+	return invalid, nil
+}
 
 // 同一批次复用表探测结果；业务规则仍由运行时回收和历史迁移共同调用。
 type publicReferenceChecker struct {

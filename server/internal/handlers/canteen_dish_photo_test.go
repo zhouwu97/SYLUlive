@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -370,6 +371,40 @@ func TestMigratePendingCanteenDishPhotosSkipsMissingFiles(t *testing.T) {
 	}
 	if photo2.Status != models.DishPhotoStatusApproved {
 		t.Fatalf("valid photo status=%s want approved", photo2.Status)
+	}
+}
+
+func TestAdminDishVisibilityUpdatesFileAccessAtomically(t *testing.T) {
+	db := newDishPhotoTestDB(t)
+	createVerifiedUser(t, db, 1, "管理员")
+	canteen := models.Canteen{Name: "测试食堂", Verified: true}
+	require.NoError(t, db.Create(&canteen).Error)
+	dish := models.CanteenDish{CanteenID: canteen.ID, Name: "测试菜品", NormalizedName: "测试菜品", Status: models.DishStatusActive}
+	require.NoError(t, db.Create(&dish).Error)
+	file := models.File{Hash: "visibility", Path: "/uploads/visibility.jpg", Status: "active", AccessScope: models.FileAccessPublic}
+	require.NoError(t, db.Create(&file).Error)
+	photo := models.CanteenDishPhoto{DishID: dish.ID, FileID: file.ID, UserID: 1, Status: models.DishPhotoStatusApproved}
+	require.NoError(t, db.Create(&photo).Error)
+	admin := NewCanteenDishPhotoAdminHandler(db)
+	update := func(status string) int {
+		return performDishPhotoRequest(t, admin.AdminUpdateDish, http.MethodPatch, "/dish",
+			gin.Params{{Key: "dishId", Value: fmt.Sprint(dish.ID)}}, 1, fmt.Sprintf(`{"status":%q}`, status)).Code
+	}
+	require.NoError(t, db.Exec(`CREATE TRIGGER reject_scope BEFORE UPDATE ON files BEGIN SELECT RAISE(ABORT,'injected'); END`).Error)
+	require.Equal(t, http.StatusInternalServerError, update("hidden"))
+	require.NoError(t, db.First(&dish, dish.ID).Error)
+	require.Equal(t, models.DishStatusActive, dish.Status)
+	require.NoError(t, db.Exec("DROP TRIGGER reject_scope").Error)
+	for _, state := range []string{"hidden", "active"} {
+		require.Equal(t, http.StatusOK, update(state))
+		require.NoError(t, db.First(&file, file.ID).Error)
+		want := models.FileAccessPrivate
+		if state == "active" {
+			want = models.FileAccessPublic
+		}
+		require.Equal(t, want, file.AccessScope)
+		require.NoError(t, db.First(&photo, photo.ID).Error)
+		require.Equal(t, models.DishPhotoStatusApproved, photo.Status)
 	}
 }
 

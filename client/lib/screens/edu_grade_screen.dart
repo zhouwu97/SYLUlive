@@ -652,60 +652,29 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     return false;
   }
 
-  /// Atomically switch semester — old grades stay visible during load.
-  /// Returns true on success, false if failed or stale.
+  // 选择立即生效，网络恢复和失败反馈交给统一读取流程，避免抽屉静默停留。
   Future<bool> _switchSemester(String year, int semester) async {
-    if (year == _selectedYear && semester == _selectedSemester) {
-      return true;
-    }
-
-    final provider = _eduProvider;
-    if (provider == null) return false;
-
+    if (year == _selectedYear && semester == _selectedSemester) return true;
+    if (_eduProvider == null) return false;
     final generation = ++_requestGeneration;
-    final cache = provider.getCachedGrades(year, semester);
-
-    if (cache != null) {
-      if (!mounted || generation != _requestGeneration) return false;
-
-      setState(() {
-        _selectedYear = year;
-        _selectedSemester = semester;
-        _grades = cache.grades;
-        _lastUpdatedAt = cache.updatedAt;
-        _activeFilter = '全部';
-        _pageState = cache.grades.isEmpty
-            ? GradePageState.empty
-            : GradePageState.content;
-      });
-
-      _saveSelectedSemester(year, semester);
-      _prefetchGradeDetails(cache.grades, year: year, semester: semester);
-
-      // Background refresh
-      _refreshSelectedSemesterInBackground(year, semester, generation);
-      return true;
-    }
-
-    // No cache — fetch from network. Old grades stay visible while loading.
-    final result = await provider.fetchGrades(year, semester);
-
-    if (!mounted || generation != _requestGeneration) return false;
-    if (!result.success || result.data == null) return false;
-
-    final entry = provider.getCachedGrades(year, semester);
     setState(() {
       _selectedYear = year;
       _selectedSemester = semester;
-      _grades = result.data!;
-      _lastUpdatedAt = entry?.updatedAt;
+      _grades = [];
+      _lastUpdatedAt = null;
       _activeFilter = '全部';
-      _pageState =
-          _grades.isEmpty ? GradePageState.empty : GradePageState.content;
+      _errorMessage = null;
+      _isInitialLoading = true;
+      _isRefreshing = false;
+      _pageState = GradePageState.loading;
     });
-
     _saveSelectedSemester(year, semester);
-    _prefetchGradeDetails(result.data!, year: year, semester: semester);
+    // 先让抽屉关闭，再允许恢复流程弹出教务登录框。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && generation == _requestGeneration) {
+        unawaited(_loadGrades(retrySession: true));
+      }
+    });
     return true;
   }
 
@@ -719,27 +688,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     AppPreferencesStore.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
-  }
-
-  Future<void> _refreshSelectedSemesterInBackground(
-    String year,
-    int semester,
-    int generation,
-  ) async {
-    final provider = _eduProvider;
-    if (provider == null) return;
-    final result = await provider.fetchGrades(year, semester);
-    if (!mounted || generation != _requestGeneration) return;
-    if (result.success && result.data != null) {
-      final entry = provider.getCachedGrades(year, semester);
-      setState(() {
-        _grades = result.data!;
-        _lastUpdatedAt = entry?.updatedAt;
-        _pageState =
-            _grades.isEmpty ? GradePageState.empty : GradePageState.content;
-      });
-      _prefetchGradeDetails(result.data!, year: year, semester: semester);
-    }
   }
 
   void _prefetchGradeDetails(

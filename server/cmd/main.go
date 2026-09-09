@@ -2650,6 +2650,9 @@ func ensureSecurityHardeningSchema(db *gorm.DB) error {
 	if err := services.MigrateFileAccessScopes(db); err != nil {
 		return err
 	}
+	if err := services.MigrateDishPhotoAccessScopes(db); err != nil {
+		return err
+	}
 	return services.BackfillPublicImageVariantTasks(db)
 }
 

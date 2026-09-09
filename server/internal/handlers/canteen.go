@@ -1528,6 +1528,13 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 		if err := tx.Model(&canteen).Update("verified", true).Error; err != nil {
 			return err
 		}
+		var dishIDs []uint
+		if err := tx.Model(&models.CanteenDish{}).Where("canteen_id = ?", canteen.ID).Pluck("id", &dishIDs).Error; err != nil {
+			return err
+		}
+		if err := services.ReconcileDishPhotoPublicAccess(tx, dishIDs...); err != nil {
+			return err
+		}
 		awarded, err := grantCanteenSubmissionExp(tx, canteen.ID, canteen.CreatedBy, time.Now())
 		if err != nil {
 			return err

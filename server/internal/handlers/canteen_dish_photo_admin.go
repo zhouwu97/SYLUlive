@@ -170,6 +170,9 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 			if err := tx.Model(&dish).Update("status", *input.Status).Error; err != nil {
 				return err
 			}
+			if err := services.ReconcileDishPhotoPublicAccess(tx, dish.ID); err != nil {
+				return err
+			}
 		}
 		return tx.Create(&models.AdminLog{
 			AdminID: adminID, AdminName: adminNickname(tx, adminID),

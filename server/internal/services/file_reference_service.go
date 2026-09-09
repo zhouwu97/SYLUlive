@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrInvalidImageFileReference = errors.New("invalid image file reference")
@@ -306,11 +308,14 @@ func (checker *publicReferenceChecker) hasActivePublicReferences(fileID uint, fi
 	if fileID == 0 {
 		return false, nil
 	}
-	// 1. 菜品实拍 (approved)
+	// 实拍审核、所属菜品和食堂都允许公开时，才构成公开引用。
 	if checker.hasTable("canteen_dish_photos") {
 		var dishPhotoCount int64
-		if err := tx.Table("canteen_dish_photos").
-			Where("file_id = ? AND status = ?", fileID, models.DishPhotoStatusApproved).
+		if err := tx.Table("canteen_dish_photos AS photo").
+			Joins("JOIN canteen_dishes dish ON dish.id = photo.dish_id").
+			Joins("JOIN canteens canteen ON canteen.id = dish.canteen_id").
+			Where("photo.file_id = ? AND photo.status = ? AND dish.status = ? AND canteen.verified = ?",
+				fileID, models.DishPhotoStatusApproved, models.DishStatusActive, true).
 			Count(&dishPhotoCount).Error; err != nil {
 			return false, err
 		}
@@ -357,35 +362,60 @@ func (checker *publicReferenceChecker) hasActivePublicReferences(fileID uint, fi
 	return checker.hasPublicPathReference(filePath)
 }
 
-// ReconcileFilePublicAccess 在公开业务引用移除后（如实拍下架、帖子删除等），
-// 检查并回收不再被任何公开业务引用的文件权限，降级为 private。
+// ReconcileFilePublicAccess 按当前全部公开引用双向更新权限，与业务状态同事务执行。
+// 恢复公开引用不复活已经删除的文件；其他公开引用仍在时也不能误降权。
 func ReconcileFilePublicAccess(tx *gorm.DB, fileIDs ...uint) error {
 	if len(fileIDs) == 0 {
 		return nil
 	}
-	for _, id := range fileIDs {
+	ids := append([]uint(nil), fileIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
 		if id == 0 {
 			continue
 		}
 		var file models.File
-		if err := tx.Select("id", "path", "access_scope").First(&file, id).Error; err != nil {
+		// 多个业务事务共享文件时先串行锁定，再读取最新公开引用。
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "path", "status", "access_scope").First(&file, id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				continue
 			}
 			return err
 		}
-		if file.AccessScope != models.FileAccessPublic {
-			continue
-		}
 		hasPublic, err := HasActivePublicReferences(tx, file.ID, file.Path)
 		if err != nil {
 			return err
 		}
-		if !hasPublic {
-			if err := tx.Model(&models.File{}).Where("id = ?", file.ID).Update("access_scope", models.FileAccessPrivate).Error; err != nil {
+		scope := models.FileAccessPrivate
+		if hasPublic && (file.Status == "active" || file.Status == "temporary") {
+			scope = models.FileAccessPublic
+		}
+		updates := map[string]interface{}{}
+		if scope != file.AccessScope {
+			updates["access_scope"] = scope
+		}
+		if scope == models.FileAccessPublic && file.Status == "temporary" {
+			updates["status"] = "active"
+			updates["claimed_at"] = gorm.Expr("COALESCE(claimed_at, CURRENT_TIMESTAMP)")
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&models.File{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// ReconcileDishPhotoPublicAccess 保留实拍审核状态，只同步指定菜品关联文件的公开权限。
+func ReconcileDishPhotoPublicAccess(tx *gorm.DB, dishIDs ...uint) error {
+	if len(dishIDs) == 0 {
+		return nil
+	}
+	var ids []uint
+	if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id IN ?", dishIDs).
+		Distinct("file_id").Order("file_id").Pluck("file_id", &ids).Error; err != nil {
+		return err
+	}
+	return ReconcileFilePublicAccess(tx, ids...)
 }

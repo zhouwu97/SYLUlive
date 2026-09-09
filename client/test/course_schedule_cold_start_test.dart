@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
+import 'package:shenliyuan/widgets/course/course_action_menu.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +107,14 @@ void main() {
       ),
     );
 
+    final academic = AcademicSessionController(
+      repository: _UnusedAcademicRepository(),
+      identity: const AcademicIdentityKey(
+        appUserId: '1',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: '2403060128',
+      ),
+    );
     final auth = _LoggedInAuthProvider(client: dio);
     final edu = _DelayedEduProvider();
     final storeOpenRelease = Completer<void>();
@@ -120,6 +132,8 @@ void main() {
 
     final widget = MultiProvider(
       providers: [
+        ChangeNotifierProvider<AcademicSessionController>.value(
+            value: academic),
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
         ChangeNotifierProvider<EduProvider>.value(value: edu),
         ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
@@ -188,8 +202,55 @@ void main() {
       2,
     );
 
+    // 实际打开弹窗，验证弹窗局部状态与复制内容一致。
+    String? copiedPrompt;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copiedPrompt = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    tester
+        .widget<CourseActionMenu>(find.byType(CourseActionMenu))
+        .onSelected(CourseMenuAction.settings);
+    for (var i = 0; i < 15; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('添加自定义课程'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('AI 导入'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final checkbox = find.widgetWithText(CheckboxListTile, '在提示词中加入我的班级号');
+    expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
+    expect(find.text('用于过滤 24030601 班课程'), findsOneWidget);
+    await tester.ensureVisible(checkbox);
+    await tester.tap(checkbox);
+    await tester.pump();
+    expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
+    await tester.ensureVisible(find.text('一键复制 AI 提示词'));
+    await tester.tap(find.text('一键复制 AI 提示词'));
+    await tester.pump();
+    expect(copiedPrompt, contains('24030601班'));
+    await tester.ensureVisible(checkbox);
+    await tester.tap(checkbox);
+    await tester.pump();
+    expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
+    await tester.ensureVisible(find.text('一键复制 AI 提示词'));
+    await tester.tap(find.text('一键复制 AI 提示词'));
+    await tester.pump();
+    expect(copiedPrompt, isNot(contains('24030601班')));
+
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 2));
+    academic.dispose();
     auth.dispose();
     edu.dispose();
     postProvider.dispose();
@@ -347,4 +408,9 @@ class _TestMessageProvider extends MessageProvider {
 class _TestUpdateCoordinator extends AppUpdateCoordinator {
   @override
   Future<void> startDeferredInitialCheck() async {}
+}
+
+class _UnusedAcademicRepository implements AcademicRepository {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

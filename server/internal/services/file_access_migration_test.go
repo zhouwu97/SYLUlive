@@ -14,8 +14,11 @@ func newAccessScopeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newFileReferenceTestDB(t)
 	for _, ddl := range []string{
-		"CREATE TABLE canteen_dish_photos (id INTEGER PRIMARY KEY, file_id BIGINT, status TEXT)",
+		"CREATE TABLE canteen_dish_photos (id INTEGER PRIMARY KEY, file_id BIGINT, status TEXT, dish_id BIGINT DEFAULT 100)",
 		"CREATE TABLE canteens (id INTEGER PRIMARY KEY, verified BOOLEAN, image TEXT)",
+		"CREATE TABLE canteen_dishes (id INTEGER PRIMARY KEY, canteen_id BIGINT, status TEXT)",
+		"INSERT INTO canteens VALUES (100,TRUE,'')",
+		"INSERT INTO canteen_dishes VALUES (100,100,'active')",
 		"CREATE TABLE canteen_review_events (id INTEGER PRIMARY KEY, canteen_id BIGINT, status TEXT, images TEXT)",
 		"CREATE TABLE canteen_ratings (id INTEGER PRIMARY KEY, canteen_id BIGINT, status TEXT, images TEXT)",
 		"CREATE TABLE user_emoji_assets (id INTEGER PRIMARY KEY, file_id BIGINT)",
@@ -26,6 +29,71 @@ func newAccessScopeTestDB(t *testing.T) *gorm.DB {
 		require.NoError(t, db.Exec(ddl).Error)
 	}
 	return db
+}
+
+func TestDishPhotoVisibilityReconcilesBothDirections(t *testing.T) {
+	db := newAccessScopeTestDB(t)
+	file := models.File{ID: 1, Hash: "visibility", Path: "/uploads/visibility.jpg", Status: "active", AccessScope: models.FileAccessPublic}
+	require.NoError(t, db.Create(&file).Error)
+	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos (id,file_id,status) VALUES (1,1,'approved')").Error)
+	check := func(sql string, want models.FileAccessScope) {
+		t.Helper()
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(sql).Error; err != nil {
+				return err
+			}
+			return ReconcileDishPhotoPublicAccess(tx, 100)
+		}))
+		require.NoError(t, db.First(&file, 1).Error)
+		require.Equal(t, want, file.AccessScope)
+	}
+	check("UPDATE canteen_dishes SET status='hidden'", models.FileAccessPrivate)
+	check("UPDATE canteen_dishes SET status='active'", models.FileAccessPublic)
+	check("UPDATE canteens SET verified=FALSE", models.FileAccessPrivate)
+	check("UPDATE canteens SET verified=TRUE", models.FileAccessPublic)
+	check("UPDATE canteen_dish_photos SET status='archived'", models.FileAccessPrivate)
+	check("UPDATE canteen_dishes SET status='active'", models.FileAccessPrivate)
+	check("UPDATE canteen_dish_photos SET status='approved'", models.FileAccessPublic)
+	require.NoError(t, db.Exec("UPDATE canteens SET image='/uploads/visibility.jpg'").Error)
+	check("UPDATE canteen_dishes SET status='hidden'", models.FileAccessPublic)
+	check("UPDATE canteens SET image=''", models.FileAccessPrivate)
+	require.NoError(t, db.Exec("UPDATE files SET status='deleted'").Error)
+	check("UPDATE canteen_dishes SET status='active'", models.FileAccessPrivate)
+}
+
+func TestDishPhotoVisibilityMigrationRunsOnceAfterOriginalMigration(t *testing.T) {
+	db := newAccessScopeTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AppSchemaMigration{}))
+	require.NoError(t, db.Create(&models.AppSchemaMigration{Version: FileAccessScopeMigrationVersion}).Error)
+	require.NoError(t, db.Create(&models.File{ID: 1, Hash: "hidden", Path: "/uploads/hidden.jpg", Status: "active", AccessScope: models.FileAccessPublic}).Error)
+	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos (id,file_id,status) VALUES (1,1,'approved')").Error)
+	require.NoError(t, db.Exec("UPDATE canteen_dishes SET status='hidden'").Error)
+	require.NoError(t, db.Exec(`CREATE TRIGGER reject_scope BEFORE UPDATE ON files BEGIN SELECT RAISE(ABORT,'injected'); END`).Error)
+	require.ErrorContains(t, MigrateDishPhotoAccessScopes(db), "injected")
+	var applied int64
+	require.NoError(t, db.Model(&models.AppSchemaMigration{}).Where("version = ?", DishPhotoAccessMigrationVersion).Count(&applied).Error)
+	require.Zero(t, applied)
+	require.NoError(t, db.Exec("DROP TRIGGER reject_scope").Error)
+	require.NoError(t, MigrateDishPhotoAccessScopes(db))
+	var file models.File
+	require.NoError(t, db.First(&file, 1).Error)
+	require.Equal(t, models.FileAccessPrivate, file.AccessScope)
+	require.NoError(t, db.Exec("UPDATE canteen_dishes SET status='active'").Error)
+	require.NoError(t, MigrateDishPhotoAccessScopes(db))
+	require.NoError(t, db.First(&file, 1).Error)
+	require.Equal(t, models.FileAccessPrivate, file.AccessScope)
+}
+
+func TestCanteenImageReferencePreflightIsReadOnly(t *testing.T) {
+	db := newAccessScopeTestDB(t)
+	require.NoError(t, db.Exec(`INSERT INTO canteen_ratings VALUES (1,100,'active','[]'),(2,100,'active','broken'),(3,100,'active','[123]'),(4,100,'active','null')`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO canteen_review_events VALUES (1,100,'active','["/uploads/a.jpg"]'),(2,100,'hidden','{bad')`).Error)
+	invalid, err := CheckCanteenImageReferences(db)
+	require.NoError(t, err)
+	require.Equal(t, []InvalidCanteenImageReference{{Table: "canteen_ratings", ID: 2}, {Table: "canteen_ratings", ID: 3}, {Table: "canteen_review_events", ID: 2}}, invalid)
+	var value string
+	require.NoError(t, db.Table("canteen_ratings").Where("id=2").Pluck("images", &value).Error)
+	require.Equal(t, "broken", value)
 }
 
 func TestMigrateFileAccessScopesPublicAndPrivateBoundaries(t *testing.T) {
@@ -39,7 +107,7 @@ func TestMigrateFileAccessScopesPublicAndPrivateBoundaries(t *testing.T) {
 	}
 	for _, sql := range []string{
 		"UPDATE files SET status='temporary' WHERE id=1",
-		"INSERT INTO canteen_dish_photos VALUES (1,1,'approved'),(2,2,'approved'),(3,3,'archived')",
+		"INSERT INTO canteen_dish_photos (id,file_id,status) VALUES (1,1,'approved'),(2,2,'approved'),(3,3,'archived')",
 		"INSERT INTO canteens VALUES (1,TRUE,'/uploads/4.jpg'),(2,FALSE,'/uploads/5.jpg')",
 		`INSERT INTO canteen_review_events VALUES (1,1,'active','["https://sylulive.online/uploads/6.jpg?v=2"]'),(2,1,'hidden','["/uploads/7.jpg"]'),(3,2,'active','["/uploads/5.jpg"]'),(4,1,'active','["/uploads/13.jpg.extra","/uploads/other.jpg?ref=/uploads/13.jpg"]')`,
 		"INSERT INTO user_emoji_assets VALUES (1,8)",
@@ -81,7 +149,7 @@ func TestMigrateFileAccessScopesRollsBackOnFailure(t *testing.T) {
 	for id := 1; id <= 2; id++ {
 		require.NoError(t, db.Create(&models.File{ID: uint(id), Hash: fmt.Sprint(id), Path: fmt.Sprintf("/uploads/%d.jpg", id), Status: "active", AccessScope: models.FileAccessPrivate}).Error)
 	}
-	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos VALUES (1,1,'approved'),(2,2,'approved')").Error)
+	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos (id,file_id,status) VALUES (1,1,'approved'),(2,2,'approved')").Error)
 	require.NoError(t, db.Exec(`CREATE TRIGGER reject_scope BEFORE UPDATE ON files WHEN NEW.id=2 BEGIN SELECT RAISE(ABORT,'injected migration failure'); END`).Error)
 	require.ErrorContains(t, MigrateFileAccessScopes(db), "injected migration failure")
 	var changed, applied int64
@@ -97,7 +165,7 @@ func TestReconcilePublicAccessWaitsForLastReference(t *testing.T) {
 	db := newAccessScopeTestDB(t)
 	file := models.File{ID: 1, Hash: "shared", Path: "/uploads/shared.jpg", Status: "active", AccessScope: models.FileAccessPublic}
 	require.NoError(t, db.Create(&file).Error)
-	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos VALUES (1,1,'approved')").Error)
+	require.NoError(t, db.Exec("INSERT INTO canteen_dish_photos (id,file_id,status) VALUES (1,1,'approved')").Error)
 	require.NoError(t, db.Exec("INSERT INTO canteens VALUES (1,TRUE,'/uploads/shared.jpg')").Error)
 	require.NoError(t, db.Exec("INSERT INTO user_emoji_assets VALUES (1,1)").Error)
 	require.NoError(t, db.Exec("UPDATE canteen_dish_photos SET status='archived'").Error)

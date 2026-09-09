@@ -536,14 +536,31 @@ final class AcademicLoginCoordinator {
   }
 
   int? _warmUpGeneration;
+  final Map<int, Future<void>> _warmUps = {};
 
   Future<void> warmUp() async {
     await controller.waitForAccountContextReady();
     final generation = controller.contextGeneration;
     if (controller.appUserId == null || _warmUpGeneration == generation) return;
-    _warmUpGeneration = generation;
-    await ensureAuthenticated();
-    await _syncLocalBinding();
+    final running = _warmUps[generation];
+    if (running != null) return running;
+    final operation = () async {
+      final outcome = await ensureAuthenticated();
+      if (controller.isCurrentContext(generation: generation) &&
+          (outcome.isSuccess ||
+              outcome.kind == AcademicLoginOutcomeKind.credentialsRequired ||
+              outcome.kind == AcademicLoginOutcomeKind.invalidCredentials ||
+              outcome.needsCaptcha)) {
+        _warmUpGeneration = generation;
+      }
+      await _syncLocalBinding();
+    }();
+    _warmUps[generation] = operation;
+    try {
+      await operation;
+    } finally {
+      _warmUps.remove(generation);
+    }
   }
 
   Future<AcademicLoginOutcome> ensureAuthenticated({

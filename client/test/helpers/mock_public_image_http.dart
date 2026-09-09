@@ -26,13 +26,17 @@ typedef MockApiHandler = Future<ResponseBody> Function(RequestOptions options);
 
 Directory? _tempRoot;
 MockApiHandler? _apiHandler;
+int Function(Uri)? _imageStatus;
 PathProviderPlatform? _previousPathProvider;
 
-Future<void> installMockPublicImageHttp({MockApiHandler? apiHandler}) async {
+Future<void> installMockPublicImageHttp(
+    {MockApiHandler? apiHandler, int Function(Uri)? imageStatus}) async {
   PostImageCache.resetInstance();
   _apiHandler = apiHandler;
+  _imageStatus = imageStatus;
   _tempRoot = await Directory.systemTemp.createTemp('mock_public_image');
-  final tmpDir = await Directory('${_tempRoot!.path}/tmp').create(recursive: true);
+  final tmpDir =
+      await Directory('${_tempRoot!.path}/tmp').create(recursive: true);
   final supportDir =
       await Directory('${_tempRoot!.path}/support').create(recursive: true);
   // 直接覆盖平台接口实现：MethodChannel 的 mock 回包要跨 fake-async zone 投递，
@@ -53,6 +57,7 @@ void uninstallMockPublicImageHttp() {
     _previousPathProvider = null;
   }
   _apiHandler = null;
+  _imageStatus = null;
   final root = _tempRoot;
   _tempRoot = null;
   root?.delete(recursive: true).ignore();
@@ -61,7 +66,8 @@ void uninstallMockPublicImageHttp() {
 /// 固定目录版 path_provider：测试中目录随 install 创建、随 uninstall 删除，
 /// 避免 flutter_cache_manager 在真实用户目录留下状态。
 class _FakePathProviderPlatform extends PathProviderPlatform {
-  _FakePathProviderPlatform({required this.temporaryPath, required this.supportPath});
+  _FakePathProviderPlatform(
+      {required this.temporaryPath, required this.supportPath});
 
   final String temporaryPath;
   final String supportPath;
@@ -101,8 +107,8 @@ Future<void> driveMockPublicImageLoads(
 /// 冲刷缓存管理器的一次性计时器（覆盖 fake zone 与 real zone 两种调度来源）。
 Future<void> flushMockPublicImageTimers(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 12));
-  await tester.runAsync(
-      () => Future<void>.delayed(const Duration(seconds: 12)));
+  await tester
+      .runAsync(() => Future<void>.delayed(const Duration(seconds: 12)));
   await tester.pump(const Duration(seconds: 1));
 }
 
@@ -172,12 +178,15 @@ class _MockImageHttpRequest extends Fake implements HttpClientRequest {
   Future<HttpClientResponse> close() async {
     final path = uri.path;
     if (path.startsWith('/uploads/')) {
+      final status = _imageStatus?.call(uri);
+      if (status != null && status != 200) {
+        return _MockImageHttpResponse(status, const [],
+            contentType: 'image/jpeg');
+      }
       return path.contains('missing')
-          ? _MockImageHttpResponse(404, const [],
-              contentType: 'image/jpeg')
+          ? _MockImageHttpResponse(404, const [], contentType: 'image/jpeg')
           : path.contains('flaky')
-              ? _MockImageHttpResponse(500, const [],
-                  contentType: 'image/jpeg')
+              ? _MockImageHttpResponse(500, const [], contentType: 'image/jpeg')
               : _MockImageHttpResponse(200, _transparentImage,
                   contentType: 'image/png');
     }

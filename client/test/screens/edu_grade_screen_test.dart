@@ -1,4 +1,13 @@
 import 'dart:async';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' as school;
+import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
+import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
+import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
+import 'package:shenliyuan/features/academic/data/academic_provider_adapters.dart';
+import 'package:shenliyuan/features/academic/data/academic_provider_router_repository.dart';
+import 'package:shenliyuan/features/academic/domain/academic_data_source.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 
 import 'package:dio/dio.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
@@ -18,6 +27,61 @@ import 'package:shenliyuan/widgets/edu_grade/grade_empty_state.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 enum _LoadMode { data, empty, error, loading }
+
+class _SchoolRepository implements AcademicRepository, AcademicDataSource {
+  school.SessionState state = school.SessionState.unauthenticated;
+  Object? restoreError;
+  @override
+  void close() {}
+  @override
+  AcademicSourceKind get sourceKind => AcademicSourceKind.local;
+  @override
+  AcademicCapabilities get capabilities => const AcademicCapabilities.local();
+  @override
+  school.SessionState get sessionState => state;
+  @override
+  String get studentId => '20240001';
+  @override
+  Future<void> restoreSession() async {
+    if (restoreError != null) throw restoreError!;
+  }
+
+  @override
+  Future<void> resetSession() async {
+    state = school.SessionState.unauthenticated;
+  }
+
+  @override
+  Future<school.LoginResult> login(
+      {required String studentId, required String password}) async {
+    state = school.SessionState.authenticated;
+    return school.LoginSuccess(studentId: studentId, cookieNames: const {});
+  }
+
+  @override
+  Future<school.StudentProfile> getProfile() async =>
+      const school.StudentProfile(name: '', grade: '', college: '', major: '');
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SchoolFactory implements AcademicProviderFactory {
+  @override
+  AcademicProviderId get id => AcademicProviderId.syluUndergraduate;
+  @override
+  AcademicProvider create(AcademicIdentityKey identity) =>
+      UndergraduateAcademicProvider(
+          identity: identity, source: _SchoolRepository());
+}
+
+class _EmptySchoolCredentials implements AcademicCredentialStore {
+  @override
+  Future<AcademicCredential?> read(String appUserId) async => null;
+  @override
+  Future<void> write(String appUserId, AcademicCredential credential) async {}
+  @override
+  Future<void> delete(String appUserId) async {}
+}
 
 class _MemoryAuthCredentialStore implements AuthCredentialStore {
   @override
@@ -83,10 +147,12 @@ class _FakeEduProvider extends EduProvider {
 
   @override
   AcademicCapabilities get academicCapabilities => AcademicCapabilities(
-    supportsProfile: true, supportsCourses: true, supportsGrades: supportsGrades,
-    supportsGradeDetail: supportsGrades, supportsAcademicSituation: supportsGrades,
-    supportsCreditRequirements: supportsGrades);
-
+      supportsProfile: true,
+      supportsCourses: true,
+      supportsGrades: supportsGrades,
+      supportsGradeDetail: supportsGrades,
+      supportsAcademicSituation: supportsGrades,
+      supportsCreditRequirements: supportsGrades);
 
   @override
   int get enrollmentYear => 2024;
@@ -167,6 +233,101 @@ class _FakeEduProvider extends EduProvider {
 }
 
 void main() {
+  testWidgets('同一 App 账号切换教务身份后，旧成绩不能覆盖新身份', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final router = AcademicProviderRouterRepository(
+        legacy: _SchoolRepository(),
+        registry: AcademicProviderRegistry([_SchoolFactory()]));
+    final session = AcademicSessionController(repository: router);
+    await session.syncAppUser('1');
+    Future<void> login(String student) async {
+      await session.beginLocalConnection(AcademicIdentityKey(
+          appUserId: '1',
+          providerId: AcademicProviderId.syluUndergraduate,
+          studentId: student));
+      await session.login(studentId: student, password: 'fixture');
+    }
+
+    await login('20240001');
+    final edu = _FakeEduProvider(gradeMode: _LoadMode.loading);
+    await _pumpGradeScreen(tester, edu: edu, session: session, settle: false);
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(edu.fetchGradesCallCount, 1);
+    await login('20240002');
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(edu.fetchGradesCallCount, 2);
+    edu.completePendingGrade(
+        1, OperationResult.ok([_grade('新身份成绩', grade: '90')]));
+    await tester.pumpAndSettle();
+    edu.completePendingGrade(
+        0, OperationResult.ok([_grade('旧身份成绩', grade: '80')]));
+    await tester.pumpAndSettle();
+    expect(find.text('新身份成绩'), findsOneWidget);
+    expect(find.text('旧身份成绩'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    router.close();
+  });
+  for (final scenario in ['cancel', 'password', 'network']) {
+    testWidgets('成绩页恢复会话后同进程加载：$scenario', (tester) async {
+      final networkFailure = scenario == 'network';
+      AppPreferencesStore.setMockInitialValues({});
+      final repository = _SchoolRepository();
+      final session = AcademicSessionController(repository: repository);
+      await session.syncAppUser('1');
+      if (networkFailure) {
+        repository.state = school.SessionState.expired;
+        repository.restoreError =
+            const school.NetworkException(message: '测试网络暂不可用');
+      }
+      final coordinator = AcademicLoginCoordinator(
+          controller: session,
+          credentialStore: _EmptySchoolCredentials(),
+          preferencesLoader: () async => MemoryPreferencesStore());
+      final edu = _FakeEduProvider();
+      await _pumpGradeScreen(tester,
+          edu: edu,
+          session: session,
+          coordinator: coordinator,
+          settle: false,
+          theme: scenario == 'password' ? ThemeData.dark() : null,
+          textScale: scenario == 'password' ? 1.3 : 1);
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(edu.fetchGradesCallCount, 0);
+      expect(find.byType(AcademicLoginDialog),
+          networkFailure ? findsNothing : findsOneWidget);
+      if (scenario == 'cancel') {
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AcademicLoginDialog), findsNothing);
+        expect(edu.fetchGradesCallCount, 0);
+      }
+      repository.restoreError = null;
+      if (scenario == 'password') {
+        await tester.enterText(find.byType(TextFormField).first, '20240001');
+        await tester.enterText(find.byType(TextFormField).at(1), 'fixture');
+        await tester.ensureVisible(find.widgetWithText(FilledButton, '登录教务'));
+        await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
+      } else {
+        await session.login(studentId: '20240001', password: 'fixture');
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('离散数学'), findsOneWidget);
+      expect(edu.fetchGradesCallCount, 1);
+      await session.loadProfile();
+      await tester.pumpAndSettle();
+      expect(edu.fetchGradesCallCount, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      session.dispose();
+    });
+  }
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('研究生未开放成绩时明确说明版本范围且不请求成绩', (tester) async {
@@ -514,6 +675,10 @@ Future<_TestProviders> _pumpGradeScreen(
   _FakeAuthProvider? auth,
   _FakeEduProvider? edu,
   bool settle = true,
+  AcademicSessionController? session,
+  AcademicLoginCoordinator? coordinator,
+  ThemeData? theme,
+  double textScale = 1,
   EduGradeScreen screen = const EduGradeScreen(),
 }) async {
   final testAuth = auth ?? _FakeAuthProvider(_user(1));
@@ -529,8 +694,19 @@ Future<_TestProviders> _pumpGradeScreen(
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(value: testAuth),
         ChangeNotifierProvider<EduProvider>.value(value: testEdu),
+        if (session != null)
+          ChangeNotifierProvider<AcademicSessionController>.value(
+              value: session),
+        if (coordinator != null)
+          Provider<AcademicLoginCoordinator>.value(value: coordinator),
       ],
-      child: MaterialApp(home: screen),
+      child: MaterialApp(
+          theme: theme,
+          home: screen,
+          builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(textScale)),
+              child: child!)),
     ),
   );
   if (settle) await tester.pumpAndSettle();

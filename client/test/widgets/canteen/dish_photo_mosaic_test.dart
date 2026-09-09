@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/widgets/canteen/dish_photo_mosaic.dart';
+import 'package:shenliyuan/screens/image_viewer_screen.dart';
 
 import '../../helpers/mock_public_image_http.dart';
 
@@ -17,6 +18,23 @@ Widget _wrap(List<String> imageUrls, {ValueChanged<String>? onImageError}) {
 }
 
 void main() {
+  testWidgets('全屏复用中图缓存地址并保留原图保存入口', (tester) async {
+    await tester.runAsync(() => installMockPublicImageHttp());
+    addTearDown(uninstallMockPublicImageHttp);
+    await tester.pumpWidget(_wrap(['/uploads/preview.jpg']));
+    await driveMockPublicImageLoads(tester);
+    await tester.tap(find.byType(DishPhotoMosaic));
+    await tester.pumpAndSettle();
+    final viewer =
+        tester.widget<ImageViewerScreen>(find.byType(ImageViewerScreen));
+    final item = viewer.items!.single;
+    expect(item.previewUrl, endsWith('/uploads/preview_v1_medium.jpg'));
+    expect(item.thumbUrl, endsWith('/uploads/preview_v1_thumb.jpg'));
+    expect(item.originalUrl, endsWith('/uploads/preview.jpg'));
+    expect(item.useProgressiveLoading, isTrue);
+    await driveMockPublicImageLoads(tester);
+    await flushMockPublicImageTimers(tester);
+  });
   testWidgets('1 张：单图布局', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -35,7 +53,8 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: DishPhotoMosaic(imageUrls: ['/uploads/a.jpg', '/uploads/b.jpg']),
+          body:
+              DishPhotoMosaic(imageUrls: ['/uploads/a.jpg', '/uploads/b.jpg']),
         ),
       ),
     );
@@ -74,8 +93,8 @@ void main() {
     final networkImages = tester.widgetList<CachedNetworkImage>(
       find.byType(CachedNetworkImage),
     );
-    expect(networkImages, hasLength(1));
-    expect(networkImages.single.imageUrl, contains('ok_v1_medium.jpg'));
+    expect(networkImages.where((image) => image.imageUrl.endsWith('ok_v1_medium.jpg')), hasLength(1));
+    expect(networkImages.every((image) => image.imageUrl.contains('/ok_v1_')), isTrue);
   });
 
   testWidgets('图片加载失败后自动移除该图，图库收起并回传失败地址', (tester) async {
@@ -107,8 +126,8 @@ void main() {
     final networkImages = tester.widgetList<CachedNetworkImage>(
       find.byType(CachedNetworkImage),
     );
-    expect(networkImages, hasLength(1));
-    expect(networkImages.single.imageUrl, contains('ok_v1_medium.jpg'));
+    expect(networkImages.where((image) => image.imageUrl.endsWith('ok_v1_medium.jpg')), hasLength(1));
+    expect(networkImages.every((image) => image.imageUrl.contains('/ok_v1_')), isTrue);
   });
 
   testWidgets('瞬时错误（500）图片保留占位，不触发移除回传', (tester) async {
@@ -127,7 +146,8 @@ void main() {
     // 变体 500 后回退原图也 500：外层与回退层同时存在
     expect(
       find.byWidgetPredicate((w) =>
-          w is CachedNetworkImage && w.imageUrl.contains('flaky_v1_medium.jpg')),
+          w is CachedNetworkImage &&
+          w.imageUrl.contains('flaky_v1_medium.jpg')),
       findsOneWidget,
     );
     expect(

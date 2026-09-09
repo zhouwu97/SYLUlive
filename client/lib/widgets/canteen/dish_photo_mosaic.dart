@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../utils/canteen_image_failure.dart';
+import '../../utils/canteen_image_url.dart';
 import 'canteen_status_image.dart';
 
 /// 菜品实拍三图布局：
@@ -81,12 +82,8 @@ class _DishPhotoMosaicState extends State<DishPhotoMosaic> {
     return _buildTile(sources, urls, context, 240, index);
   }
 
-  Widget _buildTile(
-      List<String> sources,
-      List<String> urls,
-      BuildContext context,
-      double height,
-      int index) {
+  Widget _buildTile(List<String> sources, List<String> urls,
+      BuildContext context, double height, int index) {
     final url = urls[index];
     final sourceUrl = sources[index];
     return GestureDetector(
@@ -95,15 +92,24 @@ class _DishPhotoMosaicState extends State<DishPhotoMosaic> {
           context,
           MaterialPageRoute(
             builder: (_) => ImageViewerScreen(
-              imageUrls: urls,
+              items: urls
+                  .map((source) => ImageViewerItem(
+                        thumbUrl: canteenImageUrl(source,
+                            variant: CanteenImageVariant.thumb),
+                        previewUrl: canteenImageUrl(source,
+                            variant: CanteenImageVariant.medium),
+                        originalUrl: source,
+                        useProgressiveLoading: true,
+                        allowOriginalPreviewFallback: true,
+                      ))
+                  .toList(growable: false),
               initialIndex: index,
             ),
           ),
         );
       },
-      onLongPress: widget.onLongPress != null
-          ? () => widget.onLongPress!(index)
-          : null,
+      onLongPress:
+          widget.onLongPress != null ? () => widget.onLongPress!(index) : null,
       child: SizedBox(
         height: height,
         width: double.infinity,

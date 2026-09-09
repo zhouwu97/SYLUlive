@@ -74,7 +74,9 @@ class CanteenStatusImage extends StatelessWidget {
         _decodeDimension(width, devicePixelRatio, selectedVariant);
     final decodeHeight = memCacheHeight ??
         _decodeDimension(height, devicePixelRatio, selectedVariant);
-    final diskWidth = maxWidthDiskCache ?? _diskWidth(selectedVariant);
+    // 服务端变体已压缩；与帖子共用原始缓存文件，避免二次磁盘缩放的
+    // 重复解码和失败后残留的缩放流。显示尺寸只约束内存解码。
+    final diskWidth = maxWidthDiskCache;
     final child = variantUrl.isEmpty
         ? _buildPlaceholder(context)
         : _buildNetworkImage(
@@ -85,6 +87,9 @@ class CanteenStatusImage extends StatelessWidget {
             decodeWidth: decodeWidth,
             decodeHeight: decodeHeight,
             diskWidth: diskWidth,
+            loadingImageUrl: selectedVariant == CanteenImageVariant.medium
+                ? canteenImageUrl(imageUrl, variant: CanteenImageVariant.thumb)
+                : null,
           );
     if (!offline) return child;
     return ColorFiltered(
@@ -101,6 +106,7 @@ class CanteenStatusImage extends StatelessWidget {
     required int? decodeWidth,
     required int? decodeHeight,
     required int? diskWidth,
+    String? loadingImageUrl,
   }) {
     return AppCachedImage.public(
       imageUrl: url,
@@ -126,8 +132,21 @@ class CanteenStatusImage extends StatelessWidget {
         return errorWidget?.call(context, failedUrl, error) ??
             _buildPlaceholder(context);
       },
-      placeholder: (context, _) =>
-          placeholder?.call(context, url) ?? _buildPlaceholder(context),
+      placeholder: (context, _) {
+        // 详情先复用首页的小图缓存，中图完成后替换，避免等待期间一直空白。
+        if (loadingImageUrl != null && loadingImageUrl != url) {
+          return AppCachedImage.public(
+            imageUrl: loadingImageUrl,
+            width: width,
+            height: height,
+            fit: fit,
+            memCacheWidth: 480,
+            placeholder: (context, _) => _buildPlaceholder(context),
+            errorWidget: (context, _, __) => _buildPlaceholder(context),
+          );
+        }
+        return placeholder?.call(context, url) ?? _buildPlaceholder(context);
+      },
     );
   }
 

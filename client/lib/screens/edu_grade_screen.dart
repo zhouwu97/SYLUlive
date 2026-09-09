@@ -1,4 +1,7 @@
 import 'dart:async';
+import '../features/academic/application/academic_session_controller.dart';
+import '../features/academic/application/academic_login_coordinator.dart';
+import '../features/academic/presentation/academic_login_dialog.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -66,6 +69,48 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   final ScrollController _overviewScrollController = ScrollController();
 
   EduProvider? _eduProvider;
+  AcademicSessionController? _academicSession;
+  String? _academicContext;
+  String? _academicIdentityKey;
+  bool _wasSessionReady = false;
+  bool _sessionReadBlocked = false;
+  Future<bool>? _sessionReadFuture;
+
+  String get _sessionMessage =>
+      _academicSession?.failure?.message ?? '请先完成教务登录后重试';
+
+  Future<bool> _ensureReadReady({bool retry = false}) async {
+    final session = _academicSession;
+    if (session == null) return true;
+    final running = _sessionReadFuture;
+    if (running != null) {
+      await running;
+      return mounted && (_academicSession?.isAuthenticated ?? false);
+    }
+    if (session.isAuthenticated) {
+      _sessionReadBlocked = false;
+      return true;
+    }
+    // 同一轮成绩、GPA 和学分读取共用一次恢复；取消后只由显式重试再弹框。
+    if (_sessionReadBlocked && !retry) return false;
+    final identity = session.identity;
+    final appUserId = session.appUserId;
+    final operation = ensureAcademicSessionForRead(context,
+        controller: session,
+        coordinator: context.read<AcademicLoginCoordinator?>());
+    _sessionReadFuture = operation;
+    try {
+      final result = await operation;
+      final sameIdentity = mounted &&
+          session.identity == identity &&
+          session.appUserId == appUserId;
+      final ready = sameIdentity && (result || session.isAuthenticated);
+      if (sameIdentity) _sessionReadBlocked = !ready;
+      return ready;
+    } finally {
+      if (identical(_sessionReadFuture, operation)) _sessionReadFuture = null;
+    }
+  }
 
   @override
   void initState() {
@@ -100,9 +145,25 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     super.didChangeDependencies();
     final eduProvider = context.read<EduProvider>();
     final authProvider = context.watch<AuthProvider>();
+    final session = context.watch<AcademicSessionController?>();
+    final identityKey = session == null
+        ? null
+        : '${session.appUserId}|${session.identity?.storageId ?? session.studentId}';
+    final sessionContext = session == null
+        ? null
+        : '${session.appUserId}|${session.identity?.storageId}|${session.contextGeneration}';
+    final ready = session?.isAuthenticated ?? false;
+    final becameReady = !_wasSessionReady && ready;
+    _wasSessionReady = ready;
+    _academicSession = session;
     final currentUserId = authProvider.user?.id.toString();
 
-    if (_eduProvider != eduProvider || _lastUserId != currentUserId) {
+    if (_eduProvider != eduProvider ||
+        _lastUserId != currentUserId ||
+        _academicContext != sessionContext) {
+      _academicContext = sessionContext;
+      if (_academicIdentityKey != identityKey) _sessionReadBlocked = false;
+      _academicIdentityKey = identityKey;
       _eduProvider = eduProvider;
       _lastUserId = currentUserId;
 
@@ -132,10 +193,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       if (currentUserId != null) {
         // 捕获局部变量防止异步期间 _lastUserId 变化
         final capturedUserId = currentUserId;
+        final capturedContext = sessionContext;
         eduProvider.setUserId(currentUserId);
         Future<void> initFlow() async {
           await eduProvider.ensureStatusLoaded();
-          if (!mounted || _lastUserId != capturedUserId) return;
+          if (!mounted ||
+              _lastUserId != capturedUserId ||
+              _academicContext != capturedContext) {
+            return;
+          }
           if (!eduProvider.isBound) {
             _showUnavailableState(eduProvider.errorMessage ?? '请先绑定教务账号');
             return;
@@ -147,10 +213,28 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           await _initSemesterAndLoad(capturedUserId);
         }
 
-        initFlow();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              _lastUserId == capturedUserId &&
+              _academicContext == capturedContext) {
+            unawaited(initFlow());
+          }
+        });
       } else {
         _showUnavailableState('请先登录后查看成绩');
       }
+    } else if (becameReady &&
+        _sessionReadBlocked &&
+        _sessionReadFuture == null) {
+      _sessionReadBlocked = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _academicContext != sessionContext) return;
+        unawaited(_loadGrades());
+        unawaited(_loadAcademicSituation());
+        if (_section == GradeCenterSection.overview) {
+          unawaited(_loadCreditRequirements());
+        }
+      });
     }
   }
 
@@ -172,8 +256,14 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Future<void> _initSemesterAndLoad(String userId) async {
+    final academicContext = _academicContext;
     // Load persisted semester
     final prefs = await AppPreferencesStore.getInstance();
+    if (!mounted ||
+        _lastUserId != userId ||
+        _academicContext != academicContext) {
+      return;
+    }
     final savedKey = 'edu_last_semester_$userId';
     final saved = prefs.getString(savedKey);
 
@@ -208,7 +298,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     if (mounted) setState(() {});
     await _loadGrades();
-    if (!mounted) return;
+    if (!mounted ||
+        _lastUserId != userId ||
+        _academicContext != academicContext) {
+      return;
+    }
 
     // 仅在当前数据源声明支持时预取 GPA；本机直连尚未迁移该能力，不能
     // 触发旧服务端接口，也不能拿旧来源缓存填充当前页面。
@@ -264,6 +358,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     final gen = ++_academicRequestGeneration;
+    if (!await _ensureReadReady(retry: forceRefresh)) {
+      if (mounted && _academicRequestGeneration == gen) {
+        setState(() {
+          _isAcademicLoading = false;
+          _academicError = _sessionMessage;
+        });
+      }
+      return;
+    }
+    if (!mounted || _academicRequestGeneration != gen) return;
     final result = await provider.fetchAcademicSituation();
 
     if (!mounted || _academicRequestGeneration != gen) return;
@@ -280,6 +384,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() {
       _isAcademicLoading = false;
       _academicError = result.errorMessage ?? '官方 GPA 获取失败';
+      if (_academicSession?.isAuthenticated == false) {
+        _sessionReadBlocked = true;
+      }
     });
   }
 
@@ -324,6 +431,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     final gen = ++_requirementRequestGeneration;
+    if (!await _ensureReadReady(retry: forceRefresh)) {
+      if (mounted && _requirementRequestGeneration == gen) {
+        setState(() {
+          _isRequirementLoading = false;
+          _requirementError = _sessionMessage;
+        });
+      }
+      return;
+    }
+    if (!mounted || _requirementRequestGeneration != gen) return;
     final result = await provider.fetchCreditRequirements();
 
     if (!mounted || _requirementRequestGeneration != gen) return;
@@ -343,6 +460,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() {
       _isRequirementLoading = false;
       _requirementError = result.errorMessage ?? '学分要求获取失败';
+      if (_academicSession?.isAuthenticated == false) {
+        _sessionReadBlocked = true;
+      }
     });
   }
 
@@ -358,7 +478,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     return success;
   }
 
-  Future<void> _loadGrades() async {
+  Future<void> _loadGrades({bool retrySession = false}) async {
     if (_eduProvider == null) return;
 
     final gen = ++_requestGeneration;
@@ -385,6 +505,18 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
+    if (!await _ensureReadReady(retry: retrySession)) {
+      if (mounted && _requestGeneration == gen) {
+        setState(() {
+          _isInitialLoading = false;
+          _isRefreshing = false;
+          if (cache == null) _pageState = GradePageState.error;
+          _errorMessage = _sessionMessage;
+        });
+      }
+      return;
+    }
+    if (!mounted || _requestGeneration != gen) return;
     final result =
         await _eduProvider!.fetchGrades(_selectedYear, _selectedSemester);
 
@@ -406,6 +538,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _prefetchGradeDetails(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
+      if (_academicSession?.isAuthenticated == false) {
+        _sessionReadBlocked = true;
+      }
       if (cache != null) {
         // 有效空缓存也属于已知数据，刷新失败时保留。
         setState(() {
@@ -431,6 +566,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() => _isRefreshing = true);
 
     final gen = ++_requestGeneration;
+    if (!await _ensureReadReady(retry: true)) {
+      if (mounted && _requestGeneration == gen) {
+        setState(() {
+          _isRefreshing = false;
+          _errorMessage = _sessionMessage;
+        });
+      }
+      return null;
+    }
+    if (!mounted || _requestGeneration != gen) return null;
     final result =
         await _eduProvider!.fetchGrades(_selectedYear, _selectedSemester);
 
@@ -455,7 +600,12 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return result.data;
     }
 
-    setState(() => _isRefreshing = false);
+    setState(() {
+      _isRefreshing = false;
+      if (_academicSession?.isAuthenticated == false) {
+        _sessionReadBlocked = true;
+      }
+    });
     if (mounted && !silent) _showSnackBar('刷新失败，请稍后重试');
     return null;
   }
@@ -828,7 +978,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           child: GradeEmptyState(
             state: GradePageState.error,
             errorMessage: _errorMessage,
-            onRetry: _loadGrades,
+            onRetry: () => _loadGrades(retrySession: true),
           ),
         ),
       if (_pageState == GradePageState.empty && _grades.isEmpty)

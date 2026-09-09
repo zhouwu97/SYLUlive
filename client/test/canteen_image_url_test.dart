@@ -49,6 +49,6 @@ void main() {
     expect(image.imageUrl, contains('/uploads/photo_v1_thumb.jpg'));
     expect(image.memCacheWidth, 444);
     expect(image.memCacheHeight, 312);
-    expect(image.maxWidthDiskCache, 480);
+    expect(image.maxWidthDiskCache, isNull);
   });
 }

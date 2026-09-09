@@ -298,11 +298,16 @@ func imageDiskPath(publicPath string) (string, error) {
 
 // HasActivePublicReferences 检查指定 fileID 是否仍存在有效公开业务引用。
 func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool, error) {
+	return newPublicReferenceChecker(tx).hasActivePublicReferences(fileID, filePath)
+}
+
+func (checker *publicReferenceChecker) hasActivePublicReferences(fileID uint, filePath string) (bool, error) {
+	tx := checker.db
 	if fileID == 0 {
 		return false, nil
 	}
 	// 1. 菜品实拍 (approved)
-	if tx.Migrator().HasTable("canteen_dish_photos") {
+	if checker.hasTable("canteen_dish_photos") {
 		var dishPhotoCount int64
 		if err := tx.Table("canteen_dish_photos").
 			Where("file_id = ? AND status = ?", fileID, models.DishPhotoStatusApproved).
@@ -315,7 +320,7 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 	}
 
 	// 2. 帖子图片 (post_images join posts 有效状态)
-	if tx.Migrator().HasTable("post_images") && tx.Migrator().HasTable("posts") {
+	if checker.hasTable("post_images") && checker.hasTable("posts") {
 		var postImageCount int64
 		if err := tx.Table("post_images AS pi").
 			Joins("JOIN posts p ON p.id = pi.post_id").
@@ -334,7 +339,7 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 	}
 
 	// 2b. 回复图片 (reply_images join replies 有效状态)
-	if tx.Migrator().HasTable("reply_images") && tx.Migrator().HasTable("replies") {
+	if checker.hasTable("reply_images") && checker.hasTable("replies") {
 		var replyImageCount int64
 		if err := tx.Table("reply_images AS ri").
 			Joins("JOIN replies r ON r.id = ri.reply_id").
@@ -347,71 +352,9 @@ func HasActivePublicReferences(tx *gorm.DB, fileID uint, filePath string) (bool,
 		}
 	}
 
-	// 3. 自定义表情资产
-	if tx.Migrator().HasTable("user_emoji_assets") {
-		var emojiCount int64
-		if err := tx.Table("user_emoji_assets").Where("file_id = ?", fileID).Count(&emojiCount).Error; err != nil {
-			return false, err
-		}
-		if emojiCount > 0 {
-			return true, nil
-		}
-	}
+	// 收藏和私信只保证资源仍被使用，不构成公开发布授权。
 
-	// 4. 路径引用（食堂封面、评价、头像等）
-	if filePath != "" {
-		cleanPath := strings.TrimPrefix(filePath, "/")
-		if tx.Migrator().HasTable("canteens") {
-			var canteenCount int64
-			if err := tx.Table("canteens").Where("image = ? OR image = ?", filePath, "/"+cleanPath).Count(&canteenCount).Error; err != nil {
-				return false, err
-			}
-			if canteenCount > 0 {
-				return true, nil
-			}
-		}
-		if tx.Migrator().HasTable("canteen_ratings") {
-			var ratingCount int64
-			if err := tx.Table("canteen_ratings").Where("(status = ? OR status IS NULL OR status = '') AND (images LIKE ? OR images LIKE ?)", models.ReviewEventStatusActive, "%"+filePath+"%", "%"+cleanPath+"%").Count(&ratingCount).Error; err != nil {
-				return false, err
-			}
-			if ratingCount > 0 {
-				return true, nil
-			}
-		}
-		if tx.Migrator().HasTable("canteen_review_events") {
-			var reviewCount int64
-			if err := tx.Table("canteen_review_events").Where(
-				"status = ? AND (images LIKE ? OR images LIKE ?)",
-				models.ReviewEventStatusActive, "%"+filePath+"%", "%"+cleanPath+"%",
-			).Count(&reviewCount).Error; err != nil {
-				return false, err
-			}
-			if reviewCount > 0 {
-				return true, nil
-			}
-		}
-		if tx.Migrator().HasTable("users") {
-			var userCount int64
-			if err := tx.Table("users").Where("avatar = ? OR avatar = ? OR background = ? OR background = ?", filePath, "/"+cleanPath, filePath, "/"+cleanPath).Count(&userCount).Error; err != nil {
-				return false, err
-			}
-			if userCount > 0 {
-				return true, nil
-			}
-		}
-		if tx.Migrator().HasTable("water_sections") {
-			var sectionCount int64
-			if err := tx.Table("water_sections").Where("avatar_url IN ? OR cover_url IN ? OR cover_portrait_url IN ? OR cover_landscape_url IN ? OR cover_square_url IN ?", []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}, []string{filePath, "/" + cleanPath}).Count(&sectionCount).Error; err != nil {
-				return false, err
-			}
-			if sectionCount > 0 {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
+	return checker.hasPublicPathReference(filePath)
 }
 
 // ReconcileFilePublicAccess 在公开业务引用移除后（如实拍下架、帖子删除等），

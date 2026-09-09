@@ -601,6 +601,30 @@ void main() {
     controller.dispose();
   });
 
+  test('warm-up 临时断网不消耗本代恢复机会，并发重试共享恢复', () async {
+    AppPreferencesStore.setMockInitialValues({});
+    final source = _FakeAcademicDataSource();
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    source._state = SessionState.expired;
+    source.restoreError = const NetworkException(message: '测试网络暂不可用');
+    final credentials = _MemoryAcademicCredentialStore()
+      ..value = const AcademicCredential(
+          studentId: '2026000001', password: 'fixture');
+    final coordinator =
+        _newCoordinator(controller, credentials, MemoryPreferencesStore());
+    await coordinator.warmUp();
+    expect(controller.isAuthenticated, false);
+    final attempts = source.restoreCalls;
+    source.restoreError = null;
+    source.restoredStudentId = '2026000001';
+    await Future.wait([coordinator.warmUp(), coordinator.warmUp()]);
+    expect(controller.isAuthenticated, true);
+    expect(source.restoreCalls, attempts + 1);
+    expect(credentials.value, isNotNull);
+    controller.dispose();
+  });
+
   test('协调器区分凭据错误和网络错误的删除策略', () async {
     final invalidSource = _FakeAcademicDataSource(
       loginResult: const InvalidCredentials(message: '教务账号或密码错误'),

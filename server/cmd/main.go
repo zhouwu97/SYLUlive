@@ -2628,40 +2628,15 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 }
 
 // ensureSecurityHardeningSchema 建立文件访问范围和举报 pending 唯一约束，
-// 并把已有公开业务引用的文件回填为 public；未被公开引用的历史文件保持 private。
+// 历史文件权限由带版本号的事务迁移修复，普通重启不再全量重置。
 func ensureSecurityHardeningSchema(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&models.File{}, "AccessScope") {
+		if err := db.Migrator().AddColumn(&models.File{}, "AccessScope"); err != nil {
+			return err
+		}
+	}
 	statements := []string{
-		`ALTER TABLE files ADD COLUMN IF NOT EXISTS access_scope VARCHAR(16) NOT NULL DEFAULT 'private'`,
 		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
-		`UPDATE files SET access_scope = 'private' WHERE access_scope IS NULL OR access_scope = ''`,
-		`UPDATE files SET access_scope = 'private' WHERE access_scope = 'public'`,
-		`UPDATE files
-SET status = 'active', claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
-WHERE EXISTS (SELECT 1 FROM messages WHERE messages.file_id = files.id)`,
-		`UPDATE files SET access_scope = 'public'
-WHERE EXISTS (SELECT 1 FROM post_images JOIN posts ON posts.id = post_images.post_id
-              WHERE post_images.file_id = files.id AND posts.status IN ('normal','sold','closed'))
-   OR EXISTS (SELECT 1 FROM reply_images JOIN replies ON replies.id = reply_images.reply_id
-              WHERE reply_images.file_id = files.id AND replies.status = 'normal')
-   OR EXISTS (SELECT 1 FROM users WHERE users.avatar = files.path OR users.avatar LIKE files.path || '?%')
-   OR EXISTS (SELECT 1 FROM users WHERE users.background = files.path OR users.background LIKE files.path || '?%')
-   OR EXISTS (SELECT 1 FROM water_sections
-              WHERE water_sections.avatar_url = files.path
-                 OR water_sections.cover_url = files.path
-                 OR water_sections.cover_portrait_url = files.path
-                 OR water_sections.cover_landscape_url = files.path
-                 OR water_sections.cover_square_url = files.path)`,
-		`UPDATE files SET access_scope = 'public'
-WHERE EXISTS (SELECT 1 FROM canteens
-              WHERE canteens.verified = TRUE
-                AND (canteens.image = files.path
-                  OR canteens.image LIKE files.path || '?%'))
-   OR EXISTS (SELECT 1
-              FROM canteen_ratings
-              JOIN canteens ON canteens.id = canteen_ratings.canteen_id
-              WHERE canteens.verified = TRUE
-                AND (canteen_ratings.images LIKE '%' || files.path || '%'
-                  OR canteen_ratings.images LIKE '%/' || files.path || '%'))`,
 		`DROP INDEX IF EXISTS uq_pending_report_target`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
  ON reports (reporter_id, target_type, target_id)
@@ -2671,6 +2646,9 @@ WHERE EXISTS (SELECT 1 FROM canteens
 		if err := db.Exec(statement).Error; err != nil {
 			return err
 		}
+	}
+	if err := services.MigrateFileAccessScopes(db); err != nil {
+		return err
 	}
 	return services.BackfillPublicImageVariantTasks(db)
 }

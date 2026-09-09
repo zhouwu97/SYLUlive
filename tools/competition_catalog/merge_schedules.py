@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from _catalog_v2 import build_document, validate_document, normalize_record
+from registration_info import apply_registration
 
 DATE_FIELDS = ('registration_start', 'registration_end', 'event_start', 'event_end')
 TIME_FIELDS = (*DATE_FIELDS, 'registration_time_text', 'event_time_text',
@@ -42,6 +43,9 @@ def validate_schedules(schedules: dict, *, today: date | None = None) -> None:
     seen = set()
     for item in schedules['items']:
         key = item['competition_id']
+        item_checked = date.fromisoformat(item.get('verified_on', schedules['verified_on']))
+        if item_checked > today:
+            raise ValueError(f'{key}: 单条核验日期不能在未来')
         if key in seen:
             raise ValueError(f'{key}: 重复日程，请先解决来源冲突')
         seen.add(key)
@@ -93,16 +97,15 @@ def validate_schedules(schedules: dict, *, today: date | None = None) -> None:
 
 
 def add_historical_fallbacks(current: dict, historical: dict) -> dict:
-    """仅补辽宁省赛缺口；当届安排和当届冲突证据优先于任何往年参考。"""
+    """仅补缺失或更旧的参考；当届安排和当届冲突证据优先于往年记录。"""
     validate_schedules(current)
     validate_schedules(historical)
     result = deepcopy(current)
     by_id = {item['competition_id']: item for item in result['items']}
     for item in historical['items']:
         key = item['competition_id']
-        if (not key.startswith('PROV-') or item['scope'] != 'liaoning'
-                or item['fields']['time_status'] != 'historical'):
-            raise ValueError(f'{key}: 此补缺操作只接受辽宁省赛往年参考')
+        if item['fields']['time_status'] != 'historical':
+            raise ValueError(f'{key}: 此补缺操作只接受注明真实年份的往年参考')
         existing = by_id.get(key)
         if existing:
             if existing['expected_title'] != item['expected_title']:
@@ -125,7 +128,8 @@ def add_historical_fallbacks(current: dict, historical: dict) -> dict:
     return result
 
 
-def merge_schedules(catalog: dict, schedules: dict, dataset_version: str) -> dict:
+def merge_schedules(catalog: dict, schedules: dict, dataset_version: str,
+                    registration: dict | None = None) -> dict:
     errors = validate_document(catalog)
     if errors:
         raise ValueError('需要管理员导出的完整有效目录包：' + '; '.join(errors))
@@ -159,11 +163,14 @@ def merge_schedules(catalog: dict, schedules: dict, dataset_version: str) -> dic
         source_urls = '；'.join(schedules['sources'][key]['url'] for key in item['source_ids'])
         note = fields.get('time_note', '')
         scope = SCOPES[item['scope']]
-        record['time_note'] = f"{item['season_year']}届；{scope}；核验 {schedules['verified_on']}。{note} 来源：{source_urls}"
+        checked = item.get('verified_on', schedules['verified_on'])
+        record['time_note'] = f"{item['season_year']}届；{scope}；核验 {checked}。{note} 来源：{source_urls}"
         if len(record['time_note']) > 500:
             raise ValueError(f'{key}: 时间说明超过数据库长度限制')
         # 通知入口属于本次核验；不改变来源可信等级、推荐权限或赛事实体关系。
         record['notice_url'] = source['url']
+    if registration is not None:
+        rows = apply_registration(rows, registration)
     document = build_document(
         rows, dataset_version=dataset_version,
         publish_status=catalog['publish_status'],
@@ -176,7 +183,7 @@ def merge_schedules(catalog: dict, schedules: dict, dataset_version: str) -> dic
     return document
 
 
-def audit_coverage(snapshot: dict, schedules: dict) -> dict:
+def audit_coverage(snapshot: dict, schedules: dict, registration: dict | None = None) -> dict:
     validate_schedules(schedules)
     items = snapshot['items']
     expected = snapshot.get('total', snapshot.get('item_count'))
@@ -193,10 +200,29 @@ def audit_coverage(snapshot: dict, schedules: dict) -> dict:
         for x in items if x['competition_id'] not in patched
     ]
     historical_count = sum(x['fields']['time_status'] == 'historical' for x in schedules['items'])
-    return {'total': expected, 'reviewed': len(patched), 'historical_reference_count': historical_count,
+    result = {'total': expected, 'reviewed': len(patched), 'historical_reference_count': historical_count,
+            'confirmed_count': sum(x['fields']['time_status'] == 'confirmed' for x in schedules['items']),
+            'pending_count': sum(x['fields']['time_status'] == 'pending' for x in schedules['items']),
+            'event_date_count': sum(bool(x['fields'].get('event_start') or x['fields'].get('event_end'))
+                                    for x in schedules['items']),
+            'event_text_count': sum(bool(x['fields'].get('event_time_text')) for x in schedules['items']),
             'remaining': remaining,
-            'verified_on': schedules['verified_on'],
-            'note': 'reviewed 表示有来源记录，不等于均可报名；省赛、校赛未继承全国截止时间。'}
+            'verified_on': max([schedules['verified_on']] +
+                               [x.get('verified_on', schedules['verified_on']) for x in schedules['items']]),
+            'note': 'reviewed 表示有来源记录，不等于时间齐全或仍可报名；event_text_count 包含待确认说明。仅为本地补录覆盖统计，不代表线上数据。'}
+    if registration is not None:
+        # 复用真实合并的身份和格式检查，但审计不输出可激活的目录包。
+        apply_registration(items, registration)
+        registered = {x['competition_id'] for x in registration['items']}
+        result['registration_guide_count'] = len(registered)
+        result['registration_entry_only_count'] = sum(x['status'] == 'entry_only' for x in registration['items'])
+        result['registration_historical_count'] = sum(x['status'] == 'historical' for x in registration['items'])
+        result['verified_on'] = max(result['verified_on'], registration['verified_on'])
+        result['registration_remaining'] = [
+            {'competition_id': x['competition_id'], 'title': x['title']}
+            for x in items if x['competition_id'] not in registered
+        ]
+    return result
 
 
 def main() -> int:
@@ -206,20 +232,28 @@ def main() -> int:
     parser.add_argument('schedules', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--dataset-version')
+    parser.add_argument('--registration', type=Path, help='可选：已核验报名入口和步骤补录')
     args = parser.parse_args()
-    if args.output.resolve() in {args.catalog.resolve(), args.schedules.resolve()}:
+    inputs = {args.catalog.resolve(), args.schedules.resolve()}
+    if args.registration:
+        inputs.add(args.registration.resolve())
+    if args.output.resolve() in inputs:
         parser.error('输出不能覆盖输入事实源')
+    if args.registration and args.mode == 'fallback':
+        parser.error('fallback 不接受报名补录')
     try:
         catalog = json.loads(args.catalog.read_text(encoding='utf-8-sig'))
         schedules = json.loads(args.schedules.read_text(encoding='utf-8-sig'))
+        registration = (json.loads(args.registration.read_text(encoding='utf-8-sig'))
+                        if args.registration else None)
         if args.mode == 'merge':
             if not args.dataset_version:
                 parser.error('merge 需要 --dataset-version')
-            output = merge_schedules(catalog, schedules, args.dataset_version)
+            output = merge_schedules(catalog, schedules, args.dataset_version, registration)
         elif args.mode == 'fallback':
             output = add_historical_fallbacks(catalog, schedules)
         else:
-            output = audit_coverage(catalog, schedules)
+            output = audit_coverage(catalog, schedules, registration)
         args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     except (ValueError, KeyError, TypeError) as exc:
         parser.error(str(exc))

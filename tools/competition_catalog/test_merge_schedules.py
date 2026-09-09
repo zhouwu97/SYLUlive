@@ -27,6 +27,19 @@ def fixture():
 
 
 class ScheduleMergeTest(unittest.TestCase):
+    def test_historical_fallback_accepts_national_and_school_scopes_without_replacing_current(self):
+        _, current = fixture()
+        historical = deepcopy(current)
+        historical['items'][0].update(season_year=2025, scope='sylu', source_ids=['old_school'])
+        historical['items'][0]['fields'] = {'time_status': 'historical', 'registration_time_text': '2025届校内参考'}
+        historical['sources']['old_school'] = {'title': '2025校内通知', 'publisher': '学校', 'url': 'https://example.org/2025'}
+        self.assertEqual(add_historical_fallbacks(current, historical), current)
+        for scope in ['national', 'sylu']:
+            historical['items'][0].update(competition_id='NAT-NEW', expected_title='另一项赛事', scope=scope)
+            merged = add_historical_fallbacks(current, historical)
+            self.assertEqual(len(merged['items']), 2)
+            self.assertFalse(next(x for x in merged['items'] if x['competition_id']=='NAT-NEW')['fields'].get('registration_end'))
+
     def test_historical_fallback_preserves_current_and_prefers_recent_season(self):
         schedules = json.loads((Path(__file__).parent / 'data/verified_schedules_2026.json').read_text(encoding='utf-8'))
         historical = deepcopy(schedules)
@@ -145,7 +158,7 @@ class ScheduleMergeTest(unittest.TestCase):
 
     def test_shipped_evidence_is_valid_and_unique(self):
         schedules = json.loads((Path(__file__).parent / 'data/verified_schedules_2026.json').read_text(encoding='utf-8'))
-        validate_schedules(schedules, today=date(2026, 9, 8))
+        validate_schedules(schedules, today=date(2026, 9, 9))
         # 全量补录也要经过真实目录规范化，覆盖说明长度和哈希校验。
         template = fixture()[0]['items'][0]
         records = [{**template, 'competition_id': item['competition_id'],

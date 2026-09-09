@@ -83,7 +83,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
                 children: [
                   if (schoolLabel.isNotEmpty) _softPill(schoolLabel, isDark),
                   if (event.competitionLevel.isNotEmpty)
-                    _softPill(event.competitionLevel, isDark),
+                    _softPill(competitionLevelLabel(event.competitionLevel), isDark),
                   if (event.primaryCategory != null)
                     _softPill(event.primaryCategory!.name, isDark),
                 ],
@@ -169,7 +169,10 @@ class CompetitionStudentEventCard extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         if (event.participationType.isNotEmpty)
-                          _outlinePill(event.participationType, isDark),
+                          _outlinePill(
+                            competitionParticipationLabel(event.participationType),
+                            isDark,
+                          ),
                       ],
                     ),
                   ),
@@ -218,14 +221,13 @@ class CompetitionStudentEventCard extends StatelessWidget {
 
 Widget _infoLine(IconData icon, String text, bool isDark) {
   return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Icon(icon, size: 15, color: CompetitionUiTokens.subColor(isDark)),
       const SizedBox(width: 6),
       Expanded(
         child: Text(
           text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 12,
             height: 1.2,

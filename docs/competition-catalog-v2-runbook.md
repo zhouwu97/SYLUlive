@@ -36,6 +36,60 @@ python tools/competition_catalog/validate_catalog_v2.py catalog.json
 离线校验只用于提前发现问题。Go 服务仍会独立复算所有 `record_hash` 和
 `package_hash`，不得跳过服务端校验。
 
+## 补录已核验报名日程
+
+`tools/competition_catalog/data/verified_schedules_2026.json` 保存已核验的当届日程、
+校内/省赛/全国适用范围和官方通知。它是增量事实清单，不能直接作为目录包激活。
+第二来源为辽宁省大学生创新创业管理共享平台（`https://cxcy.upln.cn/match`），
+核对时选择当届年度和“全部”。来源中的 `registration_window` 保留平台原始时刻；
+更早的校内截止仍优先。同属省赛而截止不一致的记录保留双方说明、标记 `pending`，
+在确认延期或补录阶段前不生成统一截止提醒；单赛道日期不能推广为整个赛事日期。
+当届日程缺失时，可使用对应全国赛、辽宁赛区或校内选拔的最近可核验往年记录：保留原始 `season_year`，
+`time_status=historical`，日期仅写入展示文字和来源证据，不写入报名/比赛时间戳。
+优先采用2025届，缺失时采用2024届，并明确标注参考年份。`fallback` 只补缺口，
+不会覆盖已有当届安排或冲突说明；后续当届日程核实后通过正常目录合并替换参考。
+
+```powershell
+python tools/competition_catalog/merge_schedules.py fallback current-schedules.json historical-schedules.json combined-schedules.json
+```
+
+使用管理员保存或导出的完整活动目录 JSON 合并，不能使用缺少治理字段的公开赛事接口响应：
+
+```powershell
+python tools/competition_catalog/merge_schedules.py merge catalog.json tools/competition_catalog/data/verified_schedules_2026.json catalog-schedules.json --dataset-version 2026.09.08-schedules-1
+python tools/competition_catalog/validate_catalog_v2.py catalog-schedules.json
+```
+
+报名入口、步骤、材料和公开校内联系方式保存在
+`tools/competition_catalog/data/verified_registration_2026.json`。合并时追加
+`--registration tools/competition_catalog/data/verified_registration_2026.json`，
+指引写入现有比赛说明并保留原介绍；重复合并只更新指引区段。
+报名方式已核验不代表报名仍开放，也不代表日程已补齐。
+当届报名方式缺失时，可使用 `status=historical`、实际 `season_year` 的往年指引，
+详情明确显示旧届年份，保留旧链接作为参考，不将其提升为当前官网入口，
+也不覆盖已存在的当届报名指引。
+
+校内信息使用[创新创业学院通知公告](https://cxcyxy.sylu.edu.cn/tztg.htm)核验。
+学生提交、学校审核推荐、省平台备案分别保留，校内截止优先于较晚的平台开放窗口。
+通知年份矛盾或同阶段日期冲突时保留待核状态，不自行改年或推算日期。
+日程单条 `verified_on` 表示该条最近核验日期，未填写时沿用文件级日期。
+
+合并保留评级、推荐权限、阻断项和发布门禁；已有日期冲突时停止并要求复核。
+分赛道安排不强行合并为统一截止，未核实项目不填写推测日期。仅公布日期的通知，
+服务按北京时间截止日结束计算；有明确时刻的通知保留原时刻，界面优先展示原通知范围说明。
+合并后仍须按下文备份、导入、检查 diff 和激活，且先部署支持日期边界处理的服务端版本。
+
+完整公开快照（含 `total` 和去重后的全部 `items`）可用于统计覆盖率，但不能用于发布：
+
+```powershell
+python tools/competition_catalog/merge_schedules.py audit public-events.json tools/competition_catalog/data/verified_schedules_2026.json coverage.json
+```
+
+审计命令也可追加同一 `--registration` 参数，同时列出报名指引缺口。
+`reviewed` 包含待核及往年记录，`event_text_count` 包含待确认说明；
+两者均不是完整率。审计结果不能作为发布包。没有服务器或完整目录时，可先完成
+本地补录与校验，保留后续导入；Git 提交本身不会把这些信息发布到线上。
+
 ## 数据库备份门禁
 
 1. 只读确认生产数据库类型、连接方式、库名和磁盘余量。

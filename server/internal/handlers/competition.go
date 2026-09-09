@@ -593,7 +593,7 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	baseQuery := func() *gorm.DB {
 		return scope.ApplyPublic(h.db.WithContext(ctx).Model(&models.CompetitionEvent{}))
 	}
-	var publishedTotal, deadlineSoonCount, timePendingCount, recognizedCount int64
+	var publishedTotal, deadlineSoonCount, timePendingCount, registrationPendingCount, recognizedCount int64
 	if err := baseQuery().Count(&publishedTotal).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
@@ -612,6 +612,12 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 		return
 	}
 	if err := baseQuery().
+		Where("time_status IN ? OR (registration_start IS NULL AND registration_end IS NULL AND (time_status IN ? OR TRIM(COALESCE(registration_time_text, '')) = ''))", []string{"historical", "estimated"}, []string{"pending", "unknown"}).
+		Count(&registrationPendingCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
+		return
+	}
+	if err := baseQuery().
 		Where("school_recognition_status = ?", "recognized").
 		Count(&recognizedCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
@@ -620,6 +626,7 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"published_total": publishedTotal, "deadline_soon_count": deadlineSoonCount,
 		"time_pending_count": timePendingCount, "recognized_count": recognizedCount,
+		"registration_pending_count": registrationPendingCount,
 	})
 }
 
@@ -730,6 +737,7 @@ func (h *CompetitionHandler) ListEvents(c *gin.Context) {
 	query.Count(&total)
 	var events []models.CompetitionEvent
 	if err := query.Order("sort_date ASC NULLS LAST").Order("importance_score DESC").
+		Order("competition_events.id ASC").
 		Offset((page - 1) * pageSize).Limit(pageSize).Find(&events).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛列表失败"})
 		return

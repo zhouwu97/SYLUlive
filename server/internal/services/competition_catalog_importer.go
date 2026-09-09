@@ -283,7 +283,7 @@ func catalogEventUpdates(event models.CompetitionEvent) map[string]any {
 		"event_end": event.EventEnd, "registration_time_text": event.RegistrationTimeText,
 		"event_time_text": event.EventTimeText, "time_precision": event.TimePrecision,
 		"time_status": event.TimeStatus, "time_note": event.TimeNote,
-		"sort_month": event.SortMonth, "location": event.Location, "is_online": event.IsOnline,
+		"sort_month": event.SortMonth, "sort_date": event.SortDate, "location": event.Location, "is_online": event.IsOnline,
 		"official_url": event.OfficialURL, "notice_url": event.NoticeURL,
 		"source_channel": event.SourceChannel, "source_note": event.SourceNote,
 		"status": event.Status, "manual_rating_reason_public": event.ManualRatingReasonPublic,
@@ -320,30 +320,37 @@ func (i *CompetitionCatalogImporter) eventFromCatalogRecord(
 			)
 		}
 	}
-	parse := func(value string) (*time.Time, error) {
+	parse := func(value string, endOfDay bool) (*time.Time, error) {
 		if value == "" {
 			return nil, nil
 		}
-		for _, layout := range []string{"2006-01-02", time.RFC3339} {
-			if parsed, parseErr := time.Parse(layout, value); parseErr == nil {
+		// 通知只写日期时按北京时间的自然日处理，避免截止日刚开始就判定过期。
+		if len(value) == len("2006-01-02") {
+			if parsed, parseErr := time.ParseInLocation("2006-01-02", value, time.FixedZone("CST", 8*60*60)); parseErr == nil {
+				if endOfDay {
+					parsed = parsed.AddDate(0, 0, 1).Add(-time.Second)
+				}
 				return &parsed, nil
 			}
 		}
+		if parsed, parseErr := time.Parse(time.RFC3339, value); parseErr == nil {
+			return &parsed, nil
+		}
 		return nil, fmt.Errorf("日期格式无效: %s", value)
 	}
-	registrationStart, err := parse(normalized.RegistrationStart)
+	registrationStart, err := parse(normalized.RegistrationStart, false)
 	if err != nil {
 		return models.CompetitionEvent{}, err
 	}
-	registrationEnd, err := parse(normalized.RegistrationEnd)
+	registrationEnd, err := parse(normalized.RegistrationEnd, true)
 	if err != nil {
 		return models.CompetitionEvent{}, err
 	}
-	eventStart, err := parse(normalized.EventStart)
+	eventStart, err := parse(normalized.EventStart, false)
 	if err != nil {
 		return models.CompetitionEvent{}, err
 	}
-	eventEnd, err := parse(normalized.EventEnd)
+	eventEnd, err := parse(normalized.EventEnd, true)
 	if err != nil {
 		return models.CompetitionEvent{}, err
 	}
@@ -352,6 +359,14 @@ func (i *CompetitionCatalogImporter) eventFromCatalogRecord(
 		return datatypes.JSON(encoded)
 	}
 	recordHash := normalized.RecordHash
+	// 目录中的日期同时驱动首页排序；没有日期时保留空值，不能使用导入当天冒充日程。
+	var sortDate *time.Time
+	if normalized.TimeStatus == "confirmed" {
+		sortDate = registrationEnd
+		if sortDate == nil {
+			sortDate = eventStart
+		}
+	}
 	return models.CompetitionEvent{
 		CompetitionID: normalized.CompetitionID, CatalogPackageID: &catalog.ID,
 		DatasetVersion: catalog.DatasetVersion, RecordHash: recordHash,
@@ -375,7 +390,7 @@ func (i *CompetitionCatalogImporter) eventFromCatalogRecord(
 		RegistrationTimeText: normalized.RegistrationTimeText,
 		EventTimeText:        normalized.EventTimeText, TimePrecision: normalized.TimePrecision,
 		TimeStatus: normalized.TimeStatus, TimeNote: normalized.TimeNote,
-		SortMonth: normalized.SortMonth, Location: normalized.Location, IsOnline: normalized.IsOnline,
+		SortMonth: normalized.SortMonth, SortDate: sortDate, Location: normalized.Location, IsOnline: normalized.IsOnline,
 		OfficialURL: normalized.OfficialURL, NoticeURL: normalized.NoticeURL,
 		SourceChannel: normalized.SourceChannel, SourceNote: normalized.SourceNote,
 		Status: normalized.Status, ManualRatingReasonPublic: normalized.ManualRatingReasonPublic,
